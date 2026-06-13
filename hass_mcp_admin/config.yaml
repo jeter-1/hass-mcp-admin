@@ -1,0 +1,34 @@
+name: HA MCP Admin
+version: "1.0.0"
+slug: hass_mcp_admin
+description: Full-access MCP server for Claude — automations, traces, history, templates, registries
+url: https://github.com/jeter-1/hass-mcp-admin
+arch:
+  - amd64
+  - aarch64
+  - armv7
+init: false
+homeassistant_api: true
+map:
+  - homeassistant_config:ro
+ports:
+  8099/tcp: 8099
+ports_description:
+  8099/tcp: MCP streamable-HTTP endpoint (point your Cloudflare Tunnel here)
+options:
+  access_secret: ""
+  rate_limit_per_minute: 120
+  rate_limit_burst: 25
+  destructive_services:
+    - lock.unlock
+    - lock.open
+    - cover.open_cover
+    - alarm_control_panel.alarm_disarm
+    - homeassistant.restart
+    - homeassistant.stop
+schema:
+  access_secret: str
+  rate_limit_per_minute: int
+  rate_limit_burst: int
+  destructive_services:
+    - str
