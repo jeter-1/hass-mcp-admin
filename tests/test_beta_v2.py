@@ -4,6 +4,7 @@ from contextlib import redirect_stderr
 import importlib.util
 import io
 import json
+import logging
 from pathlib import Path
 import sys
 import tempfile
@@ -29,6 +30,7 @@ production_spec.loader.exec_module(production_server)
 
 from ha_mcp_engineering.application import create_application  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
+from ha_mcp_engineering.logging_config import JsonFormatter  # noqa: E402
 from ha_mcp_engineering.capabilities import (  # noqa: E402
     CAPABILITIES,
     PLANNED_CAPABILITIES,
@@ -49,6 +51,34 @@ INITIALIZE_REQUEST = {
         "clientInfo": {"name": "beta-regression", "version": "1"},
     },
 }
+
+
+class FakeResponse:
+    def __init__(self, status):
+        self.status = status
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def text(self):
+        return '{"message":"safe fake upstream response"}'
+
+
+class FakeSession:
+    def __init__(self, status):
+        self.status = status
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    def request(self, *args, **kwargs):
+        return FakeResponse(self.status)
 
 
 def beta_settings(audit_path: str) -> Settings:
@@ -156,7 +186,8 @@ class ToolParityTests(unittest.TestCase):
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.1")
-        self.assertEqual(result["data"]["tool_count"], 25)
+        self.assertEqual(result["data"]["tool_count"], 26)
+        self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
     def test_list_capabilities_reports_expected_catalog(self):
         result = json.loads(asyncio.run(compatibility.list_capabilities()))
@@ -197,6 +228,32 @@ class BetaApplicationTests(unittest.TestCase):
             },
         )
 
+    def rpc(self, method, params, *, request_id):
+        response = self.client.post(
+            f"/{SECRET}/mcp",
+            json={"jsonrpc": "2.0", "id": request_id, "method": method, "params": params},
+            headers={
+                "accept": "application/json, text/event-stream",
+                "content-type": "application/json",
+                "x-request-id": request_id,
+            },
+        )
+        data_line = next(
+            line
+            for line in response.text.replace("\r", "").splitlines()
+            if line.startswith("data: ")
+        )
+        return response, json.loads(data_line.removeprefix("data: "))
+
+    def audit_record(self, request_id):
+        path = Path(self.tempdir.name) / "audit.jsonl"
+        records = [json.loads(line) for line in path.read_text().splitlines()]
+        return next(
+            record
+            for record in reversed(records)
+            if record.get("request_id") == request_id
+        )
+
     def test_beta_application_starts_and_health_check_succeeds(self):
         response = self.client.get("/health")
         self.assertEqual(response.status_code, 200)
@@ -209,6 +266,89 @@ class BetaApplicationTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertNotIn("location", response.headers)
                 self.assertIn("protocolVersion", response.text)
+
+    def test_tools_list_exposes_and_invokes_beta_health_tool(self):
+        response, listing = self.rpc(
+            "tools/list", {}, request_id="tools-list-request-123"
+        )
+        names = [tool["name"] for tool in listing["result"]["tools"]]
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(names), 26)
+        self.assertIn("get_server_health", names)
+
+        response, call = self.rpc(
+            "tools/call",
+            {"name": "get_server_health", "arguments": {"check_ha": False}},
+            request_id="health-call-request-123",
+        )
+        tool_payload = json.loads(call["result"]["content"][0]["text"])
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(call["result"]["isError"])
+        self.assertTrue(tool_payload["success"])
+        self.assertEqual(tool_payload["operation"], "get_server_health")
+        self.assertEqual(tool_payload["request_id"], "health-call-request-123")
+
+    def test_upstream_404_is_correlated_and_audited_as_failure(self):
+        request_id = "entity-404-request-123"
+        stream = io.StringIO()
+        handler = logging.StreamHandler(stream)
+        handler.setFormatter(JsonFormatter())
+        logger = logging.getLogger("ha_mcp_engineering.gateway")
+        old_handlers = logger.handlers
+        old_level = logger.level
+        old_propagate = logger.propagate
+        logger.handlers = [handler]
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        try:
+            with patch(
+                "ha_mcp_engineering.clients.rest.aiohttp.ClientSession",
+                return_value=FakeSession(404),
+            ):
+                response, call = self.rpc(
+                    "tools/call",
+                    {
+                        "name": "get_entity",
+                        "arguments": {
+                            "entity_id": "sensor.beta_smoke_test_nonexistent"
+                        },
+                    },
+                    request_id=request_id,
+                )
+        finally:
+            logger.handlers = old_handlers
+            logger.setLevel(old_level)
+            logger.propagate = old_propagate
+
+        tool_payload = json.loads(call["result"]["content"][0]["text"])
+        audit = self.audit_record(request_id)
+        self.assertEqual(response.headers["x-request-id"], request_id)
+        self.assertFalse(tool_payload["success"])
+        self.assertEqual(tool_payload["error_code"], "entity_not_found")
+        self.assertEqual(tool_payload["request_id"], request_id)
+        self.assertEqual(audit["result_status"], "failure")
+        self.assertEqual(audit["error_code"], "entity_not_found")
+        self.assertEqual(audit["request_id"], request_id)
+        self.assertIn(request_id, stream.getvalue())
+        self.assertNotIn(SECRET, stream.getvalue())
+
+    def test_upstream_500_is_audited_as_failure(self):
+        request_id = "entity-500-request-123"
+        with patch(
+            "ha_mcp_engineering.clients.rest.aiohttp.ClientSession",
+            return_value=FakeSession(500),
+        ):
+            _, call = self.rpc(
+                "tools/call",
+                {"name": "get_entity", "arguments": {"entity_id": "sensor.fake"}},
+                request_id=request_id,
+            )
+        tool_payload = json.loads(call["result"]["content"][0]["text"])
+        audit = self.audit_record(request_id)
+        self.assertFalse(tool_payload["success"])
+        self.assertEqual(tool_payload["error_code"], "home_assistant_api_error")
+        self.assertEqual(audit["result_status"], "failure")
+        self.assertEqual(audit["error_code"], "home_assistant_api_error")
 
     def test_unauthenticated_root_paths_are_rejected(self):
         for path in ("/mcp", "/mcp/"):
