@@ -1,7 +1,7 @@
-name: HA MCP Admin
-version: "1.0.0"
+name: HA MCP Engineering Server
+version: "1.1.0"
 slug: hass_mcp_admin
-description: Full-access MCP server for Claude — automations, traces, history, templates, registries
+description: Focused Home Assistant engineering MCP server for diagnostics, analysis, and controlled administration
 url: https://github.com/jeter-1/hass-mcp-admin
 arch:
   - amd64
