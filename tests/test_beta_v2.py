@@ -93,6 +93,26 @@ class AddonIsolationTests(unittest.TestCase):
         self.assertEqual(beta, production)
         self.assertTrue(all("==" in requirement for requirement in beta))
 
+    def test_required_v2_boundaries_and_documentation_exist(self):
+        package = BETA_DIR / "ha_mcp_engineering"
+        for relative_path in (
+            "application.py",
+            "mcp_server.py",
+            "tools/registry.py",
+            "routing.py",
+            "clients/rest.py",
+            "clients/websocket.py",
+            "configuration.py",
+            "models/responses.py",
+            "models/failures.py",
+            "audit.py",
+            "capabilities.py",
+            "version.py",
+        ):
+            self.assertTrue((package / relative_path).is_file(), relative_path)
+        self.assertTrue((BETA_DIR / "README.md").is_file())
+        self.assertTrue((ROOT / "V2_BETA_ARCHITECTURE.md").is_file())
+
 
 class ToolParityTests(unittest.TestCase):
     @classmethod
