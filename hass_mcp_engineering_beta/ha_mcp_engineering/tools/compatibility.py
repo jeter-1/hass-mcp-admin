@@ -12,6 +12,7 @@ Designed for ChatGPT, Claude, and other streamable-HTTP MCP clients.
 """
 
 import json
+import logging
 import os
 import sys
 import time
@@ -23,8 +24,11 @@ import uvicorn
 from ..capabilities import build_capability_catalog, build_server_metadata
 from ..clients import HomeAssistantRestClient, HomeAssistantWebSocketClient
 from ..configuration import load_settings
+from ..health import HEALTH
+from ..logging_config import get_logger, log_event
 from ..mcp_server import create_mcp_server
 from ..models.responses import dump_json
+from ..tool_framework import run_structured
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -45,6 +49,7 @@ AUDIT_PATH = SETTINGS.audit_path
 REST_CLIENT = HomeAssistantRestClient(SETTINGS)
 WEBSOCKET_CLIENT = HomeAssistantWebSocketClient(SETTINGS)
 MAX_CHARS = 60_000
+LOGGER = get_logger("compatibility")
 
 
 # ---------------------------------------------------------------------------
@@ -110,30 +115,39 @@ async def server_info(check_ha: bool = True) -> str:
 
     Set check_ha=False to skip the live read-only HA connectivity probe.
     """
-    runtime_mode = "home_assistant_addon" if os.environ.get("SUPERVISOR_TOKEN") else "standalone"
-    if not check_ha:
-        connection = {"checked": False, "status": "not_checked"}
-    else:
-        started = time.monotonic()
-        try:
-            config = await rest("GET", "/config")
-            connection = {
-                "checked": True,
-                "status": "connected",
-                "latency_ms": round((time.monotonic() - started) * 1000, 1),
-                "ha_version": config.get("version") if isinstance(config, dict) else None,
-                "location_name": config.get("location_name") if isinstance(config, dict) else None,
-                "time_zone": config.get("time_zone") if isinstance(config, dict) else None,
-            }
-        except Exception as exc:
-            connection = {
-                "checked": True,
-                "status": "unavailable",
-                "latency_ms": round((time.monotonic() - started) * 1000, 1),
-                "error_type": type(exc).__name__,
-                "error": str(exc)[:500],
-            }
-    return dump(build_server_metadata(ha_url=HA_URL, runtime_mode=runtime_mode, ha_connection=connection))
+    async def action():
+        runtime_mode = "home_assistant_addon" if os.environ.get("SUPERVISOR_TOKEN") else "standalone"
+        if not check_ha:
+            connection = {"checked": False, "status": "not_checked"}
+        else:
+            started = time.monotonic()
+            try:
+                config = await rest("GET", "/config")
+                connection = {
+                    "checked": True,
+                    "status": "connected",
+                    "latency_ms": round((time.monotonic() - started) * 1000, 1),
+                    "ha_version": config.get("version") if isinstance(config, dict) else None,
+                    "location_name": config.get("location_name") if isinstance(config, dict) else None,
+                    "time_zone": config.get("time_zone") if isinstance(config, dict) else None,
+                }
+            except Exception as exc:
+                connection = {
+                    "checked": True,
+                    "status": "unavailable",
+                    "latency_ms": round((time.monotonic() - started) * 1000, 1),
+                    "error_category": type(exc).__name__,
+                }
+        return build_server_metadata(
+            ha_url=HA_URL, runtime_mode=runtime_mode, ha_connection=connection
+        )
+
+    return await run_structured(
+        "server_info",
+        "Returned beta server identity and runtime metadata.",
+        action,
+        response_limit=SETTINGS.response_size_limit,
+    )
 
 
 @mcp.tool()
@@ -147,7 +161,45 @@ async def list_capabilities(status: str = "", category: str = "") -> str:
 
     Planned engineering capabilities are returned separately.
     """
-    return dump(build_capability_catalog(status=status, category=category))
+    return await run_structured(
+        "list_capabilities",
+        "Returned the canonical tool catalog and additive beta capabilities.",
+        lambda: build_capability_catalog(status=status, category=category),
+        response_limit=SETTINGS.response_size_limit,
+    )
+
+
+@mcp.tool()
+async def get_server_health(check_ha: bool = True) -> str:
+    """Return safe beta runtime, connectivity, audit, logging, and latency health.
+
+    Set check_ha=False to skip the live read-only Home Assistant probe.
+    """
+    async def action():
+        if not check_ha:
+            connection = {"checked": False, "status": "not_checked"}
+        else:
+            try:
+                config = await rest("GET", "/config")
+                connection = {
+                    "checked": True,
+                    "status": "connected",
+                    "version": config.get("version") if isinstance(config, dict) else None,
+                }
+            except Exception as exc:
+                connection = {
+                    "checked": True,
+                    "status": "unavailable",
+                    "error_category": type(exc).__name__,
+                }
+        return HEALTH.snapshot(connection)
+
+    return await run_structured(
+        "get_server_health",
+        "Returned safe beta operational health.",
+        action,
+        response_limit=SETTINGS.response_size_limit,
+    )
 
 
 # ----- Visibility & debugging ----------------------------------------------
@@ -213,9 +265,17 @@ async def get_logbook(hours: float = 12, entity_id: str = "") -> str:
 @mcp.tool()
 async def get_error_log(tail_lines: int = 200) -> str:
     """The Home Assistant core error log (most recent lines)."""
-    text = await rest("GET", "/error_log", raw=True)
-    lines = text.splitlines()
-    return "\n".join(lines[-tail_lines:])
+    async def action():
+        text = await rest("GET", "/error_log", raw=True)
+        lines = text.splitlines()
+        return {"line_count": min(len(lines), tail_lines), "lines": lines[-tail_lines:]}
+
+    return await run_structured(
+        "get_error_log",
+        "Returned the requested tail of the Home Assistant error log.",
+        action,
+        response_limit=SETTINGS.response_size_limit,
+    )
 
 
 @mcp.tool()
@@ -604,7 +664,14 @@ def audit_write(entry: dict) -> None:
         with open(AUDIT_PATH, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, default=str) + "\n")
     except OSError as e:
-        print(f"audit write failed: {e}", flush=True)
+        log_event(
+            LOGGER,
+            logging.ERROR,
+            "legacy_audit_write_failed",
+            "Compatibility audit output could not be written.",
+            context={"error_type": type(e).__name__},
+            secret=ACCESS_SECRET,
+        )
 
 
 def _summarize_args(args: Any, limit: int = 300) -> Any:
@@ -753,9 +820,14 @@ def main() -> None:
             "FATAL: access_secret is unset or too short (min 24 chars). "
             "Set it in the add-on configuration — generate one with: openssl rand -hex 24"
         )
-    print(f"HA MCP Engineering Server starting on :{PORT}  (HA at {HA_URL})", flush=True)
-    print(f"MCP endpoint path: /{ACCESS_SECRET[:4]}.../mcp", flush=True)
-    print(f"Destructive-service gate: {sorted(DESTRUCTIVE_SERVICES)}", flush=True)
+    log_event(
+        LOGGER,
+        logging.INFO,
+        "legacy_entrypoint_starting",
+        "Compatibility entry point is starting.",
+        context={"port": PORT},
+        secret=ACCESS_SECRET,
+    )
     app = Gateway(mcp.streamable_http_app(), ACCESS_SECRET)
     # Request paths contain the access secret. Uvicorn's standard access log
     # prints the complete path, so it must remain disabled for this gateway.

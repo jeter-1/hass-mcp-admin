@@ -52,6 +52,23 @@ PLANNED_CAPABILITIES: tuple[dict[str, str], ...] = (
     {"capability": "handoff_generation", "status": "planned", "risk": "analytical"},
 )
 
+BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
+    {
+        "tool": "get_server_health",
+        "category": "observability",
+        "status": "beta_native",
+        "risk": "read",
+        "additive": True,
+    },
+)
+
+
+def capability_for_tool(tool_name: str | None) -> dict[str, Any]:
+    for item in (*CAPABILITIES, *BETA_NATIVE_CAPABILITIES):
+        if item["tool"] == tool_name:
+            return dict(item)
+    return {}
+
 
 def build_server_metadata(*, ha_url: str, runtime_mode: str, ha_connection: dict[str, Any]) -> dict[str, Any]:
     """Return stable server identity and runtime metadata."""
@@ -91,5 +108,7 @@ def build_capability_catalog(*, status: str = "", category: str = "") -> dict[st
         },
         "tools": tools,
         "planned": [dict(item) for item in PLANNED_CAPABILITIES],
+        "beta_native": [dict(item) for item in BETA_NATIVE_CAPABILITIES],
+        "registered_count": len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES),
         "status_values": ["native", "transitional", "delegated", "deprecated", "planned", "unavailable"],
     }
