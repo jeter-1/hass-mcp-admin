@@ -1,15 +1,28 @@
-# HA MCP Admin
+# HA MCP Engineering Server
 
-A full-access MCP (Model Context Protocol) server for Home Assistant, packaged as a
-Home Assistant OS add-on. It gives Claude (via a claude.ai custom connector) admin-plane
-capabilities the built-in HA MCP integration doesn't expose:
+A focused Model Context Protocol server for Home Assistant engineering, diagnostics,
+and controlled administration, packaged as a Home Assistant OS add-on. It works with
+ChatGPT, Claude, and other MCP-capable clients.
+
+The current release exposes a compact set of direct Home Assistant inspection and
+administration tools. The project is evolving toward an engineering, analysis,
+governance, verification, and handoff layer that complements the broader `ha-mcp`
+server instead of duplicating it. See [ARCHITECTURE.md](ARCHITECTURE.md) for the current
+boundaries and roadmap.
+
+Current tools:
+
+> `server_info` reports the exact server/version/build and live HA connectivity. `list_capabilities` reports whether each tool is native, transitional, delegated, or deprecated.
 
 | Category | Tools |
 |---|---|
+| Foundation | `server_info`, `list_capabilities` |
 | Debugging | `get_history`, `get_logbook`, `get_error_log`, `list_automation_traces`, `get_automation_trace`, `render_template` |
 | Automations | `list_automations`, `get_automation_config`, `upsert_automation`, `delete_automation`, `reload_domain`, `check_config` |
+| Blueprints | `list_blueprints`, `get_blueprint` |
 | State | `get_entity`, `search_entities` |
-| Registries | `list_areas`, `list_devices`, `list_entity_registry`, `list_services` |
+| Registries | `list_areas`, `list_devices`, `list_entity_registry`, `search_services`, `list_services` |
+| Operations | `get_audit_log` |
 | Escape hatch | `call_service` (any domain/service, with a destructive-services confirm gate) |
 
 It runs against the Supervisor's internal HA proxy, so **no long-lived access token is
@@ -20,8 +33,8 @@ needed** — auth to HA is handled by the injected `SUPERVISOR_TOKEN`.
 ## Security model (read this first)
 
 - The MCP endpoint is only reachable at `/<access_secret>/mcp`. Everything else 404s.
-  The secret is effectively a bearer credential embedded in the URL, because claude.ai
-  custom connectors don't send custom headers for non-OAuth servers. **Minimum 24 chars;
+  The secret is effectively a bearer credential embedded in the URL, because some hosted MCP
+  connectors don't send custom headers for non-OAuth servers. **Minimum 24 chars;
   the server refuses to start otherwise.** Generate one: `openssl rand -hex 24`
 - Services that physically open/unlock things (configurable list) require an explicit
   `confirm=true` parameter on top of the secret.
@@ -34,7 +47,7 @@ needed** — auth to HA is handled by the injected `SUPERVISOR_TOKEN`.
 ### 1. Put this repo on GitHub
 
 ```bash
-git init && git add -A && git commit -m "HA MCP Admin add-on"
+git init && git add -A && git commit -m "HA MCP Engineering Server add-on"
 git remote add origin git@github.com:YOUR_GITHUB_USERNAME/hass-mcp-admin.git
 git push -u origin main
 ```
@@ -46,10 +59,10 @@ Then replace `YOUR_GITHUB_USERNAME` in `repository.yaml` and
 
 1. HA → **Settings → Add-ons → Add-on Store → ⋮ → Repositories**
 2. Add `https://github.com/YOUR_GITHUB_USERNAME/hass-mcp-admin`
-3. Refresh, open **HA MCP Admin**, click **Install** (it builds locally, ~1–2 min)
+3. Refresh, open **HA MCP Engineering Server**, click **Install** (it builds locally, ~1–2 min)
 4. **Configuration** tab → set `access_secret` to your generated value → **Save**
 5. **Start** the add-on. Check the **Log** tab — you should see
-   `HA MCP Admin starting on :8099`.
+   `HA MCP Engineering Server starting on :8099`.
 
 ### 3. Expose it with Cloudflare Tunnel
 
@@ -72,13 +85,13 @@ additional_hosts:
 3. Restart Cloudflared, then verify: `https://ha-mcp.yourdomain.com/health` → `ok`,
    and `https://ha-mcp.yourdomain.com/anything-else` → 404.
 
-### 4. Connect claude.ai
+### 4. Connect an MCP client
 
-1. claude.ai → **Settings → Connectors → Add custom connector**
+1. In your MCP client, add a custom Streamable HTTP connector.
 2. URL: `https://ha-mcp.yourdomain.com/<access_secret>/mcp`
-3. No OAuth — it should connect directly and show ~19 tools.
+3. No OAuth — it should connect directly and show 25 tools.
 
-For current claude.ai connector documentation, see https://support.claude.com.
+Consult your MCP client documentation for its custom-connector workflow.
 
 ## Standalone / Docker use (non-HAOS installs)
 

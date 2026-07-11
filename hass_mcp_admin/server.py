@@ -1,4 +1,4 @@
-"""HA MCP Admin — full-access Model Context Protocol server for Home Assistant.
+"""HA MCP Engineering Server — focused MCP engineering interface for Home Assistant.
 
 Runs as a Home Assistant add-on. Talks to HA Core through the Supervisor
 proxy (REST + WebSocket) using the injected SUPERVISOR_TOKEN, so no
@@ -8,8 +8,7 @@ Exposes a streamable-HTTP MCP endpoint protected by a secret URL path:
 
     https://<your-tunnel-domain>/<access_secret>/mcp
 
-Designed for Claude (claude.ai custom connectors), but works with any
-streamable-HTTP MCP client.
+Designed for ChatGPT, Claude, and other streamable-HTTP MCP clients.
 """
 
 import json
@@ -22,6 +21,8 @@ from typing import Any, Optional
 import aiohttp
 import uvicorn
 from mcp.server.fastmcp import FastMCP
+
+from metadata import build_capability_catalog, build_server_metadata
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -139,13 +140,64 @@ INSTRUCTIONS = """Operating procedure for this Home Assistant admin server:
    dumps; output is truncated at 60k characters."""
 
 mcp = FastMCP(
-    "ha-admin",
+    "ha-engineering",
     instructions=INSTRUCTIONS,
     host="0.0.0.0",
     port=PORT,
     streamable_http_path="/mcp",
     stateless_http=True,
 )
+
+
+# ----- Server identity & capabilities --------------------------------------
+
+
+@mcp.tool()
+async def server_info(check_ha: bool = True) -> str:
+    """Return this MCP server's identity, build metadata, runtime mode, and
+    Home Assistant connectivity. This distinguishes the Engineering server
+    from the broader standard ha-mcp server.
+
+    Set check_ha=False to skip the live read-only HA connectivity probe.
+    """
+    runtime_mode = "home_assistant_addon" if os.environ.get("SUPERVISOR_TOKEN") else "standalone"
+    if not check_ha:
+        connection = {"checked": False, "status": "not_checked"}
+    else:
+        started = time.monotonic()
+        try:
+            config = await rest("GET", "/config")
+            connection = {
+                "checked": True,
+                "status": "connected",
+                "latency_ms": round((time.monotonic() - started) * 1000, 1),
+                "ha_version": config.get("version") if isinstance(config, dict) else None,
+                "location_name": config.get("location_name") if isinstance(config, dict) else None,
+                "time_zone": config.get("time_zone") if isinstance(config, dict) else None,
+            }
+        except Exception as exc:
+            connection = {
+                "checked": True,
+                "status": "unavailable",
+                "latency_ms": round((time.monotonic() - started) * 1000, 1),
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:500],
+            }
+    return dump(build_server_metadata(ha_url=HA_URL, runtime_mode=runtime_mode, ha_connection=connection))
+
+
+@mcp.tool()
+async def list_capabilities(status: str = "", category: str = "") -> str:
+    """List this server's tool capabilities and lifecycle classification.
+
+    Optional exact filters:
+    - status: native, transitional, delegated, deprecated
+    - category: foundation, evidence, verification, observability, discovery,
+      configuration, or execution
+
+    Planned engineering capabilities are returned separately.
+    """
+    return dump(build_capability_catalog(status=status, category=category))
 
 
 # ----- Visibility & debugging ----------------------------------------------
@@ -736,7 +788,7 @@ def main() -> None:
             "FATAL: access_secret is unset or too short (min 24 chars). "
             "Set it in the add-on configuration — generate one with: openssl rand -hex 24"
         )
-    print(f"HA MCP Admin starting on :{PORT}  (HA at {HA_URL})", flush=True)
+    print(f"HA MCP Engineering Server starting on :{PORT}  (HA at {HA_URL})", flush=True)
     print(f"MCP endpoint path: /{ACCESS_SECRET[:4]}.../mcp", flush=True)
     print(f"Destructive-service gate: {sorted(DESTRUCTIVE_SERVICES)}", flush=True)
     app = Gateway(mcp.streamable_http_app(), ACCESS_SECRET)
