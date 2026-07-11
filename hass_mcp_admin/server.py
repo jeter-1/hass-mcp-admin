@@ -807,7 +807,9 @@ def main() -> None:
     print(f"MCP endpoint path: /{ACCESS_SECRET[:4]}.../mcp", flush=True)
     print(f"Destructive-service gate: {sorted(DESTRUCTIVE_SERVICES)}", flush=True)
     app = Gateway(mcp.streamable_http_app(), ACCESS_SECRET)
-    uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info")
+    # Request paths contain the access secret. Uvicorn's standard access log
+    # prints the complete path, so it must remain disabled for this gateway.
+    uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info", access_log=False)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.2
+
+- Disabled Uvicorn HTTP access logging because authenticated request paths contain the access secret.
+- Added a regression guard requiring raw request access logs to remain disabled.
+
 ## 1.1.1
 
 - Fixed authenticated MCP requests being redirected from `/<access_secret>/mcp` to the unauthenticated `/mcp/` path.

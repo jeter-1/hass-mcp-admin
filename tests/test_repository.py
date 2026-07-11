@@ -9,7 +9,7 @@ class RepositoryTests(unittest.TestCase):
     def test_addon_config_is_valid_yaml_and_version_matches(self):
         config = yaml.safe_load((ROOT / "hass_mcp_admin" / "config.yaml").read_text())
         self.assertEqual(config["name"], "HA MCP Engineering Server")
-        self.assertEqual(config["version"], "1.1.1")
+        self.assertEqual(config["version"], "1.1.2")
         self.assertTrue(config["homeassistant_api"])
 
     def test_required_project_documents_exist(self):
@@ -22,6 +22,10 @@ if __name__ == "__main__":
 
 
 class ToolCatalogParityTests(unittest.TestCase):
+    def test_uvicorn_access_log_is_disabled(self):
+        server_source = (ROOT / "hass_mcp_admin" / "server.py").read_text()
+        self.assertIn("access_log=False", server_source)
+
     def test_registered_tools_match_capability_catalog(self):
         import ast
         import importlib.util

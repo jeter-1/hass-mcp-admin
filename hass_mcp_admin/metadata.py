@@ -7,7 +7,7 @@ from typing import Any
 
 SERVER_NAME = "HA MCP Engineering Server"
 SERVER_ID = "hass-mcp-engineering"
-SERVER_VERSION = "1.1.1"
+SERVER_VERSION = "1.1.2"
 SCHEMA_VERSION = "1"
 
 BUILD_SHA = os.environ.get("HAMCP_BUILD_SHA", "unknown")
