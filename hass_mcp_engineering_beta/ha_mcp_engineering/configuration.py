@@ -29,6 +29,12 @@ class Settings:
     rate_limit_per_minute: int
     rate_limit_burst: int
     destructive_services: frozenset[str]
+    audit_enabled: bool = True
+    audit_max_payload_chars: int = 8192
+    log_level: str = "INFO"
+    ha_timeout_seconds: float = 60.0
+    response_size_limit: int = 60_000
+    redaction_enabled: bool = True
 
     @property
     def api_url(self) -> str:
@@ -57,8 +63,14 @@ def load_settings() -> Settings:
         ha_token=token,
         access_secret=secret,
         port=int(os.environ.get("MCP_PORT", "8100")),
-        audit_path=os.environ.get("AUDIT_PATH", "/data/audit.jsonl"),
+        audit_path=str(options.get("audit_path", os.environ.get("AUDIT_PATH", "/data/audit.jsonl"))),
         rate_limit_per_minute=int(options.get("rate_limit_per_minute", 120)),
         rate_limit_burst=int(options.get("rate_limit_burst", 25)),
         destructive_services=frozenset(destructive),
+        audit_enabled=bool(options.get("audit_enabled", True)),
+        audit_max_payload_chars=int(options.get("audit_max_payload_chars", 8192)),
+        log_level=str(options.get("log_level", os.environ.get("LOG_LEVEL", "INFO"))).upper(),
+        ha_timeout_seconds=float(options.get("ha_timeout_seconds", 60)),
+        response_size_limit=int(options.get("response_size_limit", 60_000)),
+        redaction_enabled=bool(options.get("redaction_enabled", True)),
     )

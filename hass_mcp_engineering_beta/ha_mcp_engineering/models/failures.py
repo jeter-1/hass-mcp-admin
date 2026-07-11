@@ -1,12 +1,7 @@
-"""Serializable failure model reserved for v2 response envelopes."""
+"""Compatibility export for the structured beta failure contract."""
 
-from dataclasses import dataclass, field
-from typing import Any
+from .responses import FailureResponse
 
+ErrorModel = FailureResponse
 
-@dataclass
-class ErrorModel:
-    code: str
-    message: str
-    retryable: bool = False
-    details: dict[str, Any] = field(default_factory=dict)
+__all__ = ["ErrorModel", "FailureResponse"]

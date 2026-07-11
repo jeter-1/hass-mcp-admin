@@ -19,6 +19,13 @@ options:
   access_secret: ""
   rate_limit_per_minute: 120
   rate_limit_burst: 25
+  audit_enabled: true
+  audit_path: /data/audit.jsonl
+  audit_max_payload_chars: 8192
+  log_level: INFO
+  ha_timeout_seconds: 60
+  response_size_limit: 60000
+  redaction_enabled: true
   destructive_services:
     - lock.unlock
     - lock.open
@@ -30,5 +37,12 @@ schema:
   access_secret: str
   rate_limit_per_minute: int
   rate_limit_burst: int
+  audit_enabled: bool
+  audit_path: str
+  audit_max_payload_chars: int
+  log_level: list(DEBUG|INFO|WARNING|ERROR)
+  ha_timeout_seconds: float
+  response_size_limit: int
+  redaction_enabled: bool
   destructive_services:
     - str

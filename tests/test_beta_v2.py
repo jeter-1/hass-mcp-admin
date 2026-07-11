@@ -1,6 +1,6 @@
 import asyncio
 from collections import Counter
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr
 import importlib.util
 import io
 import json
@@ -111,6 +111,7 @@ class AddonIsolationTests(unittest.TestCase):
         ):
             self.assertTrue((package / relative_path).is_file(), relative_path)
         self.assertTrue((BETA_DIR / "README.md").is_file())
+        self.assertTrue((BETA_DIR / "OBSERVABILITY.md").is_file())
         self.assertTrue((ROOT / "V2_BETA_ARCHITECTURE.md").is_file())
 
 
@@ -125,14 +126,17 @@ class ToolParityTests(unittest.TestCase):
         }
 
     def test_all_25_tools_are_registered(self):
-        self.assertEqual(len(self.beta_tools), 25)
-        self.assertEqual(set(self.beta_tools), set(self.production_tools))
+        self.assertEqual(len(self.production_tools), 25)
+        self.assertEqual(len(self.beta_tools), 26)
+        self.assertEqual(set(self.production_tools), set(self.beta_tools) - {"get_server_health"})
 
     def test_tool_names_and_argument_schemas_match_v1_1_2(self):
         production_schemas = {
             name: tool.parameters for name, tool in self.production_tools.items()
         }
-        beta_schemas = {name: tool.parameters for name, tool in self.beta_tools.items()}
+        beta_schemas = {
+            name: self.beta_tools[name].parameters for name in self.production_tools
+        }
         self.assertEqual(beta_schemas, production_schemas)
 
     def test_capability_catalog_and_classifications_match_v1_1_2(self):
@@ -148,17 +152,22 @@ class ToolParityTests(unittest.TestCase):
 
     def test_server_info_reports_beta_identity(self):
         result = json.loads(asyncio.run(compatibility.server_info(check_ha=False)))
-        self.assertEqual(result["server"]["id"], "hass-mcp-engineering-beta")
-        self.assertEqual(result["server"]["name"], "HA MCP Engineering Server Beta")
-        self.assertEqual(result["server"]["version"], "2.0.0-beta.1")
-        self.assertEqual(result["tool_count"], 25)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
+        self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
+        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.1")
+        self.assertEqual(result["data"]["tool_count"], 25)
 
     def test_list_capabilities_reports_expected_catalog(self):
         result = json.loads(asyncio.run(compatibility.list_capabilities()))
-        self.assertEqual(result["count"], 25)
-        self.assertEqual(len(result["planned"]), 6)
+        self.assertTrue(result["success"])
+        catalog = result["data"]
+        self.assertEqual(catalog["count"], 25)
+        self.assertEqual(catalog["registered_count"], 26)
+        self.assertEqual(len(catalog["planned"]), 6)
+        self.assertEqual([item["tool"] for item in catalog["beta_native"]], ["get_server_health"])
         self.assertEqual(
-            Counter(item["status"] for item in result["tools"]),
+            Counter(item["status"] for item in catalog["tools"]),
             {"native": 8, "transitional": 10, "delegated": 4, "deprecated": 3},
         )
 
@@ -220,12 +229,12 @@ class BetaApplicationTests(unittest.TestCase):
         output = io.StringIO()
         with patch("ha_mcp_engineering.application.load_settings", return_value=settings), patch(
             "ha_mcp_engineering.application.uvicorn.run"
-        ), redirect_stdout(output):
+        ), redirect_stderr(output):
             from ha_mcp_engineering.application import main
 
             main()
         self.assertNotIn(SECRET, output.getvalue())
-        self.assertIn("redacted secret path", output.getvalue())
+        self.assertIn('"event": "server_starting"', output.getvalue())
 
 
 if __name__ == "__main__":
