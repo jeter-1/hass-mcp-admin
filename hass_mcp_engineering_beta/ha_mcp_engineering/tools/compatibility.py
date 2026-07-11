@@ -169,7 +169,6 @@ async def list_capabilities(status: str = "", category: str = "") -> str:
     )
 
 
-@mcp.tool()
 async def get_server_health(check_ha: bool = True) -> str:
     """Return safe beta runtime, connectivity, audit, logging, and latency health.
 
@@ -208,7 +207,13 @@ async def get_server_health(check_ha: bool = True) -> str:
 @mcp.tool()
 async def get_entity(entity_id: str) -> str:
     """Get full current state and all attributes for one entity."""
-    return dump(await rest("GET", f"/states/{entity_id}"))
+    return await run_structured(
+        "get_entity",
+        "Returned the requested Home Assistant entity state.",
+        lambda: rest("GET", f"/states/{entity_id}"),
+        metadata={"resource_type": "entity", "resource_id": entity_id},
+        response_limit=SETTINGS.response_size_limit,
+    )
 
 
 @mcp.tool()

@@ -86,7 +86,8 @@ def build_server_metadata(*, ha_url: str, runtime_mode: str, ha_connection: dict
             "home_assistant_url": ha_url,
             "home_assistant_connection": ha_connection,
         },
-        "tool_count": len(CAPABILITIES),
+        "tool_count": len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES),
+        "canonical_tool_count": len(CAPABILITIES),
     }
 
 

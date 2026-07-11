@@ -8,6 +8,15 @@ compatibility layer.
 
 from . import compatibility
 
+_SERVER = compatibility.mcp
+if "get_server_health" not in {
+    tool.name for tool in _SERVER._tool_manager.list_tools()
+}:
+    # Register the beta-native tool explicitly on the FastMCP instance used to
+    # serve tools/list. This avoids relying on capability metadata or an import
+    # side effect as proof that the tool is callable.
+    _SERVER.tool()(compatibility.get_server_health)
+
 
 def get_registered_server():
-    return compatibility.mcp
+    return _SERVER
