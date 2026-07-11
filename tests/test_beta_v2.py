@@ -111,6 +111,7 @@ class AddonIsolationTests(unittest.TestCase):
         ):
             self.assertTrue((package / relative_path).is_file(), relative_path)
         self.assertTrue((BETA_DIR / "README.md").is_file())
+        self.assertTrue((BETA_DIR / "OBSERVABILITY.md").is_file())
         self.assertTrue((ROOT / "V2_BETA_ARCHITECTURE.md").is_file())
 
 

@@ -87,3 +87,8 @@ rollback.
 See [`../V2_BETA_ARCHITECTURE.md`](../V2_BETA_ARCHITECTURE.md) for module
 boundaries, compatibility strategy, current limitations, and the rules for
 migrating tools out of the compatibility layer.
+
+See [`OBSERVABILITY.md`](OBSERVABILITY.md) for structured response examples,
+the error-code catalog, audit schema, redaction and request-correlation rules,
+logging conventions, health fields, startup validation, and the incremental
+tool-migration policy.

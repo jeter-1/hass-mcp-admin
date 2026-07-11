@@ -74,6 +74,12 @@ change governance, analysis findings, relationship graphs, orphan detection,
 and trace comparison without coupling those concepts to the transport or
 gateway.
 
+The response, error, audit, request-correlation, structured logging, timing, and
+health foundations are documented in
+[`hass_mcp_engineering_beta/OBSERVABILITY.md`](hass_mcp_engineering_beta/OBSERVABILITY.md).
+They are active for a representative beta tool set while compatibility tools
+continue to use their existing response formats.
+
 ## Tool migration rules
 
 1. Preserve the public tool name and generated argument schema unless a
