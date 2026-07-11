@@ -9,6 +9,8 @@ import aiohttp
 
 from ..configuration import Settings
 from ..errors import (
+    AutomationNotFoundError,
+    EntityNotFoundError,
     ErrorCode,
     HomeAssistantApiError,
     HomeAssistantTimeoutError,
@@ -57,13 +59,22 @@ class HomeAssistantRestClient:
                     text = await response.text()
                     self._record(started, category)
                     if response.status >= 400:
-                        raise HomeAssistantApiError(
-                            details={
-                                "status": response.status,
-                                "method": method,
-                                "endpoint_category": category,
-                            }
-                        )
+                        details = {
+                            "status": response.status,
+                            "method": method,
+                            "endpoint_category": category,
+                        }
+                        if response.status == 404 and path.startswith("/states/"):
+                            error = EntityNotFoundError(details=details)
+                        elif response.status == 404 and "/automation/" in path:
+                            error = AutomationNotFoundError(details=details)
+                        else:
+                            error = HomeAssistantApiError(details=details)
+                        telemetry = current_telemetry()
+                        if telemetry:
+                            telemetry.error_code = error.code.value
+                        METRICS.record_error(error.code.value)
+                        raise error
                     if raw:
                         return text
                     try:

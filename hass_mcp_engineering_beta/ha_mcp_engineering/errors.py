@@ -97,6 +97,14 @@ class HomeAssistantTimeoutError(EngineeringServerError):
     code = ErrorCode.HA_TIMEOUT
 
 
+class EntityNotFoundError(EngineeringServerError):
+    code = ErrorCode.ENTITY_NOT_FOUND
+
+
+class AutomationNotFoundError(EngineeringServerError):
+    code = ErrorCode.AUTOMATION_NOT_FOUND
+
+
 # Compatibility name retained for the scaffold imports.
 HomeAssistantError = HomeAssistantApiError
 
