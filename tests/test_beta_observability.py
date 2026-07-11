@@ -144,6 +144,7 @@ class ErrorTaxonomyTests(unittest.TestCase):
             self.assertTrue(definition.message)
             self.assertIsInstance(definition.http_status, int)
             self.assertTrue(definition.mcp_mapping)
+            self.assertIn("endpoint_category", definition.safe_detail_fields)
 
     def test_retryable_classification(self):
         for code in (ErrorCode.HA_TIMEOUT, ErrorCode.HA_UNAVAILABLE, ErrorCode.RATE_LIMIT_EXCEEDED):

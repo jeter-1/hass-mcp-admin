@@ -29,6 +29,13 @@ class ErrorDefinition:
     retryable: bool
     http_status: int
     mcp_mapping: str
+    safe_detail_fields: tuple[str, ...] = (
+        "exception_type",
+        "operation",
+        "resource_id",
+        "status",
+        "endpoint_category",
+    )
 
 
 ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {

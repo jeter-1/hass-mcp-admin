@@ -83,6 +83,10 @@ Unexpected exception messages are not returned. The safe response contains the
 exception type and catalog message; internal details remain in correlated,
 redacted application logs.
 
+Taxonomy definitions allow only safe diagnostic field categories:
+`exception_type`, `operation`, `resource_id`, `status`, and
+`endpoint_category`. Individual mappings may return a subset.
+
 ## Request correlation
 
 Every HTTP MCP request receives a request ID. A caller may provide
