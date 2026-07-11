@@ -226,9 +226,18 @@ Delegated 4, Deprecated 3, with 6 planned capabilities. `get_server_health` is
 advertised separately as additive `beta_native` metadata so these counts do not
 change.
 
-This change migrates `server_info`, `list_capabilities`, and `get_error_log`,
-plus the new health tool and the representative HA failure path. Remaining tools
-retain their published names, argument schemas, and legacy response behavior.
+This change migrates `server_info`, `list_capabilities`, `get_error_log`, and
+`get_entity`, plus the new health tool and representative HA 4xx/5xx failure
+paths. Remaining tools retain their published names, argument schemas, and
+legacy response behavior. `get_server_health` is registered explicitly on the
+FastMCP instance returned by the beta registry and is verified through real
+`tools/list` and `tools/call` integration tests.
+
+Upstream Home Assistant failures set the request telemetry error code before
+control returns through FastMCP. The client response, structured request logs,
+and final audit record therefore share the same request ID and stable error
+code; HTTP 404 entity lookups map to `entity_not_found`, while other upstream
+rejections map to `home_assistant_api_error`.
 
 For each future migration:
 

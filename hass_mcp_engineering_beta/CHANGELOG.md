@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Explicitly register `get_server_health` with the served FastMCP registry and
+  verify its `tools/list`/`tools/call` exposure.
+- Correlate upstream HA 4xx/5xx failures across structured tool responses,
+  logs, and audit records; entity 404s now use `entity_not_found`.
 - Add typed success and failure response contracts and a stable error taxonomy.
 - Add request correlation, structured logging, bounded audit records, timing,
   and safe runtime metrics.
