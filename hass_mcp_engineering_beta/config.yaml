@@ -1,0 +1,34 @@
+name: HA MCP Engineering Server Beta
+version: "2.0.0-beta.1"
+slug: hass_mcp_engineering_beta
+description: Modular v2 beta scaffold for Home Assistant MCP engineering workflows
+url: https://github.com/jeter-1/hass-mcp-admin
+arch:
+  - amd64
+  - aarch64
+  - armv7
+init: false
+homeassistant_api: true
+map:
+  - homeassistant_config:ro
+ports:
+  8100/tcp: 8100
+ports_description:
+  8100/tcp: Beta MCP streamable-HTTP endpoint
+options:
+  access_secret: ""
+  rate_limit_per_minute: 120
+  rate_limit_burst: 25
+  destructive_services:
+    - lock.unlock
+    - lock.open
+    - cover.open_cover
+    - alarm_control_panel.alarm_disarm
+    - homeassistant.restart
+    - homeassistant.stop
+schema:
+  access_secret: str
+  rate_limit_per_minute: int
+  rate_limit_burst: int
+  destructive_services:
+    - str
