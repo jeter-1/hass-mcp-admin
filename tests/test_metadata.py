@@ -17,7 +17,7 @@ class MetadataTests(unittest.TestCase):
             ha_connection={"checked": False, "status": "not_checked"},
         )
         self.assertEqual(result["server"]["id"], "hass-mcp-engineering")
-        self.assertEqual(result["server"]["version"], "1.1.0")
+        self.assertEqual(result["server"]["version"], "1.1.1")
         self.assertEqual(result["tool_count"], 25)
 
     def test_capability_catalog_contains_every_tool_once(self):
