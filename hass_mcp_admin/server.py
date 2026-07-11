@@ -676,6 +676,10 @@ class Gateway:
         self.global_bucket = TokenBucket(RATE_PER_MINUTE * 2, RATE_BURST * 2)
         self.auth_fail: dict[str, TokenBucket] = {}
 
+    def _redact_path(self, path: str) -> str:
+        """Remove the complete credential from any path written to audit logs."""
+        return path.replace(self.prefix, "/<access_secret>")[:64]
+
     def _client_ip(self, scope) -> str:
         for name, value in scope.get("headers", []):
             if name == b"cf-connecting-ip":
@@ -710,9 +714,11 @@ class Gateway:
         if not path.startswith(self.prefix + "/") and path != self.prefix:
             fb = self._bucket(self.auth_fail, ip, per_minute=0.5, burst=5)
             if not fb.allow():
-                audit_write({"event": "auth_failure_throttled", "client_ip": ip, "path": path[:64]})
+                audit_write({"event": "auth_failure_throttled", "client_ip": ip,
+                             "path": self._redact_path(path)})
                 return await self._respond(send, 429, b"too many requests")
-            audit_write({"event": "auth_failure", "client_ip": ip, "path": path[:64]})
+            audit_write({"event": "auth_failure", "client_ip": ip,
+                         "path": self._redact_path(path)})
             return await self._respond(send, 404, b"not found")
 
         # Rate limits (authenticated traffic)
@@ -767,11 +773,20 @@ class Gateway:
             await send(message)
 
         scope = dict(scope)
-        scope["path"] = path[len(self.prefix):] or "/"
+        internal_path = path[len(self.prefix):] or "/"
+        # FastMCP's canonical endpoint has a trailing slash. Normalize both
+        # authenticated public forms internally so Starlette never sends a
+        # redirect that drops the secret prefix from the client-visible URL.
+        if internal_path in ("/mcp", "/mcp/"):
+            internal_path = "/mcp/"
+        scope["path"] = internal_path
         if scope.get("raw_path"):
             raw, pref = scope["raw_path"], self.prefix.encode()
             if raw.startswith(pref):
-                scope["raw_path"] = raw[len(pref):] or b"/"
+                internal_raw_path = raw[len(pref):] or b"/"
+                if internal_raw_path in (b"/mcp", b"/mcp/"):
+                    internal_raw_path = b"/mcp/"
+                scope["raw_path"] = internal_raw_path
         try:
             await self.app(scope, new_receive, send_wrapper)
         finally:
