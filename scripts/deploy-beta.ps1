@@ -202,7 +202,7 @@ try {
         "[ ] Refresh the Home Assistant add-on repository.",
         "[ ] Update HA MCP Engineering Server Beta only.",
         "[ ] Confirm /health on port 8100.",
-        "[ ] Use MCP Inspector tools/list and confirm the expected tools.",
+        "[ ] Use MCP Inspector tools/list and confirm exactly 32 callable tools.",
         "[ ] Call server_info and verify version $betaVersion.",
         "[ ] Call list_capabilities.",
         "[ ] Call get_server_health.",

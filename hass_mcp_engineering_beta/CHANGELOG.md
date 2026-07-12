@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.0-beta.4
+
+- Add approval-based change plans for creating and updating Home Assistant
+  automations, with deterministic dry-run diffs and risk classification.
+- Add hash-bound approval, stale-state protection, per-target concurrency,
+  controlled apply, read-back verification, and separately approved rollback.
+- Add atomic beta-only governance persistence, retention, corrupt-record
+  quarantine, restart recovery, safe audit events, and bounded health metrics.
+- Expose six governance tools for 32 total callable beta MCP tools while
+  preserving all 25 production-compatible tool schemas.
+
 ## 2.0.0-beta.3
 
 - Add fail-closed beta deployment and metadata validation for Windows development.
