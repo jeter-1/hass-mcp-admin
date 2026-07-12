@@ -9,7 +9,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-beta.7` |
+| Version | `1.1.2` | `2.0.0-beta.8` |
 | Port | `8099` | `8100` |
 | Options and secret | Production add-on data | Beta add-on data |
 
@@ -33,7 +33,8 @@ ha_mcp_engineering/
 `- providers/
    |- base.py               # transport-independent evidence provider interface
    |- models.py             # provider request, result, error, and coverage models
-   |- routing.py            # deterministic capability and fallback policy
+   |- routing.py            # deterministic capability and tool-exception policy
+   |- dispatch.py           # schema-preserving canonical provider dispatch
    |- standard_mcp.py       # honest unavailable delegation boundary
    `- direct_ha.py          # explicit direct-API exception boundary
 ```
@@ -74,7 +75,7 @@ FastMCP factory. `server_info` and `list_capabilities` use beta version and
 capability metadata.
 
 The v1.1.2 catalog currently contains 8 native, 10 transitional, 4 delegated,
-and 3 deprecated tools. Beta 7 advertises 4 remaining planned capabilities. The often
+and 3 deprecated tools. Beta 8 advertises 4 remaining planned capabilities. The often
 quoted transitional count of 9 is inconsistent with the checked-in 25-tool
 catalog; v2 intentionally preserves the source catalog rather than
 reclassifying a tool during a scaffold change.
@@ -84,8 +85,10 @@ reclassifying a tool during a scaffold change.
 Phase 3A implements the provider and response boundaries defined in
 [`docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md`](docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md).
 There is currently no supported nested standard-HA-MCP transport. The standard
-provider is deliberately unavailable; existing compatibility reads remain direct until
-a future migration. Provider availability must not be inferred from lifecycle labels.
+provider is deliberately unavailable. Delegated canonical calls therefore return a
+structured unavailable response and cannot silently reach direct HA. Transitional and
+direct-required calls enter the dispatcher and use only the documented tool-specific
+direct exceptions. Provider availability must not be inferred from lifecycle labels.
 
 The response and error models are intentionally minimal. Future changes can
 add structured envelopes, dry-run results, approval state, rollback metadata,
@@ -96,8 +99,7 @@ gateway.
 The response, error, audit, request-correlation, structured logging, timing, and
 health foundations are documented in
 [`hass_mcp_engineering_beta/OBSERVABILITY.md`](hass_mcp_engineering_beta/OBSERVABILITY.md).
-They are active for a representative beta tool set while compatibility tools
-continue to use their existing response formats.
+They are active for beta-native tools and every provider-routed canonical tool.
 
 ## Tool migration rules
 
@@ -122,15 +124,13 @@ continue to use their existing response formats.
 
 ## Known limitations
 
-Beta 7 adds one engineering-native dependency-analysis tool and changes the callable
+Beta 8 retains the engineering-native dependency-analysis tool and the callable
 manifest to 33 tools. Exact source coverage is documented in
 [`docs/ENTITY_DEPENDENCY_ANALYSIS.md`](docs/ENTITY_DEPENDENCY_ANALYSIS.md).
 
-- The scaffold deliberately preserves legacy tool response formats.
-- Structured envelopes and governance features are boundaries only, not active
-  behavior.
-- The 23 non-foundation tools still use compatibility implementations.
+- Provider-routed canonical tools now return the facilitator response envelope.
+- Handler bodies remain compatibility implementations behind the routing boundary.
 - Live Home Assistant behavior requires a Supervisor token or an explicit
   standalone `HA_URL`/`HA_TOKEN` pair.
-- Standard Home Assistant MCP delegation is not operational in Beta 7; the gateway
+- Standard Home Assistant MCP delegation is not operational in Beta 8; the gateway
   reports explicit unavailability and never fabricates delegated evidence.

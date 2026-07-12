@@ -98,6 +98,7 @@ class ProviderResult:
     fallback_occurred: bool = False
     coverage: ProviderCoverage = field(default_factory=lambda: ProviderCoverage(1, 0))
     metadata: dict[str, Any] = field(default_factory=dict)
+    data: Any = None
 
     @property
     def evidence_count(self) -> int:

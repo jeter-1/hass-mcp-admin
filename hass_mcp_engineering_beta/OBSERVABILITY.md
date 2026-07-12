@@ -225,10 +225,15 @@ envelope containing safe operational data:
 It never returns the secret, tokens, headers, cookies, complete MCP endpoint
 paths, private request payloads, or raw audit/log records.
 
-The delegation diagnostic reflects current reality: Beta 7 has no configured nested
+The delegation diagnostic reflects current reality: Beta 8 has no configured nested
 standard-MCP transport. It must not be interpreted as a connectivity probe for another
 MCP server. Provider failures and partial coverage remain visible; permitted direct
 read fallback requires explicit policy, while direct write fallback is prohibited.
+
+Every provider-routed canonical call contributes to these counters. Delegated calls
+are attributed to `standard_ha_mcp`, including structured unavailable failures;
+transitional and direct-required exceptions are attributed to `direct_ha_api`.
+Lifecycle labels do not substitute for runtime provider attribution.
 
 ## Startup configuration validation
 

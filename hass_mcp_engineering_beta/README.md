@@ -36,7 +36,7 @@ https://BETA_TUNNEL/REDACTED_BETA_SECRET/mcp/
 ```
 
 Direct requests to `/mcp` and `/mcp/` must return `404`. After initialization,
-call `server_info(check_ha=false)` and verify version `2.0.0-beta.7`, then call
+call `server_info(check_ha=false)` and verify version `2.0.0-beta.8`, then call
 `list_capabilities` and verify the preserved 25-tool canonical catalog plus the
 eight beta-native tools; MCP `tools/list` should expose 33 callable tools.
 
@@ -102,8 +102,8 @@ approval-based automation change lifecycle, risk model, persistence, audit,
 verification, rollback, limitations, and MCP client examples.
 
 See [`../docs/ENTITY_DEPENDENCY_ANALYSIS.md`](../docs/ENTITY_DEPENDENCY_ANALYSIS.md)
-for Beta 7 source coverage, cache/cursor behavior, cautious assessment, limitations,
-and connector recreation or `?manifest=beta7` cache-busting guidance.
+for dependency source coverage, cache/cursor behavior, cautious assessment, limitations,
+and connector recreation or `?manifest=beta8` cache-busting guidance.
 
 See [`../docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md`](../docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md)
 and [`../docs/TOKEN_EFFICIENCY.md`](../docs/TOKEN_EFFICIENCY.md) for provider routing,

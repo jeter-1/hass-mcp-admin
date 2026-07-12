@@ -40,6 +40,10 @@ class ErrorCode(str, Enum):
     INVALID_CURSOR = "invalid_cursor"
     STALE_CURSOR = "stale_cursor"
     ANALYSIS_UNAVAILABLE = "analysis_unavailable"
+    PROVIDER_UNAVAILABLE = "provider_unavailable"
+    PROVIDER_TIMEOUT = "provider_timeout"
+    PROVIDER_ERROR = "provider_error"
+    PROVIDER_PROHIBITED = "provider_prohibited"
 
 
 @dataclass(frozen=True)
@@ -90,6 +94,10 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
     ErrorCode.INVALID_CURSOR: ErrorDefinition("The pagination cursor is invalid.", False, 400, "invalid_params"),
     ErrorCode.STALE_CURSOR: ErrorDefinition("The pagination cursor belongs to an expired index generation; restart pagination.", False, 409, "invalid_request"),
     ErrorCode.ANALYSIS_UNAVAILABLE: ErrorDefinition("Dependency analysis evidence is unavailable.", True, 503, "internal_error"),
+    ErrorCode.PROVIDER_UNAVAILABLE: ErrorDefinition("The required capability provider is unavailable.", False, 503, "internal_error"),
+    ErrorCode.PROVIDER_TIMEOUT: ErrorDefinition("The capability provider timed out.", True, 504, "internal_error"),
+    ErrorCode.PROVIDER_ERROR: ErrorDefinition("The capability provider failed.", True, 502, "internal_error"),
+    ErrorCode.PROVIDER_PROHIBITED: ErrorDefinition("Provider policy prohibits this operation or fallback.", False, 403, "invalid_request"),
 }
 
 

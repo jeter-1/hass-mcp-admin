@@ -40,6 +40,12 @@ from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.governance import GOVERNANCE  # noqa: E402
 from ha_mcp_engineering.dependency import DEPENDENCY_ANALYSIS  # noqa: E402
 from ha_mcp_engineering.dependency.service import AnalysisOutput  # noqa: E402
+from ha_mcp_engineering.providers import (  # noqa: E402
+    CANONICAL_DISPATCHER,
+    EngineeringEvidenceProvider,
+    ProviderCompleteness,
+    ProviderResult,
+)
 from ha_mcp_engineering.tools import compatibility  # noqa: E402
 from ha_mcp_engineering.tools.registry import get_registered_server  # noqa: E402
 
@@ -85,6 +91,20 @@ class FakeSession:
 
     def request(self, *args, **kwargs):
         return FakeResponse(self.status, self.body)
+
+
+class FakeStandardMcpProvider(EngineeringEvidenceProvider):
+    provider_id = "standard_ha_mcp"
+    capabilities = frozenset()
+    available = True
+
+    async def fetch(self, request):
+        return ProviderResult(
+            provider_id=self.provider_id,
+            capability=request.capability,
+            completeness=ProviderCompleteness.COMPLETE,
+            data={"entity_id": "sensor.facilitated", "state": "ready"},
+        )
 
 
 def beta_settings(audit_path: str) -> Settings:
@@ -160,7 +180,7 @@ class AddonIsolationTests(unittest.TestCase):
     def test_beta_metadata_is_distinct_and_valid(self):
         self.assertEqual(self.beta["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(self.beta["slug"], "hass_mcp_engineering_beta")
-        self.assertEqual(self.beta["version"], "2.0.0-beta.7")
+        self.assertEqual(self.beta["version"], "2.0.0-beta.8")
         self.assertEqual(self.beta["ports"], {"8100/tcp": 8100})
         self.assertNotEqual(self.beta["slug"], self.production["slug"])
         self.assertNotEqual(set(self.beta["ports"]), set(self.production["ports"]))
@@ -273,7 +293,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
-        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.7")
+        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.8")
         self.assertEqual(result["data"]["tool_count"], 33)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
@@ -387,6 +407,14 @@ class BetaApplicationTests(unittest.TestCase):
             "entity_dependency_analysis",
         }
         self.assertTrue(expected_beta_native.issubset(names))
+        dependency_schema = next(
+            tool["inputSchema"]
+            for tool in listing["result"]["tools"]
+            if tool["name"] == "entity_dependency_analysis"
+        )
+        self.assertEqual(dependency_schema["type"], "object")
+        for tool in listing["result"]["tools"]:
+            json.dumps(tool["inputSchema"])
 
         response, call = self.rpc(
             "tools/call",
@@ -429,6 +457,27 @@ class BetaApplicationTests(unittest.TestCase):
         self.assertEqual(audit["result_status"], "partial")
         self.assertEqual(audit["resource_ids"]["entity_id"], "sensor.removed_sensor")
         self.assertNotIn("findings", json.dumps(audit))
+
+    def test_delegated_tool_routes_through_provider_via_real_mcp(self):
+        previous = CANONICAL_DISPATCHER.standard_provider
+        CANONICAL_DISPATCHER.standard_provider = FakeStandardMcpProvider()
+        request_id = "delegated-provider-integration-123"
+        try:
+            with patch.object(compatibility, "rest") as direct:
+                response, call = self.rpc(
+                    "tools/call",
+                    {"name": "get_entity", "arguments": {"entity_id": "sensor.facilitated"}},
+                    request_id=request_id,
+                )
+        finally:
+            CANONICAL_DISPATCHER.standard_provider = previous
+        payload = json.loads(call["result"]["content"][0]["text"])
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["data"]["state"], "ready")
+        self.assertEqual(payload["metadata"]["routing"]["provider"], "standard_ha_mcp")
+        self.assertEqual(payload["request_id"], request_id)
+        direct.assert_not_called()
 
     def test_governance_tools_call_end_to_end_through_real_mcp(self):
         initialized = self.initialize(f"/{SECRET}/mcp")
@@ -674,7 +723,7 @@ class BetaApplicationTests(unittest.TestCase):
         self.assertEqual(payload["error_code"], "home_assistant_api_error")
         self.assertEqual(audit["error_code"], "home_assistant_api_error")
 
-    def test_upstream_404_is_correlated_and_audited_as_failure(self):
+    def test_delegated_call_does_not_use_direct_ha_404_fallback(self):
         request_id = "entity-404-request-123"
         stream = io.StringIO()
         handler = logging.StreamHandler(stream)
@@ -690,7 +739,7 @@ class BetaApplicationTests(unittest.TestCase):
             with patch(
                 "ha_mcp_engineering.clients.rest.aiohttp.ClientSession",
                 return_value=FakeSession(404),
-            ):
+            ) as direct_session:
                 response, call = self.rpc(
                     "tools/call",
                     {
@@ -705,36 +754,38 @@ class BetaApplicationTests(unittest.TestCase):
             logger.handlers = old_handlers
             logger.setLevel(old_level)
             logger.propagate = old_propagate
+        direct_session.assert_not_called()
 
         tool_payload = json.loads(call["result"]["content"][0]["text"])
         audit = self.audit_record(request_id)
         self.assertEqual(response.headers["x-request-id"], request_id)
         self.assertFalse(tool_payload["success"])
-        self.assertEqual(tool_payload["error_code"], "entity_not_found")
+        self.assertEqual(tool_payload["error_code"], "provider_unavailable")
         self.assertEqual(tool_payload["request_id"], request_id)
         self.assertEqual(audit["result_status"], "failure")
-        self.assertEqual(audit["error_code"], "entity_not_found")
+        self.assertEqual(audit["error_code"], "provider_unavailable")
         self.assertEqual(audit["request_id"], request_id)
         self.assertIn(request_id, stream.getvalue())
         self.assertNotIn(SECRET, stream.getvalue())
 
-    def test_upstream_500_is_audited_as_failure(self):
+    def test_delegated_call_does_not_use_direct_ha_500_fallback(self):
         request_id = "entity-500-request-123"
         with patch(
             "ha_mcp_engineering.clients.rest.aiohttp.ClientSession",
             return_value=FakeSession(500),
-        ):
+        ) as direct_session:
             _, call = self.rpc(
                 "tools/call",
                 {"name": "get_entity", "arguments": {"entity_id": "sensor.fake"}},
                 request_id=request_id,
             )
+        direct_session.assert_not_called()
         tool_payload = json.loads(call["result"]["content"][0]["text"])
         audit = self.audit_record(request_id)
         self.assertFalse(tool_payload["success"])
-        self.assertEqual(tool_payload["error_code"], "home_assistant_api_error")
+        self.assertEqual(tool_payload["error_code"], "provider_unavailable")
         self.assertEqual(audit["result_status"], "failure")
-        self.assertEqual(audit["error_code"], "home_assistant_api_error")
+        self.assertEqual(audit["error_code"], "provider_unavailable")
 
     def test_unauthenticated_root_paths_are_rejected(self):
         for path in ("/mcp", "/mcp/"):

@@ -1,7 +1,7 @@
 # Beta deployment and validation
 
 The beta add-on is isolated from production. Production remains **HA MCP
-Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.7
+Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.8
 is **HA MCP Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100).
 The workflow in this document deploys or updates only the beta.
 
@@ -17,8 +17,8 @@ From a clean branch in Windows PowerShell, run:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.6 `
-  -ExpectedVersion 2.0.0-beta.7 `
+  -DeployedVersion 2.0.0-beta.7 `
+  -ExpectedVersion 2.0.0-beta.8 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -FullTests
 ```
@@ -39,8 +39,8 @@ without supplying authentication material:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.6 `
-  -ExpectedVersion 2.0.0-beta.7 `
+  -DeployedVersion 2.0.0-beta.7 `
+  -ExpectedVersion 2.0.0-beta.8 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -SkipTests -SkipDockerBuild `
   -HealthHost homeassistant.local `
@@ -74,9 +74,11 @@ authenticated path, credential, or secret in the argument.
 The unauthenticated health endpoint proves that a process is responding. It
 does not replace `server_info` for verifying the running server version.
 
-Beta 7 changes `tools/list` from 32 to 33 tools. If ChatGPT retains the old manifest,
+Beta 8 must return 33 serializable tools from the server's real `tools/list`, including
+`entity_dependency_analysis`. If ChatGPT retains a 32-tool manifest while the server
+returns 33, the remaining mismatch is connector caching rather than server registration;
 recreate only the beta connector or append the non-secret cache marker
-`?manifest=beta7` to its authenticated connector URL. Never share that complete URL.
+`?manifest=beta8` to its authenticated connector URL. Never share that complete URL.
 
 ## Optional local add-on development
 
@@ -126,10 +128,18 @@ and that `get_server_health` identifies the beta server.
 
 ## Provider-routing troubleshooting
 
-Beta 7 intentionally reports `standard_ha_mcp_delegation: unavailable` in safe health
+Beta 8 intentionally reports `standard_ha_mcp_delegation: unavailable` in safe health
 diagnostics. This is the expected current state: the add-on has no configured or tested
 nested standard-MCP transport. It does not indicate a Home Assistant REST outage and
 must not be worked around by adding a secret-bearing MCP URL to options or source.
+
+Delegated tools such as `get_entity`, `list_areas`, `search_services`, and
+`list_services` must return a structured `provider_unavailable` response in this state.
+They must also increment `standard_ha_mcp` request/failure counters and the blocked
+fallback counter without changing direct-HA counters. Transitional tools such as
+`list_automations` must increment direct-HA request/success counters and return the
+facilitator envelope. If either behavior differs, verify `server_info` reports Beta 8
+before diagnosing provider connectivity.
 
 When future analytical work uses providers, inspect only bounded provider identity,
 completeness, failure category, coverage, fallback, and timing fields. A partial result
