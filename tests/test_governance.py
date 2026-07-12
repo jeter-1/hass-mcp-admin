@@ -371,6 +371,12 @@ class NormalizationAndRiskTests(unittest.TestCase):
 
 
 class ApprovalAndApplyTests(GovernanceTestCase):
+    async def test_successful_apply_invalidates_dependency_index(self):
+        created, _ = await self.approved_plan()
+        with patch("ha_mcp_engineering.dependency.DEPENDENCY_ANALYSIS.invalidate") as invalidate:
+            await self.service.apply(created["plan_id"], created["plan_hash"])
+        invalidate.assert_called_once()
+
     async def test_valid_approval_is_separate_from_apply(self):
         created = await self.update_plan()
         approved = self.service.approve(created["plan_id"], created["plan_hash"], "Reviewed")
@@ -539,6 +545,15 @@ class ApprovalAndApplyTests(GovernanceTestCase):
 
 
 class RollbackTests(GovernanceTestCase):
+    async def test_successful_rollback_invalidates_dependency_index(self):
+        created, _ = await self.approved_plan()
+        await self.service.apply(created["plan_id"], created["plan_hash"])
+        pending = await self.service.rollback_change(created["plan_id"])
+        self.service.approve(created["plan_id"], pending["plan_hash"])
+        with patch("ha_mcp_engineering.dependency.DEPENDENCY_ANALYSIS.invalidate") as invalidate:
+            await self.service.rollback_change(created["plan_id"], pending["plan_hash"])
+        invalidate.assert_called_once()
+
     async def applied_update(self):
         created, _ = await self.approved_plan()
         await self.service.apply(created["plan_id"])

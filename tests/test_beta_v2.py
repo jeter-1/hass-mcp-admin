@@ -38,6 +38,8 @@ from ha_mcp_engineering.capabilities import (  # noqa: E402
 )
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.governance import GOVERNANCE  # noqa: E402
+from ha_mcp_engineering.dependency import DEPENDENCY_ANALYSIS  # noqa: E402
+from ha_mcp_engineering.dependency.service import AnalysisOutput  # noqa: E402
 from ha_mcp_engineering.tools import compatibility  # noqa: E402
 from ha_mcp_engineering.tools.registry import get_registered_server  # noqa: E402
 
@@ -93,7 +95,7 @@ def beta_settings(audit_path: str) -> Settings:
         port=8100,
         audit_path=audit_path,
         rate_limit_per_minute=120,
-        rate_limit_burst=25,
+        rate_limit_burst=100,
         destructive_services=frozenset(),
         governance_path=str(Path(audit_path).parent / "governance"),
     )
@@ -124,6 +126,25 @@ class FakeGovernanceGateway:
         return {"result": "valid", "errors": None}
 
 
+class FakeDependencyService:
+    async def analyze(self, **kwargs):
+        entity_id = kwargs["entity_id"].strip().lower()
+        return AnalysisOutput(
+            data={
+                "target": {"entity_id": entity_id, "entity_exists": False, "registry_entry_exists": False, "domain": entity_id.split(".", 1)[0]},
+                "overview": {"dependency_status": "not_detected", "direct_reference_count": 0},
+                "assessment": {"rename_or_removal_status": "unknown_due_to_incomplete_coverage", "reason": "Coverage is incomplete."},
+                "findings": [],
+                "source_coverage": [{"source_type": "dashboard", "completeness": "unavailable"}],
+                "pagination": {"limit": 10, "returned": 0, "total": 0, "has_more": False, "next_cursor": None},
+                "index": {"fingerprint": "safe-fingerprint", "generation": 1, "cache_hit": True},
+            },
+            warnings=["Dashboard configuration is unavailable."],
+            metadata={"detail_level": kwargs.get("detail_level", "summary"), "partial": True},
+            partial=True,
+        )
+
+
 class AddonIsolationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -139,7 +160,7 @@ class AddonIsolationTests(unittest.TestCase):
     def test_beta_metadata_is_distinct_and_valid(self):
         self.assertEqual(self.beta["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(self.beta["slug"], "hass_mcp_engineering_beta")
-        self.assertEqual(self.beta["version"], "2.0.0-beta.6")
+        self.assertEqual(self.beta["version"], "2.0.0-beta.7")
         self.assertEqual(self.beta["ports"], {"8100/tcp": 8100})
         self.assertNotEqual(self.beta["slug"], self.production["slug"])
         self.assertNotEqual(set(self.beta["ports"]), set(self.production["ports"]))
@@ -147,10 +168,11 @@ class AddonIsolationTests(unittest.TestCase):
             self.beta["slug"].replace("_", "-"), "hass-mcp-engineering-beta"
         )
 
-    def test_dependencies_are_pinned_and_match_production(self):
+    def test_dependencies_are_exactly_pinned(self):
         production = (PRODUCTION_DIR / "requirements.txt").read_text().splitlines()
         beta = (BETA_DIR / "requirements.txt").read_text().splitlines()
-        self.assertEqual(beta, production)
+        self.assertTrue(set(production).issubset(beta))
+        self.assertIn("PyYAML==6.0.2", beta)
         self.assertTrue(all("==" in requirement for requirement in beta))
 
     def test_required_v2_boundaries_and_documentation_exist(self):
@@ -180,6 +202,12 @@ class AddonIsolationTests(unittest.TestCase):
             "providers/routing.py",
             "providers/standard_mcp.py",
             "providers/direct_ha.py",
+            "dependency/models.py",
+            "dependency/extraction.py",
+            "dependency/provider.py",
+            "dependency/index.py",
+            "dependency/service.py",
+            "tools/analysis.py",
         ):
             self.assertTrue((package / relative_path).is_file(), relative_path)
         self.assertTrue((BETA_DIR / "README.md").is_file())
@@ -204,7 +232,7 @@ class ToolParityTests(unittest.TestCase):
 
     def test_all_25_tools_are_registered(self):
         self.assertEqual(len(self.production_tools), 25)
-        self.assertEqual(len(self.beta_tools), 32)
+        self.assertEqual(len(self.beta_tools), 33)
         self.assertEqual(
             set(self.production_tools),
             set(self.beta_tools)
@@ -216,6 +244,7 @@ class ToolParityTests(unittest.TestCase):
                 "approve_change_plan",
                 "apply_change_plan",
                 "rollback_change",
+                "entity_dependency_analysis",
             },
         )
 
@@ -237,15 +266,15 @@ class ToolParityTests(unittest.TestCase):
             counts,
             {"native": 8, "transitional": 10, "delegated": 4, "deprecated": 3},
         )
-        self.assertEqual(len(PLANNED_CAPABILITIES), 5)
+        self.assertEqual(len(PLANNED_CAPABILITIES), 4)
 
     def test_server_info_reports_beta_identity(self):
         result = json.loads(asyncio.run(compatibility.server_info(check_ha=False)))
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
-        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.6")
-        self.assertEqual(result["data"]["tool_count"], 32)
+        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.7")
+        self.assertEqual(result["data"]["tool_count"], 33)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
     def test_list_capabilities_reports_expected_catalog(self):
@@ -253,8 +282,8 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         catalog = result["data"]
         self.assertEqual(catalog["count"], 25)
-        self.assertEqual(catalog["registered_count"], 32)
-        self.assertEqual(len(catalog["planned"]), 5)
+        self.assertEqual(catalog["registered_count"], 33)
+        self.assertEqual(len(catalog["planned"]), 4)
         self.assertEqual(
             [item["tool"] for item in catalog["beta_native"]],
             [
@@ -265,6 +294,7 @@ class ToolParityTests(unittest.TestCase):
                 "approve_change_plan",
                 "apply_change_plan",
                 "rollback_change",
+                "entity_dependency_analysis",
             ],
         )
         self.assertEqual(
@@ -345,7 +375,7 @@ class BetaApplicationTests(unittest.TestCase):
         )
         names = [tool["name"] for tool in listing["result"]["tools"]]
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(names), 32)
+        self.assertEqual(len(names), 33)
         expected_beta_native = {
             "get_server_health",
             "create_change_plan",
@@ -354,6 +384,7 @@ class BetaApplicationTests(unittest.TestCase):
             "approve_change_plan",
             "apply_change_plan",
             "rollback_change",
+            "entity_dependency_analysis",
         }
         self.assertTrue(expected_beta_native.issubset(names))
 
@@ -368,6 +399,36 @@ class BetaApplicationTests(unittest.TestCase):
         self.assertTrue(tool_payload["success"])
         self.assertEqual(tool_payload["operation"], "get_server_health")
         self.assertEqual(tool_payload["request_id"], "health-call-request-123")
+
+    def test_entity_dependency_analysis_calls_through_real_mcp(self):
+        initialized = self.initialize(f"/{SECRET}/mcp")
+        self.assertEqual(initialized.status_code, 200)
+        previous = DEPENDENCY_ANALYSIS.service
+        DEPENDENCY_ANALYSIS.service = FakeDependencyService()
+        request_id = "dependency-analysis-request-123"
+        try:
+            response, call = self.rpc(
+                "tools/call",
+                {
+                    "name": "entity_dependency_analysis",
+                    "arguments": {"entity_id": "sensor.removed_sensor"},
+                },
+                request_id=request_id,
+            )
+        finally:
+            DEPENDENCY_ANALYSIS.service = previous
+        payload = json.loads(call["result"]["content"][0]["text"])
+        audit = self.audit_record(request_id)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["success"])
+        self.assertFalse(payload["data"]["target"]["entity_exists"])
+        self.assertEqual(payload["request_id"], request_id)
+        self.assertEqual(audit["tool_name"], "entity_dependency_analysis")
+        self.assertEqual(audit["operation_category"], "analysis")
+        self.assertEqual(audit["access"], "read")
+        self.assertEqual(audit["result_status"], "partial")
+        self.assertEqual(audit["resource_ids"]["entity_id"], "sensor.removed_sensor")
+        self.assertNotIn("findings", json.dumps(audit))
 
     def test_governance_tools_call_end_to_end_through_real_mcp(self):
         initialized = self.initialize(f"/{SECRET}/mcp")
