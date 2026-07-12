@@ -53,6 +53,8 @@ class ChangeRiskAssessment:
     level: RiskLevel
     reasons: list[str] = field(default_factory=list)
     apply_allowed: bool = True
+    evidence: list[dict[str, str]] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -168,6 +170,8 @@ class ChangePlan:
             level=RiskLevel(risk["level"]),
             reasons=list(risk.get("reasons", [])),
             apply_allowed=bool(risk.get("apply_allowed", True)),
+            evidence=list(risk.get("evidence", [])),
+            warnings=list(risk.get("warnings", [])),
         )
         approval = data.get("approval", {})
         approval["state"] = ApprovalState(approval.get("state", "required"))
