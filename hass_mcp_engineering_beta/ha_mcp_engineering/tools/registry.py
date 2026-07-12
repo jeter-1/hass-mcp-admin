@@ -7,6 +7,7 @@ compatibility layer.
 """
 
 from . import compatibility
+from .governance import GOVERNANCE_TOOLS
 
 _SERVER = compatibility.mcp
 if "get_server_health" not in {
@@ -16,6 +17,11 @@ if "get_server_health" not in {
     # serve tools/list. This avoids relying on capability metadata or an import
     # side effect as proof that the tool is callable.
     _SERVER.tool()(compatibility.get_server_health)
+
+_registered = {tool.name for tool in _SERVER._tool_manager.list_tools()}
+for governance_tool in GOVERNANCE_TOOLS:
+    if governance_tool.__name__ not in _registered:
+        _SERVER.tool()(governance_tool)
 
 
 def get_registered_server():

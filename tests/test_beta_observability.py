@@ -138,6 +138,14 @@ class ErrorTaxonomyTests(unittest.TestCase):
             "home_assistant_api_error", "home_assistant_timeout", "entity_not_found",
             "automation_not_found", "unsupported_operation", "configuration_conflict",
             "rate_limit_exceeded", "internal_server_error",
+            "change_plan_not_found", "change_plan_expired",
+            "change_plan_not_approved", "approval_hash_mismatch",
+            "approval_already_consumed", "stale_target_state",
+            "change_in_progress", "unsupported_change_operation",
+            "high_risk_change_rejected", "automation_validation_failed",
+            "automation_apply_failed", "automation_verification_failed",
+            "rollback_not_available", "rollback_approval_required",
+            "rollback_failed", "change_plan_storage_error",
         }
         self.assertEqual({code.value for code in ERROR_CATALOG}, expected)
         for definition in ERROR_CATALOG.values():
@@ -324,8 +332,10 @@ class GatewayAndHealthTests(unittest.TestCase):
             payload = json.loads(asyncio.run(compatibility.get_server_health(check_ha=False)))
         self.assertTrue(payload["success"])
         health = payload["data"]
-        self.assertEqual(health["server"]["version"], "2.0.0-beta.3")
-        self.assertEqual(health["registered_tool_count"], 26)
+        self.assertEqual(health["server"]["version"], "2.0.0-beta.4")
+        self.assertEqual(health["registered_tool_count"], 32)
+        self.assertIn("governance", health)
+        self.assertIn("storage_corruption_count", health["governance"])
         self.assertTrue(health["redaction"]["enabled"])
         encoded = json.dumps(payload)
         self.assertNotIn(SECRET, encoded)

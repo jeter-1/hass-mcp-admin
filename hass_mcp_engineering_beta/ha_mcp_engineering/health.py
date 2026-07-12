@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .observability import METRICS
+from .capabilities import BETA_NATIVE_CAPABILITIES, CAPABILITIES
 from .version import SERVER_ID, SERVER_NAME, SERVER_VERSION
 
 
@@ -15,12 +16,14 @@ class HealthRegistry:
     audit: Any = None
     gateway: Any = None
     configuration_valid: bool = False
+    governance: Any = None
 
-    def configure(self, settings, audit, gateway) -> None:
+    def configure(self, settings, audit, gateway, governance=None) -> None:
         self.settings = settings
         self.audit = audit
         self.gateway = gateway
         self.configuration_valid = True
+        self.governance = governance
 
     def snapshot(self, ha_connection: dict[str, Any]) -> dict[str, Any]:
         metrics = METRICS.snapshot()
@@ -33,7 +36,7 @@ class HealthRegistry:
                 "requests": metrics["request_latency"],
                 "home_assistant": metrics["home_assistant_latency"],
             },
-            "registered_tool_count": 26,
+            "registered_tool_count": len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES),
             "audit": self.audit.state() if self.audit else {"enabled": False, "configured": False},
             "logging": {
                 "structured": True,
@@ -47,6 +50,11 @@ class HealthRegistry:
             "tool_call_count": metrics["tool_call_count"],
             "retry_count": metrics["retry_count"],
             "timeout_count": metrics["timeout_count"],
+            "governance": (
+                self.governance.health_summary()
+                if self.governance
+                else {"enabled": False, "storage": {"configured": False}}
+            ),
         }
 
 

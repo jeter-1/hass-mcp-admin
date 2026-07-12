@@ -36,9 +36,9 @@ https://BETA_TUNNEL/REDACTED_BETA_SECRET/mcp/
 ```
 
 Direct requests to `/mcp` and `/mcp/` must return `404`. After initialization,
-call `server_info(check_ha=false)` and verify version `2.0.0-beta.3`, then call
+call `server_info(check_ha=false)` and verify version `2.0.0-beta.4`, then call
 `list_capabilities` and verify the preserved 25-tool canonical catalog plus the
-beta-native `get_server_health`; MCP `tools/list` should expose 26 callable tools.
+seven beta-native tools; MCP `tools/list` should expose 32 callable tools.
 
 Use a separate tunnel ingress or hostname for beta. Route it to port `8100`;
 leave the production ingress on `8099`.
@@ -96,3 +96,7 @@ tool-migration policy.
 
 See [`../docs/BETA_DEPLOYMENT.md`](../docs/BETA_DEPLOYMENT.md) for the validated
 Windows release workflow, Supervisor cache troubleshooting, and rollback steps.
+
+See [`../docs/CHANGE_GOVERNANCE.md`](../docs/CHANGE_GOVERNANCE.md) for the
+approval-based automation change lifecycle, risk model, persistence, audit,
+verification, rollback, limitations, and MCP client examples.

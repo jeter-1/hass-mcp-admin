@@ -24,6 +24,7 @@ class RequestTelemetry:
     response_status: int | None = None
     endpoint_categories: set[str] = field(default_factory=set)
     error_code: str | None = None
+    caller_id: str = "anonymous"
 
     @property
     def total_duration_ms(self) -> float:
@@ -55,3 +56,8 @@ def current_telemetry() -> RequestTelemetry | None:
 def current_request_id() -> str:
     telemetry = current_telemetry()
     return telemetry.request_id if telemetry else normalize_request_id(None)
+
+
+def current_caller_id() -> str:
+    telemetry = current_telemetry()
+    return telemetry.caller_id if telemetry else "anonymous"

@@ -21,6 +21,22 @@ class ErrorCode(str, Enum):
     CONFIGURATION_CONFLICT = "configuration_conflict"
     RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
     INTERNAL_SERVER_ERROR = "internal_server_error"
+    CHANGE_PLAN_NOT_FOUND = "change_plan_not_found"
+    CHANGE_PLAN_EXPIRED = "change_plan_expired"
+    CHANGE_PLAN_NOT_APPROVED = "change_plan_not_approved"
+    APPROVAL_HASH_MISMATCH = "approval_hash_mismatch"
+    APPROVAL_ALREADY_CONSUMED = "approval_already_consumed"
+    STALE_TARGET_STATE = "stale_target_state"
+    CHANGE_IN_PROGRESS = "change_in_progress"
+    UNSUPPORTED_CHANGE_OPERATION = "unsupported_change_operation"
+    HIGH_RISK_CHANGE_REJECTED = "high_risk_change_rejected"
+    AUTOMATION_VALIDATION_FAILED = "automation_validation_failed"
+    AUTOMATION_APPLY_FAILED = "automation_apply_failed"
+    AUTOMATION_VERIFICATION_FAILED = "automation_verification_failed"
+    ROLLBACK_NOT_AVAILABLE = "rollback_not_available"
+    ROLLBACK_APPROVAL_REQUIRED = "rollback_approval_required"
+    ROLLBACK_FAILED = "rollback_failed"
+    CHANGE_PLAN_STORAGE_ERROR = "change_plan_storage_error"
 
 
 @dataclass(frozen=True)
@@ -52,6 +68,22 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
     ErrorCode.CONFIGURATION_CONFLICT: ErrorDefinition("The configuration conflicts with current state.", False, 409, "invalid_request"),
     ErrorCode.RATE_LIMIT_EXCEEDED: ErrorDefinition("The request rate limit was exceeded.", True, 429, "server_error"),
     ErrorCode.INTERNAL_SERVER_ERROR: ErrorDefinition("An internal server error occurred.", False, 500, "internal_error"),
+    ErrorCode.CHANGE_PLAN_NOT_FOUND: ErrorDefinition("The change plan was not found.", False, 404, "invalid_params"),
+    ErrorCode.CHANGE_PLAN_EXPIRED: ErrorDefinition("The change plan has expired.", False, 409, "invalid_request"),
+    ErrorCode.CHANGE_PLAN_NOT_APPROVED: ErrorDefinition("The change plan is not approved.", False, 409, "invalid_request"),
+    ErrorCode.APPROVAL_HASH_MISMATCH: ErrorDefinition("The approval does not match the immutable plan content.", False, 409, "invalid_request"),
+    ErrorCode.APPROVAL_ALREADY_CONSUMED: ErrorDefinition("The approval has already been consumed.", False, 409, "invalid_request"),
+    ErrorCode.STALE_TARGET_STATE: ErrorDefinition("Home Assistant state changed after planning.", False, 409, "invalid_request"),
+    ErrorCode.CHANGE_IN_PROGRESS: ErrorDefinition("Another governed change is in progress for this target.", True, 409, "server_error"),
+    ErrorCode.UNSUPPORTED_CHANGE_OPERATION: ErrorDefinition("The requested change operation is unsupported.", False, 405, "method_not_found"),
+    ErrorCode.HIGH_RISK_CHANGE_REJECTED: ErrorDefinition("High-risk changes cannot be approved or applied in this milestone.", False, 403, "invalid_request"),
+    ErrorCode.AUTOMATION_VALIDATION_FAILED: ErrorDefinition("The proposed automation failed validation.", False, 422, "invalid_params"),
+    ErrorCode.AUTOMATION_APPLY_FAILED: ErrorDefinition("Home Assistant could not apply the automation change.", False, 502, "internal_error"),
+    ErrorCode.AUTOMATION_VERIFICATION_FAILED: ErrorDefinition("The stored automation did not match the approved configuration.", False, 409, "internal_error"),
+    ErrorCode.ROLLBACK_NOT_AVAILABLE: ErrorDefinition("Rollback is not available for this change.", False, 409, "invalid_request"),
+    ErrorCode.ROLLBACK_APPROVAL_REQUIRED: ErrorDefinition("Rollback requires a separate approval.", False, 409, "invalid_request"),
+    ErrorCode.ROLLBACK_FAILED: ErrorDefinition("The governed rollback failed.", False, 502, "internal_error"),
+    ErrorCode.CHANGE_PLAN_STORAGE_ERROR: ErrorDefinition("Governance storage is unavailable.", True, 503, "internal_error"),
 }
 
 
@@ -103,6 +135,18 @@ class EntityNotFoundError(EngineeringServerError):
 
 class AutomationNotFoundError(EngineeringServerError):
     code = ErrorCode.AUTOMATION_NOT_FOUND
+
+
+class GovernanceError(EngineeringServerError):
+    def __init__(
+        self,
+        code: ErrorCode,
+        message: str | None = None,
+        *,
+        details: dict[str, Any] | None = None,
+    ):
+        self.code = code
+        super().__init__(message, details=details)
 
 
 # Compatibility name retained for the scaffold imports.

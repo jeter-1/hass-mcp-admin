@@ -11,6 +11,8 @@ from .configuration import MIN_ACCESS_SECRET_LENGTH, Settings, load_settings
 from .errors import ConfigurationError
 from .logging_config import configure_logging, get_logger, log_event
 from .health import HEALTH
+from .clients import HomeAssistantRestClient
+from .governance import GOVERNANCE
 from .routing import AuthenticatedMcpGateway
 from .tools import get_registered_server
 
@@ -41,6 +43,10 @@ def validate_settings(settings: Settings) -> None:
         errors.append("response_size_limit must be between 1024 and 1000000")
     if not settings.redaction_enabled:
         errors.append("redaction_enabled must remain true")
+    if not settings.governance_path.strip():
+        errors.append("governance_path is required")
+    if not 1 <= settings.governance_retention_days <= 365:
+        errors.append("governance_retention_days must be between 1 and 365")
     if errors:
         raise ConfigurationError(
             "Beta configuration validation failed.", details={"issues": errors}
@@ -57,7 +63,8 @@ def create_application(settings: Settings | None = None):
         max_payload_chars=settings.audit_max_payload_chars,
     )
     gateway = AuthenticatedMcpGateway(server.streamable_http_app(), settings, audit)
-    HEALTH.configure(settings, audit, gateway)
+    GOVERNANCE.configure(settings, audit, HomeAssistantRestClient(settings))
+    HEALTH.configure(settings, audit, gateway, GOVERNANCE)
     return gateway
 
 
