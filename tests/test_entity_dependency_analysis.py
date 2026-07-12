@@ -374,7 +374,7 @@ class ToolContractTests(unittest.TestCase):
     def test_tool_is_registered_once_and_schema_is_exact(self):
         tools = get_registered_server()._tool_manager.list_tools()
         matches = [tool for tool in tools if tool.name == "entity_dependency_analysis"]
-        self.assertEqual(len(tools), 33)
+        self.assertEqual(len(tools), 34)
         self.assertEqual(len(matches), 1)
         schema = matches[0].parameters
         self.assertEqual(
