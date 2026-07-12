@@ -36,6 +36,8 @@ class Settings:
     ha_timeout_seconds: float = 60.0
     response_size_limit: int = 60_000
     redaction_enabled: bool = True
+    governance_path: str = "/data/governance/change_plans"
+    governance_retention_days: int = 90
 
     @property
     def api_url(self) -> str:
@@ -74,4 +76,8 @@ def load_settings() -> Settings:
         ha_timeout_seconds=float(options.get("ha_timeout_seconds", 60)),
         response_size_limit=int(options.get("response_size_limit", 60_000)),
         redaction_enabled=bool(options.get("redaction_enabled", True)),
+        governance_path=os.environ.get(
+            "GOVERNANCE_PATH", "/data/governance/change_plans"
+        ),
+        governance_retention_days=int(os.environ.get("GOVERNANCE_RETENTION_DAYS", "90")),
     )
