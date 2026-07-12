@@ -478,6 +478,8 @@ class ChangeGovernanceService:
             )
         plan.status = PlanStatus.APPLIED
         plan.applied_at = self._timestamp()
+        from ..dependency import DEPENDENCY_ANALYSIS
+        DEPENDENCY_ANALYSIS.invalidate()
         self._record(plan, "change_apply_succeeded", "success", duration_ms=duration)
         return {"status": "applied", "plan": self._public(plan, include_configs=False)}
 
@@ -571,6 +573,8 @@ class ChangeGovernanceService:
         plan.status = PlanStatus.ROLLED_BACK
         plan.rollback.status = "rolled_back"
         plan.rollback.rolled_back_at = self._timestamp()
+        from ..dependency import DEPENDENCY_ANALYSIS
+        DEPENDENCY_ANALYSIS.invalidate()
         self._record(plan, "rollback_succeeded", "success")
         return {"status": "rolled_back", "plan": self._public(plan, include_configs=False)}
 

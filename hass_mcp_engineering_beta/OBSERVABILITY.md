@@ -192,6 +192,11 @@ failures by safe provider identity; partial results; fallback attempts and succe
 prohibited fallback attempts; and evidence truncation. Counters contain no queries,
 evidence payloads, credentials, or provider URLs.
 
+Beta 7 adds dependency-analysis request/success/partial/failure counters, index builds
+and failures, cache hits/misses, invalidations, bounded source/edge counts, index age,
+last successful build, truncation, and unresolved dynamic-reference counts. Entity IDs
+are never metric labels. Health exposes no findings or raw configuration.
+
 Long-lived GET/SSE stream and idle session lifetime is excluded from operational
 latency. Transport completions are counted separately without treating session
 lifetime as request-processing time. Metrics are process-local and reset
@@ -220,7 +225,7 @@ envelope containing safe operational data:
 It never returns the secret, tokens, headers, cookies, complete MCP endpoint
 paths, private request payloads, or raw audit/log records.
 
-The delegation diagnostic reflects current reality: Beta 6 has no configured nested
+The delegation diagnostic reflects current reality: Beta 7 has no configured nested
 standard-MCP transport. It must not be interpreted as a connectivity probe for another
 MCP server. Provider failures and partial coverage remain visible; permitted direct
 read fallback requires explicit policy, while direct write fallback is prohibited.
@@ -245,7 +250,7 @@ configuration values.
 ## Compatibility and remaining migrations
 
 The canonical 25-tool classification remains Native 8, Transitional 10,
-Delegated 4, Deprecated 3, with 6 planned capabilities. `get_server_health` is
+Delegated 4, Deprecated 3, with 4 remaining planned capabilities. `get_server_health` is
 advertised separately as additive `beta_native` metadata so these counts do not
 change.
 

@@ -24,6 +24,8 @@ class RequestTelemetry:
     response_status: int | None = None
     endpoint_categories: set[str] = field(default_factory=set)
     error_code: str | None = None
+    result_status: str | None = None
+    completeness: str | None = None
     caller_id: str = "anonymous"
 
     @property

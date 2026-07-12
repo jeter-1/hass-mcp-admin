@@ -8,6 +8,7 @@ compatibility layer.
 
 from . import compatibility
 from .governance import GOVERNANCE_TOOLS
+from .analysis import ANALYSIS_TOOLS
 
 _SERVER = compatibility.mcp
 if "get_server_health" not in {
@@ -22,6 +23,11 @@ _registered = {tool.name for tool in _SERVER._tool_manager.list_tools()}
 for governance_tool in GOVERNANCE_TOOLS:
     if governance_tool.__name__ not in _registered:
         _SERVER.tool()(governance_tool)
+
+_registered = {tool.name for tool in _SERVER._tool_manager.list_tools()}
+for analysis_tool in ANALYSIS_TOOLS:
+    if analysis_tool.__name__ not in _registered:
+        _SERVER.tool()(analysis_tool)
 
 
 def get_registered_server():

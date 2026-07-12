@@ -41,3 +41,7 @@ and report incomplete coverage. A trace finding should summarize the relevant pa
 reference the trace; it should not embed the entire trace. Repeated references should be
 collapsed. If a source fails, the response must preserve the successful bounded evidence
 and mark the overall result partial rather than silently omitting the failure.
+
+`entity_dependency_analysis` is the first implementation: summary mode caps findings
+at 10, standard/evidence pages cap at 100, opaque cursors avoid repeat source dumps,
+and the index retains bounded edges rather than raw configuration.

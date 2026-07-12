@@ -112,3 +112,7 @@ callable beta count remains 32. Future analysis tools should depend on
 `EngineeringEvidenceProvider`, not REST, WebSocket, or MCP transports directly, and
 should use the bounded response primitives documented in
 [`../TOKEN_EFFICIENCY.md`](../TOKEN_EFFICIENCY.md).
+
+Phase 3B subsequently adds `entity_dependency_analysis` as the first consumer of these
+contracts, increasing the beta manifest to 33 tools without changing the delegation or
+fallback decision.

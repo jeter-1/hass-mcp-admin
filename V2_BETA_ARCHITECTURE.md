@@ -9,7 +9,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-beta.6` |
+| Version | `1.1.2` | `2.0.0-beta.7` |
 | Port | `8099` | `8100` |
 | Options and secret | Production add-on data | Beta add-on data |
 
@@ -74,7 +74,7 @@ FastMCP factory. `server_info` and `list_capabilities` use beta version and
 capability metadata.
 
 The v1.1.2 catalog currently contains 8 native, 10 transitional, 4 delegated,
-and 3 deprecated tools. It also advertises 6 planned capabilities. The often
+and 3 deprecated tools. Beta 7 advertises 4 remaining planned capabilities. The often
 quoted transitional count of 9 is inconsistent with the checked-in 25-tool
 catalog; v2 intentionally preserves the source catalog rather than
 reclassifying a tool during a scaffold change.
@@ -122,11 +122,15 @@ continue to use their existing response formats.
 
 ## Known limitations
 
+Beta 7 adds one engineering-native dependency-analysis tool and changes the callable
+manifest to 33 tools. Exact source coverage is documented in
+[`docs/ENTITY_DEPENDENCY_ANALYSIS.md`](docs/ENTITY_DEPENDENCY_ANALYSIS.md).
+
 - The scaffold deliberately preserves legacy tool response formats.
 - Structured envelopes and governance features are boundaries only, not active
   behavior.
 - The 23 non-foundation tools still use compatibility implementations.
 - Live Home Assistant behavior requires a Supervisor token or an explicit
   standalone `HA_URL`/`HA_TOKEN` pair.
-- Standard Home Assistant MCP delegation is not operational in Beta 6; the gateway
+- Standard Home Assistant MCP delegation is not operational in Beta 7; the gateway
   reports explicit unavailability and never fabricates delegated evidence.

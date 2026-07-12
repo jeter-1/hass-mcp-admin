@@ -147,6 +147,7 @@ class ErrorTaxonomyTests(unittest.TestCase):
             "automation_apply_failed", "automation_verification_failed",
             "rollback_not_available", "rollback_approval_required",
             "rollback_failed", "change_plan_storage_error",
+            "invalid_cursor", "stale_cursor", "analysis_unavailable",
         }
         self.assertEqual({code.value for code in ERROR_CATALOG}, expected)
         for definition in ERROR_CATALOG.values():
@@ -156,7 +157,7 @@ class ErrorTaxonomyTests(unittest.TestCase):
             self.assertIn("endpoint_category", definition.safe_detail_fields)
 
     def test_retryable_classification(self):
-        for code in (ErrorCode.HA_TIMEOUT, ErrorCode.HA_UNAVAILABLE, ErrorCode.RATE_LIMIT_EXCEEDED):
+        for code in (ErrorCode.HA_TIMEOUT, ErrorCode.HA_UNAVAILABLE, ErrorCode.RATE_LIMIT_EXCEEDED, ErrorCode.ANALYSIS_UNAVAILABLE):
             self.assertTrue(error_definition(code).retryable)
         for code in (ErrorCode.INVALID_REQUEST, ErrorCode.AUTHENTICATION_FAILURE):
             self.assertFalse(error_definition(code).retryable)
@@ -432,8 +433,8 @@ class GatewayAndHealthTests(unittest.TestCase):
             payload = json.loads(asyncio.run(compatibility.get_server_health(check_ha=False)))
         self.assertTrue(payload["success"])
         health = payload["data"]
-        self.assertEqual(health["server"]["version"], "2.0.0-beta.6")
-        self.assertEqual(health["registered_tool_count"], 32)
+        self.assertEqual(health["server"]["version"], "2.0.0-beta.7")
+        self.assertEqual(health["registered_tool_count"], 33)
         self.assertIn("governance", health)
         self.assertIn("storage_corruption_count", health["governance"])
         self.assertTrue(health["redaction"]["enabled"])
@@ -448,6 +449,7 @@ class GatewayAndHealthTests(unittest.TestCase):
         self.assertTrue(
             health["provider_routing"]["direct_fallback_requires_explicit_policy"]
         )
+        self.assertIn("dependency_analysis", health)
         encoded = json.dumps(payload)
         self.assertNotIn(SECRET, encoded)
         self.assertNotIn("test-ha-token", encoded)

@@ -12,7 +12,9 @@ from .errors import ConfigurationError
 from .logging_config import configure_logging, get_logger, log_event
 from .health import HEALTH
 from .clients import HomeAssistantRestClient
+from .clients import HomeAssistantWebSocketClient
 from .governance import GOVERNANCE
+from .dependency import DEPENDENCY_ANALYSIS
 from .routing import AuthenticatedMcpGateway
 from .tools import get_registered_server
 
@@ -64,7 +66,13 @@ def create_application(settings: Settings | None = None):
     )
     gateway = AuthenticatedMcpGateway(server.streamable_http_app(), settings, audit)
     GOVERNANCE.configure(settings, audit, HomeAssistantRestClient(settings))
-    HEALTH.configure(settings, audit, gateway, GOVERNANCE)
+    DEPENDENCY_ANALYSIS.configure(
+        HomeAssistantRestClient(settings),
+        HomeAssistantWebSocketClient(settings),
+        secret=settings.access_secret,
+        timeout=settings.ha_timeout_seconds,
+    )
+    HEALTH.configure(settings, audit, gateway, GOVERNANCE, DEPENDENCY_ANALYSIS)
     return gateway
 
 
