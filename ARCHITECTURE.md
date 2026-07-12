@@ -64,7 +64,7 @@ The engineering server may retain direct Home Assistant read access where it mat
 
 ## Current Implementation
 
-The v2 beta currently exposes 32 tools and implements governance, verification,
+The v2 beta currently exposes 33 tools and implements governance, verification,
 rollback, persistence, audit, and request correlation. It has direct REST/WebSocket
 clients but no configured nested standard-MCP client. Delegation labels describe the
 target provider; current compatibility reads remain direct and transitional. The
@@ -330,6 +330,11 @@ Phase 3A establishes transport-independent evidence providers, deterministic rou
 and fallback policy, bounded coverage/evidence/pagination models, safe provider
 observability, and structure-first risk classification. It adds no analytical MCP
 tools.
+
+Phase 3B implements `entity_dependency_analysis`, the first analytical consumer of
+those boundaries. It builds bounded exact-reference edges from supported automation,
+blueprint, state, and registry evidence while marking unavailable sources explicitly.
+See [`docs/ENTITY_DEPENDENCY_ANALYSIS.md`](docs/ENTITY_DEPENDENCY_ANALYSIS.md).
 
 - entity dependency analysis;
 - automation reliability analysis;

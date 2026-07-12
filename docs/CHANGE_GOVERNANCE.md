@@ -1,6 +1,6 @@
 # Beta automation change governance
 
-Version 2.0.0-beta.6 provides a beta-only approval boundary for controlled
+Version 2.0.0-beta.7 retains the beta-only approval boundary for controlled
 Home Assistant automation creation and updates. It does not alter production
 v1.1.2 and does not govern scripts, scenes, dashboards, helpers, integrations,
 devices, add-ons, system configuration, arbitrary direct service calls, or
@@ -232,3 +232,7 @@ These examples use generic IDs and no credentials or private entity names.
 Clients should always present diff, risk reasons, expiry, and exact hash before
 approval. Create a new plan after expiry, stale-state rejection, ambiguous apply
 failure, or external target changes.
+
+Successful governed apply and rollback now invalidate the process-local entity
+dependency index so the next analysis rebuilds configuration evidence. This adds no
+write and does not change the persisted governance-plan format.

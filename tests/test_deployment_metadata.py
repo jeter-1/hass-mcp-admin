@@ -18,7 +18,7 @@ SPEC.loader.exec_module(VALIDATOR)
 class VersionComparisonTests(unittest.TestCase):
     def test_beta_prerelease_increments_are_ordered(self):
         self.assertTrue(
-            VALIDATOR.is_newer_version("2.0.0-beta.6", "2.0.0-beta.5")
+            VALIDATOR.is_newer_version("2.0.0-beta.7", "2.0.0-beta.6")
         )
         self.assertFalse(
             VALIDATOR.is_newer_version("2.0.0-beta.2", "2.0.0-beta.2")
@@ -112,12 +112,12 @@ class AddonMetadataValidationTests(unittest.TestCase):
         report = VALIDATOR.validate_repository(
             ROOT,
             base_ref="origin/main",
-            expected_version="2.0.0-beta.6",
-            deployed_version="2.0.0-beta.5",
+            expected_version="2.0.0-beta.7",
+            deployed_version="2.0.0-beta.6",
             paths={"hass_mcp_engineering_beta/config.yaml"},
         )
         self.assertEqual(report.production_version, "1.1.2")
-        self.assertEqual(report.beta_version, "2.0.0-beta.6")
+        self.assertEqual(report.beta_version, "2.0.0-beta.7")
 
 
 class DeploymentScriptTests(unittest.TestCase):

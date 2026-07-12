@@ -10,7 +10,7 @@ This document classifies every tool currently exposed by the custom HA MCP Engin
 
 Lifecycle classification and provider routing answer different questions. The existing
 `native`, `transitional`, `delegated`, and `deprecated` labels remain unchanged. The
-central Phase 3A policy maps all 32 beta tools to these execution/evidence routes:
+central routing policy maps all 33 beta tools to these execution/evidence routes:
 
 | Route | Existing tools/capabilities |
 | --- | --- |
@@ -20,10 +20,14 @@ central Phase 3A policy maps all 32 beta tools to these execution/evidence route
 | `transitional_direct` | template/history/logbook/error log, list automations/devices/entity registry/blueprints, legacy upsert |
 | `prohibited` | ungoverned destructive automation deletion in the target architecture and secret-bearing diagnostics |
 
-The deprecated compatibility tools remain callable in Beta 6 with unchanged schemas;
+The deprecated compatibility tools remain callable in Beta 7 with unchanged schemas;
 the routing overlay documents the target boundary and is not a silent behavior change.
 Standard-MCP delegation is not currently operational. Its internal provider reports
 unavailable, and no write falls back to direct HA execution.
+
+Beta 7 moves `entity_dependency_analysis` from planned to additive `beta_native`,
+category `analysis`, risk `read`, routed `engineering_native`. Four planned analytical
+capabilities remain; all prior 32 tool schemas are unchanged.
 
 Classifications:
 

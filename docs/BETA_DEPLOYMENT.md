@@ -1,7 +1,7 @@
 # Beta deployment and validation
 
 The beta add-on is isolated from production. Production remains **HA MCP
-Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.6
+Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.7
 is **HA MCP Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100).
 The workflow in this document deploys or updates only the beta.
 
@@ -17,8 +17,8 @@ From a clean branch in Windows PowerShell, run:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.5 `
-  -ExpectedVersion 2.0.0-beta.6 `
+  -DeployedVersion 2.0.0-beta.6 `
+  -ExpectedVersion 2.0.0-beta.7 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -FullTests
 ```
@@ -39,8 +39,8 @@ without supplying authentication material:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.5 `
-  -ExpectedVersion 2.0.0-beta.6 `
+  -DeployedVersion 2.0.0-beta.6 `
+  -ExpectedVersion 2.0.0-beta.7 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -SkipTests -SkipDockerBuild `
   -HealthHost homeassistant.local `
@@ -73,6 +73,10 @@ authenticated path, credential, or secret in the argument.
 
 The unauthenticated health endpoint proves that a process is responding. It
 does not replace `server_info` for verifying the running server version.
+
+Beta 7 changes `tools/list` from 32 to 33 tools. If ChatGPT retains the old manifest,
+recreate only the beta connector or append the non-secret cache marker
+`?manifest=beta7` to its authenticated connector URL. Never share that complete URL.
 
 ## Optional local add-on development
 
@@ -122,7 +126,7 @@ and that `get_server_health` identifies the beta server.
 
 ## Provider-routing troubleshooting
 
-Beta 6 intentionally reports `standard_ha_mcp_delegation: unavailable` in safe health
+Beta 7 intentionally reports `standard_ha_mcp_delegation: unavailable` in safe health
 diagnostics. This is the expected current state: the add-on has no configured or tested
 nested standard-MCP transport. It does not indicate a Home Assistant REST outage and
 must not be worked around by adding a secret-bearing MCP URL to options or source.

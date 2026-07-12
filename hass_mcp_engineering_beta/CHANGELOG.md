@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.0-beta.7
+
+- Add the read-only `entity_dependency_analysis` tool; the beta manifest now exposes
+  33 tools.
+- Build a bounded in-memory dependency index from automation configuration, blueprint
+  input/source roles, entity state, and entity registry evidence.
+- Add exact structured/template extraction, partial source coverage, cautious stale
+  assessment, stable cursors, cache/refresh/invalidation, and bounded detail levels.
+- Report unsupported source families and standard-MCP delegation honestly as
+  unavailable while preserving all prior schemas and production v1.1.2.
+
 ## 2.0.0-beta.6
 
 - Establish the Engineering MCP facilitator architecture, deterministic provider

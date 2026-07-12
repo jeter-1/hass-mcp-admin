@@ -202,10 +202,12 @@ try {
         "[ ] Refresh the Home Assistant add-on repository.",
         "[ ] Update HA MCP Engineering Server Beta only.",
         "[ ] Confirm /health on port 8100.",
-        "[ ] Use MCP Inspector tools/list and confirm exactly 32 callable tools.",
+        "[ ] Recreate/cache-bust the beta connector if it still shows 32 tools.",
+        "[ ] Use MCP Inspector tools/list and confirm exactly 33 callable tools.",
         "[ ] Call server_info and verify version $betaVersion.",
         "[ ] Call list_capabilities.",
         "[ ] Call get_server_health.",
+        "[ ] Call entity_dependency_analysis for a known and a missing entity.",
         "[ ] Run one intentional HA failure and verify the audit result is error."
     ) | ForEach-Object { Write-Host $_ }
 
