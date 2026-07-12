@@ -160,6 +160,12 @@ DIRECT_HA_TOOL_EXCEPTIONS = frozenset(
 )
 
 DIRECT_HA_READ_POLICIES = {
+    "get_error_log": {
+        "policy_id": "structured_system_log_read",
+        "capability": ProviderCapability.ERROR_LOG_READ.value,
+        "access": "read",
+        "justification": "Recent Core warnings and errors require the admin-only System Log WebSocket API.",
+    },
     "get_entity": {
         "policy_id": "exact_entity_state_read",
         "capability": ProviderCapability.CURRENT_ENTITY_STATE.value,

@@ -8,7 +8,6 @@ from typing import Any, Awaitable, Callable
 
 from .errors import map_exception
 from .models import FailureResponse, SuccessResponse, Timing
-from .observability import METRICS
 from .request_context import current_request_id, current_telemetry
 
 
@@ -49,7 +48,6 @@ async def run_structured(
         ).to_json(response_limit)
     except Exception as exc:
         code, message, retryable, details = map_exception(exc)
-        METRICS.record_error(code.value)
         telemetry = current_telemetry()
         if telemetry:
             telemetry.error_code = code.value

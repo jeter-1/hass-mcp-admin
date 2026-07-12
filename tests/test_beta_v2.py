@@ -160,7 +160,7 @@ class AddonIsolationTests(unittest.TestCase):
     def test_beta_metadata_is_distinct_and_valid(self):
         self.assertEqual(self.beta["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(self.beta["slug"], "hass_mcp_engineering_beta")
-        self.assertEqual(self.beta["version"], "2.0.0-beta.9")
+        self.assertEqual(self.beta["version"], "2.0.0-beta.10")
         self.assertEqual(self.beta["ports"], {"8100/tcp": 8100})
         self.assertNotEqual(self.beta["slug"], self.production["slug"])
         self.assertNotEqual(set(self.beta["ports"]), set(self.production["ports"]))
@@ -258,7 +258,7 @@ class ToolParityTests(unittest.TestCase):
         }
         self.assertEqual(beta_schemas, production_schemas)
 
-    def test_capability_catalog_reflects_beta9_provider_truth(self):
+    def test_capability_catalog_preserves_phase3c_provider_truth(self):
         production_catalog = {
             item["tool"]: item for item in production_server.build_capability_catalog()["tools"]
         }
@@ -282,7 +282,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
-        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.9")
+        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.10")
         self.assertEqual(result["data"]["tool_count"], 33)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
@@ -716,6 +716,10 @@ class BetaApplicationTests(unittest.TestCase):
 
     def test_exact_entity_404_is_correlated_and_audited(self):
         request_id = "entity-404-request-123"
+        errors_before = Counter(METRICS.snapshot()["recent_error_counts"])
+        provider_before = Counter(
+            METRICS.snapshot()["provider_routing"]["failures_by_provider"]
+        )
         stream = io.StringIO()
         handler = logging.StreamHandler(stream)
         handler.setFormatter(JsonFormatter())
@@ -756,6 +760,53 @@ class BetaApplicationTests(unittest.TestCase):
         self.assertEqual(audit["request_id"], request_id)
         self.assertIn(request_id, stream.getvalue())
         self.assertNotIn(SECRET, stream.getvalue())
+        errors_after = Counter(METRICS.snapshot()["recent_error_counts"])
+        provider_after = Counter(
+            METRICS.snapshot()["provider_routing"]["failures_by_provider"]
+        )
+        self.assertEqual(
+            errors_after["entity_not_found"] - errors_before["entity_not_found"],
+            1,
+        )
+        self.assertEqual(
+            provider_after["direct_ha_api"] - provider_before["direct_ha_api"],
+            1,
+        )
+
+    def test_invalid_entity_is_counted_once_without_upstream_access(self):
+        request_id = "entity-invalid-request-123"
+        errors_before = Counter(METRICS.snapshot()["recent_error_counts"])
+        provider_before = Counter(
+            METRICS.snapshot()["provider_routing"]["failures_by_provider"]
+        )
+        with patch.object(compatibility, "rest", new=AsyncMock()) as direct:
+            _, call = self.rpc(
+                "tools/call",
+                {"name": "get_entity", "arguments": {"entity_id": "../config"}},
+                request_id=request_id,
+            )
+        payload = json.loads(call["result"]["content"][0]["text"])
+        audit = self.audit_record(request_id)
+        coverage = payload["metadata"]["source_coverage"][0]
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error_code"], "invalid_request")
+        self.assertEqual(payload["timing"]["home_assistant_ms"], 0.0)
+        self.assertEqual(coverage["failure_category"], "request_validation")
+        self.assertFalse(coverage["upstream_attempted"])
+        self.assertEqual(audit["error_code"], "invalid_request")
+        direct.assert_not_awaited()
+        errors_after = Counter(METRICS.snapshot()["recent_error_counts"])
+        provider_after = Counter(
+            METRICS.snapshot()["provider_routing"]["failures_by_provider"]
+        )
+        self.assertEqual(
+            errors_after["invalid_request"] - errors_before["invalid_request"],
+            1,
+        )
+        self.assertEqual(
+            provider_after["direct_ha_api"] - provider_before["direct_ha_api"],
+            1,
+        )
 
     def test_exact_entity_500_is_audited_as_upstream_failure(self):
         request_id = "entity-500-request-123"

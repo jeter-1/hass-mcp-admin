@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.0.0-beta.10
+
+- Replace the conditionally registered `/api/error_log` REST read with Home
+  Assistant's supported admin-only `system_log/list` WebSocket command.
+- Preserve the `tail_lines` input while returning bounded, newest-first,
+  structured warning/error entries with explicit truncation and untrusted-data
+  metadata.
+- Redact access secrets, Supervisor tokens, authorization material,
+  credential-bearing URLs, webhook secrets, and session identifiers from log
+  content before it reaches responses, application logs, or audit output.
+- Classify pre-upstream request validation as `request_validation` source
+  coverage with zero Home Assistant time.
+- Count `recent_error_counts` once per terminal public tool failure instead of
+  once at each REST, structured-response, and facilitator propagation layer.
+- Preserve all 33 tools, Phase 3C's four direct administrative-read policies,
+  dependency behavior, governance boundaries, and production v1.1.2.
+
 ## 2.0.0-beta.9
 
 - Align capability truth for `get_entity`, `list_areas`, `search_services`, and

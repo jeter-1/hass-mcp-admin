@@ -202,10 +202,13 @@ class CanonicalRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(metrics["requests_by_provider"].get("standard_ha_mcp", 0), 0)
 
     async def test_direct_read_policy_does_not_expand_write_boundaries(self):
+        phase3c_reads = {"get_entity", "list_areas", "search_services", "list_services"}
+        self.assertTrue(phase3c_reads.issubset(DIRECT_HA_READ_POLICIES))
         self.assertEqual(
-            set(DIRECT_HA_READ_POLICIES),
-            {"get_entity", "list_areas", "search_services", "list_services"},
+            set(DIRECT_HA_READ_POLICIES) - phase3c_reads,
+            {"get_error_log"},
         )
+        self.assertEqual(DIRECT_HA_READ_POLICIES["get_error_log"]["access"], "read")
         for name in ("call_service", "delete_automation", "reload_domain"):
             with self.subTest(name=name):
                 self.assertIsNone(direct_ha_policy_for_tool(name))

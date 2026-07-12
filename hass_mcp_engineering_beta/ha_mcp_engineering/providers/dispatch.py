@@ -100,7 +100,6 @@ class CanonicalProviderDispatcher:
             return rendered
         except Exception as exc:
             code, message, retryable, details = map_exception(exc)
-            METRICS.record_error(code.value)
             if provider_result is None:
                 provider_result = ProviderResult(
                     provider_id=provider_id,
@@ -110,6 +109,8 @@ class CanonicalProviderDispatcher:
                     failure=_failure(
                         ProviderFailureCategory.PROHIBITED
                         if code == ErrorCode.PROVIDER_PROHIBITED
+                        else ProviderFailureCategory.REQUEST_VALIDATION
+                        if code in {ErrorCode.INVALID_REQUEST, ErrorCode.VALIDATION_FAILURE}
                         else ProviderFailureCategory.UPSTREAM_ERROR,
                         message,
                         retryable,
@@ -216,6 +217,11 @@ def _routing_metadata(tool_name, route, result, provider_id=None):
         "warnings": result.warnings[:10] if result else [],
         "duration_ms": round(result.timing_ms, 3) if result else 0.0,
         "failure_category": failure_category,
+        "upstream_attempted": failure_category not in {
+            ProviderFailureCategory.REQUEST_VALIDATION.value,
+            ProviderFailureCategory.PROHIBITED.value,
+            ProviderFailureCategory.UNAVAILABLE.value,
+        },
         "fallback_occurred": bool(result and result.fallback_occurred),
     }
     return {
