@@ -16,15 +16,18 @@ under an unchanged version may leave a cached image installed.
 From a clean branch in Windows PowerShell, run:
 
 ```powershell
-.\scripts\deploy-beta.ps1 `
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
   -DeployedVersion 2.0.0-beta.2 `
   -ExpectedVersion 2.0.0-beta.3 `
+  -PythonExecutable .\.venv\Scripts\python.exe `
   -FullTests
 ```
 
 The deployed version must be supplied explicitly, or through the
 `HA_MCP_BETA_DEPLOYED_VERSION` environment variable. This makes the version
 comparison fail closed instead of guessing what Home Assistant currently runs.
+Python 3.12 must be on `PATH`, or its virtual-environment executable must be
+provided with `-PythonExecutable` as shown above.
 The script validates the clean working tree and metadata, compiles beta Python,
 runs beta-focused tests by default (or the full suite with `-FullTests`), and
 builds the beta image. `-SkipTests` and `-SkipDockerBuild` are intended only for
@@ -35,13 +38,17 @@ After Home Assistant has updated and started the beta, health can be checked
 without supplying authentication material:
 
 ```powershell
-.\scripts\deploy-beta.ps1 `
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
   -DeployedVersion 2.0.0-beta.2 `
   -ExpectedVersion 2.0.0-beta.3 `
+  -PythonExecutable .\.venv\Scripts\python.exe `
   -SkipTests -SkipDockerBuild `
   -HealthHost homeassistant.local `
   -HealthTimeoutSeconds 20
 ```
+
+`-ExecutionPolicy Bypass` applies only to this PowerShell process; it does not
+change the machine or user execution policy.
 
 `-HealthHost` accepts a hostname or IP address only. Do not put a URL, MCP
 authenticated path, credential, or secret in the argument.

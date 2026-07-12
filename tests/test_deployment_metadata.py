@@ -133,6 +133,7 @@ class DeploymentScriptTests(unittest.TestCase):
             "HealthHost",
             "HealthTimeoutSeconds",
             "ExpectedVersion",
+            "PythonExecutable",
             "DryRun",
         ):
             self.assertIn(f"${parameter}", self.script)

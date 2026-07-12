@@ -8,6 +8,7 @@ param(
     [int]$HealthTimeoutSeconds = 15,
     [string]$ExpectedVersion,
     [string]$DeployedVersion,
+    [string]$PythonExecutable,
     [switch]$DryRun
 )
 
@@ -39,14 +40,24 @@ function Invoke-External {
         return
     }
 
-    if ($SuppressOutput) {
-        $capturedOutput = @(& $Executable @Arguments 2>&1)
+    $previousErrorPreference = $ErrorActionPreference
+    try {
+        # Windows PowerShell wraps native stderr as error records even when the
+        # process exits successfully. Exit codes remain the source of truth.
+        $ErrorActionPreference = "Continue"
+        if ($SuppressOutput) {
+            $capturedOutput = @(& $Executable @Arguments 2>&1)
+        }
+        else {
+            & $Executable @Arguments
+        }
+        $exitCode = $LASTEXITCODE
     }
-    else {
-        & $Executable @Arguments
+    finally {
+        $ErrorActionPreference = $previousErrorPreference
     }
-    if ($LASTEXITCODE -ne 0) {
-        throw "$Label failed. Output was suppressed to prevent credential or authenticated-path disclosure."
+    if ($exitCode -ne 0) {
+        throw "$Label failed with exit code $exitCode."
     }
     if ($SuppressOutput) {
         Write-Host "$Label passed."
@@ -63,13 +74,21 @@ function Get-BetaVersion {
 
 function Assert-CleanWorkingTree {
     Write-Step "Validate repository working tree"
-    $diffCheck = @(& git -C $RepoRoot diff --check 2>&1)
-    if ($LASTEXITCODE -ne 0) {
+    $previousErrorPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $diffCheck = @(& git -C $RepoRoot diff --check 2>&1)
+        $diffExitCode = $LASTEXITCODE
+        $changes = @(& git -C $RepoRoot status --porcelain 2>&1)
+        $statusExitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorPreference
+    }
+    if ($diffExitCode -ne 0) {
         throw "Working tree contains whitespace errors."
     }
-
-    $changes = @(& git -C $RepoRoot status --porcelain)
-    if ($LASTEXITCODE -ne 0) {
+    if ($statusExitCode -ne 0) {
         throw "Unable to inspect the repository working tree."
     }
     if ($changes.Count -gt 0) {
@@ -115,6 +134,14 @@ if (-not $DeployedVersion) {
     throw "Provide -DeployedVersion (or HA_MCP_BETA_DEPLOYED_VERSION) so the version bump can be verified."
 }
 
+if (-not $PythonExecutable) {
+    $pythonCommand = Get-Command python.exe -ErrorAction SilentlyContinue
+    if (-not $pythonCommand) {
+        throw "Python was not found. Provide -PythonExecutable with the Python 3.12 executable path."
+    }
+    $PythonExecutable = $pythonCommand.Source
+}
+
 Push-Location $RepoRoot
 try {
     Assert-CleanWorkingTree
@@ -128,12 +155,12 @@ try {
     if ($ExpectedVersion) {
         $validatorArgs += @("--expected-version", $ExpectedVersion)
     }
-    Invoke-External -Label "Validate add-on metadata and version bump" -Executable "python" -Arguments $validatorArgs -AlwaysRun
+    Invoke-External -Label "Validate add-on metadata and version bump" -Executable $PythonExecutable -Arguments $validatorArgs -AlwaysRun
 
     $betaVersion = Get-BetaVersion
     Write-Host "Validated beta version: $betaVersion"
 
-    Invoke-External -Label "Compile beta Python files" -Executable "python" -Arguments @(
+    Invoke-External -Label "Compile beta Python files" -Executable $PythonExecutable -Arguments @(
         "-m", "compileall", "-q", "hass_mcp_engineering_beta"
     )
 
@@ -142,15 +169,15 @@ try {
         Write-Host "Skipped by request."
     }
     elseif ($FullTests) {
-        Invoke-External -Label "Run complete test suite" -Executable "python" -Arguments @(
+        Invoke-External -Label "Run complete test suite" -Executable $PythonExecutable -Arguments @(
             "-m", "unittest", "discover", "-s", "tests", "-v"
         ) -SuppressOutput
     }
     else {
-        Invoke-External -Label "Run beta-focused tests" -Executable "python" -Arguments @(
+        Invoke-External -Label "Run beta-focused tests" -Executable $PythonExecutable -Arguments @(
             "-m", "unittest", "discover", "-s", "tests", "-p", "test_beta*.py", "-v"
         ) -SuppressOutput
-        Invoke-External -Label "Run deployment metadata tests" -Executable "python" -Arguments @(
+        Invoke-External -Label "Run deployment metadata tests" -Executable $PythonExecutable -Arguments @(
             "-m", "unittest", "discover", "-s", "tests", "-p", "test_deployment_metadata.py", "-v"
         ) -SuppressOutput
     }
