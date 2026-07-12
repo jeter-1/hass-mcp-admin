@@ -1,6 +1,6 @@
 # Beta automation change governance
 
-Version 2.0.0-beta.4 introduces a beta-only approval boundary for controlled
+Version 2.0.0-beta.5 provides a beta-only approval boundary for controlled
 Home Assistant automation creation and updates. It does not alter production
 v1.1.2 and does not govern scripts, scenes, dashboards, helpers, integrations,
 devices, add-ons, system configuration, arbitrary direct service calls, or
@@ -177,6 +177,16 @@ rollback_approval_required
 rollback_failed
 change_plan_storage_error
 ```
+
+An absent record, including a lookup string that is not a generated plan ID,
+returns `change_plan_not_found` and is non-retryable. It does not degrade storage
+health. `change_plan_storage_error` is reserved for real read/write,
+serialization, corruption, permission, or atomic-replacement failures.
+
+For `create_automation`, a Home Assistant 404 during the ID-availability probe
+is expected and does not set request failure telemetry. An existing ID returns
+`configuration_conflict`; upstream 4xx/5xx or malformed success responses remain
+real Home Assistant failures.
 
 ## MCP client example
 

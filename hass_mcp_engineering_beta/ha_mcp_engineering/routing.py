@@ -110,6 +110,8 @@ class AuthenticatedMcpGateway:
         caller_id = self._caller_id(client_ip)
         telemetry.caller_id = caller_id
         tool_name = None
+        rpc_method = None
+        operation_started = None
         parameters = {}
         capability = {}
         try:
@@ -177,7 +179,10 @@ class AuthenticatedMcpGateway:
                 body = b"".join(message.get("body", b"") for message in chunks)
                 try:
                     rpc = json.loads(body)
-                    if isinstance(rpc, dict) and rpc.get("method") == "tools/call":
+                    if isinstance(rpc, dict) and isinstance(rpc.get("method"), str):
+                        rpc_method = rpc["method"]
+                        operation_started = time.perf_counter()
+                    if rpc_method == "tools/call":
                         params = rpc.get("params", {}) or {}
                         tool_name = params.get("name")
                         parameters = params.get("arguments", {}) or {}
@@ -241,8 +246,16 @@ class AuthenticatedMcpGateway:
                 telemetry.tool_duration_ms = round(
                     (time.perf_counter() - telemetry.tool_started) * 1000, 3
                 )
-            duration = telemetry.total_duration_ms
-            METRICS.record_request(duration)
+                METRICS.record_tool_completion(telemetry.tool_duration_ms)
+            transport_duration = telemetry.total_duration_ms
+            operation_duration = (
+                round((time.perf_counter() - operation_started) * 1000, 3)
+                if operation_started is not None
+                else None
+            )
+            METRICS.record_transport_completion()
+            if operation_duration is not None and rpc_method is not None:
+                METRICS.record_mcp_operation(operation_duration, rpc_method)
             if tool_name:
                 risk = capability.get("risk")
                 access = "write" if risk in {"behavioral_write", "physical_action", "destructive", "infrastructure"} else "read"
@@ -273,7 +286,7 @@ class AuthenticatedMcpGateway:
                         else "success" if (telemetry.response_status or 500) < 400 else "failure"
                     ),
                     error_code=telemetry.error_code,
-                    duration_ms=duration,
+                    duration_ms=telemetry.tool_duration_ms or operation_duration,
                     ha_endpoint_categories=sorted(telemetry.endpoint_categories),
                     resource_ids=resource_ids,
                 ))
@@ -284,7 +297,10 @@ class AuthenticatedMcpGateway:
                 "MCP request completed.",
                 context={
                     "tool": tool_name,
-                    "duration_ms": duration,
+                    "mcp_method": rpc_method,
+                    "operation_duration_ms": operation_duration,
+                    "tool_duration_ms": telemetry.tool_duration_ms,
+                    "transport_duration_ms": transport_duration,
                     "response_status": telemetry.response_status,
                     "error_code": telemetry.error_code,
                 },

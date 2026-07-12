@@ -175,7 +175,7 @@ class PlanCreationTests(GovernanceTestCase):
         self.assertEqual(self.repository.list(), [])
 
     async def test_existing_id_collision(self):
-        with self.assertRaises(GovernanceError):
+        with self.assertRaises(GovernanceError) as raised:
             await self.service.create_plan(
                 title="Collision",
                 description="Collision",
@@ -183,9 +183,10 @@ class PlanCreationTests(GovernanceTestCase):
                 automation_id="porch",
                 proposed_config=copy.deepcopy(CURRENT),
             )
+        self.assertEqual(raised.exception.code, ErrorCode.CONFIGURATION_CONFLICT)
 
     async def test_missing_update_target(self):
-        with self.assertRaises(GovernanceError):
+        with self.assertRaises(GovernanceError) as raised:
             await self.service.create_plan(
                 title="Missing",
                 description="Missing",
@@ -193,6 +194,7 @@ class PlanCreationTests(GovernanceTestCase):
                 automation_id="missing",
                 proposed_config=copy.deepcopy(CURRENT),
             )
+        self.assertEqual(raised.exception.code, ErrorCode.AUTOMATION_NOT_FOUND)
 
     async def test_expiration_marks_plan_expired(self):
         result = await self.update_plan(expiration_minutes=5)
@@ -546,6 +548,30 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(repository.list(), [])
         self.assertEqual(repository.corruption_count, 1)
         self.assertTrue(any(repository.quarantine.iterdir()))
+
+    def test_direct_corrupt_record_is_storage_error(self):
+        repository = ChangePlanRepository(self.root)
+        plan_id = "b" * 32
+        (self.root / f"{plan_id}.json").write_text("{bad json", encoding="utf-8")
+        with self.assertRaises(ChangePlanStorageError):
+            repository.get(plan_id)
+        self.assertEqual(repository.corruption_count, 1)
+
+    def test_invalid_or_missing_lookup_is_not_storage_error(self):
+        repository = ChangePlanRepository(self.root)
+        self.assertIsNone(repository.get("not-a-plan-id"))
+        self.assertIsNone(repository.get("c" * 32))
+        health = repository.health()
+        self.assertEqual(health["status"], "healthy")
+        self.assertEqual(health["write_failures"], 0)
+        self.assertEqual(health["corruption_count"], 0)
+
+    def test_permission_failure_is_storage_error(self):
+        repository = ChangePlanRepository(self.root)
+        plan_id = "d" * 32
+        with patch.object(Path, "read_text", side_effect=PermissionError("safe fake permission error")):
+            with self.assertRaises(ChangePlanStorageError):
+                repository.get(plan_id)
 
     def test_atomic_files_have_no_temporary_residue(self):
         async def create():

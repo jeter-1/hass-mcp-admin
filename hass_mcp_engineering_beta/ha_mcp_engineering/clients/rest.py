@@ -1,6 +1,7 @@
 """Observable Home Assistant REST transport with safe error mapping."""
 
 import asyncio
+from dataclasses import dataclass
 import json
 import time
 from typing import Any
@@ -18,6 +19,13 @@ from ..errors import (
 )
 from ..observability import METRICS
 from ..request_context import current_telemetry
+
+
+@dataclass(frozen=True)
+class ExpectedHttpStatus:
+    """Internal marker for an explicitly expected upstream branch."""
+
+    status: int
 
 
 def endpoint_category(path: str) -> str:
@@ -43,7 +51,14 @@ class HomeAssistantRestClient:
             telemetry.endpoint_categories.add(category)
         return duration
 
-    async def request(self, method: str, path: str, body: Any = None, raw: bool = False) -> Any:
+    async def request(
+        self,
+        method: str,
+        path: str,
+        body: Any = None,
+        raw: bool = False,
+        expected_statuses: frozenset[int] = frozenset(),
+    ) -> Any:
         headers = {
             "Authorization": f"Bearer {self.settings.ha_token}",
             "Content-Type": "application/json",
@@ -58,6 +73,8 @@ class HomeAssistantRestClient:
                 ) as response:
                     text = await response.text()
                     self._record(started, category)
+                    if response.status in expected_statuses:
+                        return ExpectedHttpStatus(response.status)
                     if response.status >= 400:
                         details = {
                             "status": response.status,

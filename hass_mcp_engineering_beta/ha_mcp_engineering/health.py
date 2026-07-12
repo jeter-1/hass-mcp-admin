@@ -33,9 +33,16 @@ class HealthRegistry:
             "uptime_seconds": metrics["uptime_seconds"],
             "home_assistant": ha_connection,
             "latency": {
-                "requests": metrics["request_latency"],
+                "mcp_operations": metrics["mcp_operation_latency"],
+                "tools": metrics["tool_latency"],
                 "home_assistant": metrics["home_assistant_latency"],
             },
+            "transport": {
+                "completed_request_count": metrics["transport_request_count"],
+                "session_lifetime_in_latency": False,
+            },
+            "mcp_operation_count": metrics["mcp_operation_count"],
+            "mcp_operation_methods": metrics["mcp_operation_methods"],
             "registered_tool_count": len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES),
             "audit": self.audit.state() if self.audit else {"enabled": False, "configured": False},
             "logging": {

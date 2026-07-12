@@ -8,8 +8,6 @@ import os
 from pathlib import Path
 import re
 import threading
-from typing import Iterable
-
 from .models import ChangePlan, PlanStatus
 
 
@@ -48,6 +46,17 @@ class ChangePlanRepository:
             raise ChangePlanStorageError("Invalid change plan identifier")
         return self.root / f"{plan_id}.json"
 
+    def _read_path(self, plan_id: str) -> Path | None:
+        """Return a safe record path, or None for a non-record identifier.
+
+        Invalid/nonexistent identifiers are lookup misses, not storage health
+        failures. Save paths remain strict because generated plan IDs must
+        always satisfy the repository format.
+        """
+        if not PLAN_ID.fullmatch(plan_id):
+            return None
+        return self.root / f"{plan_id}.json"
+
     def save(self, plan: ChangePlan) -> None:
         path = self._path(plan.plan_id)
         temporary = path.with_suffix(f".tmp-{os.getpid()}-{threading.get_ident()}")
@@ -68,21 +77,31 @@ class ChangePlanRepository:
             raise ChangePlanStorageError("Atomic governance storage write failed") from exc
 
     def get(self, plan_id: str) -> ChangePlan | None:
-        path = self._path(plan_id)
-        if not path.exists():
+        path = self._read_path(plan_id)
+        if path is None:
             return None
         try:
             with self._lock:
                 value = json.loads(path.read_text(encoding="utf-8"))
             return ChangePlan.from_dict(value)
-        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
-            self._quarantine(path)
+        except FileNotFoundError:
             return None
+        except OSError as exc:
+            raise ChangePlanStorageError("Governance record read failed") from exc
+        except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+            self._quarantine(path)
+            raise ChangePlanStorageError("Governance record is corrupt") from exc
 
     def list(self) -> list[ChangePlan]:
         plans = []
         for path in sorted(self.root.glob("*.json")):
-            plan = self.get(path.stem)
+            try:
+                plan = self.get(path.stem)
+            except ChangePlanStorageError:
+                # Corrupt records are quarantined and do not block startup or
+                # healthy records. Genuine directory enumeration failures are
+                # raised by glob before this point.
+                continue
             if plan:
                 plans.append(plan)
         return sorted(plans, key=lambda plan: plan.created_at, reverse=True)

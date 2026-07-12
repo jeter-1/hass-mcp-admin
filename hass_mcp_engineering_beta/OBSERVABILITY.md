@@ -176,9 +176,10 @@ or output subsystems. Do not add ad hoc `print` statements to beta runtime code.
 
 The in-memory metrics registry captures:
 
-- total request and tool-call counts;
-- total request duration samples;
-- tool execution duration in migrated responses;
+- completed transport-request, MCP-operation, and tool-call counts;
+- completed JSON-RPC operation latency for methods such as `initialize`,
+  `tools/list`, and `tools/call`;
+- tool-processing latency independently from the enclosing transport request;
 - Home Assistant API duration samples;
 - retry count (currently zero because automatic retries are not enabled);
 - timeout count and per-request timeout occurrence;
@@ -186,8 +187,11 @@ The in-memory metrics registry captures:
 - safe Home Assistant endpoint categories; and
 - recent error counts by stable code.
 
-Metrics are process-local and reset on restart. They are intentionally not a
-durable analytics or tracing backend.
+Long-lived GET/SSE stream and idle session lifetime is excluded from operational
+latency. Transport completions are counted separately without treating session
+lifetime as request-processing time. Metrics are process-local and reset
+deterministically on restart. They are intentionally not a durable analytics or
+tracing backend.
 
 ## `get_server_health`
 
@@ -197,7 +201,9 @@ envelope containing safe operational data:
 - beta identity and version;
 - runtime mode and uptime;
 - optional Home Assistant connection state;
-- request and Home Assistant latency summaries;
+- MCP operation, tool-processing, and Home Assistant latency summaries;
+- completed transport-request count with an explicit indication that session
+  lifetime is excluded;
 - registered tool count;
 - audit and logging subsystem state;
 - recent safe error counts;
