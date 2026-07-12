@@ -6,6 +6,8 @@
 > See [`V2_BETA_ARCHITECTURE.md`](V2_BETA_ARCHITECTURE.md) before installing or
 > migrating tools. Beta release and cache-refresh procedures are documented in
 > [`docs/BETA_DEPLOYMENT.md`](docs/BETA_DEPLOYMENT.md).
+> The beta approval workflow is documented in
+> [`docs/CHANGE_GOVERNANCE.md`](docs/CHANGE_GOVERNANCE.md).
 
 A focused Model Context Protocol server for Home Assistant engineering, diagnostics,
 and controlled administration, packaged as a Home Assistant OS add-on. It works with

@@ -3,6 +3,12 @@
 These contracts apply only to `hass_mcp_engineering_beta`. Production v1.1.2
 runtime behavior and logging remain unchanged.
 
+Governed automation changes add safe lifecycle events and bounded governance
+health counts. Proposed/current configurations, approval notes, hashes, secrets,
+webhook IDs, authorization material, and authenticated paths are excluded from
+generic audit parameters. See
+[`../docs/CHANGE_GOVERNANCE.md`](../docs/CHANGE_GOVERNANCE.md).
+
 ## Structured responses
 
 Migrated beta tools return JSON strings containing one of two envelopes. Tool
