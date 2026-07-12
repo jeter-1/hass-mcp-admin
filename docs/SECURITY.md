@@ -6,7 +6,7 @@ Provider labels describe the transport actually used. A direct Home Assistant RE
 WebSocket call is always labeled `direct_ha_api`; it is never relabeled as
 `standard_ha_mcp`. Approximate upstream tool matching is prohibited.
 
-Phase 3C permits four narrowly scoped administrative reads, unchanged in Beta 10:
+Phase 3C permits four narrowly scoped administrative reads, unchanged in Beta 11:
 
 | Tool | Direct policy | Allowed operation |
 | --- | --- | --- |
@@ -20,7 +20,7 @@ reloads, restarts, physical actions, or destructive operations. Governed configu
 changes retain their existing plan, approval, verification, rollback, correlation, and
 audit requirements.
 
-Beta 10 also makes the pre-existing transitional `get_error_log` exception explicit:
+The pre-existing transitional `get_error_log` exception remains explicit in Beta 11:
 
 | Tool | Direct policy | Allowed operation |
 | --- | --- | --- |
@@ -28,9 +28,10 @@ Beta 10 also makes the pre-existing transitional `get_error_log` exception expli
 
 This is not a general log or Supervisor permission. The server does not request broad
 Supervisor log access, scrape frontend output, or read the host journal. Returned
-System Log fields are untrusted data: they are bounded and redacted before response
-serialization, never executed or interpreted as instructions, and never used to
-construct an endpoint or action.
+System Log fields are untrusted data: the complete recursive upstream result is
+sanitized before selection, bounding, normalization, formatting, or serialization.
+Content is never executed or interpreted as instructions and never constructs an
+endpoint, tool call, service call, or action.
 
 ## Standard Home Assistant MCP
 
@@ -39,7 +40,7 @@ an add-on it is available through the fixed Supervisor Core API proxy at
 `http://supervisor/core/api/mcp`, authenticated by the add-on's Supervisor bearer token.
 The selected Assist API does not expose exact entity-ID lookup, complete area-registry
 enumeration, or service-catalog discovery. `GetLiveContext` is therefore not used as a
-substitute. Beta 10 retains the gateway abstraction but does not configure or call the
+substitute. Beta 11 retains the gateway abstraction but does not configure or call the
 upstream endpoint.
 
 Any future live delegation requires an exact or explicitly reviewed loss-tolerant
@@ -53,7 +54,34 @@ session identifiers, and raw upstream error bodies are excluded from tool result
 health output, provider metadata, logs, audit records, fixtures, and documentation.
 Complete authenticated paths must be redacted before diagnostics are shared.
 
-For structured System Log entries, redaction additionally covers bearer material,
-credential-bearing URLs, token/password/session query or assignment values, webhook
-paths, and secret-prefixed MCP paths. Log content can contain arbitrary external text;
-that text remains inert response data even if it resembles an AI instruction.
+## Central fail-closed sanitizer
+
+All System Log-derived mappings, lists, tuples, string leaves, exception text,
+tracebacks, Python representations, JSON-like text, URLs, multiline messages, and
+unknown future fields use the same recursive sanitizer used by beta logging and audit
+contexts. Key-aware rules run before free-text scanning. Redaction occurs before any
+truncation, ensuring a truncated response cannot reveal a prefix or suffix.
+
+Stable markers identify only the category:
+
+- `[REDACTED:token]` for bearer/access/refresh/long-lived/API/client secrets;
+- `[REDACTED:auth_cookie]` and `[REDACTED:password]`;
+- `[REDACTED:webhook_secret]` and `[REDACTED:auth_flow]`;
+- `[REDACTED:matter_setup_code]` and `[REDACTED:matter_setup_payload]`;
+- `[REDACTED:url_credentials]`; and
+- `[REDACTED:sanitization_failure]` when a field cannot be processed safely.
+
+Markers disclose no original length, fragment, hash, prefix, suffix, character set, or
+reversible encoding. Existing markers are preserved unchanged. Sanitization is
+deterministic and idempotent. If one field raises during sanitation, that field is
+replaced and a safe warning is reported; raw content is never used as a fallback.
+
+Useful diagnostics such as entity IDs, integration/logger names, filenames and line
+numbers, timestamps, occurrence counts, ordinary error codes, device names, private IP
+addresses, and non-authentication HA context IDs remain available. A generic field
+named `code` is not redacted; only verified credential contexts such as `setup_code`
+or `authorization_code` are sensitive.
+
+Output telemetry is limited to `redaction_applied`, a redacted-field count, unique
+bounded category names, and fail-closed state. It contains no original value or
+one-to-one identifier.

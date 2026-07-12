@@ -4,34 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from typing import Any
 
 from .request_context import current_request_id
-
-SENSITIVE_KEYS = {
-    "access_secret",
-    "authorization",
-    "cookie",
-    "set-cookie",
-    "token",
-    "password",
-    "api_key",
-    "credential",
-    "session_id",
-    "webhook_id",
-}
-
-_INLINE_SECRET_PATTERNS = (
-    re.compile(r"(?i)(authorization\s*[:=]\s*)(?:bearer\s+)?[^\s,;]+"),
-    re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+"),
-    re.compile(
-        r"(?i)(\b(?:access_token|token|api_key|webhook(?:_id)?|secret|password|session_id)\s*[:=]\s*)[^\s,;?#&]+"
-    ),
-    re.compile(r"(?i)(https?://)[^/@\s:]+:[^/@\s]+@"),
-    re.compile(r"(?i)(/api/webhook/)[^/?#\s]+"),
-    re.compile(r"(?i)/[A-Za-z0-9_-]{24,}/mcp(?=/|\b)"),
-)
+from .sanitization import sanitize_untrusted_data
 
 
 def redact_untrusted_text(
@@ -40,23 +16,12 @@ def redact_untrusted_text(
     secrets: tuple[str, ...] = (),
     max_string: int = 2048,
 ) -> str:
-    """Redact credential-shaped text and bound untrusted log content."""
+    """Compatibility wrapper around the centralized fail-closed sanitizer."""
 
-    safe = value
-    for secret in secrets:
-        if secret:
-            safe = safe.replace(secret, "<redacted>")
-    replacements = (
-        r"\1<redacted>",
-        r"\1<redacted>",
-        r"\1<redacted>",
-        r"\1<redacted>@",
-        r"\1<redacted>",
-        "/<access_secret>/mcp",
+    result = sanitize_untrusted_data(
+        value, known_secrets=secrets, max_string=max_string
     )
-    for pattern, replacement in zip(_INLINE_SECRET_PATTERNS, replacements):
-        safe = pattern.sub(replacement, safe)
-    return safe[:max_string] + ("...<truncated>" if len(safe) > max_string else "")
+    return str(result.value)
 
 
 def redact_data(
@@ -66,26 +31,12 @@ def redact_data(
     secrets: tuple[str, ...] = (),
     max_string: int = 2048,
 ) -> Any:
-    if isinstance(value, dict):
-        return {
-            str(key): (
-                "<redacted>"
-                if str(key).lower() in SENSITIVE_KEYS
-                else redact_data(
-                    item, secret=secret, secrets=secrets, max_string=max_string
-                )
-            )
-            for key, item in value.items()
-        }
-    if isinstance(value, (list, tuple)):
-        return [
-            redact_data(item, secret=secret, secrets=secrets, max_string=max_string)
-            for item in value
-        ]
-    if isinstance(value, str):
-        safe = value.replace(secret, "<access_secret>") if secret else value
-        return redact_untrusted_text(safe, secrets=secrets, max_string=max_string)
-    return value
+    result = sanitize_untrusted_data(
+        value,
+        known_secrets=tuple(item for item in (secret, *secrets) if item),
+        max_string=max_string,
+    )
+    return result.value
 
 
 class JsonFormatter(logging.Formatter):

@@ -144,11 +144,13 @@ error; it does not raise into a read-only tool call.
 
 ## Redaction rules
 
-Redaction is recursive and deterministic. Dictionary keys matching
-`access_secret`, `authorization`, `cookie`, `set-cookie`, `token`, `password`,
-`api_key`, or `credential` are replaced with `<redacted>`. Any occurrence of
-the configured access secret inside another string becomes `<access_secret>`.
-Long strings are bounded before logging or auditing.
+Redaction is centralized, recursive, deterministic, idempotent, and fail-closed.
+Key-aware rules cover verified authentication, webhook, Matter commissioning, auth
+flow, cookie, and password fields without treating every field named `code` as secret.
+Every string leaf is then scanned for credential-bearing URLs, query/fragment
+parameters, login-flow and webhook paths, bearer/JWT-like credentials, Matter `MT:`
+payloads, and quoted Python/JSON assignments. Stable category markers are emitted.
+Redaction always precedes string and payload bounding.
 
 Never log or audit:
 
@@ -158,6 +160,11 @@ Never log or audit:
 - the complete access secret;
 - complete authenticated MCP paths; or
 - unbounded request/response payloads.
+
+If sanitation of one field raises, that field becomes
+`[REDACTED:sanitization_failure]`; the raw value is never returned or logged. Existing
+markers are not reprocessed. System Log redaction telemetry contains only the applied
+flag, field count, bounded unique categories, and fail-closed state.
 
 `redaction_enabled` must remain true; startup validation rejects false.
 
@@ -237,7 +244,7 @@ envelope containing safe operational data:
 It never returns the secret, tokens, headers, cookies, complete MCP endpoint
 paths, private request payloads, or raw audit/log records.
 
-The delegation diagnostic reflects current reality: Beta 10 verifies the Home Assistant
+The delegation diagnostic reflects current reality: Beta 11 verifies the Home Assistant
 MCP endpoint but does not configure or call it because Assist lacks exact mappings for
 the approved administrative reads. It must not be interpreted as a Home Assistant API
 connectivity failure. Provider failures and partial coverage remain visible; the four
@@ -261,7 +268,7 @@ reported as work repeated during the current request.
 [Home Assistant 2026.7.2 registers the historical `/api/error_log` REST view only
 when file logging is configured](https://github.com/home-assistant/core/blob/2026.7.2/homeassistant/components/api/__init__.py);
 [HA OS normally sends Core logs to the system journal](https://www.home-assistant.io/common-tasks/os/),
-so that conditional view can return 404. Beta 10 does not request broad Supervisor log
+so that conditional view can return 404. Beta 11 does not request broad Supervisor log
 permissions.
 
 The compatible input name remains `tail_lines`, but the result now contains
@@ -271,6 +278,15 @@ effective and maximum limits, explicit truncation reasons, and
 `content_is_untrusted_data=true`. Each string and the total payload are bounded. Empty
 System Log state is a successful empty list; 404, permission, timeout, unavailable, and
 malformed responses remain explicit failures.
+
+Beta 11 sanitizes the complete recursive `system_log/list` result before applying
+`tail_lines`, limiting message history, renaming known fields, preserving safe unknown
+fields, calculating payload size, or serializing the facilitator envelope. Both
+`message` and `exception`, including nested serialized structures and future fields,
+pass through the same pipeline. The response reports `redaction_applied`,
+`redacted_field_count`, `redaction_categories`, `sanitization_failed_closed`, and only
+safe sanitation warnings. Log text remains evidence rather than instructions; it
+cannot authorize or trigger another operation.
 
 ## Startup configuration validation
 
