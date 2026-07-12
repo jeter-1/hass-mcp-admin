@@ -432,7 +432,7 @@ class GatewayAndHealthTests(unittest.TestCase):
             payload = json.loads(asyncio.run(compatibility.get_server_health(check_ha=False)))
         self.assertTrue(payload["success"])
         health = payload["data"]
-        self.assertEqual(health["server"]["version"], "2.0.0-beta.5")
+        self.assertEqual(health["server"]["version"], "2.0.0-beta.6")
         self.assertEqual(health["registered_tool_count"], 32)
         self.assertIn("governance", health)
         self.assertIn("storage_corruption_count", health["governance"])
@@ -441,6 +441,13 @@ class GatewayAndHealthTests(unittest.TestCase):
         self.assertIn("tools", health["latency"])
         self.assertIn("home_assistant", health["latency"])
         self.assertFalse(health["transport"]["session_lifetime_in_latency"])
+        self.assertEqual(
+            health["provider_routing"]["standard_ha_mcp_delegation"],
+            "unavailable",
+        )
+        self.assertTrue(
+            health["provider_routing"]["direct_fallback_requires_explicit_policy"]
+        )
         encoded = json.dumps(payload)
         self.assertNotIn(SECRET, encoded)
         self.assertNotIn("test-ha-token", encoded)

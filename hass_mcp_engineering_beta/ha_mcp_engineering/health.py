@@ -51,6 +51,11 @@ class HealthRegistry:
                 "redaction_filter": True,
             },
             "recent_error_counts": metrics["recent_error_counts"],
+            "provider_routing": {
+                **metrics["provider_routing"],
+                "standard_ha_mcp_delegation": "unavailable",
+                "direct_fallback_requires_explicit_policy": True,
+            },
             "rate_limiter": self.gateway.rate_limiter_state() if self.gateway else {"configured": False},
             "redaction": {"enabled": bool(self.settings and self.settings.redaction_enabled)},
             "configuration": {"valid": self.configuration_valid},
