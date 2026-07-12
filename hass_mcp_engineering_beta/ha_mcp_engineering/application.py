@@ -7,7 +7,7 @@ import sys
 import uvicorn
 
 from .audit import AuditLogger
-from .configuration import Settings, load_settings
+from .configuration import MIN_ACCESS_SECRET_LENGTH, Settings, load_settings
 from .errors import ConfigurationError
 from .logging_config import configure_logging, get_logger, log_event
 from .health import HEALTH
@@ -23,8 +23,10 @@ def validate_settings(settings: Settings) -> None:
         errors.append("Home Assistant API token is unavailable")
     if not settings.ha_url.startswith(("http://", "https://")):
         errors.append("Home Assistant URL must use http or https")
-    if not settings.access_secret or len(settings.access_secret) < 24:
-        errors.append("access_secret is unset or shorter than 24 characters")
+    if not settings.access_secret or len(settings.access_secret) < MIN_ACCESS_SECRET_LENGTH:
+        errors.append(
+            f"access_secret is unset or shorter than {MIN_ACCESS_SECRET_LENGTH} characters"
+        )
     if not 1 <= settings.port <= 65535:
         errors.append("port must be between 1 and 65535")
     if settings.audit_enabled and not settings.audit_path.strip():
