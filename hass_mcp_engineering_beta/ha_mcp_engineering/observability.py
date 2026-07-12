@@ -29,6 +29,20 @@ class RuntimeMetrics:
     fallback_successes: int = 0
     prohibited_fallback_attempts: int = 0
     evidence_truncation_count: int = 0
+    dependency_analysis_requests: int = 0
+    dependency_analysis_successes: int = 0
+    dependency_analysis_partial: int = 0
+    dependency_analysis_failures: int = 0
+    dependency_index_builds: int = 0
+    dependency_index_build_failures: int = 0
+    dependency_cache_hits: int = 0
+    dependency_cache_misses: int = 0
+    dependency_index_invalidations: int = 0
+    dependency_findings_truncated: int = 0
+    dependency_unresolved_dynamic: int = 0
+    dependency_index_source_count: int = 0
+    dependency_index_edge_count: int = 0
+    dependency_last_successful_build: str | None = None
 
     def record_transport_completion(self) -> None:
         self.transport_request_count += 1
@@ -75,6 +89,45 @@ class RuntimeMetrics:
     def record_evidence_truncation(self) -> None:
         self.evidence_truncation_count += 1
 
+    def record_dependency_analysis_request(self) -> None:
+        self.dependency_analysis_requests += 1
+
+    def record_dependency_analysis_success(self) -> None:
+        self.dependency_analysis_successes += 1
+
+    def record_dependency_analysis_partial(self) -> None:
+        self.dependency_analysis_partial += 1
+
+    def record_dependency_analysis_failure(self) -> None:
+        self.dependency_analysis_failures += 1
+
+    def record_dependency_index_build(self) -> None:
+        self.dependency_index_builds += 1
+
+    def record_dependency_index_failure(self) -> None:
+        self.dependency_index_build_failures += 1
+
+    def record_dependency_cache_hit(self) -> None:
+        self.dependency_cache_hits += 1
+
+    def record_dependency_cache_miss(self) -> None:
+        self.dependency_cache_misses += 1
+
+    def record_dependency_invalidation(self) -> None:
+        self.dependency_index_invalidations += 1
+
+    def record_dependency_truncation(self) -> None:
+        self.dependency_findings_truncated += 1
+        self.record_evidence_truncation()
+
+    def record_dependency_unresolved(self, count: int = 1) -> None:
+        self.dependency_unresolved_dynamic += max(0, int(count))
+
+    def set_dependency_index_state(self, *, source_count: int, edge_count: int, built_at: str) -> None:
+        self.dependency_index_source_count = max(0, int(source_count))
+        self.dependency_index_edge_count = max(0, int(edge_count))
+        self.dependency_last_successful_build = built_at
+
     def reset(self) -> None:
         """Deterministically reset in-memory metrics without replacing the registry."""
         self.started = time.monotonic()
@@ -96,6 +149,20 @@ class RuntimeMetrics:
         self.fallback_successes = 0
         self.prohibited_fallback_attempts = 0
         self.evidence_truncation_count = 0
+        self.dependency_analysis_requests = 0
+        self.dependency_analysis_successes = 0
+        self.dependency_analysis_partial = 0
+        self.dependency_analysis_failures = 0
+        self.dependency_index_builds = 0
+        self.dependency_index_build_failures = 0
+        self.dependency_cache_hits = 0
+        self.dependency_cache_misses = 0
+        self.dependency_index_invalidations = 0
+        self.dependency_findings_truncated = 0
+        self.dependency_unresolved_dynamic = 0
+        self.dependency_index_source_count = 0
+        self.dependency_index_edge_count = 0
+        self.dependency_last_successful_build = None
 
     @staticmethod
     def _summary(values: deque[float]) -> dict[str, float | int | None]:
@@ -129,6 +196,22 @@ class RuntimeMetrics:
                 "fallback_successes": self.fallback_successes,
                 "prohibited_fallback_attempts": self.prohibited_fallback_attempts,
                 "evidence_truncation_count": self.evidence_truncation_count,
+            },
+            "dependency_analysis": {
+                "request_count": self.dependency_analysis_requests,
+                "successful_count": self.dependency_analysis_successes,
+                "partial_count": self.dependency_analysis_partial,
+                "failed_count": self.dependency_analysis_failures,
+                "index_build_count": self.dependency_index_builds,
+                "index_build_failures": self.dependency_index_build_failures,
+                "index_cache_hits": self.dependency_cache_hits,
+                "index_cache_misses": self.dependency_cache_misses,
+                "index_invalidations": self.dependency_index_invalidations,
+                "current_index_source_count": self.dependency_index_source_count,
+                "current_index_edge_count": self.dependency_index_edge_count,
+                "last_successful_index_build": self.dependency_last_successful_build,
+                "findings_truncated": self.dependency_findings_truncated,
+                "unresolved_dynamic_reference_count": self.dependency_unresolved_dynamic,
             },
         }
 
