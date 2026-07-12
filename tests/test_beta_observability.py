@@ -34,6 +34,7 @@ from ha_mcp_engineering.errors import (  # noqa: E402
 )
 from ha_mcp_engineering.logging_config import JsonFormatter, log_event, redact_data  # noqa: E402
 from ha_mcp_engineering.models import FailureResponse, SuccessResponse, Timing  # noqa: E402
+from ha_mcp_engineering.observability import METRICS, RuntimeMetrics  # noqa: E402
 from ha_mcp_engineering.request_context import (  # noqa: E402
     begin_request,
     current_request_id,
@@ -291,6 +292,105 @@ class RedactionAndAuditTests(unittest.TestCase):
             self.assertEqual(audit.state()["write_failures"], 1)
 
 
+class OperationLatencyMetricTests(unittest.TestCase):
+    def test_long_lived_transport_does_not_inflate_operation_latency(self):
+        with tempfile.TemporaryDirectory() as directory:
+            configured = settings(str(Path(directory) / "audit.jsonl"))
+
+            async def app(scope, receive, send):
+                if scope["method"] == "GET":
+                    await asyncio.sleep(0.15)
+                else:
+                    await asyncio.sleep(0.002)
+                await send({"type": "http.response.start", "status": 200, "headers": []})
+                await send({"type": "http.response.body", "body": b"{}"})
+
+            gateway = AuthenticatedMcpGateway(
+                app, configured, AuditLogger(configured.audit_path, SECRET)
+            )
+
+            async def invoke(method, rpc=None):
+                body = json.dumps(rpc).encode() if rpc else b""
+                delivered = False
+
+                async def receive():
+                    nonlocal delivered
+                    if delivered:
+                        return {"type": "http.disconnect"}
+                    delivered = True
+                    return {"type": "http.request", "body": body, "more_body": False}
+
+                async def send(message):
+                    return None
+
+                scope = {
+                    "type": "http",
+                    "method": method,
+                    "path": f"/{SECRET}/mcp",
+                    "raw_path": f"/{SECRET}/mcp".encode(),
+                    "headers": [],
+                    "client": ("127.0.0.1", 1),
+                }
+                await gateway(scope, receive, send)
+
+            METRICS.reset()
+            try:
+                asyncio.run(invoke("GET"))
+                after_transport = METRICS.snapshot()
+                self.assertEqual(after_transport["transport_request_count"], 1)
+                self.assertEqual(after_transport["mcp_operation_count"], 0)
+                self.assertEqual(after_transport["mcp_operation_latency"]["count"], 0)
+
+                asyncio.run(invoke("POST", {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}))
+                asyncio.run(invoke("POST", {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}))
+                asyncio.run(invoke("POST", {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {"name": "safe_fake_tool", "arguments": {}},
+                }))
+                final = METRICS.snapshot()
+                self.assertEqual(final["transport_request_count"], 4)
+                self.assertEqual(final["mcp_operation_count"], 3)
+                self.assertEqual(
+                    final["mcp_operation_methods"],
+                    {"initialize": 1, "tools/list": 1, "tools/call": 1},
+                )
+                self.assertEqual(final["tool_latency"]["count"], 1)
+                self.assertLess(final["mcp_operation_latency"]["maximum_ms"], 100)
+            finally:
+                METRICS.reset()
+
+    def test_tool_and_home_assistant_latency_are_independent(self):
+        metrics = RuntimeMetrics()
+        metrics.record_mcp_operation(12.0, "tools/call")
+        metrics.record_tool_call()
+        metrics.record_tool_completion(7.0)
+        metrics.record_ha(3.0)
+        snapshot = metrics.snapshot()
+        self.assertEqual(snapshot["mcp_operation_latency"]["average_ms"], 12.0)
+        self.assertEqual(snapshot["tool_latency"]["average_ms"], 7.0)
+        self.assertEqual(snapshot["home_assistant_latency"]["average_ms"], 3.0)
+
+    def test_metric_reset_is_deterministic(self):
+        metrics = RuntimeMetrics()
+        metrics.record_transport_completion()
+        metrics.record_mcp_operation(10.0, "initialize")
+        metrics.record_tool_call()
+        metrics.record_tool_completion(5.0)
+        metrics.record_ha(2.0)
+        metrics.record_error("safe_test_error")
+        metrics.reset()
+        snapshot = metrics.snapshot()
+        self.assertEqual(snapshot["transport_request_count"], 0)
+        self.assertEqual(snapshot["mcp_operation_count"], 0)
+        self.assertEqual(snapshot["tool_call_count"], 0)
+        self.assertEqual(snapshot["mcp_operation_latency"]["count"], 0)
+        self.assertEqual(snapshot["tool_latency"]["count"], 0)
+        self.assertEqual(snapshot["home_assistant_latency"]["count"], 0)
+        self.assertEqual(snapshot["recent_error_counts"], {})
+
+
 class GatewayAndHealthTests(unittest.TestCase):
     def test_rate_limit_response_uses_stable_error_mapping(self):
         class RecordingApp:
@@ -332,11 +432,15 @@ class GatewayAndHealthTests(unittest.TestCase):
             payload = json.loads(asyncio.run(compatibility.get_server_health(check_ha=False)))
         self.assertTrue(payload["success"])
         health = payload["data"]
-        self.assertEqual(health["server"]["version"], "2.0.0-beta.4")
+        self.assertEqual(health["server"]["version"], "2.0.0-beta.5")
         self.assertEqual(health["registered_tool_count"], 32)
         self.assertIn("governance", health)
         self.assertIn("storage_corruption_count", health["governance"])
         self.assertTrue(health["redaction"]["enabled"])
+        self.assertIn("mcp_operations", health["latency"])
+        self.assertIn("tools", health["latency"])
+        self.assertIn("home_assistant", health["latency"])
+        self.assertFalse(health["transport"]["session_lifetime_in_latency"])
         encoded = json.dumps(payload)
         self.assertNotIn(SECRET, encoded)
         self.assertNotIn("test-ha-token", encoded)
