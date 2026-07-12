@@ -9,7 +9,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-beta.8` |
+| Version | `1.1.2` | `2.0.0-beta.9` |
 | Port | `8099` | `8100` |
 | Options and secret | Production add-on data | Beta add-on data |
 
@@ -74,8 +74,9 @@ through the response-model boundary, and server construction through the v2
 FastMCP factory. `server_info` and `list_capabilities` use beta version and
 capability metadata.
 
-The v1.1.2 catalog currently contains 8 native, 10 transitional, 4 delegated,
-and 3 deprecated tools. Beta 8 advertises 4 remaining planned capabilities. The often
+The v1.1.2 catalog contains 8 native, 10 transitional, 4 delegated, and 3 deprecated
+tools. Beta 9 truthfully reclassifies the four administrative reads as transitional,
+producing 8 native, 14 transitional, and 3 deprecated tools. It advertises 4 remaining planned capabilities. The often
 quoted transitional count of 9 is inconsistent with the checked-in 25-tool
 catalog; v2 intentionally preserves the source catalog rather than
 reclassifying a tool during a scaffold change.
@@ -84,11 +85,12 @@ reclassifying a tool during a scaffold change.
 
 Phase 3A implements the provider and response boundaries defined in
 [`docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md`](docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md).
-There is currently no supported nested standard-HA-MCP transport. The standard
-provider is deliberately unavailable. Delegated canonical calls therefore return a
-structured unavailable response and cannot silently reach direct HA. Transitional and
-direct-required calls enter the dispatcher and use only the documented tool-specific
-direct exceptions. Provider availability must not be inferred from lifecycle labels.
+The verified Standard HA MCP endpoint is `/api/mcp`, available to an add-on through
+`http://supervisor/core/api/mcp` with its Supervisor bearer token. Its selected Assist
+API does not expose exact equivalents for entity-ID lookup, the area registry, or the
+service catalog. Beta 9 does not configure or call that endpoint. The four exact
+administrative reads enter facilitator dispatch as explicit `transitional_direct`
+exceptions. Provider availability must not be inferred from lifecycle labels.
 
 The response and error models are intentionally minimal. Future changes can
 add structured envelopes, dry-run results, approval state, rollback metadata,
@@ -124,7 +126,7 @@ They are active for beta-native tools and every provider-routed canonical tool.
 
 ## Known limitations
 
-Beta 8 retains the engineering-native dependency-analysis tool and the callable
+Beta 9 retains the engineering-native dependency-analysis tool and the callable
 manifest to 33 tools. Exact source coverage is documented in
 [`docs/ENTITY_DEPENDENCY_ANALYSIS.md`](docs/ENTITY_DEPENDENCY_ANALYSIS.md).
 
@@ -132,5 +134,7 @@ manifest to 33 tools. Exact source coverage is documented in
 - Handler bodies remain compatibility implementations behind the routing boundary.
 - Live Home Assistant behavior requires a Supervisor token or an explicit
   standalone `HA_URL`/`HA_TOKEN` pair.
-- Standard Home Assistant MCP delegation is not operational in Beta 8; the gateway
-  reports explicit unavailability and never fabricates delegated evidence.
+- Standard Home Assistant MCP transport is verified but has no approved exact mapping
+  in this release; the gateway reports explicit unavailability and is not called.
+- `GetLiveContext` is not an exact replacement for entity, registry, or service-catalog
+  administrative reads.

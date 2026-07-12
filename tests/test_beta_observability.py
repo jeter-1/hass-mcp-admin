@@ -447,7 +447,7 @@ class GatewayAndHealthTests(unittest.TestCase):
             payload = json.loads(asyncio.run(compatibility.get_server_health(check_ha=False)))
         self.assertTrue(payload["success"])
         health = payload["data"]
-        self.assertEqual(health["server"]["version"], "2.0.0-beta.8")
+        self.assertEqual(health["server"]["version"], "2.0.0-beta.9")
         self.assertEqual(health["registered_tool_count"], 33)
         self.assertIn("governance", health)
         self.assertIn("storage_corruption_count", health["governance"])
@@ -463,7 +463,19 @@ class GatewayAndHealthTests(unittest.TestCase):
         self.assertTrue(
             health["provider_routing"]["direct_fallback_requires_explicit_policy"]
         )
+        self.assertEqual(
+            set(health["provider_routing"]["approved_direct_read_tools"]),
+            {"get_entity", "list_areas", "search_services", "list_services"},
+        )
+        self.assertEqual(health["provider_routing"]["standard_ha_mcp_exact_mapping_count"], 0)
         self.assertIn("dependency_analysis", health)
+        dependency = health["dependency_analysis"]
+        self.assertIn("findings_truncation_event_count", dependency)
+        self.assertIn("current_index_unresolved_dynamic_reference_count", dependency)
+        self.assertEqual(
+            dependency["counter_semantics"]["findings_truncation_event_count"],
+            "cumulative_process_events",
+        )
         encoded = json.dumps(payload)
         self.assertNotIn(SECRET, encoded)
         self.assertNotIn("test-ha-token", encoded)

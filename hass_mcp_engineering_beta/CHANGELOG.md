@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.0.0-beta.9
+
+- Align capability truth for `get_entity`, `list_areas`, `search_services`, and
+  `list_services`: lifecycle `transitional`, route `transitional_direct`, and provider
+  `direct_ha_api` under four specific read-only policies.
+- Preserve facilitator dispatch, normalized envelopes, source coverage, timing, audit
+  correlation, and provider counters for all four administrative reads.
+- Document the verified stateless Home Assistant `/api/mcp` endpoint and reject
+  approximate `GetLiveContext` mappings for exact entity, area, and service semantics.
+- Honor dependency-analysis limits through 100 with explicit requested/effective limit
+  metadata; separate current lookup/request timing from original build provenance.
+- Clarify dependency health counters as cumulative truncation events versus current
+  unresolved-reference index state.
+- Keep production v1.1.2 and all write, physical-action, reload, delete, and governance
+  boundaries unchanged.
+
 ## 2.0.0-beta.8
 
 - Route canonical delegated, transitional, direct-required, and prohibited tools

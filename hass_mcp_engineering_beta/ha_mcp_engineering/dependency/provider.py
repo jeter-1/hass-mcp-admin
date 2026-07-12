@@ -84,14 +84,11 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         coverage: list[SourceCoverageItem] = []
 
         state_started = time.perf_counter()
-        METRICS.record_provider_result("standard_ha_mcp", "unavailable")
-        METRICS.record_fallback_attempt()
         try:
             states = await asyncio.wait_for(self.rest_client.request("GET", "/states"), self.timeout)
             if not isinstance(states, list):
                 raise TypeError("state response is not a list")
             METRICS.record_provider_result(self.provider_id, "complete")
-            METRICS.record_fallback_success()
         except Exception:
             METRICS.record_provider_result(self.provider_id, "failed")
             raise
@@ -223,8 +220,8 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             SourceCoverageItem(
                 "entity_metadata", self.provider_id, ProviderCapability.CURRENT_ENTITY_STATE.value,
                 "partial" if registry_warning else "complete", len(metadata), 1 if registry_warning else 0,
-                registry_warning, (time.perf_counter() - state_started) * 1000, True,
-                "standard_mcp_preferred with explicit transitional direct read fallback",
+                registry_warning, (time.perf_counter() - state_started) * 1000, False,
+                "transitional_direct exact administrative read",
             )
         )
         return DependencyScanResult(findings, dynamic, metadata, coverage)

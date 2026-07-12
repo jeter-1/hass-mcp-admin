@@ -78,10 +78,10 @@ class RoutingPolicyTests(unittest.TestCase):
             ProviderCapability.IMPACT_ANALYSIS: CapabilityRoute.ENGINEERING_NATIVE,
             ProviderCapability.AUDIT: CapabilityRoute.ENGINEERING_NATIVE,
             ProviderCapability.HANDOFF_GENERATION: CapabilityRoute.ENGINEERING_NATIVE,
-            ProviderCapability.CURRENT_ENTITY_STATE: CapabilityRoute.STANDARD_MCP_PREFERRED,
+            ProviderCapability.CURRENT_ENTITY_STATE: CapabilityRoute.TRANSITIONAL_DIRECT,
             ProviderCapability.BROAD_ENTITY_SEARCH: CapabilityRoute.STANDARD_MCP_PREFERRED,
-            ProviderCapability.AREA_LOOKUP: CapabilityRoute.STANDARD_MCP_PREFERRED,
-            ProviderCapability.SERVICE_DISCOVERY: CapabilityRoute.STANDARD_MCP_PREFERRED,
+            ProviderCapability.AREA_LOOKUP: CapabilityRoute.TRANSITIONAL_DIRECT,
+            ProviderCapability.SERVICE_DISCOVERY: CapabilityRoute.TRANSITIONAL_DIRECT,
             ProviderCapability.ORDINARY_SERVICE_EXECUTION: CapabilityRoute.STANDARD_MCP_PREFERRED,
             ProviderCapability.AUTOMATION_CONFIG: CapabilityRoute.DIRECT_HA_REQUIRED,
             ProviderCapability.AUTOMATION_TRACE: CapabilityRoute.DIRECT_HA_REQUIRED,
@@ -148,34 +148,28 @@ class RoutingPolicyTests(unittest.TestCase):
         self.assertEqual(response.provider_id, "standard_ha_mcp")
         self.assertFalse(response.fallback_occurred)
 
-    def test_explicit_read_fallback_is_recorded(self):
-        unavailable = result(
-            "standard_ha_mcp",
-            ProviderCapability.CURRENT_ENTITY_STATE,
-            ProviderCompleteness.UNAVAILABLE,
-            failure=ProviderError(ProviderFailureCategory.UNAVAILABLE, "Unavailable"),
-        )
+    def test_exact_entity_read_selects_direct_without_fallback(self):
         direct = result("direct_ha_api", ProviderCapability.CURRENT_ENTITY_STATE)
-        router = EvidenceRouter([FakeProvider("standard_ha_mcp", unavailable), FakeProvider("direct_ha_api", direct)])
+        router = EvidenceRouter([FakeProvider("direct_ha_api", direct)])
         response = asyncio.run(router.fetch(EvidenceRequest(
             ProviderCapability.CURRENT_ENTITY_STATE,
-            allow_direct_fallback=True,
         )))
-        self.assertTrue(response.fallback_occurred)
+        self.assertEqual(response.provider_id, "direct_ha_api")
+        self.assertFalse(response.fallback_occurred)
         metrics = METRICS.snapshot()["provider_routing"]
-        self.assertEqual(metrics["fallback_attempts"], 1)
-        self.assertEqual(metrics["fallback_successes"], 1)
+        self.assertEqual(metrics["fallback_attempts"], 0)
+        self.assertEqual(metrics["fallback_successes"], 0)
 
     def test_provider_evidence_is_bounded_and_truncation_counted(self):
         refs = [EvidenceReference(f"ref:{index}", "standard_ha_mcp", "state", "Finding") for index in range(5)]
         complete = result(
             "standard_ha_mcp",
-            ProviderCapability.CURRENT_ENTITY_STATE,
+            ProviderCapability.BROAD_ENTITY_SEARCH,
             evidence=refs,
         )
         router = EvidenceRouter([FakeProvider("standard_ha_mcp", complete)])
         response = asyncio.run(router.fetch(EvidenceRequest(
-            ProviderCapability.CURRENT_ENTITY_STATE,
+            ProviderCapability.BROAD_ENTITY_SEARCH,
             max_evidence=2,
         )))
         self.assertEqual(response.completeness, ProviderCompleteness.PARTIAL)

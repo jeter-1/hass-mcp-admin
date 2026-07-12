@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 import base64
 import hashlib
 import json
+import time
 from typing import Any
 
 from ..errors import EngineeringServerError, ErrorCode, GovernanceError, InvalidRequestError
@@ -39,6 +40,7 @@ class EntityDependencyAnalysisService:
         cursor: str = "",
         refresh_index: bool = False,
     ) -> AnalysisOutput:
+        request_started = time.perf_counter()
         METRICS.record_dependency_analysis_request()
         target = entity_id.strip().lower()
         if not valid_entity_id(target):
@@ -62,7 +64,7 @@ class EntityDependencyAnalysisService:
             raise InvalidRequestError(details={"operation": "entity_dependency_analysis"})
 
         try:
-            snapshot, rebuilt = await self.index.get(refresh=refresh_index)
+            snapshot, rebuilt, lookup_duration_ms = await self.index.get(refresh=refresh_index)
         except EngineeringServerError:
             METRICS.record_dependency_analysis_failure()
             raise
@@ -78,7 +80,8 @@ class EntityDependencyAnalysisService:
 
         query_fingerprint = _query_fingerprint(target, detail_level, include_indirect, max_depth, requested)
         offset = _decode_cursor(cursor, snapshot.fingerprint, query_fingerprint) if cursor else 0
-        effective_limit = min(limit, 10) if detail_level == "summary" else limit
+        requested_limit = limit
+        effective_limit = min(requested_limit, 100)
         page = findings[offset : offset + effective_limit]
         next_offset = offset + len(page)
         has_more = next_offset < len(findings)
@@ -93,11 +96,14 @@ class EntityDependencyAnalysisService:
         metadata.setdefault("domain", target.split(".", 1)[0])
         metadata = _safe_target_metadata(metadata)
 
-        coverage = _coverage_for(snapshot.coverage, requested, findings)
+        coverage = _coverage_for(
+            snapshot.coverage,
+            requested,
+            findings,
+            cache_hit=not rebuilt,
+        )
         partial = any(item.completeness in {"partial", "unavailable", "unsupported"} for item in coverage if item.completeness != "not_requested")
         dynamic = [item for item in snapshot.dynamic_references if item.source_type in requested][:10]
-        if dynamic:
-            METRICS.record_dependency_unresolved(len(dynamic))
         warnings = [warning for item in coverage for warning in item.warnings]
         warnings.extend(item.warning + f" Source: {item.source_type}/{item.source_id}, path {item.config_path}." for item in dynamic)
         if has_more:
@@ -122,7 +128,11 @@ class EntityDependencyAnalysisService:
             "findings": [item.public(include_excerpt=detail_level == "evidence") for item in page],
             "source_coverage": [item.public() for item in coverage],
             "pagination": {
-                "limit": effective_limit,
+                "requested_limit": requested_limit,
+                "effective_limit": effective_limit,
+                "maximum_limit": 100,
+                "clamped": effective_limit != requested_limit,
+                "clamp_reason": "maximum_limit" if effective_limit != requested_limit else None,
                 "returned": len(page),
                 "total": len(findings),
                 "has_more": has_more,
@@ -134,6 +144,12 @@ class EntityDependencyAnalysisService:
                 "built_at": snapshot.built_at,
                 "cache_hit": not rebuilt,
                 "refreshed": bool(refresh_index and rebuilt),
+                "lookup_duration_ms": round(lookup_duration_ms, 3),
+                "original_build_duration_ms": round(snapshot.build_duration_ms, 3),
+                "current_request_duration_ms": round(
+                    (time.perf_counter() - request_started) * 1000,
+                    3,
+                ),
             },
         }
         METRICS.record_dependency_analysis_success()
@@ -185,10 +201,14 @@ def _indirect(all_findings, target: str, requested: list[str], max_depth: int) -
     return results[:500]
 
 
-def _coverage_for(items, requested, findings):
+def _coverage_for(items, requested, findings, *, cache_hit: bool):
     output = []
     for item in items:
         copy = replace(item)
+        copy.index_build_duration_ms = item.duration_ms
+        copy.cached_provenance = cache_hit
+        if cache_hit:
+            copy.duration_ms = 0.0
         if item.source_type in SOURCE_TYPES and item.source_type not in requested:
             copy.completeness = "not_requested"
             copy.evidence_count = 0

@@ -46,10 +46,7 @@ _ENGINEERING_NATIVE = {
     ProviderCapability.HANDOFF_GENERATION,
 }
 _STANDARD_PREFERRED = {
-    ProviderCapability.CURRENT_ENTITY_STATE,
     ProviderCapability.BROAD_ENTITY_SEARCH,
-    ProviderCapability.AREA_LOOKUP,
-    ProviderCapability.SERVICE_DISCOVERY,
     ProviderCapability.ORDINARY_SERVICE_EXECUTION,
 }
 _DIRECT_REQUIRED = {
@@ -71,6 +68,9 @@ _TRANSITIONAL_DIRECT = {
     ProviderCapability.ENTITY_REGISTRY_READ,
     ProviderCapability.BLUEPRINT_LIST,
     ProviderCapability.LEGACY_AUTOMATION_WRITE,
+    ProviderCapability.CURRENT_ENTITY_STATE,
+    ProviderCapability.AREA_LOOKUP,
+    ProviderCapability.SERVICE_DISCOVERY,
 }
 _PROHIBITED = {
     ProviderCapability.UNGOVERNED_PHYSICAL_ACTION,
@@ -83,13 +83,10 @@ class RoutingPolicy:
         if capability in _ENGINEERING_NATIVE:
             return RoutingDecision(capability, CapabilityRoute.ENGINEERING_NATIVE, "engineering")
         if capability in _STANDARD_PREFERRED:
-            fallback = ("direct_ha_api",) if capability == ProviderCapability.CURRENT_ENTITY_STATE else ()
             return RoutingDecision(
                 capability,
                 CapabilityRoute.STANDARD_MCP_PREFERRED,
                 "standard_ha_mcp",
-                fallback,
-                explicit_direct_fallback_allowed=bool(fallback),
             )
         if capability in _DIRECT_REQUIRED:
             return RoutingDecision(capability, CapabilityRoute.DIRECT_HA_REQUIRED, "direct_ha_api")
@@ -155,14 +152,60 @@ DIRECT_HA_TOOL_EXCEPTIONS = frozenset(
         "list_entity_registry",
         "upsert_automation",
         "list_blueprints",
+        "get_entity",
+        "list_areas",
+        "search_services",
+        "list_services",
     }
 )
+
+DIRECT_HA_READ_POLICIES = {
+    "get_entity": {
+        "policy_id": "exact_entity_state_read",
+        "capability": ProviderCapability.CURRENT_ENTITY_STATE.value,
+        "access": "read",
+        "justification": "Exact state and attributes require entity-ID REST lookup.",
+    },
+    "list_areas": {
+        "policy_id": "complete_area_registry_read",
+        "capability": ProviderCapability.AREA_LOOKUP.value,
+        "access": "read",
+        "justification": "Complete area enumeration requires the area-registry WebSocket API.",
+    },
+    "search_services": {
+        "policy_id": "bounded_service_catalog_search",
+        "capability": ProviderCapability.SERVICE_DISCOVERY.value,
+        "access": "read",
+        "justification": "Service discovery requires a bounded read of the service catalog.",
+    },
+    "list_services": {
+        "policy_id": "bounded_service_schema_read",
+        "capability": ProviderCapability.SERVICE_DISCOVERY.value,
+        "access": "read",
+        "justification": "Full service schemas require a bounded read of the service catalog.",
+    },
+}
 
 
 def direct_ha_exception_for_tool(tool_name: str) -> bool:
     """Return whether a canonical tool has an explicit direct-HA exception."""
+    if tool_name not in DIRECT_HA_TOOL_EXCEPTIONS:
+        return False
+    if policy := DIRECT_HA_READ_POLICIES.get(tool_name):
+        capability = TOOL_CAPABILITY_POLICY.get(tool_name)
+        return bool(
+            capability
+            and policy["access"] == "read"
+            and policy["capability"] == capability.value
+        )
+    return True
 
-    return tool_name in DIRECT_HA_TOOL_EXCEPTIONS
+
+def direct_ha_policy_for_tool(tool_name: str) -> dict[str, str] | None:
+    """Return safe public metadata for an explicit direct-read policy."""
+
+    policy = DIRECT_HA_READ_POLICIES.get(tool_name)
+    return dict(policy) if policy else None
 
 
 def routing_for_tool(tool_name: str, policy: RoutingPolicy | None = None) -> RoutingDecision:

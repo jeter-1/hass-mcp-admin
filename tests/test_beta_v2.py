@@ -9,7 +9,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from starlette.testclient import TestClient
 import yaml
@@ -40,12 +40,6 @@ from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.governance import GOVERNANCE  # noqa: E402
 from ha_mcp_engineering.dependency import DEPENDENCY_ANALYSIS  # noqa: E402
 from ha_mcp_engineering.dependency.service import AnalysisOutput  # noqa: E402
-from ha_mcp_engineering.providers import (  # noqa: E402
-    CANONICAL_DISPATCHER,
-    EngineeringEvidenceProvider,
-    ProviderCompleteness,
-    ProviderResult,
-)
 from ha_mcp_engineering.tools import compatibility  # noqa: E402
 from ha_mcp_engineering.tools.registry import get_registered_server  # noqa: E402
 
@@ -91,20 +85,6 @@ class FakeSession:
 
     def request(self, *args, **kwargs):
         return FakeResponse(self.status, self.body)
-
-
-class FakeStandardMcpProvider(EngineeringEvidenceProvider):
-    provider_id = "standard_ha_mcp"
-    capabilities = frozenset()
-    available = True
-
-    async def fetch(self, request):
-        return ProviderResult(
-            provider_id=self.provider_id,
-            capability=request.capability,
-            completeness=ProviderCompleteness.COMPLETE,
-            data={"entity_id": "sensor.facilitated", "state": "ready"},
-        )
 
 
 def beta_settings(audit_path: str) -> Settings:
@@ -156,8 +136,8 @@ class FakeDependencyService:
                 "assessment": {"rename_or_removal_status": "unknown_due_to_incomplete_coverage", "reason": "Coverage is incomplete."},
                 "findings": [],
                 "source_coverage": [{"source_type": "dashboard", "completeness": "unavailable"}],
-                "pagination": {"limit": 10, "returned": 0, "total": 0, "has_more": False, "next_cursor": None},
-                "index": {"fingerprint": "safe-fingerprint", "generation": 1, "cache_hit": True},
+                "pagination": {"requested_limit": 50, "effective_limit": 50, "maximum_limit": 100, "clamped": False, "clamp_reason": None, "returned": 0, "total": 0, "has_more": False, "next_cursor": None},
+                "index": {"fingerprint": "safe-fingerprint", "generation": 1, "cache_hit": True, "lookup_duration_ms": 0.1, "original_build_duration_ms": 1.0, "current_request_duration_ms": 0.2},
             },
             warnings=["Dashboard configuration is unavailable."],
             metadata={"detail_level": kwargs.get("detail_level", "summary"), "partial": True},
@@ -180,7 +160,7 @@ class AddonIsolationTests(unittest.TestCase):
     def test_beta_metadata_is_distinct_and_valid(self):
         self.assertEqual(self.beta["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(self.beta["slug"], "hass_mcp_engineering_beta")
-        self.assertEqual(self.beta["version"], "2.0.0-beta.8")
+        self.assertEqual(self.beta["version"], "2.0.0-beta.9")
         self.assertEqual(self.beta["ports"], {"8100/tcp": 8100})
         self.assertNotEqual(self.beta["slug"], self.production["slug"])
         self.assertNotEqual(set(self.beta["ports"]), set(self.production["ports"]))
@@ -234,6 +214,7 @@ class AddonIsolationTests(unittest.TestCase):
         self.assertTrue((BETA_DIR / "OBSERVABILITY.md").is_file())
         self.assertTrue((ROOT / "V2_BETA_ARCHITECTURE.md").is_file())
         self.assertTrue((ROOT / "docs" / "CHANGE_GOVERNANCE.md").is_file())
+        self.assertTrue((ROOT / "docs" / "SECURITY.md").is_file())
         self.assertTrue((ROOT / "docs" / "TOKEN_EFFICIENCY.md").is_file())
         self.assertTrue(
             (ROOT / "docs" / "architecture" / "ADR-002-ENGINEERING-MCP-FACILITATOR.md").is_file()
@@ -277,14 +258,22 @@ class ToolParityTests(unittest.TestCase):
         }
         self.assertEqual(beta_schemas, production_schemas)
 
-    def test_capability_catalog_and_classifications_match_v1_1_2(self):
-        self.assertEqual(
-            list(CAPABILITIES), production_server.build_capability_catalog()["tools"]
-        )
+    def test_capability_catalog_reflects_beta9_provider_truth(self):
+        production_catalog = {
+            item["tool"]: item for item in production_server.build_capability_catalog()["tools"]
+        }
+        beta_catalog = {item["tool"]: item for item in CAPABILITIES}
+        changed = {name for name in beta_catalog if beta_catalog[name] != production_catalog[name]}
+        self.assertEqual(changed, {"get_entity", "list_areas", "search_services", "list_services"})
+        for name in changed:
+            self.assertEqual(beta_catalog[name]["status"], "transitional")
+            self.assertEqual(beta_catalog[name]["routing"], "transitional_direct")
+            self.assertEqual(beta_catalog[name]["provider"], "direct_ha_api")
+            self.assertEqual(beta_catalog[name]["risk"], "read")
         counts = Counter(item["status"] for item in CAPABILITIES)
         self.assertEqual(
             counts,
-            {"native": 8, "transitional": 10, "delegated": 4, "deprecated": 3},
+            {"native": 8, "transitional": 14, "deprecated": 3},
         )
         self.assertEqual(len(PLANNED_CAPABILITIES), 4)
 
@@ -293,7 +282,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
-        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.8")
+        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.9")
         self.assertEqual(result["data"]["tool_count"], 33)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
@@ -319,7 +308,12 @@ class ToolParityTests(unittest.TestCase):
         )
         self.assertEqual(
             Counter(item["status"] for item in catalog["tools"]),
-            {"native": 8, "transitional": 10, "delegated": 4, "deprecated": 3},
+            {"native": 8, "transitional": 14, "deprecated": 3},
+        )
+        self.assertEqual(len(catalog["provider_matrix"]), 4)
+        self.assertEqual(
+            {item["selected_provider"] for item in catalog["provider_matrix"]},
+            {"direct_ha_api"},
         )
 
 
@@ -458,26 +452,23 @@ class BetaApplicationTests(unittest.TestCase):
         self.assertEqual(audit["resource_ids"]["entity_id"], "sensor.removed_sensor")
         self.assertNotIn("findings", json.dumps(audit))
 
-    def test_delegated_tool_routes_through_provider_via_real_mcp(self):
-        previous = CANONICAL_DISPATCHER.standard_provider
-        CANONICAL_DISPATCHER.standard_provider = FakeStandardMcpProvider()
-        request_id = "delegated-provider-integration-123"
-        try:
-            with patch.object(compatibility, "rest") as direct:
-                response, call = self.rpc(
-                    "tools/call",
-                    {"name": "get_entity", "arguments": {"entity_id": "sensor.facilitated"}},
-                    request_id=request_id,
-                )
-        finally:
-            CANONICAL_DISPATCHER.standard_provider = previous
+    def test_exact_entity_direct_provider_routes_via_real_mcp(self):
+        request_id = "direct-provider-integration-123"
+        entity = {"entity_id": "sensor.facilitated", "state": "ready", "attributes": {}}
+        with patch.object(compatibility, "rest", new=AsyncMock(return_value=entity)) as direct:
+            response, call = self.rpc(
+                "tools/call",
+                {"name": "get_entity", "arguments": {"entity_id": "sensor.facilitated"}},
+                request_id=request_id,
+            )
         payload = json.loads(call["result"]["content"][0]["text"])
         self.assertEqual(response.status_code, 200)
         self.assertTrue(payload["success"])
         self.assertEqual(payload["data"]["state"], "ready")
-        self.assertEqual(payload["metadata"]["routing"]["provider"], "standard_ha_mcp")
+        self.assertEqual(payload["metadata"]["routing"]["provider"], "direct_ha_api")
+        self.assertEqual(payload["metadata"]["routing"]["classification"], "transitional_direct")
         self.assertEqual(payload["request_id"], request_id)
-        direct.assert_not_called()
+        direct.assert_awaited_once_with("GET", "/states/sensor.facilitated")
 
     def test_governance_tools_call_end_to_end_through_real_mcp(self):
         initialized = self.initialize(f"/{SECRET}/mcp")
@@ -723,7 +714,7 @@ class BetaApplicationTests(unittest.TestCase):
         self.assertEqual(payload["error_code"], "home_assistant_api_error")
         self.assertEqual(audit["error_code"], "home_assistant_api_error")
 
-    def test_delegated_call_does_not_use_direct_ha_404_fallback(self):
+    def test_exact_entity_404_is_correlated_and_audited(self):
         request_id = "entity-404-request-123"
         stream = io.StringIO()
         handler = logging.StreamHandler(stream)
@@ -739,7 +730,7 @@ class BetaApplicationTests(unittest.TestCase):
             with patch(
                 "ha_mcp_engineering.clients.rest.aiohttp.ClientSession",
                 return_value=FakeSession(404),
-            ) as direct_session:
+            ):
                 response, call = self.rpc(
                     "tools/call",
                     {
@@ -754,38 +745,35 @@ class BetaApplicationTests(unittest.TestCase):
             logger.handlers = old_handlers
             logger.setLevel(old_level)
             logger.propagate = old_propagate
-        direct_session.assert_not_called()
-
         tool_payload = json.loads(call["result"]["content"][0]["text"])
         audit = self.audit_record(request_id)
         self.assertEqual(response.headers["x-request-id"], request_id)
         self.assertFalse(tool_payload["success"])
-        self.assertEqual(tool_payload["error_code"], "provider_unavailable")
+        self.assertEqual(tool_payload["error_code"], "entity_not_found")
         self.assertEqual(tool_payload["request_id"], request_id)
         self.assertEqual(audit["result_status"], "failure")
-        self.assertEqual(audit["error_code"], "provider_unavailable")
+        self.assertEqual(audit["error_code"], "entity_not_found")
         self.assertEqual(audit["request_id"], request_id)
         self.assertIn(request_id, stream.getvalue())
         self.assertNotIn(SECRET, stream.getvalue())
 
-    def test_delegated_call_does_not_use_direct_ha_500_fallback(self):
+    def test_exact_entity_500_is_audited_as_upstream_failure(self):
         request_id = "entity-500-request-123"
         with patch(
             "ha_mcp_engineering.clients.rest.aiohttp.ClientSession",
             return_value=FakeSession(500),
-        ) as direct_session:
+        ):
             _, call = self.rpc(
                 "tools/call",
                 {"name": "get_entity", "arguments": {"entity_id": "sensor.fake"}},
                 request_id=request_id,
             )
-        direct_session.assert_not_called()
         tool_payload = json.loads(call["result"]["content"][0]["text"])
         audit = self.audit_record(request_id)
         self.assertFalse(tool_payload["success"])
-        self.assertEqual(tool_payload["error_code"], "provider_unavailable")
+        self.assertEqual(tool_payload["error_code"], "home_assistant_api_error")
         self.assertEqual(audit["result_status"], "failure")
-        self.assertEqual(audit["error_code"], "provider_unavailable")
+        self.assertEqual(audit["error_code"], "home_assistant_api_error")
 
     def test_unauthenticated_root_paths_are_rejected(self):
         for path in ("/mcp", "/mcp/"):

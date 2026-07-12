@@ -11,7 +11,7 @@
 > The facilitator decision and bounded-response contract are documented in
 > [`docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md`](docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md)
 > and [`docs/TOKEN_EFFICIENCY.md`](docs/TOKEN_EFFICIENCY.md).
-> Beta 8 dependency coverage and connector-cache guidance are documented in
+> Beta 9 dependency coverage and connector-cache guidance are documented in
 > [`docs/ENTITY_DEPENDENCY_ANALYSIS.md`](docs/ENTITY_DEPENDENCY_ANALYSIS.md).
 
 A focused Model Context Protocol server for Home Assistant engineering, diagnostics,

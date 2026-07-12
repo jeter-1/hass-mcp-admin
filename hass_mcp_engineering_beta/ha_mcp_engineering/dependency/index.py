@@ -19,16 +19,19 @@ class DependencyIndex:
         self.generation = 0
         self.invalidated = False
 
-    async def get(self, *, refresh: bool = False) -> tuple[DependencyIndexSnapshot, bool]:
+    async def get(self, *, refresh: bool = False) -> tuple[DependencyIndexSnapshot, bool, float]:
+        lookup_started = time.perf_counter()
         now = time.monotonic()
         valid = self.snapshot and not self.invalidated and now - self.snapshot.built_at_monotonic < self.ttl_seconds
         if valid and not refresh:
             METRICS.record_dependency_cache_hit()
-            return self.snapshot, False
+            return self.snapshot, False, (time.perf_counter() - lookup_started) * 1000
         METRICS.record_dependency_cache_miss()
-        return await self._build(), True
+        snapshot = await self._build()
+        return snapshot, True, (time.perf_counter() - lookup_started) * 1000
 
     async def _build(self) -> DependencyIndexSnapshot:
+        build_started = time.perf_counter()
         METRICS.record_dependency_index_build()
         try:
             scan = await self.provider.scan()
@@ -40,6 +43,7 @@ class DependencyIndex:
         if len(scan.findings) > self.max_edges:
             METRICS.record_dependency_truncation()
         fingerprint = snapshot_fingerprint(findings, scan.coverage, self.generation)
+        build_duration_ms = (time.perf_counter() - build_started) * 1000
         self.snapshot = DependencyIndexSnapshot(
             fingerprint=fingerprint,
             generation=self.generation,
@@ -49,10 +53,14 @@ class DependencyIndex:
             dynamic_references=tuple(scan.dynamic_references[:1000]),
             target_metadata=scan.target_metadata,
             coverage=tuple(scan.coverage),
+            build_duration_ms=build_duration_ms,
         )
         self.invalidated = False
         METRICS.set_dependency_index_state(
-            source_count=len(scan.coverage), edge_count=len(findings), built_at=self.snapshot.built_at
+            source_count=len(scan.coverage),
+            edge_count=len(findings),
+            unresolved_count=len(scan.dynamic_references),
+            built_at=self.snapshot.built_at,
         )
         return self.snapshot
 
@@ -71,4 +79,5 @@ class DependencyIndex:
             "age_seconds": age,
             "valid": bool(self.snapshot and not self.invalidated and age is not None and age < self.ttl_seconds),
             "invalidated": self.invalidated,
+            "build_duration_ms": round(self.snapshot.build_duration_ms, 3) if self.snapshot else None,
         }

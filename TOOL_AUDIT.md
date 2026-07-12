@@ -15,9 +15,9 @@ central routing policy maps all 33 beta tools to these execution/evidence routes
 | Route | Existing tools/capabilities |
 | --- | --- |
 | `engineering_native` | server/capability diagnostics, audit, plan creation/risk, plan reads/list/approval |
-| `standard_mcp_preferred` | entity state/search, areas, service discovery, ordinary execution/reload |
+| `standard_mcp_preferred` | broad entity search and ordinary execution/reload pending exact upstream coverage |
 | `direct_ha_required` | automation config, traces, blueprint source, config check, governed apply/verification/rollback |
-| `transitional_direct` | template/history/logbook/error log, list automations/devices/entity registry/blueprints, legacy upsert |
+| `transitional_direct` | exact entity/area/service-catalog reads, template/history/logbook/error log, list automations/devices/entity registry/blueprints, legacy upsert |
 | `prohibited` | ungoverned destructive automation deletion in the target architecture and secret-bearing diagnostics |
 
 Beta 8 preserves every public schema but enforces the routing overlay at runtime.
@@ -25,6 +25,13 @@ Delegated calls return a structured provider-unavailable result while Standard M
 unavailable. `delete_automation` fails closed as prohibited; `call_service` and
 `reload_domain` cannot silently execute through direct HA. Transitional calls use only
 the explicit direct-HA allowlist and record their provider.
+
+Beta 9 corrects the remaining capability-truth mismatch. `get_entity`, `list_areas`,
+`search_services`, and `list_services` are lifecycle `transitional`, route
+`transitional_direct`, and identify `direct_ha_api`. Standard HA MCP's Assist surface
+does not provide their exact semantics; `GetLiveContext` is not substituted. The four
+policies are read-only and do not authorize service execution, reload, deletion, or any
+physical action.
 
 Beta 7 moves `entity_dependency_analysis` from planned to additive `beta_native`,
 category `analysis`, risk `read`, routed `engineering_native`. Four planned analytical

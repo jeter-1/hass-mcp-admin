@@ -1,7 +1,7 @@
 # Beta deployment and validation
 
 The beta add-on is isolated from production. Production remains **HA MCP
-Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.8
+Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.9
 is **HA MCP Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100).
 The workflow in this document deploys or updates only the beta.
 
@@ -17,8 +17,8 @@ From a clean branch in Windows PowerShell, run:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.7 `
-  -ExpectedVersion 2.0.0-beta.8 `
+  -DeployedVersion 2.0.0-beta.8 `
+  -ExpectedVersion 2.0.0-beta.9 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -FullTests
 ```
@@ -39,8 +39,8 @@ without supplying authentication material:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.7 `
-  -ExpectedVersion 2.0.0-beta.8 `
+  -DeployedVersion 2.0.0-beta.8 `
+  -ExpectedVersion 2.0.0-beta.9 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -SkipTests -SkipDockerBuild `
   -HealthHost homeassistant.local `
@@ -74,11 +74,11 @@ authenticated path, credential, or secret in the argument.
 The unauthenticated health endpoint proves that a process is responding. It
 does not replace `server_info` for verifying the running server version.
 
-Beta 8 must return 33 serializable tools from the server's real `tools/list`, including
+Beta 9 must return 33 serializable tools from the server's real `tools/list`, including
 `entity_dependency_analysis`. If ChatGPT retains a 32-tool manifest while the server
 returns 33, the remaining mismatch is connector caching rather than server registration;
 recreate only the beta connector or append the non-secret cache marker
-`?manifest=beta8` to its authenticated connector URL. Never share that complete URL.
+`?manifest=beta9` to its authenticated connector URL. Never share that complete URL.
 
 ## Optional local add-on development
 
@@ -128,23 +128,47 @@ and that `get_server_health` identifies the beta server.
 
 ## Provider-routing troubleshooting
 
-Beta 8 intentionally reports `standard_ha_mcp_delegation: unavailable` in safe health
-diagnostics. This is the expected current state: the add-on has no configured or tested
-nested standard-MCP transport. It does not indicate a Home Assistant REST outage and
-must not be worked around by adding a secret-bearing MCP URL to options or source.
+Beta 9 intentionally reports `standard_ha_mcp_delegation: unavailable`. The real
+Home Assistant endpoint is `/api/mcp` (internally
+`http://supervisor/core/api/mcp` with Supervisor bearer authentication), but the Assist
+tool surface lacks exact entity-ID, complete area-registry, and service-catalog
+semantics. The beta does not configure or call that endpoint.
 
-Delegated tools such as `get_entity`, `list_areas`, `search_services`, and
-`list_services` must return a structured `provider_unavailable` response in this state.
-They must also increment `standard_ha_mcp` request/failure counters and the blocked
-fallback counter without changing direct-HA counters. Transitional tools such as
-`list_automations` must increment direct-HA request/success counters and return the
-facilitator envelope. If either behavior differs, verify `server_info` reports Beta 8
-before diagnosing provider connectivity.
+`get_entity`, `list_areas`, `search_services`, and `list_services` must use
+`direct_ha_api` through facilitator routing. Four successful calls must add four direct
+provider requests and successes, add no Standard MCP success, and show no fallback.
+Their responses must include lifecycle `transitional`, route `transitional_direct`, the
+specific direct-read policy, source coverage, and current request timing.
+
+For dependency analysis, a request with `limit=20` must report requested and effective
+limits of 20. A repeat cache-hit request must show near-current lookup/request timing;
+original build and source provenance durations remain separately labeled.
 
 When future analytical work uses providers, inspect only bounded provider identity,
 completeness, failure category, coverage, fallback, and timing fields. A partial result
 must identify missing sources. A failed ordinary service operation must not show a
 direct-HA fallback. Redact authenticated paths before sharing logs.
+
+## Beta 9 read-only acceptance test
+
+1. Call `server_info` and confirm `2.0.0-beta.9`.
+2. Call `list_capabilities`; confirm the four administrative reads are transitional,
+   `transitional_direct`, and `direct_ha_api`.
+3. Call `get_server_health(check_ha=false)` and save the provider counters.
+4. Call `get_entity(entity_id="input_boolean.away_mode")`.
+5. Call `list_areas`.
+6. Call `search_services(query="light.turn_on")`.
+7. Call `list_services(domain="light")`.
+8. Confirm each response has a facilitator envelope, source coverage, request timing,
+   no fallback, and its specific direct-read policy.
+9. Call health again. Direct-HA request and success counts must each increase by four;
+   Standard MCP successes must not increase.
+10. Run `entity_dependency_analysis` for a safe test entity with `limit=20` and confirm
+    requested/effective limit 20.
+11. Repeat the same analysis and confirm `cache_hit=true`, current lookup/request timing
+    is small, and original build/provenance timing is separately labeled.
+12. Inspect bounded logs and audit records for matching request IDs and verify no secret,
+    token, authenticated path, or authorization header is present.
 
 ## Rollback and removal
 
