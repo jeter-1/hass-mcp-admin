@@ -11,8 +11,9 @@
 > The facilitator decision and bounded-response contract are documented in
 > [`docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md`](docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md)
 > and [`docs/TOKEN_EFFICIENCY.md`](docs/TOKEN_EFFICIENCY.md).
-> Beta 11 System Log security stabilization and connector-cache guidance are documented in
-> [`docs/ENTITY_DEPENDENCY_ANALYSIS.md`](docs/ENTITY_DEPENDENCY_ANALYSIS.md).
+> Beta 11 System Log security and Beta 12 connector-cache guidance are documented in
+> [`docs/BETA_DEPLOYMENT.md`](docs/BETA_DEPLOYMENT.md). Beta 12 reliability analysis is
+> documented in [`docs/AUTOMATION_RELIABILITY_ANALYSIS.md`](docs/AUTOMATION_RELIABILITY_ANALYSIS.md).
 
 A focused Model Context Protocol server for Home Assistant engineering, diagnostics,
 and controlled administration, packaged as a Home Assistant OS add-on. It works with

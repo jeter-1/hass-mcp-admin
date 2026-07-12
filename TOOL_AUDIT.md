@@ -10,7 +10,7 @@ This document classifies every tool currently exposed by the custom HA MCP Engin
 
 Lifecycle classification and provider routing answer different questions. The existing
 `native`, `transitional`, `delegated`, and `deprecated` labels remain unchanged. The
-central routing policy maps all 33 beta tools to these execution/evidence routes:
+central routing policy maps all 34 beta tools to these execution/evidence routes:
 
 | Route | Existing tools/capabilities |
 | --- | --- |
@@ -34,8 +34,9 @@ policies are read-only and do not authorize service execution, reload, deletion,
 physical action.
 
 Beta 7 moves `entity_dependency_analysis` from planned to additive `beta_native`,
-category `analysis`, risk `read`, routed `engineering_native`. Four planned analytical
-capabilities remain; all prior 32 tool schemas are unchanged.
+category `analysis`, risk `read`, routed `engineering_native`. Beta 12 likewise moves
+`automation_reliability_analysis` into additive `beta_native`; three planned analytical
+capabilities remain and all prior 33 tool schemas are unchanged.
 
 Classifications:
 
@@ -198,9 +199,14 @@ Identifies each capability as native, delegated, transitional, or unavailable, i
 
 Finds direct and probable consumers across automations, scripts, scenes, helpers, groups, dashboards, and blueprint inputs.
 
-### `analyze_automation_reliability`
+### `automation_reliability_analysis`
 
-Checks missing/disabled entities, unavailable-state handling, concurrency mode, race conditions, delays, restart behavior, retries, notifications, manual overrides, and physical safety.
+Beta 12 implements a deliberately smaller deterministic first slice: disabled status,
+missing/unavailable/unknown/registry-disabled dependencies, repeated trace/action
+errors, repeated condition stops, explicit concurrency rejections, correlated sanitized
+System Log errors, dynamic-reference gaps, missing blueprint evidence, and absent trace
+evidence. It does not speculate about trigger events, delays, retries, thresholds,
+manual overrides, or physical safety without direct evidence.
 
 ### `analyze_change_impact`
 

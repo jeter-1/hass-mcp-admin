@@ -15,6 +15,7 @@ from .clients import HomeAssistantRestClient
 from .clients import HomeAssistantWebSocketClient
 from .governance import GOVERNANCE
 from .dependency import DEPENDENCY_ANALYSIS
+from .reliability import RELIABILITY_ANALYSIS
 from .routing import AuthenticatedMcpGateway
 from .tools import get_registered_server
 
@@ -72,7 +73,16 @@ def create_application(settings: Settings | None = None):
         secret=settings.access_secret,
         timeout=settings.ha_timeout_seconds,
     )
-    HEALTH.configure(settings, audit, gateway, GOVERNANCE, DEPENDENCY_ANALYSIS)
+    RELIABILITY_ANALYSIS.configure(
+        HomeAssistantRestClient(settings),
+        HomeAssistantWebSocketClient(settings),
+        secret=settings.access_secret,
+        ha_token=settings.ha_token,
+        timeout=settings.ha_timeout_seconds,
+    )
+    HEALTH.configure(
+        settings, audit, gateway, GOVERNANCE, DEPENDENCY_ANALYSIS, RELIABILITY_ANALYSIS
+    )
     return gateway
 
 

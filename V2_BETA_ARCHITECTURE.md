@@ -9,7 +9,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-beta.11` |
+| Version | `1.1.2` | `2.0.0-beta.12` |
 | Port | `8099` | `8100` |
 | Options and secret | Production add-on data | Beta add-on data |
 
@@ -70,6 +70,10 @@ trust-boundary for System Log results plus beta log/audit contexts. It returns s
 data and bounded category/count telemetry; tool code does not implement parallel
 redaction rules.
 
+Beta 12 adds `ha_mcp_engineering/reliability/` for provider-backed evidence
+collection, deterministic rules, bounded models, pagination, orchestration, and
+runtime composition. The tool handler remains transport-independent.
+
 ## Compatibility approach
 
 The beta's compatibility module preserves the current 25 function names,
@@ -81,7 +85,7 @@ capability metadata.
 
 The v1.1.2 catalog contains 8 native, 10 transitional, 4 delegated, and 3 deprecated
 tools. Beta 9 truthfully reclassifies the four administrative reads as transitional,
-producing 8 native, 14 transitional, and 3 deprecated tools. It advertises 4 remaining planned capabilities. The often
+producing 8 native, 14 transitional, and 3 deprecated tools. It advertises 3 remaining planned capabilities. The often
 quoted transitional count of 9 is inconsistent with the checked-in 25-tool
 catalog; v2 intentionally preserves the source catalog rather than
 reclassifying a tool during a scaffold change.
@@ -131,9 +135,9 @@ They are active for beta-native tools and every provider-routed canonical tool.
 
 ## Known limitations
 
-Beta 9 retains the engineering-native dependency-analysis tool and the callable
-manifest to 33 tools. Exact source coverage is documented in
-[`docs/ENTITY_DEPENDENCY_ANALYSIS.md`](docs/ENTITY_DEPENDENCY_ANALYSIS.md).
+Beta 12 retains dependency analysis and adds single-automation reliability analysis,
+bringing the callable manifest to 34 tools. Exact source coverage is documented in
+[`docs/AUTOMATION_RELIABILITY_ANALYSIS.md`](docs/AUTOMATION_RELIABILITY_ANALYSIS.md).
 
 - Provider-routed canonical tools now return the facilitator response envelope.
 - Handler bodies remain compatibility implementations behind the routing boundary.

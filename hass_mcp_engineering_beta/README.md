@@ -36,9 +36,13 @@ https://BETA_TUNNEL/REDACTED_BETA_SECRET/mcp/
 ```
 
 Direct requests to `/mcp` and `/mcp/` must return `404`. After initialization,
-call `server_info(check_ha=false)` and verify version `2.0.0-beta.11`, then call
+call `server_info(check_ha=false)` and verify version `2.0.0-beta.12`, then call
 `list_capabilities` and verify the preserved 25-tool canonical catalog plus the
-eight beta-native tools; MCP `tools/list` should expose 33 callable tools.
+nine beta-native tools; MCP `tools/list` should expose 34 callable tools.
+
+Beta 12 adds `automation_reliability_analysis`, a bounded read-only analyzer for one
+internal automation ID. Because the manifest changed, ChatGPT and Claude may need the
+beta connector refreshed or recreated after deployment.
 
 Use a separate tunnel ingress or hostname for beta. Route it to port `8100`;
 leave the production ingress on `8099`.
@@ -118,6 +122,10 @@ verification, rollback, limitations, and MCP client examples.
 See [`../docs/ENTITY_DEPENDENCY_ANALYSIS.md`](../docs/ENTITY_DEPENDENCY_ANALYSIS.md)
 for dependency source coverage, cache/cursor behavior, cautious assessment, limitations,
 and connector recreation or `?manifest=beta11` cache-busting guidance.
+
+See [`../docs/AUTOMATION_RELIABILITY_ANALYSIS.md`](../docs/AUTOMATION_RELIABILITY_ANALYSIS.md)
+for the Beta 12 evidence sources, provider policy, deterministic rules, bounds,
+partial-result contract, and limitations.
 
 See [`../docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md`](../docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md)
 and [`../docs/TOKEN_EFFICIENCY.md`](../docs/TOKEN_EFFICIENCY.md) for provider routing,

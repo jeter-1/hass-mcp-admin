@@ -40,6 +40,8 @@ from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.governance import GOVERNANCE  # noqa: E402
 from ha_mcp_engineering.dependency import DEPENDENCY_ANALYSIS  # noqa: E402
 from ha_mcp_engineering.dependency.service import AnalysisOutput  # noqa: E402
+from ha_mcp_engineering.reliability import RELIABILITY_ANALYSIS  # noqa: E402
+from ha_mcp_engineering.reliability.models import ReliabilityAnalysisOutput  # noqa: E402
 from ha_mcp_engineering.tools import compatibility  # noqa: E402
 from ha_mcp_engineering.tools.registry import get_registered_server  # noqa: E402
 
@@ -145,6 +147,37 @@ class FakeDependencyService:
         )
 
 
+class FakeReliabilityService:
+    async def analyze(self, **kwargs):
+        automation_id = kwargs["automation_id"]
+        return ReliabilityAnalysisOutput(
+            data={
+                "target": {
+                    "automation_id": automation_id,
+                    "entity_id": "automation.reliability_fixture",
+                    "friendly_name": "Reliability fixture",
+                    "enabled": True,
+                },
+                "analysis_timestamp": "2026-07-12T12:00:00+00:00",
+                "requested_lookback_hours": kwargs.get("lookback_hours", 168),
+                "overall_assessment": "partial_evidence",
+                "result_status": "partial",
+                "finding_counts_by_severity": {"info": 1, "low": 0, "medium": 0, "high": 0, "critical": 0},
+                "findings": [{"finding_id": "finding-safe", "rule_id": "no_recent_execution_evidence", "severity": "info"}],
+                "evidence_references": [{"reference_id": "ev-safe", "source_type": "trace_coverage", "summary": "No trace evidence."}],
+                "configuration_fingerprint": "safe-configuration-fingerprint",
+                "evidence_source_coverage": [{"source_type": "automation_traces", "provider": "direct_ha_api", "completeness": "unavailable"}],
+                "pagination": {"requested_limit": kwargs.get("limit", 20), "effective_limit": kwargs.get("limit", 20), "maximum_limit": 100, "returned": 1, "total": 1, "has_more": False, "next_cursor": None},
+            },
+            warnings=["Trace evidence is unavailable."],
+            metadata={
+                "routing": {"classification": "engineering_native", "provider": "engineering", "fallback_occurred": False},
+                "source_coverage": [{"source_type": "automation_traces", "provider": "direct_ha_api", "completeness": "unavailable"}],
+            },
+            partial=True,
+        )
+
+
 class AddonIsolationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -160,7 +193,7 @@ class AddonIsolationTests(unittest.TestCase):
     def test_beta_metadata_is_distinct_and_valid(self):
         self.assertEqual(self.beta["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(self.beta["slug"], "hass_mcp_engineering_beta")
-        self.assertEqual(self.beta["version"], "2.0.0-beta.11")
+        self.assertEqual(self.beta["version"], "2.0.0-beta.12")
         self.assertEqual(self.beta["ports"], {"8100/tcp": 8100})
         self.assertNotEqual(self.beta["slug"], self.production["slug"])
         self.assertNotEqual(set(self.beta["ports"]), set(self.production["ports"]))
@@ -234,7 +267,7 @@ class ToolParityTests(unittest.TestCase):
 
     def test_all_25_tools_are_registered(self):
         self.assertEqual(len(self.production_tools), 25)
-        self.assertEqual(len(self.beta_tools), 33)
+        self.assertEqual(len(self.beta_tools), 34)
         self.assertEqual(
             set(self.production_tools),
             set(self.beta_tools)
@@ -247,6 +280,7 @@ class ToolParityTests(unittest.TestCase):
                 "apply_change_plan",
                 "rollback_change",
                 "entity_dependency_analysis",
+                "automation_reliability_analysis",
             },
         )
 
@@ -276,15 +310,15 @@ class ToolParityTests(unittest.TestCase):
             counts,
             {"native": 8, "transitional": 14, "deprecated": 3},
         )
-        self.assertEqual(len(PLANNED_CAPABILITIES), 4)
+        self.assertEqual(len(PLANNED_CAPABILITIES), 3)
 
     def test_server_info_reports_beta_identity(self):
         result = json.loads(asyncio.run(compatibility.server_info(check_ha=False)))
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
-        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.11")
-        self.assertEqual(result["data"]["tool_count"], 33)
+        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.12")
+        self.assertEqual(result["data"]["tool_count"], 34)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
     def test_list_capabilities_reports_expected_catalog(self):
@@ -292,8 +326,8 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         catalog = result["data"]
         self.assertEqual(catalog["count"], 25)
-        self.assertEqual(catalog["registered_count"], 33)
-        self.assertEqual(len(catalog["planned"]), 4)
+        self.assertEqual(catalog["registered_count"], 34)
+        self.assertEqual(len(catalog["planned"]), 3)
         self.assertEqual(
             [item["tool"] for item in catalog["beta_native"]],
             [
@@ -305,6 +339,7 @@ class ToolParityTests(unittest.TestCase):
                 "apply_change_plan",
                 "rollback_change",
                 "entity_dependency_analysis",
+                "automation_reliability_analysis",
             ],
         )
         self.assertEqual(
@@ -390,7 +425,7 @@ class BetaApplicationTests(unittest.TestCase):
         )
         names = [tool["name"] for tool in listing["result"]["tools"]]
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(names), 33)
+        self.assertEqual(len(names), 34)
         expected_beta_native = {
             "get_server_health",
             "create_change_plan",
@@ -400,6 +435,7 @@ class BetaApplicationTests(unittest.TestCase):
             "apply_change_plan",
             "rollback_change",
             "entity_dependency_analysis",
+            "automation_reliability_analysis",
         }
         self.assertTrue(expected_beta_native.issubset(names))
         dependency_schema = next(
@@ -452,6 +488,44 @@ class BetaApplicationTests(unittest.TestCase):
         self.assertEqual(audit["result_status"], "partial")
         self.assertEqual(audit["resource_ids"]["entity_id"], "sensor.removed_sensor")
         self.assertNotIn("findings", json.dumps(audit))
+
+    def test_automation_reliability_analysis_calls_through_real_mcp_without_auditing_evidence(self):
+        previous = RELIABILITY_ANALYSIS.service
+        RELIABILITY_ANALYSIS.service = FakeReliabilityService()
+        request_id = "reliability-analysis-request-123"
+        try:
+            response, call = self.rpc(
+                "tools/call",
+                {
+                    "name": "automation_reliability_analysis",
+                    "arguments": {
+                        "automation_id": "reliability_fixture",
+                        "lookback_hours": 24,
+                        "trace_limit": 5,
+                        "detail_level": "standard",
+                        "limit": 10,
+                    },
+                },
+                request_id=request_id,
+            )
+        finally:
+            RELIABILITY_ANALYSIS.service = previous
+        payload = json.loads(call["result"]["content"][0]["text"])
+        audit = self.audit_record(request_id)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["request_id"], request_id)
+        self.assertEqual(payload["metadata"]["routing"]["classification"], "engineering_native")
+        self.assertEqual(payload["metadata"]["routing"]["provider"], "engineering")
+        self.assertEqual(audit["tool_name"], "automation_reliability_analysis")
+        self.assertEqual(audit["operation_category"], "analysis")
+        self.assertEqual(audit["access"], "read")
+        self.assertEqual(audit["result_status"], "partial")
+        self.assertEqual(audit["resource_ids"], {"automation_id": "reliability_fixture"})
+        audit_text = json.dumps(audit)
+        self.assertNotIn("findings", audit_text)
+        self.assertNotIn("evidence", audit_text)
+        self.assertNotIn("configuration_fingerprint", audit_text)
 
     def test_exact_entity_direct_provider_routes_via_real_mcp(self):
         request_id = "direct-provider-integration-123"

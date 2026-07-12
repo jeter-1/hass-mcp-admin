@@ -126,6 +126,13 @@ serialized structures, tracebacks, and prompt-like text remain untrusted evidenc
 Sanitization failure replaces the affected field and never authorizes an unsanitized
 fallback. Redaction metadata reports categories and counts only.
 
+Beta 12 adds `automation_reliability_analysis` as an engineering-native orchestrator.
+The `single_automation_reliability_read` policy composes one automation's exact config,
+state, optional blueprint, bounded traces, deduplicated referenced-entity/registry
+evidence, and sanitized correlated System Log evidence. Source records identify
+`direct_ha_api`; the top-level orchestrator identifies `engineering`. There is no
+fallback or write permission, and Standard HA MCP coverage is not claimed.
+
 `server_info` and `get_server_health` may perform their documented bounded HA
 connectivity probes. Governance apply, exact read-back verification, and rollback use
 the direct configuration API under their existing approval and audit controls.
@@ -183,3 +190,8 @@ should use the bounded response primitives documented in
 Phase 3B subsequently adds `entity_dependency_analysis` as the first consumer of these
 contracts, increasing the beta manifest to 33 tools without changing the delegation or
 fallback decision.
+
+Beta 12 adds the second consumer and first reliability workflow, increasing the
+manifest to 34 tools. It proves the intended facilitator pattern: select bounded
+evidence, preserve partial-source truth, run deterministic rules, and return stable
+references instead of raw bulk configuration or traces.

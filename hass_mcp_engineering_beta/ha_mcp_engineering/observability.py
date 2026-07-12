@@ -43,6 +43,17 @@ class RuntimeMetrics:
     dependency_index_source_count: int = 0
     dependency_index_edge_count: int = 0
     dependency_last_successful_build: str | None = None
+    reliability_analysis_requests: int = 0
+    reliability_analysis_successes: int = 0
+    reliability_analysis_partial: int = 0
+    reliability_analysis_failures: int = 0
+    reliability_finding_counts: Counter = field(default_factory=Counter)
+    reliability_traces_examined: int = 0
+    reliability_referenced_entities_examined: int = 0
+    reliability_source_failures: int = 0
+    reliability_findings_truncated: int = 0
+    reliability_last_successful_analysis: str | None = None
+    reliability_last_failure_category: str | None = None
 
     def record_transport_completion(self) -> None:
         self.transport_request_count += 1
@@ -133,6 +144,37 @@ class RuntimeMetrics:
         self.dependency_current_unresolved_dynamic = max(0, int(unresolved_count))
         self.dependency_last_successful_build = built_at
 
+    def record_reliability_analysis_request(self) -> None:
+        self.reliability_analysis_requests += 1
+
+    def record_reliability_analysis_terminal(
+        self,
+        *,
+        partial: bool,
+        finding_counts,
+        traces_examined: int,
+        referenced_entities_examined: int,
+        source_failures: int,
+    ) -> None:
+        if partial:
+            self.reliability_analysis_partial += 1
+        else:
+            self.reliability_analysis_successes += 1
+        self.reliability_finding_counts.update(finding_counts)
+        self.reliability_traces_examined += max(0, int(traces_examined))
+        self.reliability_referenced_entities_examined += max(0, int(referenced_entities_examined))
+        self.reliability_source_failures += max(0, int(source_failures))
+        from datetime import datetime, timezone
+        self.reliability_last_successful_analysis = datetime.now(timezone.utc).isoformat()
+
+    def record_reliability_analysis_failure(self, category: str) -> None:
+        self.reliability_analysis_failures += 1
+        self.reliability_last_failure_category = str(category)[:64]
+
+    def record_reliability_truncation(self) -> None:
+        self.reliability_findings_truncated += 1
+        self.record_evidence_truncation()
+
     def reset(self) -> None:
         """Deterministically reset in-memory metrics without replacing the registry."""
         self.started = time.monotonic()
@@ -168,6 +210,17 @@ class RuntimeMetrics:
         self.dependency_index_source_count = 0
         self.dependency_index_edge_count = 0
         self.dependency_last_successful_build = None
+        self.reliability_analysis_requests = 0
+        self.reliability_analysis_successes = 0
+        self.reliability_analysis_partial = 0
+        self.reliability_analysis_failures = 0
+        self.reliability_finding_counts.clear()
+        self.reliability_traces_examined = 0
+        self.reliability_referenced_entities_examined = 0
+        self.reliability_source_failures = 0
+        self.reliability_findings_truncated = 0
+        self.reliability_last_successful_analysis = None
+        self.reliability_last_failure_category = None
 
     @staticmethod
     def _summary(values: deque[float]) -> dict[str, float | int | None]:
@@ -221,6 +274,22 @@ class RuntimeMetrics:
                     "findings_truncation_event_count": "cumulative_process_events",
                     "current_index_unresolved_dynamic_reference_count": "current_index_state",
                 },
+            },
+            "automation_reliability_analysis": {
+                "request_count": self.reliability_analysis_requests,
+                "successful_count": self.reliability_analysis_successes,
+                "partial_count": self.reliability_analysis_partial,
+                "failed_count": self.reliability_analysis_failures,
+                "finding_counts_by_severity": dict(self.reliability_finding_counts),
+                "traces_examined": self.reliability_traces_examined,
+                "referenced_entities_examined": self.reliability_referenced_entities_examined,
+                "source_failures": self.reliability_source_failures,
+                "findings_truncated": self.reliability_findings_truncated,
+                "cache_hits": 0,
+                "cache_misses": 0,
+                "last_successful_analysis_timestamp": self.reliability_last_successful_analysis,
+                "last_failure_category": self.reliability_last_failure_category,
+                "counter_semantics": "cumulative_process_events",
             },
         }
 

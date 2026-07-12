@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from ..dependency import DEPENDENCY_ANALYSIS
+from ..reliability import RELIABILITY_ANALYSIS
 from ..errors import map_exception
 from ..models import FailureResponse, SuccessResponse
 from ..observability import METRICS
@@ -78,4 +79,64 @@ async def entity_dependency_analysis(
         ).to_json(SETTINGS.response_size_limit)
 
 
-ANALYSIS_TOOLS = (entity_dependency_analysis,)
+async def automation_reliability_analysis(
+    automation_id: str,
+    lookback_hours: Annotated[int, Field(ge=1, le=720)] = 168,
+    trace_limit: Annotated[int, Field(ge=1, le=50)] = 10,
+    detail_level: Literal["summary", "standard", "evidence"] = "standard",
+    limit: Annotated[int, Field(ge=1, le=100)] = 20,
+    cursor: str = "",
+) -> str:
+    """Analyze one automation using bounded configuration and runtime evidence.
+
+    automation_id is the internal Home Assistant automation ID returned by
+    list_automations, not an automation entity_id. The operation is read-only:
+    it cannot trigger an automation, call a service, or modify configuration.
+    Results are evidence-backed, paginated, and explicit about partial coverage.
+    """
+    started = time.perf_counter()
+    telemetry = current_telemetry()
+    try:
+        output = await RELIABILITY_ANALYSIS.require().analyze(
+            automation_id=automation_id,
+            lookback_hours=lookback_hours,
+            trace_limit=trace_limit,
+            detail_level=detail_level,
+            limit=limit,
+            cursor=cursor,
+        )
+        if telemetry:
+            telemetry.result_status = "partial" if output.partial else "success"
+            telemetry.completeness = "partial" if output.partial else "complete"
+        return SuccessResponse(
+            operation="automation_reliability_analysis",
+            summary=(
+                "Completed a bounded single-automation reliability analysis with partial evidence."
+                if output.partial
+                else "Completed a bounded single-automation reliability analysis."
+            ),
+            data=output.data,
+            warnings=output.warnings,
+            metadata=output.metadata,
+            timing=timing_since(started),
+            request_id=current_request_id(),
+        ).to_json(SETTINGS.response_size_limit)
+    except Exception as exc:
+        code, message, retryable, details = map_exception(exc)
+        if telemetry:
+            telemetry.error_code = code.value
+            telemetry.result_status = "failure"
+            telemetry.completeness = "failed"
+        return FailureResponse(
+            operation="automation_reliability_analysis",
+            error=type(exc).__name__,
+            error_code=code.value,
+            message=message,
+            details=details,
+            retryable=retryable,
+            timing=timing_since(started),
+            request_id=current_request_id(),
+        ).to_json(SETTINGS.response_size_limit)
+
+
+ANALYSIS_TOOLS = (entity_dependency_analysis, automation_reliability_analysis)

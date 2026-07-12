@@ -44,7 +44,6 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
 )
 
 PLANNED_CAPABILITIES: tuple[dict[str, str], ...] = (
-    {"capability": "automation_reliability_analysis", "status": "planned", "risk": "analytical"},
     {"capability": "change_impact_analysis", "status": "planned", "risk": "analytical"},
     {"capability": "incident_correlation", "status": "planned", "risk": "analytical"},
     {"capability": "handoff_generation", "status": "planned", "risk": "analytical"},
@@ -65,6 +64,15 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
     {"tool": "apply_change_plan", "category": "governance", "status": "beta_native", "risk": "behavioral_write", "additive": True},
     {"tool": "rollback_change", "category": "governance", "status": "beta_native", "risk": "behavioral_write", "additive": True},
     {"tool": "entity_dependency_analysis", "category": "analysis", "status": "beta_native", "risk": "read", "additive": True},
+    {
+        "tool": "automation_reliability_analysis",
+        "category": "analysis",
+        "status": "beta_native",
+        "risk": "read",
+        "additive": True,
+        "routing": "engineering_native",
+        "provider": "engineering",
+    },
 )
 
 CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (

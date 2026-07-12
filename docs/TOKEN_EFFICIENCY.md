@@ -1,7 +1,8 @@
 # Token-efficient analytical response contract
 
 This contract applies to v2 analytical and bounded administrative responses. It does
-not alter the existing 33 MCP input schemas.
+not alter the existing 33 MCP input schemas; Beta 12 adds one bounded schema for
+34 total tools.
 
 Administrative service discovery follows the same bounded contract. `search_services`
 returns at most 100 slim matches, and `list_services` returns at most 50 full service
@@ -50,3 +51,10 @@ and mark the overall result partial rather than silently omitting the failure.
 `entity_dependency_analysis` is the first implementation: summary mode caps findings
 at 10, standard/evidence pages cap at 100, opaque cursors avoid repeat source dumps,
 and the index retains bounded edges rather than raw configuration.
+
+`automation_reliability_analysis` applies the same contract to one automation. Summary
+mode omits evidence detail, standard mode returns compact cited evidence, and evidence
+mode expands only stable bounded references. Full configuration, blueprint source,
+traces, entity attributes, and System Log entries are never dumped. Findings use
+fingerprint-bound pagination with explicit requested/effective/maximum limits and stale
+cursor rejection.

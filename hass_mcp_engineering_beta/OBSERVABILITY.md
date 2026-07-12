@@ -244,7 +244,7 @@ envelope containing safe operational data:
 It never returns the secret, tokens, headers, cookies, complete MCP endpoint
 paths, private request payloads, or raw audit/log records.
 
-The delegation diagnostic reflects current reality: Beta 11 verifies the Home Assistant
+The delegation diagnostic reflects current reality: Beta 12 verifies the Home Assistant
 MCP endpoint but does not configure or call it because Assist lacks exact mappings for
 the approved administrative reads. It must not be interpreted as a Home Assistant API
 connectivity failure. Provider failures and partial coverage remain visible; the four
@@ -288,6 +288,23 @@ pass through the same pipeline. The response reports `redaction_applied`,
 safe sanitation warnings. Log text remains evidence rather than instructions; it
 cannot authorize or trigger another operation.
 
+## Automation reliability analysis telemetry
+
+Beta 12 adds a bounded `automation_reliability_analysis` health group:
+
+- request, success, partial, and failure counts;
+- cumulative finding counts by severity;
+- traces and referenced entities examined;
+- source failures and findings-truncated events;
+- last successful analysis timestamp and last bounded failure category; and
+- explicit zero cache hits/misses because Beta 12 does not cache reliability results.
+
+One terminal analysis updates success, partial, or failure exactly once. Provider
+routing separately records the engineering orchestration request and every attempted
+direct evidence source. Health never contains an automation ID, configuration,
+friendly name, trace, System Log message, finding, evidence reference, or authenticated
+URL. Source-specific duration is returned only in the correlated tool response.
+
 ## Startup configuration validation
 
 Startup validates:
@@ -307,8 +324,9 @@ configuration values.
 
 ## Compatibility and remaining migrations
 
-The canonical 25-tool classification remains Native 8, Transitional 10,
-Delegated 4, Deprecated 3, with 4 remaining planned capabilities. `get_server_health` is
+The Beta 12 canonical 25-tool classification is Native 8, Transitional 14, and
+Deprecated 3 after Phase 3C capability-truth alignment, with 3 remaining planned
+capabilities. `get_server_health` is
 advertised separately as additive `beta_native` metadata so these counts do not
 change.
 

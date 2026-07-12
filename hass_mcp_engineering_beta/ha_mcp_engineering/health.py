@@ -18,14 +18,16 @@ class HealthRegistry:
     configuration_valid: bool = False
     governance: Any = None
     dependency: Any = None
+    reliability: Any = None
 
-    def configure(self, settings, audit, gateway, governance=None, dependency=None) -> None:
+    def configure(self, settings, audit, gateway, governance=None, dependency=None, reliability=None) -> None:
         self.settings = settings
         self.audit = audit
         self.gateway = gateway
         self.configuration_valid = True
         self.governance = governance
         self.dependency = dependency
+        self.reliability = reliability
 
     def snapshot(self, ha_connection: dict[str, Any]) -> dict[str, Any]:
         metrics = METRICS.snapshot()
@@ -68,6 +70,10 @@ class HealthRegistry:
             "dependency_analysis": {
                 **metrics["dependency_analysis"],
                 "index": self.dependency.health() if self.dependency else {"configured": False},
+            },
+            "automation_reliability_analysis": {
+                **metrics["automation_reliability_analysis"],
+                "runtime": self.reliability.health() if self.reliability else {"configured": False},
             },
             "rate_limiter": self.gateway.rate_limiter_state() if self.gateway else {"configured": False},
             "redaction": {"enabled": bool(self.settings and self.settings.redaction_enabled)},

@@ -64,11 +64,17 @@ The engineering server may retain direct Home Assistant read access where it mat
 
 ## Current Implementation
 
-The v2 beta currently exposes 33 tools and implements governance, verification,
+The v2 beta currently exposes 34 tools and implements governance, verification,
 rollback, persistence, audit, and request correlation. It has direct REST/WebSocket
 clients but no configured nested standard-MCP client. Delegation labels describe the
 target provider; current compatibility reads remain direct and transitional. The
 standard-MCP gateway reports unavailable rather than simulating success.
+
+Beta 12 adds the first single-target reliability analyzer. Its MCP handler depends on
+an engineering facilitator service rather than transport clients. The service composes
+bounded direct-read evidence through a provider, runs deterministic rules, and emits
+stable evidence references with explicit partial coverage. It does not add a general
+Home Assistant action plane.
 
 The current release is a compact Python service built around FastMCP and an ASGI gateway.
 
