@@ -36,6 +36,7 @@ from ha_mcp_engineering.capabilities import (  # noqa: E402
     PLANNED_CAPABILITIES,
 )
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
+from ha_mcp_engineering.governance import GOVERNANCE  # noqa: E402
 from ha_mcp_engineering.tools import compatibility  # noqa: E402
 from ha_mcp_engineering.tools.registry import get_registered_server  # noqa: E402
 
@@ -91,7 +92,33 @@ def beta_settings(audit_path: str) -> Settings:
         rate_limit_per_minute=120,
         rate_limit_burst=25,
         destructive_services=frozenset(),
+        governance_path=str(Path(audit_path).parent / "governance"),
     )
+
+
+class FakeGovernanceGateway:
+    def __init__(self):
+        self.configs = {
+            "mcp_governance_test": {
+                "alias": "Governance fixture",
+                "trigger": [{"platform": "state", "entity_id": "binary_sensor.example"}],
+                "condition": [],
+                "action": [{"service": "notify.example", "data": {"message": "before"}}],
+                "mode": "single",
+            }
+        }
+
+    async def get(self, automation_id):
+        import copy
+        return copy.deepcopy(self.configs.get(automation_id))
+
+    async def write(self, automation_id, config):
+        import copy
+        self.configs[automation_id] = copy.deepcopy(config)
+        return {"result": "ok"}
+
+    async def validate(self):
+        return {"result": "valid", "errors": None}
 
 
 class AddonIsolationTests(unittest.TestCase):
@@ -109,7 +136,7 @@ class AddonIsolationTests(unittest.TestCase):
     def test_beta_metadata_is_distinct_and_valid(self):
         self.assertEqual(self.beta["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(self.beta["slug"], "hass_mcp_engineering_beta")
-        self.assertEqual(self.beta["version"], "2.0.0-beta.3")
+        self.assertEqual(self.beta["version"], "2.0.0-beta.4")
         self.assertEqual(self.beta["ports"], {"8100/tcp": 8100})
         self.assertNotEqual(self.beta["slug"], self.production["slug"])
         self.assertNotEqual(set(self.beta["ports"]), set(self.production["ports"]))
@@ -138,11 +165,18 @@ class AddonIsolationTests(unittest.TestCase):
             "audit.py",
             "capabilities.py",
             "version.py",
+            "governance/models.py",
+            "governance/normalize.py",
+            "governance/risk.py",
+            "governance/storage.py",
+            "governance/service.py",
+            "tools/governance.py",
         ):
             self.assertTrue((package / relative_path).is_file(), relative_path)
         self.assertTrue((BETA_DIR / "README.md").is_file())
         self.assertTrue((BETA_DIR / "OBSERVABILITY.md").is_file())
         self.assertTrue((ROOT / "V2_BETA_ARCHITECTURE.md").is_file())
+        self.assertTrue((ROOT / "docs" / "CHANGE_GOVERNANCE.md").is_file())
 
 
 class ToolParityTests(unittest.TestCase):
@@ -157,8 +191,20 @@ class ToolParityTests(unittest.TestCase):
 
     def test_all_25_tools_are_registered(self):
         self.assertEqual(len(self.production_tools), 25)
-        self.assertEqual(len(self.beta_tools), 26)
-        self.assertEqual(set(self.production_tools), set(self.beta_tools) - {"get_server_health"})
+        self.assertEqual(len(self.beta_tools), 32)
+        self.assertEqual(
+            set(self.production_tools),
+            set(self.beta_tools)
+            - {
+                "get_server_health",
+                "create_change_plan",
+                "get_change_plan",
+                "list_change_plans",
+                "approve_change_plan",
+                "apply_change_plan",
+                "rollback_change",
+            },
+        )
 
     def test_tool_names_and_argument_schemas_match_v1_1_2(self):
         production_schemas = {
@@ -178,15 +224,15 @@ class ToolParityTests(unittest.TestCase):
             counts,
             {"native": 8, "transitional": 10, "delegated": 4, "deprecated": 3},
         )
-        self.assertEqual(len(PLANNED_CAPABILITIES), 6)
+        self.assertEqual(len(PLANNED_CAPABILITIES), 5)
 
     def test_server_info_reports_beta_identity(self):
         result = json.loads(asyncio.run(compatibility.server_info(check_ha=False)))
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
-        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.3")
-        self.assertEqual(result["data"]["tool_count"], 26)
+        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.4")
+        self.assertEqual(result["data"]["tool_count"], 32)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
     def test_list_capabilities_reports_expected_catalog(self):
@@ -194,9 +240,20 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         catalog = result["data"]
         self.assertEqual(catalog["count"], 25)
-        self.assertEqual(catalog["registered_count"], 26)
-        self.assertEqual(len(catalog["planned"]), 6)
-        self.assertEqual([item["tool"] for item in catalog["beta_native"]], ["get_server_health"])
+        self.assertEqual(catalog["registered_count"], 32)
+        self.assertEqual(len(catalog["planned"]), 5)
+        self.assertEqual(
+            [item["tool"] for item in catalog["beta_native"]],
+            [
+                "get_server_health",
+                "create_change_plan",
+                "get_change_plan",
+                "list_change_plans",
+                "approve_change_plan",
+                "apply_change_plan",
+                "rollback_change",
+            ],
+        )
         self.assertEqual(
             Counter(item["status"] for item in catalog["tools"]),
             {"native": 8, "transitional": 10, "delegated": 4, "deprecated": 3},
@@ -267,14 +324,25 @@ class BetaApplicationTests(unittest.TestCase):
                 self.assertNotIn("location", response.headers)
                 self.assertIn("protocolVersion", response.text)
 
-    def test_tools_list_exposes_and_invokes_beta_health_tool(self):
+    def test_tools_list_exposes_all_beta_native_tools(self):
+        initialized = self.initialize(f"/{SECRET}/mcp")
+        self.assertEqual(initialized.status_code, 200)
         response, listing = self.rpc(
             "tools/list", {}, request_id="tools-list-request-123"
         )
         names = [tool["name"] for tool in listing["result"]["tools"]]
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(names), 26)
-        self.assertIn("get_server_health", names)
+        self.assertEqual(len(names), 32)
+        expected_beta_native = {
+            "get_server_health",
+            "create_change_plan",
+            "get_change_plan",
+            "list_change_plans",
+            "approve_change_plan",
+            "apply_change_plan",
+            "rollback_change",
+        }
+        self.assertTrue(expected_beta_native.issubset(names))
 
         response, call = self.rpc(
             "tools/call",
@@ -287,6 +355,99 @@ class BetaApplicationTests(unittest.TestCase):
         self.assertTrue(tool_payload["success"])
         self.assertEqual(tool_payload["operation"], "get_server_health")
         self.assertEqual(tool_payload["request_id"], "health-call-request-123")
+
+    def test_governance_tools_call_end_to_end_through_real_mcp(self):
+        initialized = self.initialize(f"/{SECRET}/mcp")
+        self.assertEqual(initialized.status_code, 200)
+        service = GOVERNANCE.require()
+        previous_gateway = service.gateway
+        service.gateway = FakeGovernanceGateway()
+        try:
+            proposed = {
+                "alias": "Governance fixture",
+                "description": "MCP-governed update",
+                "trigger": [{"platform": "state", "entity_id": "binary_sensor.example"}],
+                "condition": [],
+                "action": [{"service": "notify.example", "data": {"message": "before"}}],
+                "mode": "single",
+            }
+            _, create_call = self.rpc(
+                "tools/call",
+                {
+                    "name": "create_change_plan",
+                    "arguments": {
+                        "title": "MCP governance integration",
+                        "description": "Safe fixture",
+                        "operation": "update_automation",
+                        "automation_id": "mcp_governance_test",
+                        "proposed_config": proposed,
+                    },
+                },
+                request_id="governance-create-123",
+            )
+            created = json.loads(create_call["result"]["content"][0]["text"])
+            self.assertTrue(created["success"])
+            plan_id = created["data"]["plan_id"]
+            plan_hash = created["data"]["plan_hash"]
+            create_audit = self.audit_record("governance-create-123")
+            self.assertEqual(
+                set(create_audit["parameters"]),
+                {"automation_id", "operation"},
+            )
+            self.assertNotIn("MCP-governed update", json.dumps(create_audit))
+            self.assertNotIn(SECRET, json.dumps(create_audit))
+
+            calls = [
+                ("get_change_plan", {"plan_id": plan_id}),
+                ("list_change_plans", {"status": "awaiting_approval", "limit": 10}),
+                ("approve_change_plan", {"plan_id": plan_id, "expected_plan_hash": plan_hash}),
+                ("apply_change_plan", {"plan_id": plan_id, "expected_plan_hash": plan_hash}),
+            ]
+            for index, (name, arguments) in enumerate(calls):
+                _, call = self.rpc(
+                    "tools/call",
+                    {"name": name, "arguments": arguments},
+                    request_id=f"governance-call-{index}-123",
+                )
+                payload = json.loads(call["result"]["content"][0]["text"])
+                self.assertTrue(payload["success"], (name, payload))
+
+            _, rollback_request_call = self.rpc(
+                "tools/call",
+                {"name": "rollback_change", "arguments": {"plan_id": plan_id}},
+                request_id="governance-rollback-request-123",
+            )
+            rollback_request = json.loads(rollback_request_call["result"]["content"][0]["text"])
+            self.assertTrue(rollback_request["success"])
+            rollback_hash = rollback_request["data"]["plan_hash"]
+
+            _, approval_call = self.rpc(
+                "tools/call",
+                {"name": "approve_change_plan", "arguments": {"plan_id": plan_id, "expected_plan_hash": rollback_hash}},
+                request_id="governance-rollback-approve-123",
+            )
+            self.assertTrue(json.loads(approval_call["result"]["content"][0]["text"])["success"])
+            _, rollback_call = self.rpc(
+                "tools/call",
+                {"name": "rollback_change", "arguments": {"plan_id": plan_id, "expected_plan_hash": rollback_hash}},
+                request_id="governance-rollback-apply-123",
+            )
+            self.assertTrue(json.loads(rollback_call["result"]["content"][0]["text"])["success"])
+        finally:
+            service.gateway = previous_gateway
+
+    def test_governance_input_schemas_are_intentional(self):
+        tools = {tool.name: tool.parameters for tool in get_registered_server()._tool_manager.list_tools()}
+        expected_properties = {
+            "create_change_plan": {"title", "description", "operation", "automation_id", "proposed_config", "expiration_minutes", "caller_context"},
+            "get_change_plan": {"plan_id"},
+            "list_change_plans": {"status", "limit"},
+            "approve_change_plan": {"plan_id", "expected_plan_hash", "approval_note"},
+            "apply_change_plan": {"plan_id", "expected_plan_hash"},
+            "rollback_change": {"plan_id", "expected_plan_hash"},
+        }
+        for name, properties in expected_properties.items():
+            self.assertEqual(set(tools[name]["properties"]), properties)
 
     def test_upstream_404_is_correlated_and_audited_as_failure(self):
         request_id = "entity-404-request-123"
