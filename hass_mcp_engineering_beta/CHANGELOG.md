@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.0.0-beta.2
 
 - Explicitly register `get_server_health` with the served FastMCP registry and
   verify its `tools/list`/`tools/call` exposure.
