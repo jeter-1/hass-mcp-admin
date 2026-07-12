@@ -11,8 +11,8 @@ from typing import Any, Callable
 import uuid
 
 from ..audit import AuditLogger
-from ..clients.rest import HomeAssistantRestClient
-from ..errors import AutomationNotFoundError, ErrorCode, GovernanceError
+from ..clients.rest import ExpectedHttpStatus, HomeAssistantRestClient
+from ..errors import ErrorCode, GovernanceError, HomeAssistantApiError
 from ..logging_config import get_logger, log_event
 from ..request_context import current_caller_id, current_request_id
 from .models import (
@@ -41,13 +41,23 @@ class AutomationGateway:
         self.client = client
 
     async def get(self, automation_id: str) -> dict[str, Any] | None:
-        try:
-            value = await self.client.request(
-                "GET", f"/config/automation/config/{automation_id}"
-            )
-            return value if isinstance(value, dict) else None
-        except AutomationNotFoundError:
+        value = await self.client.request(
+            "GET",
+            f"/config/automation/config/{automation_id}",
+            expected_statuses=frozenset({404}),
+        )
+        if isinstance(value, ExpectedHttpStatus) and value.status == 404:
             return None
+        if not isinstance(value, dict):
+            raise HomeAssistantApiError(
+                details={
+                    "operation": "automation_config_read",
+                    "resource_id": automation_id,
+                    "endpoint_category": "config/automation",
+                    "reason": "malformed_response",
+                }
+            )
+        return value
 
     async def write(self, automation_id: str, config: dict[str, Any]) -> Any:
         return await self.client.request(
@@ -241,12 +251,15 @@ class ChangeGovernanceService:
                 details={"validation_errors": ["The proposal contains prohibited sensitive data."]},
             )
         current = await self.gateway.get(automation_id) if valid else None
+        failure_code = ErrorCode.AUTOMATION_VALIDATION_FAILED
         if valid and change_operation == ChangeOperation.CREATE_AUTOMATION and current is not None:
             errors.append("automation_id already exists")
             valid = False
+            failure_code = ErrorCode.CONFIGURATION_CONFLICT
         if valid and change_operation == ChangeOperation.UPDATE_AUTOMATION and current is None:
             errors.append("automation_id does not exist")
             valid = False
+            failure_code = ErrorCode.AUTOMATION_NOT_FOUND
 
         normalized_proposed = normalize_automation(proposed_config) or {}
         normalized_current = normalize_automation(current)
@@ -295,12 +308,12 @@ class ChangeGovernanceService:
             plan,
             "change_plan_created" if valid else "change_plan_validation_failed",
             "success" if valid else "failure",
-            error_code=None if valid else ErrorCode.AUTOMATION_VALIDATION_FAILED.value,
+            error_code=None if valid else failure_code.value,
         )
         self._supersede_prior(plan)
         if not valid:
             raise GovernanceError(
-                ErrorCode.AUTOMATION_VALIDATION_FAILED,
+                failure_code,
                 details={"resource_id": plan.plan_id, "validation_errors": errors},
             )
         return self._public(plan)

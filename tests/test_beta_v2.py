@@ -31,6 +31,7 @@ production_spec.loader.exec_module(production_server)
 from ha_mcp_engineering.application import create_application  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.logging_config import JsonFormatter  # noqa: E402
+from ha_mcp_engineering.observability import METRICS  # noqa: E402
 from ha_mcp_engineering.capabilities import (  # noqa: E402
     CAPABILITIES,
     PLANNED_CAPABILITIES,
@@ -55,8 +56,9 @@ INITIALIZE_REQUEST = {
 
 
 class FakeResponse:
-    def __init__(self, status):
+    def __init__(self, status, body='{"message":"safe fake upstream response"}'):
         self.status = status
+        self.body = body
 
     async def __aenter__(self):
         return self
@@ -65,12 +67,13 @@ class FakeResponse:
         return False
 
     async def text(self):
-        return '{"message":"safe fake upstream response"}'
+        return self.body
 
 
 class FakeSession:
-    def __init__(self, status):
+    def __init__(self, status, body='{"message":"safe fake upstream response"}'):
         self.status = status
+        self.body = body
 
     async def __aenter__(self):
         return self
@@ -79,7 +82,7 @@ class FakeSession:
         return False
 
     def request(self, *args, **kwargs):
-        return FakeResponse(self.status)
+        return FakeResponse(self.status, self.body)
 
 
 def beta_settings(audit_path: str) -> Settings:
@@ -136,7 +139,7 @@ class AddonIsolationTests(unittest.TestCase):
     def test_beta_metadata_is_distinct_and_valid(self):
         self.assertEqual(self.beta["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(self.beta["slug"], "hass_mcp_engineering_beta")
-        self.assertEqual(self.beta["version"], "2.0.0-beta.4")
+        self.assertEqual(self.beta["version"], "2.0.0-beta.5")
         self.assertEqual(self.beta["ports"], {"8100/tcp": 8100})
         self.assertNotEqual(self.beta["slug"], self.production["slug"])
         self.assertNotEqual(set(self.beta["ports"]), set(self.production["ports"]))
@@ -231,7 +234,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
-        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.4")
+        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.5")
         self.assertEqual(result["data"]["tool_count"], 32)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
@@ -448,6 +451,157 @@ class BetaApplicationTests(unittest.TestCase):
         }
         for name, properties in expected_properties.items():
             self.assertEqual(set(tools[name]["properties"]), properties)
+
+    def test_unknown_plan_ids_map_to_not_found_across_governance_tools(self):
+        plan_id = "0" * 32
+        service = GOVERNANCE.require()
+        storage_before = service.repository.health()
+        errors_before = Counter(METRICS.snapshot()["recent_error_counts"])
+        cases = (
+            ("get_change_plan", {"plan_id": plan_id}),
+            ("approve_change_plan", {"plan_id": plan_id, "expected_plan_hash": "1" * 64}),
+            ("apply_change_plan", {"plan_id": plan_id}),
+            ("rollback_change", {"plan_id": plan_id}),
+        )
+        for index, (tool_name, arguments) in enumerate(cases):
+            request_id = f"missing-plan-{index}-123"
+            _, call = self.rpc(
+                "tools/call",
+                {"name": tool_name, "arguments": arguments},
+                request_id=request_id,
+            )
+            payload = json.loads(call["result"]["content"][0]["text"])
+            audit = self.audit_record(request_id)
+            self.assertFalse(payload["success"])
+            self.assertEqual(payload["error_code"], "change_plan_not_found")
+            self.assertFalse(payload["retryable"])
+            self.assertEqual(payload["request_id"], request_id)
+            self.assertEqual(audit["result_status"], "failure")
+            self.assertEqual(audit["error_code"], "change_plan_not_found")
+        storage_after = service.repository.health()
+        self.assertEqual(storage_after["write_failures"], storage_before["write_failures"])
+        self.assertEqual(storage_after["corruption_count"], storage_before["corruption_count"])
+        errors_after = Counter(METRICS.snapshot()["recent_error_counts"])
+        self.assertEqual(
+            errors_after["change_plan_storage_error"],
+            errors_before["change_plan_storage_error"],
+        )
+        self.assertEqual(
+            errors_after["change_plan_not_found"] - errors_before["change_plan_not_found"],
+            len(cases),
+        )
+        _, health_call = self.rpc(
+            "tools/call",
+            {"name": "get_server_health", "arguments": {"check_ha": False}},
+            request_id="missing-plan-health-123",
+        )
+        health = json.loads(health_call["result"]["content"][0]["text"])["data"]
+        self.assertEqual(health["governance"]["storage_status"], "healthy")
+        self.assertEqual(
+            health["governance"]["storage"]["write_failures"],
+            storage_before["write_failures"],
+        )
+
+    def _create_plan_through_mcp(self, automation_id, request_id, session):
+        proposed = {
+            "alias": "Beta 5 create probe",
+            "trigger": [{"platform": "state", "entity_id": "binary_sensor.example"}],
+            "condition": [],
+            "action": [{"service": "notify.example", "data": {"message": "safe fixture"}}],
+            "mode": "single",
+        }
+        with patch(
+            "ha_mcp_engineering.clients.rest.aiohttp.ClientSession",
+            return_value=session,
+        ):
+            return self.rpc(
+                "tools/call",
+                {
+                    "name": "create_change_plan",
+                    "arguments": {
+                        "title": "Beta 5 create probe",
+                        "description": "Safe regression fixture",
+                        "operation": "create_automation",
+                        "automation_id": automation_id,
+                        "proposed_config": proposed,
+                    },
+                },
+                request_id=request_id,
+            )
+
+    def test_absent_create_id_is_success_and_audit_is_success(self):
+        request_id = "create-id-absent-request-123"
+        errors_before = Counter(METRICS.snapshot()["recent_error_counts"])
+        stream = io.StringIO()
+        handler = logging.StreamHandler(stream)
+        handler.setFormatter(JsonFormatter())
+        loggers = [
+            logging.getLogger("ha_mcp_engineering.gateway"),
+            logging.getLogger("ha_mcp_engineering.governance"),
+        ]
+        previous = [(logger.handlers, logger.level, logger.propagate) for logger in loggers]
+        for logger in loggers:
+            logger.handlers = [handler]
+            logger.setLevel(logging.INFO)
+            logger.propagate = False
+        try:
+            _, call = self._create_plan_through_mcp(
+                "beta5_absent_create", request_id, FakeSession(404)
+            )
+        finally:
+            for logger, state in zip(loggers, previous):
+                logger.handlers, logger.level, logger.propagate = state
+        payload = json.loads(call["result"]["content"][0]["text"])
+        audit = self.audit_record(request_id)
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["request_id"], request_id)
+        self.assertEqual(audit["result_status"], "success")
+        self.assertIsNone(audit["error_code"])
+        plan = GOVERNANCE.require().repository.get(payload["data"]["plan_id"])
+        self.assertEqual(plan.status.value, "awaiting_approval")
+        self.assertEqual(plan.events[-1].event, "change_plan_created")
+        self.assertEqual(plan.events[-1].result_status, "success")
+        self.assertEqual(plan.events[-1].request_id, request_id)
+        self.assertIn(request_id, stream.getvalue())
+        errors_after = Counter(METRICS.snapshot()["recent_error_counts"])
+        self.assertEqual(
+            errors_after["automation_not_found"],
+            errors_before["automation_not_found"],
+        )
+
+    def test_existing_create_id_is_configuration_conflict(self):
+        request_id = "create-id-collision-request-123"
+        _, call = self._create_plan_through_mcp(
+            "beta5_existing_create", request_id, FakeSession(200, '{"alias":"Already exists"}')
+        )
+        payload = json.loads(call["result"]["content"][0]["text"])
+        audit = self.audit_record(request_id)
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error_code"], "configuration_conflict")
+        self.assertEqual(audit["error_code"], "configuration_conflict")
+        self.assertEqual(audit["result_status"], "failure")
+
+    def test_create_probe_upstream_500_is_real_api_failure(self):
+        request_id = "create-id-upstream-500-request-123"
+        _, call = self._create_plan_through_mcp(
+            "beta5_upstream_failure", request_id, FakeSession(500)
+        )
+        payload = json.loads(call["result"]["content"][0]["text"])
+        audit = self.audit_record(request_id)
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error_code"], "home_assistant_api_error")
+        self.assertEqual(audit["error_code"], "home_assistant_api_error")
+
+    def test_create_probe_malformed_success_response_is_failure(self):
+        request_id = "create-id-malformed-request-123"
+        _, call = self._create_plan_through_mcp(
+            "beta5_malformed_response", request_id, FakeSession(200, "not-json")
+        )
+        payload = json.loads(call["result"]["content"][0]["text"])
+        audit = self.audit_record(request_id)
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error_code"], "home_assistant_api_error")
+        self.assertEqual(audit["error_code"], "home_assistant_api_error")
 
     def test_upstream_404_is_correlated_and_audited_as_failure(self):
         request_id = "entity-404-request-123"
