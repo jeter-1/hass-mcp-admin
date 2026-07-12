@@ -14,6 +14,7 @@ Designed for ChatGPT, Claude, and other streamable-HTTP MCP clients.
 import json
 import logging
 import os
+import re
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -208,11 +209,14 @@ async def get_server_health(check_ha: bool = True) -> str:
 @mcp.tool()
 async def get_entity(entity_id: str) -> str:
     """Get full current state and all attributes for one entity."""
+    normalized_entity_id = entity_id.strip().lower()
+    if not re.fullmatch(r"[a-z0-9_]+\.[a-z0-9_]+", normalized_entity_id):
+        raise ValueError("entity_id must be a canonical Home Assistant entity ID")
     return await run_structured(
         "get_entity",
         "Returned the requested Home Assistant entity state.",
-        lambda: rest("GET", f"/states/{entity_id}"),
-        metadata={"resource_type": "entity", "resource_id": entity_id},
+        lambda: rest("GET", f"/states/{normalized_entity_id}"),
+        metadata={"resource_type": "entity", "resource_id": normalized_entity_id},
         response_limit=SETTINGS.response_size_limit,
     )
 
@@ -591,6 +595,8 @@ async def search_services(query: str, limit: int = 30) -> str:
     only) — use this for discovery, then list_services(domain) for full
     field schemas. Much cheaper on context than list_services."""
     services = await rest("GET", "/services")
+    requested_limit = int(limit)
+    effective_limit = max(1, min(requested_limit, 100))
     q = query.lower()
     out = []
     for dom in services:
@@ -608,9 +614,27 @@ async def search_services(query: str, limit: int = 30) -> str:
                     "fields": sorted((meta.get("fields") or {}).keys()),
                 }
             )
-            if len(out) >= limit:
-                return dump({"count": len(out), "results": out, "note": "limit reached"})
-    return dump({"count": len(out), "results": out})
+            if len(out) >= effective_limit:
+                return dump(
+                    {
+                        "count": len(out),
+                        "results": out,
+                        "requested_limit": requested_limit,
+                        "effective_limit": effective_limit,
+                        "maximum_limit": 100,
+                        "truncated": True,
+                    }
+                )
+    return dump(
+        {
+            "count": len(out),
+            "results": out,
+            "requested_limit": requested_limit,
+            "effective_limit": effective_limit,
+            "maximum_limit": 100,
+            "truncated": False,
+        }
+    )
 
 
 @mcp.tool()
@@ -621,7 +645,31 @@ async def list_services(domain: str = "") -> str:
     services = await rest("GET", "/services")
     if domain:
         services = [s for s in services if s.get("domain") == domain]
-    return dump(services)
+    maximum_services = 50
+    total_services = sum(len(item.get("services") or {}) for item in services)
+    returned_services = 0
+    bounded_domains = []
+    for item in services:
+        remaining = maximum_services - returned_services
+        if remaining <= 0:
+            break
+        domain_services = item.get("services") or {}
+        selected = dict(list(domain_services.items())[:remaining])
+        if selected:
+            bounded = dict(item)
+            bounded["services"] = selected
+            bounded_domains.append(bounded)
+            returned_services += len(selected)
+    return dump(
+        {
+            "domains": bounded_domains,
+            "domain_filter": domain or None,
+            "returned_service_count": returned_services,
+            "total_service_count": total_services,
+            "maximum_service_count": maximum_services,
+            "truncated": returned_services < total_services,
+        }
+    )
 
 
 

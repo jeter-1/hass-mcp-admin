@@ -69,7 +69,14 @@ def coverage(automation="complete", blueprint="complete", other="unavailable"):
     ]
     for source in ("script", "scene", "group", "template", "dashboard"):
         values.append(SourceCoverageItem(source, "none", f"{source}_configuration", other))
-    values.append(SourceCoverageItem("entity_metadata", "direct_ha_api", "current_entity_state", "complete", fallback_occurred=True))
+    values.append(SourceCoverageItem(
+        "entity_metadata",
+        "direct_ha_api",
+        "current_entity_state",
+        "complete",
+        fallback_occurred=False,
+        policy="transitional_direct exact administrative read",
+    ))
     return values
 
 
@@ -246,6 +253,55 @@ class IndexAndAnalysisTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(metrics["index_invalidations"], 1)
         self.assertNotIn(TARGET, json.dumps(metrics))
 
+    async def test_requested_summary_limit_is_honored_and_explicit(self):
+        many = [
+            finding(path=f"$.action[{index}].target.entity_id", source_id=f"auto-{index}")
+            for index in range(30)
+        ]
+        service, _ = self.service(scan(many))
+        output = await service.analyze(entity_id=TARGET, detail_level="summary", limit=20)
+        pagination = output.data["pagination"]
+        self.assertEqual(len(output.data["findings"]), 20)
+        self.assertEqual(pagination["requested_limit"], 20)
+        self.assertEqual(pagination["effective_limit"], 20)
+        self.assertEqual(pagination["maximum_limit"], 100)
+        self.assertFalse(pagination["clamped"])
+        self.assertIsNone(pagination["clamp_reason"])
+
+    async def test_cache_hit_separates_current_and_provenance_timing(self):
+        timed_coverage = coverage()
+        timed_coverage[0].duration_ms = 33_000.0
+        service, _ = self.service(scan([finding()], coverage_items=timed_coverage))
+        first = await service.analyze(entity_id=TARGET)
+        second = await service.analyze(entity_id=TARGET)
+        first_source = first.data["source_coverage"][0]
+        cached_source = second.data["source_coverage"][0]
+        self.assertFalse(first_source["cached_provenance"])
+        self.assertEqual(first_source["duration_ms"], 33_000.0)
+        self.assertTrue(cached_source["cached_provenance"])
+        self.assertEqual(cached_source["duration_ms"], 0.0)
+        self.assertEqual(cached_source["index_build_duration_ms"], 33_000.0)
+        self.assertGreaterEqual(first.data["index"]["original_build_duration_ms"], 0.0)
+        self.assertLess(second.data["index"]["current_request_duration_ms"], 33_000.0)
+        self.assertLess(second.data["index"]["lookup_duration_ms"], 33_000.0)
+
+    async def test_dependency_counter_semantics_are_stable_on_cache_hits(self):
+        dynamic = [DynamicReference("dyn-1", "automation", "a", "$.action", "Dynamic target")]
+        many = [
+            finding(path=f"$.action[{index}].target.entity_id", source_id=f"auto-{index}")
+            for index in range(25)
+        ]
+        service, _ = self.service(scan(many, dynamic=dynamic))
+        await service.analyze(entity_id=TARGET, limit=20)
+        await service.analyze(entity_id=TARGET, limit=20)
+        metrics = METRICS.snapshot()["dependency_analysis"]
+        self.assertEqual(metrics["current_index_unresolved_dynamic_reference_count"], 1)
+        self.assertEqual(metrics["findings_truncation_event_count"], 2)
+        self.assertEqual(
+            metrics["counter_semantics"]["current_index_unresolved_dynamic_reference_count"],
+            "current_index_state",
+        )
+
     async def test_indirect_group_chain_is_bounded_and_no_action_causality(self):
         membership = finding(source_type="group", source_id="g", source_entity_id="group.example", relation="group_member", path="$.entities")
         inbound = finding(target="group.example", source_id="uses-group", relation="condition", path="$.condition.entity_id")
@@ -262,8 +318,8 @@ class IndexAndAnalysisTests(unittest.IsolatedAsyncioTestCase):
         service, _ = self.service(scan(huge))
         summary = await service.analyze(entity_id=TARGET, detail_level="summary", limit=100)
         evidence = await service.analyze(entity_id=TARGET, detail_level="evidence", limit=100)
-        self.assertLessEqual(len(summary.data["findings"]), 10)
-        self.assertLess(len(json.dumps(summary.data)), 30_000)
+        self.assertEqual(len(summary.data["findings"]), 100)
+        self.assertLess(len(json.dumps(summary.data)), 60_000)
         self.assertLess(len(json.dumps(evidence.data)), 60_000)
         self.assertNotIn("proposed_config", json.dumps(summary.data))
 

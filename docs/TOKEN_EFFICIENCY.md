@@ -1,7 +1,12 @@
 # Token-efficient analytical response contract
 
-This contract applies to future v2 analytical tools. It does not alter the existing
-32 MCP tool schemas or compatibility responses.
+This contract applies to v2 analytical and bounded administrative responses. It does
+not alter the existing 33 MCP input schemas.
+
+Administrative service discovery follows the same bounded contract. `search_services`
+returns at most 100 slim matches, and `list_services` returns at most 50 full service
+schemas with explicit total, returned, maximum, and truncation metadata. Clients should
+filter `list_services` by domain and use `search_services` first.
 
 ## Defaults
 

@@ -57,6 +57,13 @@ class HealthRegistry:
                 **metrics["provider_routing"],
                 "standard_ha_mcp_delegation": "unavailable",
                 "direct_fallback_requires_explicit_policy": True,
+                "approved_direct_read_tools": [
+                    "get_entity",
+                    "list_areas",
+                    "search_services",
+                    "list_services",
+                ],
+                "standard_ha_mcp_exact_mapping_count": 0,
             },
             "dependency_analysis": {
                 **metrics["dependency_analysis"],

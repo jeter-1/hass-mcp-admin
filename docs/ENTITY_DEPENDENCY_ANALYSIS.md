@@ -27,12 +27,12 @@ entity is analyzed normally because stale references may remain.
 | Automations | complete or partial per scan | Direct HA automation configuration API with bounded concurrency |
 | Blueprint inputs | complete when automation input is readable | Direct automation configuration evidence |
 | Blueprint role resolution | complete or partial | Read-only blueprint mount, safe paths, YAML `!input` resolution |
-| Entity current state | transitional direct fallback | Standard MCP preferred but unavailable; explicit direct HA REST fallback |
+| Entity current state | transitional direct | Exact entity state requires direct HA REST; no fallback or Standard MCP claim |
 | Entity registry | transitional direct | HA WebSocket entity registry |
 | Scripts, scenes, groups, template source, dashboards | unavailable | No reliable complete configuration adapter yet |
 | Static YAML/packages/custom integrations | outside coverage | No arbitrary filesystem or `.storage` scan |
 
-Standard HA MCP nested delegation remains unavailable and is never fabricated.
+Standard HA MCP lacks an exact entity-ID contract for this evidence and is never fabricated.
 Direct evidence is labeled `direct_ha_api`.
 
 ## Matching and response semantics
@@ -49,7 +49,9 @@ not guessed; it produces a bounded unresolved warning and source path. Blueprint
 values remain visible even if source parsing fails. No full automation or blueprint
 source is returned.
 
-Summary mode returns at most 10 findings. Standard/evidence paginate up to 100.
+Every detail level honors `limit` from 1 through 100. Pagination reports
+`requested_limit`, `effective_limit`, `maximum_limit`, clamping state/reason, returned
+count, total, and cursor state; no detail level silently substitutes a lower cap.
 Evidence mode adds bounded redacted excerpts and static indirect paths.
 
 Assessment values are deliberately cautious:
@@ -73,6 +75,13 @@ fingerprint, cache metrics, and opaque generation-bound cursors. Invalid cursors
 legacy automation upsert/delete, and relevant reloads invalidate the index. Restart
 resets it deterministically.
 
+The index records original build duration separately from the current lookup and
+request duration. On a cache hit, source coverage reports `duration_ms=0` for current
+provider work, preserves `index_build_duration_ms` as provenance, and marks
+`cached_provenance=true`. Health reports truncation as a cumulative process event count
+and unresolved dynamic references as current index state, so repeated cache hits do not
+look like duplicate current findings.
+
 ## Known limitations and connector impact
 
 Dynamic entity construction cannot always be resolved. Device triggers may not map to
@@ -80,6 +89,6 @@ one entity. Runtime automation action-to-trigger causality is not inferred. Dash
 static YAML/package, script, scene, group, template-source, and custom-integration
 coverage remains unavailable.
 
-The server-side Beta 8 manifest contains 33 tools. Recreate the ChatGPT beta connector or
-use the cache marker `?manifest=beta8` if the tool is absent. Never place a real secret
+The server-side Beta 9 manifest contains 33 tools. Recreate the ChatGPT beta connector or
+use the cache marker `?manifest=beta9` if the tool is absent. Never place a real secret
 or private connector URL in source, logs, or screenshots.

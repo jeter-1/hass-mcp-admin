@@ -64,6 +64,8 @@ class SourceCoverageItem:
     duration_ms: float = 0.0
     fallback_occurred: bool = False
     policy: str | None = None
+    index_build_duration_ms: float | None = None
+    cached_provenance: bool = False
 
     def public(self) -> dict[str, Any]:
         return {
@@ -75,6 +77,12 @@ class SourceCoverageItem:
             "failed_item_count": self.failed_item_count,
             "warnings": self.warnings[:10],
             "duration_ms": round(max(0.0, self.duration_ms), 3),
+            "index_build_duration_ms": (
+                round(max(0.0, self.index_build_duration_ms), 3)
+                if self.index_build_duration_ms is not None
+                else None
+            ),
+            "cached_provenance": self.cached_provenance,
             "fallback_occurred": self.fallback_occurred,
             "policy": self.policy,
         }
@@ -98,6 +106,7 @@ class DependencyIndexSnapshot:
     dynamic_references: tuple[DynamicReference, ...]
     target_metadata: dict[str, dict[str, Any]]
     coverage: tuple[SourceCoverageItem, ...]
+    build_duration_ms: float = 0.0
 
 
 def evidence_id(*parts: Any) -> str:

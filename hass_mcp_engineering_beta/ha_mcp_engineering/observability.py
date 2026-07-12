@@ -39,7 +39,7 @@ class RuntimeMetrics:
     dependency_cache_misses: int = 0
     dependency_index_invalidations: int = 0
     dependency_findings_truncated: int = 0
-    dependency_unresolved_dynamic: int = 0
+    dependency_current_unresolved_dynamic: int = 0
     dependency_index_source_count: int = 0
     dependency_index_edge_count: int = 0
     dependency_last_successful_build: str | None = None
@@ -120,12 +120,17 @@ class RuntimeMetrics:
         self.dependency_findings_truncated += 1
         self.record_evidence_truncation()
 
-    def record_dependency_unresolved(self, count: int = 1) -> None:
-        self.dependency_unresolved_dynamic += max(0, int(count))
-
-    def set_dependency_index_state(self, *, source_count: int, edge_count: int, built_at: str) -> None:
+    def set_dependency_index_state(
+        self,
+        *,
+        source_count: int,
+        edge_count: int,
+        unresolved_count: int,
+        built_at: str,
+    ) -> None:
         self.dependency_index_source_count = max(0, int(source_count))
         self.dependency_index_edge_count = max(0, int(edge_count))
+        self.dependency_current_unresolved_dynamic = max(0, int(unresolved_count))
         self.dependency_last_successful_build = built_at
 
     def reset(self) -> None:
@@ -159,7 +164,7 @@ class RuntimeMetrics:
         self.dependency_cache_misses = 0
         self.dependency_index_invalidations = 0
         self.dependency_findings_truncated = 0
-        self.dependency_unresolved_dynamic = 0
+        self.dependency_current_unresolved_dynamic = 0
         self.dependency_index_source_count = 0
         self.dependency_index_edge_count = 0
         self.dependency_last_successful_build = None
@@ -210,8 +215,12 @@ class RuntimeMetrics:
                 "current_index_source_count": self.dependency_index_source_count,
                 "current_index_edge_count": self.dependency_index_edge_count,
                 "last_successful_index_build": self.dependency_last_successful_build,
-                "findings_truncated": self.dependency_findings_truncated,
-                "unresolved_dynamic_reference_count": self.dependency_unresolved_dynamic,
+                "findings_truncation_event_count": self.dependency_findings_truncated,
+                "current_index_unresolved_dynamic_reference_count": self.dependency_current_unresolved_dynamic,
+                "counter_semantics": {
+                    "findings_truncation_event_count": "cumulative_process_events",
+                    "current_index_unresolved_dynamic_reference_count": "current_index_state",
+                },
             },
         }
 

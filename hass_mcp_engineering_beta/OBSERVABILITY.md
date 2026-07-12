@@ -192,9 +192,10 @@ failures by safe provider identity; partial results; fallback attempts and succe
 prohibited fallback attempts; and evidence truncation. Counters contain no queries,
 evidence payloads, credentials, or provider URLs.
 
-Beta 7 adds dependency-analysis request/success/partial/failure counters, index builds
+Dependency analysis exposes request/success/partial/failure counters, index builds
 and failures, cache hits/misses, invalidations, bounded source/edge counts, index age,
-last successful build, truncation, and unresolved dynamic-reference counts. Entity IDs
+last successful build, cumulative truncation events, and the current index's unresolved
+dynamic-reference count. Entity IDs
 are never metric labels. Health exposes no findings or raw configuration.
 
 Long-lived GET/SSE stream and idle session lifetime is excluded from operational
@@ -225,15 +226,22 @@ envelope containing safe operational data:
 It never returns the secret, tokens, headers, cookies, complete MCP endpoint
 paths, private request payloads, or raw audit/log records.
 
-The delegation diagnostic reflects current reality: Beta 8 has no configured nested
-standard-MCP transport. It must not be interpreted as a connectivity probe for another
-MCP server. Provider failures and partial coverage remain visible; permitted direct
-read fallback requires explicit policy, while direct write fallback is prohibited.
+The delegation diagnostic reflects current reality: Beta 9 verifies the Home Assistant
+MCP endpoint but does not configure or call it because Assist lacks exact mappings for
+the approved administrative reads. It must not be interpreted as a Home Assistant API
+connectivity failure. Provider failures and partial coverage remain visible; the four
+administrative reads select explicit direct policies without fallback, while direct
+write expansion remains prohibited.
 
-Every provider-routed canonical call contributes to these counters. Delegated calls
-are attributed to `standard_ha_mcp`, including structured unavailable failures;
-transitional and direct-required exceptions are attributed to `direct_ha_api`.
+Every provider-routed canonical call contributes to these counters. `get_entity`,
+`list_areas`, `search_services`, and `list_services` are attributed to `direct_ha_api`;
+they never claim `standard_ha_mcp`. Other transitional and direct-required exceptions
+are likewise attributed to the provider actually used.
 Lifecycle labels do not substitute for runtime provider attribution.
+
+Dependency timing separates current request duration, cache lookup duration, original
+index-build duration, and cached source-provenance duration. Cached provenance is not
+reported as work repeated during the current request.
 
 ## Startup configuration validation
 

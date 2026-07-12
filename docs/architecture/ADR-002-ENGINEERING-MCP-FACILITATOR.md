@@ -30,9 +30,13 @@ governed rollback, and server health/connectivity. These capabilities need exact
 configuration semantics or safety guarantees that ordinary service execution cannot
 provide.
 
-The current beta has no configured or verified nested standard-MCP client transport.
-`StandardHaMcpGateway` therefore reports `provider_unavailable`; it never fabricates a
-delegation result. Beginning with Beta 8, every canonical handler whose capability is
+The Standard Home Assistant MCP endpoint is verified as stateless Streamable HTTP at
+`/api/mcp`; an add-on can reach it through the fixed Supervisor Core API proxy and
+authenticate with its Supervisor token. The Assist API exposed there does not provide
+exact entity-ID lookup, complete area-registry enumeration, or service-catalog
+discovery. `GetLiveContext` is intentionally rejected as an approximation for these
+administrative reads. `StandardHaMcpGateway` therefore remains unavailable in Beta 9
+and no upstream transport is configured or called. Beginning with Beta 8, every canonical handler whose capability is
 provider-routed enters the facilitator dispatcher. Delegated handlers fail closed while
 that gateway is unavailable and never reach their legacy direct-HA implementation.
 Transitional handlers enter the same dispatcher, use a reviewed tool-specific direct-HA
@@ -42,8 +46,9 @@ exception, and report the provider actually used.
 
 | Capability type | Preferred provider | Permitted fallback |
 | --- | --- | --- |
-| General entity state | Standard HA MCP | Direct HA only when explicitly justified by policy and requested |
-| Service discovery | Standard HA MCP | None by default |
+| Exact entity-ID state | Direct HA REST API | None |
+| Complete area registry | Direct HA WebSocket API | None |
+| Service discovery/schema | Direct HA REST API, bounded | None |
 | Ordinary service execution | Standard HA MCP | None by default |
 | Automation config | Direct HA config API | No generic fallback |
 | Automation traces | Direct HA trace API | No generic fallback |
@@ -55,12 +60,25 @@ exception, and report the provider actually used.
 | Dependency analysis | Engineering orchestration | Multiple bounded evidence providers |
 | Reliability analysis | Engineering orchestration | Multiple bounded evidence providers |
 
+## Beta 9 capability-truth matrix
+
+| Engineering capability | Required semantics | Standard HA MCP coverage | Direct HA coverage | Selected provider | Completeness | Fallback | Security justification |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `get_entity` / current entity state | Exact state and attributes by `entity_id` | Unavailable; `GetLiveContext` filters names/domains/areas | Exact REST state endpoint | `direct_ha_api` | Complete | None | Single read-only entity endpoint |
+| `list_areas` / area lookup | Complete area registry | Unavailable; exposed context is not the registry | Exact registry WebSocket command | `direct_ha_api` | Complete | None | Read-only registry command |
+| `search_services` / service discovery | Bounded catalog search | Unavailable | Complete catalog with enforced result limit | `direct_ha_api` | Complete within requested bound | None | Read-only catalog endpoint |
+| `list_services` / service schemas | Bounded catalog schemas | Unavailable | Complete catalog, explicitly truncated at 50 services when necessary | `direct_ha_api` | Complete or explicitly truncated | None | Read-only catalog endpoint and fixed output bound |
+
+The same matrix is returned by `list_capabilities` as `provider_matrix`. Runtime routing
+metadata reports lifecycle, route, selected provider, no-fallback state, and the
+specific direct-read policy.
+
 ## Routing classifications
 
 - `engineering_native`: governance persistence, risk assessment, analysis,
   auditing, and handoff generation.
-- `standard_mcp_preferred`: current state, broad search, areas, and ordinary service
-  discovery/execution.
+- `standard_mcp_preferred`: broad entity search and ordinary service execution where an
+  exact upstream contract is available.
 - `direct_ha_required`: exact automation configuration, traces, blueprint source,
   configuration checks, governed apply, verification, and rollback.
 - `transitional_direct`: an existing direct read/write retained for compatibility
@@ -88,6 +106,8 @@ The canonical direct-access allowlist is explicit and fail-closed:
 - Transitional evidence: `render_template`, `get_history`, `get_logbook`,
   `get_error_log`, `list_automations`, `list_devices`, `list_entity_registry`, and
   `list_blueprints`.
+- Exact administrative reads: `get_entity`, `list_areas`, `search_services`, and
+  `list_services`. Each has a distinct read-only policy and no fallback.
 - Exact engineering configuration: `get_automation_config`,
   `list_automation_traces`, `get_automation_trace`, `get_blueprint`, and
   `check_config`.
@@ -97,8 +117,8 @@ The canonical direct-access allowlist is explicit and fail-closed:
 `server_info` and `get_server_health` may perform their documented bounded HA
 connectivity probes. Governance apply, exact read-back verification, and rollback use
 the direct configuration API under their existing approval and audit controls.
-`entity_dependency_analysis` retains its separately tested explicit current-state
-fallback and reports partial source coverage. These exceptions do not authorize a
+`entity_dependency_analysis` uses its explicitly selected direct administrative sources
+and reports partial source coverage. These exceptions do not authorize a
 failed delegated canonical call to fall back directly.
 
 `delete_automation` is prohibited by policy. `call_service` and `reload_domain` are
@@ -117,6 +137,10 @@ Future analytical tools must state incomplete source coverage and distinguish co
 partial, unavailable, and failed provider results. The standard-MCP delegation path must
 not be described as operational until a real transport, authentication boundary, failure
 mapping, and integration tests exist.
+
+Exact or explicitly loss-tolerant semantics are prerequisites for future Standard MCP
+delegation. Provider preference never overrides semantic correctness. Approximate tool
+name or schema matching is prohibited.
 
 ## Token and credit efficiency
 
