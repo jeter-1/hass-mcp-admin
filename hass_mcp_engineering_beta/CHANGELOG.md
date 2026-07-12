@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.0.0-beta.5
+
+- Map missing or invalid change-plan lookups to `change_plan_not_found` while
+  reserving storage failures for real I/O, corruption, serialization,
+  permission, and atomic-write failures.
+- Treat the expected create-automation availability 404 as a successful probe
+  branch so client responses, logs, plan events, and tool-call audits agree.
+- Reject existing automation IDs as `configuration_conflict` and malformed or
+  failed HA probe responses as real upstream failures.
+- Replace transport-lifetime request latency with separate MCP operation, tool,
+  and Home Assistant latency summaries; open stream lifetime is excluded.
+- Preserve all 32 beta tools and all original 25 compatibility schemas.
+
 ## 2.0.0-beta.4
 
 - Add approval-based change plans for creating and updating Home Assistant
