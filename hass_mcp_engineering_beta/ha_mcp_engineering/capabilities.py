@@ -44,7 +44,6 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
 )
 
 PLANNED_CAPABILITIES: tuple[dict[str, str], ...] = (
-    {"capability": "entity_dependency_analysis", "status": "planned", "risk": "analytical"},
     {"capability": "automation_reliability_analysis", "status": "planned", "risk": "analytical"},
     {"capability": "change_impact_analysis", "status": "planned", "risk": "analytical"},
     {"capability": "incident_correlation", "status": "planned", "risk": "analytical"},
@@ -65,6 +64,7 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
     {"tool": "approve_change_plan", "category": "governance", "status": "beta_native", "risk": "behavioral_write", "additive": True},
     {"tool": "apply_change_plan", "category": "governance", "status": "beta_native", "risk": "behavioral_write", "additive": True},
     {"tool": "rollback_change", "category": "governance", "status": "beta_native", "risk": "behavioral_write", "additive": True},
+    {"tool": "entity_dependency_analysis", "category": "analysis", "status": "beta_native", "risk": "read", "additive": True},
 )
 
 

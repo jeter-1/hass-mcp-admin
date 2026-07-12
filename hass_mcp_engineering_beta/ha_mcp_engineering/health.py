@@ -17,13 +17,15 @@ class HealthRegistry:
     gateway: Any = None
     configuration_valid: bool = False
     governance: Any = None
+    dependency: Any = None
 
-    def configure(self, settings, audit, gateway, governance=None) -> None:
+    def configure(self, settings, audit, gateway, governance=None, dependency=None) -> None:
         self.settings = settings
         self.audit = audit
         self.gateway = gateway
         self.configuration_valid = True
         self.governance = governance
+        self.dependency = dependency
 
     def snapshot(self, ha_connection: dict[str, Any]) -> dict[str, Any]:
         metrics = METRICS.snapshot()
@@ -55,6 +57,10 @@ class HealthRegistry:
                 **metrics["provider_routing"],
                 "standard_ha_mcp_delegation": "unavailable",
                 "direct_fallback_requires_explicit_policy": True,
+            },
+            "dependency_analysis": {
+                **metrics["dependency_analysis"],
+                "index": self.dependency.health() if self.dependency else {"configured": False},
             },
             "rate_limiter": self.gateway.rate_limiter_state() if self.gateway else {"configured": False},
             "redaction": {"enabled": bool(self.settings and self.settings.redaction_enabled)},

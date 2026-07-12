@@ -37,6 +37,9 @@ class ErrorCode(str, Enum):
     ROLLBACK_APPROVAL_REQUIRED = "rollback_approval_required"
     ROLLBACK_FAILED = "rollback_failed"
     CHANGE_PLAN_STORAGE_ERROR = "change_plan_storage_error"
+    INVALID_CURSOR = "invalid_cursor"
+    STALE_CURSOR = "stale_cursor"
+    ANALYSIS_UNAVAILABLE = "analysis_unavailable"
 
 
 @dataclass(frozen=True)
@@ -84,6 +87,9 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
     ErrorCode.ROLLBACK_APPROVAL_REQUIRED: ErrorDefinition("Rollback requires a separate approval.", False, 409, "invalid_request"),
     ErrorCode.ROLLBACK_FAILED: ErrorDefinition("The governed rollback failed.", False, 502, "internal_error"),
     ErrorCode.CHANGE_PLAN_STORAGE_ERROR: ErrorDefinition("Governance storage is unavailable.", True, 503, "internal_error"),
+    ErrorCode.INVALID_CURSOR: ErrorDefinition("The pagination cursor is invalid.", False, 400, "invalid_params"),
+    ErrorCode.STALE_CURSOR: ErrorDefinition("The pagination cursor belongs to an expired index generation; restart pagination.", False, 409, "invalid_request"),
+    ErrorCode.ANALYSIS_UNAVAILABLE: ErrorDefinition("Dependency analysis evidence is unavailable.", True, 503, "internal_error"),
 }
 
 

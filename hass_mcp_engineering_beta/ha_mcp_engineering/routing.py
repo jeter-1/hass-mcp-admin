@@ -281,6 +281,9 @@ class AuthenticatedMcpGateway:
                     caller_id=caller_id,
                     parameters=audit_parameters,
                     result_status=(
+                        telemetry.result_status
+                        if telemetry.result_status
+                        else
                         "failure"
                         if telemetry.error_code
                         else "success" if (telemetry.response_status or 500) < 400 else "failure"
@@ -303,6 +306,7 @@ class AuthenticatedMcpGateway:
                     "transport_duration_ms": transport_duration,
                     "response_status": telemetry.response_status,
                     "error_code": telemetry.error_code,
+                    "completeness": telemetry.completeness,
                 },
                 secret=self.settings.access_secret,
             )

@@ -25,6 +25,7 @@ from ..capabilities import build_capability_catalog, build_server_metadata
 from ..clients import HomeAssistantRestClient, HomeAssistantWebSocketClient
 from ..configuration import load_settings
 from ..health import HEALTH
+from ..dependency import DEPENDENCY_ANALYSIS
 from ..logging_config import get_logger, log_event
 from ..mcp_server import create_mcp_server
 from ..models.responses import dump_json
@@ -455,6 +456,7 @@ async def upsert_automation(automation_id: str, config_json: str) -> str:
         )
     write_result = await rest("POST", f"/config/automation/config/{automation_id}", config)
     stored = await rest("GET", f"/config/automation/config/{automation_id}")
+    DEPENDENCY_ANALYSIS.invalidate()
     return dump(
         {
             "write_result": write_result,
@@ -469,7 +471,9 @@ async def delete_automation(automation_id: str, confirm: bool = False) -> str:
     """Delete an automation by internal id. Requires confirm=true."""
     if not confirm:
         return "Refused: pass confirm=true to delete this automation."
-    return dump(await rest("DELETE", f"/config/automation/config/{automation_id}"))
+    result = await rest("DELETE", f"/config/automation/config/{automation_id}")
+    DEPENDENCY_ANALYSIS.invalidate()
+    return dump(result)
 
 
 @mcp.tool()
@@ -509,6 +513,8 @@ async def reload_domain(domain: str) -> str:
     if domain not in allowed:
         return f"Refused: '{domain}' not in reloadable set {sorted(allowed)}."
     await rest("POST", f"/services/{domain}/reload", {})
+    if domain in {"automation", "script", "scene", "template", "group"}:
+        DEPENDENCY_ANALYSIS.invalidate()
     return f"Reloaded {domain}."
 
 

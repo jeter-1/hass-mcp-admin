@@ -133,6 +133,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "approve_change_plan": ProviderCapability.GOVERNANCE_PERSISTENCE,
     "apply_change_plan": ProviderCapability.GOVERNED_APPLY,
     "rollback_change": ProviderCapability.GOVERNED_ROLLBACK,
+    "entity_dependency_analysis": ProviderCapability.DEPENDENCY_ANALYSIS,
 }
 
 
