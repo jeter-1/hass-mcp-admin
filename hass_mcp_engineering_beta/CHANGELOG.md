@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.0.0-beta.12
+
+- Add the read-only `automation_reliability_analysis` tool for one internal
+  automation ID, increasing the beta manifest to 34 callable tools.
+- Compose bounded configuration, state, blueprint, trace, referenced-entity,
+  registry, and sanitized System Log evidence behind an engineering facilitator
+  provider; no tool handler calls Home Assistant directly.
+- Add 13 deterministic rules with stable findings, confidence/status, evidence
+  references, fingerprint-bound pagination, three detail levels, and honest partial
+  coverage. No opaque reliability score is produced.
+- Bound lookback, traces, entity reads, concurrency, findings, evidence, log
+  correlation, response size, and total duration; independent source failures retain
+  useful confirmed findings.
+- Add safe analysis health counters without exposing configuration or evidence.
+- Collapse duplicate adjacent Matter setup-payload redaction markers while preserving
+  detection and sanitizer idempotence.
+- Preserve the original 25 names and input schemas, all eight prior beta-native tools,
+  governance and Phase 3C boundaries, and production v1.1.2.
+
 ## 2.0.0-beta.11
 
 - Sanitize the complete recursive Home Assistant System Log result before any

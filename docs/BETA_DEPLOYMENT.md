@@ -1,7 +1,7 @@
 # Beta deployment and validation
 
 The beta add-on is isolated from production. Production remains **HA MCP
-Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.11
+Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.12
 is **HA MCP Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100).
 The workflow in this document deploys or updates only the beta.
 
@@ -18,7 +18,7 @@ From a clean branch in Windows PowerShell, run:
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
   -DeployedVersion 2.0.0-beta.10 `
-  -ExpectedVersion 2.0.0-beta.11 `
+  -ExpectedVersion 2.0.0-beta.12 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -FullTests
 ```
@@ -40,7 +40,7 @@ without supplying authentication material:
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
   -DeployedVersion 2.0.0-beta.10 `
-  -ExpectedVersion 2.0.0-beta.11 `
+  -ExpectedVersion 2.0.0-beta.12 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -SkipTests -SkipDockerBuild `
   -HealthHost homeassistant.local `
@@ -74,11 +74,12 @@ authenticated path, credential, or secret in the argument.
 The unauthenticated health endpoint proves that a process is responding. It
 does not replace `server_info` for verifying the running server version.
 
-Beta 11 must return 33 serializable tools from the server's real `tools/list`, including
-`entity_dependency_analysis`. If ChatGPT retains a 32-tool manifest while the server
-returns 33, the remaining mismatch is connector caching rather than server registration;
+Beta 12 must return 34 serializable tools from the server's real `tools/list`, including
+`entity_dependency_analysis` and `automation_reliability_analysis`. If ChatGPT or
+Claude retains a 33-tool manifest while the server returns 34, the remaining mismatch
+is connector caching rather than server registration;
 recreate only the beta connector or append the non-secret cache marker
-`?manifest=beta11` to its authenticated connector URL. Never share that complete URL.
+`?manifest=beta12` to its authenticated connector URL. Never share that complete URL.
 
 ## Optional local add-on development
 
@@ -128,7 +129,7 @@ and that `get_server_health` identifies the beta server.
 
 ## Provider-routing troubleshooting
 
-Beta 11 intentionally reports `standard_ha_mcp_delegation: unavailable`. The real
+Beta 12 intentionally reports `standard_ha_mcp_delegation: unavailable`. The real
 Home Assistant endpoint is `/api/mcp` (internally
 `http://supervisor/core/api/mcp` with Supervisor bearer authentication), but the Assist
 tool surface lacks exact entity-ID, complete area-registry, and service-catalog
@@ -146,7 +147,7 @@ original build and source provenance durations remain separately labeled.
 
 `get_error_log` uses `system_log/list`, not the historical `/api/error_log` REST path.
 On Home Assistant 2026.7.2 that REST view is conditional on file logging and can return
-404 on HA OS. A successful Beta 11 call returns bounded structured entries. An empty
+404 on HA OS. A successful Beta 12 call returns bounded structured entries. An empty
 System Log is a successful empty list; permission, unavailable, timeout, malformed, or
 other upstream failures remain explicit. The command requires an administrative HA
 WebSocket identity; do not add broad Supervisor permissions to work around denial.
@@ -190,6 +191,45 @@ direct-HA fallback. Redact authenticated paths before sharing logs.
     policy remains intact.
 13. Confirm neither the System Log call nor the Phase 3C read claims fallback or a
     Standard HA MCP success.
+
+## Beta 12 read-only acceptance test
+
+1. Call `server_info(check_ha=false)`; confirm `2.0.0-beta.12` and 34 tools.
+2. Call `list_capabilities`; confirm `automation_reliability_analysis` is additive
+   `beta_native`, category `analysis`, risk `read`, and no longer planned.
+3. Call `get_server_health(check_ha=false)` and capture the reliability and provider
+   counter baselines.
+4. Call `list_automations` with a narrow query and record one internal `id` (not the
+   `automation.*` entity ID).
+5. Call `automation_reliability_analysis` with that internal ID, a bounded lookback,
+   bounded `trace_limit`, `detail_level=standard`, and a bounded finding `limit`.
+6. Confirm every finding cites actual configuration, state, trace, registry, blueprint,
+   or sanitized System Log evidence.
+7. Confirm no unsupported claim is `confirmed`; a repeated condition stop states that
+   the condition may be working as designed, and no-trace evidence is only a gap.
+8. Confirm unavailable, failed, dynamic, blueprint, and truncated sources make coverage
+   explicitly partial while preserving independent confirmed findings.
+9. Confirm routing identifies `engineering`, every source identifies its actual
+   provider, fallback is false, and Standard HA MCP success is not claimed.
+10. Confirm no write, service call, automation trigger, reload, restart, deletion,
+    change plan, approval, or apply operation occurred.
+11. Call the tool with a syntactically valid nonexistent internal ID; confirm the safe
+    structured `automation_not_found` result.
+12. If enough findings exist, follow `next_cursor`; confirm no duplicate findings. If
+    evidence changes before the next page, confirm `stale_cursor`.
+13. Call health again; verify one terminal success/partial/failure update per analysis,
+    accurate source/finding counters, and no automation/evidence content in health.
+14. Inspect audit records by request ID; confirm bounded arguments and resource ID are
+    present while findings, evidence, config, traces, and log content are absent.
+15. Call `get_error_log(tail_lines=50)`.
+16. Confirm overlapping Matter setup-payload detection yields one
+    `[REDACTED:matter_setup_payload]` marker per original value, not adjacent duplicates.
+17. Reconfirm all Beta 11 token, cookie, password, webhook, auth-flow, Matter, URL
+    credential, fail-closed, and prompt-as-data protections.
+
+Because Beta 12 adds a tool, refresh or recreate only the beta connector if its cached
+manifest still exposes 33 tools. Production remains on port 8099 and must not be
+reconfigured.
 
 ## Rollback and removal
 

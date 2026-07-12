@@ -6,7 +6,7 @@ Provider labels describe the transport actually used. A direct Home Assistant RE
 WebSocket call is always labeled `direct_ha_api`; it is never relabeled as
 `standard_ha_mcp`. Approximate upstream tool matching is prohibited.
 
-Phase 3C permits four narrowly scoped administrative reads, unchanged in Beta 11:
+Phase 3C permits four narrowly scoped administrative reads, unchanged in Beta 12:
 
 | Tool | Direct policy | Allowed operation |
 | --- | --- | --- |
@@ -20,7 +20,7 @@ reloads, restarts, physical actions, or destructive operations. Governed configu
 changes retain their existing plan, approval, verification, rollback, correlation, and
 audit requirements.
 
-The pre-existing transitional `get_error_log` exception remains explicit in Beta 11:
+The pre-existing transitional `get_error_log` exception remains explicit in Beta 12:
 
 | Tool | Direct policy | Allowed operation |
 | --- | --- | --- |
@@ -33,6 +33,20 @@ sanitized before selection, bounding, normalization, formatting, or serializatio
 Content is never executed or interpreted as instructions and never constructs an
 endpoint, tool call, service call, or action.
 
+## Beta 12 analytical read policy
+
+`automation_reliability_analysis` uses the engineering-native
+`single_automation_reliability_read` policy. Its facilitator provider may compose one
+automation configuration/state, one blueprint, bounded traces, deduplicated referenced
+entity state, filtered entity-registry metadata, and sanitized correlated System Log
+entries. Every underlying Home Assistant source is labeled `direct_ha_api`; no result
+claims Standard HA MCP coverage or fallback.
+
+The policy grants no write, service-call, trigger, change-plan, approval, reload,
+restart, deletion, physical-action, or destructive permission. The handler cannot call
+transport clients directly. Audit records contain input bounds and the automation ID,
+not configuration, trace, log, finding, or evidence payloads.
+
 ## Standard Home Assistant MCP
 
 Home Assistant documents a stateless Streamable HTTP MCP endpoint at `/api/mcp`. From
@@ -40,7 +54,7 @@ an add-on it is available through the fixed Supervisor Core API proxy at
 `http://supervisor/core/api/mcp`, authenticated by the add-on's Supervisor bearer token.
 The selected Assist API does not expose exact entity-ID lookup, complete area-registry
 enumeration, or service-catalog discovery. `GetLiveContext` is therefore not used as a
-substitute. Beta 11 retains the gateway abstraction but does not configure or call the
+substitute. Beta 12 retains the gateway abstraction but does not configure or call the
 upstream endpoint.
 
 Any future live delegation requires an exact or explicitly reviewed loss-tolerant
@@ -75,6 +89,10 @@ Markers disclose no original length, fragment, hash, prefix, suffix, character s
 reversible encoding. Existing markers are preserved unchanged. Sanitization is
 deterministic and idempotent. If one field raises during sanitation, that field is
 replaced and a safe warning is reported; raw content is never used as a fallback.
+
+When overlapping key-aware and free-text detection identifies the same Matter setup
+payload, adjacent identical markers collapse to one stable marker. This does not skip
+either detection pass and remains idempotent.
 
 Useful diagnostics such as entity IDs, integration/logger names, filenames and line
 numbers, timestamps, occurrence counts, ordinary error codes, device names, private IP
