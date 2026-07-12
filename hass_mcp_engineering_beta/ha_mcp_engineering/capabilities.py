@@ -48,7 +48,6 @@ PLANNED_CAPABILITIES: tuple[dict[str, str], ...] = (
     {"capability": "automation_reliability_analysis", "status": "planned", "risk": "analytical"},
     {"capability": "change_impact_analysis", "status": "planned", "risk": "analytical"},
     {"capability": "incident_correlation", "status": "planned", "risk": "analytical"},
-    {"capability": "change_plan_governance", "status": "planned", "risk": "behavioral_write"},
     {"capability": "handoff_generation", "status": "planned", "risk": "analytical"},
 )
 
@@ -60,6 +59,12 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "risk": "read",
         "additive": True,
     },
+    {"tool": "create_change_plan", "category": "governance", "status": "beta_native", "risk": "behavioral_write", "additive": True},
+    {"tool": "get_change_plan", "category": "governance", "status": "beta_native", "risk": "read", "additive": True},
+    {"tool": "list_change_plans", "category": "governance", "status": "beta_native", "risk": "read", "additive": True},
+    {"tool": "approve_change_plan", "category": "governance", "status": "beta_native", "risk": "behavioral_write", "additive": True},
+    {"tool": "apply_change_plan", "category": "governance", "status": "beta_native", "risk": "behavioral_write", "additive": True},
+    {"tool": "rollback_change", "category": "governance", "status": "beta_native", "risk": "behavioral_write", "additive": True},
 )
 
 

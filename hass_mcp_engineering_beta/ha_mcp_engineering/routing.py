@@ -108,6 +108,7 @@ class AuthenticatedMcpGateway:
         request_id = telemetry.request_id
         client_ip = self._client_ip(scope)
         caller_id = self._caller_id(client_ip)
+        telemetry.caller_id = caller_id
         tool_name = None
         parameters = {}
         capability = {}
@@ -250,6 +251,13 @@ class AuthenticatedMcpGateway:
                     for key, value in parameters.items()
                     if key.endswith("_id") and isinstance(value, (str, int))
                 }
+                audit_parameters = parameters
+                if capability.get("category") == "governance":
+                    audit_parameters = {
+                        key: parameters[key]
+                        for key in ("plan_id", "automation_id", "operation", "expiration_minutes")
+                        if key in parameters
+                    }
                 self.audit.write(AuditRecord(
                     request_id=request_id,
                     tool_name=tool_name,
@@ -258,7 +266,7 @@ class AuthenticatedMcpGateway:
                     access=access,
                     authenticated=True,
                     caller_id=caller_id,
-                    parameters=parameters,
+                    parameters=audit_parameters,
                     result_status=(
                         "failure"
                         if telemetry.error_code
