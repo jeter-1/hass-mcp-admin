@@ -9,7 +9,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-beta.10` |
+| Version | `1.1.2` | `2.0.0-beta.11` |
 | Port | `8099` | `8100` |
 | Options and secret | Production add-on data | Beta add-on data |
 
@@ -64,6 +64,11 @@ hass_mcp_engineering_beta/
         ├── registry.py                 # registration boundary
         └── compatibility.py            # unchanged v1.1.2 tool behavior/signatures
 ```
+
+Beta 11 adds `ha_mcp_engineering/sanitization.py` as the centralized recursive
+trust-boundary for System Log results plus beta log/audit contexts. It returns sanitized
+data and bounded category/count telemetry; tool code does not implement parallel
+redaction rules.
 
 ## Compatibility approach
 

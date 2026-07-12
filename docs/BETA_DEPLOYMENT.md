@@ -1,7 +1,7 @@
 # Beta deployment and validation
 
 The beta add-on is isolated from production. Production remains **HA MCP
-Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.10
+Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.11
 is **HA MCP Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100).
 The workflow in this document deploys or updates only the beta.
 
@@ -17,8 +17,8 @@ From a clean branch in Windows PowerShell, run:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.9 `
-  -ExpectedVersion 2.0.0-beta.10 `
+  -DeployedVersion 2.0.0-beta.10 `
+  -ExpectedVersion 2.0.0-beta.11 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -FullTests
 ```
@@ -39,8 +39,8 @@ without supplying authentication material:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.9 `
-  -ExpectedVersion 2.0.0-beta.10 `
+  -DeployedVersion 2.0.0-beta.10 `
+  -ExpectedVersion 2.0.0-beta.11 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -SkipTests -SkipDockerBuild `
   -HealthHost homeassistant.local `
@@ -74,11 +74,11 @@ authenticated path, credential, or secret in the argument.
 The unauthenticated health endpoint proves that a process is responding. It
 does not replace `server_info` for verifying the running server version.
 
-Beta 10 must return 33 serializable tools from the server's real `tools/list`, including
+Beta 11 must return 33 serializable tools from the server's real `tools/list`, including
 `entity_dependency_analysis`. If ChatGPT retains a 32-tool manifest while the server
 returns 33, the remaining mismatch is connector caching rather than server registration;
 recreate only the beta connector or append the non-secret cache marker
-`?manifest=beta10` to its authenticated connector URL. Never share that complete URL.
+`?manifest=beta11` to its authenticated connector URL. Never share that complete URL.
 
 ## Optional local add-on development
 
@@ -128,7 +128,7 @@ and that `get_server_health` identifies the beta server.
 
 ## Provider-routing troubleshooting
 
-Beta 10 intentionally reports `standard_ha_mcp_delegation: unavailable`. The real
+Beta 11 intentionally reports `standard_ha_mcp_delegation: unavailable`. The real
 Home Assistant endpoint is `/api/mcp` (internally
 `http://supervisor/core/api/mcp` with Supervisor bearer authentication), but the Assist
 tool surface lacks exact entity-ID, complete area-registry, and service-catalog
@@ -146,42 +146,50 @@ original build and source provenance durations remain separately labeled.
 
 `get_error_log` uses `system_log/list`, not the historical `/api/error_log` REST path.
 On Home Assistant 2026.7.2 that REST view is conditional on file logging and can return
-404 on HA OS. A successful Beta 10 call returns bounded structured entries. An empty
+404 on HA OS. A successful Beta 11 call returns bounded structured entries. An empty
 System Log is a successful empty list; permission, unavailable, timeout, malformed, or
 other upstream failures remain explicit. The command requires an administrative HA
 WebSocket identity; do not add broad Supervisor permissions to work around denial.
+
+If a System Log response appears insufficiently sanitized, stop testing that response:
+do not copy it into an issue, terminal transcript, screenshot, or PR. Record only the
+request ID and safe redaction telemetry, stop the beta connector if necessary, and roll
+forward to a newer beta version. The sanitizer is expected to process unknown nested
+fields before bounding; `sanitization_failed_closed=true` means affected fields were
+replaced, not passed through.
 
 When future analytical work uses providers, inspect only bounded provider identity,
 completeness, failure category, coverage, fallback, and timing fields. A partial result
 must identify missing sources. A failed ordinary service operation must not show a
 direct-HA fallback. Redact authenticated paths before sharing logs.
 
-## Beta 10 read-only acceptance test
+## Beta 11 read-only acceptance test
 
-1. Call `server_info`; confirm `2.0.0-beta.10` and 33 tools.
-2. Call `get_server_health(check_ha=false)` and capture baseline recent-error and
-   provider-routing counters.
+1. Call `server_info`; confirm `2.0.0-beta.11` and 33 tools.
+2. Call `get_server_health(check_ha=false)` and capture baseline counters.
 3. Call `get_error_log(tail_lines=50)`.
-4. Confirm a successful bounded `home_assistant_system_log` result (including a valid
-   empty list), or an explicit documented unavailable/permission failure; never an
-   unexplained empty success.
-5. Inspect the returned content and confirm no access secret, Supervisor token,
-   authorization value, credential URL, webhook secret, session identifier, or complete
-   authenticated path appears.
-6. Call `get_entity(entity_id="../config")`.
-7. Confirm `invalid_request`, `home_assistant_ms=0`, source failure
-   `request_validation`, `upstream_attempted=false`, and no unsafe endpoint construction.
-8. Call `get_entity(entity_id="sensor.beta10_smoke_test_nonexistent")`.
-9. Confirm a normalized `entity_not_found` result attributed to `direct_ha_api`.
-10. Call `get_server_health(check_ha=false)` again.
-11. Confirm each terminal error increased its final public error counter exactly once.
-12. Confirm direct-provider success/failure counters changed by the calls' actual
-    outcomes, with no Standard HA MCP success or fallback claim.
-13. Re-run one approved Phase 3C read, such as
-    `get_entity(entity_id="input_boolean.away_mode")`, and confirm its specific direct
-    policy, source coverage, timing, and no fallback.
-14. Inspect correlated audit/application records and confirm request IDs match and all
-    sensitive material remains redacted.
+4. Inspect every returned entry and nested field for Matter commissioning material,
+   authentication-flow identifiers, webhook secrets, tokens, credential-bearing URLs,
+   and authentication session credentials. Do not copy any detected value into a
+   report.
+5. Confirm every detected value uses a stable `[REDACTED:<category>]` marker.
+6. Confirm no original prefix, suffix, hash, partial value, length, or reversible
+   encoding remains.
+7. Confirm useful non-secret diagnostics remain: logger/integration names, entity IDs,
+   source filenames and lines, timestamps, counts, ordinary error codes, device names,
+   and non-credential private IPs.
+8. Confirm `content_is_untrusted_data=true`, bounded results, explicit truncation,
+   redaction telemetry, provider `direct_ha_api`, policy
+   `structured_system_log_read`, and no fallback.
+9. Inspect the audit record correlated to the request ID.
+10. Confirm the audit contains bounded arguments and the request ID but no returned log
+    payload or sensitive value.
+11. Repeat the Beta 10 invalid-ID and nonexistent-entity checks; confirm local
+    `request_validation`, zero HA time, and one terminal `entity_not_found` increment.
+12. Re-run one approved Phase 3C administrative read and confirm its specific direct
+    policy remains intact.
+13. Confirm neither the System Log call nor the Phase 3C read claims fallback or a
+    Standard HA MCP success.
 
 ## Rollback and removal
 

@@ -120,6 +120,12 @@ WebSocket command and does not authorize Supervisor journal access, raw log-file
 mounts, frontend scraping, or any log-triggered action. The existing Phase 3C four-read
 capability-truth matrix is otherwise unchanged.
 
+Beta 11 makes the System Log trust boundary explicit: the complete recursive upstream
+result is sanitized before evidence selection or response reduction. Unknown fields,
+serialized structures, tracebacks, and prompt-like text remain untrusted evidence.
+Sanitization failure replaces the affected field and never authorizes an unsanitized
+fallback. Redaction metadata reports categories and counts only.
+
 `server_info` and `get_server_health` may perform their documented bounded HA
 connectivity probes. Governance apply, exact read-back verification, and rollback use
 the direct configuration API under their existing approval and audit controls.

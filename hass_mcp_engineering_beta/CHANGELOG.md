@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.0.0-beta.11
+
+- Sanitize the complete recursive Home Assistant System Log result before any
+  entry selection, field bounding, normalization, formatting, or serialization.
+- Add key-aware and free-text redaction for authentication material, auth flows,
+  webhook secrets, Matter commissioning values, credential-bearing URLs,
+  serialized Python/JSON representations, cookies, and known runtime secrets.
+- Use stable category markers without exposing secret fragments, lengths, hashes,
+  encodings, prefixes, or suffixes.
+- Fail closed per field when sanitation raises, preserve existing markers
+  idempotently, and keep prompt-like log text inert untrusted evidence.
+- Report only bounded redaction categories, field counts, and fail-closed state.
+- Preserve 33 tools, all original 25 input schemas, Phase 3C routing, governance,
+  dependency behavior, and production v1.1.2.
+
 ## 2.0.0-beta.10
 
 - Replace the conditionally registered `/api/error_log` REST read with Home

@@ -160,7 +160,7 @@ class AddonIsolationTests(unittest.TestCase):
     def test_beta_metadata_is_distinct_and_valid(self):
         self.assertEqual(self.beta["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(self.beta["slug"], "hass_mcp_engineering_beta")
-        self.assertEqual(self.beta["version"], "2.0.0-beta.10")
+        self.assertEqual(self.beta["version"], "2.0.0-beta.11")
         self.assertEqual(self.beta["ports"], {"8100/tcp": 8100})
         self.assertNotEqual(self.beta["slug"], self.production["slug"])
         self.assertNotEqual(set(self.beta["ports"]), set(self.production["ports"]))
@@ -188,6 +188,7 @@ class AddonIsolationTests(unittest.TestCase):
             "models/responses.py",
             "models/failures.py",
             "audit.py",
+            "sanitization.py",
             "capabilities.py",
             "version.py",
             "governance/models.py",
@@ -282,7 +283,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
-        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.10")
+        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.11")
         self.assertEqual(result["data"]["tool_count"], 33)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
@@ -469,6 +470,52 @@ class BetaApplicationTests(unittest.TestCase):
         self.assertEqual(payload["metadata"]["routing"]["classification"], "transitional_direct")
         self.assertEqual(payload["request_id"], request_id)
         direct.assert_awaited_once_with("GET", "/states/sensor.facilitated")
+
+    def test_system_log_payload_is_sanitized_before_response_logging_and_audit(self):
+        request_id = "beta11-system-log-audit-123"
+        synthetic_secret = "synthetic-beta11-log-secret-value"
+        system_log = [
+            {
+                "timestamp": 1_789_000_000.0,
+                "name": "homeassistant.components.synthetic",
+                "level": "ERROR",
+                "message": [f"Authorization: Bearer {synthetic_secret}"],
+                "exception": f"/api/webhook/{synthetic_secret}",
+                "count": 1,
+                "source": ["components/synthetic/__init__.py", 42],
+            }
+        ]
+        stream = io.StringIO()
+        handler = logging.StreamHandler(stream)
+        handler.setFormatter(JsonFormatter())
+        logger = logging.getLogger("ha_mcp_engineering.gateway")
+        previous = (logger.handlers, logger.level, logger.propagate)
+        logger.handlers = [handler]
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+        try:
+            with patch.object(
+                compatibility, "ws_command", new=AsyncMock(return_value=system_log)
+            ):
+                _, call = self.rpc(
+                    "tools/call",
+                    {"name": "get_error_log", "arguments": {"tail_lines": 50}},
+                    request_id=request_id,
+                )
+        finally:
+            logger.handlers, logger.level, logger.propagate = previous
+        payload = json.loads(call["result"]["content"][0]["text"])
+        audit = self.audit_record(request_id)
+        response_text = json.dumps(payload)
+        audit_text = json.dumps(audit)
+        self.assertTrue(payload["success"])
+        self.assertTrue(payload["data"]["redaction_applied"])
+        self.assertNotIn(synthetic_secret, response_text)
+        self.assertNotIn(synthetic_secret, stream.getvalue())
+        self.assertNotIn(synthetic_secret, audit_text)
+        self.assertNotIn("message", audit_text)
+        self.assertEqual(audit["parameters"], {"tail_lines": 50})
+        self.assertEqual(audit["request_id"], request_id)
 
     def test_governance_tools_call_end_to_end_through_real_mcp(self):
         initialized = self.initialize(f"/{SECRET}/mcp")
@@ -838,7 +885,7 @@ class BetaApplicationTests(unittest.TestCase):
             audit.write({"event": "auth_failure", "path": f"/{SECRET}x/mcp"})
             contents = path.read_text()
             self.assertNotIn(SECRET, contents)
-            self.assertIn("<access_secret>", contents)
+            self.assertIn("[REDACTED:token]", contents)
 
     def test_startup_log_does_not_contain_secret(self):
         settings = beta_settings(str(Path(self.tempdir.name) / "startup-audit.jsonl"))

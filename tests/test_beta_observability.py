@@ -217,8 +217,8 @@ class RedactionAndAuditTests(unittest.TestCase):
         encoded = json.dumps(safe)
         for forbidden in (SECRET, "Bearer raw-token", "session=raw", '"raw-token"'):
             self.assertNotIn(forbidden, encoded)
-        self.assertIn("<redacted>", encoded)
-        self.assertIn("<access_secret>", encoded)
+        self.assertIn("[REDACTED:token]", encoded)
+        self.assertIn("[REDACTED:auth_cookie]", encoded)
 
     def test_request_id_is_present_in_structured_logs(self):
         stream = io.StringIO()
@@ -447,7 +447,7 @@ class GatewayAndHealthTests(unittest.TestCase):
             payload = json.loads(asyncio.run(compatibility.get_server_health(check_ha=False)))
         self.assertTrue(payload["success"])
         health = payload["data"]
-        self.assertEqual(health["server"]["version"], "2.0.0-beta.10")
+        self.assertEqual(health["server"]["version"], "2.0.0-beta.11")
         self.assertEqual(health["registered_tool_count"], 33)
         self.assertIn("governance", health)
         self.assertIn("storage_corruption_count", health["governance"])
