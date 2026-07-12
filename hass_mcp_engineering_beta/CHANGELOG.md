@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.0.0-beta.6
+
+- Establish the Engineering MCP facilitator architecture, deterministic provider
+  routing policy, and transport-independent evidence-provider contracts.
+- Represent standard Home Assistant MCP delegation honestly as unavailable until a
+  supported nested client transport is configured and verified.
+- Add bounded, paginated, deduplicated response and evidence models for future
+  analytical tools, plus safe provider-routing health counters.
+- Replace free-text safety keyword matching with structured action, service, target,
+  entity-domain, and blueprint-input risk evidence; harmless descriptive text no
+  longer produces high-risk plans.
+- Preserve all 32 beta tools, the original 25 schemas, the seven beta-native schemas,
+  governance persistence compatibility, and production v1.1.2.
+
 ## 2.0.0-beta.5
 
 - Map missing or invalid change-plan lookups to `change_plan_not_found` while

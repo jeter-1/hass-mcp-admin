@@ -9,7 +9,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-beta.5` |
+| Version | `1.1.2` | `2.0.0-beta.6` |
 | Port | `8099` | `8100` |
 | Options and secret | Production add-on data | Beta add-on data |
 
@@ -24,6 +24,19 @@ v1.1.2 remains the rollback target and continues to run from its existing
 directory and port.
 
 ## Module structure
+
+Phase 3A adds these beta-only internal boundaries without changing the MCP registry:
+
+```text
+ha_mcp_engineering/
+|- facilitation/models.py   # bounded result, evidence, pagination, and coverage
+`- providers/
+   |- base.py               # transport-independent evidence provider interface
+   |- models.py             # provider request, result, error, and coverage models
+   |- routing.py            # deterministic capability and fallback policy
+   |- standard_mcp.py       # honest unavailable delegation boundary
+   `- direct_ha.py          # explicit direct-API exception boundary
+```
 
 ```text
 hass_mcp_engineering_beta/
@@ -68,6 +81,12 @@ reclassifying a tool during a scaffold change.
 
 ## Future extension boundaries
 
+Phase 3A implements the provider and response boundaries defined in
+[`docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md`](docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md).
+There is currently no supported nested standard-HA-MCP transport. The standard
+provider is deliberately unavailable; existing compatibility reads remain direct until
+a future migration. Provider availability must not be inferred from lifecycle labels.
+
 The response and error models are intentionally minimal. Future changes can
 add structured envelopes, dry-run results, approval state, rollback metadata,
 change governance, analysis findings, relationship graphs, orphan detection,
@@ -95,6 +114,11 @@ continue to use their existing response formats.
 7. Do not share production options, secrets, audit state, or runtime ports.
 8. Keep destructive-action confirmation behavior unchanged until governance
    and approval semantics are implemented and reviewed.
+9. New analytical code depends on `EngineeringEvidenceProvider`, never directly on a
+   REST, WebSocket, or nested-MCP transport.
+10. A standard-MCP failure never falls back to an ungoverned direct write. Permitted
+    direct read fallback requires central policy and explicit request intent.
+11. Use the bounded response contract in [`docs/TOKEN_EFFICIENCY.md`](docs/TOKEN_EFFICIENCY.md).
 
 ## Known limitations
 
@@ -104,3 +128,5 @@ continue to use their existing response formats.
 - The 23 non-foundation tools still use compatibility implementations.
 - Live Home Assistant behavior requires a Supervisor token or an explicit
   standalone `HA_URL`/`HA_TOKEN` pair.
+- Standard Home Assistant MCP delegation is not operational in Beta 6; the gateway
+  reports explicit unavailability and never fabricates delegated evidence.

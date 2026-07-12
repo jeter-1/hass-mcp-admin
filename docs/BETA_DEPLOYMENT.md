@@ -1,7 +1,7 @@
 # Beta deployment and validation
 
 The beta add-on is isolated from production. Production remains **HA MCP
-Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.5
+Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.6
 is **HA MCP Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100).
 The workflow in this document deploys or updates only the beta.
 
@@ -17,8 +17,8 @@ From a clean branch in Windows PowerShell, run:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.4 `
-  -ExpectedVersion 2.0.0-beta.5 `
+  -DeployedVersion 2.0.0-beta.5 `
+  -ExpectedVersion 2.0.0-beta.6 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -FullTests
 ```
@@ -39,8 +39,8 @@ without supplying authentication material:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.4 `
-  -ExpectedVersion 2.0.0-beta.5 `
+  -DeployedVersion 2.0.0-beta.5 `
+  -ExpectedVersion 2.0.0-beta.6 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -SkipTests -SkipDockerBuild `
   -HealthHost homeassistant.local `
@@ -119,6 +119,18 @@ An installed add-on card can show repository metadata before a new container is
 actually running. Verify the live image by calling beta `server_info` and matching
 its version to the intended release. Also verify the container exposes port 8100
 and that `get_server_health` identifies the beta server.
+
+## Provider-routing troubleshooting
+
+Beta 6 intentionally reports `standard_ha_mcp_delegation: unavailable` in safe health
+diagnostics. This is the expected current state: the add-on has no configured or tested
+nested standard-MCP transport. It does not indicate a Home Assistant REST outage and
+must not be worked around by adding a secret-bearing MCP URL to options or source.
+
+When future analytical work uses providers, inspect only bounded provider identity,
+completeness, failure category, coverage, fallback, and timing fields. A partial result
+must identify missing sources. A failed ordinary service operation must not show a
+direct-HA fallback. Redact authenticated paths before sharing logs.
 
 ## Rollback and removal
 

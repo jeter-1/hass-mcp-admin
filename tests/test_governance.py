@@ -290,17 +290,84 @@ class NormalizationAndRiskTests(unittest.TestCase):
         risk = classify_risk(ChangeOperation.UPDATE_AUTOMATION, structured_diff(CURRENT, proposed), proposed)
         self.assertEqual(risk.level, RiskLevel.HIGH)
 
-    def test_high_risk_unrestricted_template(self):
+    def test_message_template_is_not_actionable_high_risk(self):
         proposed = copy.deepcopy(CURRENT)
         proposed["action"] = [{"service": "notify.example", "data": {"message": "{{ states('sensor.example') }}"}}]
         risk = classify_risk(ChangeOperation.UPDATE_AUTOMATION, structured_diff(CURRENT, proposed), proposed)
-        self.assertEqual(risk.level, RiskLevel.HIGH)
+        self.assertEqual(risk.level, RiskLevel.MEDIUM)
 
     def test_high_risk_water_action(self):
         proposed = copy.deepcopy(CURRENT)
         proposed["action"] = [{"service": "switch.turn_off", "target": {"entity_id": "switch.example_water"}}]
         risk = classify_risk(ChangeOperation.UPDATE_AUTOMATION, structured_diff(CURRENT, proposed), proposed)
         self.assertEqual(risk.level, RiskLevel.HIGH)
+
+    def _create_risk(self, **overrides):
+        proposed = copy.deepcopy(CURRENT)
+        proposed.update(overrides)
+        return classify_risk(
+            ChangeOperation.CREATE_AUTOMATION,
+            structured_diff(None, proposed),
+            proposed,
+        )
+
+    def test_smoke_test_alias_only_is_not_high(self):
+        self.assertNotEqual(self._create_risk(alias="Smoke Test").level, RiskLevel.HIGH)
+
+    def test_fire_description_only_is_not_high(self):
+        self.assertNotEqual(self._create_risk(description="fire drill text").level, RiskLevel.HIGH)
+
+    def test_all_in_alias_only_is_not_high(self):
+        self.assertNotEqual(self._create_risk(alias="all").level, RiskLevel.HIGH)
+
+    def test_never_fire_custom_event_is_not_high(self):
+        risk = self._create_risk(trigger=[{"platform": "event", "event_type": "never_fire"}])
+        self.assertNotEqual(risk.level, RiskLevel.HIGH)
+
+    def test_logbook_message_sensitive_words_are_not_high(self):
+        risk = self._create_risk(action=[{"service": "logbook.log", "data": {"message": "alarm lock fire"}}])
+        self.assertNotEqual(risk.level, RiskLevel.HIGH)
+
+    def test_notification_text_garage_door_is_not_high(self):
+        risk = self._create_risk(action=[{"service": "notify.mobile_app", "data": {"message": "garage door"}}])
+        self.assertNotEqual(risk.level, RiskLevel.HIGH)
+
+    def test_lock_lock_action_is_high_with_structured_evidence(self):
+        risk = self._create_risk(action=[{"service": "lock.lock", "target": {"entity_id": "lock.front"}}])
+        self.assertEqual(risk.level, RiskLevel.HIGH)
+        self.assertTrue(any(item["field"].endswith(".service") for item in risk.evidence))
+        self.assertNotIn("lock.front", json.dumps(risk.evidence))
+
+    def test_garage_cover_open_is_high(self):
+        risk = self._create_risk(action=[{"service": "cover.open_cover", "target": {"entity_id": "cover.garage_door"}}])
+        self.assertEqual(risk.level, RiskLevel.HIGH)
+
+    def test_alarm_disarm_is_high(self):
+        risk = self._create_risk(action=[{"service": "alarm_control_panel.alarm_disarm", "target": {"entity_id": "alarm_control_panel.home"}}])
+        self.assertEqual(risk.level, RiskLevel.HIGH)
+
+    def test_valve_shutoff_is_high(self):
+        risk = self._create_risk(action=[{"service": "valve.close", "target": {"entity_id": "valve.main"}}])
+        self.assertEqual(risk.level, RiskLevel.HIGH)
+
+    def test_homeassistant_restart_is_high(self):
+        self.assertEqual(self._create_risk(action=[{"service": "homeassistant.restart"}]).level, RiskLevel.HIGH)
+
+    def test_broad_destructive_service_is_high(self):
+        self.assertEqual(self._create_risk(action=[{"service": "hassio.host_reboot"}]).level, RiskLevel.HIGH)
+
+    def test_dynamic_service_is_conservative_medium_with_warning(self):
+        risk = self._create_risk(action=[{"service": "{{ dynamic_domain }}.{{ dynamic_service }}"}])
+        self.assertEqual(risk.level, RiskLevel.MEDIUM)
+        self.assertTrue(risk.warnings)
+        self.assertTrue(any(item["trigger"] == "unresolved_dynamic_service" for item in risk.evidence))
+
+    def test_risk_reasons_and_evidence_are_deterministic(self):
+        proposed = {**copy.deepcopy(CURRENT), "action": [{"service": "lock.lock", "target": {"entity_id": "lock.front"}}]}
+        first = classify_risk(ChangeOperation.CREATE_AUTOMATION, structured_diff(None, proposed), proposed)
+        second = classify_risk(ChangeOperation.CREATE_AUTOMATION, structured_diff(None, proposed), proposed)
+        self.assertEqual(first.reasons, second.reasons)
+        self.assertEqual(first.evidence, second.evidence)
 
 
 class ApprovalAndApplyTests(GovernanceTestCase):
@@ -601,6 +668,27 @@ class PersistenceTests(unittest.TestCase):
         created = asyncio.run(create())
         reloaded = ChangePlanRepository(self.root).get(created["plan_id"])
         self.assertEqual(reloaded.plan_id, created["plan_id"])
+
+    def test_beta5_plan_without_risk_evidence_remains_readable(self):
+        async def create():
+            repository = ChangePlanRepository(self.root)
+            service = ChangeGovernanceService(repository, FakeGateway({"porch": CURRENT}))
+            config = copy.deepcopy(CURRENT)
+            config["description"] = "changed"
+            return await service.create_plan(
+                title="Beta 5 compatibility", description="Compatibility",
+                operation="update_automation", automation_id="porch",
+                proposed_config=config,
+            )
+        created = asyncio.run(create())
+        path = self.root / f"{created['plan_id']}.json"
+        stored = json.loads(path.read_text())
+        stored["risk"].pop("evidence", None)
+        stored["risk"].pop("warnings", None)
+        path.write_text(json.dumps(stored))
+        reloaded = ChangePlanRepository(self.root).get(created["plan_id"])
+        self.assertEqual(reloaded.risk.evidence, [])
+        self.assertEqual(reloaded.risk.warnings, [])
 
     def test_restart_marks_abandoned_apply_failed(self):
         async def create():

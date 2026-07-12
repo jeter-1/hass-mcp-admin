@@ -6,6 +6,25 @@ Date: 2026-07-10
 
 This document classifies every tool currently exposed by the custom HA MCP Engineering Server against the project's intended role: engineering analysis, governance, verification, and documentation that complements the standard `ha-mcp` server.
 
+## Phase 3A provider routing overlay
+
+Lifecycle classification and provider routing answer different questions. The existing
+`native`, `transitional`, `delegated`, and `deprecated` labels remain unchanged. The
+central Phase 3A policy maps all 32 beta tools to these execution/evidence routes:
+
+| Route | Existing tools/capabilities |
+| --- | --- |
+| `engineering_native` | server/capability diagnostics, audit, plan creation/risk, plan reads/list/approval |
+| `standard_mcp_preferred` | entity state/search, areas, service discovery, ordinary execution/reload |
+| `direct_ha_required` | automation config, traces, blueprint source, config check, governed apply/verification/rollback |
+| `transitional_direct` | template/history/logbook/error log, list automations/devices/entity registry/blueprints, legacy upsert |
+| `prohibited` | ungoverned destructive automation deletion in the target architecture and secret-bearing diagnostics |
+
+The deprecated compatibility tools remain callable in Beta 6 with unchanged schemas;
+the routing overlay documents the target boundary and is not a silent behavior change.
+Standard-MCP delegation is not currently operational. Its internal provider reports
+unavailable, and no write falls back to direct HA execution.
+
 Classifications:
 
 - **Keep** — uniquely useful or strategically important to the Engineering server.

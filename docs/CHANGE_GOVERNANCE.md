@@ -1,6 +1,6 @@
 # Beta automation change governance
 
-Version 2.0.0-beta.5 provides a beta-only approval boundary for controlled
+Version 2.0.0-beta.6 provides a beta-only approval boundary for controlled
 Home Assistant automation creation and updates. It does not alter production
 v1.1.2 and does not govern scripts, scenes, dashboards, helpers, integrations,
 devices, add-ons, system configuration, arbitrary direct service calls, or
@@ -73,14 +73,25 @@ Risk classification is deterministic:
 - **Medium:** new automations, trigger/condition/time-window changes, mode or
   maximum-run changes, notification recipient behavior, HVAC/lighting changes,
   and non-critical physical actions.
-- **High:** lock, garage, alarm, water-shutoff, security-bypass, host/core,
-  unrestricted broad-target, unrestricted-template, destructive, or immediate
-  safety-sensitive behavior.
+- **High:** structured lock, garage-cover, alarm, valve/water-shutoff, host/core,
+  broad-target, destructive, or immediate safety-sensitive actions.
+
+Risk is based on actionable structure: action service/domain, target entity/device/area,
+entity domain, trigger/condition type, and structured blueprint inputs. Alias,
+description, event text, log messages, notification text, approval notes, caller context,
+and non-actionable template literals cannot independently make a plan high risk.
+Unresolved dynamic service or target construction is conservatively medium with a
+warning and structured evidence. Evidence identifies the triggering field and category
+without echoing complete target identifiers or secrets.
 
 Low and medium plans require approval and may execute. High-risk plans remain
 visible with deterministic reasons, but `approve_change_plan` and
 `apply_change_plan` reject them with `high_risk_change_rejected`. Caller text or
 an approval note cannot lower calculated risk.
+
+Governed configuration reads, writes, verification, and rollback are
+`direct_ha_required` facilitator capabilities. They do not route through ordinary
+service execution or fall back to an unverified write. See ADR-002 for provider rules.
 
 ## Approval and expiration
 

@@ -8,6 +8,9 @@
 > [`docs/BETA_DEPLOYMENT.md`](docs/BETA_DEPLOYMENT.md).
 > The beta approval workflow is documented in
 > [`docs/CHANGE_GOVERNANCE.md`](docs/CHANGE_GOVERNANCE.md).
+> The facilitator decision and bounded-response contract are documented in
+> [`docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md`](docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md)
+> and [`docs/TOKEN_EFFICIENCY.md`](docs/TOKEN_EFFICIENCY.md).
 
 A focused Model Context Protocol server for Home Assistant engineering, diagnostics,
 and controlled administration, packaged as a Home Assistant OS add-on. It works with

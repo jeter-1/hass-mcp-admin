@@ -21,6 +21,14 @@ class RuntimeMetrics:
     ha_latencies: deque[float] = field(default_factory=lambda: deque(maxlen=100))
     operation_methods: Counter = field(default_factory=Counter)
     errors: Counter = field(default_factory=Counter)
+    provider_requests: Counter = field(default_factory=Counter)
+    provider_successes: Counter = field(default_factory=Counter)
+    provider_failures: Counter = field(default_factory=Counter)
+    provider_partial_results: int = 0
+    fallback_attempts: int = 0
+    fallback_successes: int = 0
+    prohibited_fallback_attempts: int = 0
+    evidence_truncation_count: int = 0
 
     def record_transport_completion(self) -> None:
         self.transport_request_count += 1
@@ -44,6 +52,29 @@ class RuntimeMetrics:
     def record_error(self, code: str) -> None:
         self.errors[code] += 1
 
+    def record_provider_result(self, provider_id: str, completeness: str) -> None:
+        provider = provider_id if provider_id in {"engineering", "standard_ha_mcp", "direct_ha_api", "policy", "none"} else "other"
+        self.provider_requests[provider] += 1
+        if completeness == "complete":
+            self.provider_successes[provider] += 1
+        elif completeness == "partial":
+            self.provider_successes[provider] += 1
+            self.provider_partial_results += 1
+        else:
+            self.provider_failures[provider] += 1
+
+    def record_fallback_attempt(self) -> None:
+        self.fallback_attempts += 1
+
+    def record_fallback_success(self) -> None:
+        self.fallback_successes += 1
+
+    def record_prohibited_fallback(self) -> None:
+        self.prohibited_fallback_attempts += 1
+
+    def record_evidence_truncation(self) -> None:
+        self.evidence_truncation_count += 1
+
     def reset(self) -> None:
         """Deterministically reset in-memory metrics without replacing the registry."""
         self.started = time.monotonic()
@@ -57,6 +88,14 @@ class RuntimeMetrics:
         self.ha_latencies.clear()
         self.operation_methods.clear()
         self.errors.clear()
+        self.provider_requests.clear()
+        self.provider_successes.clear()
+        self.provider_failures.clear()
+        self.provider_partial_results = 0
+        self.fallback_attempts = 0
+        self.fallback_successes = 0
+        self.prohibited_fallback_attempts = 0
+        self.evidence_truncation_count = 0
 
     @staticmethod
     def _summary(values: deque[float]) -> dict[str, float | int | None]:
@@ -81,6 +120,16 @@ class RuntimeMetrics:
             "home_assistant_latency": self._summary(self.ha_latencies),
             "mcp_operation_methods": dict(self.operation_methods),
             "recent_error_counts": dict(self.errors),
+            "provider_routing": {
+                "requests_by_provider": dict(self.provider_requests),
+                "successful_requests_by_provider": dict(self.provider_successes),
+                "failures_by_provider": dict(self.provider_failures),
+                "partial_results": self.provider_partial_results,
+                "fallback_attempts": self.fallback_attempts,
+                "fallback_successes": self.fallback_successes,
+                "prohibited_fallback_attempts": self.prohibited_fallback_attempts,
+                "evidence_truncation_count": self.evidence_truncation_count,
+            },
         }
 
 

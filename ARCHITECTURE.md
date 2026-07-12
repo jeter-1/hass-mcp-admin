@@ -22,6 +22,18 @@ Its long-term purpose is to help an AI client such as ChatGPT, Claude, or anothe
 
 It is not intended to duplicate every Home Assistant API operation exposed by a general-purpose Home Assistant MCP server.
 
+The architectural decision is formalized in
+[`docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md`](docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md):
+
+> The Engineering MCP is not intended to replace the standard Home Assistant MCP
+> server. It facilitates, governs, correlates, and reduces the information exchanged
+> between the AI and Home Assistant.
+
+The target flow is AI client -> Engineering MCP -> standard HA MCP -> Home
+Assistant. Direct HA API access bypasses the standard-MCP layer only for explicit
+native exceptions requiring exact configuration, traces, blueprint source,
+configuration validation, governed read-back, rollback, or health/connectivity.
+
 ## Relationship to the General Home Assistant MCP Server
 
 The general `ha-mcp` server should normally remain the primary execution and broad administration interface for Home Assistant.
@@ -51,6 +63,12 @@ The general `ha-mcp` server should normally remain the primary execution and bro
 The engineering server may retain direct Home Assistant read access where it materially improves analysis. Write and physical-action capabilities should exist only where they provide stronger governance, verification, or safety than direct use of the general server.
 
 ## Current Implementation
+
+The v2 beta currently exposes 32 tools and implements governance, verification,
+rollback, persistence, audit, and request correlation. It has direct REST/WebSocket
+clients but no configured nested standard-MCP client. Delegation labels describe the
+target provider; current compatibility reads remain direct and transitional. The
+standard-MCP gateway reports unavailable rather than simulating success.
 
 The current release is a compact Python service built around FastMCP and an ASGI gateway.
 
@@ -307,6 +325,11 @@ The engineering server should not become:
 - establish unit and contract tests.
 
 ### Phase 3: unique analysis
+
+Phase 3A establishes transport-independent evidence providers, deterministic routing
+and fallback policy, bounded coverage/evidence/pagination models, safe provider
+observability, and structure-first risk classification. It adds no analytical MCP
+tools.
 
 - entity dependency analysis;
 - automation reliability analysis;
