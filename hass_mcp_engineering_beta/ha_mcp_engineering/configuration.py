@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 OPTIONS_PATH = Path(os.environ.get("HAMCP_OPTIONS_PATH", "/data/options.json"))
+MIN_ACCESS_SECRET_LENGTH = 24
 
 DEFAULT_DESTRUCTIVE_SERVICES = (
     "lock.unlock",

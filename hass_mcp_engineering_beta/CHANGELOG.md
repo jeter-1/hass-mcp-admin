@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.0-beta.3
+
+- Add fail-closed beta deployment and metadata validation for Windows development.
+- Add a repeatable beta release checklist, optional health check, and cache-delay
+  troubleshooting guidance.
+- Keep the production v1.1.2 add-on and runtime unchanged.
+
 ## 2.0.0-beta.2
 
 - Explicitly register `get_server_health` with the served FastMCP registry and
