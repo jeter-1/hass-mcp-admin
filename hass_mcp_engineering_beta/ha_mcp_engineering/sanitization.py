@@ -9,6 +9,9 @@ from typing import Any
 
 
 REDACTION_MARKER = re.compile(r"\[REDACTED:[a-z0-9_]+\]")
+REPEATED_REDACTION_MARKER = re.compile(
+    r"(\[REDACTED:([a-z0-9_]+)\])(?:\s*\1)+"
+)
 MAX_REDACTION_CATEGORIES = 16
 SANITIZATION_FAILURE_MARKER = "[REDACTED:sanitization_failure]"
 
@@ -314,7 +317,11 @@ class _Sanitizer:
             if index < len(markers):
                 output.append(markers[index])
         self._record_field(categories)
-        return self._truncate("".join(output))
+        # Overlapping key-aware and free-text detections may identify the same
+        # original value. Preserve one stable marker without weakening either
+        # detection pass or changing idempotence.
+        deduplicated = REPEATED_REDACTION_MARKER.sub(r"\1", "".join(output))
+        return self._truncate(deduplicated)
 
     def sanitize(self, value: Any, path: tuple[str, ...] = ()) -> Any:
         if isinstance(value, Mapping):
