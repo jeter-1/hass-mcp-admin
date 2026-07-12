@@ -139,7 +139,7 @@ class AddonIsolationTests(unittest.TestCase):
     def test_beta_metadata_is_distinct_and_valid(self):
         self.assertEqual(self.beta["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(self.beta["slug"], "hass_mcp_engineering_beta")
-        self.assertEqual(self.beta["version"], "2.0.0-beta.5")
+        self.assertEqual(self.beta["version"], "2.0.0-beta.6")
         self.assertEqual(self.beta["ports"], {"8100/tcp": 8100})
         self.assertNotEqual(self.beta["slug"], self.production["slug"])
         self.assertNotEqual(set(self.beta["ports"]), set(self.production["ports"]))
@@ -174,12 +174,22 @@ class AddonIsolationTests(unittest.TestCase):
             "governance/storage.py",
             "governance/service.py",
             "tools/governance.py",
+            "facilitation/models.py",
+            "providers/base.py",
+            "providers/models.py",
+            "providers/routing.py",
+            "providers/standard_mcp.py",
+            "providers/direct_ha.py",
         ):
             self.assertTrue((package / relative_path).is_file(), relative_path)
         self.assertTrue((BETA_DIR / "README.md").is_file())
         self.assertTrue((BETA_DIR / "OBSERVABILITY.md").is_file())
         self.assertTrue((ROOT / "V2_BETA_ARCHITECTURE.md").is_file())
         self.assertTrue((ROOT / "docs" / "CHANGE_GOVERNANCE.md").is_file())
+        self.assertTrue((ROOT / "docs" / "TOKEN_EFFICIENCY.md").is_file())
+        self.assertTrue(
+            (ROOT / "docs" / "architecture" / "ADR-002-ENGINEERING-MCP-FACILITATOR.md").is_file()
+        )
 
 
 class ToolParityTests(unittest.TestCase):
@@ -234,7 +244,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
-        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.5")
+        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.6")
         self.assertEqual(result["data"]["tool_count"], 32)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 

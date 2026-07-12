@@ -187,6 +187,11 @@ The in-memory metrics registry captures:
 - safe Home Assistant endpoint categories; and
 - recent error counts by stable code.
 
+Phase 3A also tracks bounded provider-routing counters: requests, successes, and
+failures by safe provider identity; partial results; fallback attempts and successes;
+prohibited fallback attempts; and evidence truncation. Counters contain no queries,
+evidence payloads, credentials, or provider URLs.
+
 Long-lived GET/SSE stream and idle session lifetime is excluded from operational
 latency. Transport completions are counted separately without treating session
 lifetime as request-processing time. Metrics are process-local and reset
@@ -210,9 +215,15 @@ envelope containing safe operational data:
 - rate-limiter summary;
 - redaction and configuration-validation state;
 - tool-call, retry, and timeout counts.
+- safe provider-routing counters and explicit `standard_ha_mcp_delegation=unavailable`.
 
 It never returns the secret, tokens, headers, cookies, complete MCP endpoint
 paths, private request payloads, or raw audit/log records.
+
+The delegation diagnostic reflects current reality: Beta 6 has no configured nested
+standard-MCP transport. It must not be interpreted as a connectivity probe for another
+MCP server. Provider failures and partial coverage remain visible; permitted direct
+read fallback requires explicit policy, while direct write fallback is prohibited.
 
 ## Startup configuration validation
 
