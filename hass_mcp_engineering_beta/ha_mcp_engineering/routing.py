@@ -230,7 +230,8 @@ class AuthenticatedMcpGateway:
             await self.app(forwarded, new_receive, correlated_send)
         except Exception:
             telemetry.error_code = telemetry.error_code or ErrorCode.INTERNAL_SERVER_ERROR.value
-            METRICS.record_error(telemetry.error_code)
+            if not tool_name:
+                METRICS.record_error(telemetry.error_code)
             log_event(
                 self.logger,
                 logging.ERROR,
@@ -242,6 +243,11 @@ class AuthenticatedMcpGateway:
             )
             raise
         finally:
+            # recent_error_counts measures terminal public tool outcomes. The
+            # transport, provider, and response-conversion layers may all see
+            # the same exception, but one tools/call contributes one count.
+            if tool_name and telemetry.error_code:
+                METRICS.record_error(telemetry.error_code)
             if telemetry.tool_started is not None:
                 telemetry.tool_duration_ms = round(
                     (time.perf_counter() - telemetry.tool_started) * 1000, 3

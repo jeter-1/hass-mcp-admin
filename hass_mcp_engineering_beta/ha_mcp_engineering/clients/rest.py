@@ -90,7 +90,6 @@ class HomeAssistantRestClient:
                         telemetry = current_telemetry()
                         if telemetry:
                             telemetry.error_code = error.code.value
-                        METRICS.record_error(error.code.value)
                         raise error
                     if raw:
                         return text
@@ -100,13 +99,11 @@ class HomeAssistantRestClient:
                         return text
         except (asyncio.TimeoutError, TimeoutError) as exc:
             self._record(started, category, timeout=True)
-            METRICS.record_error(ErrorCode.HA_TIMEOUT.value)
             raise HomeAssistantTimeoutError(
                 details={"method": method, "endpoint_category": category}
             ) from exc
         except (aiohttp.ClientConnectionError, OSError) as exc:
             self._record(started, category)
-            METRICS.record_error(ErrorCode.HA_UNAVAILABLE.value)
             raise HomeAssistantUnavailableError(
                 details={"method": method, "endpoint_category": category}
             ) from exc

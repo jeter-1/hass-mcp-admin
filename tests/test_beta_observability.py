@@ -447,7 +447,7 @@ class GatewayAndHealthTests(unittest.TestCase):
             payload = json.loads(asyncio.run(compatibility.get_server_health(check_ha=False)))
         self.assertTrue(payload["success"])
         health = payload["data"]
-        self.assertEqual(health["server"]["version"], "2.0.0-beta.9")
+        self.assertEqual(health["server"]["version"], "2.0.0-beta.10")
         self.assertEqual(health["registered_tool_count"], 33)
         self.assertIn("governance", health)
         self.assertIn("storage_corruption_count", health["governance"])

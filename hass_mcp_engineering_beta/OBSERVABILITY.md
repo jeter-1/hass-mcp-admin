@@ -45,7 +45,7 @@ Failure response:
   "error": "HomeAssistantTimeoutError",
   "error_code": "home_assistant_timeout",
   "message": "Home Assistant timed out.",
-  "details": {"method": "GET", "endpoint_category": "error_log"},
+  "details": {"method": "WEBSOCKET", "endpoint_category": "system_log/list"},
   "retryable": true,
   "warnings": [],
   "metadata": {},
@@ -92,6 +92,11 @@ redacted application logs.
 Taxonomy definitions allow only safe diagnostic field categories:
 `exception_type`, `operation`, `resource_id`, `status`, and
 `endpoint_category`. Individual mappings may return a subset.
+
+Provider source coverage uses a separate stable failure taxonomy. A request rejected
+locally before any provider I/O uses `request_validation`, sets
+`upstream_attempted=false`, and reports `home_assistant_ms=0`. It must not be labeled
+`provider_upstream_error`. Upstream rejections retain `provider_upstream_error`.
 
 ## Request correlation
 
@@ -187,6 +192,12 @@ The in-memory metrics registry captures:
 - safe Home Assistant endpoint categories; and
 - recent error counts by stable code.
 
+`recent_error_counts` counts terminal public tool outcomes: one failed `tools/call`
+increments its final public error code once. REST/WebSocket detection, facilitator
+conversion, and response wrapping do not add duplicate counts for the same call.
+Provider failures remain separately counted by provider, and retry attempts remain in
+retry telemetry.
+
 Phase 3A also tracks bounded provider-routing counters: requests, successes, and
 failures by safe provider identity; partial results; fallback attempts and successes;
 prohibited fallback attempts; and evidence truncation. Counters contain no queries,
@@ -226,7 +237,7 @@ envelope containing safe operational data:
 It never returns the secret, tokens, headers, cookies, complete MCP endpoint
 paths, private request payloads, or raw audit/log records.
 
-The delegation diagnostic reflects current reality: Beta 9 verifies the Home Assistant
+The delegation diagnostic reflects current reality: Beta 10 verifies the Home Assistant
 MCP endpoint but does not configure or call it because Assist lacks exact mappings for
 the approved administrative reads. It must not be interpreted as a Home Assistant API
 connectivity failure. Provider failures and partial coverage remain visible; the four
@@ -242,6 +253,24 @@ Lifecycle labels do not substitute for runtime provider attribution.
 Dependency timing separates current request duration, cache lookup duration, original
 index-build duration, and cached source-provenance duration. Cached provenance is not
 reported as work repeated during the current request.
+
+## Structured Home Assistant error entries
+
+`get_error_log(tail_lines=1..200)` uses Home Assistant's admin-only
+[`system_log/list` WebSocket command](https://github.com/home-assistant/core/blob/2026.7.2/homeassistant/components/system_log/__init__.py).
+[Home Assistant 2026.7.2 registers the historical `/api/error_log` REST view only
+when file logging is configured](https://github.com/home-assistant/core/blob/2026.7.2/homeassistant/components/api/__init__.py);
+[HA OS normally sends Core logs to the system journal](https://www.home-assistant.io/common-tasks/os/),
+so that conditional view can return 404. Beta 10 does not request broad Supervisor log
+permissions.
+
+The compatible input name remains `tail_lines`, but the result now contains
+newest-first, deduplicated structured warning/error entries rather than raw file lines.
+The envelope identifies `home_assistant_system_log`, returned/available counts,
+effective and maximum limits, explicit truncation reasons, and
+`content_is_untrusted_data=true`. Each string and the total payload are bounded. Empty
+System Log state is a successful empty list; 404, permission, timeout, unavailable, and
+malformed responses remain explicit failures.
 
 ## Startup configuration validation
 

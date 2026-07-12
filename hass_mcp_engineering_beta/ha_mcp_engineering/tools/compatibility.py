@@ -27,7 +27,8 @@ from ..clients import HomeAssistantRestClient, HomeAssistantWebSocketClient
 from ..configuration import load_settings
 from ..health import HEALTH
 from ..dependency import DEPENDENCY_ANALYSIS
-from ..logging_config import get_logger, log_event
+from ..errors import HomeAssistantApiError
+from ..logging_config import get_logger, log_event, redact_data
 from ..mcp_server import create_mcp_server
 from ..models.responses import dump_json
 from ..tool_framework import run_structured
@@ -51,6 +52,8 @@ AUDIT_PATH = SETTINGS.audit_path
 REST_CLIENT = HomeAssistantRestClient(SETTINGS)
 WEBSOCKET_CLIENT = HomeAssistantWebSocketClient(SETTINGS)
 MAX_CHARS = 60_000
+MAX_ERROR_LOG_ENTRIES = 200
+MAX_ERROR_LOG_PAYLOAD_CHARS = 40_000
 LOGGER = get_logger("compatibility")
 
 
@@ -274,15 +277,93 @@ async def get_logbook(hours: float = 12, entity_id: str = "") -> str:
 
 @mcp.tool()
 async def get_error_log(tail_lines: int = 200) -> str:
-    """The Home Assistant core error log (most recent lines)."""
+    """Recent structured Home Assistant Core warnings and errors.
+
+    tail_lines is retained for compatibility and now bounds structured System
+    Log entries (newest first), not raw file lines. Allowed range: 1-200.
+    """
     async def action():
-        text = await rest("GET", "/error_log", raw=True)
-        lines = text.splitlines()
-        return {"line_count": min(len(lines), tail_lines), "lines": lines[-tail_lines:]}
+        if not isinstance(tail_lines, int) or isinstance(tail_lines, bool):
+            raise ValueError("tail_lines must be an integer")
+        if not 1 <= tail_lines <= MAX_ERROR_LOG_ENTRIES:
+            raise ValueError(
+                f"tail_lines must be between 1 and {MAX_ERROR_LOG_ENTRIES}"
+            )
+        result = await ws_command({"type": "system_log/list"})
+        if not isinstance(result, list) or any(not isinstance(item, dict) for item in result):
+            raise HomeAssistantApiError(
+                details={
+                    "method": "WEBSOCKET",
+                    "endpoint_category": "system_log/list",
+                }
+            )
+
+        payload_budget = min(
+            MAX_ERROR_LOG_PAYLOAD_CHARS,
+            max(4_000, SETTINGS.response_size_limit // 2),
+        )
+        entries = []
+        payload_truncated = False
+        field_truncated = False
+        selected = result[:tail_lines]
+        for item in selected:
+            source = item.get("source")
+            messages = item.get("message") or []
+            if isinstance(messages, str):
+                messages = [messages]
+            elif not isinstance(messages, (list, tuple)):
+                messages = []
+            safe_entry = redact_data(
+                {
+                    "timestamp": item.get("timestamp"),
+                    "first_occurred": item.get("first_occurred"),
+                    "level": item.get("level"),
+                    "logger": item.get("name"),
+                    "message": list(messages)[:5],
+                    "source": source,
+                    "exception": item.get("exception") or "",
+                    "count": item.get("count", 1),
+                },
+                secret=ACCESS_SECRET,
+                secrets=(HA_TOKEN,),
+                max_string=2_048,
+            )
+            field_truncated = field_truncated or "...<truncated>" in json.dumps(
+                safe_entry, default=str
+            )
+            candidate = [*entries, safe_entry]
+            if len(json.dumps(candidate, default=str)) > payload_budget:
+                payload_truncated = True
+                break
+            entries.append(safe_entry)
+
+        limit_truncated = len(result) > tail_lines
+        truncated = payload_truncated or limit_truncated or field_truncated
+        reasons = []
+        if limit_truncated:
+            reasons.append("tail_lines_limit")
+        if payload_truncated:
+            reasons.append("payload_size_limit")
+        if field_truncated:
+            reasons.append("entry_field_limit")
+        return {
+            "source": "home_assistant_system_log",
+            "semantics": "deduplicated_warning_and_error_entries",
+            "ordering": "newest_first",
+            "requested_tail_lines": tail_lines,
+            "effective_tail_lines": tail_lines,
+            "maximum_tail_lines": MAX_ERROR_LOG_ENTRIES,
+            "available_entry_count": len(result),
+            "returned_entry_count": len(entries),
+            "entries": entries,
+            "truncated": truncated,
+            "truncation_reasons": reasons,
+            "content_is_untrusted_data": True,
+        }
 
     return await run_structured(
         "get_error_log",
-        "Returned the requested tail of the Home Assistant error log.",
+        "Returned bounded structured Home Assistant warning and error entries.",
         action,
         response_limit=SETTINGS.response_size_limit,
     )

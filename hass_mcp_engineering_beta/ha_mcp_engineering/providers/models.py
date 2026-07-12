@@ -51,6 +51,7 @@ class ProviderCompleteness(str, Enum):
 
 
 class ProviderFailureCategory(str, Enum):
+    REQUEST_VALIDATION = "request_validation"
     UNAVAILABLE = "provider_unavailable"
     TIMEOUT = "provider_timeout"
     UPSTREAM_ERROR = "provider_upstream_error"

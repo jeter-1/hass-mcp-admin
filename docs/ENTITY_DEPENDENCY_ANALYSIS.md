@@ -89,6 +89,6 @@ one entity. Runtime automation action-to-trigger causality is not inferred. Dash
 static YAML/package, script, scene, group, template-source, and custom-integration
 coverage remains unavailable.
 
-The server-side Beta 9 manifest contains 33 tools. Recreate the ChatGPT beta connector or
-use the cache marker `?manifest=beta9` if the tool is absent. Never place a real secret
+The server-side Beta 10 manifest contains 33 tools. Recreate the ChatGPT beta connector or
+use the cache marker `?manifest=beta10` if the tool is absent. Never place a real secret
 or private connector URL in source, logs, or screenshots.

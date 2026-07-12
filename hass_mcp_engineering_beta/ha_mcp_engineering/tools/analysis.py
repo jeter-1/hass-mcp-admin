@@ -63,7 +63,6 @@ async def entity_dependency_analysis(
         ).to_json(SETTINGS.response_size_limit)
     except Exception as exc:
         code, message, retryable, details = map_exception(exc)
-        METRICS.record_error(code.value)
         if telemetry:
             telemetry.error_code = code.value
             telemetry.result_status = "failure"

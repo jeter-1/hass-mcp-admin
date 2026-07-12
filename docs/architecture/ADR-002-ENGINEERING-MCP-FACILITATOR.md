@@ -114,6 +114,12 @@ The canonical direct-access allowlist is explicit and fail-closed:
 - Legacy configuration write retained during governance migration:
   `upsert_automation`.
 
+Beta 10 narrows the `get_error_log` exception to the read-only
+`structured_system_log_read` policy. It uses the admin-only `system_log/list`
+WebSocket command and does not authorize Supervisor journal access, raw log-file
+mounts, frontend scraping, or any log-triggered action. The existing Phase 3C four-read
+capability-truth matrix is otherwise unchanged.
+
 `server_info` and `get_server_health` may perform their documented bounded HA
 connectivity probes. Governance apply, exact read-back verification, and rollback use
 the direct configuration API under their existing approval and audit controls.
