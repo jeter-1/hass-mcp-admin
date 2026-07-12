@@ -148,6 +148,8 @@ class ErrorTaxonomyTests(unittest.TestCase):
             "rollback_not_available", "rollback_approval_required",
             "rollback_failed", "change_plan_storage_error",
             "invalid_cursor", "stale_cursor", "analysis_unavailable",
+            "provider_unavailable", "provider_timeout", "provider_error",
+            "provider_prohibited",
         }
         self.assertEqual({code.value for code in ERROR_CATALOG}, expected)
         for definition in ERROR_CATALOG.values():
@@ -157,9 +159,21 @@ class ErrorTaxonomyTests(unittest.TestCase):
             self.assertIn("endpoint_category", definition.safe_detail_fields)
 
     def test_retryable_classification(self):
-        for code in (ErrorCode.HA_TIMEOUT, ErrorCode.HA_UNAVAILABLE, ErrorCode.RATE_LIMIT_EXCEEDED, ErrorCode.ANALYSIS_UNAVAILABLE):
+        for code in (
+            ErrorCode.HA_TIMEOUT,
+            ErrorCode.HA_UNAVAILABLE,
+            ErrorCode.RATE_LIMIT_EXCEEDED,
+            ErrorCode.ANALYSIS_UNAVAILABLE,
+            ErrorCode.PROVIDER_TIMEOUT,
+            ErrorCode.PROVIDER_ERROR,
+        ):
             self.assertTrue(error_definition(code).retryable)
-        for code in (ErrorCode.INVALID_REQUEST, ErrorCode.AUTHENTICATION_FAILURE):
+        for code in (
+            ErrorCode.INVALID_REQUEST,
+            ErrorCode.AUTHENTICATION_FAILURE,
+            ErrorCode.PROVIDER_UNAVAILABLE,
+            ErrorCode.PROVIDER_PROHIBITED,
+        ):
             self.assertFalse(error_definition(code).retryable)
 
     def test_invalid_request_mapping(self):
@@ -433,7 +447,7 @@ class GatewayAndHealthTests(unittest.TestCase):
             payload = json.loads(asyncio.run(compatibility.get_server_health(check_ha=False)))
         self.assertTrue(payload["success"])
         health = payload["data"]
-        self.assertEqual(health["server"]["version"], "2.0.0-beta.7")
+        self.assertEqual(health["server"]["version"], "2.0.0-beta.8")
         self.assertEqual(health["registered_tool_count"], 33)
         self.assertIn("governance", health)
         self.assertIn("storage_corruption_count", health["governance"])

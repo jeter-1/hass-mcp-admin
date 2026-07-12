@@ -20,10 +20,11 @@ central routing policy maps all 33 beta tools to these execution/evidence routes
 | `transitional_direct` | template/history/logbook/error log, list automations/devices/entity registry/blueprints, legacy upsert |
 | `prohibited` | ungoverned destructive automation deletion in the target architecture and secret-bearing diagnostics |
 
-The deprecated compatibility tools remain callable in Beta 7 with unchanged schemas;
-the routing overlay documents the target boundary and is not a silent behavior change.
-Standard-MCP delegation is not currently operational. Its internal provider reports
-unavailable, and no write falls back to direct HA execution.
+Beta 8 preserves every public schema but enforces the routing overlay at runtime.
+Delegated calls return a structured provider-unavailable result while Standard MCP is
+unavailable. `delete_automation` fails closed as prohibited; `call_service` and
+`reload_domain` cannot silently execute through direct HA. Transitional calls use only
+the explicit direct-HA allowlist and record their provider.
 
 Beta 7 moves `entity_dependency_analysis` from planned to additive `beta_native`,
 category `analysis`, risk `read`, routed `engineering_native`. Four planned analytical

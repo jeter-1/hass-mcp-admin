@@ -337,7 +337,7 @@ class ToolContractTests(unittest.TestCase):
             {"summary", "standard", "evidence"},
         )
 
-    def test_direct_upsert_delete_and_reload_invalidate_index(self):
+    def test_direct_upsert_invalidates_but_prohibited_and_delegated_writes_do_not(self):
         async def exercise():
             with patch.object(compatibility, "rest", new=AsyncMock(side_effect=[{"ok": True}, {"trigger": [], "action": []}])), patch.object(
                 compatibility.DEPENDENCY_ANALYSIS, "invalidate"
@@ -347,9 +347,11 @@ class ToolContractTests(unittest.TestCase):
             with patch.object(compatibility, "rest", new=AsyncMock(return_value={"ok": True})), patch.object(
                 compatibility.DEPENDENCY_ANALYSIS, "invalidate"
             ) as invalidate:
-                await compatibility.delete_automation("test", confirm=True)
-                await compatibility.reload_domain("automation")
-                self.assertEqual(invalidate.call_count, 2)
+                deleted = json.loads(await compatibility.delete_automation("test", confirm=True))
+                reloaded = json.loads(await compatibility.reload_domain("automation"))
+                self.assertEqual(deleted["error_code"], "provider_prohibited")
+                self.assertEqual(reloaded["error_code"], "provider_unavailable")
+                invalidate.assert_not_called()
         asyncio.run(exercise())
 
 

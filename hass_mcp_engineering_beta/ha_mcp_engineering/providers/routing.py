@@ -136,6 +136,34 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "entity_dependency_analysis": ProviderCapability.DEPENDENCY_ANALYSIS,
 }
 
+# Canonical tools in this allowlist may execute their existing direct-HA
+# implementation. Capability classification alone is intentionally insufficient:
+# direct access is a tool-specific exception that must be reviewed explicitly.
+DIRECT_HA_TOOL_EXCEPTIONS = frozenset(
+    {
+        "render_template",
+        "list_automation_traces",
+        "get_automation_trace",
+        "get_blueprint",
+        "check_config",
+        "get_history",
+        "get_logbook",
+        "get_error_log",
+        "list_automations",
+        "get_automation_config",
+        "list_devices",
+        "list_entity_registry",
+        "upsert_automation",
+        "list_blueprints",
+    }
+)
+
+
+def direct_ha_exception_for_tool(tool_name: str) -> bool:
+    """Return whether a canonical tool has an explicit direct-HA exception."""
+
+    return tool_name in DIRECT_HA_TOOL_EXCEPTIONS
+
 
 def routing_for_tool(tool_name: str, policy: RoutingPolicy | None = None) -> RoutingDecision:
     capability = TOOL_CAPABILITY_POLICY.get(tool_name, ProviderCapability.UNSUPPORTED_EXPERIMENTAL)

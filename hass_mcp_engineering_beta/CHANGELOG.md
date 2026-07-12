@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.0-beta.8
+
+- Route canonical delegated, transitional, direct-required, and prohibited tools
+  through the facilitator dispatcher while preserving all 33 tool input schemas.
+- Fail delegated calls with a structured provider error when the Standard HA MCP
+  gateway is unavailable; never silently invoke the legacy direct-HA implementation.
+- Normalize routed responses and attribute provider request, success, failure,
+  partial-result, and prohibited-fallback metrics.
+- Enforce a reviewed tool-specific allowlist for direct Home Assistant exceptions and
+  verify that `entity_dependency_analysis` is present and serializable in `tools/list`.
+
 ## 2.0.0-beta.7
 
 - Add the read-only `entity_dependency_analysis` tool; the beta manifest now exposes

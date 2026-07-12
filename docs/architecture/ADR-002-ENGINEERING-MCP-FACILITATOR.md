@@ -32,9 +32,11 @@ provide.
 
 The current beta has no configured or verified nested standard-MCP client transport.
 `StandardHaMcpGateway` therefore reports `provider_unavailable`; it never fabricates a
-delegation result. Existing compatibility reads continue through their current direct
-HA clients and are classified `transitional_direct` until a supported standard-MCP
-transport is introduced and contract-tested.
+delegation result. Beginning with Beta 8, every canonical handler whose capability is
+provider-routed enters the facilitator dispatcher. Delegated handlers fail closed while
+that gateway is unavailable and never reach their legacy direct-HA implementation.
+Transitional handlers enter the same dispatcher, use a reviewed tool-specific direct-HA
+exception, and report the provider actually used.
 
 ## Decision matrix
 
@@ -74,6 +76,35 @@ Partial delegation is represented by provider coverage, missing sources, warning
 and `completeness=partial`; it is never labeled complete merely because one source
 succeeded.
 
+Canonical registration wraps the existing handler rather than changing its signature.
+The wrapper applies routing before the handler can perform transport I/O and normalizes
+the result into the facilitator envelope. Lifecycle classification alone never grants a
+provider or a fallback.
+
+## Intentional direct-HA exceptions
+
+The canonical direct-access allowlist is explicit and fail-closed:
+
+- Transitional evidence: `render_template`, `get_history`, `get_logbook`,
+  `get_error_log`, `list_automations`, `list_devices`, `list_entity_registry`, and
+  `list_blueprints`.
+- Exact engineering configuration: `get_automation_config`,
+  `list_automation_traces`, `get_automation_trace`, `get_blueprint`, and
+  `check_config`.
+- Legacy configuration write retained during governance migration:
+  `upsert_automation`.
+
+`server_info` and `get_server_health` may perform their documented bounded HA
+connectivity probes. Governance apply, exact read-back verification, and rollback use
+the direct configuration API under their existing approval and audit controls.
+`entity_dependency_analysis` retains its separately tested explicit current-state
+fallback and reports partial source coverage. These exceptions do not authorize a
+failed delegated canonical call to fall back directly.
+
+`delete_automation` is prohibited by policy. `call_service` and `reload_domain` are
+delegated and cannot fall back to direct execution while Standard HA MCP delegation is
+unavailable.
+
 ## Failure and fallback rules
 
 Provider failures remain visible through a bounded failure category, warning, timing,
@@ -102,8 +133,8 @@ paying to transmit unchanged evidence on every analytical call.
   rollback, request correlation, and audit guarantees.
 - Failures and partial evidence cannot be silently converted into apparent success.
 - Provider metadata excludes credentials and authenticated URLs.
-- The facilitator has one deterministic routing policy instead of tool-specific fallback
-  decisions.
+- The facilitator has one deterministic capability policy plus a reviewed,
+  tool-specific direct-access exception allowlist.
 
 ## Consequences and follow-up
 

@@ -216,7 +216,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             coverage.append(
                 SourceCoverageItem(
                     source_type, "none", f"{source_type}_configuration", "unavailable", 0, 0,
-                    [f"Reliable {source_type} configuration access is not available in Beta 7."], 0.0,
+                    [f"Reliable {source_type} configuration access is not available in this beta."], 0.0,
                 )
             )
         coverage.append(
