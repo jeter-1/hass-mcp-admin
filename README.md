@@ -4,7 +4,8 @@
 > `8099`. An isolated v2 beta scaffold is available at
 > [`hass_mcp_engineering_beta/`](hass_mcp_engineering_beta/) on port `8100`.
 > See [`V2_BETA_ARCHITECTURE.md`](V2_BETA_ARCHITECTURE.md) before installing or
-> migrating tools.
+> migrating tools. Beta release and cache-refresh procedures are documented in
+> [`docs/BETA_DEPLOYMENT.md`](docs/BETA_DEPLOYMENT.md).
 
 A focused Model Context Protocol server for Home Assistant engineering, diagnostics,
 and controlled administration, packaged as a Home Assistant OS add-on. It works with
