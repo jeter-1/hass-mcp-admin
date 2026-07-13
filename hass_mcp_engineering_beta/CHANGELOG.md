@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.0.0-beta.14
+
+- Fixed the Beta 13 null analysis timestamp by accepting injected timezone-aware clock instants and capturing one UTC request instant.
+- Unified `list_automation_traces` and reliability analysis behind one sanitized trace-list transport and normalization contract.
+- Added Home Assistant `{start, finish}` trace interval support alongside offset ISO strings and permitted epoch timestamps.
+- Made the lookback cutoff inclusive, timezone-aware, fixed for the request, and bound to pagination fingerprints.
+- Added truthful trace coverage states and bounded counts for upstream, parsed, eligible, selected, retrieved, failed, malformed, duplicate, and truncated runs.
+- Restricted `no_recent_execution_evidence` to trustworthy empty trace results; source defects now return partial or failure truthfully.
+- Added bounded sanitized pagination snapshots so cursor pages do not repeat HA trace collection or inflate aggregate counters.
+- Preserved Beta 13 correlation, chronology, root-cause, timing, cache-truth, redaction, routing, and write-boundary protections.
+- Preserved all 34 tool names and input schemas; production v1.1.2 remains unchanged.
+
 ## 2.0.0-beta.13
 
 - Corrected reliability observation chronology using timezone-aware UTC ordering independent of Home Assistant source order.

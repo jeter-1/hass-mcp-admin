@@ -119,3 +119,10 @@ summaries, normalized error text, or evidence fingerprints.
 The `single_automation_reliability_read` policy remains read-only. Beta 13 adds no
 service execution, trigger, write, approval, reload, restart, fallback, Supervisor
 permission, or Standard HA MCP success path.
+
+Beta 14 applies the recursive sanitizer to the complete trace-list result before
+selection, timestamp parsing, run-ID deduplication, hashing, truncation, formatting, or
+serialization. Trace detail follows the same fail-closed boundary. Pagination stores
+only already-sanitized public findings, references, coverage, and metadata in a bounded
+short-lived process snapshot; it never stores raw configuration, trace bodies, logs,
+entity state values, or normalized error content for audit.

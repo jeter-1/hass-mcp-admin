@@ -64,3 +64,8 @@ returns only their count. Correlation bases are stable enums rather than repeate
 log text. System Log limitations and timestamp intervals are compact metadata. A
 continuation page does not inflate aggregate finding or root-cause telemetry, and no
 result cache is implied where none exists.
+
+Beta 14 cursor pages reuse a bounded sanitized public-output snapshot for at most five
+minutes instead of retransmitting or recollecting trace evidence. The snapshot is
+cursor-only, capped at 16 analyses, removed after the final page, and cannot answer a
+new analysis request. Reusable reliability-result caching remains unsupported.
