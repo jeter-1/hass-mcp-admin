@@ -61,7 +61,7 @@ def evaluate_impact_rules(bundle: ImpactEvidenceBundle) -> list[ImpactFinding]:
                         affected_id,
                         True,
                         depth,
-                        f"A {source_type} contains one or more exact static references to the target entity.",
+                        f"{_article(source_type)} {source_type} contains one or more exact static references to the target entity.",
                         _direct_consequence(bundle.operation, source_type),
                         references,
                         True,
@@ -149,18 +149,29 @@ def evaluate_impact_rules(bundle: ImpactEvidenceBundle) -> list[ImpactFinding]:
 
     for item in bundle.dynamic_references:
         ref = str(item["reference_id"])
+        confirmed_target_related = (
+            item.get("relation_status") == "confirmed_target_related"
+        )
         findings.append(
             _finding(
                 "unresolved_dynamic_reference",
                 "medium",
-                "limited",
+                "limited" if confirmed_target_related else "unknown",
                 "dynamic_reference",
                 str(item.get("affected_object_type", "configuration")),
                 str(item.get("affected_object_id", item.get("source_id", "unknown"))),
-                True,
-                1,
-                "A dynamic reference in an already affected object cannot be resolved statically.",
-                "Manual review is required because the target relationship cannot be bounded safely.",
+                confirmed_target_related,
+                1 if confirmed_target_related else 0,
+                (
+                    "A dynamic reference in a confirmed target-related object cannot be resolved statically."
+                    if confirmed_target_related
+                    else "An unresolved dynamic reference exists in the requested source scope and cannot be proven related or unrelated to the target."
+                ),
+                (
+                    "Manual review is required because the known target-related object contains a dynamic reference."
+                    if confirmed_target_related
+                    else "Manual review is required because static analysis cannot bound the target relationship."
+                ),
                 (ref,),
                 False,
                 True,
@@ -517,6 +528,10 @@ def _direct_consequence(operation: str, source_type: str) -> str:
     if operation == "remove_entity":
         return f"The {source_type} may retain a stale reference after removal."
     return f"The {source_type} may observe unavailable, unknown, or absent-state behavior after disablement."
+
+
+def _article(value: str) -> str:
+    return "An" if value[:1].lower() in {"a", "e", "i", "o", "u"} else "A"
 
 
 def _finding_sort_key(item: ImpactFinding):

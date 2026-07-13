@@ -183,6 +183,9 @@ class ImpactEvidenceBundle:
     coverage: list[ImpactSourceCoverage]
     index: dict[str, Any]
     evidence_collection_duration_ms: float
+    confirmed_target_related_dynamic_count: int = 0
+    unresolved_in_requested_scope_count: int = 0
+    dynamic_outside_requested_scope_count: int = 0
 
     @property
     def required_coverage_complete(self) -> bool:
@@ -205,6 +208,11 @@ class ImpactEvidenceBundle:
             "operation": self.operation,
             "replacement": self.replacement_entity_id,
             "replacement_conflict": self.replacement_conflict,
+            "dynamic_references": {
+                "confirmed_target_related": self.confirmed_target_related_dynamic_count,
+                "unresolved_in_requested_scope": self.unresolved_in_requested_scope_count,
+                "outside_requested_scope": self.dynamic_outside_requested_scope_count,
+            },
             "evidence": sorted(self.evidence),
             "coverage": [
                 (

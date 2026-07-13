@@ -50,6 +50,8 @@ class _PaginationSnapshot:
     expires_at: float
     query_fingerprint: str
     evidence_fingerprint: str
+    index_generation: int
+    index_fingerprint: str
     analysis_timestamp: str
     detail_level: str
     data_base: dict[str, Any]
@@ -73,12 +75,18 @@ class _PaginationSnapshotStore:
             self._values.popitem(last=False)
         return snapshot_id
 
-    def get(self, snapshot_id: str) -> _PaginationSnapshot | None:
-        self._purge()
+    def get(self, snapshot_id: str) -> tuple[_PaginationSnapshot | None, str | None]:
         value = self._values.get(snapshot_id)
-        if value is not None:
-            self._values.move_to_end(snapshot_id)
-        return value
+        if value is None:
+            self._purge()
+            return None, "snapshot_unavailable"
+        if value.expires_at <= time.monotonic():
+            self._values.pop(snapshot_id, None)
+            self._purge()
+            return None, "snapshot_expired"
+        self._values.move_to_end(snapshot_id)
+        self._purge()
+        return value, None
 
     def remove(self, snapshot_id: str) -> None:
         self._values.pop(snapshot_id, None)
@@ -130,10 +138,15 @@ class ChangeImpactAnalysisService:
                 source_types=source_types,
                 detail_level=detail_level,
                 limit=limit,
+                cursor=cursor,
                 refresh_index=refresh_index,
             )
         except InvalidRequestError:
-            METRICS.record_impact_analysis_failure("request_validation")
+            if cursor:
+                METRICS.record_impact_cursor_continuation()
+                METRICS.record_impact_cursor_event("invalid_cursor")
+            else:
+                METRICS.record_impact_analysis_failure("request_validation")
             raise
 
         query_fingerprint = _query_fingerprint(
@@ -144,7 +157,6 @@ class ChangeImpactAnalysisService:
             validated["max_depth"],
             validated["source_types"],
             validated["detail_level"],
-            validated["refresh_index"],
         )
         if cursor:
             return self._continue_snapshot(
@@ -266,29 +278,27 @@ class ChangeImpactAnalysisService:
             )
 
         severity_counts = Counter(item.severity for item in findings)
-        object_counts = Counter(item.affected_object_type for item in findings)
+        finding_object_counts = Counter(
+            item.affected_object_type for item in findings
+        )
         direct_count = sum(item.direct for item in findings)
         indirect_count = len(findings) - direct_count
         unique_affected = {
             (item.affected_object_type, item.affected_object_id) for item in findings
         }
-        dynamic_count = sum(
-            item.rule_id == "unresolved_dynamic_reference" for item in findings
+        unique_object_counts = Counter(
+            object_type for object_type, _object_id in unique_affected
         )
-        METRICS.record_impact_analysis_terminal(
-            partial=partial,
-            operation=validated["operation"],
-            severity_counts=severity_counts,
-            object_counts=object_counts,
-            direct_impacts=direct_count,
-            indirect_impacts=indirect_count,
-            unique_root_causes=len(groups),
-            dynamic_review_events=dynamic_count,
-            source_failures=required_source_failures,
-            index_cache_hit=bool(bundle.index.get("cache_hit")),
-            analysis_timestamp=analysis_timestamp,
+        confirmed_dynamic_count = max(
+            0, int(bundle.confirmed_target_related_dynamic_count)
         )
-
+        unresolved_scope_count = max(
+            0, int(bundle.unresolved_in_requested_scope_count)
+        )
+        outside_scope_count = max(
+            0, int(bundle.dynamic_outside_requested_scope_count)
+        )
+        dynamic_review_count = confirmed_dynamic_count + unresolved_scope_count
         data = {
             "target_entity_summary": bundle.target,
             "requested_operation": validated["operation"],
@@ -296,6 +306,20 @@ class ChangeImpactAnalysisService:
             "analysis_timestamp": analysis_timestamp,
             "final_assessment": assessment,
             "result_status": "partial" if partial else "success",
+            "findings_by_severity": {
+                severity: severity_counts.get(severity, 0)
+                for severity in SEVERITIES
+            },
+            "finding_count": len(findings),
+            "findings_by_object_type": dict(sorted(finding_object_counts.items())),
+            "direct_finding_count": direct_count,
+            "indirect_finding_count": indirect_count,
+            "unique_affected_object_count": len(unique_affected),
+            "unique_affected_objects_by_type": dict(
+                sorted(unique_object_counts.items())
+            ),
+            "unique_root_cause_count": len(groups),
+            # Corrected compatibility aliases retained for Beta 15 clients.
             "severity_totals": {
                 severity: severity_counts.get(severity, 0)
                 for severity in SEVERITIES
@@ -303,9 +327,7 @@ class ChangeImpactAnalysisService:
             "direct_impact_count": direct_count,
             "indirect_impact_count": indirect_count,
             "affected_object_count": len(unique_affected),
-            "affected_object_totals": dict(sorted(object_counts.items())),
-            "unique_root_cause_count": len(groups),
-            "finding_count": len(findings),
+            "affected_object_totals": dict(sorted(unique_object_counts.items())),
             "findings": [
                 item.public(include_evidence=include_evidence) for item in page
             ],
@@ -319,8 +341,27 @@ class ChangeImpactAnalysisService:
             "evidence_references": evidence,
             "source_coverage_matrix": coverage,
             "dynamic_reference_summary": {
-                "count": dynamic_count,
-                "manual_review_required": dynamic_count > 0,
+                "confirmed_target_related_count": confirmed_dynamic_count,
+                "unresolved_in_requested_scope_count": unresolved_scope_count,
+                "outside_requested_scope_count": outside_scope_count,
+                "manual_review_required": dynamic_review_count > 0,
+                "count": dynamic_review_count,
+            },
+            "counter_semantics": {
+                "finding_count": "whole_analysis_rule_findings",
+                "direct_finding_count": "whole_analysis_findings_with_confirmed_direct_designation",
+                "indirect_finding_count": "whole_analysis_findings_without_confirmed_direct_designation",
+                "unique_affected_object_count": "whole_analysis_unique_object_type_and_identifier_pairs",
+                "unique_affected_objects_by_type": "whole_analysis_unique_identifiers_per_object_type",
+                "unique_root_cause_count": "whole_analysis_affected_object_and_consequence_groups",
+                "pagination_changes_whole_analysis_totals": False,
+                "deprecated_aliases": {
+                    "severity_totals": "findings_by_severity",
+                    "direct_impact_count": "direct_finding_count",
+                    "indirect_impact_count": "indirect_finding_count",
+                    "affected_object_count": "unique_affected_object_count",
+                    "affected_object_totals": "unique_affected_objects_by_type",
+                },
             },
             "pagination": {
                 "requested_limit": validated["limit"],
@@ -404,12 +445,35 @@ class ChangeImpactAnalysisService:
             ):
                 data_base.pop(key, None)
             evidence_fingerprint = bundle.evidence_fingerprint()
+            index_generation = int(bundle.index.get("generation", 0))
+            index_fingerprint = str(bundle.index.get("fingerprint") or "")
+            active_index = _active_index_identity(self.provider)
+            if (
+                not active_index
+                or not active_index.get("valid")
+                or int(active_index.get("generation", 0)) != index_generation
+                or str(active_index.get("fingerprint") or "")
+                != index_fingerprint
+            ):
+                METRICS.record_impact_analysis_failure(
+                    "index_changed_before_snapshot_commit"
+                )
+                raise GovernanceError(
+                    ErrorCode.ANALYSIS_UNAVAILABLE,
+                    details={
+                        "field": "cursor",
+                        "reason": "index_changed_before_snapshot_commit",
+                        "operation": "change_impact_analysis",
+                    },
+                )
             snapshot_id = self.pagination_snapshots.put(
                 _PaginationSnapshot(
                     expires_at=time.monotonic()
                     + PAGINATION_SNAPSHOT_TTL_SECONDS,
                     query_fingerprint=query_fingerprint,
                     evidence_fingerprint=evidence_fingerprint,
+                    index_generation=index_generation,
+                    index_fingerprint=index_fingerprint,
                     analysis_timestamp=analysis_timestamp,
                     detail_level=validated["detail_level"],
                     data_base=data_base,
@@ -426,8 +490,30 @@ class ChangeImpactAnalysisService:
                 query_fingerprint=query_fingerprint,
                 evidence_fingerprint=evidence_fingerprint,
                 analysis_timestamp=analysis_timestamp,
+                index_generation=index_generation,
+                index_fingerprint=index_fingerprint,
                 offset=len(page),
             )
+
+        # Record the terminal analysis and its whole-analysis aggregates only
+        # after any required snapshot is committed against the active index.
+        METRICS.record_impact_analysis_terminal(
+            partial=partial,
+            operation=validated["operation"],
+            severity_counts=severity_counts,
+            finding_object_counts=finding_object_counts,
+            finding_count=len(findings),
+            unique_object_counts=unique_object_counts,
+            unique_affected_object_count=len(unique_affected),
+            direct_findings=direct_count,
+            indirect_findings=indirect_count,
+            unique_root_causes=len(groups),
+            dynamic_review_required=dynamic_review_count > 0,
+            unresolved_dynamic_references=unresolved_scope_count,
+            source_failures=required_source_failures,
+            index_cache_hit=bool(bundle.index.get("cache_hit")),
+            analysis_timestamp=analysis_timestamp,
+        )
 
         _set_audit_summary(
             operation=validated["operation"],
@@ -457,22 +543,66 @@ class ChangeImpactAnalysisService:
         except GovernanceError as exc:
             METRICS.record_impact_cursor_event(exc.code.value)
             raise
-        snapshot = self.pagination_snapshots.get(str(payload["snapshot_id"]))
+        snapshot, snapshot_error = self.pagination_snapshots.get(
+            str(payload["snapshot_id"])
+        )
         if snapshot is None:
             METRICS.record_impact_cursor_event("stale_cursor")
-            raise GovernanceError(ErrorCode.STALE_CURSOR)
+            raise GovernanceError(
+                ErrorCode.STALE_CURSOR,
+                details={
+                    "field": "cursor",
+                    "reason": snapshot_error or "snapshot_unavailable",
+                    "operation": "change_impact_analysis",
+                },
+            )
         if (
             payload.get("query_fingerprint") != query_fingerprint
             or snapshot.query_fingerprint != query_fingerprint
             or payload.get("evidence_fingerprint") != snapshot.evidence_fingerprint
             or payload.get("analysis_timestamp") != snapshot.analysis_timestamp
+            or int(payload.get("index_generation", 0))
+            != snapshot.index_generation
+            or payload.get("index_fingerprint") != snapshot.index_fingerprint
         ):
             METRICS.record_impact_cursor_event("stale_cursor")
-            raise GovernanceError(ErrorCode.STALE_CURSOR)
+            raise GovernanceError(
+                ErrorCode.STALE_CURSOR,
+                details={
+                    "field": "cursor",
+                    "reason": "query_or_snapshot_binding_changed",
+                    "operation": "change_impact_analysis",
+                },
+            )
+        active_index = _active_index_identity(self.provider)
+        if (
+            not active_index
+            or not active_index.get("valid")
+            or int(active_index.get("generation", 0))
+            != snapshot.index_generation
+            or str(active_index.get("fingerprint") or "")
+            != snapshot.index_fingerprint
+        ):
+            METRICS.record_impact_cursor_event("stale_cursor")
+            raise GovernanceError(
+                ErrorCode.STALE_CURSOR,
+                details={
+                    "field": "cursor",
+                    "reason": "active_index_replaced_or_invalidated",
+                    "operation": "change_impact_analysis",
+                },
+            )
         offset = int(payload["offset"])
         if offset < 0 or offset > len(snapshot.findings):
             METRICS.record_impact_cursor_event("invalid_cursor")
-            raise GovernanceError(ErrorCode.INVALID_CURSOR)
+            raise GovernanceError(
+                ErrorCode.INVALID_CURSOR,
+                details={
+                    "field": "cursor",
+                    "reason": "offset_out_of_range",
+                    "operation": "change_impact_analysis",
+                },
+            )
         effective_limit, clamp_reason = _effective_limit(
             limit, snapshot.detail_level
         )
@@ -501,6 +631,8 @@ class ChangeImpactAnalysisService:
                 query_fingerprint=query_fingerprint,
                 evidence_fingerprint=snapshot.evidence_fingerprint,
                 analysis_timestamp=snapshot.analysis_timestamp,
+                index_generation=snapshot.index_generation,
+                index_fingerprint=snapshot.index_fingerprint,
                 offset=next_offset,
             )
             if has_more
@@ -553,6 +685,8 @@ class ChangeImpactAnalysisService:
         query_fingerprint,
         evidence_fingerprint,
         analysis_timestamp,
+        index_generation,
+        index_fingerprint,
         offset,
     ) -> str:
         payload = json.dumps(
@@ -561,6 +695,8 @@ class ChangeImpactAnalysisService:
                 "query_fingerprint": query_fingerprint,
                 "evidence_fingerprint": evidence_fingerprint,
                 "analysis_timestamp": analysis_timestamp,
+                "index_generation": int(index_generation),
+                "index_fingerprint": str(index_fingerprint),
                 "offset": int(offset),
             },
             sort_keys=True,
@@ -595,6 +731,8 @@ class ChangeImpactAnalysisService:
                     "query_fingerprint",
                     "evidence_fingerprint",
                     "analysis_timestamp",
+                    "index_generation",
+                    "index_fingerprint",
                     "offset",
                 )
             ):
@@ -602,7 +740,35 @@ class ChangeImpactAnalysisService:
             value["offset"] = int(value["offset"])
             return value
         except Exception as exc:
-            raise GovernanceError(ErrorCode.INVALID_CURSOR) from exc
+            raise GovernanceError(
+                ErrorCode.INVALID_CURSOR,
+                details={
+                    "field": "cursor",
+                    "reason": "integrity_or_format_invalid",
+                    "operation": "change_impact_analysis",
+                },
+            ) from exc
+
+
+def _active_index_identity(provider) -> dict[str, object] | None:
+    reader = getattr(provider, "active_index_identity", None)
+    if not callable(reader):
+        return None
+    try:
+        value = reader()
+    except Exception:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _invalid(field: str, reason: str, operation: str) -> InvalidRequestError:
+    return InvalidRequestError(
+        details={
+            "field": field,
+            "reason": reason,
+            "operation": operation,
+        }
+    )
 
 
 def _validate_inputs(**values) -> dict[str, Any]:
@@ -613,42 +779,79 @@ def _validate_inputs(**values) -> dict[str, Any]:
         or entity_id != entity_id.lower()
         or not valid_entity_id(entity_id)
     ):
-        raise InvalidRequestError(details={"operation": "change_impact_analysis"})
-    operation = str(values["operation"])
+        raise _invalid(
+            "entity_id", "canonical_entity_id_required", "change_impact_analysis"
+        )
+    operation_value = values["operation"]
+    operation = operation_value if isinstance(operation_value, str) else ""
     if operation not in OPERATIONS:
-        raise InvalidRequestError(details={"operation": "change_impact_analysis"})
+        raise _invalid(
+            "operation", "unsupported_operation", "change_impact_analysis"
+        )
     replacement_raw = values.get("replacement_entity_id")
     replacement = replacement_raw if replacement_raw not in (None, "") else None
     if operation == "rename_entity":
+        if replacement is None:
+            raise _invalid(
+                "replacement_entity_id", "required_for_rename", operation
+            )
         if (
             not isinstance(replacement, str)
             or replacement != replacement.strip()
             or replacement != replacement.lower()
             or not valid_entity_id(replacement)
-            or replacement == entity_id
         ):
-            raise InvalidRequestError(details={"operation": "change_impact_analysis"})
+            raise _invalid(
+                "replacement_entity_id",
+                "canonical_entity_id_required",
+                operation,
+            )
+        if replacement == entity_id:
+            raise _invalid(
+                "replacement_entity_id",
+                "must_differ_from_entity_id",
+                operation,
+            )
     elif replacement is not None:
-        raise InvalidRequestError(details={"operation": "change_impact_analysis"})
+        raise _invalid(
+            "replacement_entity_id", "not_allowed_for_operation", operation
+        )
     try:
         max_depth = int(values["max_depth"])
         limit = int(values["limit"])
     except (TypeError, ValueError) as exc:
-        raise InvalidRequestError(
-            details={"operation": "change_impact_analysis"}
+        raise _invalid(
+            "max_depth_or_limit", "integer_required", operation
         ) from exc
-    if not 1 <= max_depth <= 3 or limit < 1:
-        raise InvalidRequestError(details={"operation": "change_impact_analysis"})
-    detail_level = str(values["detail_level"])
+    if not 1 <= max_depth <= 3:
+        raise _invalid("max_depth", "range_1_to_3", operation)
+    if limit < 1:
+        raise _invalid("limit", "positive_integer_required", operation)
+    detail_value = values["detail_level"]
+    detail_level = detail_value if isinstance(detail_value, str) else ""
     if detail_level not in {item.value for item in DetailLevel}:
-        raise InvalidRequestError(details={"operation": "change_impact_analysis"})
+        raise _invalid("detail_level", "unsupported_detail_level", operation)
     raw_sources = values.get("source_types")
-    requested = list(dict.fromkeys(raw_sources or SOURCE_TYPES))
+    if raw_sources is None or raw_sources == []:
+        requested = list(SOURCE_TYPES)
+    elif not isinstance(raw_sources, (list, tuple)) or any(
+        not isinstance(item, str) for item in raw_sources
+    ):
+        raise _invalid("source_types", "array_of_supported_sources_required", operation)
+    else:
+        requested = list(dict.fromkeys(raw_sources))
     if (
         len(requested) > MAX_SOURCE_TYPES
         or any(item not in SOURCE_TYPES for item in requested)
     ):
-        raise InvalidRequestError(details={"operation": "change_impact_analysis"})
+        raise _invalid("source_types", "unsupported_source_type", operation)
+    cursor = values.get("cursor")
+    if not isinstance(cursor, str):
+        raise _invalid("cursor", "opaque_string_required", operation)
+    if cursor and bool(values["refresh_index"]):
+        raise _invalid(
+            "refresh_index", "first_page_only_when_cursor_absent", operation
+        )
     return {
         "entity_id": entity_id,
         "operation": operation,
@@ -658,6 +861,7 @@ def _validate_inputs(**values) -> dict[str, Any]:
         "source_types": requested,
         "detail_level": detail_level,
         "limit": limit,
+        "cursor": cursor,
         "refresh_index": bool(values["refresh_index"]),
     }
 

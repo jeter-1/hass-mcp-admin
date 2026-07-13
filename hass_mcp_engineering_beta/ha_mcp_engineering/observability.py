@@ -61,16 +61,21 @@ class RuntimeMetrics:
     impact_analysis_failures: int = 0
     impact_operations: Counter = field(default_factory=Counter)
     impact_findings_by_severity: Counter = field(default_factory=Counter)
-    impact_direct_count: int = 0
-    impact_indirect_count: int = 0
-    impact_affected_objects_by_type: Counter = field(default_factory=Counter)
+    impact_finding_count: int = 0
+    impact_findings_by_object_type: Counter = field(default_factory=Counter)
+    impact_direct_findings: int = 0
+    impact_indirect_findings: int = 0
+    impact_unique_affected_object_count: int = 0
+    impact_unique_affected_objects_by_type: Counter = field(default_factory=Counter)
     impact_unique_root_causes: int = 0
     impact_dynamic_review_events: int = 0
+    impact_unresolved_dynamic_references: int = 0
     impact_source_failures: int = 0
     impact_findings_truncated: int = 0
     impact_cursor_continuations: int = 0
     impact_stale_cursor_events: int = 0
     impact_invalid_cursor_events: int = 0
+    impact_last_cursor_failure_category: str | None = None
     impact_index_cache_hits: int = 0
     impact_index_cache_misses: int = 0
     impact_last_successful_analysis: str | None = None
@@ -213,11 +218,15 @@ class RuntimeMetrics:
         partial: bool,
         operation: str,
         severity_counts,
-        object_counts,
-        direct_impacts: int,
-        indirect_impacts: int,
+        finding_object_counts,
+        finding_count: int,
+        unique_object_counts,
+        unique_affected_object_count: int,
+        direct_findings: int,
+        indirect_findings: int,
         unique_root_causes: int,
-        dynamic_review_events: int,
+        dynamic_review_required: bool,
+        unresolved_dynamic_references: int,
         source_failures: int,
         index_cache_hit: bool,
         analysis_timestamp: str,
@@ -233,11 +242,19 @@ class RuntimeMetrics:
         )
         self.impact_operations[normalized_operation] += 1
         self.impact_findings_by_severity.update(severity_counts)
-        self.impact_affected_objects_by_type.update(object_counts)
-        self.impact_direct_count += max(0, int(direct_impacts))
-        self.impact_indirect_count += max(0, int(indirect_impacts))
+        self.impact_finding_count += max(0, int(finding_count))
+        self.impact_findings_by_object_type.update(finding_object_counts)
+        self.impact_direct_findings += max(0, int(direct_findings))
+        self.impact_indirect_findings += max(0, int(indirect_findings))
+        self.impact_unique_affected_object_count += max(
+            0, int(unique_affected_object_count)
+        )
+        self.impact_unique_affected_objects_by_type.update(unique_object_counts)
         self.impact_unique_root_causes += max(0, int(unique_root_causes))
-        self.impact_dynamic_review_events += max(0, int(dynamic_review_events))
+        self.impact_dynamic_review_events += int(bool(dynamic_review_required))
+        self.impact_unresolved_dynamic_references += max(
+            0, int(unresolved_dynamic_references)
+        )
         self.impact_source_failures += max(0, int(source_failures))
         if index_cache_hit:
             self.impact_index_cache_hits += 1
@@ -261,7 +278,7 @@ class RuntimeMetrics:
             self.impact_stale_cursor_events += 1
         else:
             self.impact_invalid_cursor_events += 1
-        self.record_impact_analysis_failure(category)
+        self.impact_last_cursor_failure_category = str(category)[:64]
 
     def reset(self) -> None:
         """Deterministically reset in-memory metrics without replacing the registry."""
@@ -316,16 +333,21 @@ class RuntimeMetrics:
         self.impact_analysis_failures = 0
         self.impact_operations.clear()
         self.impact_findings_by_severity.clear()
-        self.impact_direct_count = 0
-        self.impact_indirect_count = 0
-        self.impact_affected_objects_by_type.clear()
+        self.impact_finding_count = 0
+        self.impact_findings_by_object_type.clear()
+        self.impact_direct_findings = 0
+        self.impact_indirect_findings = 0
+        self.impact_unique_affected_object_count = 0
+        self.impact_unique_affected_objects_by_type.clear()
         self.impact_unique_root_causes = 0
         self.impact_dynamic_review_events = 0
+        self.impact_unresolved_dynamic_references = 0
         self.impact_source_failures = 0
         self.impact_findings_truncated = 0
         self.impact_cursor_continuations = 0
         self.impact_stale_cursor_events = 0
         self.impact_invalid_cursor_events = 0
+        self.impact_last_cursor_failure_category = None
         self.impact_index_cache_hits = 0
         self.impact_index_cache_misses = 0
         self.impact_last_successful_analysis = None
@@ -410,10 +432,23 @@ class RuntimeMetrics:
                 "failed_count": self.impact_analysis_failures,
                 "operations_by_type": dict(self.impact_operations),
                 "findings_by_severity": dict(self.impact_findings_by_severity),
-                "direct_impacts": self.impact_direct_count,
-                "indirect_impacts": self.impact_indirect_count,
+                "finding_count": self.impact_finding_count,
+                "findings_by_object_type": dict(
+                    self.impact_findings_by_object_type
+                ),
+                "direct_finding_count": self.impact_direct_findings,
+                "indirect_finding_count": self.impact_indirect_findings,
+                "unique_affected_object_count": self.impact_unique_affected_object_count,
+                "unique_affected_objects_by_type": dict(
+                    self.impact_unique_affected_objects_by_type
+                ),
+                "unique_root_cause_count": self.impact_unique_root_causes,
+                "dynamic_reference_review_event_count": self.impact_dynamic_review_events,
+                "unresolved_dynamic_reference_count": self.impact_unresolved_dynamic_references,
+                "direct_impacts": self.impact_direct_findings,
+                "indirect_impacts": self.impact_indirect_findings,
                 "affected_objects_by_type": dict(
-                    self.impact_affected_objects_by_type
+                    self.impact_unique_affected_objects_by_type
                 ),
                 "unique_root_causes": self.impact_unique_root_causes,
                 "dynamic_reference_review_events": self.impact_dynamic_review_events,
@@ -422,6 +457,9 @@ class RuntimeMetrics:
                 "cursor_continuations": self.impact_cursor_continuations,
                 "stale_cursor_events": self.impact_stale_cursor_events,
                 "invalid_cursor_events": self.impact_invalid_cursor_events,
+                "cursor_failure_count": self.impact_stale_cursor_events
+                + self.impact_invalid_cursor_events,
+                "last_cursor_failure_category": self.impact_last_cursor_failure_category,
                 "index_cache_hits": self.impact_index_cache_hits,
                 "index_cache_misses": self.impact_index_cache_misses,
                 "last_successful_analysis_timestamp": self.impact_last_successful_analysis,
@@ -431,6 +469,20 @@ class RuntimeMetrics:
                     "request_count": "tool_invocations_including_cursor_continuations",
                     "terminal_outcomes_and_aggregates": "new_analyses_only",
                     "cursor_continuations": "bounded_snapshot_page_requests",
+                    "finding_count": "cumulative_findings_from_new_analyses",
+                    "findings_by_object_type": "cumulative_finding_observations_by_type",
+                    "unique_affected_object_count": "sum_of_per_analysis_unique_object_type_and_identifier_pairs",
+                    "unique_affected_objects_by_type": "sum_of_per_analysis_unique_identifiers_by_type",
+                    "dynamic_reference_review_event_count": "new_analyses_requiring_dynamic_reference_review",
+                    "unresolved_dynamic_reference_count": "cumulative_in_scope_dynamic_references_observed_by_new_analyses",
+                    "cursor_failures_are_terminal_analysis_failures": False,
+                    "deprecated_aliases": {
+                        "direct_impacts": "direct_finding_count",
+                        "indirect_impacts": "indirect_finding_count",
+                        "affected_objects_by_type": "unique_affected_objects_by_type",
+                        "unique_root_causes": "unique_root_cause_count",
+                        "dynamic_reference_review_events": "dynamic_reference_review_event_count",
+                    },
                 },
             },
         }
