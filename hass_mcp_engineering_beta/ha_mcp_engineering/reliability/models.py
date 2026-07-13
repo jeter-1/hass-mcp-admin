@@ -28,10 +28,13 @@ class ReliabilityEvidenceReference:
     configuration_path: str | None = None
     trace_run_id: str | None = None
     trace_step: str | None = None
+    interval: dict[str, str | None] | None = None
+    correlation_basis: tuple[str, ...] = ()
+    confidence: str | None = None
 
     def public(self) -> dict[str, Any]:
         value = asdict(self)
-        return {key: item for key, item in value.items() if item not in (None, "")}
+        return {key: item for key, item in value.items() if item not in (None, "", (), [])}
 
 
 @dataclass
@@ -47,9 +50,13 @@ class ReliabilitySourceCoverage:
     warnings: list[str] = field(default_factory=list)
     fallback_occurred: bool = False
     policy: str = "single_automation_reliability_read"
+    affects_result_status: bool = True
+    snapshot_completeness: str | None = None
+    retention_coverage: str | None = None
+    requested_lookback_hours: int | None = None
 
     def public(self) -> dict[str, Any]:
-        return {
+        value = {
             "source_type": self.source_type,
             "provider": self.provider,
             "provider_capability": self.provider_capability,
@@ -61,7 +68,15 @@ class ReliabilitySourceCoverage:
             "warnings": self.warnings[:10],
             "fallback_occurred": bool(self.fallback_occurred),
             "policy": self.policy,
+            "affects_result_status": self.affects_result_status,
         }
+        if self.snapshot_completeness is not None:
+            value["snapshot_completeness"] = self.snapshot_completeness
+        if self.retention_coverage is not None:
+            value["retention_coverage"] = self.retention_coverage
+        if self.requested_lookback_hours is not None:
+            value["requested_lookback_hours"] = self.requested_lookback_hours
+        return value
 
 
 @dataclass(frozen=True)
@@ -84,9 +99,36 @@ class ReliabilityFinding:
     operational_impact: str = ""
     recommended_next_investigation: str = ""
     governed_change_required: bool = False
+    root_cause_group_id: str | None = None
+    related_finding_ids: tuple[str, ...] = ()
+    root_cause_relationship: str = "primary"
+    occurrence_ids: tuple[str, ...] = field(default=(), repr=False, compare=False)
+    affected_dependency: str | None = None
 
     def public(self, *, include_evidence: bool = True) -> dict[str, Any]:
         value = asdict(self)
+        value.pop("occurrence_ids", None)
+        value["evidence_references"] = list(self.evidence_references) if include_evidence else []
+        value["related_finding_ids"] = list(self.related_finding_ids)
+        return {key: item for key, item in value.items() if item not in (None, "", (), [])}
+
+
+@dataclass(frozen=True)
+class ReliabilityRootCauseGroup:
+    root_cause_group_id: str
+    primary_finding_id: str
+    member_finding_ids: tuple[str, ...]
+    unique_occurrence_count: int
+    highest_severity: str
+    first_observed: str | None
+    last_observed: str | None
+    affected_step: str | None
+    affected_dependency: str | None
+    evidence_references: tuple[str, ...]
+
+    def public(self, *, include_evidence: bool = True) -> dict[str, Any]:
+        value = asdict(self)
+        value["member_finding_ids"] = list(self.member_finding_ids)
         value["evidence_references"] = list(self.evidence_references) if include_evidence else []
         return {key: item for key, item in value.items() if item not in (None, "", (), [])}
 
@@ -108,7 +150,19 @@ class ReliabilityEvidenceBundle:
 
     @property
     def partial(self) -> bool:
-        return any(item.completeness not in {"complete", "not_requested"} for item in self.coverage)
+        return any(
+            item.affects_result_status
+            and item.completeness not in {"complete", "not_requested"}
+            for item in self.coverage
+        )
+
+    @property
+    def has_coverage_limitations(self) -> bool:
+        return any(
+            item.completeness not in {"complete", "not_requested"}
+            or item.retention_coverage in {"unknown", "partial"}
+            for item in self.coverage
+        )
 
     def evidence_fingerprint(self) -> str:
         payload = {
@@ -140,4 +194,3 @@ class ReliabilityAnalysisOutput:
     warnings: list[str]
     metadata: dict[str, Any]
     partial: bool = False
-

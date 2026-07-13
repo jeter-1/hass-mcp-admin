@@ -58,3 +58,9 @@ mode expands only stable bounded references. Full configuration, blueprint sourc
 traces, entity attributes, and System Log entries are never dumped. Findings use
 fingerprint-bound pagination with explicit requested/effective/maximum limits and stale
 cursor rejection.
+
+Beta 13 adds bounded root-cause groups to standard/evidence detail while summary mode
+returns only their count. Correlation bases are stable enums rather than repeated raw
+log text. System Log limitations and timestamp intervals are compact metadata. A
+continuation page does not inflate aggregate finding or root-cause telemetry, and no
+result cache is implied where none exists.

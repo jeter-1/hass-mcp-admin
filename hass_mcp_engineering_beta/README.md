@@ -36,11 +36,11 @@ https://BETA_TUNNEL/REDACTED_BETA_SECRET/mcp/
 ```
 
 Direct requests to `/mcp` and `/mcp/` must return `404`. After initialization,
-call `server_info(check_ha=false)` and verify version `2.0.0-beta.12`, then call
+call `server_info(check_ha=false)` and verify version `2.0.0-beta.13`, then call
 `list_capabilities` and verify the preserved 25-tool canonical catalog plus the
 nine beta-native tools; MCP `tools/list` should expose 34 callable tools.
 
-Beta 12 adds `automation_reliability_analysis`, a bounded read-only analyzer for one
+Beta 12 added `automation_reliability_analysis`; Beta 13 stabilizes its bounded read-only analysis for one
 internal automation ID. Because the manifest changed, ChatGPT and Claude may need the
 beta connector refreshed or recreated after deployment.
 
@@ -124,8 +124,8 @@ for dependency source coverage, cache/cursor behavior, cautious assessment, limi
 and connector recreation or `?manifest=beta11` cache-busting guidance.
 
 See [`../docs/AUTOMATION_RELIABILITY_ANALYSIS.md`](../docs/AUTOMATION_RELIABILITY_ANALYSIS.md)
-for the Beta 12 evidence sources, provider policy, deterministic rules, bounds,
-partial-result contract, and limitations.
+for the Beta 12 evidence sources and Beta 13 chronology, correlation, root-cause,
+coverage, timing, cache-truth, bounds, partial-result, and limitation contracts.
 
 See [`../docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md`](../docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md)
 and [`../docs/TOKEN_EFFICIENCY.md`](../docs/TOKEN_EFFICIENCY.md) for provider routing,

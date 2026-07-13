@@ -35,11 +35,13 @@ class HomeAssistantWebSocketClient:
         return details
 
     def _record(self, started: float, category: str, *, timeout: bool = False) -> None:
-        duration = round((time.perf_counter() - started) * 1000, 3)
+        finished = time.perf_counter()
+        duration = round((finished - started) * 1000, 3)
         METRICS.record_ha(duration, timeout=timeout)
         telemetry = current_telemetry()
         if telemetry:
             telemetry.ha_duration_ms += duration
+            telemetry.finish_ha_attempt(finished)
             telemetry.timeout_occurred = telemetry.timeout_occurred or timeout
             telemetry.endpoint_categories.add(category)
 
@@ -52,6 +54,9 @@ class HomeAssistantWebSocketClient:
     async def command(self, payload: dict) -> Any:
         category = self._category(payload)
         started = time.perf_counter()
+        telemetry = current_telemetry()
+        if telemetry:
+            telemetry.begin_ha_attempt(started)
         timeout = aiohttp.ClientTimeout(total=self.settings.ha_timeout_seconds)
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:

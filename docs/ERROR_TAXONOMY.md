@@ -23,3 +23,10 @@ provider route separately. Retry attempts, if introduced, belong in retry teleme
 and do not masquerade as additional user-visible failures.
 
 This contract is beta-only. Production v1.1.2 behavior is unchanged.
+
+For reliability analysis, malformed internal automation IDs fail local validation
+before any HA request. A syntactically valid missing internal ID remains
+`automation_not_found`. Provider/source failures, retry attempts, and terminal public
+errors retain separate counters. Invalid cursors and terminal failures increment the
+reliability failure category once; cursor continuation pages do not repeat finding or
+root-cause aggregates.

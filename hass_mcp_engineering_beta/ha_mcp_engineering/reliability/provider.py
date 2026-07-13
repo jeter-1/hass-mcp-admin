@@ -6,6 +6,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+import re
 import time
 from typing import Any
 
@@ -25,6 +26,7 @@ from ..providers import (
 )
 from ..sanitization import sanitize_untrusted_data
 from .models import ReliabilityEvidenceBundle, ReliabilitySourceCoverage
+from .timestamps import newest_first_key, normalize_timestamp, parse_timestamp
 
 
 MAX_REFERENCED_ENTITIES = 100
@@ -237,12 +239,12 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
         coverage.append(trace_coverage)
 
         logs, log_coverage = await self._collect_system_log(
-            automation, automation_id, reference_records, traces
+            automation, automation_id, reference_records, traces, lookback_hours
         )
         coverage.append(log_coverage)
         self._coverage(
             coverage, "logbook_history", ProviderCapability.LOGBOOK_READ, "not_requested", 0, 0, time.perf_counter(),
-            warnings=["Logbook/history was not required by a deterministic Beta 12 rule."],
+            warnings=["Logbook/history was not required by a deterministic reliability rule."],
         )
 
         return ReliabilityEvidenceBundle(
@@ -337,22 +339,30 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
                 raise TypeError("trace list response is invalid")
             cutoff = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
             eligible = [item for item in listing if isinstance(item, dict) and _within_lookback(item.get("timestamp"), cutoff)]
+            eligible.sort(key=newest_first_key, reverse=True)
             selected = eligible[:trace_limit]
             truncated = len(eligible) > trace_limit
             semaphore = asyncio.Semaphore(self.concurrency)
 
             async def fetch(item):
-                run_id = item.get("run_id")
+                safe_summary = sanitize_untrusted_data(
+                    item, known_secrets=(self.secret, self.ha_token), max_string=2_000
+                )
+                summary = safe_summary.value if isinstance(safe_summary.value, dict) else {}
+                run_id = summary.get("run_id")
                 if not run_id:
-                    return _normalize_trace(item, None), True
+                    return _normalize_trace(summary, None), True
                 try:
                     async with semaphore:
                         detail = await self.websocket_client.command(
                             {"type": "trace/get", "domain": "automation", "item_id": automation_id, "run_id": run_id}
                         )
-                    return _normalize_trace(item, detail), False
+                    sanitized = sanitize_untrusted_data(
+                        detail, known_secrets=(self.secret, self.ha_token), max_string=2_000
+                    )
+                    return _normalize_trace(summary, sanitized.value), sanitized.failed_closed or safe_summary.failed_closed
                 except Exception:
-                    return _normalize_trace(item, None), True
+                    return _normalize_trace(summary, None), True
 
             values = await asyncio.gather(*(fetch(item) for item in selected))
             traces = [item for item, _failed in values]
@@ -375,7 +385,7 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
             self._record_source(coverage)
             return [], coverage
 
-    async def _collect_system_log(self, automation, automation_id, references, traces):
+    async def _collect_system_log(self, automation, automation_id, references, traces, lookback_hours):
         started = time.perf_counter()
         try:
             result = await self.websocket_client.command({"type": "system_log/list"})
@@ -385,30 +395,26 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
                 result, known_secrets=(self.secret, self.ha_token), max_string=2_048
             )
             safe = sanitation.value
-            identifiers = {
-                str(automation_id).lower(),
-                str(automation.get("entity_id") or "").lower(),
+            automation_entity_id = str(automation.get("entity_id") or "").lower()
+            internal_id = str(automation_id).lower()
+            failed_dependencies = {
+                str(item.get("affected_dependency") or "").lower()
+                for item in traces if item.get("affected_dependency")
             }
-            name = str(automation.get("friendly_name") or "").strip().lower()
-            if len(name) >= 4:
-                identifiers.add(name)
-            # A dependency mention alone is not enough to correlate an error
-            # to this automation. Include referenced entities only when the
-            # same identifier appears in an explicit trace error.
-            failed_trace_text = json.dumps(
-                [item.get("error") for item in traces if item.get("error")],
-                default=str,
-            ).lower()
-            identifiers.update(
-                str(item.get("entity_id", "")).lower()
-                for item in references
-                if str(item.get("entity_id", "")).lower() in failed_trace_text
-            )
-            identifiers.discard("")
+            trace_signatures = {
+                (str(service).lower(), str(item.get("error_signature") or ""))
+                for item in traces for service in item.get("services", ())
+                if service and item.get("error_signature")
+            }
             matched = []
             for item in safe:
                 encoded = json.dumps(item, sort_keys=True, default=str).lower()
-                if not any(identifier in encoded for identifier in identifiers):
+                bases = _correlation_bases(
+                    encoded, automation_entity_id=automation_entity_id,
+                    internal_id=internal_id, failed_dependencies=failed_dependencies,
+                    trace_signatures=trace_signatures,
+                )
+                if not bases:
                     continue
                 messages = item.get("message") or []
                 if isinstance(messages, str):
@@ -418,14 +424,18 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
                 matched.append(
                     {
                         "identity": identity[:128],
-                        "timestamp": item.get("timestamp") or item.get("first_occurred") or item.get("last_occurred"),
+                        "timestamp": normalize_timestamp(item.get("timestamp") or item.get("first_occurred") or item.get("last_occurred")),
                         "summary": summary or "Sanitized correlated System Log entry.",
+                        "correlation_basis": bases,
+                        "confidence": "high" if any(value.endswith("_exact") for value in bases) else "medium",
                     }
                 )
             truncated = len(matched) > MAX_SYSTEM_LOG_MATCHES
             bounded = matched[:MAX_SYSTEM_LOG_MATCHES]
-            completeness = "partial" if truncated or sanitation.failed_closed else "complete"
-            warnings = []
+            completeness = "partial"
+            warnings = [
+                "System Log is an in-memory deduplicated snapshot; retention coverage for the requested lookback is unknown."
+            ]
             if truncated:
                 warnings.append(f"Correlated System Log evidence was capped at {MAX_SYSTEM_LOG_MATCHES} entries.")
             if sanitation.failed_closed:
@@ -434,6 +444,9 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
                 "system_log", "direct_ha_api", ProviderCapability.ERROR_LOG_READ.value,
                 completeness, len(bounded), 1 if sanitation.failed_closed else 0,
                 (time.perf_counter() - started) * 1000, truncated, warnings,
+                affects_result_status=False,
+                snapshot_completeness="partial" if truncated or sanitation.failed_closed else "complete",
+                retention_coverage="unknown", requested_lookback_hours=lookback_hours,
             )
             self._record_source(coverage)
             return bounded, coverage
@@ -442,6 +455,8 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
                 "system_log", "direct_ha_api", ProviderCapability.ERROR_LOG_READ.value,
                 "unavailable", 0, 1, (time.perf_counter() - started) * 1000, False,
                 ["Sanitized System Log evidence was unavailable."],
+                affects_result_status=False, snapshot_completeness="unavailable",
+                retention_coverage="unknown", requested_lookback_hours=lookback_hours,
             )
             self._record_source(coverage)
             return [], coverage
@@ -462,23 +477,33 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
 
 
 def _within_lookback(value: Any, cutoff: datetime) -> bool:
-    if not value:
+    if value in (None, ""):
         return True
     try:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed >= cutoff
+        parsed = parse_timestamp(value)
+        return parsed is not None and parsed >= cutoff
     except (TypeError, ValueError):
-        return True
+        return False
 
 
 def _normalize_trace(summary: dict[str, Any], detail: Any) -> dict[str, Any]:
     errors: list[tuple[str, str]] = []
     condition_stops: list[str] = []
+    services: set[str] = set()
+    entities: set[str] = set()
 
     def walk(value: Any, path: str = "$") -> None:
         if isinstance(value, dict):
+            for key in ("service", "action"):
+                candidate = value.get(key)
+                if isinstance(candidate, str) and re.fullmatch(r"[a-z0-9_]+\.[a-z0-9_]+", candidate.lower()):
+                    services.add(candidate.lower())
+            for key in ("entity_id", "target"):
+                candidate = value.get(key)
+                candidates = candidate if isinstance(candidate, list) else [candidate]
+                for entity in candidates:
+                    if isinstance(entity, str) and re.fullmatch(r"[a-z0-9_]+\.[a-z0-9_]+", entity.lower()):
+                        entities.add(entity.lower())
             error = value.get("error")
             if error not in (None, "", False):
                 errors.append((path, str(error)[:MAX_TRACE_ERROR_CHARS]))
@@ -499,16 +524,53 @@ def _normalize_trace(summary: dict[str, Any], detail: Any) -> dict[str, Any]:
         errors.insert(0, (str(summary.get("last_step") or "$"), str(summary_error)[:MAX_TRACE_ERROR_CHARS]))
     error_step, error = errors[0] if errors else (None, None)
     last_step = str(summary.get("last_step") or error_step or "")[:160] or None
+    started_at = normalize_timestamp(summary.get("timestamp") or summary.get("started_at"))
+    finished_at = normalize_timestamp(summary.get("last_action") or summary.get("finished_at"))
+    normalized_error = _error_signature(error)
     return {
         "run_id": str(summary.get("run_id") or "")[:128] or None,
-        "timestamp": summary.get("timestamp"),
+        "timestamp": started_at,
+        "started_at": started_at,
+        "finished_at": finished_at,
         "state": str(summary.get("state") or "")[:64] or None,
         "script_execution": str(summary.get("script_execution") or "")[:128] or None,
         "last_step": last_step,
         "failure_step": error_step,
         "error": error,
+        "error_signature": normalized_error,
+        "services": sorted(services)[:20],
+        "entity_ids": sorted(entities)[:50],
+        "affected_dependency": sorted(entities)[0] if entities else None,
         "action_error": bool(error_step and any(term in error_step.lower() for term in ("action", "sequence", "service"))),
         "condition_stop_step": condition_stops[0] if condition_stops else (
             last_step if last_step and "condition" in last_step.lower() and not error else None
         ),
     }
+
+
+def _error_signature(value: Any) -> str:
+    if value in (None, "", False):
+        return ""
+    text = re.sub(r"\b[0-9a-f]{8,}\b", "<id>", str(value).lower())
+    return re.sub(r"\s+", " ", text).strip()[:300]
+
+
+def _contains_exact(text: str, token: str) -> bool:
+    if not token:
+        return False
+    return re.search(rf"(?<![a-z0-9_.-]){re.escape(token)}(?![a-z0-9_.-])", text) is not None
+
+
+def _correlation_bases(text: str, *, automation_entity_id: str, internal_id: str,
+                       failed_dependencies: set[str], trace_signatures: set[tuple[str, str]]) -> tuple[str, ...]:
+    bases: list[str] = []
+    if _contains_exact(text, automation_entity_id):
+        bases.append("automation_entity_id_exact")
+    if _contains_exact(text, internal_id):
+        bases.append("automation_internal_id_exact")
+    if any(_contains_exact(text, entity_id) for entity_id in failed_dependencies):
+        bases.append("failed_dependency_entity_id_exact")
+    if any(_contains_exact(text, service) and signature and signature in _error_signature(text)
+           for service, signature in trace_signatures):
+        bases.append("trace_service_error_signature")
+    return tuple(bases)
