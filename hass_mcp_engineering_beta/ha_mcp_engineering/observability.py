@@ -48,6 +48,7 @@ class RuntimeMetrics:
     reliability_analysis_partial: int = 0
     reliability_analysis_failures: int = 0
     reliability_finding_counts: Counter = field(default_factory=Counter)
+    reliability_root_cause_counts: Counter = field(default_factory=Counter)
     reliability_traces_examined: int = 0
     reliability_referenced_entities_examined: int = 0
     reliability_source_failures: int = 0
@@ -152,6 +153,8 @@ class RuntimeMetrics:
         *,
         partial: bool,
         finding_counts,
+        root_cause_counts,
+        aggregate_findings: bool,
         traces_examined: int,
         referenced_entities_examined: int,
         source_failures: int,
@@ -160,12 +163,14 @@ class RuntimeMetrics:
             self.reliability_analysis_partial += 1
         else:
             self.reliability_analysis_successes += 1
-        self.reliability_finding_counts.update(finding_counts)
-        self.reliability_traces_examined += max(0, int(traces_examined))
-        self.reliability_referenced_entities_examined += max(0, int(referenced_entities_examined))
-        self.reliability_source_failures += max(0, int(source_failures))
+        if aggregate_findings:
+            self.reliability_finding_counts.update(finding_counts)
+            self.reliability_root_cause_counts.update(root_cause_counts)
+            self.reliability_traces_examined += max(0, int(traces_examined))
+            self.reliability_referenced_entities_examined += max(0, int(referenced_entities_examined))
+            self.reliability_source_failures += max(0, int(source_failures))
         from datetime import datetime, timezone
-        self.reliability_last_successful_analysis = datetime.now(timezone.utc).isoformat()
+        self.reliability_last_successful_analysis = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     def record_reliability_analysis_failure(self, category: str) -> None:
         self.reliability_analysis_failures += 1
@@ -215,6 +220,7 @@ class RuntimeMetrics:
         self.reliability_analysis_partial = 0
         self.reliability_analysis_failures = 0
         self.reliability_finding_counts.clear()
+        self.reliability_root_cause_counts.clear()
         self.reliability_traces_examined = 0
         self.reliability_referenced_entities_examined = 0
         self.reliability_source_failures = 0
@@ -281,12 +287,15 @@ class RuntimeMetrics:
                 "partial_count": self.reliability_analysis_partial,
                 "failed_count": self.reliability_analysis_failures,
                 "finding_counts_by_severity": dict(self.reliability_finding_counts),
+                "root_cause_counts_by_severity": dict(self.reliability_root_cause_counts),
                 "traces_examined": self.reliability_traces_examined,
                 "referenced_entities_examined": self.reliability_referenced_entities_examined,
                 "source_failures": self.reliability_source_failures,
                 "findings_truncated": self.reliability_findings_truncated,
-                "cache_hits": 0,
-                "cache_misses": 0,
+                "cache_supported": False,
+                "cache_counters_active": False,
+                "cache_status": "not_configured",
+                "cache_reason": "Reliability results are collected and evaluated for every request.",
                 "last_successful_analysis_timestamp": self.reliability_last_successful_analysis,
                 "last_failure_category": self.reliability_last_failure_category,
                 "counter_semantics": "cumulative_process_events",

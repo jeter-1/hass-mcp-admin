@@ -14,8 +14,10 @@ from ..errors import AutomationNotFoundError, ErrorCode, GovernanceError, Invali
 from ..facilitation import DetailLevel
 from ..observability import METRICS
 from ..providers import EvidenceRequest, ProviderCapability, ProviderCompleteness, ProviderFailureCategory
+from ..request_context import current_telemetry
 from .models import ReliabilityAnalysisOutput, ReliabilityEvidenceBundle
-from .rules import evaluate_rules
+from .rules import build_root_cause_groups, evaluate_rules
+from .timestamps import normalize_timestamp
 
 
 AUTOMATION_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
@@ -85,7 +87,11 @@ class AutomationReliabilityAnalysisService:
         bundle = result.data
         findings = evaluate_rules(bundle)
         fingerprint = bundle.evidence_fingerprint()
-        offset = _decode_cursor(cursor, fingerprint) if cursor else 0
+        try:
+            offset = _decode_cursor(cursor, fingerprint) if cursor else 0
+        except GovernanceError:
+            METRICS.record_reliability_analysis_failure("invalid_cursor")
+            raise
         if offset > len(findings):
             METRICS.record_reliability_analysis_failure("invalid_cursor")
             raise GovernanceError(ErrorCode.INVALID_CURSOR)
@@ -98,6 +104,9 @@ class AutomationReliabilityAnalysisService:
             METRICS.record_reliability_truncation()
 
         include_evidence = detail_level != DetailLevel.SUMMARY.value
+        root_cause_groups = build_root_cause_groups(findings)
+        page_ids = {item.finding_id for item in page}
+        page_groups = [group for group in root_cause_groups if page_ids.intersection(group.member_finding_ids)]
         evidence_ids = {reference for item in page for reference in item.evidence_references}
         evidence = [
             bundle.evidence[reference_id].public()
@@ -113,6 +122,7 @@ class AutomationReliabilityAnalysisService:
             ]
 
         severity_counts = Counter(item.severity for item in findings)
+        root_cause_severity_counts = Counter(item.highest_severity for item in root_cause_groups)
         coverage = [item.public() for item in bundle.coverage]
         source_failures = sum(item.failed_items for item in bundle.coverage)
         traces_examined = next((item.items_examined for item in bundle.coverage if item.source_type == "automation_traces"), 0)
@@ -120,6 +130,8 @@ class AutomationReliabilityAnalysisService:
         METRICS.record_reliability_analysis_terminal(
             partial=partial,
             finding_counts=severity_counts,
+            root_cause_counts=root_cause_severity_counts,
+            aggregate_findings=offset == 0,
             traces_examined=traces_examined,
             referenced_entities_examined=entities_examined,
             source_failures=source_failures,
@@ -142,15 +154,18 @@ class AutomationReliabilityAnalysisService:
                 "entity_id": bundle.automation.get("entity_id"),
                 "friendly_name": bundle.automation.get("friendly_name"),
                 "enabled": str(bundle.automation.get("state", "")).lower() != "off",
-                "last_triggered": bundle.automation.get("last_triggered"),
+                "last_triggered": normalize_timestamp(bundle.automation.get("last_triggered")),
             },
-            "analysis_timestamp": datetime.now(timezone.utc).isoformat(),
+            "analysis_timestamp": normalize_timestamp(datetime.now(timezone.utc)),
             "requested_lookback_hours": int(lookback_hours),
             "trace_limit": int(trace_limit),
             "detail_level": detail_level,
             "overall_assessment": assessment,
             "result_status": "partial" if partial else "success",
             "finding_counts_by_severity": {severity: severity_counts.get(severity, 0) for severity in ("info", "low", "medium", "high", "critical")},
+            "unique_root_cause_count": len(root_cause_groups),
+            "root_cause_counts_by_severity": {severity: root_cause_severity_counts.get(severity, 0) for severity in ("info", "low", "medium", "high", "critical")},
+            "root_cause_groups": [] if detail_level == DetailLevel.SUMMARY.value else [group.public(include_evidence=include_evidence) for group in page_groups[:100]],
             "findings": [item.public(include_evidence=include_evidence) for item in page],
             "evidence_references": evidence,
             "configuration_fingerprint": bundle.configuration_fingerprint,
@@ -172,6 +187,13 @@ class AutomationReliabilityAnalysisService:
                 "clamp_reason": "maximum_limit" if int(limit) > MAX_FINDINGS else None,
             },
             "analysis_duration_ms": round((time.perf_counter() - started) * 1000, 3),
+            "timing_details": _timing_details(started),
+            "cache": {
+                "supported": False,
+                "status": "not_configured",
+                "hit": None,
+                "reason": "Reliability evidence is collected and evaluated for every request.",
+            },
         }
         metadata = {
             "routing": {
@@ -188,6 +210,21 @@ class AutomationReliabilityAnalysisService:
             "source_coverage": coverage,
         }
         return ReliabilityAnalysisOutput(data=data, warnings=warnings, metadata=metadata, partial=partial)
+
+
+def _timing_details(started: float) -> dict:
+    telemetry = current_telemetry()
+    current_ms = round((time.perf_counter() - started) * 1000, 3)
+    return {
+        "current_request_wall_clock_ms": current_ms,
+        "engineering_analysis_wall_clock_ms": current_ms,
+        "home_assistant_cumulative_attempt_ms": round(telemetry.ha_duration_ms, 3) if telemetry else 0.0,
+        "home_assistant_wall_clock_span_ms": telemetry.ha_wall_clock_span_ms if telemetry else 0.0,
+        "home_assistant_request_count": telemetry.ha_request_count if telemetry else 0,
+        "maximum_concurrent_home_assistant_requests": telemetry.ha_max_concurrent_requests if telemetry else 0,
+        "provider_operations_concurrent": bool(telemetry and telemetry.ha_max_concurrent_requests > 1),
+        "home_assistant_duration_semantics": "cumulative_attempt_effort_and_wall_clock_span_are_reported_separately",
+    }
 
 
 def _encode_cursor(fingerprint: str, offset: int) -> str:
@@ -208,4 +245,3 @@ def _decode_cursor(cursor: str, fingerprint: str) -> int:
     if cursor_fingerprint != fingerprint:
         raise GovernanceError(ErrorCode.STALE_CURSOR)
     return offset
-
