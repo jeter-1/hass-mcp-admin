@@ -1,7 +1,7 @@
 # Beta deployment and validation
 
 The beta add-on is isolated from production. Production remains **HA MCP
-Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.13
+Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.14
 is **HA MCP Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100).
 The workflow in this document deploys or updates only the beta.
 
@@ -17,8 +17,8 @@ From a clean branch in Windows PowerShell, run:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.12 `
-  -ExpectedVersion 2.0.0-beta.13 `
+  -DeployedVersion 2.0.0-beta.13 `
+  -ExpectedVersion 2.0.0-beta.14 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -FullTests
 ```
@@ -39,8 +39,8 @@ without supplying authentication material:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.12 `
-  -ExpectedVersion 2.0.0-beta.13 `
+  -DeployedVersion 2.0.0-beta.13 `
+  -ExpectedVersion 2.0.0-beta.14 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -SkipTests -SkipDockerBuild `
   -HealthHost homeassistant.local `
@@ -74,11 +74,11 @@ authenticated path, credential, or secret in the argument.
 The unauthenticated health endpoint proves that a process is responding. It
 does not replace `server_info` for verifying the running server version.
 
-Beta 13 must return 34 serializable tools from the server's real `tools/list`, including
+Beta 14 must return 34 serializable tools from the server's real `tools/list`, including
 `entity_dependency_analysis` and `automation_reliability_analysis`. If ChatGPT or
 Claude retains a 33-tool manifest while the server returns 34, the remaining mismatch
 is connector caching rather than server registration;
-refresh only the beta connector. Beta 13 does not change the manifest, so connector
+refresh only the beta connector. Beta 14 does not change the manifest, so connector
 recreation should not be required. Never share the complete authenticated URL.
 
 ## Optional local add-on development
@@ -192,33 +192,36 @@ direct-HA fallback. Redact authenticated paths before sharing logs.
 13. Confirm neither the System Log call nor the Phase 3C read claims fallback or a
     Standard HA MCP success.
 
-## Beta 13 read-only acceptance test
+## Beta 14 read-only acceptance test
 
-Do not run this procedure from CI or against production. After the user deploys Beta 13:
+Do not run this procedure from CI or against production. After the user deploys Beta 14:
 
-1. Call `server_info(check_ha=false)`; confirm `2.0.0-beta.13` and 34 tools.
-2. Call `list_capabilities`; confirm no tool was added and the analyzer remains additive beta-native.
-3. Capture health, provider, reliability, and error counters.
-4. Run standard-detail analysis for internal ID `office_tv_lights_on` with `lookback_hours=168`, `trace_limit=10`, and `limit=20`, if it still exists.
-5. Confirm the real Govee failure remains visible only when current evidence supports it.
-6. Confirm `first_observed` is not later than `last_observed` for every finding and root-cause group.
-7. Confirm every reliability timestamp follows the RFC 3339 UTC `Z` contract.
-8. Confirm generic `Task exception was never retrieved` entries are excluded unless a separate explicit basis binds them.
-9. Confirm overlapping action/trace findings share one root cause or follow the documented deduplication rule.
-10. Confirm System Log coverage does not claim complete 168-hour retention.
-11. Confirm request wall clock, HA cumulative attempt effort, and HA wall-clock span are separately labeled and plausible.
-12. Repeat the analysis; confirm cache status remains truthfully `not_configured` rather than requiring a hit.
-13. Analyze `beta13_smoke_test_nonexistent`; confirm `automation_not_found` and one terminal error increment.
-14. Analyze a malformed identifier; confirm local validation, no upstream request, zero HA time, and one terminal error increment.
-15. Confirm reliability/provider counters match outcomes and pagination did not repeat finding/root-cause aggregates.
-16. Inspect audit records by request ID; confirm configuration, traces, logs, findings, evidence, and error text are absent.
-17. Call `get_error_log(tail_lines=50)` and confirm Beta 11 redaction remains intact.
-18. Confirm no write, service call, trigger, plan, reload, restart, fallback, or Standard MCP success occurred.
+1. Call `server_info(check_ha=false)`.
+2. Confirm `2.0.0-beta.14`, 34 tools, and 25 canonical tools.
+3. Call `list_capabilities`; confirm no new tool was added.
+4. Capture health, provider, reliability, and error counters.
+5. Select an automation with recent retained traces.
+6. Call `list_automation_traces` and record the bounded returned run count and IDs.
+7. Immediately call `automation_reliability_analysis` for the same internal ID with a covering lookback and sufficient `trace_limit`.
+8. Confirm `analysis_timestamp` is a non-null RFC 3339 UTC timestamp.
+9. Confirm the analyzer examines the same eligible runs, subject only to documented bounds.
+10. Confirm it does not emit `no_recent_execution_evidence` when eligible traces exist.
+11. Confirm earliest/latest observations are chronological.
+12. Confirm overlapping failures retain correct root-cause grouping.
+13. Confirm trace coverage counts, state, cutoff, and completeness are truthful.
+14. Confirm timing separates wall-clock duration and cumulative HA effort.
+15. Repeat with an automation having legitimately zero recent traces; confirm the evidence-gap finding is accurate.
+16. Analyze `beta14_smoke_test_nonexistent`; confirm `automation_not_found`.
+17. Analyze `../config`; confirm `invalid_request`, zero HA time, zero HA requests, and no upstream attempt.
+18. Capture health again and verify exact counter deltas.
+19. Inspect audit records; confirm configuration, trace bodies, logs, findings, evidence, state values, and error content are absent.
+20. Call `get_error_log(tail_lines=50)` and confirm Beta 11 redaction remains intact.
+21. Confirm no writes, service calls, triggers, plans, reloads, restarts, fallback, or Standard MCP successes occurred.
 
-If the named automation no longer exists or has no current failure evidence, select
-another automation with known trace failures and retain only sanitized identifiers in
-the report. Never manufacture a finding. Beta 13 does not change the tool manifest, so
-connector recreation is not expected. Production remains on port 8099.
+Do not require a cache hit. New analyses always recollect evidence; only an active
+cursor page may reuse its bounded sanitized five-minute pagination snapshot. Beta 14
+does not change the tool manifest, so connector recreation is not expected. Production
+remains on port 8099.
 
 ## Rollback and removal
 

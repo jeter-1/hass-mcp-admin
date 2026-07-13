@@ -154,8 +154,10 @@ class FakeProvider:
 
     def __init__(self, bundle):
         self.bundle = bundle
+        self.calls = []
 
-    async def fetch(self, _request):
+    async def fetch(self, request):
+        self.calls.append(request)
         return ProviderResult(
             provider_id="engineering", capability=ProviderCapability.RELIABILITY_ANALYSIS,
             completeness=ProviderCompleteness.PARTIAL if self.bundle.partial else ProviderCompleteness.COMPLETE,
@@ -201,6 +203,7 @@ class ServiceAndMetricsContractTests(unittest.IsolatedAsyncioTestCase):
         before = METRICS.snapshot()["automation_reliability_analysis"]
         await service.analyze(automation_id="beta13_fixture", limit=1, cursor=first.data["pagination"]["next_cursor"])
         after = METRICS.snapshot()["automation_reliability_analysis"]
+        self.assertEqual(len(service.provider.calls), 1)
         self.assertEqual(before["finding_counts_by_severity"], after["finding_counts_by_severity"])
         self.assertEqual(before["root_cause_counts_by_severity"], after["root_cause_counts_by_severity"])
 

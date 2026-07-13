@@ -373,3 +373,17 @@ fields expose cumulative attempt effort, upstream wall-clock span, request count
 maximum concurrency, current request wall clock, and Engineering analysis wall clock.
 The wall-clock span is measured from the first attempt start through the last attempt
 completion and does not add overlapping durations.
+
+## Beta 14 trace coverage and request-time telemetry
+
+Trace coverage exposes only bounded counts and states: upstream returned, considered,
+parsed, inside lookback, selected, details retrieved/failed, malformed starts/finishes,
+duplicates, truncation, cutoff, and whether an empty result is trustworthy. It never
+contains a run ID, automation identity, trace body, error text, or malformed payload.
+
+One captured UTC analysis instant is used throughout a new analysis and its cursor
+pages. First-page source, trace, finding, and root-cause aggregates update once.
+Continuation pages update only their terminal request outcome and reuse a maximum-16,
+five-minute sanitized public-output snapshot, so HA/provider requests and traces
+examined do not repeat. Reusable reliability-result caching remains unsupported and
+health continues to report `cache_supported: false`.

@@ -21,6 +21,7 @@ def timing_since(started: float) -> Timing:
         home_assistant_cumulative_attempt_ms=round(telemetry.ha_duration_ms, 3) if telemetry else 0.0,
         home_assistant_wall_clock_span_ms=telemetry.ha_wall_clock_span_ms if telemetry else 0.0,
         home_assistant_request_count=telemetry.ha_request_count if telemetry else 0,
+        upstream_attempted=bool(telemetry and telemetry.ha_request_count > 0),
         provider_operations_concurrent=bool(telemetry and telemetry.ha_max_concurrent_requests > 1),
         retry_count=telemetry.retry_count if telemetry else 0,
         timeout_occurred=telemetry.timeout_occurred if telemetry else False,

@@ -158,6 +158,7 @@ class RuntimeMetrics:
         traces_examined: int,
         referenced_entities_examined: int,
         source_failures: int,
+        analysis_timestamp: str | None = None,
     ) -> None:
         if partial:
             self.reliability_analysis_partial += 1
@@ -170,7 +171,10 @@ class RuntimeMetrics:
             self.reliability_referenced_entities_examined += max(0, int(referenced_entities_examined))
             self.reliability_source_failures += max(0, int(source_failures))
         from datetime import datetime, timezone
-        self.reliability_last_successful_analysis = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        self.reliability_last_successful_analysis = (
+            analysis_timestamp
+            or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        )
 
     def record_reliability_analysis_failure(self, category: str) -> None:
         self.reliability_analysis_failures += 1

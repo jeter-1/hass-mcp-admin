@@ -1,5 +1,6 @@
 import asyncio
 import copy
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sys
@@ -32,6 +33,7 @@ from ha_mcp_engineering.tools import get_registered_server  # noqa: E402
 
 AUTOMATION_ID = "reliability_test"
 ENTITY_ID = "automation.reliability_test"
+ANALYSIS_INSTANT = datetime(2026, 7, 12, 12, 0, tzinfo=timezone.utc)
 
 
 def coverage(source_type, completeness="complete", *, examined=1, failed=0, truncated=False):
@@ -200,7 +202,7 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(output.data["overall_assessment"], "partial_evidence")
         self.assertIn("automation_disabled", {item["rule_id"] for item in output.data["findings"]})
 
-    async def test_finding_pagination_and_stale_cursor(self):
+    async def test_finding_pagination_uses_stable_snapshot_without_refetch(self):
         refs = [
             {"entity_id": f"sensor.missing_{index}", "status": "missing", "config_path": f"$.action[{index}].entity_id"}
             for index in range(5)
@@ -219,11 +221,19 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         )
 
         changed = bundle(references=refs[:-1])
-        changing = AutomationReliabilityAnalysisService(FakeProvider([first_bundle, changed]))
+        changing_provider = FakeProvider([first_bundle, changed])
+        changing = AutomationReliabilityAnalysisService(changing_provider)
         page = await changing.analyze(automation_id=AUTOMATION_ID, limit=2)
-        with self.assertRaises(GovernanceError) as raised:
-            await changing.analyze(automation_id=AUTOMATION_ID, limit=2, cursor=page.data["pagination"]["next_cursor"])
-        self.assertEqual(raised.exception.code, ErrorCode.STALE_CURSOR)
+        continuation = await changing.analyze(
+            automation_id=AUTOMATION_ID,
+            limit=2,
+            cursor=page.data["pagination"]["next_cursor"],
+        )
+        self.assertEqual(len(changing_provider.calls), 1)
+        self.assertFalse(
+            {item["finding_id"] for item in page.data["findings"]}
+            & {item["finding_id"] for item in continuation.data["findings"]}
+        )
 
     async def test_automation_not_found_and_internal_id_validation(self):
         service = AutomationReliabilityAnalysisService(FakeProvider(AutomationNotFoundError()))
@@ -304,7 +314,7 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
         rest = self.Rest()
         websocket = self.WebSocket(self.SECRET)
         provider = DirectHaReliabilityProvider(rest, websocket, secret=self.SECRET)
-        result = await provider.collect(automation_id=AUTOMATION_ID, lookback_hours=168, trace_limit=10)
+        result = await provider.collect(automation_id=AUTOMATION_ID, lookback_hours=168, trace_limit=10, analysis_instant=ANALYSIS_INSTANT)
         self.assertEqual(sum(path == "/states/sensor.shared" for _method, path in rest.calls), 1)
         self.assertNotIn(("GET", "/states"), rest.calls)
         self.assertIn(("GET", f"/states/{ENTITY_ID}"), rest.calls)
@@ -326,7 +336,7 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
 
         provider = DirectHaReliabilityProvider(MissingRest(), self.WebSocket(self.SECRET))
         with self.assertRaises(AutomationNotFoundError):
-            await provider.collect(automation_id=AUTOMATION_ID, lookback_hours=168, trace_limit=10)
+            await provider.collect(automation_id=AUTOMATION_ID, lookback_hours=168, trace_limit=10, analysis_instant=ANALYSIS_INSTANT)
 
     async def test_blueprint_source_available_and_unavailable_are_explicit(self):
         class BlueprintRest(self.Rest):
@@ -337,12 +347,12 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
 
         provider = DirectHaReliabilityProvider(BlueprintRest(), self.WebSocket(self.SECRET))
         with patch("ha_mcp_engineering.reliability.provider._read_blueprint", return_value={"trigger": [{"platform": "state", "entity_id": {"__blueprint_input__": "target"}}]}):
-            available = await provider.collect(automation_id=AUTOMATION_ID, lookback_hours=168, trace_limit=10)
+            available = await provider.collect(automation_id=AUTOMATION_ID, lookback_hours=168, trace_limit=10, analysis_instant=ANALYSIS_INSTANT)
         self.assertIsNotNone(available.blueprint)
         self.assertEqual(next(item.completeness for item in available.coverage if item.source_type == "blueprint_source"), "complete")
 
         with patch("ha_mcp_engineering.reliability.provider._read_blueprint", return_value=None):
-            unavailable = await provider.collect(automation_id=AUTOMATION_ID, lookback_hours=168, trace_limit=10)
+            unavailable = await provider.collect(automation_id=AUTOMATION_ID, lookback_hours=168, trace_limit=10, analysis_instant=ANALYSIS_INSTANT)
         self.assertIsNone(unavailable.blueprint)
         self.assertEqual(next(item.completeness for item in unavailable.coverage if item.source_type == "blueprint_source"), "partial")
 
@@ -351,7 +361,7 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
             async def command(self, payload):
                 if payload["type"] == "trace/list":
                     return [
-                        {"run_id": f"run-{index}", "last_step": "action/0", "error": "service failed"}
+                        {"run_id": f"run-{index}", "timestamp": f"2026-07-12T{10 + index:02d}:00:00Z", "last_step": "action/0", "error": "service failed"}
                         for index in range(3)
                     ]
                 if payload["type"] == "trace/get":
@@ -359,7 +369,7 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
                 return await super().command(payload)
 
         provider = DirectHaReliabilityProvider(self.Rest(), TraceWebSocket(self.SECRET))
-        result = await provider.collect(automation_id=AUTOMATION_ID, lookback_hours=168, trace_limit=2)
+        result = await provider.collect(automation_id=AUTOMATION_ID, lookback_hours=168, trace_limit=2, analysis_instant=ANALYSIS_INSTANT)
         trace_coverage = next(item for item in result.coverage if item.source_type == "automation_traces")
         self.assertEqual(len(result.traces), 2)
         self.assertTrue(trace_coverage.truncated)
@@ -375,7 +385,7 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
                 return await super().request(method, path)
 
         provider = DirectHaReliabilityProvider(SecretRest(), self.WebSocket(self.SECRET), secret=self.SECRET)
-        result = await provider.collect(automation_id=AUTOMATION_ID, lookback_hours=168, trace_limit=10)
+        result = await provider.collect(automation_id=AUTOMATION_ID, lookback_hours=168, trace_limit=10, analysis_instant=ANALYSIS_INSTANT)
         self.assertNotIn(self.SECRET, json.dumps(result.automation))
         self.assertEqual(result.automation["friendly_name"], "[REDACTED:token]")
 

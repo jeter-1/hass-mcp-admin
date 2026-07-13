@@ -93,7 +93,7 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
     ErrorCode.CHANGE_PLAN_STORAGE_ERROR: ErrorDefinition("Governance storage is unavailable.", True, 503, "internal_error"),
     ErrorCode.INVALID_CURSOR: ErrorDefinition("The pagination cursor is invalid.", False, 400, "invalid_params"),
     ErrorCode.STALE_CURSOR: ErrorDefinition("The pagination cursor belongs to an expired index generation; restart pagination.", False, 409, "invalid_request"),
-    ErrorCode.ANALYSIS_UNAVAILABLE: ErrorDefinition("Dependency analysis evidence is unavailable.", True, 503, "internal_error"),
+    ErrorCode.ANALYSIS_UNAVAILABLE: ErrorDefinition("Analysis evidence is unavailable.", True, 503, "internal_error"),
     ErrorCode.PROVIDER_UNAVAILABLE: ErrorDefinition("The required capability provider is unavailable.", False, 503, "internal_error"),
     ErrorCode.PROVIDER_TIMEOUT: ErrorDefinition("The capability provider timed out.", True, 504, "internal_error"),
     ErrorCode.PROVIDER_ERROR: ErrorDefinition("The capability provider failed.", True, 502, "internal_error"),

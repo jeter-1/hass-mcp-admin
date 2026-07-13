@@ -19,6 +19,10 @@ def parse_timestamp(value: Any) -> datetime | None:
     if value is None or isinstance(value, bool):
         return None
     try:
+        if isinstance(value, datetime):
+            if value.tzinfo is None:
+                return None
+            return value.astimezone(timezone.utc)
         if isinstance(value, (int, float)):
             return datetime.fromtimestamp(float(value), tz=timezone.utc)
         if not isinstance(value, str) or not value.strip():

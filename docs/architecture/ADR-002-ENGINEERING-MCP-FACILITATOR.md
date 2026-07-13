@@ -203,3 +203,11 @@ Multiple rule interpretations of the same occurrence set remain distinct finding
 share a root-cause identity, preventing the facilitator from overstating incident
 count. Auxiliary bounded-source retention limits remain visible without erasing
 independently complete evidence.
+
+Beta 14 requires every trace consumer to use the shared sanitized normalization
+boundary. Transport success is not evidence completeness: interval timestamps must be
+parsed to aware UTC instants, malformed headers must remain visible in coverage, and
+only trustworthy empty results may support a no-execution evidence gap. One captured
+request instant binds cutoff, result, and continuation. Cursor pages use bounded
+sanitized public-output snapshots rather than repeating provider access; this is not a
+reusable analytical result cache.

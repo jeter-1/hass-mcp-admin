@@ -30,3 +30,11 @@ before any HA request. A syntactically valid missing internal ID remains
 errors retain separate counters. Invalid cursors and terminal failures increment the
 reliability failure category once; cursor continuation pages do not repeat finding or
 root-cause aggregates.
+
+Beta 14 distinguishes a trustworthy empty trace result from evidence loss. A
+successful zero-run list or a successfully parsed list with no in-window run may
+return a successful evidence-gap finding. Malformed/filter/detail loss returns partial.
+A failed or timed-out foundational trace list with no independent finding returns
+`analysis_unavailable` or `provider_timeout`. Clock normalization failure maps to the
+bounded `internal_server_error` before any upstream attempt. These terminal categories
+increment once; trace-source/provider counters remain separate.

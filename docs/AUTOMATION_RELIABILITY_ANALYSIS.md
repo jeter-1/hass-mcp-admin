@@ -1,7 +1,7 @@
 # Single-automation reliability analysis
 
-Beta 12 added the read-only `automation_reliability_analysis` tool. Beta 13 stabilizes
-its chronology, correlation, grouping, coverage, and timing contracts. It accepts one
+Beta 12 added the read-only `automation_reliability_analysis` tool. Beta 13 stabilized
+correlation and grouping; Beta 14 unifies trace retrieval and request time. It accepts one
 Home Assistant internal automation ID and returns bounded, evidence-backed findings;
 it never triggers an automation, calls a service, creates a change plan, or changes
 configuration.
@@ -14,8 +14,9 @@ configuration.
 - `trace_limit` defaults to 10 and is bounded to 1-50.
 - `detail_level` is `summary`, `standard`, or `evidence`.
 - `limit` defaults to 20 and is bounded to 1-100 findings.
-- `cursor` is an opaque, evidence-fingerprint-bound pagination cursor. A changed
-  configuration or evidence set invalidates an older cursor with `stale_cursor`.
+- `cursor` is an opaque, fingerprint-bound continuation token. It reads from a
+  sanitized five-minute pagination snapshot and never repeats HA trace collection.
+  Missing, expired, or mismatched snapshots return `stale_cursor`.
 
 ## Facilitator and provider architecture
 
@@ -62,6 +63,7 @@ next investigation, and whether remediation would require governance.
 | `unresolved_dynamic_reference` | A dynamic template target cannot be resolved statically; coverage is incomplete. |
 | `blueprint_evidence_unavailable` | The actual blueprint source cannot be read. |
 | `no_recent_execution_evidence` | No trace exists in the lookback; this is an evidence gap, never an unreliable verdict. |
+| `trace_evidence_unavailable` | Trace retrieval or timestamp parsing was incomplete; this is a source limitation, never proof that no run occurred. |
 
 Beta 12 intentionally has no opaque reliability score, subjective complexity rule,
 trigger-should-have-fired speculation, or threshold recommendation.
@@ -135,6 +137,39 @@ can exceed request wall time when reads overlap. Cursor pages count as calls but
 the first page updates cumulative finding, root-cause, source, trace, and entity
 aggregates.
 
+## Beta 14 analysis time and shared trace contract
+
+The service captures exactly one injected, timezone-aware UTC instant at request start.
+The normalized RFC 3339 `Z` value is reused for the inclusive lookback cutoff, result
+metadata, provider request, evidence fingerprint, and every cursor page. An invalid or
+naive clock value fails closed before Home Assistant access; a successful or partial
+analysis can never return a null `analysis_timestamp`.
+
+`list_automation_traces` and reliability collection call the same `trace/list` payload
+and sanitizer-backed normalizer. Accepted starts include `Z`, explicit offsets,
+fractional seconds, permitted numeric epochs, and Home Assistant `{start, finish}`
+intervals. Valid starts are converted to UTC instants before comparison. A missing
+finish is allowed; missing, malformed, or naive starts are counted as parsing loss and
+never replaced with the current time. Runs exactly on the cutoff are included.
+
+Normalized headers are deduplicated by run ID, ordered by instant and run ID, bounded
+before detail retrieval, filtered before `trace/get`, and capped by `trace_limit`.
+Coverage reports `collection_state`, `trustworthy_empty`, the normalized cutoff, and
+bounded counts for upstream, considered, parsed, inside-lookback, selected, retrieved,
+failed, malformed, missing-start, bad-start, bad-finish, and duplicate runs.
+
+`no_recent_execution_evidence` is permitted only for a successful zero-run list or a
+successful parsed list whose runs are all outside the lookback. Malformed headers,
+list failure, timeout, detail loss, or unexplained filtering cannot produce that
+finding. Malformed/detail/truncation loss is partial. A foundational trace-list failure
+without an independent finding fails the analysis; independent findings may remain a
+truthful partial result.
+
+Reliability-result caching remains unsupported. A cursor may reuse only a bounded,
+sanitized public-output pagination snapshot (maximum 16, five-minute TTL); it cannot
+serve a new analysis and is removed after the final page. This prevents repeated HA
+reads and aggregate counter inflation without concealing new evidence on a new call.
+
 ## Known limitations
 
 - Static extraction cannot resolve every dynamic Jinja target.
@@ -143,5 +178,6 @@ aggregates.
 - No-event evidence is unavailable, so the analyzer cannot prove that a trigger
   should have fired.
 - Logbook/history is intentionally unused by the initial deterministic rule set.
-- A new MCP tool changes the manifest to 34 tools; refresh or recreate ChatGPT/Claude
-  beta connectors after deployment if they retain a cached 33-tool manifest.
+- Home Assistant retains only a bounded trace history, so a successful lookback query
+  cannot prove that older executions never occurred.
+- Beta 14 does not change the 34-tool manifest; connector recreation is not required.

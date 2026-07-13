@@ -74,6 +74,14 @@ Beta 12 adds `ha_mcp_engineering/reliability/` for provider-backed evidence
 collection, deterministic rules, bounded models, pagination, orchestration, and
 runtime composition. The tool handler remains transport-independent.
 
+Beta 14 adds `ha_mcp_engineering/trace_normalization.py` as the common sanitized
+boundary for the canonical `list_automation_traces` tool and Engineering reliability
+collection. The pure normalizer owns interval/scalar timestamp parsing, UTC ordering,
+run-ID deduplication, and header bounds; the reliability provider alone owns lookback
+and detail-selection policy. One injected request clock binds the analysis cutoff and
+result metadata. Cursor continuation uses only bounded sanitized public output and
+does not create a reusable result cache.
+
 ## Compatibility approach
 
 The beta's compatibility module preserves the current 25 function names,
