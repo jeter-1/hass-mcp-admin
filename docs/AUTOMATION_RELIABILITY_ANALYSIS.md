@@ -1,6 +1,7 @@
 # Single-automation reliability analysis
 
-Beta 12 adds the read-only `automation_reliability_analysis` tool. It accepts one
+Beta 12 added the read-only `automation_reliability_analysis` tool. Beta 13 stabilizes
+its chronology, correlation, grouping, coverage, and timing contracts. It accepts one
 Home Assistant internal automation ID and returns bounded, evidence-backed findings;
 it never triggers an automation, calls a service, creates a change plan, or changes
 configuration.
@@ -94,7 +95,45 @@ trace/configuration content, or evidence payloads.
 Exact entity lookups are deduplicated and bounded, reads use bounded concurrency,
 trace and log retrieval are capped, individual entity/trace failures do not abort
 other evidence, and the total analysis has a configured timeout. Beta 12 does not
-cache reliability results; health therefore reports zero cache hits/misses.
+cache reliability results. Beta 13 reports `cache_supported: false`,
+`cache_counters_active: false`, and per-response `cache.status: not_configured`
+instead of presenting zero counters as an active cache.
+
+## Beta 13 correlation and timestamp contract
+
+Every public reliability timestamp is an RFC 3339 UTC string ending in `Z`. Trace
+intervals use the stable `started_at` and `finished_at` keys. Missing timestamps remain
+absent, malformed values are omitted, and neither case is replaced with the current
+time. `first_observed` is the earliest parsed occurrence and `last_observed` is the
+latest, regardless of source ordering.
+
+System Log correlation is deterministic. Accepted bases are
+`automation_entity_id_exact`, `automation_internal_id_exact`,
+`failed_dependency_entity_id_exact`, and `trace_service_error_signature`. Canonical
+identifiers use token boundaries. Friendly names, temporal proximity, generic task or
+executor text, and substrings are insufficient. Evidence exposes only the bounded
+basis enum and derived confidence, never the matched secret-bearing text.
+
+`system_log/list` is a bounded, deduplicated, in-memory snapshot. Coverage therefore
+distinguishes `snapshot_completeness` from `retention_coverage`; retention for the
+requested lookback is reported `unknown`. This auxiliary limitation is always visible
+but does not make independently supported trace/config findings fail or disappear.
+
+## Root causes, timing, and pagination
+
+Distinct rule findings remain available, but findings with the same automation,
+failure step, sanitized error signature, affected dependency, and overlapping runs
+share a stable `root_cause_group_id`. Standard/evidence responses include bounded
+`root_cause_groups`; summary responses include only `unique_root_cause_count` and
+separate finding/root-cause severity counts.
+
+`home_assistant_ms` remains the shared cumulative duration of all HA attempts for
+compatibility. The unambiguous companion fields are
+`home_assistant_cumulative_attempt_ms`, `home_assistant_wall_clock_span_ms`,
+`home_assistant_request_count`, and `provider_operations_concurrent`. Cumulative work
+can exceed request wall time when reads overlap. Cursor pages count as calls but only
+the first page updates cumulative finding, root-cause, source, trace, and entity
+aggregates.
 
 ## Known limitations
 

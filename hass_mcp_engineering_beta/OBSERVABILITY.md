@@ -290,16 +290,20 @@ cannot authorize or trigger another operation.
 
 ## Automation reliability analysis telemetry
 
-Beta 12 adds a bounded `automation_reliability_analysis` health group:
+Beta 12 added a bounded `automation_reliability_analysis` health group; Beta 13
+clarifies its aggregate and cache semantics:
 
 - request, success, partial, and failure counts;
-- cumulative finding counts by severity;
+- cumulative finding and unique-root-cause counts by severity;
 - traces and referenced entities examined;
 - source failures and findings-truncated events;
 - last successful analysis timestamp and last bounded failure category; and
-- explicit zero cache hits/misses because Beta 12 does not cache reliability results.
+- explicit `cache_supported: false` and `cache_status: not_configured` because no
+  reliability-result cache exists.
 
-One terminal analysis updates success, partial, or failure exactly once. Provider
+One terminal analysis updates success, partial, or failure exactly once. Only a first
+page updates finding/root-cause/source aggregates; cursor continuation does not count
+the same population again. Provider
 routing separately records the engineering orchestration request and every attempted
 direct evidence source. Health never contains an automation ID, configuration,
 friendly name, trace, System Log message, finding, evidence reference, or authenticated
@@ -352,3 +356,20 @@ For each future migration:
 5. add only safe audit resource identifiers and endpoint categories;
 6. preserve destructive-service confirmation behavior; and
 7. migrate one coherent read-only family before any write/governance work.
+
+## Beta 13 reliability telemetry
+
+Reliability health reports cumulative terminal requests, successes, partial results,
+failures, finding severity counts, and separate unique-root-cause severity counts.
+Finding/root-cause/source aggregates update on the first page only. Continuation
+requests remain requests but do not duplicate the analysis population.
+
+Reliability result caching is not configured. Health reports `cache_supported: false`,
+`cache_counters_active: false`, and `cache_status: not_configured`; per-response cache
+provenance says the same. No unsafe cache was added merely to produce hits.
+
+The shared `home_assistant_ms` field is cumulative attempt effort. Additive timing
+fields expose cumulative attempt effort, upstream wall-clock span, request count,
+maximum concurrency, current request wall clock, and Engineering analysis wall clock.
+The wall-clock span is measured from the first attempt start through the last attempt
+completion and does not add overlapping durations.

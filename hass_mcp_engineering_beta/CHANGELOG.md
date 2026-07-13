@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.0-beta.13
+
+- Corrected reliability observation chronology using timezone-aware UTC ordering independent of Home Assistant source order.
+- Replaced broad System Log substring correlation with exact identifier and trace-signature bases, with safe confidence metadata.
+- Added deterministic root-cause groups so overlapping trace and action findings are not presented as independent incidents.
+- Standardized reliability timestamps as RFC 3339 UTC strings and trace intervals as `started_at`/`finished_at` objects.
+- Distinguished the bounded System Log snapshot from unverifiable lookback retention without discarding independent findings.
+- Separated cumulative Home Assistant request effort from upstream wall-clock span and concurrency.
+- Marked reliability-result caching honestly unavailable and prevented pagination from inflating finding/root-cause counters.
+- Preserved all 34 tool names and input schemas; production v1.1.2 is unchanged.
+
 ## 2.0.0-beta.12
 
 - Add the read-only `automation_reliability_analysis` tool for one internal

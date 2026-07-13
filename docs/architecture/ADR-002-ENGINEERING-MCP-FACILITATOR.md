@@ -195,3 +195,11 @@ Beta 12 adds the second consumer and first reliability workflow, increasing the
 manifest to 34 tools. It proves the intended facilitator pattern: select bounded
 evidence, preserve partial-source truth, run deterministic rules, and return stable
 references instead of raw bulk configuration or traces.
+
+Beta 13 records an analytical evidence item only when a reviewed deterministic basis
+binds it to the target. Provider proximity and temporal overlap are not delegation or
+correlation evidence. Sanitization precedes normalization and identity derivation.
+Multiple rule interpretations of the same occurrence set remain distinct findings but
+share a root-cause identity, preventing the facilitator from overstating incident
+count. Auxiliary bounded-source retention limits remain visible without erasing
+independently complete evidence.

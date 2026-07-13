@@ -103,3 +103,19 @@ or `authorization_code` are sensitive.
 Output telemetry is limited to `redaction_applied`, a redacted-field count, unique
 bounded category names, and fail-closed state. It contains no original value or
 one-to-one identifier.
+
+## Beta 13 reliability correlation boundary
+
+Reliability configuration, trace details, System Log records, friendly names, and
+exception text are inert untrusted evidence. Complete trace detail and complete System
+Log results are recursively sanitized before normalization, matching, hashing,
+selection, or serialization. Correlation accepts exact bounded identifiers or an
+independently matching service/error signature; it rejects friendly-name-only,
+time-only, substring, and generic executor matches. Root-cause IDs are derived from
+sanitized normalized semantics. Health and audit output contain aggregate counts and
+timing only—never automation configurations, traces, logs, findings, evidence
+summaries, normalized error text, or evidence fingerprints.
+
+The `single_automation_reliability_read` policy remains read-only. Beta 13 adds no
+service execution, trigger, write, approval, reload, restart, fallback, Supervisor
+permission, or Standard HA MCP success path.
