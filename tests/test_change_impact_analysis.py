@@ -1,5 +1,6 @@
 import asyncio
 import copy
+from dataclasses import replace
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -248,6 +249,21 @@ class FakeProvider:
     def __init__(self, value):
         self.value = value
         self.calls = []
+        bundle_value = value.data if isinstance(value, ProviderResult) else value
+        index = (
+            bundle_value.index
+            if isinstance(bundle_value, ImpactEvidenceBundle)
+            else {}
+        )
+        self.index_identity = {
+            "generation": int(index.get("generation", 0)),
+            "fingerprint": str(index.get("fingerprint") or ""),
+            "valid": bool(index),
+            "invalidated": False,
+        }
+
+    def active_index_identity(self):
+        return copy.deepcopy(self.index_identity)
 
     async def fetch(self, request):
         self.calls.append(request)
@@ -320,6 +336,10 @@ class RuleTests(unittest.TestCase):
                 [item.finding_id for item in first],
                 [item.finding_id for item in second],
             )
+            direct_finding = next(item for item in first if item.rule_id == expected)
+            self.assertNotIn("A automation", direct_finding.explanation)
+            if source_type == "automation":
+                self.assertTrue(direct_finding.explanation.startswith("An automation"))
 
     def test_rename_disable_and_conflict_semantics(self):
         ref = "ev-direct"
@@ -814,6 +834,9 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                 cursor=tampered,
             )
         self.assertEqual(bad.exception.code, ErrorCode.INVALID_CURSOR)
+        self.assertEqual(
+            bad.exception.details["reason"], "integrity_or_format_invalid"
+        )
         with self.assertRaises(GovernanceError) as stale:
             await current.analyze(
                 entity_id=TARGET,
@@ -823,6 +846,10 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                 cursor=cursor,
             )
         self.assertEqual(stale.exception.code, ErrorCode.STALE_CURSOR)
+        self.assertEqual(
+            stale.exception.details["reason"],
+            "query_or_snapshot_binding_changed",
+        )
 
         expiring, _ = service(bundle(direct=direct, references=refs))
         expiring_first = await expiring.analyze(
@@ -843,6 +870,297 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                 cursor=expiring_cursor,
             )
         self.assertEqual(expired.exception.code, ErrorCode.STALE_CURSOR)
+        self.assertEqual(expired.exception.details["reason"], "snapshot_expired")
+
+    async def test_refresh_index_cursor_uses_committed_snapshot_across_pages(self):
+        refs = {}
+        direct = []
+        for index in range(7):
+            reference = f"ev-refresh-{index}"
+            object_id = f"automation.refresh_consumer_{index}"
+            refs[reference] = evidence(
+                reference,
+                source_id=f"refresh-{index}",
+                object_id=object_id,
+            )
+            direct.append(
+                dependency(
+                    reference,
+                    source_id=f"refresh-{index}",
+                    object_id=object_id,
+                )
+            )
+        value = bundle(direct=direct, references=refs)
+        value.index.update({"cache_hit": False, "refreshed": True})
+        current, provider = service(value)
+
+        first = await current.analyze(
+            entity_id=TARGET,
+            operation="remove_entity",
+            source_types=["automation", "blueprint"],
+            limit=3,
+            refresh_index=True,
+        )
+        aggregate_after_first = copy.deepcopy(
+            METRICS.snapshot()["change_impact_analysis"]
+        )
+        pages = [first]
+        cursor = first.data["pagination"]["next_cursor"]
+        while cursor:
+            page = await current.analyze(
+                entity_id=TARGET,
+                operation="remove_entity",
+                source_types=["automation", "blueprint"],
+                limit=3,
+                cursor=cursor,
+                refresh_index=False,
+            )
+            pages.append(page)
+            cursor = page.data["pagination"]["next_cursor"]
+
+        self.assertGreater(len(pages), 2)
+        self.assertTrue(first.data["pagination"]["has_more"])
+        self.assertTrue(all(
+            page.data["analysis_timestamp"] == first.data["analysis_timestamp"]
+            for page in pages
+        ))
+        self.assertEqual(len(provider.calls), 1)
+        self.assertTrue(provider.calls[0].query["refresh_index"])
+        self.assertEqual(
+            sum(len(page.data["findings"]) for page in pages),
+            first.data["finding_count"],
+        )
+        metrics = METRICS.snapshot()["change_impact_analysis"]
+        self.assertEqual(metrics["cursor_continuations"], len(pages) - 1)
+        self.assertEqual(metrics["request_count"], len(pages))
+        for key in (
+            "finding_count",
+            "findings_by_severity",
+            "findings_by_object_type",
+            "unique_affected_object_count",
+            "unique_affected_objects_by_type",
+            "unique_root_cause_count",
+        ):
+            self.assertEqual(metrics[key], aggregate_after_first[key])
+
+    async def test_cursor_stales_only_after_index_invalidation_or_replacement(self):
+        refs = {}
+        direct = []
+        for index in range(3):
+            reference = f"ev-stale-{index}"
+            object_id = f"automation.stale_consumer_{index}"
+            refs[reference] = evidence(
+                reference, source_id=f"stale-{index}", object_id=object_id
+            )
+            direct.append(
+                dependency(
+                    reference, source_id=f"stale-{index}", object_id=object_id
+                )
+            )
+
+        for change, expected in (
+            ({"invalidated": True, "valid": False}, "invalidation"),
+            (
+                {
+                    "generation": 8,
+                    "fingerprint": "8" * 64,
+                    "valid": True,
+                    "invalidated": False,
+                },
+                "replacement",
+            ),
+        ):
+            with self.subTest(change=expected):
+                METRICS.reset()
+                current, provider = service(bundle(direct=direct, references=refs))
+                first = await current.analyze(
+                    entity_id=TARGET,
+                    operation="remove_entity",
+                    source_types=["automation"],
+                    limit=2,
+                )
+                provider.index_identity.update(change)
+                with self.assertRaises(GovernanceError) as raised:
+                    await current.analyze(
+                        entity_id=TARGET,
+                        operation="remove_entity",
+                        source_types=["automation"],
+                        limit=2,
+                        cursor=first.data["pagination"]["next_cursor"],
+                    )
+                self.assertEqual(raised.exception.code, ErrorCode.STALE_CURSOR)
+                self.assertEqual(
+                    raised.exception.details["reason"],
+                    "active_index_replaced_or_invalidated",
+                )
+                self.assertEqual(len(provider.calls), 1)
+                metrics = METRICS.snapshot()["change_impact_analysis"]
+                self.assertEqual(metrics["failed_count"], 0)
+                self.assertEqual(metrics["stale_cursor_events"], 1)
+
+    async def test_counter_names_reconcile_findings_and_unique_objects(self):
+        refs = {}
+        direct = []
+        for index in range(3):
+            reference = f"ev-duplicate-{index}"
+            refs[reference] = evidence(reference)
+            direct.append(dependency(reference))
+        current, _ = service(bundle(direct=direct, references=refs))
+        output = await current.analyze(
+            entity_id=TARGET,
+            operation="remove_entity",
+            source_types=["automation"],
+        )
+        data = output.data
+        self.assertEqual(
+            data["direct_finding_count"] + data["indirect_finding_count"],
+            data["finding_count"],
+        )
+        self.assertEqual(
+            sum(data["findings_by_severity"].values()), data["finding_count"]
+        )
+        self.assertEqual(
+            sum(data["unique_affected_objects_by_type"].values()),
+            data["unique_affected_object_count"],
+        )
+        self.assertGreater(data["finding_count"], data["unique_affected_object_count"])
+        self.assertEqual(
+            data["affected_object_totals"],
+            data["unique_affected_objects_by_type"],
+        )
+        metrics = METRICS.snapshot()["change_impact_analysis"]
+        self.assertEqual(metrics["finding_count"], data["finding_count"])
+        self.assertEqual(
+            metrics["unique_affected_object_count"],
+            data["unique_affected_object_count"],
+        )
+        self.assertNotEqual(
+            metrics["findings_by_object_type"],
+            metrics["unique_affected_objects_by_type"],
+        )
+
+    async def test_validation_details_are_field_specific_and_upstream_free(self):
+        cases = (
+            (
+                {"entity_id": TARGET, "operation": "rename_entity"},
+                "replacement_entity_id",
+                "required_for_rename",
+            ),
+            (
+                {
+                    "entity_id": TARGET,
+                    "operation": "rename_entity",
+                    "replacement_entity_id": TARGET,
+                },
+                "replacement_entity_id",
+                "must_differ_from_entity_id",
+            ),
+            (
+                {
+                    "entity_id": TARGET,
+                    "operation": "rename_entity",
+                    "replacement_entity_id": "../config",
+                },
+                "replacement_entity_id",
+                "canonical_entity_id_required",
+            ),
+            (
+                {
+                    "entity_id": TARGET,
+                    "operation": "remove_entity",
+                    "replacement_entity_id": REPLACEMENT,
+                },
+                "replacement_entity_id",
+                "not_allowed_for_operation",
+            ),
+            (
+                {
+                    "entity_id": TARGET,
+                    "operation": "disable_entity",
+                    "replacement_entity_id": REPLACEMENT,
+                },
+                "replacement_entity_id",
+                "not_allowed_for_operation",
+            ),
+            (
+                {"entity_id": "../config", "operation": "remove_entity"},
+                "entity_id",
+                "canonical_entity_id_required",
+            ),
+            (
+                {"entity_id": TARGET, "operation": "replace_everything"},
+                "operation",
+                "unsupported_operation",
+            ),
+            (
+                {
+                    "entity_id": TARGET,
+                    "operation": "remove_entity",
+                    "source_types": ["unsupported_source"],
+                },
+                "source_types",
+                "unsupported_source_type",
+            ),
+        )
+        for arguments, field, reason in cases:
+            with self.subTest(field=field, reason=reason):
+                METRICS.reset()
+                current, provider = service(bundle())
+                with self.assertRaises(InvalidRequestError) as raised:
+                    await current.analyze(**arguments)
+                self.assertEqual(raised.exception.code, ErrorCode.INVALID_REQUEST)
+                self.assertEqual(raised.exception.details["field"], field)
+                self.assertEqual(raised.exception.details["reason"], reason)
+                self.assertIn("operation", raised.exception.details)
+                self.assertEqual(provider.calls, [])
+                self.assertEqual(current.pagination_snapshots._values, {})
+                metrics = METRICS.snapshot()["change_impact_analysis"]
+                self.assertEqual(metrics["failed_count"], 1)
+                self.assertEqual(metrics["successful_count"], 0)
+                self.assertEqual(metrics["partial_count"], 0)
+
+    async def test_cursor_rejects_first_page_only_refresh_with_validation_details(self):
+        refs = {
+            f"ev-cursor-validation-{index}": evidence(
+                f"ev-cursor-validation-{index}",
+                source_id=f"cursor-validation-{index}",
+                object_id=f"automation.cursor_validation_{index}",
+            )
+            for index in range(2)
+        }
+        direct = [
+            dependency(
+                reference,
+                source_id=f"cursor-validation-{index}",
+                object_id=f"automation.cursor_validation_{index}",
+            )
+            for index, reference in enumerate(refs)
+        ]
+        current, provider = service(bundle(direct=direct, references=refs))
+        first = await current.analyze(
+            entity_id=TARGET,
+            operation="remove_entity",
+            source_types=["automation"],
+            limit=1,
+        )
+        with self.assertRaises(InvalidRequestError) as raised:
+            await current.analyze(
+                entity_id=TARGET,
+                operation="remove_entity",
+                source_types=["automation"],
+                limit=1,
+                cursor=first.data["pagination"]["next_cursor"],
+                refresh_index=True,
+            )
+        self.assertEqual(raised.exception.details["field"], "refresh_index")
+        self.assertEqual(
+            raised.exception.details["reason"],
+            "first_page_only_when_cursor_absent",
+        )
+        self.assertEqual(len(provider.calls), 1)
+        metrics = METRICS.snapshot()["change_impact_analysis"]
+        self.assertEqual(metrics["invalid_cursor_events"], 1)
+        self.assertEqual(metrics["failed_count"], 0)
 
     async def test_pagination_clamping_detail_levels_and_stable_order(self):
         refs = {}
@@ -937,6 +1255,14 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
         async def get(self, *, refresh=False):
             self.calls.append(refresh)
             return self.snapshot, False, 1.25
+
+        def active_identity(self):
+            return {
+                "generation": self.snapshot.generation,
+                "fingerprint": self.snapshot.fingerprint,
+                "valid": True,
+                "invalidated": False,
+            }
 
     class Rest:
         def __init__(self, *, destination_exists=False, target_exists=True):
@@ -1117,6 +1443,223 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
                 for payload in websocket.calls
             )
         )
+
+    async def test_dynamic_reference_scope_and_relation_are_reported_honestly(self):
+        METRICS.reset()
+
+        async def collect(dynamic_references, requested):
+            snapshot = replace(
+                self.snapshot(dynamic=False),
+                dynamic_references=tuple(dynamic_references),
+            )
+            provider = DirectHaImpactProvider(
+                self.Index(snapshot), self.Rest(), self.WebSocket()
+            )
+            return await provider.collect(
+                {
+                    "entity_id": TARGET,
+                    "operation": "remove_entity",
+                    "replacement_entity_id": None,
+                    "include_indirect": True,
+                    "max_depth": 2,
+                    "source_types": requested,
+                    "detail_level": "standard",
+                    "limit": 20,
+                    "refresh_index": False,
+                    "analysis_timestamp": "2026-07-14T12:00:00Z",
+                }
+            )
+
+        clean = await collect((), ["automation"])
+        self.assertEqual(clean.confirmed_target_related_dynamic_count, 0)
+        self.assertEqual(clean.unresolved_in_requested_scope_count, 0)
+        self.assertEqual(clean.dynamic_outside_requested_scope_count, 0)
+
+        outside = await collect(
+            (
+                DynamicReference(
+                    "ev-outside",
+                    "script",
+                    "script-1",
+                    "$.sequence[0].target.entity_id",
+                    "Dynamic script target",
+                ),
+            ),
+            ["automation"],
+        )
+        self.assertEqual(outside.dynamic_outside_requested_scope_count, 1)
+        self.assertEqual(outside.unresolved_in_requested_scope_count, 0)
+        self.assertEqual(outside.dynamic_references, [])
+        outside_service, _ = service(outside)
+        outside_output = await outside_service.analyze(
+            entity_id=TARGET,
+            operation="remove_entity",
+            source_types=["automation"],
+        )
+        self.assertEqual(
+            outside_output.data["dynamic_reference_summary"][
+                "outside_requested_scope_count"
+            ],
+            1,
+        )
+        self.assertFalse(
+            outside_output.data["dynamic_reference_summary"][
+                "manual_review_required"
+            ]
+        )
+
+        unresolved = await collect(
+            (
+                DynamicReference(
+                    "ev-unresolved",
+                    "automation",
+                    "auto-unresolved",
+                    "$.action[0].target.entity_id",
+                    "Dynamic automation target",
+                ),
+            ),
+            ["automation"],
+        )
+        self.assertEqual(unresolved.confirmed_target_related_dynamic_count, 0)
+        self.assertEqual(unresolved.unresolved_in_requested_scope_count, 1)
+        self.assertEqual(
+            unresolved.dynamic_references[0]["relation_status"],
+            "unresolved_in_requested_scope",
+        )
+        self.assertEqual(
+            unresolved.dynamic_references[0]["configuration_path"],
+            "$.action[0].target.entity_id",
+        )
+        self.assertEqual(
+            next(
+                item for item in unresolved.coverage if item.source_type == "automation"
+            ).completeness,
+            "partial",
+        )
+
+        bounded = await collect(
+            tuple(
+                DynamicReference(
+                    f"ev-bounded-{index}",
+                    "automation",
+                    f"auto-bounded-{index}",
+                    f"$.action[{index}].target.entity_id",
+                    "Bounded dynamic target",
+                )
+                for index in range(101)
+            ),
+            ["automation"],
+        )
+        self.assertEqual(bounded.unresolved_in_requested_scope_count, 101)
+        self.assertEqual(len(bounded.dynamic_references), 100)
+        bounded_coverage = next(
+            item for item in bounded.coverage if item.source_type == "automation"
+        )
+        self.assertTrue(bounded_coverage.truncated)
+        self.assertTrue(
+            any(
+                "bounded evidence payload" in item
+                for item in bounded_coverage.warnings
+            )
+        )
+
+        mixed = await collect(
+            (
+                DynamicReference(
+                    "ev-confirmed",
+                    "automation",
+                    "auto-1",
+                    "$.condition[0].value_template",
+                    "Dynamic value in a target-related automation",
+                ),
+                DynamicReference(
+                    "ev-mixed-unresolved",
+                    "automation",
+                    "auto-unresolved",
+                    "$.action[1].target.entity_id",
+                    "Unbounded dynamic target",
+                ),
+            ),
+            ["automation"],
+        )
+        self.assertEqual(mixed.confirmed_target_related_dynamic_count, 1)
+        self.assertEqual(mixed.unresolved_in_requested_scope_count, 1)
+        self.assertEqual(
+            {item["relation_status"] for item in mixed.dynamic_references},
+            {"confirmed_target_related", "unresolved_in_requested_scope"},
+        )
+
+        current, _ = service(mixed)
+        output = await current.analyze(
+            entity_id=TARGET,
+            operation="remove_entity",
+            source_types=["automation"],
+        )
+        summary = output.data["dynamic_reference_summary"]
+        self.assertEqual(summary["confirmed_target_related_count"], 1)
+        self.assertEqual(summary["unresolved_in_requested_scope_count"], 1)
+        self.assertTrue(summary["manual_review_required"])
+        self.assertEqual(output.data["final_assessment"], "review_required")
+        dynamic_findings = [
+            item
+            for item in output.data["findings"]
+            if item["rule_id"] == "unresolved_dynamic_reference"
+        ]
+        self.assertEqual(len(dynamic_findings), 2)
+        self.assertTrue(all(item["manual_review_required"] for item in dynamic_findings))
+        unresolved_evidence = next(
+            item
+            for item in output.data["evidence_references"]
+            if item["reference_id"] == "ev-mixed-unresolved"
+        )
+        self.assertEqual(unresolved_evidence["source_type"], "automation")
+        self.assertEqual(unresolved_evidence["source_id"], "auto-unresolved")
+        self.assertEqual(
+            unresolved_evidence["configuration_paths"],
+            ["$.action[1].target.entity_id"],
+        )
+        impact_metrics = METRICS.snapshot()["change_impact_analysis"]
+        self.assertEqual(impact_metrics["dynamic_reference_review_event_count"], 1)
+        self.assertEqual(impact_metrics["unresolved_dynamic_reference_count"], 1)
+
+    async def test_all_impact_operations_remain_read_only(self):
+        for operation, replacement_entity_id in (
+            ("rename_entity", REPLACEMENT),
+            ("remove_entity", None),
+            ("disable_entity", None),
+        ):
+            with self.subTest(operation=operation):
+                index = self.Index(self.snapshot(dynamic=False))
+                rest = self.Rest()
+                websocket = self.WebSocket()
+                provider = DirectHaImpactProvider(index, rest, websocket)
+                await provider.collect(
+                    {
+                        "entity_id": TARGET,
+                        "operation": operation,
+                        "replacement_entity_id": replacement_entity_id,
+                        "include_indirect": True,
+                        "max_depth": 2,
+                        "source_types": ["automation", "blueprint"],
+                        "detail_level": "standard",
+                        "limit": 20,
+                        "refresh_index": False,
+                        "analysis_timestamp": "2026-07-14T12:00:00Z",
+                    }
+                )
+                self.assertTrue(
+                    all(method == "GET" for method, _path, _kwargs in rest.calls)
+                )
+                command_types = {payload["type"] for payload in websocket.calls}
+                self.assertFalse(
+                    command_types
+                    & {
+                        "call_service",
+                        "config/entity_registry/update",
+                        "automation/trigger",
+                        "config/automation/config",
+                    }
+                )
 
     async def test_destination_conflict_and_nonexistent_target(self):
         provider = DirectHaImpactProvider(
