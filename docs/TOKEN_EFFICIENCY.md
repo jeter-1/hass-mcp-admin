@@ -76,3 +76,12 @@ standard, and 20 in evidence mode. The response reports the requested limit, eff
 limit, payload cap, and clamp reason. Repeated references are grouped by affected
 object and consequence, and raw state, registry, trace, log, or configuration payloads
 are never returned.
+
+Beta 19 paginates ranked hypotheses, not an unbounded timeline. Summary mode leads
+with assessment, counts, time window, focus, coverage, and limitations and omits
+normalized events. Standard mode adds compact cited hypotheses. Evidence mode adds
+only bounded sanitized events referenced by the current page. Duplicate source
+events and hypotheses are collapsed with stable IDs while contradiction remains
+separate. Whole-analysis totals, coverage, incident identity, and provenance are
+stored once in a five-minute cursor snapshot; continuation performs no evidence
+collection or recorrelation and never becomes a reusable result cache.

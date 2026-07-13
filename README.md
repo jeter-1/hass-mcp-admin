@@ -168,3 +168,13 @@ transport layer by parsing JSON-RPC `tools/call` bodies, so coverage is uniform
 across all tools. Limitation: in-tool refusals (e.g. the destructive gate) return
 HTTP 200 — the log records the attempt and whether `confirm` was set, not the gate
 outcome. Review from chat via the `get_audit_log` tool.
+
+## Engineering beta analytical milestones
+
+The parallel v2 beta is now `2.0.0-beta.19` with 37 registered tools and 25
+unchanged canonical tools. Beta 19 adds the read-only Engineering-native
+`incident_correlation` capability. It correlates bounded existing evidence into
+ranked, cited hypotheses while preserving contradiction and incomplete coverage;
+it never treats proximity as proof or performs remediation. Production v1.1.2,
+`hass_mcp_admin`, and port 8099 remain unchanged. See
+[`docs/INCIDENT_CORRELATION.md`](docs/INCIDENT_CORRELATION.md).

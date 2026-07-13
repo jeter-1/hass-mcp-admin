@@ -236,3 +236,14 @@ unavailable, provider fallback is forbidden, and every unsupported source stays
 visible. Candidate orphan detection never authorizes deletion or generates a
 cleanup plan. See
 [`../CONFIGURATION_INTEGRITY_ANALYSIS.md`](../CONFIGURATION_INTEGRITY_ANALYSIS.md).
+
+Beta 19 adds `incident_correlation` as an Engineering-native orchestrator rather
+than another general-purpose HA access tool. Policy
+`bounded_incident_correlation_read` composes existing direct administrative reads
+and shared dependency, integrity, and reliability services behind one bounded
+internal provider. It does not recursively call public MCP tools, delegate to an
+approximate Standard HA MCP capability, silently fall back, or introduce a write
+path. The normalized event and hypothesis layers are transport-independent.
+Every source failure stays visible; free-form logs are untrusted evidence;
+temporal proximity alone cannot establish causality. See
+[`../INCIDENT_CORRELATION.md`](../INCIDENT_CORRELATION.md).

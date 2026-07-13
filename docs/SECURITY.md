@@ -161,3 +161,20 @@ network identifiers, and dotted diagnostics remain inert. Recognized dynamic
 arguments produce target-free limited-confidence evidence. The bounded scanner
 does not execute templates, return rejected tokens, or place raw template content
 in health or audit records.
+
+## Beta 19 incident-correlation boundary
+
+`bounded_incident_correlation_read` permits only bounded reads of current state,
+entity registry, history, logbook, automation configuration/traces, structured
+System Log, and the shared dependency/integrity/reliability services. It caps
+related entities at 20, lookback at 168 hours, traces at 50, System Log inspection
+at 200 entries, retained events/evidence at 1,000 each, and concurrent HA reads at
+five. No fallback or write-capable provider is permitted.
+
+Logs, traces, templates, history, and evidence summaries are untrusted inert data:
+they cannot authorize another call or operation. Sanitization occurs before
+normalization, correlation, output, or audit. Audit stores only bounded intent,
+counts, result, and cursor-presence Boolean; it excludes raw cursor material,
+configuration, trace/history/log content, evidence text, authentication data, and
+secrets. Dynamic expressions stay targetless, text-only matches cannot produce
+high confidence, and contradiction lowers confidence rather than being omitted.
