@@ -8,6 +8,7 @@ from pydantic import Field
 from ..dependency import DEPENDENCY_ANALYSIS
 from ..impact import CHANGE_IMPACT_ANALYSIS
 from ..integrity import CONFIGURATION_INTEGRITY_ANALYSIS
+from ..incident import INCIDENT_CORRELATION
 from ..reliability import RELIABILITY_ANALYSIS
 from ..errors import ErrorCode, map_exception
 from ..models import FailureResponse, SuccessResponse
@@ -351,17 +352,11 @@ async def configuration_integrity_analysis(
                 },
                 "source_coverage": [
                     {
-                        "source_type": "request_validation"
-                        if local_validation
-                        else "configuration_integrity_evidence",
+                        "source_type": "request_validation" if local_validation else "configuration_integrity_evidence",
                         "provider": "engineering",
                         "completeness": "unavailable",
-                        "failure_category": "request_validation"
-                        if local_validation
-                        else "provider_error",
-                        "upstream_attempted": bool(
-                            telemetry and telemetry.ha_request_count > 0
-                        ),
+                        "failure_category": "request_validation" if local_validation else "provider_error",
+                        "upstream_attempted": bool(telemetry and telemetry.ha_request_count > 0),
                     }
                 ],
             },
@@ -370,9 +365,108 @@ async def configuration_integrity_analysis(
         ).to_json(SETTINGS.response_size_limit)
 
 
+async def incident_correlation(
+    focus_entity_id: str = "",
+    automation_id: str = "",
+    related_entity_ids: list[str] = [],
+    lookback_hours: Annotated[int, Field(ge=1, le=168)] = 24,
+    correlation_window_minutes: Annotated[int, Field(ge=1, le=60)] = 10,
+    trace_limit: Annotated[int, Field(ge=1, le=50)] = 10,
+    include_dependency_context: bool = True,
+    include_integrity_context: bool = True,
+    include_reliability_context: bool = True,
+    detail_level: Literal["summary", "standard", "evidence"] = "standard",
+    limit: Annotated[int, Field(ge=1, le=100)] = 20,
+    cursor: str = "",
+    refresh_index: bool = False,
+) -> str:
+    """Correlate bounded evidence around one entity, one automation, or both.
+
+    automation_id is the internal ID returned by list_automations. Hypotheses
+    preserve supporting and contradicting evidence, never infer causation from
+    timing alone, and never perform a service call, configuration write, or
+    remediation. Cursor continuations use a five-minute sanitized snapshot.
+    """
+
+    started = time.perf_counter()
+    telemetry = current_telemetry()
+    try:
+        output = await INCIDENT_CORRELATION.require().analyze(
+            focus_entity_id=focus_entity_id,
+            automation_id=automation_id,
+            related_entity_ids=related_entity_ids,
+            lookback_hours=lookback_hours,
+            correlation_window_minutes=correlation_window_minutes,
+            trace_limit=trace_limit,
+            include_dependency_context=include_dependency_context,
+            include_integrity_context=include_integrity_context,
+            include_reliability_context=include_reliability_context,
+            detail_level=detail_level,
+            limit=limit,
+            cursor=cursor,
+            refresh_index=refresh_index,
+        )
+        if telemetry:
+            telemetry.result_status = "partial" if output.partial else "success"
+            telemetry.completeness = "partial" if output.partial else "complete"
+        return SuccessResponse(
+            operation="incident_correlation",
+            summary=(
+                "Completed bounded incident correlation with partial evidence."
+                if output.partial
+                else "Completed bounded evidence-backed incident correlation."
+            ),
+            data=output.data,
+            warnings=output.warnings,
+            metadata=output.metadata,
+            timing=timing_since(started),
+            request_id=current_request_id(),
+        ).to_json(SETTINGS.response_size_limit)
+    except Exception as exc:
+        code, message, retryable, details = map_exception(exc)
+        if telemetry:
+            telemetry.error_code = code.value
+            telemetry.result_status = "failure"
+            telemetry.completeness = "failed"
+        local_validation = code in {
+            ErrorCode.INVALID_REQUEST,
+            ErrorCode.VALIDATION_FAILURE,
+            ErrorCode.INVALID_CURSOR,
+            ErrorCode.STALE_CURSOR,
+        }
+        return FailureResponse(
+            operation="incident_correlation",
+            error=type(exc).__name__,
+            error_code=code.value,
+            message=message,
+            details=details,
+            retryable=retryable,
+            metadata={
+                "routing": {
+                    "lifecycle_status": "beta_native",
+                    "classification": "engineering_native",
+                    "provider": "engineering",
+                    "policy": "bounded_incident_correlation_read",
+                    "access": "read",
+                    "fallback_occurred": False,
+                },
+                "source_coverage": [
+                    {
+                        "source_type": "request_validation" if local_validation else "incident_evidence",
+                        "provider": "engineering",
+                        "completeness": "failed",
+                        "failure_category": "request_validation" if local_validation else "provider_error",
+                        "upstream_attempted": bool(telemetry and telemetry.ha_request_count > 0),
+                    }
+                ],
+            },
+            timing=timing_since(started),
+            request_id=current_request_id(),
+        ).to_json(SETTINGS.response_size_limit)
 ANALYSIS_TOOLS = (
     entity_dependency_analysis,
     automation_reliability_analysis,
     change_impact_analysis,
     configuration_integrity_analysis,
+    incident_correlation,
 )

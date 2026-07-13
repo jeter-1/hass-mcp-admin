@@ -270,3 +270,21 @@ refresh the repository, and update beta only.
 The beta can be uninstalled after saving any non-secret audit evidence needed for
 diagnosis. Removing beta must not delete, reinstall, reconfigure, or change the
 stable `hass_mcp_admin` add-on.
+
+## Beta 19 deployment and connector refresh
+
+Beta 19 adds one public tool. After merging and publishing the add-on update,
+refresh the Home Assistant repository, update only
+`hass_mcp_engineering_beta`, verify port 8100 health, and reconnect or recreate the
+beta connector if `tools/list` remains cached at 36. Never replace the production
+connector, reveal its secret path, or log the authenticated beta URL.
+
+Verify `server_info` reports `2.0.0-beta.19`, `list_capabilities` reports 37
+registered/25 canonical tools with only `handoff_generation` planned, and
+`incident_correlation` is callable. Follow the full read-only procedure in
+[`INCIDENT_CORRELATION.md`](INCIDENT_CORRELATION.md). If any source is mislabeled,
+pagination performs upstream work, counters double, audit contains raw evidence,
+or a write occurs, stop testing and roll forward to a newer beta version. Do not
+downgrade metadata in place. Supervisor cache delays can be distinguished from a
+bad image by comparing live `server_info`, add-on logs without secrets, repository
+metadata, and real `tools/list` after a connector refresh.

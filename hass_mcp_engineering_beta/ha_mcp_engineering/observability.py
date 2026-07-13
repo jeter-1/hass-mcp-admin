@@ -103,6 +103,30 @@ class RuntimeMetrics:
     integrity_index_cache_misses: int = 0
     integrity_last_successful_analysis: str | None = None
     integrity_last_failure_category: str | None = None
+    incident_requests: int = 0
+    incident_successes: int = 0
+    incident_partial: int = 0
+    incident_failures: int = 0
+    incident_hypothesis_count: int = 0
+    incident_hypotheses_by_confidence: Counter = field(default_factory=Counter)
+    incident_hypotheses_by_severity: Counter = field(default_factory=Counter)
+    incident_hypotheses_by_causal_status: Counter = field(default_factory=Counter)
+    incident_event_count: int = 0
+    incident_events_by_type: Counter = field(default_factory=Counter)
+    incident_unique_entities: int = 0
+    incident_unique_automations: int = 0
+    incident_manual_review_events: int = 0
+    incident_source_failures: int = 0
+    incident_evidence_truncations: int = 0
+    incident_timeline_truncations: int = 0
+    incident_cursor_continuations: int = 0
+    incident_stale_cursor_events: int = 0
+    incident_invalid_cursor_events: int = 0
+    incident_last_cursor_failure_category: str | None = None
+    incident_index_cache_hits: int = 0
+    incident_index_cache_misses: int = 0
+    incident_last_successful_analysis: str | None = None
+    incident_last_failure_category: str | None = None
 
     def record_transport_completion(self) -> None:
         self.transport_request_count += 1
@@ -369,6 +393,70 @@ class RuntimeMetrics:
             self.integrity_invalid_cursor_events += 1
         self.integrity_last_cursor_failure_category = str(category)[:64]
 
+    def record_incident_request(self) -> None:
+        self.incident_requests += 1
+
+    def record_incident_terminal(
+        self,
+        *,
+        partial: bool,
+        hypothesis_count: int,
+        confidence_counts,
+        severity_counts,
+        causal_counts,
+        correlated_event_count: int,
+        event_counts,
+        unique_entity_count: int,
+        unique_automation_count: int,
+        manual_review_required: bool,
+        source_failures: int,
+        index_cache_hit: bool,
+        index_requested: bool,
+        analysis_timestamp: str,
+    ) -> None:
+        if partial:
+            self.incident_partial += 1
+        else:
+            self.incident_successes += 1
+        self.incident_hypothesis_count += max(0, int(hypothesis_count))
+        self.incident_hypotheses_by_confidence.update(confidence_counts)
+        self.incident_hypotheses_by_severity.update(severity_counts)
+        self.incident_hypotheses_by_causal_status.update(causal_counts)
+        self.incident_event_count += max(0, int(correlated_event_count))
+        self.incident_events_by_type.update(event_counts)
+        self.incident_unique_entities += max(0, int(unique_entity_count))
+        self.incident_unique_automations += max(0, int(unique_automation_count))
+        self.incident_manual_review_events += int(bool(manual_review_required))
+        self.incident_source_failures += max(0, int(source_failures))
+        if index_requested:
+            if index_cache_hit:
+                self.incident_index_cache_hits += 1
+            else:
+                self.incident_index_cache_misses += 1
+        self.incident_last_successful_analysis = str(analysis_timestamp)[:64]
+
+    def record_incident_failure(self, category: str) -> None:
+        self.incident_failures += 1
+        self.incident_last_failure_category = str(category)[:64]
+
+    def record_incident_cursor_continuation(self) -> None:
+        self.incident_cursor_continuations += 1
+
+    def record_incident_cursor_event(self, category: str) -> None:
+        if category == "stale_cursor":
+            self.incident_stale_cursor_events += 1
+        else:
+            self.incident_invalid_cursor_events += 1
+        self.incident_last_cursor_failure_category = str(category)[:64]
+
+    def record_incident_evidence_truncation(self) -> None:
+        self.incident_evidence_truncations += 1
+        self.record_evidence_truncation()
+
+    def record_incident_timeline_truncation(self) -> None:
+        self.incident_timeline_truncations += 1
+        self.record_evidence_truncation()
+
     def reset(self) -> None:
         """Deterministically reset in-memory metrics without replacing the registry."""
         self.started = time.monotonic()
@@ -464,6 +552,30 @@ class RuntimeMetrics:
         self.integrity_index_cache_misses = 0
         self.integrity_last_successful_analysis = None
         self.integrity_last_failure_category = None
+        self.incident_requests = 0
+        self.incident_successes = 0
+        self.incident_partial = 0
+        self.incident_failures = 0
+        self.incident_hypothesis_count = 0
+        self.incident_hypotheses_by_confidence.clear()
+        self.incident_hypotheses_by_severity.clear()
+        self.incident_hypotheses_by_causal_status.clear()
+        self.incident_event_count = 0
+        self.incident_events_by_type.clear()
+        self.incident_unique_entities = 0
+        self.incident_unique_automations = 0
+        self.incident_manual_review_events = 0
+        self.incident_source_failures = 0
+        self.incident_evidence_truncations = 0
+        self.incident_timeline_truncations = 0
+        self.incident_cursor_continuations = 0
+        self.incident_stale_cursor_events = 0
+        self.incident_invalid_cursor_events = 0
+        self.incident_last_cursor_failure_category = None
+        self.incident_index_cache_hits = 0
+        self.incident_index_cache_misses = 0
+        self.incident_last_successful_analysis = None
+        self.incident_last_failure_category = None
 
     @staticmethod
     def _summary(values: deque[float]) -> dict[str, float | int | None]:
@@ -634,6 +746,42 @@ class RuntimeMetrics:
                     "orphan_candidate_count": "cumulative_conservative_registry_candidates",
                     "unresolved_dynamic_reference_count": "cumulative_requested_scope_unresolved_references",
                     "manual_review_event_count": "new_analyses_requiring_manual_review",
+                    "cursor_continuations": "bounded_snapshot_page_requests",
+                    "cursor_failures_are_terminal_analysis_failures": False,
+                    "pagination_snapshots_are_general_result_cache": False,
+                },
+            },
+            "incident_correlation": {
+                "request_count": self.incident_requests,
+                "successful_count": self.incident_successes,
+                "partial_count": self.incident_partial,
+                "failed_count": self.incident_failures,
+                "hypothesis_count": self.incident_hypothesis_count,
+                "hypotheses_by_confidence": dict(self.incident_hypotheses_by_confidence),
+                "hypotheses_by_severity": dict(self.incident_hypotheses_by_severity),
+                "hypotheses_by_causal_status": dict(self.incident_hypotheses_by_causal_status),
+                "correlated_event_count": self.incident_event_count,
+                "events_by_type": dict(self.incident_events_by_type),
+                "unique_entity_count": self.incident_unique_entities,
+                "unique_automation_count": self.incident_unique_automations,
+                "manual_review_event_count": self.incident_manual_review_events,
+                "source_failures": self.incident_source_failures,
+                "evidence_truncation_events": self.incident_evidence_truncations,
+                "timeline_truncation_events": self.incident_timeline_truncations,
+                "cursor_continuations": self.incident_cursor_continuations,
+                "cursor_failure_count": self.incident_stale_cursor_events + self.incident_invalid_cursor_events,
+                "stale_cursor_events": self.incident_stale_cursor_events,
+                "invalid_cursor_events": self.incident_invalid_cursor_events,
+                "last_cursor_failure_category": self.incident_last_cursor_failure_category,
+                "index_cache_hits": self.incident_index_cache_hits,
+                "index_cache_misses": self.incident_index_cache_misses,
+                "last_successful_analysis_timestamp": self.incident_last_successful_analysis,
+                "last_failure_category": self.incident_last_failure_category,
+                "result_cache_supported": False,
+                "counter_semantics": {
+                    "request_count": "tool_invocations_including_cursor_continuations",
+                    "terminal_outcomes_and_aggregates": "new_analyses_only",
+                    "unique_counts": "sums_of_per_analysis_unique_values",
                     "cursor_continuations": "bounded_snapshot_page_requests",
                     "cursor_failures_are_terminal_analysis_failures": False,
                     "pagination_snapshots_are_general_result_cache": False,

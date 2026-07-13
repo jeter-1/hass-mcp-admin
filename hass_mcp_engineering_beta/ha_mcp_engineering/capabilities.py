@@ -44,7 +44,6 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
 )
 
 PLANNED_CAPABILITIES: tuple[dict[str, str], ...] = (
-    {"capability": "incident_correlation", "status": "planned", "risk": "analytical"},
     {"capability": "handoff_generation", "status": "planned", "risk": "analytical"},
 )
 
@@ -92,9 +91,31 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "provider": "engineering",
         "policy": "global_configuration_integrity_read",
     },
+    {
+        "tool": "incident_correlation",
+        "category": "analysis",
+        "status": "beta_native",
+        "risk": "read",
+        "additive": True,
+        "routing": "engineering_native",
+        "provider": "engineering",
+        "policy": "bounded_incident_correlation_read",
+        "fallback": "none",
+    },
 )
 
 CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
+    {
+        "tool": "incident_correlation",
+        "capability": "incident_correlation",
+        "required_semantics": "Bounded evidence-backed correlation around one entity, one automation, or both with ranked hypotheses and preserved contradictory evidence.",
+        "standard_ha_mcp_coverage": "unavailable",
+        "direct_ha_coverage": "bounded_read_sources",
+        "selected_provider": "engineering",
+        "completeness": "complete_or_explicitly_incomplete",
+        "fallback_policy": "none",
+        "security_justification": "Read-only Engineering orchestration over bounded administrative evidence; no service call, remediation, or write provider is permitted.",
+    },
     {
         "tool": "configuration_integrity_analysis",
         "capability": "configuration_integrity_analysis",

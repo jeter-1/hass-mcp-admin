@@ -423,3 +423,20 @@ non-entity text never becomes a finding and therefore does not increment finding
 severity, type, source, unique-target, or manual-review aggregates. Recognized
 dynamic entity expressions remain counted separately and never inflate unique
 target totals. No rejected token value is exposed through health telemetry.
+
+## Incident correlation telemetry
+
+Beta 19 adds an identity-free `incident_correlation` health group. It tracks
+request, success, partial, and failure outcomes; hypotheses by confidence,
+severity, and causal status; normalized events by type; per-analysis unique entity
+and automation sums; manual-review, source-failure, evidence/timeline truncation,
+cursor, index-cache, and bounded last-outcome counters. `result_cache_supported`
+is always false.
+
+`request_count` includes first pages and continuation pages. Terminal outcomes and
+whole-analysis hypothesis/event/unique aggregates count a new analysis exactly
+once. Cursor validation failures increment cursor-specific counters without
+becoming failed analyses. Validation failures add a failed request but no evidence
+aggregate. When index context is not requested, no index hit or miss is recorded.
+Provider routing attributes orchestration to `engineering` and approved evidence
+reads to their actual provider; no Standard HA MCP success or fallback is claimed.

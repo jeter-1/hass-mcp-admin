@@ -1,7 +1,7 @@
 name: HA MCP Engineering Server Beta
-version: "2.0.0-beta.18"
+version: "2.0.0-beta.19"
 slug: hass_mcp_engineering_beta
-description: Modular v2 beta scaffold for Home Assistant MCP engineering workflows
+description: Governed Home Assistant engineering analysis with bounded incident correlation
 url: https://github.com/jeter-1/hass-mcp-admin
 arch:
   - amd64

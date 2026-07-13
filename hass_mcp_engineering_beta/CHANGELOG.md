@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.0.0-beta.19
+
+- Add read-only Engineering-native `incident_correlation`, increasing the beta
+  tool count to 37 while retaining 25 canonical tools and all existing schemas.
+- Correlate bounded automation, entity, trace, history, logbook, structured log,
+  registry, dependency, integrity, and reliability evidence into deterministic
+  ranked hypotheses with supporting and contradicting evidence.
+- Add explicit confidence, causal-status, severity, coverage, event-normalization,
+  clustering, pagination, security, audit, and health-counter contracts.
+- Preserve the Beta 16–18 signed snapshot lifecycle; continuation performs no
+  upstream collection, index work, classification, or recorrelation.
+- Add no write capability; production v1.1.2 remains unchanged and
+  `handoff_generation` remains planned.
+
 ## 2.0.0-beta.18
 
 - Replace broad dotted-token template scanning with context-aware extraction from
