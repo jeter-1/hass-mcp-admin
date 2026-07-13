@@ -62,3 +62,12 @@ value is intact but its snapshot expired/disappeared, its result-shaping query n
 longer matches, or its committed dependency-index generation was replaced or
 invalidated. Cursor failures have dedicated health counters and are not terminal
 failures of new analyses. `refresh_index=true` is valid only without a cursor.
+
+`configuration_integrity_analysis` uses the same cursor categories. Its
+first-page validation returns `invalid_request` with stable `field`, `reason`,
+and `operation` details for invalid detail level, 1–100 limit, source type,
+finding type, Boolean orphan flag, or incompatible continuation options.
+Validation occurs before provider dispatch, HA access, dependency-index access,
+or snapshot creation. An intact cursor bound to changed query semantics, an
+expired snapshot, or a replaced index returns `stale_cursor`; malformed or
+tampered cursor material returns `invalid_cursor`.

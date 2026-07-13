@@ -16,6 +16,8 @@
 > documented in [`docs/AUTOMATION_RELIABILITY_ANALYSIS.md`](docs/AUTOMATION_RELIABILITY_ANALYSIS.md),
 > and Beta 15 change-impact analysis is documented in
 > [`docs/CHANGE_IMPACT_ANALYSIS.md`](docs/CHANGE_IMPACT_ANALYSIS.md).
+> Beta 17 global configuration-integrity analysis is documented in
+> [`docs/CONFIGURATION_INTEGRITY_ANALYSIS.md`](docs/CONFIGURATION_INTEGRITY_ANALYSIS.md).
 
 A focused Model Context Protocol server for Home Assistant engineering, diagnostics,
 and controlled administration, packaged as a Home Assistant OS add-on. It works with
@@ -40,6 +42,7 @@ Current tools:
 | State | `get_entity`, `search_entities` |
 | Registries | `list_areas`, `list_devices`, `list_entity_registry`, `search_services`, `list_services` |
 | Operations | `get_audit_log` |
+| Beta analysis | `entity_dependency_analysis`, `automation_reliability_analysis`, `change_impact_analysis`, `configuration_integrity_analysis` |
 | Escape hatch | `call_service` (any domain/service, with a destructive-services confirm gate) |
 
 It runs against the Supervisor's internal HA proxy, so **no long-lived access token is

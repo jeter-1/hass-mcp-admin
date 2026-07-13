@@ -20,6 +20,7 @@ class HealthRegistry:
     dependency: Any = None
     reliability: Any = None
     impact: Any = None
+    integrity: Any = None
 
     def configure(
         self,
@@ -30,6 +31,7 @@ class HealthRegistry:
         dependency=None,
         reliability=None,
         impact=None,
+        integrity=None,
     ) -> None:
         self.settings = settings
         self.audit = audit
@@ -39,6 +41,7 @@ class HealthRegistry:
         self.dependency = dependency
         self.reliability = reliability
         self.impact = impact
+        self.integrity = integrity
 
     def snapshot(self, ha_connection: dict[str, Any]) -> dict[str, Any]:
         metrics = METRICS.snapshot()
@@ -90,6 +93,12 @@ class HealthRegistry:
                 **metrics["change_impact_analysis"],
                 "runtime": self.impact.health()
                 if self.impact
+                else {"configured": False},
+            },
+            "configuration_integrity_analysis": {
+                **metrics["configuration_integrity_analysis"],
+                "runtime": self.integrity.health()
+                if self.integrity
                 else {"configured": False},
             },
             "rate_limiter": self.gateway.rate_limiter_state() if self.gateway else {"configured": False},

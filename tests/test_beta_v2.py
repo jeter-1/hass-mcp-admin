@@ -44,6 +44,8 @@ from ha_mcp_engineering.reliability import RELIABILITY_ANALYSIS  # noqa: E402
 from ha_mcp_engineering.reliability.models import ReliabilityAnalysisOutput  # noqa: E402
 from ha_mcp_engineering.impact import CHANGE_IMPACT_ANALYSIS  # noqa: E402
 from ha_mcp_engineering.impact.models import ImpactAnalysisOutput  # noqa: E402
+from ha_mcp_engineering.integrity import CONFIGURATION_INTEGRITY_ANALYSIS  # noqa: E402
+from ha_mcp_engineering.integrity.models import IntegrityAnalysisOutput  # noqa: E402
 from ha_mcp_engineering.tools import compatibility  # noqa: E402
 from ha_mcp_engineering.tools.registry import get_registered_server  # noqa: E402
 
@@ -241,6 +243,60 @@ class FakeImpactService:
         )
 
 
+class FakeIntegrityService:
+    async def analyze(self, **kwargs):
+        return IntegrityAnalysisOutput(
+            data={
+                "analysis_timestamp": "2026-07-20T12:00:00Z",
+                "final_assessment": "review_required",
+                "result_status": "partial",
+                "finding_count": 1,
+                "findings_by_severity": {"high": 1, "medium": 0, "low": 0, "info": 0},
+                "findings_by_type": {"missing_entity_reference": 1},
+                "findings_by_source_type": {"automation": 1},
+                "unique_source_object_count": 1,
+                "unique_target_entity_count": 1,
+                "unique_orphan_candidate_count": 0,
+                "unresolved_dynamic_reference_count": 0,
+                "manual_review_required": True,
+                "findings": [
+                    {
+                        "finding_id": "integrity-safe",
+                        "finding_type": "missing_entity_reference",
+                        "severity": "high",
+                    }
+                ],
+                "source_coverage_matrix": [
+                    {"source_type": "automation", "completeness": "partial"}
+                ],
+                "pagination": {
+                    "requested_limit": kwargs.get("limit", 20),
+                    "effective_limit": kwargs.get("limit", 20),
+                    "maximum_limit": 100,
+                    "returned": 1,
+                    "total": 1,
+                    "has_more": False,
+                    "next_cursor": None,
+                },
+            },
+            warnings=["Synthetic bounded integrity warning."],
+            metadata={
+                "routing": {
+                    "lifecycle_status": "beta_native",
+                    "classification": "engineering_native",
+                    "provider": "engineering",
+                    "policy": "global_configuration_integrity_read",
+                    "access": "read",
+                    "fallback_occurred": False,
+                },
+                "source_coverage": [
+                    {"source_type": "automation", "completeness": "partial"}
+                ],
+            },
+            partial=True,
+        )
+
+
 class AddonIsolationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -256,7 +312,7 @@ class AddonIsolationTests(unittest.TestCase):
     def test_beta_metadata_is_distinct_and_valid(self):
         self.assertEqual(self.beta["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(self.beta["slug"], "hass_mcp_engineering_beta")
-        self.assertEqual(self.beta["version"], "2.0.0-beta.16")
+        self.assertEqual(self.beta["version"], "2.0.0-beta.17")
         self.assertEqual(self.beta["ports"], {"8100/tcp": 8100})
         self.assertNotEqual(self.beta["slug"], self.production["slug"])
         self.assertNotEqual(set(self.beta["ports"]), set(self.production["ports"]))
@@ -304,6 +360,11 @@ class AddonIsolationTests(unittest.TestCase):
             "dependency/provider.py",
             "dependency/index.py",
             "dependency/service.py",
+            "integrity/models.py",
+            "integrity/provider.py",
+            "integrity/rules.py",
+            "integrity/service.py",
+            "integrity/runtime.py",
             "tools/analysis.py",
         ):
             self.assertTrue((package / relative_path).is_file(), relative_path)
@@ -313,6 +374,9 @@ class AddonIsolationTests(unittest.TestCase):
         self.assertTrue((ROOT / "docs" / "CHANGE_GOVERNANCE.md").is_file())
         self.assertTrue((ROOT / "docs" / "SECURITY.md").is_file())
         self.assertTrue((ROOT / "docs" / "TOKEN_EFFICIENCY.md").is_file())
+        self.assertTrue(
+            (ROOT / "docs" / "CONFIGURATION_INTEGRITY_ANALYSIS.md").is_file()
+        )
         self.assertTrue(
             (ROOT / "docs" / "architecture" / "ADR-002-ENGINEERING-MCP-FACILITATOR.md").is_file()
         )
@@ -330,7 +394,7 @@ class ToolParityTests(unittest.TestCase):
 
     def test_all_25_tools_are_registered(self):
         self.assertEqual(len(self.production_tools), 25)
-        self.assertEqual(len(self.beta_tools), 35)
+        self.assertEqual(len(self.beta_tools), 36)
         self.assertEqual(
             set(self.production_tools),
             set(self.beta_tools)
@@ -345,6 +409,7 @@ class ToolParityTests(unittest.TestCase):
                 "entity_dependency_analysis",
                 "automation_reliability_analysis",
                 "change_impact_analysis",
+                "configuration_integrity_analysis",
             },
         )
 
@@ -381,8 +446,8 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
-        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.16")
-        self.assertEqual(result["data"]["tool_count"], 35)
+        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.17")
+        self.assertEqual(result["data"]["tool_count"], 36)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
     def test_list_capabilities_reports_expected_catalog(self):
@@ -390,7 +455,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         catalog = result["data"]
         self.assertEqual(catalog["count"], 25)
-        self.assertEqual(catalog["registered_count"], 35)
+        self.assertEqual(catalog["registered_count"], 36)
         self.assertEqual(len(catalog["planned"]), 2)
         self.assertEqual(
             [item["tool"] for item in catalog["beta_native"]],
@@ -405,13 +470,14 @@ class ToolParityTests(unittest.TestCase):
                 "entity_dependency_analysis",
                 "automation_reliability_analysis",
                 "change_impact_analysis",
+                "configuration_integrity_analysis",
             ],
         )
         self.assertEqual(
             Counter(item["status"] for item in catalog["tools"]),
             {"native": 8, "transitional": 14, "deprecated": 3},
         )
-        self.assertEqual(len(catalog["provider_matrix"]), 5)
+        self.assertEqual(len(catalog["provider_matrix"]), 6)
         self.assertEqual(
             {item["selected_provider"] for item in catalog["provider_matrix"]},
             {"direct_ha_api", "engineering"},
@@ -490,7 +556,7 @@ class BetaApplicationTests(unittest.TestCase):
         )
         names = [tool["name"] for tool in listing["result"]["tools"]]
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(names), 35)
+        self.assertEqual(len(names), 36)
         expected_beta_native = {
             "get_server_health",
             "create_change_plan",
@@ -672,6 +738,42 @@ class BetaApplicationTests(unittest.TestCase):
         self.assertEqual(audit["error_code"], "invalid_request")
         self.assertNotIn("cursor", audit["parameters"])
         self.assertNotIn(SECRET, json.dumps(audit))
+
+    def test_configuration_integrity_analysis_calls_through_real_mcp(self):
+        previous = CONFIGURATION_INTEGRITY_ANALYSIS.service
+        CONFIGURATION_INTEGRITY_ANALYSIS.service = FakeIntegrityService()
+        request_id = "configuration-integrity-request-123"
+        try:
+            response, call = self.rpc(
+                "tools/call",
+                {
+                    "name": "configuration_integrity_analysis",
+                    "arguments": {
+                        "source_types": ["automation"],
+                        "finding_types": ["missing_entity_reference"],
+                        "include_orphan_candidates": False,
+                        "detail_level": "standard",
+                        "limit": 20,
+                    },
+                },
+                request_id=request_id,
+            )
+        finally:
+            CONFIGURATION_INTEGRITY_ANALYSIS.service = previous
+        payload = json.loads(call["result"]["content"][0]["text"])
+        audit = self.audit_record(request_id)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["request_id"], request_id)
+        self.assertEqual(payload["metadata"]["routing"]["provider"], "engineering")
+        self.assertEqual(audit["tool_name"], "configuration_integrity_analysis")
+        self.assertEqual(audit["operation_category"], "analysis")
+        self.assertEqual(audit["access"], "read")
+        self.assertEqual(audit["result_status"], "partial")
+        self.assertEqual(audit["parameters"]["cursor_present"], False)
+        audit_text = json.dumps(audit)
+        self.assertNotIn("integrity-safe", audit_text)
+        self.assertNotIn("Synthetic bounded integrity warning", audit_text)
 
     def test_exact_entity_direct_provider_routes_via_real_mcp(self):
         request_id = "direct-provider-integration-123"

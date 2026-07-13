@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.0.0-beta.17
+
+- Add the Engineering-native, read-only `configuration_integrity_analysis`
+  tool, increasing the beta manifest from 35 to 36 tools while retaining 25
+  canonical tools.
+- Detect exact missing entity references, references to disabled and
+  registry-only entities, conservative orphan-registry candidates, and
+  unresolved dynamic references as distinct evidence-backed findings.
+- Reuse the shared dependency index plus one bounded state inventory and one
+  entity-registry inventory; unsupported coverage remains explicit.
+- Reuse Beta 16 signed, immutable pagination snapshots with upstream-free
+  continuation, fixed provenance, whole-analysis totals, and fail-closed
+  cursor validation.
+- Add deterministic deduplication, bounded detail levels, field-level
+  validation, safe auditing, and dedicated health counters.
+- Add no write capability and no automatic cleanup, reference rewrite,
+  incident correlation, handoff generation, or RC stabilization.
+- Preserve production v1.1.2 and all existing public tool input schemas.
+
 ## 2.0.0-beta.16
 
 - Bind refreshed-index pagination snapshots and signed cursors to the final

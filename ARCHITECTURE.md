@@ -64,7 +64,7 @@ The engineering server may retain direct Home Assistant read access where it mat
 
 ## Current Implementation
 
-The v2 beta currently exposes 35 tools and implements governance, verification,
+The v2 beta currently exposes 36 tools and implements governance, verification,
 rollback, persistence, audit, and request correlation. It has direct REST/WebSocket
 clients but no configured nested standard-MCP client. Delegation labels describe the
 target provider; current compatibility reads remain direct and transitional. The
@@ -249,6 +249,7 @@ hass_mcp_engineering/
 |  |- reliability.py
 |  |- incidents.py
 |  |- change_impact.py
+|  |- configuration_integrity.py
 |  `- handoff.py
 |- governance/
 |  |- plans.py
@@ -350,6 +351,8 @@ global orphan detection and incident correlation are separate future capabilitie
 - entity dependency analysis;
 - automation reliability analysis;
 - change-impact analysis (Beta 15);
+- global configuration-integrity analysis (Beta 17), correlating bounded
+  dependency, state, and entity-registry inventories without cleanup authority;
 - incident correlation.
 
 ### Phase 4: reduce dangerous overlap

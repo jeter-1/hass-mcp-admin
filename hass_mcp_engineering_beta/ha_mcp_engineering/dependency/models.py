@@ -50,6 +50,9 @@ class DynamicReference:
     config_path: str
     warning: str
     excerpt: str | None = None
+    source_entity_id: str | None = None
+    source_name: str | None = None
+    source_state: str | None = None
 
 
 @dataclass

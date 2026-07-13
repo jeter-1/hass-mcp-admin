@@ -82,9 +82,30 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "provider": "engineering",
         "policy": "single_entity_change_impact_read",
     },
+    {
+        "tool": "configuration_integrity_analysis",
+        "category": "analysis",
+        "status": "beta_native",
+        "risk": "read",
+        "additive": True,
+        "routing": "engineering_native",
+        "provider": "engineering",
+        "policy": "global_configuration_integrity_read",
+    },
 )
 
 CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
+    {
+        "tool": "configuration_integrity_analysis",
+        "capability": "configuration_integrity_analysis",
+        "required_semantics": "Bounded evidence-backed global detection of missing references, disabled or registry-only targets, orphan registry candidates, and unresolved dynamic references.",
+        "standard_ha_mcp_coverage": "unavailable",
+        "direct_ha_coverage": "bounded_read_sources",
+        "selected_provider": "engineering",
+        "completeness": "complete_or_explicitly_incomplete",
+        "fallback_policy": "none",
+        "security_justification": "Read-only Engineering orchestration over one bounded state inventory, entity-registry inventory, and the shared dependency index.",
+    },
     {
         "tool": "change_impact_analysis",
         "capability": "impact_analysis",
