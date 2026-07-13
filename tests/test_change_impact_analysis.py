@@ -110,6 +110,9 @@ BETA14_SCHEMA_HASHES = {
     "server_info": "7b4b1b89dbb37c36e528e8e412ada1915d16f57d3ead411f411b1a58dbea0094",
     "upsert_automation": "9d1188547d08b426e83ca2965bbe27470006ec52d188c3d05933b6cbf120ffe5",
 }
+BETA16_CHANGE_IMPACT_SCHEMA_HASH = (
+    "b35810b0b377b8a0afdee8eb9ca5e5d84b0175e1a8ed694eebae2b5a1ab04d6b"
+)
 def source_coverage(
     source_type,
     completeness="complete",
@@ -1758,11 +1761,14 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ToolCompatibilityTests(unittest.TestCase):
-    def test_exactly_35_tools_new_schema_and_all_beta14_schemas_unchanged(self):
+    def test_exactly_36_tools_and_all_beta14_schemas_unchanged(self):
         tools = get_registered_server()._tool_manager.list_tools()
-        self.assertEqual(len(tools), 35)
+        self.assertEqual(len(tools), 36)
         current = {item.name: item for item in tools}
-        self.assertEqual(set(current) - set(BETA14_SCHEMA_HASHES), {"change_impact_analysis"})
+        self.assertEqual(
+            set(current) - set(BETA14_SCHEMA_HASHES),
+            {"change_impact_analysis", "configuration_integrity_analysis"},
+        )
         for name, expected in BETA14_SCHEMA_HASHES.items():
             digest = hashlib.sha256(
                 json.dumps(
@@ -1773,6 +1779,14 @@ class ToolCompatibilityTests(unittest.TestCase):
             ).hexdigest()
             self.assertEqual(digest, expected, name)
         schema = current["change_impact_analysis"].parameters
+        self.assertEqual(
+            hashlib.sha256(
+                json.dumps(
+                    schema, sort_keys=True, separators=(",", ":")
+                ).encode()
+            ).hexdigest(),
+            BETA16_CHANGE_IMPACT_SCHEMA_HASH,
+        )
         self.assertEqual(schema["required"], ["entity_id", "operation"])
         self.assertEqual(schema["properties"]["include_indirect"]["default"], True)
         self.assertEqual(schema["properties"]["max_depth"]["maximum"], 3)
