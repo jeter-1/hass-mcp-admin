@@ -76,6 +76,9 @@ def extract_document(
                 config_path=path,
                 warning="Dynamic template reference could not be resolved statically.",
                 excerpt=safe,
+                source_entity_id=_bounded(source_entity_id, 128, secret),
+                source_name=_bounded(source_name, 160, secret),
+                source_state=_bounded(source_state, 32, secret),
             )
         )
 

@@ -295,6 +295,23 @@ class AuthenticatedMcpGateway:
                         )
                         if key in parameters
                     }
+                elif tool_name == "configuration_integrity_analysis":
+                    # Raw signed cursors and finding evidence never enter audit.
+                    audit_parameters = {
+                        key: parameters[key]
+                        for key in (
+                            "source_types",
+                            "finding_types",
+                            "include_orphan_candidates",
+                            "detail_level",
+                            "limit",
+                            "refresh_index",
+                        )
+                        if key in parameters
+                    }
+                    audit_parameters["cursor_present"] = bool(
+                        parameters.get("cursor")
+                    )
                 self.audit.write(AuditRecord(
                     request_id=request_id,
                     tool_name=tool_name,
@@ -318,7 +335,10 @@ class AuthenticatedMcpGateway:
                     resource_ids=resource_ids,
                     analysis_summary=(
                         dict(telemetry.audit_context)
-                        if tool_name == "change_impact_analysis"
+                        if tool_name in {
+                            "change_impact_analysis",
+                            "configuration_integrity_analysis",
+                        }
                         else {}
                     ),
                 ))

@@ -80,6 +80,29 @@ class RuntimeMetrics:
     impact_index_cache_misses: int = 0
     impact_last_successful_analysis: str | None = None
     impact_last_failure_category: str | None = None
+    integrity_analysis_requests: int = 0
+    integrity_analysis_successes: int = 0
+    integrity_analysis_partial: int = 0
+    integrity_analysis_failures: int = 0
+    integrity_finding_count: int = 0
+    integrity_findings_by_severity: Counter = field(default_factory=Counter)
+    integrity_findings_by_type: Counter = field(default_factory=Counter)
+    integrity_findings_by_source_type: Counter = field(default_factory=Counter)
+    integrity_unique_source_objects: int = 0
+    integrity_unique_target_entities: int = 0
+    integrity_orphan_candidates: int = 0
+    integrity_unresolved_dynamic_references: int = 0
+    integrity_manual_review_events: int = 0
+    integrity_source_failures: int = 0
+    integrity_finding_truncations: int = 0
+    integrity_cursor_continuations: int = 0
+    integrity_stale_cursor_events: int = 0
+    integrity_invalid_cursor_events: int = 0
+    integrity_last_cursor_failure_category: str | None = None
+    integrity_index_cache_hits: int = 0
+    integrity_index_cache_misses: int = 0
+    integrity_last_successful_analysis: str | None = None
+    integrity_last_failure_category: str | None = None
 
     def record_transport_completion(self) -> None:
         self.transport_request_count += 1
@@ -280,6 +303,72 @@ class RuntimeMetrics:
             self.impact_invalid_cursor_events += 1
         self.impact_last_cursor_failure_category = str(category)[:64]
 
+    def record_integrity_analysis_request(self) -> None:
+        self.integrity_analysis_requests += 1
+
+    def record_integrity_analysis_terminal(
+        self,
+        *,
+        partial: bool,
+        severity_counts,
+        type_counts,
+        source_counts,
+        finding_count: int,
+        unique_source_object_count: int,
+        unique_target_entity_count: int,
+        orphan_candidate_count: int,
+        unresolved_dynamic_reference_count: int,
+        manual_review_required: bool,
+        source_failures: int,
+        index_cache_hit: bool,
+        analysis_timestamp: str,
+    ) -> None:
+        if partial:
+            self.integrity_analysis_partial += 1
+        else:
+            self.integrity_analysis_successes += 1
+        self.integrity_findings_by_severity.update(severity_counts)
+        self.integrity_findings_by_type.update(type_counts)
+        self.integrity_findings_by_source_type.update(source_counts)
+        self.integrity_finding_count += max(0, int(finding_count))
+        self.integrity_unique_source_objects += max(
+            0, int(unique_source_object_count)
+        )
+        self.integrity_unique_target_entities += max(
+            0, int(unique_target_entity_count)
+        )
+        self.integrity_orphan_candidates += max(
+            0, int(orphan_candidate_count)
+        )
+        self.integrity_unresolved_dynamic_references += max(
+            0, int(unresolved_dynamic_reference_count)
+        )
+        self.integrity_manual_review_events += int(bool(manual_review_required))
+        self.integrity_source_failures += max(0, int(source_failures))
+        if index_cache_hit:
+            self.integrity_index_cache_hits += 1
+        else:
+            self.integrity_index_cache_misses += 1
+        self.integrity_last_successful_analysis = str(analysis_timestamp)[:64]
+
+    def record_integrity_analysis_failure(self, category: str) -> None:
+        self.integrity_analysis_failures += 1
+        self.integrity_last_failure_category = str(category)[:64]
+
+    def record_integrity_truncation(self) -> None:
+        self.integrity_finding_truncations += 1
+        self.record_evidence_truncation()
+
+    def record_integrity_cursor_continuation(self) -> None:
+        self.integrity_cursor_continuations += 1
+
+    def record_integrity_cursor_event(self, category: str) -> None:
+        if category == "stale_cursor":
+            self.integrity_stale_cursor_events += 1
+        else:
+            self.integrity_invalid_cursor_events += 1
+        self.integrity_last_cursor_failure_category = str(category)[:64]
+
     def reset(self) -> None:
         """Deterministically reset in-memory metrics without replacing the registry."""
         self.started = time.monotonic()
@@ -352,6 +441,29 @@ class RuntimeMetrics:
         self.impact_index_cache_misses = 0
         self.impact_last_successful_analysis = None
         self.impact_last_failure_category = None
+        self.integrity_analysis_requests = 0
+        self.integrity_analysis_successes = 0
+        self.integrity_analysis_partial = 0
+        self.integrity_analysis_failures = 0
+        self.integrity_finding_count = 0
+        self.integrity_findings_by_severity.clear()
+        self.integrity_findings_by_type.clear()
+        self.integrity_findings_by_source_type.clear()
+        self.integrity_unique_source_objects = 0
+        self.integrity_unique_target_entities = 0
+        self.integrity_orphan_candidates = 0
+        self.integrity_unresolved_dynamic_references = 0
+        self.integrity_manual_review_events = 0
+        self.integrity_source_failures = 0
+        self.integrity_finding_truncations = 0
+        self.integrity_cursor_continuations = 0
+        self.integrity_stale_cursor_events = 0
+        self.integrity_invalid_cursor_events = 0
+        self.integrity_last_cursor_failure_category = None
+        self.integrity_index_cache_hits = 0
+        self.integrity_index_cache_misses = 0
+        self.integrity_last_successful_analysis = None
+        self.integrity_last_failure_category = None
 
     @staticmethod
     def _summary(values: deque[float]) -> dict[str, float | int | None]:
@@ -483,6 +595,48 @@ class RuntimeMetrics:
                         "unique_root_causes": "unique_root_cause_count",
                         "dynamic_reference_review_events": "dynamic_reference_review_event_count",
                     },
+                },
+            },
+            "configuration_integrity_analysis": {
+                "request_count": self.integrity_analysis_requests,
+                "successful_count": self.integrity_analysis_successes,
+                "partial_count": self.integrity_analysis_partial,
+                "failed_count": self.integrity_analysis_failures,
+                "finding_count": self.integrity_finding_count,
+                "findings_by_severity": dict(self.integrity_findings_by_severity),
+                "findings_by_type": dict(self.integrity_findings_by_type),
+                "findings_by_source_type": dict(
+                    self.integrity_findings_by_source_type
+                ),
+                "unique_source_object_count": self.integrity_unique_source_objects,
+                "unique_target_entity_count": self.integrity_unique_target_entities,
+                "orphan_candidate_count": self.integrity_orphan_candidates,
+                "unresolved_dynamic_reference_count": self.integrity_unresolved_dynamic_references,
+                "manual_review_event_count": self.integrity_manual_review_events,
+                "source_failures": self.integrity_source_failures,
+                "finding_truncation_events": self.integrity_finding_truncations,
+                "cursor_continuations": self.integrity_cursor_continuations,
+                "cursor_failure_count": self.integrity_stale_cursor_events
+                + self.integrity_invalid_cursor_events,
+                "stale_cursor_events": self.integrity_stale_cursor_events,
+                "invalid_cursor_events": self.integrity_invalid_cursor_events,
+                "last_cursor_failure_category": self.integrity_last_cursor_failure_category,
+                "index_cache_hits": self.integrity_index_cache_hits,
+                "index_cache_misses": self.integrity_index_cache_misses,
+                "last_successful_analysis_timestamp": self.integrity_last_successful_analysis,
+                "last_failure_category": self.integrity_last_failure_category,
+                "result_cache_supported": False,
+                "counter_semantics": {
+                    "request_count": "tool_invocations_including_cursor_continuations",
+                    "terminal_outcomes_and_aggregates": "new_analyses_only",
+                    "finding_count": "cumulative_findings_from_new_analyses",
+                    "unique_counts": "sums_of_per_analysis_unique_values",
+                    "orphan_candidate_count": "cumulative_conservative_registry_candidates",
+                    "unresolved_dynamic_reference_count": "cumulative_requested_scope_unresolved_references",
+                    "manual_review_event_count": "new_analyses_requiring_manual_review",
+                    "cursor_continuations": "bounded_snapshot_page_requests",
+                    "cursor_failures_are_terminal_analysis_failures": False,
+                    "pagination_snapshots_are_general_result_cache": False,
                 },
             },
         }

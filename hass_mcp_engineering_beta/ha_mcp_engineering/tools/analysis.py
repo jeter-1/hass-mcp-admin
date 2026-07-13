@@ -7,6 +7,7 @@ from pydantic import Field
 
 from ..dependency import DEPENDENCY_ANALYSIS
 from ..impact import CHANGE_IMPACT_ANALYSIS
+from ..integrity import CONFIGURATION_INTEGRITY_ANALYSIS
 from ..reliability import RELIABILITY_ANALYSIS
 from ..errors import ErrorCode, map_exception
 from ..models import FailureResponse, SuccessResponse
@@ -254,8 +255,124 @@ async def change_impact_analysis(
         ).to_json(SETTINGS.response_size_limit)
 
 
+async def configuration_integrity_analysis(
+    source_types: list[
+        Literal[
+            "automation",
+            "blueprint",
+            "script",
+            "scene",
+            "group",
+            "template",
+            "dashboard",
+        ]
+    ] = [],
+    finding_types: list[
+        Literal[
+            "missing_entity_reference",
+            "disabled_entity_reference",
+            "registry_only_entity_reference",
+            "orphan_registry_candidate",
+            "unresolved_dynamic_reference",
+        ]
+    ] = [],
+    include_orphan_candidates: bool = True,
+    detail_level: Literal["summary", "standard", "evidence"] = "standard",
+    limit: Annotated[int, Field(ge=1, le=100)] = 20,
+    cursor: str = "",
+    refresh_index: bool = False,
+) -> str:
+    """Audit global Home Assistant configuration integrity using bounded evidence.
+
+    Reports exact references to missing, disabled, or registry-only entities,
+    conservative orphan-registry candidates, and unresolved dynamic references.
+    This read-only operation never deletes, rewrites, or changes Home Assistant.
+    """
+
+    started = time.perf_counter()
+    telemetry = current_telemetry()
+    try:
+        output = await CONFIGURATION_INTEGRITY_ANALYSIS.require().analyze(
+            source_types=source_types,
+            finding_types=finding_types,
+            include_orphan_candidates=include_orphan_candidates,
+            detail_level=detail_level,
+            limit=limit,
+            cursor=cursor,
+            refresh_index=refresh_index,
+        )
+        if telemetry:
+            telemetry.result_status = "partial" if output.partial else "success"
+            telemetry.completeness = "partial" if output.partial else "complete"
+        assessment = output.data.get("final_assessment")
+        summary = (
+            "Completed bounded configuration-integrity analysis; review is required."
+            if assessment == "review_required"
+            else "Completed bounded configuration-integrity analysis with incomplete coverage."
+            if assessment == "assessment_incomplete"
+            else "No confirmed integrity findings were detected within the reported coverage."
+        )
+        return SuccessResponse(
+            operation="configuration_integrity_analysis",
+            summary=summary,
+            data=output.data,
+            warnings=output.warnings,
+            metadata=output.metadata,
+            timing=timing_since(started),
+            request_id=current_request_id(),
+        ).to_json(SETTINGS.response_size_limit)
+    except Exception as exc:
+        code, message, retryable, details = map_exception(exc)
+        if telemetry:
+            telemetry.error_code = code.value
+            telemetry.result_status = "failure"
+            telemetry.completeness = "failed"
+        local_validation = code in {
+            ErrorCode.INVALID_REQUEST,
+            ErrorCode.VALIDATION_FAILURE,
+            ErrorCode.INVALID_CURSOR,
+            ErrorCode.STALE_CURSOR,
+        }
+        return FailureResponse(
+            operation="configuration_integrity_analysis",
+            error=type(exc).__name__,
+            error_code=code.value,
+            message=message,
+            details=details,
+            retryable=retryable,
+            metadata={
+                "routing": {
+                    "lifecycle_status": "beta_native",
+                    "classification": "engineering_native",
+                    "provider": "engineering",
+                    "policy": "global_configuration_integrity_read",
+                    "access": "read",
+                    "fallback_occurred": False,
+                },
+                "source_coverage": [
+                    {
+                        "source_type": "request_validation"
+                        if local_validation
+                        else "configuration_integrity_evidence",
+                        "provider": "engineering",
+                        "completeness": "unavailable",
+                        "failure_category": "request_validation"
+                        if local_validation
+                        else "provider_error",
+                        "upstream_attempted": bool(
+                            telemetry and telemetry.ha_request_count > 0
+                        ),
+                    }
+                ],
+            },
+            timing=timing_since(started),
+            request_id=current_request_id(),
+        ).to_json(SETTINGS.response_size_limit)
+
+
 ANALYSIS_TOOLS = (
     entity_dependency_analysis,
     automation_reliability_analysis,
     change_impact_analysis,
+    configuration_integrity_analysis,
 )
