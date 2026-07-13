@@ -9,7 +9,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-beta.12` |
+| Version | `1.1.2` | `2.0.0-beta.15` |
 | Port | `8099` | `8100` |
 | Options and secret | Production add-on data | Beta add-on data |
 
@@ -82,6 +82,12 @@ and detail-selection policy. One injected request clock binds the analysis cutof
 result metadata. Cursor continuation uses only bounded sanitized public output and
 does not create a reusable result cache.
 
+Beta 15 adds `ha_mcp_engineering/impact/` for a transport-independent single-entity
+impact provider, bounded evidence/result models, deterministic rules, signed
+pagination, and orchestration. It reuses the dependency index and trace sanitizer;
+the MCP handler does not perform Home Assistant I/O and the new capability has no
+write, fallback, or Standard MCP path.
+
 ## Compatibility approach
 
 The beta's compatibility module preserves the current 25 function names,
@@ -93,7 +99,8 @@ capability metadata.
 
 The v1.1.2 catalog contains 8 native, 10 transitional, 4 delegated, and 3 deprecated
 tools. Beta 9 truthfully reclassifies the four administrative reads as transitional,
-producing 8 native, 14 transitional, and 3 deprecated tools. It advertises 3 remaining planned capabilities. The often
+producing 8 native, 14 transitional, and 3 deprecated canonical tools. Beta 15 has
+10 additive beta-native tools and advertises 2 remaining planned capabilities. The often
 quoted transitional count of 9 is inconsistent with the checked-in 25-tool
 catalog; v2 intentionally preserves the source catalog rather than
 reclassifying a tool during a scaffold change.
@@ -143,9 +150,10 @@ They are active for beta-native tools and every provider-routed canonical tool.
 
 ## Known limitations
 
-Beta 12 retains dependency analysis and adds single-automation reliability analysis,
-bringing the callable manifest to 34 tools. Exact source coverage is documented in
-[`docs/AUTOMATION_RELIABILITY_ANALYSIS.md`](docs/AUTOMATION_RELIABILITY_ANALYSIS.md).
+Beta 15 retains dependency and reliability analysis and adds single-entity
+change-impact analysis, bringing the callable manifest to 35 tools. Exact impact
+source coverage is documented in
+[`docs/CHANGE_IMPACT_ANALYSIS.md`](docs/CHANGE_IMPACT_ANALYSIS.md).
 
 - Provider-routed canonical tools now return the facilitator response envelope.
 - Handler bodies remain compatibility implementations behind the routing boundary.

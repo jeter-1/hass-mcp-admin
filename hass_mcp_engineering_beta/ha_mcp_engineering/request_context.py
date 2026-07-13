@@ -32,6 +32,7 @@ class RequestTelemetry:
     result_status: str | None = None
     completeness: str | None = None
     caller_id: str = "anonymous"
+    audit_context: dict[str, object] = field(default_factory=dict)
 
     @property
     def total_duration_ms(self) -> float:

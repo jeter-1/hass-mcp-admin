@@ -203,7 +203,7 @@ try {
         "[ ] Update HA MCP Engineering Server Beta only.",
         "[ ] Confirm /health on port 8100.",
         "[ ] Refresh the beta connector only if its cached manifest is stale; recreation is not normally required.",
-        "[ ] Use MCP Inspector tools/list and confirm exactly 34 callable tools.",
+        "[ ] Use MCP Inspector tools/list and confirm exactly 35 callable tools.",
         "[ ] Call server_info and verify version $betaVersion.",
         "[ ] Call list_capabilities.",
         "[ ] Call get_server_health.",

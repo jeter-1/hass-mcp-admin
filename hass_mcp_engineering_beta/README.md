@@ -36,14 +36,15 @@ https://BETA_TUNNEL/REDACTED_BETA_SECRET/mcp/
 ```
 
 Direct requests to `/mcp` and `/mcp/` must return `404`. After initialization,
-call `server_info(check_ha=false)` and verify version `2.0.0-beta.14`, then call
+call `server_info(check_ha=false)` and verify version `2.0.0-beta.15`, then call
 `list_capabilities` and verify the preserved 25-tool canonical catalog plus the
-nine beta-native tools; MCP `tools/list` should expose 34 callable tools.
+nine prior beta-native tools and `change_impact_analysis`; MCP `tools/list` should
+expose 35 callable tools.
 
 Beta 12 added `automation_reliability_analysis`; Beta 13 stabilized correlation and
 Beta 14 unifies its trace-list normalization and request timestamp for one internal
-automation ID. Beta 14 does not change the manifest, so connector recreation is not
-normally required.
+automation ID. Beta 15 adds read-only single-entity change-impact analysis. Refresh
+or recreate only the beta connector because the manifest changes from 34 to 35 tools.
 
 Use a separate tunnel ingress or hostname for beta. Route it to port `8100`;
 leave the production ingress on `8099`.
@@ -128,6 +129,10 @@ See [`../docs/AUTOMATION_RELIABILITY_ANALYSIS.md`](../docs/AUTOMATION_RELIABILIT
 for the Beta 12 evidence sources, Beta 13 correlation/root-cause contracts, and Beta 14
 shared trace, analysis-time, coverage, status, pagination, timing, and limitation
 contracts.
+
+See [`../docs/CHANGE_IMPACT_ANALYSIS.md`](../docs/CHANGE_IMPACT_ANALYSIS.md) for
+Beta 15 operations, deterministic rule and assessment semantics, source coverage,
+pagination, timing, security, audit, and read-only live acceptance steps.
 
 See [`../docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md`](../docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md)
 and [`../docs/TOKEN_EFFICIENCY.md`](../docs/TOKEN_EFFICIENCY.md) for provider routing,

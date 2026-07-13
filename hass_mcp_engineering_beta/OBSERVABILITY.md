@@ -328,8 +328,8 @@ configuration values.
 
 ## Compatibility and remaining migrations
 
-The Beta 12 canonical 25-tool classification is Native 8, Transitional 14, and
-Deprecated 3 after Phase 3C capability-truth alignment, with 3 remaining planned
+The Beta 15 canonical 25-tool classification is Native 8, Transitional 14, and
+Deprecated 3 after Phase 3C capability-truth alignment, with 2 remaining planned
 capabilities. `get_server_health` is
 advertised separately as additive `beta_native` metadata so these counts do not
 change.
@@ -387,3 +387,18 @@ Continuation pages update only their terminal request outcome and reuse a maximu
 five-minute sanitized public-output snapshot, so HA/provider requests and traces
 examined do not repeat. Reusable reliability-result caching remains unsupported and
 health continues to report `cache_supported: false`.
+
+## Beta 15 change-impact telemetry
+
+`change_impact_analysis` health reports identity-free cumulative request, terminal
+success/partial/failure, operation, severity, direct/indirect, affected-object-type,
+root-cause, dynamic-review, source-failure, truncation, cursor, and index-cache
+counters. It also reports only the last successful timestamp and last bounded failure
+category. Entity IDs, replacement IDs, affected-object IDs, states, configuration,
+findings, evidence, traces, logs, templates, and secrets are excluded.
+
+New analyses update terminal aggregates once. Cursor pages increment only request and
+continuation counters and reuse a bounded sanitized five-minute snapshot; they do not
+repeat provider access or count the same findings again. Response timing keeps current
+analysis, index lookup/build provenance, evidence collection, cumulative HA effort,
+HA wall-clock span, request count, and maximum concurrency distinct.

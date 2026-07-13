@@ -69,3 +69,10 @@ Beta 14 cursor pages reuse a bounded sanitized public-output snapshot for at mos
 minutes instead of retransmitting or recollecting trace evidence. The snapshot is
 cursor-only, capped at 16 analyses, removed after the final page, and cannot answer a
 new analysis request. Reusable reliability-result caching remains unsupported.
+
+Beta 15 applies the same cursor-only model to change-impact results. Public input
+accepts up to 100 findings, while per-page response caps are 50 in summary, 30 in
+standard, and 20 in evidence mode. The response reports the requested limit, effective
+limit, payload cap, and clamp reason. Repeated references are grouped by affected
+object and consequence, and raw state, registry, trace, log, or configuration payloads
+are never returned.

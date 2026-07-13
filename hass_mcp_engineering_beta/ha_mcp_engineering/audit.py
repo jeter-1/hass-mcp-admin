@@ -30,6 +30,7 @@ class AuditRecord:
     duration_ms: float | None = None
     ha_endpoint_categories: list[str] = field(default_factory=list)
     resource_ids: dict[str, str] = field(default_factory=dict)
+    analysis_summary: dict[str, Any] = field(default_factory=dict)
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     server_version: str = SERVER_VERSION
     event: str = "tool_call"

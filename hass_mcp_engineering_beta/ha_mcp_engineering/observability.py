@@ -55,6 +55,26 @@ class RuntimeMetrics:
     reliability_findings_truncated: int = 0
     reliability_last_successful_analysis: str | None = None
     reliability_last_failure_category: str | None = None
+    impact_analysis_requests: int = 0
+    impact_analysis_successes: int = 0
+    impact_analysis_partial: int = 0
+    impact_analysis_failures: int = 0
+    impact_operations: Counter = field(default_factory=Counter)
+    impact_findings_by_severity: Counter = field(default_factory=Counter)
+    impact_direct_count: int = 0
+    impact_indirect_count: int = 0
+    impact_affected_objects_by_type: Counter = field(default_factory=Counter)
+    impact_unique_root_causes: int = 0
+    impact_dynamic_review_events: int = 0
+    impact_source_failures: int = 0
+    impact_findings_truncated: int = 0
+    impact_cursor_continuations: int = 0
+    impact_stale_cursor_events: int = 0
+    impact_invalid_cursor_events: int = 0
+    impact_index_cache_hits: int = 0
+    impact_index_cache_misses: int = 0
+    impact_last_successful_analysis: str | None = None
+    impact_last_failure_category: str | None = None
 
     def record_transport_completion(self) -> None:
         self.transport_request_count += 1
@@ -184,6 +204,65 @@ class RuntimeMetrics:
         self.reliability_findings_truncated += 1
         self.record_evidence_truncation()
 
+    def record_impact_analysis_request(self) -> None:
+        self.impact_analysis_requests += 1
+
+    def record_impact_analysis_terminal(
+        self,
+        *,
+        partial: bool,
+        operation: str,
+        severity_counts,
+        object_counts,
+        direct_impacts: int,
+        indirect_impacts: int,
+        unique_root_causes: int,
+        dynamic_review_events: int,
+        source_failures: int,
+        index_cache_hit: bool,
+        analysis_timestamp: str,
+    ) -> None:
+        if partial:
+            self.impact_analysis_partial += 1
+        else:
+            self.impact_analysis_successes += 1
+        normalized_operation = (
+            operation
+            if operation in {"rename_entity", "remove_entity", "disable_entity"}
+            else "other"
+        )
+        self.impact_operations[normalized_operation] += 1
+        self.impact_findings_by_severity.update(severity_counts)
+        self.impact_affected_objects_by_type.update(object_counts)
+        self.impact_direct_count += max(0, int(direct_impacts))
+        self.impact_indirect_count += max(0, int(indirect_impacts))
+        self.impact_unique_root_causes += max(0, int(unique_root_causes))
+        self.impact_dynamic_review_events += max(0, int(dynamic_review_events))
+        self.impact_source_failures += max(0, int(source_failures))
+        if index_cache_hit:
+            self.impact_index_cache_hits += 1
+        else:
+            self.impact_index_cache_misses += 1
+        self.impact_last_successful_analysis = str(analysis_timestamp)[:64]
+
+    def record_impact_analysis_failure(self, category: str) -> None:
+        self.impact_analysis_failures += 1
+        self.impact_last_failure_category = str(category)[:64]
+
+    def record_impact_truncation(self) -> None:
+        self.impact_findings_truncated += 1
+        self.record_evidence_truncation()
+
+    def record_impact_cursor_continuation(self) -> None:
+        self.impact_cursor_continuations += 1
+
+    def record_impact_cursor_event(self, category: str) -> None:
+        if category == "stale_cursor":
+            self.impact_stale_cursor_events += 1
+        else:
+            self.impact_invalid_cursor_events += 1
+        self.record_impact_analysis_failure(category)
+
     def reset(self) -> None:
         """Deterministically reset in-memory metrics without replacing the registry."""
         self.started = time.monotonic()
@@ -231,6 +310,26 @@ class RuntimeMetrics:
         self.reliability_findings_truncated = 0
         self.reliability_last_successful_analysis = None
         self.reliability_last_failure_category = None
+        self.impact_analysis_requests = 0
+        self.impact_analysis_successes = 0
+        self.impact_analysis_partial = 0
+        self.impact_analysis_failures = 0
+        self.impact_operations.clear()
+        self.impact_findings_by_severity.clear()
+        self.impact_direct_count = 0
+        self.impact_indirect_count = 0
+        self.impact_affected_objects_by_type.clear()
+        self.impact_unique_root_causes = 0
+        self.impact_dynamic_review_events = 0
+        self.impact_source_failures = 0
+        self.impact_findings_truncated = 0
+        self.impact_cursor_continuations = 0
+        self.impact_stale_cursor_events = 0
+        self.impact_invalid_cursor_events = 0
+        self.impact_index_cache_hits = 0
+        self.impact_index_cache_misses = 0
+        self.impact_last_successful_analysis = None
+        self.impact_last_failure_category = None
 
     @staticmethod
     def _summary(values: deque[float]) -> dict[str, float | int | None]:
@@ -303,6 +402,36 @@ class RuntimeMetrics:
                 "last_successful_analysis_timestamp": self.reliability_last_successful_analysis,
                 "last_failure_category": self.reliability_last_failure_category,
                 "counter_semantics": "cumulative_process_events",
+            },
+            "change_impact_analysis": {
+                "request_count": self.impact_analysis_requests,
+                "successful_count": self.impact_analysis_successes,
+                "partial_count": self.impact_analysis_partial,
+                "failed_count": self.impact_analysis_failures,
+                "operations_by_type": dict(self.impact_operations),
+                "findings_by_severity": dict(self.impact_findings_by_severity),
+                "direct_impacts": self.impact_direct_count,
+                "indirect_impacts": self.impact_indirect_count,
+                "affected_objects_by_type": dict(
+                    self.impact_affected_objects_by_type
+                ),
+                "unique_root_causes": self.impact_unique_root_causes,
+                "dynamic_reference_review_events": self.impact_dynamic_review_events,
+                "source_failures": self.impact_source_failures,
+                "finding_truncation_events": self.impact_findings_truncated,
+                "cursor_continuations": self.impact_cursor_continuations,
+                "stale_cursor_events": self.impact_stale_cursor_events,
+                "invalid_cursor_events": self.impact_invalid_cursor_events,
+                "index_cache_hits": self.impact_index_cache_hits,
+                "index_cache_misses": self.impact_index_cache_misses,
+                "last_successful_analysis_timestamp": self.impact_last_successful_analysis,
+                "last_failure_category": self.impact_last_failure_category,
+                "result_cache_supported": False,
+                "counter_semantics": {
+                    "request_count": "tool_invocations_including_cursor_continuations",
+                    "terminal_outcomes_and_aggregates": "new_analyses_only",
+                    "cursor_continuations": "bounded_snapshot_page_requests",
+                },
             },
         }
 
