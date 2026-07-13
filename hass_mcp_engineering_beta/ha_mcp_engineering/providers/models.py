@@ -37,6 +37,7 @@ class ProviderCapability(str, Enum):
     RELIABILITY_ANALYSIS = "reliability_analysis"
     IMPACT_ANALYSIS = "impact_analysis"
     CONFIGURATION_INTEGRITY_ANALYSIS = "configuration_integrity_analysis"
+    INCIDENT_CORRELATION = "incident_correlation"
     AUDIT = "audit"
     HANDOFF_GENERATION = "handoff_generation"
     UNGOVERNED_PHYSICAL_ACTION = "ungoverned_physical_action"
