@@ -32,6 +32,7 @@ from ..logging_config import get_logger, log_event
 from ..mcp_server import create_mcp_server
 from ..models.responses import dump_json
 from ..sanitization import sanitize_untrusted_data
+from ..trace_normalization import fetch_normalized_trace_list
 from ..tool_framework import run_structured
 
 # ---------------------------------------------------------------------------
@@ -413,20 +414,12 @@ async def list_automation_traces(automation_id: str) -> str:
     """List recent execution traces for an automation. automation_id is the
     internal id (the 'id' attribute, not the entity_id) — get it from
     list_automations. Returns run_ids, timestamps, and last_step."""
-    result = await ws_command(
-        {"type": "trace/list", "domain": "automation", "item_id": automation_id}
+    normalized = await fetch_normalized_trace_list(
+        ws_command,
+        automation_id,
+        known_secrets=(ACCESS_SECRET, HA_TOKEN),
     )
-    slim = [
-        {
-            "run_id": t.get("run_id"),
-            "timestamp": t.get("timestamp"),
-            "state": t.get("state"),
-            "script_execution": t.get("script_execution"),
-            "last_step": t.get("last_step"),
-            "error": t.get("error"),
-        }
-        for t in (result or [])
-    ]
+    slim = [header.public() for header in normalized.headers]
     return dump(slim)
 
 

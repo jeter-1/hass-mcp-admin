@@ -54,6 +54,11 @@ class ReliabilitySourceCoverage:
     snapshot_completeness: str | None = None
     retention_coverage: str | None = None
     requested_lookback_hours: int | None = None
+    collection_state: str | None = None
+    trustworthy_empty: bool = False
+    lookback_cutoff: str | None = None
+    lookback_inclusive: bool | None = None
+    counts: dict[str, int] = field(default_factory=dict)
 
     def public(self) -> dict[str, Any]:
         value = {
@@ -76,6 +81,18 @@ class ReliabilitySourceCoverage:
             value["retention_coverage"] = self.retention_coverage
         if self.requested_lookback_hours is not None:
             value["requested_lookback_hours"] = self.requested_lookback_hours
+        if self.collection_state is not None:
+            value["collection_state"] = self.collection_state
+        if self.lookback_cutoff is not None:
+            value["lookback_cutoff"] = self.lookback_cutoff
+        if self.lookback_inclusive is not None:
+            value["lookback_inclusive"] = self.lookback_inclusive
+        if self.source_type == "automation_traces":
+            value["trustworthy_empty"] = self.trustworthy_empty
+            value["counts"] = {
+                str(key)[:64]: max(0, int(item))
+                for key, item in list(self.counts.items())[:20]
+            }
         return value
 
 

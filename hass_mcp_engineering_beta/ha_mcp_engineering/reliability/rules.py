@@ -32,6 +32,7 @@ RULES: tuple[dict[str, Any], ...] = (
     {"rule_id": "unresolved_dynamic_reference", "required_evidence": ("automation_config",), "severity": "low"},
     {"rule_id": "blueprint_evidence_unavailable", "required_evidence": ("blueprint_source",), "severity": "low"},
     {"rule_id": "no_recent_execution_evidence", "required_evidence": ("automation_traces",), "severity": "info"},
+    {"rule_id": "trace_evidence_unavailable", "required_evidence": ("automation_traces",), "severity": "low"},
 )
 
 _SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
@@ -153,6 +154,35 @@ def _entity_rules(bundle):
 
 def _trace_rules(bundle):
     if not bundle.traces:
+        coverage = next(
+            (item for item in bundle.coverage if item.source_type == "automation_traces"),
+            None,
+        )
+        trustworthy_empty = bool(
+            coverage
+            and (
+                coverage.trustworthy_empty
+                or (
+                    coverage.completeness == "complete"
+                    and coverage.collection_state is None
+                )
+            )
+        )
+        if not trustworthy_empty:
+            ref = _reference(
+                bundle,
+                source_type="trace_coverage",
+                source_id=bundle.automation_id,
+                summary="Trace evidence could not be evaluated completely.",
+            )
+            return [_finding(
+                bundle, "trace_evidence_unavailable", "Trace evidence is incomplete",
+                "low", "exact", "evidence_gap",
+                "Trace retrieval or timestamp normalization was incomplete; this is a source limitation, not evidence that the automation did not execute.",
+                refs=(ref,),
+                operational_impact="Runtime reliability could not be assessed completely from traces.",
+                recommended_next_investigation="Inspect bounded trace source coverage and retry when the source is healthy.",
+            )]
         ref = _reference(bundle, source_type="trace_coverage", source_id=bundle.automation_id, summary="No trace runs were available in the requested lookback.")
         return [_finding(bundle, "no_recent_execution_evidence", "No recent execution evidence", "info", "exact", "evidence_gap",
             "No recent traces were available. This is an evidence gap, not proof of unreliable behavior.", refs=(ref,),

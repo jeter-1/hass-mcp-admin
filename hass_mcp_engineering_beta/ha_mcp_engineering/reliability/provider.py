@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import hashlib
 import json
 import re
@@ -12,7 +12,7 @@ from typing import Any
 
 from ..dependency.extraction import extract_document, resolve_blueprint_roles
 from ..dependency.provider import _read_blueprint
-from ..errors import AutomationNotFoundError, EntityNotFoundError
+from ..errors import AutomationNotFoundError, EntityNotFoundError, HomeAssistantTimeoutError
 from ..observability import METRICS
 from ..providers import (
     EngineeringEvidenceProvider,
@@ -25,8 +25,9 @@ from ..providers import (
     ProviderResult,
 )
 from ..sanitization import sanitize_untrusted_data
+from ..trace_normalization import fetch_normalized_trace_list
 from .models import ReliabilityEvidenceBundle, ReliabilitySourceCoverage
-from .timestamps import newest_first_key, normalize_timestamp, parse_timestamp
+from .timestamps import normalize_timestamp, parse_timestamp
 
 
 MAX_REFERENCED_ENTITIES = 100
@@ -67,6 +68,7 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
                 automation_id=str(query["automation_id"]),
                 lookback_hours=int(query["lookback_hours"]),
                 trace_limit=int(query["trace_limit"]),
+                analysis_instant=_required_instant(query.get("analysis_timestamp")),
             )
         except AutomationNotFoundError:
             raise
@@ -105,7 +107,14 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
             data=bundle,
         )
 
-    async def collect(self, *, automation_id: str, lookback_hours: int, trace_limit: int) -> ReliabilityEvidenceBundle:
+    async def collect(
+        self,
+        *,
+        automation_id: str,
+        lookback_hours: int,
+        trace_limit: int,
+        analysis_instant: datetime,
+    ) -> ReliabilityEvidenceBundle:
         coverage: list[ReliabilitySourceCoverage] = []
 
         config_started = time.perf_counter()
@@ -235,7 +244,9 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
         )
         coverage.extend(reference_coverage)
 
-        traces, trace_coverage = await self._collect_traces(automation_id, lookback_hours, trace_limit)
+        traces, trace_coverage = await self._collect_traces(
+            automation_id, lookback_hours, trace_limit, analysis_instant
+        )
         coverage.append(trace_coverage)
 
         logs, log_coverage = await self._collect_system_log(
@@ -329,58 +340,133 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
         self._record_source(registry_coverage)
         return records, [state_coverage, registry_coverage]
 
-    async def _collect_traces(self, automation_id, lookback_hours, trace_limit):
+    async def _collect_traces(
+        self, automation_id, lookback_hours, trace_limit, analysis_instant
+    ):
         started = time.perf_counter()
+        cutoff = analysis_instant - timedelta(hours=lookback_hours)
+        cutoff_text = normalize_timestamp(cutoff)
         try:
-            listing = await self.websocket_client.command(
-                {"type": "trace/list", "domain": "automation", "item_id": automation_id}
+            normalized = await fetch_normalized_trace_list(
+                self.websocket_client.command,
+                automation_id,
+                known_secrets=(self.secret, self.ha_token),
             )
-            if not isinstance(listing, list):
-                raise TypeError("trace list response is invalid")
-            cutoff = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
-            eligible = [item for item in listing if isinstance(item, dict) and _within_lookback(item.get("timestamp"), cutoff)]
-            eligible.sort(key=newest_first_key, reverse=True)
+            eligible = [
+                header for header in normalized.headers
+                if header.started_instant >= cutoff
+            ]
             selected = eligible[:trace_limit]
-            truncated = len(eligible) > trace_limit
+            truncated = normalized.source_truncated or len(eligible) > trace_limit
             semaphore = asyncio.Semaphore(self.concurrency)
 
-            async def fetch(item):
-                safe_summary = sanitize_untrusted_data(
-                    item, known_secrets=(self.secret, self.ha_token), max_string=2_000
-                )
-                summary = safe_summary.value if isinstance(safe_summary.value, dict) else {}
-                run_id = summary.get("run_id")
-                if not run_id:
-                    return _normalize_trace(summary, None), True
+            async def fetch(header):
+                summary = header.public()
                 try:
                     async with semaphore:
                         detail = await self.websocket_client.command(
-                            {"type": "trace/get", "domain": "automation", "item_id": automation_id, "run_id": run_id}
+                            {
+                                "type": "trace/get",
+                                "domain": "automation",
+                                "item_id": automation_id,
+                                "run_id": header.run_id,
+                            }
                         )
                     sanitized = sanitize_untrusted_data(
                         detail, known_secrets=(self.secret, self.ha_token), max_string=2_000
                     )
-                    return _normalize_trace(summary, sanitized.value), sanitized.failed_closed or safe_summary.failed_closed
+                    return _normalize_trace(summary, sanitized.value), True, sanitized.failed_closed
                 except Exception:
-                    return _normalize_trace(summary, None), True
+                    return _normalize_trace(summary, None), False, False
 
             values = await asyncio.gather(*(fetch(item) for item in selected))
-            traces = [item for item, _failed in values]
-            failed = sum(failed for _item, failed in values)
-            completeness = "partial" if failed or truncated else "complete"
+            traces = [item for item, _retrieved, _sanitation_failed in values]
+            details_retrieved = sum(retrieved for _item, retrieved, _failed in values)
+            detail_failures = len(values) - details_retrieved
+            detail_sanitation_failures = sum(failed for _item, _retrieved, failed in values)
+            material_loss = bool(
+                normalized.malformed_entries
+                or normalized.source_truncated
+                or normalized.sanitization_failed_closed
+                or detail_failures
+                or detail_sanitation_failures
+                or len(eligible) > trace_limit
+            )
+            completeness = "partial" if material_loss else "complete"
+            if normalized.malformed_entries:
+                collection_state = "malformed_entries"
+            elif normalized.source_truncated or len(eligible) > trace_limit:
+                collection_state = "truncated"
+            elif detail_failures or detail_sanitation_failures:
+                collection_state = "partial_detail"
+            elif normalized.upstream_runs_returned == 0:
+                collection_state = "zero_upstream"
+            elif not eligible:
+                collection_state = "outside_lookback"
+            else:
+                collection_state = "complete"
+            trustworthy_empty = not traces and completeness == "complete" and collection_state in {
+                "zero_upstream", "outside_lookback"
+            }
+            warnings = list(normalized.warnings)
+            if len(eligible) > trace_limit:
+                warnings.append("Eligible trace evidence reached the requested trace_limit.")
+            if detail_failures:
+                warnings.append(
+                    f"{detail_failures} trace detail request(s) failed; normalized headers were retained."
+                )
+            if detail_sanitation_failures:
+                warnings.append(
+                    f"{detail_sanitation_failures} trace detail response(s) failed closed during sanitization."
+                )
             coverage = ReliabilitySourceCoverage(
                 "automation_traces", "direct_ha_api", ProviderCapability.AUTOMATION_TRACE.value,
-                completeness, len(traces), failed, (time.perf_counter() - started) * 1000, truncated,
-                (["Trace evidence reached the requested trace_limit."] if truncated else [])
-                + ([f"{failed} trace detail request(s) failed; summary evidence was retained."] if failed else []),
+                completeness, len(traces),
+                normalized.malformed_entries + detail_failures + detail_sanitation_failures,
+                (time.perf_counter() - started) * 1000, truncated, warnings[:10],
+                requested_lookback_hours=lookback_hours,
+                collection_state=collection_state,
+                trustworthy_empty=trustworthy_empty,
+                lookback_cutoff=cutoff_text,
+                lookback_inclusive=True,
+                counts={
+                    "runs_returned_by_upstream": normalized.upstream_runs_returned,
+                    "runs_considered": normalized.runs_considered,
+                    "runs_parsed_successfully": normalized.runs_parsed_successfully,
+                    "runs_inside_lookback": len(eligible),
+                    "runs_selected_by_limit": len(selected),
+                    "trace_details_retrieved": details_retrieved,
+                    "trace_details_failed": detail_failures,
+                    "malformed_entries": normalized.malformed_entries,
+                    "missing_start_entries": normalized.missing_start_entries,
+                    "malformed_start_entries": normalized.malformed_start_entries,
+                    "malformed_finish_entries": normalized.malformed_finish_entries,
+                    "duplicate_run_ids": normalized.duplicate_run_ids,
+                },
             )
             self._record_source(coverage)
             return traces, coverage
+        except (asyncio.TimeoutError, TimeoutError, HomeAssistantTimeoutError):
+            coverage = ReliabilitySourceCoverage(
+                "automation_traces", "direct_ha_api", ProviderCapability.AUTOMATION_TRACE.value,
+                "unavailable", 0, 1, (time.perf_counter() - started) * 1000, False,
+                ["Recent automation trace collection timed out."],
+                requested_lookback_hours=lookback_hours,
+                collection_state="timeout", trustworthy_empty=False,
+                lookback_cutoff=cutoff_text, lookback_inclusive=True,
+                counts=_empty_trace_counts(),
+            )
+            self._record_source(coverage)
+            return [], coverage
         except Exception:
             coverage = ReliabilitySourceCoverage(
                 "automation_traces", "direct_ha_api", ProviderCapability.AUTOMATION_TRACE.value,
                 "unavailable", 0, 1, (time.perf_counter() - started) * 1000, False,
                 ["Recent automation traces were unavailable."],
+                requested_lookback_hours=lookback_hours,
+                collection_state="list_failed", trustworthy_empty=False,
+                lookback_cutoff=cutoff_text, lookback_inclusive=True,
+                counts=_empty_trace_counts(),
             )
             self._record_source(coverage)
             return [], coverage
@@ -476,14 +562,28 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
         METRICS.record_provider_result(item.provider, normalized)
 
 
-def _within_lookback(value: Any, cutoff: datetime) -> bool:
-    if value in (None, ""):
-        return True
-    try:
-        parsed = parse_timestamp(value)
-        return parsed is not None and parsed >= cutoff
-    except (TypeError, ValueError):
-        return False
+def _required_instant(value: Any) -> datetime:
+    parsed = parse_timestamp(value)
+    if parsed is None:
+        raise ValueError("analysis timestamp is invalid")
+    return parsed
+
+
+def _empty_trace_counts() -> dict[str, int]:
+    return {
+        "runs_returned_by_upstream": 0,
+        "runs_considered": 0,
+        "runs_parsed_successfully": 0,
+        "runs_inside_lookback": 0,
+        "runs_selected_by_limit": 0,
+        "trace_details_retrieved": 0,
+        "trace_details_failed": 0,
+        "malformed_entries": 0,
+        "missing_start_entries": 0,
+        "malformed_start_entries": 0,
+        "malformed_finish_entries": 0,
+        "duplicate_run_ids": 0,
+    }
 
 
 def _normalize_trace(summary: dict[str, Any], detail: Any) -> dict[str, Any]:
