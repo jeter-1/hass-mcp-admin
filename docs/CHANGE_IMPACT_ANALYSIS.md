@@ -1,6 +1,7 @@
 # Change-impact analysis
 
-`change_impact_analysis` is the Beta 15 read-only Engineering-native tool for
+`change_impact_analysis` is the read-only Engineering-native tool introduced in
+Beta 15 and contract-hardened in Beta 16. It answers
 answering a narrow pre-change question: before one Home Assistant entity is
 renamed, removed, or disabled, which known objects and behaviors could be
 affected?
@@ -35,8 +36,10 @@ Inputs are:
 Validation occurs before any provider or Home Assistant request. Paths, URLs,
 whitespace, control characters, uppercase identifiers, malformed IDs, unsupported
 operations, and invalid replacement combinations return `invalid_request` with
+stable `details.field`, `details.reason`, and `details.operation` values,
 `request_validation`, zero Home Assistant requests, zero Home Assistant duration,
-and `upstream_attempted: false`. A canonical source that is absent from both the
+and `upstream_attempted: false`. Validation also performs no dependency-index
+lookup or build and creates no pagination snapshot. A canonical source absent from both the
 state machine and entity registry returns `entity_not_found` once.
 
 ## Operations
@@ -58,7 +61,7 @@ graph. It combines exact state and entity-registry reads, static index findings,
 bounded indirect traversal, exact registry relationships, recent trace headers,
 and sanitized exact System Log correlations.
 
-| Source | Current Beta 15 coverage | Assessment role |
+| Source | Current Beta 16 coverage | Assessment role |
 | --- | --- | --- |
 | Exact source state | Complete exact entity read, or explicit missing/unavailable failure | Required |
 | Entity registry | Complete registry enumeration with only the exact target retained | Required |
@@ -110,6 +113,9 @@ coverage. Findings are ordered deterministically. Repeated references are groupe
 by affected object and operation consequence, while their individual paths remain
 evidence; five references in one automation do not become five root causes.
 
+Generated explanations use grammatical source-specific articles (for example,
+“An automation”). Wording changes do not change stable rule IDs.
+
 ## Assessment semantics
 
 Exactly one assessment is returned:
@@ -141,13 +147,46 @@ standard findings, and 20 evidence findings per page. Pagination reports
 `requested_limit`, `effective_limit`, `maximum_limit`, `effective_payload_cap`,
 `clamped`, and `clamp_reason`; clamping is never silent.
 
+Whole-analysis counters use these non-overlapping names:
+
+| Field | Meaning |
+| --- | --- |
+| `finding_count` | Number of deterministic rule findings in the complete analysis, independent of the current page. |
+| `direct_finding_count` / `indirect_finding_count` | Findings split by confirmed direct designation; together they equal `finding_count`. |
+| `findings_by_severity` | Whole-analysis finding totals whose sum equals `finding_count`. |
+| `findings_by_object_type` | Finding observations by affected-object type; repeated objects may contribute more than once. |
+| `unique_affected_object_count` | Unique `(object type, stable object identifier)` pairs in the analysis. |
+| `unique_affected_objects_by_type` | Unique identifiers per type; its sum equals `unique_affected_object_count`. |
+| `unique_root_cause_count` | Distinct affected-object/consequence groups produced by deterministic grouping. |
+
+The Beta 15 fields `severity_totals`, `direct_impact_count`,
+`indirect_impact_count`, `affected_object_count`, and `affected_object_totals`
+remain as deprecated aliases. They now carry the corrected semantics shown in
+`counter_semantics`; in particular, no field named for affected objects contains
+finding counts.
+
+`dynamic_reference_summary` separates references confirmed to be in an already
+target-related object, unresolved references within requested source types, and
+global unresolved references outside the request. Requested-scope uncertainty is
+reported with source type, stable source ID, and configuration path where
+available, marks its source coverage partial, and requires manual review.
+Out-of-scope references remain visible as a count but do not create a false review
+requirement. Confirmed static references remain distinct from dynamic uncertainty.
+
 Cursors are HMAC-signed and bound to the source, operation, replacement, indirect
-setting, depth, sources, detail level, index/evidence fingerprints, coverage state,
-and fixed analysis timestamp. Continuation uses a sanitized process-local snapshot
-for at most five minutes and does not repeat provider collection or inflate terminal
-finding counters. Changed inputs, invalid signatures, changed evidence, missing or
-expired snapshots return an explicit cursor error. This snapshot is pagination
-state, not a general result cache.
+setting, depth, sources, detail level, committed index generation/fingerprint,
+evidence fingerprint, coverage state, and fixed analysis timestamp. `refresh_index`
+is a first-page collection instruction, not a result-shaping query identity: a
+refreshed first page may therefore continue with the required
+`refresh_index=false`. The snapshot is created only after the refreshed index is
+the active committed generation. Continuation checks that active identity without
+performing an index lookup, rebuild, or Home Assistant request and reads the next
+page only from the bounded sanitized process-local snapshot.
+
+Snapshots live for at most five minutes. A truly replaced or invalidated index,
+changed query, missing snapshot, or expiration returns `stale_cursor`; a modified
+or malformed cursor returns `invalid_cursor`. Cursor validation is fail-closed.
+This snapshot is pagination state, not a general result cache.
 
 ## Timing and cache provenance
 
@@ -172,12 +211,16 @@ timing. They exclude state values, configurations, trace/log/template/dashboard
 content, findings, evidence summaries, dependency paths, error text, cursors, and
 secret-derived material.
 
-Health telemetry is cumulative and identity-free: requests, terminal successes,
-partials and failures, operation counts, severity counts, direct/indirect totals,
-affected-object types, root causes, dynamic-review events, source failures,
-truncation, cursor events, index cache hits/misses, last success time, and last
-bounded failure category. Cursor pages increment request/continuation counters but
-not terminal aggregates.
+Health telemetry is cumulative and identity-free. `request_count` includes new
+analyses and cursor pages. Terminal success/partial/failure and whole-analysis
+aggregates count new analyses only. Health exposes `finding_count`,
+`findings_by_object_type`, direct/indirect finding counts, per-analysis unique
+affected-object totals, unique root-cause totals, dynamic-review events,
+requested-scope unresolved dynamic-reference totals, source failures, truncation,
+index cache state, and cursor-specific events. Cursor pages never add the same
+analysis aggregates again; cursor failures increment cursor counters and are not
+misreported as failed new analyses. Corrected deprecated health aliases are listed
+under `counter_semantics`.
 
 ## Troubleshooting
 
@@ -186,20 +229,21 @@ not terminal aggregates.
   was made.
 - `analysis_unavailable` or `provider_timeout`: inspect health, source coverage, and
   sanitized System Log; do not infer a clean result.
-- `stale_cursor`: rerun the first page. The snapshot may have expired or its bound
-  evidence/input contract changed.
+- `stale_cursor`: rerun the first page. The snapshot expired, its query binding
+  changed, or the committed dependency index was replaced or invalidated.
 - `invalid_cursor`: do not edit or decode/re-encode the opaque cursor.
 - `not_supported` coverage: narrow `source_types` only if that matches the decision
   being evaluated; never reinterpret unsupported as clear.
-- Missing tool after upgrade: refresh or recreate only the beta connector because
-  Beta 15 changes the manifest from 34 to 35 tools.
+- Missing tool after upgrading from Beta 14: refresh or recreate only the beta
+  connector because Beta 15 changed the manifest from 34 to 35 tools. Beta 16
+  does not change the manifest or any input schema.
 
-## Beta 15 read-only live acceptance
+## Beta 16 read-only live acceptance
 
 Do not run this procedure from CI or against production.
 
 1. Call `server_info(check_ha=false)`.
-2. Confirm `2.0.0-beta.15`, 35 tools, and 25 canonical tools.
+2. Confirm `2.0.0-beta.16`, 35 tools, and 25 canonical tools.
 3. Call `list_capabilities`.
 4. Confirm `change_impact_analysis` is additive, beta-native, Engineering-routed, and read-only.
 5. Capture health and provider counters.
@@ -215,15 +259,20 @@ Do not run this procedure from CI or against production.
 15. Analyze a valid nonexistent target and confirm `entity_not_found`.
 16. Analyze `../config` and confirm `invalid_request`, zero HA time/requests, and no upstream attempt.
 17. Exercise indirect traversal and depth bounds.
-18. Exercise pagination and cursor continuation.
-19. Change a result-shaping input and confirm cursor rejection.
-20. Confirm continuation does not repeat provider work or inflate terminal counters.
-21. Confirm incomplete coverage cannot produce a complete clean assessment.
-22. Confirm dynamic references require review.
-23. Confirm current timing and index-build provenance are separate and truthful.
-24. Confirm audit excludes findings and evidence.
-25. Confirm health contains no entity identities.
-26. Call `get_error_log(tail_lines=50)` and confirm sanitization remains intact.
-27. Confirm no secret or authenticated path appears in output, audit, health, or logs.
-28. Confirm no Standard MCP success or fallback is claimed.
-29. Confirm no writes, services, plans, approvals, reloads, or restarts occurred.
+18. Request a low-limit first page with `refresh_index=true` and enough findings for pagination.
+19. Immediately continue with the returned cursor and `refresh_index=false`; confirm success, the same analysis timestamp, and the next findings.
+20. Continue through another page and confirm no Home Assistant request or index build occurred on either continuation.
+21. Change a result-shaping input and confirm `stale_cursor`; alter the cursor and confirm `invalid_cursor`.
+22. Refresh or invalidate the shared index after issuing a cursor and confirm the old cursor becomes stale.
+23. Confirm finding, severity, direct/indirect, unique-object, and root-cause totals reconcile and remain unchanged on every cursor page.
+24. Confirm health request/continuation counters advance while terminal and aggregate counters advance only for the first page.
+25. Confirm unresolved dynamic references in requested source scope identify their source/path and require manual review.
+26. Confirm unresolved references only in unrequested source types do not create a false review requirement.
+27. Exercise every invalid operation/replacement combination and confirm field/reason details, zero HA activity, and no index or snapshot activity.
+28. Confirm incomplete coverage cannot produce a complete clean assessment.
+29. Confirm current timing and index-build provenance are separate and truthful.
+30. Confirm audit excludes findings, evidence, cursors, secrets, and authenticated paths.
+31. Confirm health contains no entity identities.
+32. Call `get_error_log(tail_lines=50)` and confirm sanitization remains intact.
+33. Confirm no Standard MCP success or fallback is claimed.
+34. Confirm no writes, services, plans, approvals, reloads, or restarts occurred.

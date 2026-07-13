@@ -16,6 +16,23 @@ Raw validation exceptions and upstream bodies are never returned. Safe details a
 limited to categories such as method, status, endpoint category, operation, resource
 identifier, and exception type.
 
+Beta 16 change-impact validation uses a stable field-level contract:
+
+```json
+{
+  "field": "replacement_entity_id",
+  "reason": "required_for_rename",
+  "operation": "rename_entity"
+}
+```
+
+Stable reasons cover a missing, malformed, same-as-source, or operation-forbidden
+replacement; malformed target IDs; unsupported operations or sources; bounded
+numeric/detail fields; and cursor use with first-page-only refresh. These details
+contain no raw exception, stack trace, filesystem path, upstream body, cursor,
+secret, or authenticated URL. Validation performs no Home Assistant request,
+dependency-index lookup/build, or pagination-snapshot creation.
+
 `get_server_health.data.metrics.recent_error_counts` counts terminal public tool
 results, not internal exception propagation. One failed `tools/call` increments its
 final public error code once. Provider request/failure counters record the selected
@@ -38,3 +55,10 @@ A failed or timed-out foundational trace list with no independent finding return
 `analysis_unavailable` or `provider_timeout`. Clock normalization failure maps to the
 bounded `internal_server_error` before any upstream attempt. These terminal categories
 increment once; trace-source/provider counters remain separate.
+
+For change-impact pagination, `invalid_cursor` means the opaque value failed
+format, field, offset, or signature validation. `stale_cursor` means the signed
+value is intact but its snapshot expired/disappeared, its result-shaping query no
+longer matches, or its committed dependency-index generation was replaced or
+invalidated. Cursor failures have dedicated health counters and are not terminal
+failures of new analyses. `refresh_index=true` is valid only without a cursor.

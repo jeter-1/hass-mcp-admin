@@ -218,3 +218,13 @@ index with exact state/registry evidence and bounded runtime evidence. The polic
 `single_entity_change_impact_read`: no direct handler I/O, write, fallback, or Standard
 MCP approximation is allowed. Unsupported static sources remain explicit coverage
 gaps, so absence of findings cannot silently become a safety claim.
+
+Beta 16 clarifies the analytical continuation contract. A signed impact cursor is
+bound to a bounded sanitized snapshot only after the dependency-index refresh has
+committed its final active generation. Continuations may verify that identity but
+must not collect Home Assistant evidence or rebuild the index. Replaced, invalidated,
+expired, mismatched, and tampered state fails closed. The snapshot exists only for
+pagination and is never a reusable general result cache. Findings, unique affected
+objects, and affected-object/consequence groups are separate aggregates, and
+unresolved dynamic references affect assessment only when their source type was
+requested and inspected.
