@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.0.0-beta.15
+
+- Add the read-only `change_impact_analysis` Engineering-native tool for one
+  entity and a proposed rename, remove, or disable operation, increasing the
+  callable beta manifest from 34 to 35 tools.
+- Reuse the existing dependency index for bounded direct and indirect impact
+  evidence; no second dependency graph or write authority was introduced.
+- Add 22 deterministic, evidence-backed rule IDs, stable findings, affected-object
+  grouping, operation-specific consequences, advisory remediation, and four
+  conservative assessment states without an opaque risk score.
+- Add exact state and entity-registry evidence, honest static-source coverage,
+  bounded retained trace headers, and sanitized exact System Log correlation.
+- Add signed evidence-bound pagination snapshots, detail-dependent payload caps,
+  truthful cache/timing provenance, safe audit summaries, and identity-free health
+  metrics.
+- Preserve every Beta 14 tool name and input schema, governance and provider
+  boundaries, and production v1.1.2.
+
 ## 2.0.0-beta.14
 
 - Fixed the Beta 13 null analysis timestamp by accepting injected timezone-aware clock instants and capturing one UTC request instant.

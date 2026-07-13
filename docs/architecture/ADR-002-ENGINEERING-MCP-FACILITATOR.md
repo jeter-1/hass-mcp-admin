@@ -211,3 +211,10 @@ only trustworthy empty results may support a no-execution evidence gap. One capt
 request instant binds cutoff, result, and continuation. Cursor pages use bounded
 sanitized public-output snapshots rather than repeating provider access; this is not a
 reusable analytical result cache.
+
+Beta 15 adds `change_impact_analysis`, the third analytical consumer, and increases
+the manifest to 35 tools. Its Engineering provider composes the existing dependency
+index with exact state/registry evidence and bounded runtime evidence. The policy is
+`single_entity_change_impact_read`: no direct handler I/O, write, fallback, or Standard
+MCP approximation is allowed. Unsupported static sources remain explicit coverage
+gaps, so absence of findings cannot silently become a safety claim.

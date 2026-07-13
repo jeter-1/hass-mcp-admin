@@ -126,3 +126,19 @@ serialization. Trace detail follows the same fail-closed boundary. Pagination st
 only already-sanitized public findings, references, coverage, and metadata in a bounded
 short-lived process snapshot; it never stores raw configuration, trace bodies, logs,
 entity state values, or normalized error content for audit.
+
+## Beta 15 change-impact boundary
+
+`single_entity_change_impact_read` permits only exact state/registry reads and bounded
+evidence collectors already approved for dependency, trace, and System Log analysis.
+The handler is transport-independent, fallback is prohibited, and the capability
+cannot call services, mutate registries/configuration, create plans, request approval,
+reload, or restart. The dependency index is reused rather than copied.
+
+Every Home Assistant-derived field is sanitized before selection, correlation,
+hashing, truncation, formatting, or serialization. A sanitation failure cannot become
+clean coverage. Audit stores only bounded validated identifiers, operation, outcome,
+counts, coverage state, and timing; it excludes state values, findings, evidence,
+paths, trace/log/configuration content, cursors, and error text. Health contains only
+identity-free cumulative aggregates. See
+[`CHANGE_IMPACT_ANALYSIS.md`](CHANGE_IMPACT_ANALYSIS.md) for the full contract.

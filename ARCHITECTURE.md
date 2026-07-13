@@ -64,7 +64,7 @@ The engineering server may retain direct Home Assistant read access where it mat
 
 ## Current Implementation
 
-The v2 beta currently exposes 34 tools and implements governance, verification,
+The v2 beta currently exposes 35 tools and implements governance, verification,
 rollback, persistence, audit, and request correlation. It has direct REST/WebSocket
 clients but no configured nested standard-MCP client. Delegation labels describe the
 target provider; current compatibility reads remain direct and transitional. The
@@ -342,9 +342,14 @@ those boundaries. It builds bounded exact-reference edges from supported automat
 blueprint, state, and registry evidence while marking unavailable sources explicitly.
 See [`docs/ENTITY_DEPENDENCY_ANALYSIS.md`](docs/ENTITY_DEPENDENCY_ANALYSIS.md).
 
+Beta 15 implements `change_impact_analysis` as targeted pre-change orchestration. It
+reuses the shared dependency index, adds exact target/registry and bounded runtime
+evidence, and applies deterministic operation-specific rules. It remains read-only;
+global orphan detection and incident correlation are separate future capabilities.
+
 - entity dependency analysis;
 - automation reliability analysis;
-- change-impact analysis;
+- change-impact analysis (Beta 15);
 - incident correlation.
 
 ### Phase 4: reduce dangerous overlap

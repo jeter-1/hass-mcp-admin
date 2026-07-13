@@ -1,7 +1,7 @@
 # Beta deployment and validation
 
 The beta add-on is isolated from production. Production remains **HA MCP
-Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.14
+Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.15
 is **HA MCP Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100).
 The workflow in this document deploys or updates only the beta.
 
@@ -17,8 +17,8 @@ From a clean branch in Windows PowerShell, run:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.13 `
-  -ExpectedVersion 2.0.0-beta.14 `
+  -DeployedVersion 2.0.0-beta.14 `
+  -ExpectedVersion 2.0.0-beta.15 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -FullTests
 ```
@@ -39,8 +39,8 @@ without supplying authentication material:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.13 `
-  -ExpectedVersion 2.0.0-beta.14 `
+  -DeployedVersion 2.0.0-beta.14 `
+  -ExpectedVersion 2.0.0-beta.15 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -SkipTests -SkipDockerBuild `
   -HealthHost homeassistant.local `
@@ -74,12 +74,11 @@ authenticated path, credential, or secret in the argument.
 The unauthenticated health endpoint proves that a process is responding. It
 does not replace `server_info` for verifying the running server version.
 
-Beta 14 must return 34 serializable tools from the server's real `tools/list`, including
-`entity_dependency_analysis` and `automation_reliability_analysis`. If ChatGPT or
-Claude retains a 33-tool manifest while the server returns 34, the remaining mismatch
-is connector caching rather than server registration;
-refresh only the beta connector. Beta 14 does not change the manifest, so connector
-recreation should not be required. Never share the complete authenticated URL.
+Beta 15 must return 35 serializable tools from the server's real `tools/list`, including
+`entity_dependency_analysis`, `automation_reliability_analysis`, and
+`change_impact_analysis`. If ChatGPT or Claude retains the 34-tool Beta 14 manifest
+while the server returns 35, refresh or recreate only the beta connector. This is a
+manifest cache, not server registration. Never share the complete authenticated URL.
 
 ## Optional local add-on development
 
@@ -222,6 +221,17 @@ Do not require a cache hit. New analyses always recollect evidence; only an acti
 cursor page may reuse its bounded sanitized five-minute pagination snapshot. Beta 14
 does not change the tool manifest, so connector recreation is not expected. Production
 remains on port 8099.
+
+## Beta 15 read-only acceptance test
+
+Beta 15 adds a tool and therefore requires a beta-connector manifest refresh. Follow
+the exact 29-step procedure in
+[`CHANGE_IMPACT_ANALYSIS.md`](CHANGE_IMPACT_ANALYSIS.md). It verifies the 35/25 tool
+counts, capability routing, all three operation semantics, destination conflict,
+nonexistent and locally invalid entities, traversal depth, signed pagination,
+no provider/counter repetition, conservative coverage, fixed timing provenance,
+audit/health exclusions, System Log sanitation, no fallback, and absence of any write
+or governance action. Do not execute the procedure from CI or against production.
 
 ## Rollback and removal
 

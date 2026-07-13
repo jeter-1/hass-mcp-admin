@@ -13,7 +13,9 @@
 > and [`docs/TOKEN_EFFICIENCY.md`](docs/TOKEN_EFFICIENCY.md).
 > Beta 11 System Log security and Beta 12 connector-cache guidance are documented in
 > [`docs/BETA_DEPLOYMENT.md`](docs/BETA_DEPLOYMENT.md). Beta 14 trace/time stabilization is
-> documented in [`docs/AUTOMATION_RELIABILITY_ANALYSIS.md`](docs/AUTOMATION_RELIABILITY_ANALYSIS.md).
+> documented in [`docs/AUTOMATION_RELIABILITY_ANALYSIS.md`](docs/AUTOMATION_RELIABILITY_ANALYSIS.md),
+> and Beta 15 change-impact analysis is documented in
+> [`docs/CHANGE_IMPACT_ANALYSIS.md`](docs/CHANGE_IMPACT_ANALYSIS.md).
 
 A focused Model Context Protocol server for Home Assistant engineering, diagnostics,
 and controlled administration, packaged as a Home Assistant OS add-on. It works with
