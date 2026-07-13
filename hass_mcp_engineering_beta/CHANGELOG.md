@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.0.0-beta.18
+
+- Replace broad dotted-token template scanning with context-aware extraction from
+  explicit entity-bearing fields and recognized Home Assistant template helpers.
+- Reject numeric fragments, versions, IP addresses, URLs, hostnames, service
+  names, member access, and arbitrary dotted prose as exact entity references.
+- Preserve exact literal references for `states`, `is_state`, `is_state_attr`,
+  `state_attr`, and `expand`, while reporting dynamic arguments separately and
+  without an invented target.
+- Harden the shared canonical entity-ID validator and retain deterministic
+  deduplication, evidence IDs, index fingerprints, pagination, health, and audit
+  contracts.
+- Preserve all 36 public tools, all existing input schemas, the read-only safety
+  model, and production v1.1.2.
+
 ## 2.0.0-beta.17
 
 - Add the Engineering-native, read-only `configuration_integrity_analysis`

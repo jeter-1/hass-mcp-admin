@@ -16,7 +16,8 @@
 > documented in [`docs/AUTOMATION_RELIABILITY_ANALYSIS.md`](docs/AUTOMATION_RELIABILITY_ANALYSIS.md),
 > and Beta 15 change-impact analysis is documented in
 > [`docs/CHANGE_IMPACT_ANALYSIS.md`](docs/CHANGE_IMPACT_ANALYSIS.md).
-> Beta 17 global configuration-integrity analysis is documented in
+> Beta 17 global configuration-integrity analysis and the Beta 18 reference
+> classifier hardening are documented in
 > [`docs/CONFIGURATION_INTEGRITY_ANALYSIS.md`](docs/CONFIGURATION_INTEGRITY_ANALYSIS.md).
 
 A focused Model Context Protocol server for Home Assistant engineering, diagnostics,

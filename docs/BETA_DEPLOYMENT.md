@@ -1,7 +1,7 @@
 # Beta deployment and validation
 
 The beta add-on is isolated from production. Production remains **HA MCP
-Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.17
+Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.18
 is **HA MCP Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100).
 The workflow in this document deploys or updates only the beta.
 
@@ -17,8 +17,8 @@ From a clean branch in Windows PowerShell, run:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.16 `
-  -ExpectedVersion 2.0.0-beta.17 `
+  -DeployedVersion 2.0.0-beta.17 `
+  -ExpectedVersion 2.0.0-beta.18 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -FullTests
 ```
@@ -39,8 +39,8 @@ without supplying authentication material:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.16 `
-  -ExpectedVersion 2.0.0-beta.17 `
+  -DeployedVersion 2.0.0-beta.17 `
+  -ExpectedVersion 2.0.0-beta.18 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -SkipTests -SkipDockerBuild `
   -HealthHost homeassistant.local `
@@ -74,10 +74,10 @@ authenticated path, credential, or secret in the argument.
 The unauthenticated health endpoint proves that a process is responding. It
 does not replace `server_info` for verifying the running server version.
 
-Beta 17 must return 36 serializable tools from the server's real `tools/list`, including
+Beta 18 must return 36 serializable tools from the server's real `tools/list`, including
 `entity_dependency_analysis`, `automation_reliability_analysis`, and
 `change_impact_analysis`, and `configuration_integrity_analysis`. If ChatGPT or
-Claude retains the 35-tool Beta 16 manifest while the server returns 36, refresh or
+Claude retains an older manifest while the server returns 36, refresh or
 recreate only the beta connector. This is a
 manifest cache, not server registration. Never share the complete authenticated URL.
 
@@ -246,17 +246,18 @@ repeat whole-analysis health aggregates, check requested-scope dynamic uncertain
 and exercise field-level validation details. The procedure is read-only and must not
 be run automatically against a deployed Home Assistant instance.
 
-## Beta 17 read-only acceptance test
+## Beta 18 read-only acceptance test
 
-Beta 17 adds one public tool, so a cached beta connector may require refresh or
-recreation after the beta-only add-on update. Follow the procedure in
+Beta 18 adds no tool and changes no public schema, so connector recreation is not
+normally required. Follow the procedure in
 [`CONFIGURATION_INTEGRITY_ANALYSIS.md`](CONFIGURATION_INTEGRITY_ANALYSIS.md).
-Verify the 36/25 tool counts, then run a low-limit automation-only first page
-with `refresh_index=true` and follow at least two cursor pages. Confirm stable
-timestamp, totals, coverage, and provenance; no HA or index activity on
-continuation; one terminal aggregate; conservative dynamic/orphan language;
-field-level validation; signed-cursor rejection; bounded redacted auditing; and
-no state, registry, service, automation, governance, reload, or restart writes.
+Verify the 36/25 tool counts, then run a low-limit automation-only first page with
+orphan candidates disabled and `refresh_index=true`; follow at least two cursor
+pages. Confirm stable timestamp, totals, coverage, and provenance with no HA or
+index activity on continuation. Verify the deployed false-positive tokens never
+appear as targets, inspect remaining exact missing references, confirm dynamic
+evidence remains target-free, exercise field-level validation and cursor tamper
+rejection, inspect bounded redacted audit/health output, and confirm no mutation.
 
 ## Rollback and removal
 

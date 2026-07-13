@@ -152,3 +152,12 @@ restart, automatic cleanup, or fallback. All source evidence is sanitized before
 classification and output; cursor material is represented in audit only as a
 Boolean presence flag. Templates and source text are untrusted inert evidence,
 never instructions.
+
+Beta 18 moves entity classification to a context-plus-validation boundary in the
+shared dependency extractor. Only explicit entity-bearing fields and literal
+arguments to the documented Home Assistant template helpers can create exact
+edges. Template comments, quoted prose, arbitrary member expressions, services,
+network identifiers, and dotted diagnostics remain inert. Recognized dynamic
+arguments produce target-free limited-confidence evidence. The bounded scanner
+does not execute templates, return rejected tokens, or place raw template content
+in health or audit records.

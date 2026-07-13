@@ -36,12 +36,13 @@ https://BETA_TUNNEL/REDACTED_BETA_SECRET/mcp/
 ```
 
 Direct requests to `/mcp` and `/mcp/` must return `404`. After initialization,
-call `server_info(check_ha=false)` and verify version `2.0.0-beta.17`, then call
+call `server_info(check_ha=false)` and verify version `2.0.0-beta.18`, then call
 `list_capabilities` and verify the preserved 25-tool canonical catalog plus the
 nine prior beta-native tools and `change_impact_analysis`; MCP `tools/list` should
-expose 36 callable tools. Beta 17 adds the read-only
-`configuration_integrity_analysis` capability; its contract and conservative
-orphan safeguards are documented in
+expose 36 callable tools. Beta 17 added the read-only
+`configuration_integrity_analysis` capability; Beta 18 hardens its shared entity
+reference classifier without changing the tool catalog or schemas. Its contract,
+false-positive safeguards, and conservative orphan behavior are documented in
 [`../docs/CONFIGURATION_INTEGRITY_ANALYSIS.md`](../docs/CONFIGURATION_INTEGRITY_ANALYSIS.md).
 
 Beta 12 added `automation_reliability_analysis`; Beta 13 stabilized correlation and
