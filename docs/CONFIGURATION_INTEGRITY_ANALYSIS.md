@@ -1,10 +1,11 @@
 # Configuration Integrity Analysis
 
 `configuration_integrity_analysis` is the Beta 17 Engineering-native,
-read-only system-wide configuration audit. It correlates the shared dependency
-index with one complete current-state inventory and one entity-registry
-inventory. It does not mutate Home Assistant, execute a service, generate a
-cleanup command, or create a governance plan.
+read-only system-wide configuration audit. Beta 18 hardens the shared reference
+classifier used by this tool and the other dependency-index consumers. It
+correlates the shared dependency index with one complete current-state inventory
+and one entity-registry inventory. It does not mutate Home Assistant, execute a
+service, generate a cleanup command, or create a governance plan.
 
 ## Input contract
 
@@ -67,6 +68,45 @@ evidence. Script, scene, group, template, dashboard, static YAML, packages,
 custom-integration configuration, external systems, and runtime history are
 reported honestly when unsupported. The server never turns absent evidence
 from an unsupported source into a clean conclusion.
+
+## Entity-reference classification
+
+Dotted syntax alone is not evidence of an entity reference. Beta 17 scanned
+generic dotted tokens inside some bracketed templates, which allowed decimals
+and member expressions such as `1.1`, `c.id`, and `ns.lines` to enter the shared
+index as exact edges. Beta 18 removes that global scan at the shared extraction
+boundary. Ignoring confirmed non-entity text is not a coverage failure.
+
+An exact reference requires both a trusted context and a canonical literal ID.
+Trusted structured contexts are explicit `entity_id` values, including bounded
+lists, under triggers, conditions, action targets/data, nested choose/if/repeat
+structures, group membership, scenes, and supported blueprint inputs. Service,
+device, area, message, description, and arbitrary variable fields are not
+promoted merely because their values contain a period.
+
+The centralized literal helper list is:
+
+- `states('sensor.example')`
+- `is_state('binary_sensor.example', 'on')`
+- `is_state_attr('climate.example', 'hvac_mode', 'cool')`
+- `state_attr('sensor.example', 'unit_of_measurement')`
+- `expand('group.example')`
+
+Literal `states['sensor.example']` and `states.sensor.example` lookups remain
+supported. The bounded tokenizer examines only template code outside comments
+and quoted prose; it never executes Jinja. A recognized helper or `states[...]`
+lookup with a dynamic argument becomes target-free
+`unresolved_dynamic_reference` evidence. General attribute access such as
+`c.name`, URLs, hostnames, IP addresses, versions, filenames, package names,
+service names, UUIDs, MAC addresses, and free-form prose are ignored.
+
+Canonical IDs contain exactly one period, non-empty lowercase ASCII
+alphanumeric/underscore components, at least one letter in each component, and
+at most 255 characters. Whitespace, uppercase, extra periods, numeric-only
+components, template syntax, URLs, versions, and IP addresses are rejected.
+Domains are not allow-listed, so valid custom-integration domains remain
+supported. Context plus validation establishes exact evidence; the validator is
+never used as a free-text detector.
 
 ## Finding classifications
 
@@ -203,24 +243,25 @@ automation write, governance creation/approval/apply, reload, restart, or
 general-result-cache path. It returns evidence and limitations only. It never
 generates deletion commands or an automatic cleanup plan.
 
-## Deployed Beta 17 acceptance
+## Deployed Beta 18 acceptance
 
 This procedure is entirely read-only:
 
-1. Call `server_info`; verify `2.0.0-beta.17`, 36 tools, and 25 canonical tools.
-2. Call `list_capabilities`; verify the new beta-native tool and provider matrix.
+1. Call `server_info`; verify `2.0.0-beta.18`, 36 tools, and 25 canonical tools.
+2. Call `list_capabilities`; verify the unchanged beta-native tool and provider matrix.
 3. Call `get_server_health`; record clean integrity/provider baselines.
 4. Confirm `configuration_integrity_analysis` appears in real `tools/list` and is callable.
-5. Run an automation-only summary request with `refresh_index=true`, low `limit`, and default finding types.
+5. Run an automation-only summary request with `include_orphan_candidates=false`, `refresh_index=true`, low `limit`, and default finding types.
 6. Follow at least two cursor pages when present.
 7. Confirm every page retains the timestamp, totals, coverage, and provenance; continuation reports zero HA requests and no index build; cursor counters rise while terminal aggregates count once.
-8. Request `evidence` detail for at least one exact finding, if present.
-9. Cross-check one exact target with `entity_dependency_analysis`, if present.
+8. Confirm `1.1`, `8.8`, `c.id`, `c.limit`, `c.name`, `grace.get`, `ns.bad`, `ns.ids`, and `ns.lines` never appear as exact target entity IDs.
+9. Inspect every remaining `missing_entity_reference` and cross-check selected targets with `get_entity`, `list_entity_registry`, and `entity_dependency_analysis`.
 10. Verify dynamic references are separate, bounded, target-free, and require review in requested scope.
-11. Send one invalid finding type outside the MCP enum path or an invalid limit; verify field-level `invalid_request` and no upstream activity.
+11. Send an invalid limit or unsupported value outside the MCP enum path; verify field-level `invalid_request` and no upstream activity.
 12. Alter one cursor character and verify fail-closed `invalid_cursor`.
 13. Recheck health counters and bounded audit records.
 14. Verify no Home Assistant state, registry, service, automation, plan, reload, or restart mutation occurred.
 
-Because Beta 17 adds a public tool, refresh or recreate only the beta connector
-after deployment if the MCP client retains a cached 35-tool catalog.
+Beta 18 adds no tool and changes no input schema, so connector recreation is not
+normally required. Refresh only the beta connector if a client caches server
+version or an older 35-tool manifest; never expose the authenticated URL.

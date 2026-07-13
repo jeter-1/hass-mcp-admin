@@ -417,3 +417,9 @@ only in cursor counters. Validation failures add a failed request but no
 findings. Pagination snapshots are bounded continuation state, not a general
 result cache. Provider-routing counters record the Engineering provider only on
 new evidence collection; continuation does not dispatch a provider.
+
+Beta 18 changes classification precision, not counter semantics. Rejected dotted
+non-entity text never becomes a finding and therefore does not increment finding,
+severity, type, source, unique-target, or manual-review aggregates. Recognized
+dynamic entity expressions remain counted separately and never inflate unique
+target totals. No rejected token value is exposed through health telemetry.

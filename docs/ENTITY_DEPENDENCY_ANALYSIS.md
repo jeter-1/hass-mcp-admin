@@ -39,15 +39,19 @@ Direct evidence is labeled `direct_ha_api`.
 
 Automation configuration is recursively traversed through triggers, conditions,
 actions, targets/data, choose, if/then/else, repeat, parallel, sequence,
-wait-for-trigger, variables, and nested lists. Exact tokens prevent substring matches.
-Aliases, descriptions, notification/log text, and unrelated free-form strings are
-excluded.
+wait-for-trigger, variables, and nested lists. Exact edges require an explicit
+entity-bearing context plus a canonical literal ID. Aliases, descriptions,
+notification/log prose, service names, device/area IDs, and unrelated strings are
+not scanned for dotted tokens.
 
-Literal Jinja references through `states()`, `states.domain.object`, `is_state()`,
-`state_attr()`, `expand()`, and literal lists are detected. Dynamic construction is
-not guessed; it produces a bounded unresolved warning and source path. Blueprint input
-values remain visible even if source parsing fails. No full automation or blueprint
-source is returned.
+Beta 18 uses a bounded function-aware tokenizer for Jinja. Literal references through
+`states()`, `states.domain.object`, `states['domain.object']`, `is_state()`,
+`is_state_attr()`, `state_attr()`, and `expand()` are detected outside comments and
+quoted prose. Dynamic helper or `states[...]` arguments produce bounded target-free
+unresolved evidence. Decimals, versions, IP addresses, URLs, hostnames, object/member
+access, and arbitrary dotted labels do not create graph edges. Blueprint input values
+remain visible under the established supported input context. No template is executed,
+and no full automation or blueprint source is returned.
 
 Every detail level honors `limit` from 1 through 100. Pagination reports
 `requested_limit`, `effective_limit`, `maximum_limit`, clamping state/reason, returned
@@ -89,6 +93,7 @@ one entity. Runtime automation action-to-trigger causality is not inferred. Dash
 static YAML/package, script, scene, group, template-source, and custom-integration
 coverage remains unavailable.
 
-The server-side Beta 15 manifest contains 35 tools. Recreate or refresh the ChatGPT/Claude beta connector or
-use the cache marker `?manifest=beta12` if a new tool is absent. Never place a real secret
-or private connector URL in source, logs, or screenshots.
+The server-side Beta 18 manifest contains 36 tools. Beta 18 changes no tool schema, so
+connector recreation is not normally required. Refresh only the beta connector if it
+still presents an older manifest. Never place a real secret or private connector URL
+in source, logs, or screenshots.
