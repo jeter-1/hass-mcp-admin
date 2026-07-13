@@ -132,6 +132,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "rollback_change": ProviderCapability.GOVERNED_ROLLBACK,
     "entity_dependency_analysis": ProviderCapability.DEPENDENCY_ANALYSIS,
     "automation_reliability_analysis": ProviderCapability.RELIABILITY_ANALYSIS,
+    "change_impact_analysis": ProviderCapability.IMPACT_ANALYSIS,
 }
 
 ANALYTICAL_PROVIDER_POLICIES = {
@@ -142,7 +143,15 @@ ANALYTICAL_PROVIDER_POLICIES = {
         "scope": "one automation plus bounded configuration, trace, entity, registry, blueprint, and sanitized System Log evidence",
         "writes_allowed": "none",
         "fallback_policy": "none",
-    }
+    },
+    "change_impact_analysis": {
+        "policy_id": "single_entity_change_impact_read",
+        "access": "read",
+        "orchestrator": "engineering",
+        "scope": "one entity, one proposed rename/remove/disable operation, the shared dependency index, and bounded supporting evidence",
+        "writes_allowed": "none",
+        "fallback_policy": "none",
+    },
 }
 
 # Canonical tools in this allowlist may execute their existing direct-HA

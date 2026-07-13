@@ -72,11 +72,13 @@ class EntityDependencyAnalysisService:
             METRICS.record_dependency_analysis_failure()
             raise GovernanceError(ErrorCode.ANALYSIS_UNAVAILABLE) from exc
 
-        direct = [item for item in snapshot.findings if item.target_entity_id == target and _source_selected(item, requested)]
-        findings = list(direct)
-        if include_indirect:
-            findings.extend(_indirect(snapshot.findings, target, requested, max_depth))
-        findings = sorted({item.evidence_id: item for item in findings}.values(), key=_sort_key)
+        direct, findings = select_dependency_findings(
+            snapshot.findings,
+            target,
+            requested,
+            include_indirect=include_indirect,
+            max_depth=max_depth,
+        )
 
         query_fingerprint = _query_fingerprint(target, detail_level, include_indirect, max_depth, requested)
         offset = _decode_cursor(cursor, snapshot.fingerprint, query_fingerprint) if cursor else 0
@@ -158,13 +160,15 @@ class EntityDependencyAnalysisService:
         return AnalysisOutput(data, list(dict.fromkeys(warnings))[:20], {"detail_level": detail_level, "partial": partial}, partial)
 
 
-def _source_selected(item: DependencyFinding, requested: list[str]) -> bool:
+def source_selected(item: DependencyFinding, requested: list[str]) -> bool:
     if item.relation.startswith("blueprint"):
         return "blueprint" in requested or "automation" in requested
     return item.source_type in requested
 
 
-def _indirect(all_findings, target: str, requested: list[str], max_depth: int) -> list[DependencyFinding]:
+def traverse_indirect_dependencies(
+    all_findings, target: str, requested: list[str], max_depth: int
+) -> list[DependencyFinding]:
     results = []
     frontier = [(target, 0, tuple())]
     visited = {target}
@@ -181,7 +185,12 @@ def _indirect(all_findings, target: str, requested: list[str], max_depth: int) -
             if intermediate in visited:
                 continue
             visited.add(intermediate)
-            inbound = [item for item in all_findings if item.target_entity_id == intermediate and _source_selected(item, requested)]
+            inbound = [
+                item
+                for item in all_findings
+                if item.target_entity_id == intermediate
+                and source_selected(item, requested)
+            ]
             for item in inbound:
                 chain = (*path, membership.evidence_id, item.evidence_id)
                 results.append(
@@ -199,6 +208,37 @@ def _indirect(all_findings, target: str, requested: list[str], max_depth: int) -
     if len(results) >= 500:
         METRICS.record_dependency_truncation()
     return results[:500]
+
+
+def select_dependency_findings(
+    all_findings,
+    target: str,
+    requested: list[str],
+    *,
+    include_indirect: bool,
+    max_depth: int,
+) -> tuple[list[DependencyFinding], list[DependencyFinding]]:
+    """Select direct and explicit indirect findings from one shared index.
+
+    Both dependency analysis and change-impact analysis use this function so
+    the latter cannot drift into a second dependency graph implementation.
+    """
+
+    direct = [
+        item
+        for item in all_findings
+        if item.target_entity_id == target and source_selected(item, requested)
+    ]
+    findings = list(direct)
+    if include_indirect:
+        findings.extend(
+            traverse_indirect_dependencies(
+                all_findings, target, requested, max_depth
+            )
+        )
+    return direct, sorted(
+        {item.evidence_id: item for item in findings}.values(), key=_sort_key
+    )
 
 
 def _coverage_for(items, requested, findings, *, cache_hit: bool):

@@ -277,6 +277,24 @@ class AuthenticatedMcpGateway:
                         for key in ("plan_id", "automation_id", "operation", "expiration_minutes")
                         if key in parameters
                     }
+                elif tool_name == "change_impact_analysis":
+                    # Cursor material and result evidence never enter audit.
+                    # Keep only bounded validated intent plus aggregate output.
+                    audit_parameters = {
+                        key: parameters[key]
+                        for key in (
+                            "entity_id",
+                            "replacement_entity_id",
+                            "operation",
+                            "include_indirect",
+                            "max_depth",
+                            "source_types",
+                            "detail_level",
+                            "limit",
+                            "refresh_index",
+                        )
+                        if key in parameters
+                    }
                 self.audit.write(AuditRecord(
                     request_id=request_id,
                     tool_name=tool_name,
@@ -298,6 +316,11 @@ class AuthenticatedMcpGateway:
                     duration_ms=telemetry.tool_duration_ms or operation_duration,
                     ha_endpoint_categories=sorted(telemetry.endpoint_categories),
                     resource_ids=resource_ids,
+                    analysis_summary=(
+                        dict(telemetry.audit_context)
+                        if tool_name == "change_impact_analysis"
+                        else {}
+                    ),
                 ))
             log_event(
                 self.logger,

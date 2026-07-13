@@ -6,8 +6,9 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from ..dependency import DEPENDENCY_ANALYSIS
+from ..impact import CHANGE_IMPACT_ANALYSIS
 from ..reliability import RELIABILITY_ANALYSIS
-from ..errors import map_exception
+from ..errors import ErrorCode, map_exception
 from ..models import FailureResponse, SuccessResponse
 from ..observability import METRICS
 from ..request_context import current_request_id, current_telemetry
@@ -139,4 +140,122 @@ async def automation_reliability_analysis(
         ).to_json(SETTINGS.response_size_limit)
 
 
-ANALYSIS_TOOLS = (entity_dependency_analysis, automation_reliability_analysis)
+async def change_impact_analysis(
+    entity_id: str,
+    operation: Literal["rename_entity", "remove_entity", "disable_entity"],
+    replacement_entity_id: str = "",
+    include_indirect: bool = True,
+    max_depth: Annotated[int, Field(ge=1, le=3)] = 2,
+    source_types: list[
+        Literal[
+            "automation",
+            "blueprint",
+            "script",
+            "scene",
+            "group",
+            "template",
+            "dashboard",
+        ]
+    ] = [],
+    detail_level: Literal["summary", "standard", "evidence"] = "standard",
+    limit: Annotated[int, Field(ge=1, le=100)] = 20,
+    cursor: str = "",
+    refresh_index: bool = False,
+) -> str:
+    """Analyze known effects of renaming, removing, or disabling one entity.
+
+    This operation is read-only. Rename requires a distinct canonical
+    replacement_entity_id; remove and disable reject one. It reuses the
+    bounded dependency index, reports unsupported sources honestly, and never
+    changes Home Assistant, calls a service, or creates a change plan.
+    """
+
+    started = time.perf_counter()
+    telemetry = current_telemetry()
+    try:
+        output = await CHANGE_IMPACT_ANALYSIS.require().analyze(
+            entity_id=entity_id,
+            operation=operation,
+            replacement_entity_id=replacement_entity_id,
+            include_indirect=include_indirect,
+            max_depth=max_depth,
+            source_types=source_types,
+            detail_level=detail_level,
+            limit=limit,
+            cursor=cursor,
+            refresh_index=refresh_index,
+        )
+        if telemetry:
+            telemetry.result_status = "partial" if output.partial else "success"
+            telemetry.completeness = "partial" if output.partial else "complete"
+        assessment = output.data.get("final_assessment", "review_required")
+        return SuccessResponse(
+            operation="change_impact_analysis",
+            summary=(
+                "Completed bounded single-entity change-impact analysis; blocking impacts were found."
+                if assessment == "blocking_impacts_found"
+                else "Completed bounded single-entity change-impact analysis; review is required."
+                if assessment == "review_required"
+                else "Completed bounded single-entity change-impact analysis with incomplete coverage."
+                if assessment == "no_known_impacts_with_incomplete_coverage"
+                else "Completed bounded single-entity change-impact analysis with complete reported coverage."
+            ),
+            data=output.data,
+            warnings=output.warnings,
+            metadata=output.metadata,
+            timing=timing_since(started),
+            request_id=current_request_id(),
+        ).to_json(SETTINGS.response_size_limit)
+    except Exception as exc:
+        code, message, retryable, details = map_exception(exc)
+        if telemetry:
+            telemetry.error_code = code.value
+            telemetry.result_status = "failure"
+            telemetry.completeness = "failed"
+        local_validation = code in {
+            ErrorCode.INVALID_REQUEST,
+            ErrorCode.VALIDATION_FAILURE,
+        }
+        metadata = {
+            "routing": {
+                "lifecycle_status": "beta_native",
+                "classification": "engineering_native",
+                "provider": "engineering",
+                "policy": "single_entity_change_impact_read",
+                "access": "read",
+                "fallback_occurred": False,
+            },
+            "source_coverage": [
+                {
+                    "source_type": "request_validation"
+                    if local_validation
+                    else "change_impact_evidence",
+                    "provider": "engineering",
+                    "completeness": "unavailable",
+                    "failure_category": "request_validation"
+                    if local_validation
+                    else "provider_error",
+                    "upstream_attempted": bool(
+                        telemetry and telemetry.ha_request_count > 0
+                    ),
+                }
+            ],
+        }
+        return FailureResponse(
+            operation="change_impact_analysis",
+            error=type(exc).__name__,
+            error_code=code.value,
+            message=message,
+            details=details,
+            retryable=retryable,
+            metadata=metadata,
+            timing=timing_since(started),
+            request_id=current_request_id(),
+        ).to_json(SETTINGS.response_size_limit)
+
+
+ANALYSIS_TOOLS = (
+    entity_dependency_analysis,
+    automation_reliability_analysis,
+    change_impact_analysis,
+)

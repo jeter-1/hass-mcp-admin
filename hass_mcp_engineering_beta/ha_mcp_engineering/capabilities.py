@@ -44,7 +44,6 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
 )
 
 PLANNED_CAPABILITIES: tuple[dict[str, str], ...] = (
-    {"capability": "change_impact_analysis", "status": "planned", "risk": "analytical"},
     {"capability": "incident_correlation", "status": "planned", "risk": "analytical"},
     {"capability": "handoff_generation", "status": "planned", "risk": "analytical"},
 )
@@ -73,9 +72,30 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "routing": "engineering_native",
         "provider": "engineering",
     },
+    {
+        "tool": "change_impact_analysis",
+        "category": "analysis",
+        "status": "beta_native",
+        "risk": "read",
+        "additive": True,
+        "routing": "engineering_native",
+        "provider": "engineering",
+        "policy": "single_entity_change_impact_read",
+    },
 )
 
 CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
+    {
+        "tool": "change_impact_analysis",
+        "capability": "impact_analysis",
+        "required_semantics": "Bounded evidence-backed effects of renaming, removing, or disabling one entity.",
+        "standard_ha_mcp_coverage": "unavailable",
+        "direct_ha_coverage": "bounded_read_sources",
+        "selected_provider": "engineering",
+        "completeness": "complete_or_explicitly_incomplete",
+        "fallback_policy": "none",
+        "security_justification": "Read-only Engineering orchestration over the shared dependency index and bounded administrative evidence.",
+    },
     {
         "tool": "get_entity",
         "capability": "current_entity_state",
@@ -172,5 +192,5 @@ def build_capability_catalog(*, status: str = "", category: str = "") -> dict[st
         "beta_native": [dict(item) for item in BETA_NATIVE_CAPABILITIES],
         "provider_matrix": [dict(item) for item in CAPABILITY_PROVIDER_MATRIX],
         "registered_count": len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES),
-        "status_values": ["native", "transitional", "delegated", "deprecated", "planned", "unavailable"],
+        "status_values": ["native", "transitional", "delegated", "deprecated", "beta_native", "planned", "unavailable"],
     }
