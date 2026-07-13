@@ -9,7 +9,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-beta.15` |
+| Version | `1.1.2` | `2.0.0-beta.16` |
 | Port | `8099` | `8100` |
 | Options and secret | Production add-on data | Beta add-on data |
 
@@ -87,6 +87,15 @@ impact provider, bounded evidence/result models, deterministic rules, signed
 pagination, and orchestration. It reuses the dependency index and trace sanitizer;
 the MCP handler does not perform Home Assistant I/O and the new capability has no
 write, fallback, or Standard MCP path.
+
+Beta 16 hardens that boundary without adding a capability. Pagination snapshots
+are committed only against the active dependency-index generation and are
+five-minute, process-local continuation state—not a general result cache. Cursor
+pages synchronously verify the committed identity but cannot trigger evidence
+collection or an index rebuild. Impact findings, unique affected objects, and
+affected-object/consequence root-cause groups are separate contracts and metrics.
+Requested-scope unresolved dynamic references conservatively require review;
+unrequested source types do not create false review requirements.
 
 ## Compatibility approach
 

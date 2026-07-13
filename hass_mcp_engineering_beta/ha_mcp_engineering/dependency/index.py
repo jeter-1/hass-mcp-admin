@@ -68,6 +68,28 @@ class DependencyIndex:
         self.invalidated = True
         METRICS.record_dependency_invalidation()
 
+    def active_identity(self) -> dict[str, object]:
+        """Return the committed index identity without building or refreshing it."""
+
+        snapshot = self.snapshot
+        age = (
+            max(0.0, time.monotonic() - snapshot.built_at_monotonic)
+            if snapshot
+            else None
+        )
+        valid = bool(
+            snapshot
+            and not self.invalidated
+            and age is not None
+            and age < self.ttl_seconds
+        )
+        return {
+            "generation": snapshot.generation if snapshot else 0,
+            "fingerprint": snapshot.fingerprint if snapshot else None,
+            "valid": valid,
+            "invalidated": self.invalidated,
+        }
+
     def health(self) -> dict:
         age = None
         if self.snapshot:

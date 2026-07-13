@@ -1,7 +1,7 @@
 # Beta deployment and validation
 
 The beta add-on is isolated from production. Production remains **HA MCP
-Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.15
+Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.16
 is **HA MCP Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100).
 The workflow in this document deploys or updates only the beta.
 
@@ -17,8 +17,8 @@ From a clean branch in Windows PowerShell, run:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.14 `
-  -ExpectedVersion 2.0.0-beta.15 `
+  -DeployedVersion 2.0.0-beta.15 `
+  -ExpectedVersion 2.0.0-beta.16 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -FullTests
 ```
@@ -39,8 +39,8 @@ without supplying authentication material:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.14 `
-  -ExpectedVersion 2.0.0-beta.15 `
+  -DeployedVersion 2.0.0-beta.15 `
+  -ExpectedVersion 2.0.0-beta.16 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -SkipTests -SkipDockerBuild `
   -HealthHost homeassistant.local `
@@ -74,7 +74,7 @@ authenticated path, credential, or secret in the argument.
 The unauthenticated health endpoint proves that a process is responding. It
 does not replace `server_info` for verifying the running server version.
 
-Beta 15 must return 35 serializable tools from the server's real `tools/list`, including
+Beta 16 must return 35 serializable tools from the server's real `tools/list`, including
 `entity_dependency_analysis`, `automation_reliability_analysis`, and
 `change_impact_analysis`. If ChatGPT or Claude retains the 34-tool Beta 14 manifest
 while the server returns 35, refresh or recreate only the beta connector. This is a
@@ -232,6 +232,18 @@ nonexistent and locally invalid entities, traversal depth, signed pagination,
 no provider/counter repetition, conservative coverage, fixed timing provenance,
 audit/health exclusions, System Log sanitation, no fallback, and absence of any write
 or governance action. Do not execute the procedure from CI or against production.
+
+## Beta 16 read-only acceptance test
+
+Beta 16 adds no tool and changes no input schema, so a connector recreation is not
+expected when upgrading from Beta 15. Follow the exact 34-step procedure in
+[`CHANGE_IMPACT_ANALYSIS.md`](CHANGE_IMPACT_ANALYSIS.md). In particular, create a
+paginated first page with `refresh_index=true`, continue immediately with
+`refresh_index=false`, and verify the same timestamp/snapshot with no new HA request
+or index build. Reconcile findings versus unique objects, verify cursor pages do not
+repeat whole-analysis health aggregates, check requested-scope dynamic uncertainty,
+and exercise field-level validation details. The procedure is read-only and must not
+be run automatically against a deployed Home Assistant instance.
 
 ## Rollback and removal
 

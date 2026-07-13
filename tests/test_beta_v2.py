@@ -256,7 +256,7 @@ class AddonIsolationTests(unittest.TestCase):
     def test_beta_metadata_is_distinct_and_valid(self):
         self.assertEqual(self.beta["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(self.beta["slug"], "hass_mcp_engineering_beta")
-        self.assertEqual(self.beta["version"], "2.0.0-beta.15")
+        self.assertEqual(self.beta["version"], "2.0.0-beta.16")
         self.assertEqual(self.beta["ports"], {"8100/tcp": 8100})
         self.assertNotEqual(self.beta["slug"], self.production["slug"])
         self.assertNotEqual(set(self.beta["ports"]), set(self.production["ports"]))
@@ -381,7 +381,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
-        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.15")
+        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.16")
         self.assertEqual(result["data"]["tool_count"], 35)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
@@ -636,6 +636,42 @@ class BetaApplicationTests(unittest.TestCase):
         self.assertNotIn("impact-safe", audit_text)
         self.assertNotIn("impact-evidence-safe", audit_text)
         self.assertNotIn("Bounded evidence", audit_text)
+
+    def test_change_impact_validation_details_and_audit_are_safe_through_real_mcp(self):
+        impact_service = CHANGE_IMPACT_ANALYSIS.require()
+        request_id = "change-impact-validation-request-123"
+        snapshot_count = len(impact_service.pagination_snapshots._values)
+        upstream = AsyncMock(side_effect=AssertionError("upstream must not run"))
+        with patch.object(impact_service.provider, "fetch", new=upstream):
+            response, call = self.rpc(
+                "tools/call",
+                {
+                    "name": "change_impact_analysis",
+                    "arguments": {
+                        "entity_id": "sensor.impact_fixture",
+                        "operation": "rename_entity",
+                    },
+                },
+                request_id=request_id,
+            )
+        payload = json.loads(call["result"]["content"][0]["text"])
+        audit = self.audit_record(request_id)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error_code"], "invalid_request")
+        self.assertEqual(payload["details"]["field"], "replacement_entity_id")
+        self.assertEqual(payload["details"]["reason"], "required_for_rename")
+        coverage = payload["metadata"]["source_coverage"][0]
+        self.assertEqual(coverage["failure_category"], "request_validation")
+        self.assertFalse(coverage["upstream_attempted"])
+        upstream.assert_not_awaited()
+        self.assertEqual(
+            len(impact_service.pagination_snapshots._values), snapshot_count
+        )
+        self.assertEqual(audit["result_status"], "failure")
+        self.assertEqual(audit["error_code"], "invalid_request")
+        self.assertNotIn("cursor", audit["parameters"])
+        self.assertNotIn(SECRET, json.dumps(audit))
 
     def test_exact_entity_direct_provider_routes_via_real_mcp(self):
         request_id = "direct-provider-integration-123"

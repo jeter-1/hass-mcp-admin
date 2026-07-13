@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.0.0-beta.16
+
+- Bind refreshed-index pagination snapshots and signed cursors to the final
+  committed dependency-index generation, allowing immediate upstream-free
+  continuation while retaining fail-closed expiry, tamper, query-change, and
+  index-replacement checks.
+- Separate impact findings from unique affected objects and root-cause groups in
+  both results and health telemetry; retain corrected Beta 15 compatibility
+  aliases with explicit deprecation metadata.
+- Report confirmed target-related, unresolved requested-scope, and out-of-scope
+  dynamic references separately, requiring manual review when requested coverage
+  remains unresolved.
+- Return stable field/reason validation details without provider activity,
+  dependency-index access, or pagination state, and correct generated article
+  wording without changing rule IDs.
+- Preserve the 35-tool manifest, every public input schema, the read-only impact
+  policy, governance boundaries, and production v1.1.2.
+
 ## 2.0.0-beta.15
 
 - Add the read-only `change_impact_analysis` Engineering-native tool for one

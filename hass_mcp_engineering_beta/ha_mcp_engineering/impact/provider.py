@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 from dataclasses import asdict, replace
 from datetime import datetime, timedelta
 import json
@@ -38,6 +39,7 @@ from .models import (
 MAX_AFFECTED_AUTOMATIONS_FOR_TRACES = 5
 MAX_SYSTEM_LOG_MATCHES = 10
 TRACE_LOOKBACK_HOURS = 168
+MAX_DYNAMIC_REFERENCES = 100
 
 
 class DirectHaImpactProvider(EngineeringEvidenceProvider):
@@ -66,6 +68,11 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
     @property
     def available(self) -> bool:
         return True
+
+    def active_index_identity(self) -> dict[str, object]:
+        """Expose only the committed dependency-index identity for cursor checks."""
+
+        return self.index.active_identity()
 
     async def fetch(self, request: EvidenceRequest) -> ProviderResult:
         started = time.perf_counter()
@@ -365,11 +372,16 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
             (item["source_type"], item["source_id"]) for item in dependencies
         }
         dynamic = []
+        confirmed_dynamic_count = 0
+        unresolved_in_scope_count = 0
+        outside_scope_count = sum(
+            item.source_type not in requested
+            for item in snapshot.dynamic_references
+        )
+        dynamic_uncertainty_counts: Counter = Counter()
+        dynamic_truncated_counts: Counter = Counter()
         for item in snapshot.dynamic_references:
-            if item.source_type not in requested or (
-                item.source_type,
-                item.source_id,
-            ) not in affected_sources:
+            if item.source_type not in requested:
                 continue
             safe = sanitize_untrusted_data(
                 asdict(item),
@@ -377,18 +389,42 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
                 max_string=500,
             )
             value = safe.value if isinstance(safe.value, dict) else {}
+            source_type = str(value.get("source_type") or "unknown")[:64]
+            source_id = str(value.get("source_id") or "unknown")[:128]
+            confirmed_target_related = (
+                source_type,
+                source_id,
+            ) in affected_sources
+            relation_status = (
+                "confirmed_target_related"
+                if confirmed_target_related
+                else "unresolved_in_requested_scope"
+            )
+            if confirmed_target_related:
+                confirmed_dynamic_count += 1
+            else:
+                unresolved_in_scope_count += 1
+            dynamic_uncertainty_counts[source_type] += 1
+            if safe.failed_closed:
+                sanitation_failures[source_type] = (
+                    sanitation_failures.get(source_type, 0) + 1
+                )
+            if len(dynamic) >= MAX_DYNAMIC_REFERENCES:
+                dynamic_truncated_counts[source_type] += 1
+                continue
             affected_id = self._affected_object_id(
-                str(value.get("source_type") or "configuration"),
-                str(value.get("source_id") or "unknown"),
+                source_type or "configuration",
+                source_id,
                 None,
             )
             record = {
                 "reference_id": str(value.get("evidence_id") or stable_id("dynamic", affected_id)),
-                "source_type": str(value.get("source_type") or "unknown")[:64],
-                "source_id": str(value.get("source_id") or "unknown")[:128],
-                "affected_object_type": str(value.get("source_type") or "configuration")[:64],
+                "source_type": source_type,
+                "source_id": source_id,
+                "affected_object_type": source_type or "configuration",
                 "affected_object_id": affected_id,
                 "configuration_path": str(value.get("config_path") or "unknown")[:256],
+                "relation_status": relation_status,
             }
             dynamic.append(record)
             reference = ImpactEvidenceReference(
@@ -396,7 +432,11 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
                 source_type=record["source_type"],
                 source_id=record["source_id"],
                 evidence_kind="unresolved_dynamic_reference",
-                summary="A dynamic reference in an affected object could not be resolved statically.",
+                summary=(
+                    "A dynamic reference in a confirmed target-related object could not be resolved statically."
+                    if confirmed_target_related
+                    else "An unresolved dynamic reference exists within the requested source scope."
+                ),
                 affected_object_type=record["affected_object_type"],
                 affected_object_id=affected_id,
                 confidence="limited",
@@ -404,10 +444,6 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
                 excerpt=str(value.get("excerpt") or "")[:300] or None,
             )
             evidence[reference.reference_id] = reference
-            if safe.failed_closed:
-                sanitation_failures[record["source_type"]] = (
-                    sanitation_failures.get(record["source_type"], 0) + 1
-                )
 
         static_coverage = self._static_coverage(
             snapshot.coverage,
@@ -415,6 +451,8 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
             dependencies,
             rebuilt=rebuilt,
             sanitation_failures=sanitation_failures,
+            dynamic_uncertainty_counts=dynamic_uncertainty_counts,
+            dynamic_truncated_counts=dynamic_truncated_counts,
         )
         coverage.extend(static_coverage)
 
@@ -502,6 +540,9 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
                 ),
             },
             evidence_collection_duration_ms=(time.perf_counter() - started) * 1000,
+            confirmed_target_related_dynamic_count=confirmed_dynamic_count,
+            unresolved_in_requested_scope_count=unresolved_in_scope_count,
+            dynamic_outside_requested_scope_count=outside_scope_count,
         )
 
     async def _exact_state(self, entity_id: str) -> tuple[dict[str, Any] | None, bool]:
@@ -653,6 +694,8 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
         *,
         rebuilt,
         sanitation_failures,
+        dynamic_uncertainty_counts,
+        dynamic_truncated_counts,
     ):
         by_source = {item.source_type: item for item in source_items}
         output = []
@@ -688,6 +731,20 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
                 warnings.append(
                     f"{sanitation_failed} {source_type} evidence field(s) failed closed during sanitization."
                 )
+            unresolved_dynamic = dynamic_uncertainty_counts.get(source_type, 0)
+            if unresolved_dynamic:
+                if completeness == "complete":
+                    completeness = "partial"
+                warnings.append(
+                    f"{unresolved_dynamic} unresolved dynamic reference(s) in {source_type} require manual review."
+                )
+            truncated_dynamic = dynamic_truncated_counts.get(source_type, 0)
+            if truncated_dynamic:
+                if completeness == "complete":
+                    completeness = "partial"
+                warnings.append(
+                    f"{truncated_dynamic} additional {source_type} dynamic reference(s) exceeded the bounded evidence payload."
+                )
             output.append(
                 ImpactSourceCoverage(
                     source_type,
@@ -708,6 +765,7 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
                     failed_items=failed,
                     warnings=warnings[:10],
                     duration_ms=duration,
+                    truncated=bool(truncated_dynamic),
                     cached_provenance=not rebuilt,
                     original_index_build_duration_ms=(
                         item.duration_ms if item is not None else None
