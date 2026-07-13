@@ -228,3 +228,11 @@ pagination and is never a reusable general result cache. Findings, unique affect
 objects, and affected-object/consequence groups are separate aggregates, and
 unresolved dynamic references affect assessment only when their source type was
 requested and inspected.
+Beta 17 applies that contract to global configuration-integrity analysis. The
+Engineering provider correlates a shared dependency-index snapshot with one
+bounded complete state inventory and one entity-registry inventory. The selected
+policy is `global_configuration_integrity_read`; Standard HA MCP coverage is
+unavailable, provider fallback is forbidden, and every unsupported source stays
+visible. Candidate orphan detection never authorizes deletion or generates a
+cleanup plan. See
+[`../CONFIGURATION_INTEGRITY_ANALYSIS.md`](../CONFIGURATION_INTEGRITY_ANALYSIS.md).

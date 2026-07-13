@@ -402,3 +402,18 @@ continuation counters and reuse a bounded sanitized five-minute snapshot; they d
 repeat provider access or count the same findings again. Response timing keeps current
 analysis, index lookup/build provenance, evidence collection, cumulative HA effort,
 HA wall-clock span, request count, and maximum concurrency distinct.
+## Configuration integrity analysis telemetry
+
+Beta 17 adds an identity-free `configuration_integrity_analysis` health group.
+It tracks request/success/partial/failure outcomes; finding totals by severity,
+type, and source; per-analysis unique source and target sums; orphan candidate,
+dynamic-reference, manual-review, source-failure, and truncation events; cursor
+continuations and failures; index cache outcomes; and bounded last-outcome
+metadata.
+
+`request_count` includes cursor pages. Terminal outcomes and all finding or
+unique-object aggregates count new analyses only. Cursor failures are recorded
+only in cursor counters. Validation failures add a failed request but no
+findings. Pagination snapshots are bounded continuation state, not a general
+result cache. Provider-routing counters record the Engineering provider only on
+new evidence collection; continuation does not dispatch a provider.

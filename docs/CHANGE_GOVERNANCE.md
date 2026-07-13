@@ -1,6 +1,6 @@
 # Beta automation change governance
 
-Version 2.0.0-beta.16 retains the beta-only approval boundary for controlled
+Version 2.0.0-beta.17 retains the beta-only approval boundary for controlled
 Home Assistant automation creation and updates. It does not alter production
 v1.1.2 and does not govern scripts, scenes, dashboards, helpers, integrations,
 devices, add-ons, system configuration, arbitrary direct service calls, or

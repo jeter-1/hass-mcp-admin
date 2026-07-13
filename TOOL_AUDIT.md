@@ -10,7 +10,7 @@ This document classifies every tool currently exposed by the custom HA MCP Engin
 
 Lifecycle classification and provider routing answer different questions. The existing
 `native`, `transitional`, `delegated`, and `deprecated` labels remain unchanged. The
-central routing policy maps all 34 beta tools to these execution/evidence routes:
+central routing policy maps all 36 beta tools to these execution/evidence routes:
 
 | Route | Existing tools/capabilities |
 | --- | --- |
@@ -35,8 +35,10 @@ physical action.
 
 Beta 7 moves `entity_dependency_analysis` from planned to additive `beta_native`,
 category `analysis`, risk `read`, routed `engineering_native`. Beta 12 likewise moves
-`automation_reliability_analysis` into additive `beta_native`; three planned analytical
-capabilities remain and all prior 33 tool schemas are unchanged.
+`automation_reliability_analysis` into additive `beta_native`. Beta 15 adds
+`change_impact_analysis`, and Beta 17 adds the read-only
+`configuration_integrity_analysis`; incident correlation and handoff generation
+remain planned. All pre-Beta-17 tool schemas are unchanged.
 
 Classifications:
 

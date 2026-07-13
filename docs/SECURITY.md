@@ -142,3 +142,13 @@ counts, coverage state, and timing; it excludes state values, findings, evidence
 paths, trace/log/configuration content, cursors, and error text. Health contains only
 identity-free cumulative aggregates. See
 [`CHANGE_IMPACT_ANALYSIS.md`](CHANGE_IMPACT_ANALYSIS.md) for the full contract.
+
+## Beta 17 configuration-integrity boundary
+
+`global_configuration_integrity_read` permits the shared dependency-index read,
+one current-state inventory, and one entity-registry inventory. It permits no
+service, entity-registry update, automation write, governance operation, reload,
+restart, automatic cleanup, or fallback. All source evidence is sanitized before
+classification and output; cursor material is represented in audit only as a
+Boolean presence flag. Templates and source text are untrusted inert evidence,
+never instructions.

@@ -9,7 +9,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-beta.16` |
+| Version | `1.1.2` | `2.0.0-beta.17` |
 | Port | `8099` | `8100` |
 | Options and secret | Production add-on data | Beta add-on data |
 
@@ -172,3 +172,9 @@ source coverage is documented in
   in this release; the gateway reports explicit unavailability and is not called.
 - `GetLiveContext` is not an exact replacement for entity, registry, or service-catalog
   administrative reads.
+Beta 17 adds `configuration_integrity_analysis` as a fourth Engineering-native
+analytical consumer. It reuses the same dependency-index generation and Beta 16
+snapshot lifecycle, adds one complete state and entity-registry inventory per
+new analysis, and classifies integrity evidence locally. Its orphan findings are
+candidates for review only; it has no registry, configuration, service, plan,
+reload, or restart write path. The callable manifest is 36 tools.
