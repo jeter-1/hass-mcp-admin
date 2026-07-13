@@ -312,6 +312,34 @@ class AuthenticatedMcpGateway:
                     audit_parameters["cursor_present"] = bool(
                         parameters.get("cursor")
                     )
+                elif tool_name == "incident_correlation":
+                    # Record bounded intent and counts, never raw cursors or
+                    # entity lists, evidence, traces, history, or log text.
+                    audit_parameters = {
+                        key: parameters[key]
+                        for key in (
+                            "lookback_hours",
+                            "correlation_window_minutes",
+                            "trace_limit",
+                            "include_dependency_context",
+                            "include_integrity_context",
+                            "include_reliability_context",
+                            "detail_level",
+                            "limit",
+                            "refresh_index",
+                        )
+                        if key in parameters
+                    }
+                    audit_parameters.update(
+                        {
+                            "focus_entity_supplied": bool(parameters.get("focus_entity_id")),
+                            "automation_id_supplied": bool(parameters.get("automation_id")),
+                            "related_entity_count": len(parameters.get("related_entity_ids") or [])
+                            if isinstance(parameters.get("related_entity_ids"), list)
+                            else 0,
+                            "cursor_present": bool(parameters.get("cursor")),
+                        }
+                    )
                 self.audit.write(AuditRecord(
                     request_id=request_id,
                     tool_name=tool_name,
@@ -338,6 +366,7 @@ class AuthenticatedMcpGateway:
                         if tool_name in {
                             "change_impact_analysis",
                             "configuration_integrity_analysis",
+                            "incident_correlation",
                         }
                         else {}
                     ),

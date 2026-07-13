@@ -677,10 +677,10 @@ class ProviderAndPublicContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(matrix["fallback_policy"], "none")
         self.assertEqual(
             {item["capability"] for item in PLANNED_CAPABILITIES},
-            {"incident_correlation", "handoff_generation"},
+            {"handoff_generation"},
         )
         tools = get_registered_server()._tool_manager._tools
-        self.assertEqual(len(tools), 36)
+        self.assertEqual(len(tools), 37)
         self.assertIn("configuration_integrity_analysis", tools)
         schema = tools["configuration_integrity_analysis"].parameters
         json.dumps(schema)

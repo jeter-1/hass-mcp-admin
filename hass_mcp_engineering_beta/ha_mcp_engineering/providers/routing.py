@@ -43,6 +43,7 @@ _ENGINEERING_NATIVE = {
     ProviderCapability.RELIABILITY_ANALYSIS,
     ProviderCapability.IMPACT_ANALYSIS,
     ProviderCapability.CONFIGURATION_INTEGRITY_ANALYSIS,
+    ProviderCapability.INCIDENT_CORRELATION,
     ProviderCapability.AUDIT,
     ProviderCapability.HANDOFF_GENERATION,
 }
@@ -135,6 +136,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "automation_reliability_analysis": ProviderCapability.RELIABILITY_ANALYSIS,
     "change_impact_analysis": ProviderCapability.IMPACT_ANALYSIS,
     "configuration_integrity_analysis": ProviderCapability.CONFIGURATION_INTEGRITY_ANALYSIS,
+    "incident_correlation": ProviderCapability.INCIDENT_CORRELATION,
 }
 
 ANALYTICAL_PROVIDER_POLICIES = {
@@ -159,6 +161,14 @@ ANALYTICAL_PROVIDER_POLICIES = {
         "access": "read",
         "orchestrator": "engineering",
         "scope": "bounded global state, entity-registry, dependency-index, source-coverage, and sanitized evidence inventories",
+        "writes_allowed": "none",
+        "fallback_policy": "none",
+    },
+    "incident_correlation": {
+        "policy_id": "bounded_incident_correlation_read",
+        "access": "read",
+        "orchestrator": "engineering",
+        "scope": "one focus entity, one automation, or both with bounded trace, state, history, logbook, System Log, dependency, integrity, and reliability evidence",
         "writes_allowed": "none",
         "fallback_policy": "none",
     },

@@ -285,10 +285,10 @@ class CanonicalRoutingTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ToolListSerializationTests(unittest.TestCase):
-    def test_all_36_registered_tools_have_serializable_json_schemas(self):
+    def test_all_37_registered_tools_have_serializable_json_schemas(self):
         tools = get_registered_server()._tool_manager.list_tools()
         names = [tool.name for tool in tools]
-        self.assertEqual(len(names), 36)
+        self.assertEqual(len(names), 37)
         self.assertEqual(len(names), len(set(names)))
         self.assertIn("entity_dependency_analysis", names)
         self.assertIn("automation_reliability_analysis", names)

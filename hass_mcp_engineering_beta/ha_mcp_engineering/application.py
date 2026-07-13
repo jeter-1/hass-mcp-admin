@@ -18,6 +18,7 @@ from .dependency import DEPENDENCY_ANALYSIS
 from .reliability import RELIABILITY_ANALYSIS
 from .impact import CHANGE_IMPACT_ANALYSIS
 from .integrity import CONFIGURATION_INTEGRITY_ANALYSIS
+from .incident import INCIDENT_CORRELATION
 from .routing import AuthenticatedMcpGateway
 from .tools import get_registered_server
 
@@ -98,6 +99,15 @@ def create_application(settings: Settings | None = None):
         ha_token=settings.ha_token,
         timeout=settings.ha_timeout_seconds,
     )
+    INCIDENT_CORRELATION.configure(
+        DEPENDENCY_ANALYSIS.require().index,
+        HomeAssistantRestClient(settings),
+        HomeAssistantWebSocketClient(settings),
+        RELIABILITY_ANALYSIS.require().provider,
+        secret=settings.access_secret,
+        ha_token=settings.ha_token,
+        timeout=settings.ha_timeout_seconds,
+    )
     HEALTH.configure(
         settings,
         audit,
@@ -107,6 +117,7 @@ def create_application(settings: Settings | None = None):
         RELIABILITY_ANALYSIS,
         CHANGE_IMPACT_ANALYSIS,
         CONFIGURATION_INTEGRITY_ANALYSIS,
+        INCIDENT_CORRELATION,
     )
     return gateway
 
