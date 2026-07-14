@@ -61,7 +61,11 @@ jobs:
           set -euo pipefail
           contract_dir="$RUNNER_TEMP/beta25-real-ha"
           mkdir -p "$contract_dir"
-          printf '%s\n' 'default_config:' > "$contract_dir/configuration.yaml"
+          printf '%s\n' \
+            'default_config:' \
+            'automation: !include automations.yaml' \
+            > "$contract_dir/configuration.yaml"
+          : > "$contract_dir/automations.yaml"
           docker pull "$HA_CONTRACT_IMAGE"
           docker run -d --name beta25-real-ha -p 8123:8123 \
             -v "$contract_dir:/config" "$HA_CONTRACT_IMAGE"
@@ -77,4 +81,4 @@ jobs:
         shell: bash
         run: |
           docker rm -f beta25-real-ha >/dev/null 2>&1 || true
-          rm -rf "$RUNNER_TEMP/beta25-real-ha"
+          sudo rm -rf "$RUNNER_TEMP/beta25-real-ha"

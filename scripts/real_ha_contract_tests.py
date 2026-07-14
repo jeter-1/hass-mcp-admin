@@ -142,11 +142,16 @@ def settings(token: str) -> Settings:
 
 
 async def run_contracts() -> None:
-    token = await bootstrap_disposable_admin()
-    configured = settings(token)
-    rest = HomeAssistantRestClient(configured)
-    websocket = HomeAssistantWebSocketClient(configured)
-    gateway = AutomationGateway(rest)
+    phase = "bootstrap"
+    try:
+        token = await bootstrap_disposable_admin()
+        configured = settings(token)
+        rest = HomeAssistantRestClient(configured)
+        websocket = HomeAssistantWebSocketClient(configured)
+        gateway = AutomationGateway(rest)
+    except Exception as exc:
+        setattr(exc, "contract_phase", phase)
+        raise
     first = {
         "alias": "Beta 25 real HA contract",
         "description": "Created without top-level identity metadata",
@@ -157,12 +162,16 @@ async def run_contracts() -> None:
     }
     second = {**first, "description": "Updated again without top-level identity metadata"}
     try:
+        phase = "automation_create"
         await gateway.write(AUTOMATION_ID, first)
+        phase = "automation_create_readback"
         read_first = await gateway.get(AUTOMATION_ID)
         assert read_first and read_first.get("id") == AUTOMATION_ID
         assert normalize_automation(read_first) == normalize_automation(first)
 
+        phase = "automation_update"
         await gateway.write(AUTOMATION_ID, second)
+        phase = "automation_update_readback"
         read_second = await gateway.get(AUTOMATION_ID)
         assert read_second and read_second.get("id") == AUTOMATION_ID
         assert normalize_automation(read_second) == normalize_automation(second)
@@ -170,11 +179,13 @@ async def run_contracts() -> None:
         assert read_second.get("mode") == "single"
         assert await gateway.get("beta25_contract_missing") is None
 
+        phase = "configuration_validation"
         validation = await gateway.validate()
         assert isinstance(validation, dict)
         assert not validation.get("errors")
         assert str(validation.get("result", "valid")).lower() in {"valid", "ok"}
 
+        phase = "rest_and_websocket_inventory"
         runtime_config = await rest.request("GET", "/config")
         assert isinstance(runtime_config, dict)
         assert runtime_config.get("version") == "2026.7.2"
@@ -211,6 +222,7 @@ async def run_contracts() -> None:
 
         # The trace contract is required, not silently skipped. Reloading and
         # firing this isolated event occur only in the disposable container.
+        phase = "trace_generation"
         await rest.request("POST", "/services/automation/reload", {})
         await rest.request("POST", "/events/beta25_contract_event", {"source": "contract"})
         normalized = None
@@ -234,6 +246,9 @@ async def run_contracts() -> None:
         assert isinstance(detail, dict)
         assert isinstance(detail.get("trace"), dict)
         assert isinstance(detail.get("config"), dict)
+    except Exception as exc:
+        setattr(exc, "contract_phase", phase)
+        raise
     finally:
         # Deletion is best effort because the entire disposable container and
         # configuration directory are destroyed by the workflow trap.
@@ -247,9 +262,22 @@ def main() -> int:
     try:
         asyncio.run(run_contracts())
     except Exception as exc:
-        # Client exceptions are intentionally safe and exclude credentials and
-        # response bodies. Never print token or onboarding values here.
-        print(f"Real Home Assistant contract failure: {type(exc).__name__}: {exc}", file=sys.stderr)
+        # Client exceptions and these selected fields are intentionally safe;
+        # never print response bodies, paths, tokens, or onboarding values.
+        details = getattr(exc, "details", {})
+        safe_details = {
+            key: details.get(key)
+            for key in ("status", "method", "endpoint_category")
+            if details.get(key) is not None
+        }
+        error_code = getattr(getattr(exc, "code", None), "value", None)
+        print(
+            "Real Home Assistant contract failure: "
+            f"phase={getattr(exc, 'contract_phase', 'unknown')} "
+            f"type={type(exc).__name__} code={error_code or 'unclassified'} "
+            f"details={safe_details}",
+            file=sys.stderr,
+        )
         return 1
     print("Real Home Assistant 2026.7.2 contract assertions passed.")
     return 0
