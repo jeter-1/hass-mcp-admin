@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.0-beta.23
+
+- Require an explicit provider-dispatch assertion before global provider request,
+  success, partial, or failure counters change.
+- Keep request/cursor validation, authentication, rate limiting, policy rejection,
+  and snapshot-only continuation out of provider failure accounting.
+- Preserve one attributable failure for real Engineering/direct provider errors
+  and timeouts; keep successful partial coverage non-failing.
+- Retain all Beta 22 handoff corrections, 38 registered/25 canonical tools, an
+  empty planned list, all public schemas, and production v1.1.2 unchanged.
+
 ## 2.0.0-beta.22
 
 - Normalize shared handoff evidence to one effective coverage record per logical

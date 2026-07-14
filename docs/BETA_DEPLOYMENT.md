@@ -1,11 +1,11 @@
 # Beta deployment and validation
 
 The beta add-on is isolated from production. Production remains **HA MCP
-Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.22
+Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.23
 is **HA MCP Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100).
 The workflow in this document deploys or updates only the beta.
 
-Beta 22 must expose 38 registered/25 canonical tools and no planned feature
+Beta 23 must expose 38 registered/25 canonical tools and no planned feature
 capabilities. It adds no tool or schema, so connector recreation is not normally
 required. Follow the read-only acceptance procedure in
 [`HANDOFF_GENERATION.md`](HANDOFF_GENERATION.md). Rollback affects only beta;
@@ -23,8 +23,8 @@ From a clean branch in Windows PowerShell, run:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.21 `
-  -ExpectedVersion 2.0.0-beta.22 `
+  -DeployedVersion 2.0.0-beta.22 `
+  -ExpectedVersion 2.0.0-beta.23 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -FullTests
 ```
@@ -45,8 +45,8 @@ without supplying authentication material:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.21 `
-  -ExpectedVersion 2.0.0-beta.22 `
+  -DeployedVersion 2.0.0-beta.22 `
+  -ExpectedVersion 2.0.0-beta.23 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -SkipTests -SkipDockerBuild `
   -HealthHost homeassistant.local `
@@ -334,3 +334,21 @@ in both structured and Markdown scope, then follow two pages and confirm frozen
 scope/lifecycle/coverage with zero upstream work. If live metadata remains Beta 21,
 compare repository metadata and `server_info` without printing the secret path;
 roll forward rather than editing a deployed version in place.
+
+## Beta 23 provider-accounting deployment
+
+Beta 23 adds no tool or schema, so connector recreation is not normally required.
+Refresh the repository, update only `hass_mcp_engineering_beta`, and verify
+`server_info` reports `2.0.0-beta.23` with 38 registered/25 canonical tools and
+an empty planned list. Capture `provider_routing` and governance baselines before
+the read-only checks in `BETA_23_RELEASE_NOTES.md`.
+
+Successful system/focused handoffs may increment provider request/success counts
+only for operations actually dispatched. Two signed-snapshot pages must leave all
+provider counters unchanged. A focusless handoff, tampered cursor,
+cursor-plus-refresh request, another invalid Engineering analysis request, and a
+malformed transitional direct-read request must fail before upstream work without
+changing provider or source-failure counters. Do not manufacture an outage to
+test failure attribution; use automated timeout/failure coverage when no natural
+read-only failure exists. Confirm audit remains bounded/redacted and governance
+plan count remains unchanged.

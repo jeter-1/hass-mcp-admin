@@ -12,6 +12,12 @@ none. The tool performs no service call, remediation, configuration write,
 governance operation, reload, restart, subscription, alert, or background
 monitoring. It analyzes one bounded request at a time.
 
+Beta 23 provider accounting treats `engineering` as selected metadata until the
+incident evidence provider is dispatched. Input/cursor validation and frozen
+snapshot continuation perform no provider work and cannot increment provider
+requests or failures. Successful partial coverage remains a non-failing provider
+operation; actual source failures and provider failures retain separate counters.
+
 ## Public schema
 
 ```json

@@ -171,11 +171,12 @@ outcome. Review from chat via the `get_audit_log` tool.
 
 ## Engineering beta analytical milestones
 
-The parallel v2 beta is now `2.0.0-beta.22` with 38 registered tools and 25
-unchanged canonical tools. Beta 22 stabilizes read-only `handoff_generation` by
-normalizing shared coverage, separating active governance work from retained
-history, freezing resolved automation entity IDs in scope, and reconciling risk
-counts with the `risks` section. No planned
-feature capability remains. Production v1.1.2, `hass_mcp_admin`, and port 8099
-remain unchanged. See [`docs/HANDOFF_GENERATION.md`](docs/HANDOFF_GENERATION.md)
-and [`docs/BETA_22_RELEASE_NOTES.md`](docs/BETA_22_RELEASE_NOTES.md).
+The parallel v2 beta is now `2.0.0-beta.23` with 38 registered tools and 25
+unchanged canonical tools. Beta 23 makes provider-routing accounting require an
+actual dispatched provider operation. Request/cursor validation, authentication,
+rate limiting, and local snapshot continuation no longer create synthetic
+provider requests or failures; actual failures and timeouts remain attributable.
+No planned feature capability remains. Production v1.1.2, `hass_mcp_admin`, and
+port 8099 remain unchanged. See
+[`docs/BETA_23_RELEASE_NOTES.md`](docs/BETA_23_RELEASE_NOTES.md) and
+[`hass_mcp_engineering_beta/OBSERVABILITY.md`](hass_mcp_engineering_beta/OBSERVABILITY.md).

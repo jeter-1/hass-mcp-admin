@@ -1,5 +1,15 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## Beta 23 provider dispatch provenance
+
+The shared observability API requires each provider result to assert that dispatch
+actually began. A selected route does not increment counters. Pre-provider request
+or cursor validation, authentication/rate-limit rejection, policy denial, and
+snapshot-only continuation therefore cannot be attributed to `engineering`,
+`direct_ha_api`, or a future `standard_ha_mcp` provider. Actual complete and
+partial operations increment request/success counters; actual failed or timed-out
+operations increment request/failure counters once.
+
 ## Beta 22 handoff stabilization
 
 The Beta 22 `handoff/` boundary normalizes shared evidence into one effective
@@ -21,7 +31,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-beta.22` |
+| Version | `1.1.2` | `2.0.0-beta.23` |
 | Port | `8099` | `8100` |
 | Options and secret | Production add-on data | Beta add-on data |
 

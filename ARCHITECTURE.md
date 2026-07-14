@@ -1,5 +1,16 @@
 # HA MCP Engineering Server Architecture
 
+## Beta 23 provider-attribution boundary
+
+Routing selects a preferred provider before input and cursor validation, but
+selection is metadata rather than evidence of work. Provider metrics now require
+an explicit dispatch assertion at the shared observability boundary. Validation,
+authentication, rate limiting, policy rejection, application pre-provider errors,
+and sanitized snapshot continuation remain tool/application events. Only a
+dispatched operation can complete, return partial evidence, time out, or fail as a
+provider operation. Source failures remain separate from process-level provider
+routing counters.
+
 ## Beta 22 handoff boundary
 
 `handoff_generation` is an Engineering-native documentation orchestrator. Its

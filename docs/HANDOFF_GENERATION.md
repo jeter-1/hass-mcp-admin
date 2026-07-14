@@ -1,6 +1,6 @@
 # Handoff generation contract
 
-`handoff_generation` is the Beta 22 Engineering-native, read-only documentation
+`handoff_generation` is the Engineering-native, read-only documentation
 capability. It converts a bounded evidence snapshot into a structured handoff and,
 optionally, deterministic Markdown. A handoff helps another engineer or future AI
 session continue without repeating every read. It is not authorization, approval,
@@ -9,6 +9,12 @@ continuous monitoring, or an executable remediation.
 Policy: `bounded_handoff_generation_read`. Provider: `engineering`. Fallback:
 `none`. The capability performs no service call, physical action, configuration
 write, plan creation, approval, apply, rollback, reload, or restart.
+
+Beta 23 clarifies that this declared provider is only a routing selection until
+evidence-provider dispatch begins. Handoff input/cursor validation and local
+snapshot pages do not increment Engineering provider counters. Actual dispatched
+success, partial evidence, failure, or timeout remains counted once. Handoff
+`source_failures` continues to count actual failed evidence sources independently.
 
 ## Public schema
 

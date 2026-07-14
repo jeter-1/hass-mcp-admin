@@ -1,5 +1,12 @@
 # Beta error taxonomy
 
+Beta 23 separates terminal tool errors from provider outcomes. An
+`invalid_request`, `invalid_cursor`, authentication failure, or pre-dispatch rate
+limit rejection may increment its tool/transport error category, but it does not
+increment provider requests or failures. Provider failure categories require an
+attempted, attributable provider operation. A selected provider in routing
+metadata is not an attempted provider.
+
 Beta 22 validation returns `invalid_request` with bounded field/reason/operation
 details before HA, provider, governance-storage, index or snapshot work. Signed
 cursor tampering/mismatch uses `invalid_cursor`; unavailable/expired snapshots or
@@ -41,8 +48,8 @@ dependency-index lookup/build, or pagination-snapshot creation.
 
 `get_server_health.data.metrics.recent_error_counts` counts terminal public tool
 results, not internal exception propagation. One failed `tools/call` increments its
-final public error code once. Provider request/failure counters record the selected
-provider route separately. Retry attempts, if introduced, belong in retry telemetry
+final public error code once. Provider request/failure counters record actual
+dispatched provider operations separately. Retry attempts, if introduced, belong in retry telemetry
 and do not masquerade as additional user-visible failures.
 
 This contract is beta-only. Production v1.1.2 behavior is unchanged.
