@@ -393,13 +393,20 @@ class ToolContractTests(unittest.TestCase):
             {"summary", "standard", "evidence"},
         )
 
-    def test_direct_upsert_invalidates_but_prohibited_and_delegated_writes_do_not(self):
+    def test_legacy_write_tools_fail_closed_without_index_invalidation(self):
         async def exercise():
-            with patch.object(compatibility, "rest", new=AsyncMock(side_effect=[{"ok": True}, {"trigger": [], "action": []}])), patch.object(
+            with patch.object(compatibility, "rest", new=AsyncMock()) as direct, patch.object(
                 compatibility.DEPENDENCY_ANALYSIS, "invalidate"
             ) as invalidate:
-                await compatibility.upsert_automation("test", '{"trigger": [], "action": []}')
-                invalidate.assert_called_once()
+                upserted = json.loads(
+                    await compatibility.upsert_automation(
+                        "test", '{"trigger": [], "action": []}'
+                    )
+                )
+                self.assertEqual(upserted["error_code"], "provider_prohibited")
+                self.assertEqual(upserted["details"]["reason"], "governance_required")
+                direct.assert_not_awaited()
+                invalidate.assert_not_called()
             with patch.object(compatibility, "rest", new=AsyncMock(return_value={"ok": True})), patch.object(
                 compatibility.DEPENDENCY_ANALYSIS, "invalidate"
             ) as invalidate:
