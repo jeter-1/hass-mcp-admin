@@ -20,6 +20,7 @@ TERMINAL_STATUSES = {
     PlanStatus.ROLLBACK_FAILED,
     PlanStatus.EXPIRED,
     PlanStatus.SUPERSEDED,
+    PlanStatus.REJECTED,
 }
 
 

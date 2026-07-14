@@ -26,6 +26,11 @@ class ErrorCode(str, Enum):
     CHANGE_PLAN_NOT_APPROVED = "change_plan_not_approved"
     APPROVAL_HASH_MISMATCH = "approval_hash_mismatch"
     APPROVAL_ALREADY_CONSUMED = "approval_already_consumed"
+    EXTERNAL_APPROVAL_REQUIRED = "external_approval_required"
+    APPROVAL_AUTHORITY_MISMATCH = "approval_authority_mismatch"
+    EXTERNAL_APPROVAL_INVALID = "external_approval_invalid"
+    EXTERNAL_APPROVAL_EXPIRED = "external_approval_expired"
+    CHANGE_PLAN_REJECTED = "change_plan_rejected"
     STALE_TARGET_STATE = "stale_target_state"
     CHANGE_IN_PROGRESS = "change_in_progress"
     UNSUPPORTED_CHANGE_OPERATION = "unsupported_change_operation"
@@ -80,6 +85,11 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
     ErrorCode.CHANGE_PLAN_NOT_APPROVED: ErrorDefinition("The change plan is not approved.", False, 409, "invalid_request"),
     ErrorCode.APPROVAL_HASH_MISMATCH: ErrorDefinition("The approval does not match the immutable plan content.", False, 409, "invalid_request"),
     ErrorCode.APPROVAL_ALREADY_CONSUMED: ErrorDefinition("The approval has already been consumed.", False, 409, "invalid_request"),
+    ErrorCode.EXTERNAL_APPROVAL_REQUIRED: ErrorDefinition("External Home Assistant administrator approval is required.", False, 409, "invalid_request"),
+    ErrorCode.APPROVAL_AUTHORITY_MISMATCH: ErrorDefinition("The plan uses an approval authority that cannot authorize this release.", False, 409, "invalid_request"),
+    ErrorCode.EXTERNAL_APPROVAL_INVALID: ErrorDefinition("The external approval challenge is invalid or no longer active.", False, 409, "invalid_request"),
+    ErrorCode.EXTERNAL_APPROVAL_EXPIRED: ErrorDefinition("The external approval challenge has expired.", False, 409, "invalid_request"),
+    ErrorCode.CHANGE_PLAN_REJECTED: ErrorDefinition("The change plan was rejected and cannot be reopened.", False, 409, "invalid_request"),
     ErrorCode.STALE_TARGET_STATE: ErrorDefinition("Home Assistant state changed after planning.", False, 409, "invalid_request"),
     ErrorCode.CHANGE_IN_PROGRESS: ErrorDefinition("Another governed change is in progress for this target.", True, 409, "server_error"),
     ErrorCode.UNSUPPORTED_CHANGE_OPERATION: ErrorDefinition("The requested change operation is unsupported.", False, 405, "method_not_found"),

@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+import hashlib
+import hmac
 import logging
 import json
+import secrets
 import time
 from typing import Any, Callable
 import uuid
@@ -15,6 +18,7 @@ from ..clients.rest import ExpectedHttpStatus, HomeAssistantRestClient
 from ..errors import ErrorCode, GovernanceError, HomeAssistantApiError
 from ..logging_config import get_logger, log_event
 from ..request_context import current_caller_id, current_request_id
+from ..sanitization import sanitize_untrusted_data
 from .models import (
     ApprovalState,
     ChangeApproval,
@@ -38,6 +42,12 @@ from .normalize import (
 from .risk import classify_risk
 from .storage import ChangePlanRepository, ChangePlanStorageError
 from .validation import sanitize_context, validate_automation
+
+
+APPROVAL_AUTHORITY_VERSION = 2
+APPROVAL_CHANNEL = "home_assistant_ingress"
+APPROVAL_CHALLENGE_TTL = timedelta(minutes=15)
+DEFAULT_APPROVER_PRINCIPAL = "home_assistant_admin_ingress"
 
 
 class AutomationGateway:
@@ -123,6 +133,12 @@ class ChangeGovernanceService:
             "approval_kind": plan.approval.approval_kind,
             "rollback_expected_fingerprint": plan.rollback.expected_current_fingerprint,
         }
+        # Beta 24 plan hashes predate external approval authority. Preserve
+        # those historical hashes exactly for readable audit/history while
+        # requiring every executable Beta 25 plan to bind authority version 2.
+        # Legacy active plans still fail closed before any provider access.
+        if plan.approval.authority_version >= APPROVAL_AUTHORITY_VERSION:
+            immutable["approval_authority_version"] = plan.approval.authority_version
         return stable_hash(immutable)
 
     def _load(self, plan_id: str) -> ChangePlan:
@@ -151,6 +167,7 @@ class ChangeGovernanceService:
         *,
         error_code: str | None = None,
         duration_ms: float | None = None,
+        approval_principal: str | None = None,
     ) -> None:
         request_id = current_request_id()
         caller_id = current_caller_id()
@@ -178,6 +195,11 @@ class ChangeGovernanceService:
             "duration_ms": duration_ms,
             "caller_id": caller_id,
             "approval_state": plan.approval.state.value,
+            "approval_authority_version": plan.approval.authority_version,
+            "approval_kind": plan.approval.approval_kind,
+            "approval_channel": plan.approval.channel,
+            "challenge_id": plan.approval.challenge_id,
+            "approver_principal": approval_principal,
         }
         # Persist the event and lifecycle state before emitting a success audit.
         # If storage fails, the caller returns change_plan_storage_error and no
@@ -200,21 +222,39 @@ class ChangeGovernanceService:
             PlanStatus.FAILED,
             PlanStatus.ROLLBACK_FAILED,
             PlanStatus.SUPERSEDED,
+            PlanStatus.REJECTED,
         }:
             return False
         if self.now() >= datetime.fromisoformat(plan.expires_at):
             plan.status = PlanStatus.EXPIRED
             plan.approval.state = ApprovalState.INVALIDATED
+            plan.approval.csrf_digest = None
+            if plan.approval.challenge_id:
+                self._record(
+                    plan,
+                    "external_approval_invalidated",
+                    "rejected",
+                    error_code=ErrorCode.CHANGE_PLAN_EXPIRED.value,
+                )
             self._record(plan, "change_plan_expired", "rejected", error_code=ErrorCode.CHANGE_PLAN_EXPIRED.value)
             return True
         return False
 
     def _public(self, plan: ChangePlan, *, include_configs: bool = True) -> dict[str, Any]:
         value = plan.to_dict()
+        # CSRF material is private to the Ingress authority and must never be
+        # returned through MCP plan reads or summaries.
+        if isinstance(value.get("approval"), dict):
+            value["approval"].pop("csrf_digest", None)
+            value["approval"].pop("csrf_issued_at", None)
         value["plan_hash"] = self.plan_hash(plan)
         value["apply_allowed"] = (
             plan.status == PlanStatus.APPROVED
             and plan.approval.state == ApprovalState.APPROVED
+            and plan.approval.authority_version == APPROVAL_AUTHORITY_VERSION
+            and plan.approval.channel == APPROVAL_CHANNEL
+            and bool(plan.approval.approver_principal)
+            and plan.approval.principal_separation_enforced
             and plan.risk.apply_allowed
         )
         if not include_configs:
@@ -331,10 +371,17 @@ class ChangeGovernanceService:
             if (
                 plan.plan_id != new_plan.plan_id
                 and plan.target_id == new_plan.target_id
-                and plan.status in {PlanStatus.AWAITING_APPROVAL, PlanStatus.APPROVED}
+                and plan.status in {
+                    PlanStatus.AWAITING_APPROVAL,
+                    PlanStatus.APPROVED,
+                    PlanStatus.ROLLBACK_PENDING,
+                }
             ):
                 plan.status = PlanStatus.SUPERSEDED
                 plan.approval.state = ApprovalState.INVALIDATED
+                plan.approval.csrf_digest = None
+                if plan.approval.challenge_id:
+                    self._record(plan, "external_approval_invalidated", "rejected")
                 self._record(plan, "change_plan_superseded", "rejected")
 
     def get_plan(self, plan_id: str) -> dict[str, Any]:
@@ -354,9 +401,18 @@ class ChangeGovernanceService:
         return {"count": len(plans), "plans": plans}
 
     def approve(self, plan_id: str, expected_plan_hash: str, approval_note: str = "") -> dict[str, Any]:
+        """Request external approval without granting authority to the MCP caller."""
+
         plan = self._load(plan_id)
         if self._expire_if_needed(plan):
             raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
+        if plan.status == PlanStatus.REJECTED or plan.approval.state == ApprovalState.REJECTED:
+            raise GovernanceError(ErrorCode.CHANGE_PLAN_REJECTED)
+        if plan.approval.authority_version != APPROVAL_AUTHORITY_VERSION:
+            raise GovernanceError(
+                ErrorCode.APPROVAL_AUTHORITY_MISMATCH,
+                details={"resource_id": plan.plan_id, "reason": "active_plan_must_be_recreated"},
+            )
         if plan.approval.state in {ApprovalState.APPROVED, ApprovalState.CONSUMED}:
             raise GovernanceError(ErrorCode.APPROVAL_ALREADY_CONSUMED)
         if plan.status not in {PlanStatus.AWAITING_APPROVAL, PlanStatus.ROLLBACK_PENDING}:
@@ -370,33 +426,272 @@ class ChangeGovernanceService:
         calculated = self.plan_hash(plan)
         if expected_plan_hash != calculated:
             raise GovernanceError(ErrorCode.APPROVAL_HASH_MISMATCH)
+
+        if self._active_challenge_matches(plan, calculated):
+            return self._approval_pending_response(plan)
+        self._expire_challenge_if_needed(plan)
+        if plan.approval.state == ApprovalState.EXTERNAL_PENDING:
+            plan.approval.state = ApprovalState.INVALIDATED
+            plan.approval.csrf_digest = None
+            self._record(plan, "external_approval_invalidated", "rejected")
+
+        approval_kind = "rollback" if plan.status == PlanStatus.ROLLBACK_PENDING else "apply"
+        requested_at = self._timestamp()
+        challenge_expires = min(
+            self.now() + APPROVAL_CHALLENGE_TTL,
+            datetime.fromisoformat(plan.expires_at),
+        ).isoformat()
+        sanitized_note = sanitize_untrusted_data(
+            approval_note[:500],
+            known_secrets=self.sensitive_values,
+            max_string=500,
+        ).value
         plan.approval = ChangeApproval(
-            state=ApprovalState.APPROVED,
-            approved_at=self._timestamp(),
-            approving_caller_id=current_caller_id(),
-            approval_note=approval_note[:500] or None,
+            state=ApprovalState.EXTERNAL_PENDING,
+            authority_version=APPROVAL_AUTHORITY_VERSION,
+            channel=APPROVAL_CHANNEL,
             bound_plan_hash=calculated,
-            approval_kind="rollback" if plan.status == PlanStatus.ROLLBACK_PENDING else "apply",
+            approval_kind=approval_kind,
+            challenge_id=secrets.token_urlsafe(24),
+            challenge_requested_at=requested_at,
+            challenge_expires_at=challenge_expires,
+            challenge_plan_version=plan.plan_version,
+            challenge_target_type=plan.target_type,
+            challenge_target_id=plan.target_id,
+            challenge_operation=plan.operation.value,
+            challenge_risk_level=plan.risk.level.value,
+            request_note=sanitized_note if isinstance(sanitized_note, str) and sanitized_note else None,
         )
-        if plan.status == PlanStatus.AWAITING_APPROVAL:
-            plan.status = PlanStatus.APPROVED
-            event = "change_plan_approved"
-        else:
-            plan.rollback.approved_at = plan.approval.approved_at
-            event = "rollback_approved"
-        self._record(plan, event, "success")
-        return {
-            "status": "approved",
+        self._record(plan, "external_approval_requested", "success")
+        return self._approval_pending_response(plan)
+
+    def _approval_pending_response(self, plan: ChangePlan) -> dict[str, Any]:
+        summary = {
+            "status": "approval_pending",
             "plan_id": plan.plan_id,
-            "approval_timestamp": plan.approval.approved_at,
-            "expires_at": plan.expires_at,
-            "bound_plan_hash": calculated,
             "approval_kind": plan.approval.approval_kind,
-            "remaining_restrictions": [
-                "Approval is single-use.",
-                "Current Home Assistant state must still match the plan fingerprint.",
-            ],
+            "bound_plan_hash": plan.approval.bound_plan_hash,
+            "external_approval_required": True,
+            "approval_channel": APPROVAL_CHANNEL,
+            "challenge_id": plan.approval.challenge_id,
+            "requested_at": plan.approval.challenge_requested_at,
+            "challenge_expires_at": plan.approval.challenge_expires_at,
+            "approval_ui": "Open the HA MCP Engineering approval panel in Home Assistant.",
+            "plan_expires_at": plan.expires_at,
+            "plan_status": plan.status.value,
+            "approval_state": plan.approval.state.value,
+            "authority_version": APPROVAL_AUTHORITY_VERSION,
         }
+        return summary
+
+    def _active_challenge_matches(self, plan: ChangePlan, calculated: str) -> bool:
+        approval = plan.approval
+        try:
+            unexpired = bool(
+                approval.challenge_expires_at
+                and self.now() < datetime.fromisoformat(approval.challenge_expires_at)
+            )
+        except ValueError:
+            unexpired = False
+        return bool(
+            approval.state == ApprovalState.EXTERNAL_PENDING
+            and plan.status in {PlanStatus.AWAITING_APPROVAL, PlanStatus.ROLLBACK_PENDING}
+            and approval.authority_version == APPROVAL_AUTHORITY_VERSION
+            and approval.channel == APPROVAL_CHANNEL
+            and approval.bound_plan_hash == calculated
+            and approval.challenge_plan_version == plan.plan_version
+            and approval.challenge_target_type == plan.target_type
+            and approval.challenge_target_id == plan.target_id
+            and approval.challenge_operation == plan.operation.value
+            and approval.challenge_risk_level == plan.risk.level.value
+            and approval.approval_kind
+            == ("rollback" if plan.status == PlanStatus.ROLLBACK_PENDING else "apply")
+            and unexpired
+        )
+
+    def _expire_challenge_if_needed(self, plan: ChangePlan) -> bool:
+        if plan.approval.state != ApprovalState.EXTERNAL_PENDING:
+            return False
+        try:
+            expired = not plan.approval.challenge_expires_at or self.now() >= datetime.fromisoformat(
+                plan.approval.challenge_expires_at
+            )
+        except ValueError:
+            expired = True
+        if not expired:
+            return False
+        plan.approval.state = ApprovalState.EXPIRED
+        plan.approval.csrf_digest = None
+        self._record(
+            plan,
+            "external_approval_expired",
+            "rejected",
+            error_code=ErrorCode.EXTERNAL_APPROVAL_EXPIRED.value,
+        )
+        return True
+
+    def pending_external_reviews(self) -> list[dict[str, Any]]:
+        reviews: list[dict[str, Any]] = []
+        for plan in self.repository.list():
+            self._expire_if_needed(plan)
+            self._expire_challenge_if_needed(plan)
+            calculated = self.plan_hash(plan)
+            if not self._active_challenge_matches(plan, calculated):
+                continue
+            reviews.append(self._review_summary(plan))
+        return reviews
+
+    def _review_summary(self, plan: ChangePlan) -> dict[str, Any]:
+        changed_fields = []
+        for item in plan.dry_run_results.get("changed_fields", [])[:50]:
+            if not isinstance(item, dict):
+                continue
+            sanitized = sanitize_untrusted_data(
+                item,
+                known_secrets=self.sensitive_values,
+                max_string=500,
+            )
+            item = sanitized.value if isinstance(sanitized.value, dict) else {}
+            changed_fields.append(
+                {
+                    "field": str(item.get("field") or "")[:160],
+                    "before": str(item.get("before") or "")[:500],
+                    "after": str(item.get("after") or "")[:500],
+                }
+            )
+        summary = {
+            "plan_id": plan.plan_id,
+            "title": plan.title[:160],
+            "description": plan.description[:1000],
+            "plan_hash": self.plan_hash(plan),
+            "plan_version": plan.plan_version,
+            "approval_kind": plan.approval.approval_kind,
+            "operation": plan.operation.value,
+            "target_type": plan.target_type,
+            "target_id": plan.target_id,
+            "risk_level": plan.risk.level.value,
+            "expires_at": plan.expires_at,
+            "challenge_id": plan.approval.challenge_id,
+            "challenge_expires_at": plan.approval.challenge_expires_at,
+            "request_note": str(
+                sanitize_untrusted_data(
+                    plan.approval.request_note or "",
+                    known_secrets=self.sensitive_values,
+                    max_string=500,
+                ).value
+            )[:500],
+            "changed_fields": changed_fields,
+            "warnings": [str(value)[:500] for value in plan.warnings[:20]],
+            "validation_valid": bool(plan.validation_results.get("valid")),
+            "apply_allowed": self._public(plan, include_configs=False)["apply_allowed"],
+            "approval_state": plan.approval.state.value,
+            "original_apply_timestamp": plan.applied_at if plan.approval.approval_kind == "rollback" else None,
+            "current_post_apply_fingerprint": plan.post_apply_fingerprint if plan.approval.approval_kind == "rollback" else None,
+            "snapshot_fingerprint": plan.snapshot.fingerprint if plan.snapshot and plan.approval.approval_kind == "rollback" else None,
+            "rollback_target": plan.target_id if plan.approval.approval_kind == "rollback" else None,
+        }
+        sanitized = sanitize_untrusted_data(
+            summary,
+            known_secrets=self.sensitive_values,
+            max_string=2_000,
+        ).value
+        if not isinstance(sanitized, dict):
+            raise GovernanceError(ErrorCode.INTERNAL_SERVER_ERROR)
+        return sanitized
+
+    async def issue_external_csrf(self, plan_id: str, challenge_id: str) -> tuple[dict[str, Any], str]:
+        lock = self._plan_locks.setdefault(plan_id, asyncio.Lock())
+        async with lock:
+            plan = self._load(plan_id)
+            if self._expire_if_needed(plan):
+                raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
+            if self._expire_challenge_if_needed(plan):
+                raise GovernanceError(ErrorCode.EXTERNAL_APPROVAL_EXPIRED)
+            calculated = self.plan_hash(plan)
+            if plan.approval.challenge_id != challenge_id or not self._active_challenge_matches(plan, calculated):
+                raise GovernanceError(ErrorCode.EXTERNAL_APPROVAL_INVALID)
+            nonce = secrets.token_urlsafe(32)
+            plan.approval.csrf_digest = hashlib.sha256(nonce.encode("utf-8")).hexdigest()
+            plan.approval.csrf_issued_at = self._timestamp()
+            self._record(plan, "external_approval_viewed", "success")
+            return self._review_summary(plan), nonce
+
+    async def decide_external_approval(
+        self,
+        *,
+        plan_id: str,
+        challenge_id: str,
+        expected_plan_hash: str,
+        approval_kind: str,
+        csrf_nonce: str,
+        decision: str,
+        approver_principal: str,
+    ) -> dict[str, Any]:
+        """Perform the private Ingress-authority decision under the plan lock."""
+
+        lock = self._plan_locks.setdefault(plan_id, asyncio.Lock())
+        async with lock:
+            plan = self._load(plan_id)
+            if self._expire_if_needed(plan):
+                raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
+            if self._expire_challenge_if_needed(plan):
+                raise GovernanceError(ErrorCode.EXTERNAL_APPROVAL_EXPIRED)
+            calculated = self.plan_hash(plan)
+            approval = plan.approval
+            if approval.challenge_id != challenge_id or not self._active_challenge_matches(plan, calculated):
+                self._reject_external_decision(plan, ErrorCode.EXTERNAL_APPROVAL_INVALID)
+            if expected_plan_hash != calculated or approval.bound_plan_hash != calculated:
+                self._reject_external_decision(plan, ErrorCode.APPROVAL_HASH_MISMATCH)
+            if approval_kind != approval.approval_kind:
+                self._reject_external_decision(plan, ErrorCode.EXTERNAL_APPROVAL_INVALID)
+            csrf_digest = hashlib.sha256(csrf_nonce.encode("utf-8")).hexdigest()
+            if not approval.csrf_digest or not hmac.compare_digest(approval.csrf_digest, csrf_digest):
+                self._reject_external_decision(plan, ErrorCode.EXTERNAL_APPROVAL_INVALID)
+            approval.csrf_digest = None
+            approval.csrf_issued_at = None
+            principal = (approver_principal or DEFAULT_APPROVER_PRINCIPAL)[:160]
+            if decision == "approve":
+                approval.state = ApprovalState.APPROVED
+                approval.approved_at = self._timestamp()
+                approval.approval_expires_at = plan.expires_at
+                approval.channel = APPROVAL_CHANNEL
+                approval.approver_principal = principal
+                approval.principal_separation_enforced = True
+                if approval.approval_kind == "apply":
+                    plan.status = PlanStatus.APPROVED
+                else:
+                    plan.rollback.approved_at = approval.approved_at
+                self._record(
+                    plan,
+                    "external_approval_granted",
+                    "success",
+                    approval_principal=principal,
+                )
+                return {"status": "approved", "plan_id": plan.plan_id, "approval_kind": approval.approval_kind}
+            if decision == "reject":
+                approval.state = ApprovalState.REJECTED
+                approval.channel = APPROVAL_CHANNEL
+                approval.approver_principal = principal
+                approval.principal_separation_enforced = True
+                plan.status = PlanStatus.REJECTED
+                self._record(
+                    plan,
+                    "external_approval_rejected",
+                    "rejected",
+                    error_code=ErrorCode.CHANGE_PLAN_REJECTED.value,
+                    approval_principal=principal,
+                )
+                return {"status": "rejected", "plan_id": plan.plan_id, "approval_kind": approval.approval_kind}
+            self._reject_external_decision(plan, ErrorCode.EXTERNAL_APPROVAL_INVALID)
+
+    def _reject_external_decision(self, plan: ChangePlan, code: ErrorCode) -> None:
+        self._record(
+            plan,
+            "external_approval_decision_failed",
+            "rejected",
+            error_code=code.value,
+        )
+        raise GovernanceError(code)
 
     async def apply(self, plan_id: str, expected_plan_hash: str = "") -> dict[str, Any]:
         plan_lock = self._plan_locks.setdefault(plan_id, asyncio.Lock())
@@ -423,10 +718,8 @@ class ChangeGovernanceService:
         self._require_current_normalization(plan)
         if _automation_id_mismatch(plan.target_id, plan.proposed_config):
             self._reject_identity_mismatch(plan)
-        current = await self.gateway.get(plan.target_id)
-        if _automation_id_mismatch(plan.target_id, current):
-            self._reject_identity_mismatch(plan)
         if plan.status == PlanStatus.APPLIED:
+            current = await self.gateway.get(plan.target_id)
             if (
                 not _automation_id_mismatch(plan.target_id, current)
                 and state_fingerprint(current) == plan.proposed_config_hash
@@ -439,10 +732,14 @@ class ChangeGovernanceService:
                 else ErrorCode.APPROVAL_ALREADY_CONSUMED,
                 details={"resource_id": plan.plan_id, "mismatch_fields": mismatch},
             )
+        if plan.status == PlanStatus.REJECTED or plan.approval.state == ApprovalState.REJECTED:
+            self._reject_apply(plan, ErrorCode.CHANGE_PLAN_REJECTED)
+        if plan.approval.authority_version != APPROVAL_AUTHORITY_VERSION:
+            self._reject_apply(plan, ErrorCode.APPROVAL_AUTHORITY_MISMATCH)
         if plan.approval.state == ApprovalState.CONSUMED:
             self._reject_apply(plan, ErrorCode.APPROVAL_ALREADY_CONSUMED)
-        if plan.status != PlanStatus.APPROVED or plan.approval.state != ApprovalState.APPROVED:
-            self._reject_apply(plan, ErrorCode.CHANGE_PLAN_NOT_APPROVED)
+        if not self._valid_external_approval(plan, "apply"):
+            self._reject_apply(plan, ErrorCode.EXTERNAL_APPROVAL_REQUIRED)
         calculated = self.plan_hash(plan)
         if (
             stable_hash(normalize_automation(plan.proposed_config) or {})
@@ -451,6 +748,9 @@ class ChangeGovernanceService:
             or (expected_plan_hash and expected_plan_hash != calculated)
         ):
             self._reject_apply(plan, ErrorCode.APPROVAL_HASH_MISMATCH)
+        current = await self.gateway.get(plan.target_id)
+        if _automation_id_mismatch(plan.target_id, current):
+            self._reject_identity_mismatch(plan)
         if state_fingerprint(current) != plan.current_state_fingerprint:
             self._record(plan, "change_apply_rejected", "rejected", error_code=ErrorCode.STALE_TARGET_STATE.value)
             raise GovernanceError(ErrorCode.STALE_TARGET_STATE)
@@ -460,6 +760,7 @@ class ChangeGovernanceService:
         plan.apply_request_id = current_request_id()
         plan.approval.state = ApprovalState.CONSUMED
         plan.approval.consumed_at = self._timestamp()
+        self._record(plan, "external_approval_consumed", "success")
         self._record(plan, "change_apply_started", "success")
         try:
             await self.gateway.write(plan.target_id, plan.proposed_config)
@@ -530,6 +831,28 @@ class ChangeGovernanceService:
             },
         )
 
+    def _valid_external_approval(self, plan: ChangePlan, approval_kind: str) -> bool:
+        approval = plan.approval
+        try:
+            unexpired = bool(
+                approval.approval_expires_at
+                and self.now() < datetime.fromisoformat(approval.approval_expires_at)
+            )
+        except ValueError:
+            unexpired = False
+        return bool(
+            plan.status
+            == (PlanStatus.APPROVED if approval_kind == "apply" else PlanStatus.ROLLBACK_PENDING)
+            and approval.state == ApprovalState.APPROVED
+            and approval.authority_version == APPROVAL_AUTHORITY_VERSION
+            and approval.channel == APPROVAL_CHANNEL
+            and approval.approval_kind == approval_kind
+            and approval.principal_separation_enforced
+            and approval.approver_principal
+            and approval.bound_plan_hash == self.plan_hash(plan)
+            and unexpired
+        )
+
     @staticmethod
     def _require_current_normalization(plan: ChangePlan) -> None:
         proposed_hash = stable_hash(normalize_automation(plan.proposed_config) or {})
@@ -571,7 +894,10 @@ class ChangeGovernanceService:
                 plan.rollback.status = "awaiting_approval"
                 plan.rollback.requested_at = self._timestamp()
                 plan.rollback.expected_current_fingerprint = plan.post_apply_fingerprint
-                plan.approval = ChangeApproval(approval_kind="rollback")
+                plan.approval = ChangeApproval(
+                    authority_version=APPROVAL_AUTHORITY_VERSION,
+                    approval_kind="rollback",
+                )
                 self._record(plan, "rollback_requested", "success")
                 return {
                     "status": "rollback_pending",
@@ -581,8 +907,16 @@ class ChangeGovernanceService:
                 }
             if plan.status != PlanStatus.ROLLBACK_PENDING:
                 raise GovernanceError(ErrorCode.ROLLBACK_NOT_AVAILABLE)
-            if plan.approval.state != ApprovalState.APPROVED or plan.approval.approval_kind != "rollback":
-                raise GovernanceError(ErrorCode.ROLLBACK_APPROVAL_REQUIRED)
+            if plan.approval.authority_version != APPROVAL_AUTHORITY_VERSION:
+                raise GovernanceError(ErrorCode.APPROVAL_AUTHORITY_MISMATCH)
+            if not self._valid_external_approval(plan, "rollback"):
+                self._record(
+                    plan,
+                    "rollback_failed",
+                    "rejected",
+                    error_code=ErrorCode.EXTERNAL_APPROVAL_REQUIRED.value,
+                )
+                raise GovernanceError(ErrorCode.EXTERNAL_APPROVAL_REQUIRED)
             calculated = self.plan_hash(plan)
             if not expected_plan_hash or expected_plan_hash != calculated or plan.approval.bound_plan_hash != calculated:
                 self._record(plan, "rollback_failed", "rejected", error_code=ErrorCode.APPROVAL_HASH_MISMATCH.value)
@@ -601,6 +935,7 @@ class ChangeGovernanceService:
             raise GovernanceError(ErrorCode.STALE_TARGET_STATE)
         plan.approval.state = ApprovalState.CONSUMED
         plan.approval.consumed_at = self._timestamp()
+        self._record(plan, "external_approval_consumed", "success")
         plan.rollback.status = "applying"
         plan.rollback.request_id = current_request_id()
         self._record(plan, "rollback_started", "success")
@@ -640,7 +975,21 @@ class ChangeGovernanceService:
 
     def health_summary(self) -> dict[str, Any]:
         plans = self.repository.list()
+        for plan in plans:
+            if not self._expire_if_needed(plan):
+                self._expire_challenge_if_needed(plan)
         storage = self.repository.health()
+        events = [event.event for plan in plans for event in plan.events]
+        approval_failures = sorted(
+            (
+                event
+                for plan in plans
+                for event in plan.events
+                if event.event.startswith("external_approval") and event.error_code
+            ),
+            key=lambda event: event.timestamp,
+            reverse=True,
+        )
         return {
             "enabled": True,
             "storage": storage,
@@ -648,6 +997,23 @@ class ChangeGovernanceService:
             "storage_corruption_count": storage["corruption_count"],
             "total_plans": len(plans),
             "plans_awaiting_approval": sum(plan.status == PlanStatus.AWAITING_APPROVAL for plan in plans),
+            "external_approval_enabled": True,
+            "ingress_approval_ui_configured": True,
+            "approval_authority_version": APPROVAL_AUTHORITY_VERSION,
+            "pending_challenge_count": sum(
+                plan.approval.state == ApprovalState.EXTERNAL_PENDING
+                and self._active_challenge_matches(plan, self.plan_hash(plan))
+                for plan in plans
+            ),
+            "granted_approval_count": events.count("external_approval_granted"),
+            "rejected_approval_count": events.count("external_approval_rejected"),
+            "expired_challenge_count": events.count("external_approval_expired"),
+            "invalidated_challenge_count": events.count("external_approval_invalidated"),
+            "approval_consumption_count": events.count("external_approval_consumed"),
+            "last_approval_failure_category": (
+                approval_failures[0].error_code if approval_failures else None
+            ),
+            "rejected_plans": sum(plan.status == PlanStatus.REJECTED for plan in plans),
             "expired_plans": sum(plan.status == PlanStatus.EXPIRED for plan in plans),
             "active_apply_operations": sum(lock.locked() for lock in self._target_locks.values()),
             "failed_apply_count": sum(

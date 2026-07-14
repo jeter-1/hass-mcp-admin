@@ -63,10 +63,14 @@ async def list_change_plans(status: str = "", limit: int = 20) -> str:
 async def approve_change_plan(
     plan_id: str, expected_plan_hash: str, approval_note: str = ""
 ) -> str:
-    """Explicitly approve the exact immutable plan hash; does not apply it."""
+    """Request administrator approval for the exact immutable plan hash.
+
+    This MCP tool never grants approval. A Home Assistant administrator must
+    approve or reject the challenge in the admin-only Ingress panel.
+    """
     return await run_structured(
         "approve_change_plan",
-        "Recorded a single-use approval bound to the exact plan content.",
+        "Requested external administrator approval bound to the exact plan content.",
         lambda: GOVERNANCE.require().approve(
             plan_id, expected_plan_hash, approval_note
         ),
@@ -76,7 +80,7 @@ async def approve_change_plan(
 
 
 async def apply_change_plan(plan_id: str, expected_plan_hash: str = "") -> str:
-    """Apply one approved low/medium-risk plan with stale-state protection and verification."""
+    """Apply one externally approved plan with stale-state protection and verification."""
     return await run_structured(
         "apply_change_plan",
         "Processed the approved governed automation change.",
@@ -89,9 +93,10 @@ async def apply_change_plan(plan_id: str, expected_plan_hash: str = "") -> str:
 async def rollback_change(plan_id: str, expected_plan_hash: str = "") -> str:
     """Request rollback approval, or execute an explicitly approved update rollback.
 
-    First call creates rollback_pending state and returns its plan hash. Approve
-    that exact hash with approve_change_plan, then call rollback_change again
-    with expected_plan_hash. Create-automation rollback is unavailable because
+    First call creates rollback_pending state and returns its plan hash. Request
+    approval for that exact hash, have a Home Assistant administrator approve
+    it through Ingress, then call rollback_change again with expected_plan_hash.
+    Create-automation rollback is unavailable because
     governed deletion is intentionally outside this milestone.
     """
     return await run_structured(

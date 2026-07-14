@@ -345,6 +345,7 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
 
     def _plan_item(self, plan, evidence):
         status = _value(getattr(plan, "status", "unknown"))
+        approval_state = _value(getattr(getattr(plan, "approval", None), "state", "required"))
         verification_status = str(getattr(getattr(plan, "verification", None), "status", "not_run"))
         verified = status == "applied" and verification_status == "passed"
         historical = status in {
@@ -369,19 +370,30 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
             summary = f"Plan {plan.plan_id} has an unresolved current {status.replace('_', ' ')} state."
         elif active_pending:
             section, public_status, severity = "outstanding_work", "pending", "medium"
-            summary = f"Plan {plan.plan_id} is active with lifecycle state {status}; it is not verified completed work."
+            if status == "awaiting_approval" and approval_state == "external_pending":
+                summary = (
+                    f"Plan {plan.plan_id} is awaiting a separate Home Assistant administrator "
+                    "decision; it is not approved or verified completed work."
+                )
+            elif status == "approved":
+                summary = f"Plan {plan.plan_id} has external approval but remains unapplied and is not completed work."
+            else:
+                summary = f"Plan {plan.plan_id} is active with lifecycle state {status}; it is not verified completed work."
         else:
             section, public_status, severity = "confirmed_findings", "unknown", "low"
             summary = f"Plan {plan.plan_id} has unrecognized lifecycle state {status}; manual classification is required."
 
-        requires_authorization = status in {"awaiting_approval", "rollback_pending"} or active_failure
+        requires_authorization = (
+            status in {"awaiting_approval", "rollback_pending"}
+            and approval_state != "approved"
+        ) or active_failure
         authorization_type = "governed_change_plan" if status in {"awaiting_approval", "rollback_pending"} else "manual_review" if active_failure else "none"
         ref = _reference(evidence, "governance_plans", plan.plan_id, summary, timestamp=plan.updated_at)
         return _item(section, "fact", f"Change plan: {plan.title[:120]}", summary, public_status, severity,
                      plans=(plan.plan_id,), refs=(ref,), manual=active_failure,
                      requires_authorization=requires_authorization,
                      authorization_type=authorization_type,
-                     key=(plan.plan_id, status, verification_status), timestamp=plan.updated_at)
+                     key=(plan.plan_id, status, approval_state, verification_status), timestamp=plan.updated_at)
 
     async def _states(self, entity_ids):
         semaphore = asyncio.Semaphore(MAX_CONCURRENT_HA_REQUESTS)
