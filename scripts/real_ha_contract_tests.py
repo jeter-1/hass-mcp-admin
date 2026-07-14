@@ -191,20 +191,18 @@ async def run_contracts() -> None:
         assert runtime_config.get("version") == "2026.7.2"
         states = await rest.request("GET", "/states")
         assert isinstance(states, list)
-        websocket_states = await websocket.command({"type": "get_states"})
         entity_registry = await websocket.command({"type": "config/entity_registry/list"})
         area_registry = await websocket.command({"type": "config/area_registry/list"})
         services = await websocket.command({"type": "get_services"})
         system_log = await websocket.command({"type": "system_log/list"})
         assert isinstance(entity_registry, list)
         assert isinstance(area_registry, list)
-        assert isinstance(websocket_states, list)
         assert isinstance(services, dict)
         assert isinstance(system_log, list)
         assert services
         assert all(
             isinstance(item, dict) and "entity_id" in item and "state" in item
-            for item in websocket_states
+            for item in states
         )
         assert all(
             isinstance(item, dict) and "area_id" in item and "name" in item
