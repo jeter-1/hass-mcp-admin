@@ -546,6 +546,19 @@ class IngressBoundaryTests(ExternalApprovalTestCase):
 
 
 class MetadataBoundaryTests(unittest.TestCase):
+    @staticmethod
+    def configured(ha_url):
+        return Settings(
+            ha_url=ha_url,
+            ha_token="test-token",
+            access_secret="beta25-websocket-url-test",
+            port=8100,
+            audit_path="/data/audit.jsonl",
+            rate_limit_per_minute=120,
+            rate_limit_burst=25,
+            destructive_services=frozenset(),
+        )
+
     def test_ingress_is_admin_only_internal_and_separate_from_mcp(self):
         import yaml
 
@@ -564,6 +577,20 @@ class MetadataBoundaryTests(unittest.TestCase):
         governance_tools = (BETA_DIR / "ha_mcp_engineering" / "tools" / "governance.py").read_text(encoding="utf-8")
         self.assertNotIn("issue_external_csrf", governance_tools)
         self.assertNotIn("decide_external_approval", governance_tools)
+
+    def test_websocket_url_preserves_supervisor_proxy_and_direct_core_contracts(self):
+        self.assertEqual(
+            self.configured("http://supervisor/core").websocket_url,
+            "ws://supervisor/core/websocket",
+        )
+        self.assertEqual(
+            self.configured("http://homeassistant:8123").websocket_url,
+            "ws://homeassistant:8123/api/websocket",
+        )
+        self.assertEqual(
+            self.configured("https://ha.example/base").websocket_url,
+            "wss://ha.example/base/api/websocket",
+        )
 
 
 class ListenerStartTests(unittest.IsolatedAsyncioTestCase):

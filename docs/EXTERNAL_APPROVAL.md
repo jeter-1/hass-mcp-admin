@@ -176,6 +176,11 @@ update the baseline, review the new Home Assistant release, resolve its immutabl
 GHCR manifest digest, update both version and digest together in `ci.yml`, run
 all contracts, and document the compatibility decision.
 
+The WebSocket client preserves Home Assistant's documented app proxy at
+`ws://supervisor/core/websocket`. For a direct Core base URL it uses the native
+`/api/websocket` endpoint. Both URL contracts are tested so disposable direct-Core
+validation cannot change the deployed add-on route.
+
 ## Deployed acceptance procedure
 
 Run this only after the user installs Beta 25. Implementation and CI must not

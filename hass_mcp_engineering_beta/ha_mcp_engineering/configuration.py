@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 OPTIONS_PATH = Path(os.environ.get("HAMCP_OPTIONS_PATH", "/data/options.json"))
 MIN_ACCESS_SECRET_LENGTH = 24
@@ -49,7 +50,14 @@ class Settings:
 
     @property
     def websocket_url(self) -> str:
-        return self.ha_url.replace("http", "ws", 1) + "/websocket"
+        parsed = urlsplit(self.ha_url)
+        scheme = "wss" if parsed.scheme == "https" else "ws"
+        base_path = parsed.path.rstrip("/")
+        if parsed.hostname == "supervisor" and base_path == "/core":
+            path = "/core/websocket"
+        else:
+            path = f"{base_path}/api/websocket"
+        return urlunsplit((scheme, parsed.netloc, path, "", ""))
 
 
 def _read_options(path: Path = OPTIONS_PATH) -> dict:
