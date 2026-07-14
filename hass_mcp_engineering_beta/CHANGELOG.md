@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.0.0-beta.26
+
+- Make plan expiration a single terminal transition; repeated plan, list,
+  health, Ingress, and handoff reads no longer rewrite an expired record or
+  duplicate lifecycle events, audit entries, logs, or `updated_at` changes.
+- Resolve external-challenge expiry through one governance lifecycle path so
+  public reads, health, Ingress, approval requests, apply, and rollback agree on
+  the effective current state.
+- Exclude expired challenges from actionable plan views, the Ingress inbox, and
+  `pending_challenge_count`; eligible plans may request one fresh challenge
+  bounded by the plan expiry while the old challenge remains unusable.
+- Preserve fail-closed apply/rollback enforcement, external authority version 2,
+  distinct apply/rollback approvals, and all Beta 25 principal-separation rules.
+- Preserve 38 registered tools, 25 canonical tools, zero planned capabilities,
+  schema version 1, and every Beta 25 public input schema. Production v1.1.2 is
+  unchanged.
+
 ## 2.0.0-beta.25
 
 - Make `approve_change_plan` request external review without granting approval;

@@ -1,7 +1,8 @@
 # External human approval authority
 
-Version `2.0.0-beta.25` separates an authenticated MCP caller from the human
-authority that approves governed Home Assistant changes. A caller may create a
+Version `2.0.0-beta.26` preserves the Beta 25 separation between an
+authenticated MCP caller and the human authority that approves governed Home
+Assistant changes. A caller may create a
 plan and request review, but only an authenticated Home Assistant administrator
 using the add-on's Ingress panel can approve or reject the exact plan. The MCP
 access secret is never accepted by the approval listener.
@@ -9,7 +10,7 @@ access secret is never accepted by the approval listener.
 This boundary does not prove that an automation will behave correctly. Apply
 verification proves that Home Assistant stored the intended configuration,
 returned the expected automation identity, and accepted its configuration.
-Beta 25 adds no behavioral observation window, mobile notification, service-call
+Beta 26 adds no behavioral observation window, mobile notification, service-call
 tool, or background monitor.
 
 ## Listener and authentication boundary
@@ -78,6 +79,29 @@ state also invalidates the challenge.
 Challenge and external-approval state is atomically persisted under
 `/data/governance/change_plans` and survives an add-on restart. A restart never
 approves, consumes, or revives an approval.
+
+## Beta 26 effective expiry lifecycle
+
+Plan expiry is a single persisted terminal transition. Once a plan has status
+`expired`, every subsequent plan read, list read, health collection, Ingress
+page load, and handoff read is lifecycle-idempotent: it does not append another
+`change_plan_expired` event, alter `updated_at`, rewrite the record, or emit a
+duplicate lifecycle audit or structured-log entry.
+
+Challenge expiry is resolved through the same shared lifecycle path before a
+plan is projected publicly. After `challenge_expires_at`, an
+`external_pending` challenge transitions once to `expired`; `get_change_plan`
+and `list_change_plans` no longer show it as actionable,
+`pending_challenge_count` excludes it, and the Ingress inbox omits it. Health,
+Ingress, approval request, apply, rollback, and handoff governance evidence all
+use that effective state instead of independent timestamp interpretations.
+
+If the plan itself is still eligible and unexpired, a later
+`approve_change_plan` request may create one fresh challenge. Its expiry is
+capped by the plan expiry. The old challenge and CSRF nonce remain unusable,
+and repeated requests return the same active replacement without extending it.
+Enforcement still fails closed before any Home Assistant or provider write,
+snapshot, approval consumption, or dependency-index invalidation.
 
 ## Human review and decision
 
@@ -183,11 +207,11 @@ validation cannot change the deployed add-on route.
 
 ## Deployed acceptance procedure
 
-Run this only after the user installs Beta 25. Implementation and CI must not
+Run this only after the user installs Beta 26. Implementation and CI must not
 access the deployed environment.
 
 1. Call `server_info`, `list_capabilities`, and `get_server_health`. Confirm
-   `2.0.0-beta.25`, 38 registered/25 canonical/zero planned capabilities, HA
+   `2.0.0-beta.26`, 38 registered/25 canonical/zero planned capabilities, HA
    connectivity, healthy governance storage, authority version 2, enabled
    external approval/Ingress UI, zero baseline pending challenges, captured
    provider counters, and no production access.

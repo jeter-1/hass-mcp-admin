@@ -334,7 +334,7 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
         try:
             service = self.governance.require()
             requested_ids = set(query["change_plan_ids"])
-            plans = service.repository.list()
+            plans = service.resolved_plans()
             if requested_ids:
                 plans = [plan for plan in plans if plan.plan_id in requested_ids]
             else:

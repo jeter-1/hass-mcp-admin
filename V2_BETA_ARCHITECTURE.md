@@ -49,7 +49,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-beta.25` |
+| Version | `1.1.2` | `2.0.0-beta.26` |
 | Port | `8099` | MCP `8100`; internal Ingress `8110` |
 | Options and secret | Production add-on data | Beta add-on data |
 

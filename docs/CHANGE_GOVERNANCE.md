@@ -13,7 +13,7 @@ failures or requirements can block a handoff. Full proposed configuration,
 unbounded diffs, secrets, authentication,
 and prior approval as reusable authority are excluded.
 
-Version 2.0.0-beta.25 requires external Home Assistant administrator approval for controlled
+Version 2.0.0-beta.26 requires external Home Assistant administrator approval for controlled
 Home Assistant automation creation and updates. It does not alter production
 v1.1.2 and does not govern scripts, scenes, dashboards, helpers, integrations,
 devices, add-ons, system configuration, arbitrary direct service calls, or
@@ -138,6 +138,15 @@ the honest Ingress principal and principal-separation flag. It is single-use.
 Rejection is terminal. A plan defaults to a 60-minute expiry; clients may
 request 5 to 1,440 minutes. Neither a plan nor a challenge can be approved after
 expiry.
+
+Beta 26 resolves plan and external-challenge expiry through one lifecycle path.
+`expired` is terminal: after the first transition, plan/list/health/Ingress/
+handoff reads do not save the record, update `updated_at`, or duplicate events,
+audit entries, or structured logs. Challenge expiry is reflected before public
+projection, so dead challenges are not returned as actionable, are excluded
+from health pending counts and the Ingress inbox, and fail closed in apply or
+rollback. A still-eligible plan may request a fresh challenge bounded by its
+own expiry; the replaced challenge remains unusable.
 
 The MCP access secret does not authorize the approval listener, and approval
 routes are absent from port `8100`. See
