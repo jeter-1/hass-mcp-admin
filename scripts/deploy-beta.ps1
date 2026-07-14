@@ -207,10 +207,12 @@ try {
         "[ ] Call server_info and verify version $betaVersion.",
         "[ ] Call list_capabilities.",
         "[ ] Call get_server_health.",
-        "[ ] Verify no pending or approved pre-Beta-24 plan was silently migrated; recreate it before use.",
+        "[ ] Verify no active pre-Beta-25 approval was silently migrated; recreate the plan before use.",
         "[ ] Verify forwarded-header trust is disabled unless trusted proxy CIDRs were intentionally configured.",
-        "[ ] Run the read-only Beta 24 handoff, cursor, provider-accounting, and audit-bound checks.",
-        "[ ] Execute any governed description-only apply and rollback only after separate explicit approvals."
+        "[ ] Open the admin-only Home Assistant Ingress approval panel; confirm internal port 8110 is not host mapped.",
+        "[ ] Confirm approve_change_plan returns approval_pending and MCP-only apply fails external_approval_required.",
+        "[ ] Run the Beta 25 handoff, cursor, provider-accounting, audit-bound, and external-approval checks.",
+        "[ ] Execute any governed description-only apply and rollback only after separate human Ingress approvals."
     ) | ForEach-Object { Write-Host $_ }
 
     Write-Host "`nValidation complete. No production deployment was performed." -ForegroundColor Green

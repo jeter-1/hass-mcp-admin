@@ -41,6 +41,7 @@ class Settings:
     governance_retention_days: int = 90
     trust_cf_connecting_ip: bool = False
     trusted_proxy_cidrs: tuple[str, ...] = ()
+    ingress_port: int = 8110
 
     @property
     def api_url(self) -> str:
@@ -90,4 +91,5 @@ def load_settings() -> Settings:
         trusted_proxy_cidrs=tuple(
             str(value).strip() for value in configured_proxies if str(value).strip()
         ),
+        ingress_port=int(os.environ.get("APPROVAL_INGRESS_PORT", "8110")),
     )
