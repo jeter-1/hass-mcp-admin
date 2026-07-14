@@ -176,7 +176,23 @@ class RuntimeMetrics:
     def record_error(self, code: str) -> None:
         self.errors[code] += 1
 
-    def record_provider_result(self, provider_id: str, completeness: str) -> None:
+    def record_provider_result(
+        self,
+        provider_id: str,
+        completeness: str,
+        *,
+        dispatched: bool,
+    ) -> None:
+        """Record one provider outcome only after dispatch actually began.
+
+        ``provider_id`` may be selected much earlier by routing policy. Requiring
+        an explicit dispatch assertion keeps validation, authentication, rate
+        limiting, cursor validation, and local snapshot failures out of provider
+        request and failure counters.
+        """
+
+        if not dispatched:
+            return
         provider = provider_id if provider_id in {"engineering", "standard_ha_mcp", "direct_ha_api", "policy", "none"} else "other"
         self.provider_requests[provider] += 1
         if completeness == "complete":
@@ -186,6 +202,12 @@ class RuntimeMetrics:
             self.provider_partial_results += 1
         else:
             self.provider_failures[provider] += 1
+        # Import lazily to preserve the observability/request-context boundary.
+        from .request_context import current_telemetry
+
+        telemetry = current_telemetry()
+        if telemetry:
+            telemetry.record_provider_outcome(completeness)
 
     def record_fallback_attempt(self) -> None:
         self.fallback_attempts += 1

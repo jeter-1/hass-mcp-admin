@@ -559,7 +559,7 @@ class DirectHaReliabilityProvider(EngineeringEvidenceProvider):
     @staticmethod
     def _record_source(item: ReliabilitySourceCoverage) -> None:
         normalized = "partial" if item.completeness == "partial" else "complete" if item.completeness == "complete" else "failed"
-        METRICS.record_provider_result(item.provider, normalized)
+        METRICS.record_provider_result(item.provider, normalized, dispatched=True)
 
 
 def _required_instant(value: Any) -> datetime:

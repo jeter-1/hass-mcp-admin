@@ -64,20 +64,17 @@ class CanonicalProviderDispatcher:
                 data, inner_warnings, inner_metadata = _normalize_payload(provider_result.data)
             elif decision.route in {CapabilityRoute.DIRECT_HA_REQUIRED, CapabilityRoute.TRANSITIONAL_DIRECT}:
                 if not direct_ha_exception_for_tool(tool_name):
-                    METRICS.record_provider_result("policy", "failed")
                     METRICS.record_prohibited_fallback()
                     raise GovernanceError(ErrorCode.PROVIDER_PROHIBITED)
                 provider_result, data, inner_warnings, inner_metadata = await self._direct(
                     decision.capability, action
                 )
             elif decision.route == CapabilityRoute.PROHIBITED:
-                METRICS.record_provider_result("policy", "failed")
                 METRICS.record_prohibited_fallback()
                 raise GovernanceError(ErrorCode.PROVIDER_PROHIBITED)
             else:
                 # Engineering-native tools are intentionally registered without
                 # this wrapper; unsupported routes fail closed if encountered.
-                METRICS.record_provider_result(provider_id, "failed")
                 raise GovernanceError(ErrorCode.PROVIDER_ERROR)
 
             routing_metadata = _routing_metadata(tool_name, decision.route, provider_result)
@@ -157,7 +154,9 @@ class CanonicalProviderDispatcher:
                 failure=_failure(ProviderFailureCategory.UPSTREAM_ERROR, "The standard provider failed.", True),
             )
         result.timing_ms = result.timing_ms or (time.perf_counter() - started) * 1000
-        METRICS.record_provider_result(result.provider_id, result.completeness.value)
+        METRICS.record_provider_result(
+            result.provider_id, result.completeness.value, dispatched=True
+        )
         return result
 
     async def _direct(self, capability, action):
@@ -180,10 +179,16 @@ class CanonicalProviderDispatcher:
                 completeness=completeness,
                 timing_ms=(time.perf_counter() - started) * 1000,
             )
-            METRICS.record_provider_result(result.provider_id, completeness.value)
+            METRICS.record_provider_result(
+                result.provider_id, completeness.value, dispatched=True
+            )
             return result, data, warnings, metadata
-        except Exception:
-            METRICS.record_provider_result("direct_ha_api", "failed")
+        except Exception as exc:
+            code, _, _, _ = map_exception(exc)
+            if code not in {ErrorCode.INVALID_REQUEST, ErrorCode.VALIDATION_FAILURE}:
+                METRICS.record_provider_result(
+                    "direct_ha_api", "failed", dispatched=True
+                )
             raise
 
 

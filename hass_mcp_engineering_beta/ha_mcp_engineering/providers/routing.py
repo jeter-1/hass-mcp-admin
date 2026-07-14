@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, replace
 from enum import Enum
 
@@ -299,7 +300,8 @@ class EvidenceRouter:
         return primary
 
     async def _attempt(self, provider_id: str | None, request: EvidenceRequest) -> ProviderResult:
-        if not provider_id or provider_id not in self.providers:
+        dispatched = bool(provider_id and provider_id in self.providers)
+        if not dispatched:
             result = ProviderResult(
                 provider_id=provider_id or "none",
                 capability=request.capability,
@@ -308,7 +310,32 @@ class EvidenceRouter:
                 coverage=ProviderCoverage(1, 0, (provider_id or "none",)),
             )
         else:
-            result = await self.providers[provider_id].fetch(request)
+            try:
+                result = await self.providers[provider_id].fetch(request)
+            except (asyncio.TimeoutError, TimeoutError):
+                result = ProviderResult(
+                    provider_id=provider_id,
+                    capability=request.capability,
+                    completeness=ProviderCompleteness.FAILED,
+                    failure=ProviderError(
+                        ProviderFailureCategory.TIMEOUT,
+                        "The selected provider timed out.",
+                        True,
+                    ),
+                    coverage=ProviderCoverage(1, 0, (provider_id,)),
+                )
+            except Exception:
+                result = ProviderResult(
+                    provider_id=provider_id,
+                    capability=request.capability,
+                    completeness=ProviderCompleteness.FAILED,
+                    failure=ProviderError(
+                        ProviderFailureCategory.UPSTREAM_ERROR,
+                        "The selected provider failed.",
+                        True,
+                    ),
+                    coverage=ProviderCoverage(1, 0, (provider_id,)),
+                )
         evidence_limit = max(1, min(request.max_evidence, 100))
         if len(result.evidence) > evidence_limit:
             result.evidence = result.evidence[:evidence_limit]
@@ -318,7 +345,11 @@ class EvidenceRouter:
                 "Evidence was truncated; request a bounded drill-down.",
             ]
             METRICS.record_evidence_truncation()
-        METRICS.record_provider_result(result.provider_id, result.completeness.value)
+        METRICS.record_provider_result(
+            result.provider_id,
+            result.completeness.value,
+            dispatched=dispatched,
+        )
         return result
 
 

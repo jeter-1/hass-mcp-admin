@@ -131,18 +131,22 @@ class HandoffGenerationService:
                 timeout=self.timeout_seconds,
             )
         except (asyncio.TimeoutError, TimeoutError) as exc:
-            METRICS.record_provider_result("engineering", "failed")
+            METRICS.record_provider_result("engineering", "failed", dispatched=True)
             METRICS.record_handoff_failure("provider_timeout")
             raise GovernanceError(ErrorCode.PROVIDER_TIMEOUT) from exc
         if not result.succeeded or not isinstance(result.data, HandoffEvidenceBundle):
-            METRICS.record_provider_result(result.provider_id, result.completeness.value)
+            METRICS.record_provider_result(
+                result.provider_id, result.completeness.value, dispatched=True
+            )
             category = result.failure.category.value if result.failure else "provider_error"
             METRICS.record_handoff_failure(category)
             code = ErrorCode.PROVIDER_TIMEOUT if result.failure and result.failure.category == ProviderFailureCategory.TIMEOUT else ErrorCode.ANALYSIS_UNAVAILABLE
             raise GovernanceError(code)
 
         bundle = result.data
-        METRICS.record_provider_result(result.provider_id, result.completeness.value)
+        METRICS.record_provider_result(
+            result.provider_id, result.completeness.value, dispatched=True
+        )
         items = bundle.items
         evidence_fingerprint = bundle.fingerprint()
         handoff_id = stable_id("handoff", generated_at, fingerprint, evidence_fingerprint)

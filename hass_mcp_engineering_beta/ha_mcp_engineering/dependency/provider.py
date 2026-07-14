@@ -88,9 +88,9 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             states = await asyncio.wait_for(self.rest_client.request("GET", "/states"), self.timeout)
             if not isinstance(states, list):
                 raise TypeError("state response is not a list")
-            METRICS.record_provider_result(self.provider_id, "complete")
+            METRICS.record_provider_result(self.provider_id, "complete", dispatched=True)
         except Exception:
-            METRICS.record_provider_result(self.provider_id, "failed")
+            METRICS.record_provider_result(self.provider_id, "failed", dispatched=True)
             raise
 
         registry = []
@@ -102,10 +102,14 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             if not isinstance(registry, list):
                 registry = []
                 registry_warning.append("Entity registry returned an invalid response.")
-            METRICS.record_provider_result(self.provider_id, "complete" if not registry_warning else "partial")
+            METRICS.record_provider_result(
+                self.provider_id,
+                "complete" if not registry_warning else "partial",
+                dispatched=True,
+            )
         except Exception:
             registry_warning.append("Entity registry could not be read; target metadata is partial.")
-            METRICS.record_provider_result(self.provider_id, "failed")
+            METRICS.record_provider_result(self.provider_id, "failed", dispatched=True)
 
         for state in states:
             entity_id = str(state.get("entity_id", "")).lower()
