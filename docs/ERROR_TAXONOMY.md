@@ -1,5 +1,11 @@
 # Beta error taxonomy
 
+Beta 21 validation returns `invalid_request` with bounded field/reason/operation
+details before HA, provider, governance-storage, index or snapshot work. Signed
+cursor tampering/mismatch uses `invalid_cursor`; unavailable/expired snapshots or
+replaced index state use `stale_cursor`. Partial or unsupported coverage is not a
+failure category.
+
 The public `error_code` is the terminal client-facing category. Provider
 `source_coverage.failure_category` describes where evidence acquisition failed; the two
 fields are related but not interchangeable.

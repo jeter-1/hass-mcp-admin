@@ -1,5 +1,13 @@
 # Token-efficient analytical response contract
 
+## Beta 21 handoff reduction
+
+Handoffs lead with an executive summary and bounded, deduplicated items. Counts
+and evidence are frozen once; cursor pages retrieve sanitized snapshots without
+source reads or analysis. Detail caps, 100-item maximum pages, 20-object focus
+limits, bounded Markdown and drill-down references prevent raw configuration,
+trace, history, log or registry dumps.
+
 This contract applies to v2 analytical and bounded administrative responses. It does
 not alter the existing 33 MCP input schemas; Beta 12 adds one bounded schema for
 34 total tools.

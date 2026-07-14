@@ -127,6 +127,32 @@ class RuntimeMetrics:
     incident_index_cache_misses: int = 0
     incident_last_successful_analysis: str | None = None
     incident_last_failure_category: str | None = None
+    handoff_requests: int = 0
+    handoff_successes: int = 0
+    handoff_partial: int = 0
+    handoff_failures: int = 0
+    handoff_count: int = 0
+    handoff_items_by_section: Counter = field(default_factory=Counter)
+    handoff_items_by_statement_type: Counter = field(default_factory=Counter)
+    handoff_items_by_status: Counter = field(default_factory=Counter)
+    handoff_items_by_severity: Counter = field(default_factory=Counter)
+    handoff_open_items: int = 0
+    handoff_risks: int = 0
+    handoff_recommendations: int = 0
+    handoff_authorization_required: int = 0
+    handoff_manual_review_events: int = 0
+    handoff_source_failures: int = 0
+    handoff_coverage_limitation_events: int = 0
+    handoff_item_truncations: int = 0
+    handoff_markdown_truncations: int = 0
+    handoff_cursor_continuations: int = 0
+    handoff_stale_cursor_events: int = 0
+    handoff_invalid_cursor_events: int = 0
+    handoff_last_cursor_failure_category: str | None = None
+    handoff_index_cache_hits: int = 0
+    handoff_index_cache_misses: int = 0
+    handoff_last_successful_generation: str | None = None
+    handoff_last_failure_category: str | None = None
 
     def record_transport_completion(self) -> None:
         self.transport_request_count += 1
@@ -455,6 +481,54 @@ class RuntimeMetrics:
 
     def record_incident_timeline_truncation(self) -> None:
         self.incident_timeline_truncations += 1
+
+    def record_handoff_request(self) -> None:
+        self.handoff_requests += 1
+
+    def record_handoff_terminal(self, *, partial, counts, source_failures, coverage_limitations, index_requested, index_cache_hit, generated_at) -> None:
+        self.handoff_count += 1
+        if partial:
+            self.handoff_partial += 1
+        else:
+            self.handoff_successes += 1
+        self.handoff_items_by_section.update(counts["by_section"])
+        self.handoff_items_by_statement_type.update(counts["by_statement"])
+        self.handoff_items_by_status.update(counts["by_status"])
+        self.handoff_items_by_severity.update(counts["by_severity"])
+        self.handoff_open_items += counts["open_item_count"]
+        self.handoff_risks += counts["risk_count"]
+        self.handoff_recommendations += counts["recommendation_count"]
+        self.handoff_authorization_required += counts["authorization_required_count"]
+        self.handoff_manual_review_events += int(counts["manual_review_required"])
+        self.handoff_source_failures += max(0, int(source_failures))
+        self.handoff_coverage_limitation_events += max(0, int(coverage_limitations))
+        if index_requested:
+            if index_cache_hit:
+                self.handoff_index_cache_hits += 1
+            else:
+                self.handoff_index_cache_misses += 1
+        self.handoff_last_successful_generation = generated_at
+        self.handoff_last_failure_category = None
+
+    def record_handoff_failure(self, category: str) -> None:
+        self.handoff_failures += 1
+        self.handoff_last_failure_category = str(category)[:128]
+
+    def record_handoff_cursor_continuation(self) -> None:
+        self.handoff_cursor_continuations += 1
+
+    def record_handoff_cursor_event(self, category: str) -> None:
+        self.handoff_last_cursor_failure_category = str(category)[:128]
+        if category == "stale_cursor":
+            self.handoff_stale_cursor_events += 1
+        else:
+            self.handoff_invalid_cursor_events += 1
+
+    def record_handoff_item_truncation(self) -> None:
+        self.handoff_item_truncations += 1
+
+    def record_handoff_markdown_truncation(self) -> None:
+        self.handoff_markdown_truncations += 1
         self.record_evidence_truncation()
 
     def reset(self) -> None:
@@ -786,6 +860,44 @@ class RuntimeMetrics:
                     "cursor_failures_are_terminal_analysis_failures": False,
                     "source_failures": "actual_failed_sources_or_source_operations_only",
                     "unsupported_or_partial_coverage_is_source_failure": False,
+                    "pagination_snapshots_are_general_result_cache": False,
+                },
+            },
+            "handoff_generation": {
+                "request_count": self.handoff_requests,
+                "successful_count": self.handoff_successes,
+                "partial_count": self.handoff_partial,
+                "failed_count": self.handoff_failures,
+                "handoff_count": self.handoff_count,
+                "items_by_section": dict(self.handoff_items_by_section),
+                "items_by_statement_type": dict(self.handoff_items_by_statement_type),
+                "items_by_status": dict(self.handoff_items_by_status),
+                "items_by_severity": dict(self.handoff_items_by_severity),
+                "open_item_count": self.handoff_open_items,
+                "risk_count": self.handoff_risks,
+                "recommendation_count": self.handoff_recommendations,
+                "authorization_required_count": self.handoff_authorization_required,
+                "manual_review_event_count": self.handoff_manual_review_events,
+                "source_failures": self.handoff_source_failures,
+                "coverage_limitation_events": self.handoff_coverage_limitation_events,
+                "item_truncation_events": self.handoff_item_truncations,
+                "markdown_truncation_events": self.handoff_markdown_truncations,
+                "cursor_continuations": self.handoff_cursor_continuations,
+                "cursor_failure_count": self.handoff_stale_cursor_events + self.handoff_invalid_cursor_events,
+                "stale_cursor_events": self.handoff_stale_cursor_events,
+                "invalid_cursor_events": self.handoff_invalid_cursor_events,
+                "last_cursor_failure_category": self.handoff_last_cursor_failure_category,
+                "index_cache_hits": self.handoff_index_cache_hits,
+                "index_cache_misses": self.handoff_index_cache_misses,
+                "last_successful_generation_timestamp": self.handoff_last_successful_generation,
+                "last_failure_category": self.handoff_last_failure_category,
+                "result_cache_supported": False,
+                "counter_semantics": {
+                    "request_count": "tool_invocations_including_cursor_continuations",
+                    "terminal_outcomes_and_aggregates": "new_generations_only",
+                    "cursor_failures_are_failed_new_generations": False,
+                    "source_failures": "actual_failed_sources_or_source_operations_only",
+                    "coverage_limitations_are_source_failures": False,
                     "pagination_snapshots_are_general_result_cache": False,
                 },
             },

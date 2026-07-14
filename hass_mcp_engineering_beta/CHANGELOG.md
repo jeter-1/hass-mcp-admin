@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.0.0-beta.21
+
+- Add read-only Engineering-native `handoff_generation`, increasing the beta
+  catalog to 38 registered/25 canonical tools with no existing schema changes.
+- Add system-status, focused-review, incident, and change handoffs with explicit
+  fact/inference/recommendation/limitation and authorization contracts.
+- Require apply plus verification evidence before work is called completed;
+  preserve pending, failed, and rolled-back lifecycle truth.
+- Add deterministic structured/Markdown output, five-minute signed sanitized
+  pagination, bounded audit, dedicated health counters, and Beta 20 coverage
+  semantics without any write capability.
+- Remove `handoff_generation` from planned capabilities; no planned feature
+  capability remains. Production v1.1.2 is unchanged.
+
 ## 2.0.0-beta.20
 
 - Correct incident-correlation coverage so a successfully built, usable but

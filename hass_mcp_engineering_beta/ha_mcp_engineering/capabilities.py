@@ -43,9 +43,7 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
     {"tool": "reload_domain", "category": "execution", "status": "deprecated", "delegate": "ha-mcp", "risk": "infrastructure"},
 )
 
-PLANNED_CAPABILITIES: tuple[dict[str, str], ...] = (
-    {"capability": "handoff_generation", "status": "planned", "risk": "analytical"},
-)
+PLANNED_CAPABILITIES: tuple[dict[str, str], ...] = ()
 
 BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
     {
@@ -102,9 +100,31 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "policy": "bounded_incident_correlation_read",
         "fallback": "none",
     },
+    {
+        "tool": "handoff_generation",
+        "category": "analysis",
+        "status": "beta_native",
+        "risk": "read",
+        "additive": True,
+        "routing": "engineering_native",
+        "provider": "engineering",
+        "policy": "bounded_handoff_generation_read",
+        "fallback": "none",
+    },
 )
 
 CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
+    {
+        "tool": "handoff_generation",
+        "capability": "handoff_generation",
+        "required_semantics": "Bounded evidence-backed operational documentation that distinguishes facts, inferences, recommendations, limitations, completed work, and authorization boundaries.",
+        "standard_ha_mcp_coverage": "unavailable",
+        "direct_ha_coverage": "bounded_read_sources",
+        "selected_provider": "engineering",
+        "completeness": "complete_or_explicitly_incomplete",
+        "fallback_policy": "none",
+        "security_justification": "Read-only Engineering orchestration over bounded runtime, governance, dependency, integrity, reliability, and incident evidence; generated documentation is never authorization.",
+    },
     {
         "tool": "incident_correlation",
         "capability": "incident_correlation",

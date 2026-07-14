@@ -137,6 +137,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "change_impact_analysis": ProviderCapability.IMPACT_ANALYSIS,
     "configuration_integrity_analysis": ProviderCapability.CONFIGURATION_INTEGRITY_ANALYSIS,
     "incident_correlation": ProviderCapability.INCIDENT_CORRELATION,
+    "handoff_generation": ProviderCapability.HANDOFF_GENERATION,
 }
 
 ANALYTICAL_PROVIDER_POLICIES = {
@@ -169,6 +170,14 @@ ANALYTICAL_PROVIDER_POLICIES = {
         "access": "read",
         "orchestrator": "engineering",
         "scope": "one focus entity, one automation, or both with bounded trace, state, history, logbook, System Log, dependency, integrity, and reliability evidence",
+        "writes_allowed": "none",
+        "fallback_policy": "none",
+    },
+    "handoff_generation": {
+        "policy_id": "bounded_handoff_generation_read",
+        "access": "read",
+        "orchestrator": "engineering",
+        "scope": "one bounded system-status, focused-review, incident, or change handoff from internal read-only evidence services",
         "writes_allowed": "none",
         "fallback_policy": "none",
     },
