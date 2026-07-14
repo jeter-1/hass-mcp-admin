@@ -28,7 +28,13 @@ from .models import (
     PlanStatus,
     RiskLevel,
 )
-from .normalize import normalize_automation, stable_hash, state_fingerprint, structured_diff
+from .normalize import (
+    AUTOMATION_NORMALIZATION_VERSION,
+    normalize_automation,
+    stable_hash,
+    state_fingerprint,
+    structured_diff,
+)
 from .risk import classify_risk
 from .storage import ChangePlanRepository, ChangePlanStorageError
 from .validation import sanitize_context, validate_automation
@@ -112,6 +118,7 @@ class ChangeGovernanceService:
             "expires_at": plan.expires_at,
             "current_state_fingerprint": plan.current_state_fingerprint,
             "proposed_config_hash": calculated_proposed_hash,
+            "normalization_version": plan.normalization_version,
             "risk_level": plan.risk.level.value,
             "approval_kind": plan.approval.approval_kind,
             "rollback_expected_fingerprint": plan.rollback.expected_current_fingerprint,
@@ -295,6 +302,7 @@ class ChangeGovernanceService:
             current_state_fingerprint=state_fingerprint(current),
             proposed_config_hash=stable_hash(normalized_proposed),
             risk=risk,
+            normalization_version=AUTOMATION_NORMALIZATION_VERSION,
             warnings=warnings,
             validation_results={"valid": valid, "errors": errors},
             dry_run_results=diff,
@@ -355,6 +363,7 @@ class ChangeGovernanceService:
             raise GovernanceError(ErrorCode.CHANGE_PLAN_NOT_APPROVED)
         if not plan.validation_results.get("valid"):
             raise GovernanceError(ErrorCode.AUTOMATION_VALIDATION_FAILED)
+        self._require_current_normalization(plan)
         if plan.risk.level == RiskLevel.HIGH:
             self._record(plan, "change_apply_rejected", "rejected", error_code=ErrorCode.HIGH_RISK_CHANGE_REJECTED.value)
             raise GovernanceError(ErrorCode.HIGH_RISK_CHANGE_REJECTED)
@@ -411,11 +420,25 @@ class ChangeGovernanceService:
             raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
         if plan.risk.level == RiskLevel.HIGH:
             self._reject_apply(plan, ErrorCode.HIGH_RISK_CHANGE_REJECTED)
+        self._require_current_normalization(plan)
+        if _automation_id_mismatch(plan.target_id, plan.proposed_config):
+            self._reject_identity_mismatch(plan)
         current = await self.gateway.get(plan.target_id)
+        if _automation_id_mismatch(plan.target_id, current):
+            self._reject_identity_mismatch(plan)
         if plan.status == PlanStatus.APPLIED:
-            if state_fingerprint(current) == plan.proposed_config_hash:
+            if (
+                not _automation_id_mismatch(plan.target_id, current)
+                and state_fingerprint(current) == plan.proposed_config_hash
+            ):
                 return {"status": "already_applied", "plan": self._public(plan, include_configs=False)}
-            raise GovernanceError(ErrorCode.APPROVAL_ALREADY_CONSUMED)
+            mismatch = ["automation_id"] if _automation_id_mismatch(plan.target_id, current) else []
+            raise GovernanceError(
+                ErrorCode.AUTOMATION_VERIFICATION_FAILED
+                if mismatch
+                else ErrorCode.APPROVAL_ALREADY_CONSUMED,
+                details={"resource_id": plan.plan_id, "mismatch_fields": mismatch},
+            )
         if plan.approval.state == ApprovalState.CONSUMED:
             self._reject_apply(plan, ErrorCode.APPROVAL_ALREADY_CONSUMED)
         if plan.status != PlanStatus.APPROVED or plan.approval.state != ApprovalState.APPROVED:
@@ -453,7 +476,7 @@ class ChangeGovernanceService:
         mismatch = _mismatch_fields(desired_normalized, normalize_automation(actual) or {})
         if actual is None:
             mismatch.append("automation_existence")
-        elif actual.get("id") is not None and str(actual.get("id")) != plan.target_id:
+        elif _automation_id_mismatch(plan.target_id, actual):
             mismatch.append("automation_id")
         config_check = await self._config_check()
         plan.verification = ChangeVerification(
@@ -491,6 +514,38 @@ class ChangeGovernanceService:
             error_code=code.value,
         )
         raise GovernanceError(code)
+
+    def _reject_identity_mismatch(self, plan: ChangePlan) -> None:
+        self._record(
+            plan,
+            "change_apply_rejected",
+            "rejected",
+            error_code=ErrorCode.AUTOMATION_VERIFICATION_FAILED.value,
+        )
+        raise GovernanceError(
+            ErrorCode.AUTOMATION_VERIFICATION_FAILED,
+            details={
+                "resource_id": plan.plan_id,
+                "mismatch_fields": ["automation_id"],
+            },
+        )
+
+    @staticmethod
+    def _require_current_normalization(plan: ChangePlan) -> None:
+        proposed_hash = stable_hash(normalize_automation(plan.proposed_config) or {})
+        current_fingerprint = state_fingerprint(plan.current_config)
+        if (
+            plan.normalization_version != AUTOMATION_NORMALIZATION_VERSION
+            or proposed_hash != plan.proposed_config_hash
+            or current_fingerprint != plan.current_state_fingerprint
+        ):
+            raise GovernanceError(
+                ErrorCode.APPROVAL_HASH_MISMATCH,
+                details={
+                    "resource_id": plan.plan_id,
+                    "reason": "normalization_version_mismatch",
+                },
+            )
 
     async def _config_check(self) -> str:
         try:
@@ -549,6 +604,12 @@ class ChangeGovernanceService:
         plan.rollback.status = "applying"
         plan.rollback.request_id = current_request_id()
         self._record(plan, "rollback_started", "success")
+        if _automation_id_mismatch(plan.target_id, plan.snapshot.config):
+            plan.status = PlanStatus.ROLLBACK_FAILED
+            plan.rollback.status = "verification_failed"
+            plan.rollback.failure_code = ErrorCode.ROLLBACK_FAILED.value
+            self._record(plan, "rollback_failed", "failure", error_code=ErrorCode.ROLLBACK_FAILED.value)
+            raise GovernanceError(ErrorCode.ROLLBACK_FAILED)
         try:
             await self.gateway.write(plan.target_id, plan.snapshot.config or {})
             actual = await self.gateway.get(plan.target_id)
@@ -558,10 +619,9 @@ class ChangeGovernanceService:
             plan.rollback.failure_code = ErrorCode.ROLLBACK_FAILED.value
             self._record(plan, "rollback_failed", "failure", error_code=ErrorCode.ROLLBACK_FAILED.value)
             raise GovernanceError(ErrorCode.ROLLBACK_FAILED) from exc
-        expected_id = actual.get("id") if isinstance(actual, dict) else None
         if (
             actual is None
-            or (expected_id is not None and str(expected_id) != plan.target_id)
+            or _automation_id_mismatch(plan.target_id, actual)
             or state_fingerprint(actual) != plan.snapshot.fingerprint
             or await self._config_check() != "valid"
         ):
@@ -607,3 +667,15 @@ def _mismatch_fields(expected: dict[str, Any], actual: dict[str, Any]) -> list[s
         item["field"]
         for item in structured_diff(expected, actual)["changed_fields"]
     ]
+
+
+def _automation_id_mismatch(
+    expected_automation_id: str, config: dict[str, Any] | None
+) -> bool:
+    """Check identity metadata independently from behavioral normalization."""
+
+    return bool(
+        isinstance(config, dict)
+        and config.get("id") is not None
+        and str(config["id"]) != expected_automation_id
+    )

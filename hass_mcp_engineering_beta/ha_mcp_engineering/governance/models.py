@@ -129,6 +129,7 @@ class ChangePlan:
     current_state_fingerprint: str
     proposed_config_hash: str
     risk: ChangeRiskAssessment
+    normalization_version: int = 2
     warnings: list[str] = field(default_factory=list)
     validation_results: dict[str, Any] = field(default_factory=dict)
     dry_run_results: dict[str, Any] = field(default_factory=dict)
@@ -162,6 +163,10 @@ class ChangePlan:
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "ChangePlan":
         data = dict(value)
+        # Records written before Beta 24 did not declare their normalization
+        # contract. Keep them readable as v1 records, but governance refuses
+        # to approve or apply them under the new hash semantics.
+        data.setdefault("normalization_version", 1)
         data["status"] = PlanStatus(data["status"])
         data["operation"] = ChangeOperation(data["operation"])
         data["target"] = ChangeTarget(**data["target"])
