@@ -37,8 +37,9 @@ Beta 7 moves `entity_dependency_analysis` from planned to additive `beta_native`
 category `analysis`, risk `read`, routed `engineering_native`. Beta 12 likewise moves
 `automation_reliability_analysis` into additive `beta_native`. Beta 15 adds
 `change_impact_analysis`, and Beta 17 adds the read-only
-`configuration_integrity_analysis`; incident correlation and handoff generation
-remain planned. All pre-Beta-17 tool schemas are unchanged.
+`configuration_integrity_analysis`; Beta 19 adds `incident_correlation`, and Beta
+21 adds `handoff_generation`. No planned feature capability remains. All existing
+public schemas remain unchanged; the Beta 21 tool is additive.
 
 Classifications:
 

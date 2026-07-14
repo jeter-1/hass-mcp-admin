@@ -1,5 +1,14 @@
 # Beta automation change governance
 
+## Beta 21 handoff lifecycle interpretation
+
+Change handoffs read persisted plan state without changing it. Proposed,
+awaiting-approval, approved, and applying plans remain pending. `applied` counts
+as completed only when required verification is `passed`. Verification failure is
+failed/blocked; rolled-back work is labeled rolled back rather than active
+completion. Full proposed configuration, unbounded diffs, secrets, authentication,
+and prior approval as reusable authority are excluded.
+
 Version 2.0.0-beta.18 retains the beta-only approval boundary for controlled
 Home Assistant automation creation and updates. It does not alter production
 v1.1.2 and does not govern scripts, scenes, dashboards, helpers, integrations,

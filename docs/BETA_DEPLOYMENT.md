@@ -1,9 +1,15 @@
 # Beta deployment and validation
 
 The beta add-on is isolated from production. Production remains **HA MCP
-Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.18
+Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.21
 is **HA MCP Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100).
 The workflow in this document deploys or updates only the beta.
+
+Beta 21 must expose 38 registered/25 canonical tools and no planned feature
+capabilities. Because it adds `handoff_generation`, reconnect or recreate a beta
+connector that caches `tools/list`. Follow the read-only acceptance procedure in
+[`HANDOFF_GENERATION.md`](HANDOFF_GENERATION.md). Rollback affects only beta;
+production v1.1.2 remains on port 8099.
 
 ## Before opening or merging a beta release
 
@@ -18,7 +24,7 @@ From a clean branch in Windows PowerShell, run:
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
   -DeployedVersion 2.0.0-beta.17 `
-  -ExpectedVersion 2.0.0-beta.18 `
+  -ExpectedVersion 2.0.0-beta.21 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -FullTests
 ```
@@ -40,7 +46,7 @@ without supplying authentication material:
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
   -DeployedVersion 2.0.0-beta.17 `
-  -ExpectedVersion 2.0.0-beta.18 `
+  -ExpectedVersion 2.0.0-beta.21 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -SkipTests -SkipDockerBuild `
   -HealthHost homeassistant.local `

@@ -171,10 +171,10 @@ outcome. Review from chat via the `get_audit_log` tool.
 
 ## Engineering beta analytical milestones
 
-The parallel v2 beta is now `2.0.0-beta.20` with 37 registered tools and 25
-unchanged canonical tools. Beta 20 hardens the read-only Engineering-native
-`incident_correlation` coverage contract: successfully collected partial evidence
-remains usable and is no longer mislabeled as an upstream failure. Missing evidence
-and incomplete coverage are reported separately. Production v1.1.2,
-`hass_mcp_admin`, and port 8099 remain unchanged. See
-[`docs/INCIDENT_CORRELATION.md`](docs/INCIDENT_CORRELATION.md).
+The parallel v2 beta is now `2.0.0-beta.21` with 38 registered tools and 25
+unchanged canonical tools. Beta 21 adds read-only `handoff_generation`, producing
+bounded structured and optional Markdown handoffs with explicit evidence,
+completion, conflict, recommendation, and authorization semantics. No planned
+feature capability remains. Production v1.1.2, `hass_mcp_admin`, and port 8099
+remain unchanged. See [`docs/HANDOFF_GENERATION.md`](docs/HANDOFF_GENERATION.md)
+and [`docs/BETA_21_RELEASE_NOTES.md`](docs/BETA_21_RELEASE_NOTES.md).
