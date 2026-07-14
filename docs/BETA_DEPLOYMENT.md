@@ -1,7 +1,7 @@
 # Beta deployment and validation
 
 The beta add-on is isolated from production. Production remains **HA MCP
-Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.23
+Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.24
 is **HA MCP Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100).
 The workflow in this document deploys or updates only the beta.
 
@@ -24,7 +24,7 @@ From a clean branch in Windows PowerShell, run:
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
   -DeployedVersion 2.0.0-beta.22 `
-  -ExpectedVersion 2.0.0-beta.23 `
+  -ExpectedVersion 2.0.0-beta.24 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -FullTests
 ```
@@ -46,7 +46,7 @@ without supplying authentication material:
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
   -DeployedVersion 2.0.0-beta.22 `
-  -ExpectedVersion 2.0.0-beta.23 `
+  -ExpectedVersion 2.0.0-beta.24 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -SkipTests -SkipDockerBuild `
   -HealthHost homeassistant.local `
@@ -352,3 +352,35 @@ changing provider or source-failure counters. Do not manufacture an outage to
 test failure attribution; use automated timeout/failure coverage when no natural
 read-only failure exists. Confirm audit remains bounded/redacted and governance
 plan count remains unchanged.
+
+## Beta 24 final pre-RC deployment
+
+Beta 24 adds no tool or public schema, so connector recreation is not normally
+required. Refresh the repository, update only `hass_mcp_engineering_beta`, and
+verify `server_info` reports `2.0.0-beta.24`, 38 registered/25 canonical tools,
+and zero planned capabilities. Production remains v1.1.2 on port 8099 and must
+not be restarted or changed.
+
+Before any governed write, inspect existing plans. Re-create all pending or
+approved plans made before Beta 24 because automation normalization and bound
+hashes changed; do not migrate or reapprove them. Terminal history remains
+readable. The full read-only checks and separately approved, description-only
+apply/rollback procedure are in
+[`BETA_24_RELEASE_NOTES.md`](BETA_24_RELEASE_NOTES.md).
+
+`cf-connecting-ip` is ignored by default. Configure
+`trust_cf_connecting_ip=true` and the bounded `trusted_proxy_cidrs` list only
+after confirming the actual proxy source networks. Do not enable forwarding
+trust merely because the deployment uses Nabu Casa. See
+[`RATE_LIMITING.md`](RATE_LIMITING.md).
+
+Signed cursor snapshots are process-local and invalidated by add-on restart.
+They are a five-minute pagination mechanism, not durable workflow state or a
+general result cache. After a restart, begin a new analysis instead of retaining
+an old cursor.
+
+For rollback, publish a newer beta that reverts the defect; do not decrease the
+add-on version in place. If live results show an ungoverned upsert, a false
+`other:id` mismatch, forwarded-header trust without configuration, whole-store
+rate reset, pre-dispatch provider failure accounting, or an unbounded audit read,
+stop acceptance and roll forward.

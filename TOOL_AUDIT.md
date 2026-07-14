@@ -10,14 +10,14 @@ This document classifies every tool currently exposed by the custom HA MCP Engin
 
 Lifecycle classification and provider routing answer different questions. The existing
 `native`, `transitional`, `delegated`, and `deprecated` labels remain unchanged. The
-central routing policy maps all 36 beta tools to these execution/evidence routes:
+central routing policy maps all 38 beta tools to these execution/evidence routes:
 
 | Route | Existing tools/capabilities |
 | --- | --- |
 | `engineering_native` | server/capability diagnostics, audit, plan creation/risk, plan reads/list/approval |
 | `standard_mcp_preferred` | broad entity search and ordinary execution/reload pending exact upstream coverage |
 | `direct_ha_required` | automation config, traces, blueprint source, config check, governed apply/verification/rollback |
-| `transitional_direct` | exact entity/area/service-catalog reads, template/history/logbook/error log, list automations/devices/entity registry/blueprints, legacy upsert |
+| `transitional_direct` | exact entity/area/service-catalog reads, template/history/logbook/error log, list automations/devices/entity registry/blueprints; legacy upsert is classified here but denied without a read policy |
 | `prohibited` | ungoverned destructive automation deletion in the target architecture and secret-bearing diagnostics |
 
 Beta 8 preserves every public schema but enforces the routing overlay at runtime.
@@ -39,8 +39,9 @@ category `analysis`, risk `read`, routed `engineering_native`. Beta 12 likewise 
 `change_impact_analysis`, and Beta 17 adds the read-only
 `configuration_integrity_analysis`; Beta 19 adds `incident_correlation`, and Beta
 21 adds `handoff_generation`. Beta 22 stabilizes that tool and Beta 23 corrects
-shared provider failure accounting without changing the
-catalog or schemas. No planned feature capability remains. All existing public
+shared provider failure accounting without changing the catalog or schemas.
+Beta 24 makes the compatibility-visible legacy upsert and every missing direct
+policy fail closed, while preserving the same catalog. No planned feature capability remains. All existing public
 schemas remain unchanged.
 
 Classifications:
@@ -78,11 +79,11 @@ The server's strongest current capabilities are automation traces, blueprint ins
 | `get_automation_config` | Redesign | Read one automation's stored config. | Uses internal ID only and returns raw config without source metadata or hash. | Retain as internal evidence provider; add canonical ID resolution, source, timestamp, and stable config hash. |
 | `list_blueprints` | Delegate | List automation/script blueprints. | Standard `ha-mcp` exposes blueprint discovery and details. | Delegate except where local-file provenance is needed for engineering analysis. |
 | `get_blueprint` | Keep | Read installed blueprint source from a read-only mount. | Unique direct-source visibility is useful; raw YAML is untrusted and may contain embedded instructions. | Retain with provenance metadata, content hash, size, and explicit untrusted-content marking. |
-| `upsert_automation` | Redesign | Create or fully replace an automation. | Full replacement, no optimistic lock, no dry-run, no backup, no plan-bound approval, and no dependency preflight. | Remove from direct public use; later expose only through approved change plans or delegate to standard `ha-mcp`. |
-| `delete_automation` | Remove | Delete an automation with `confirm=true`. | Boolean confirmation is weak; no dependency check, backup, or rollback receipt. | Delegate deletion to standard `ha-mcp` or future plan-bound execution. |
+| `upsert_automation` | Redesign | Compatibility-visible automation replacement schema; runtime refuses it. | Ungoverned full replacement would bypass immutable plan approval, stale-state checks, snapshots, verification, and rollback. | Fails closed with `governance_required`; use governed change plans. |
+| `delete_automation` | Remove | Compatibility-visible deletion schema; runtime refuses it. | Boolean confirmation is not plan-bound approval and provides no dependency check, backup, or rollback receipt. | Fails closed; any future deletion requires a separately reviewed governed design. |
 | `check_config` | Keep | Run HA configuration validation. | Good read-only/idempotent safety control; response could be normalized. | Retain as a verification primitive and include in change-verification workflows. |
-| `call_service` | Remove | Generic execution of any HA service. | Broad physical-action surface; denylist is incomplete by design; arbitrary scripts/automations can bypass service-name risk assumptions. | Use standard `ha-mcp` execution tools. Reintroduce only as plan-bound delegated execution if needed. |
-| `reload_domain` | Remove | Reload selected HA domains. | Infrastructure/behavioral change with little unique engineering value; no preflight or outcome verification. | Delegate to standard `ha-mcp`; future Engineering workflows may request it as an approved execution step. |
+| `call_service` | Remove | Compatibility-visible generic execution schema; runtime refuses it. | Broad physical-action surface; a denylist or caller Boolean is not sufficient authority. | Use standard `ha-mcp` execution tools where supported; no direct fallback. |
+| `reload_domain` | Remove | Compatibility-visible reload schema; runtime refuses it. | Infrastructure/behavioral change with no immutable plan, preflight, or verification. | Use an approved external/general HA workflow; no direct fallback. |
 | `list_areas` | Delegate | List area registry. | Standard `ha-mcp` provides richer floor/area topology. | Delegate; retain only as an internal dependency-analysis primitive if necessary. |
 | `list_devices` | Redesign | Search device registry. | Limited fields, first-match truncation, no pagination, identifiers/connections omitted despite docstring, and no orphan analysis. | Replace with `analyze_devices` / `find_orphaned_devices` backed by a complete pageable registry client. |
 | `list_entity_registry` | Redesign | Search entity registry. | Limited metadata, first-match truncation, no labels/categories/config entry/unique ID, and no actual orphan/reference analysis. | Replace with dependency and configuration-debt tools. |
@@ -145,15 +146,16 @@ They should move behind reusable HA client and evidence-provider interfaces. Sel
 
 ### 2. Writes should be plan-bound
 
-`upsert_automation` should not remain directly callable in its current form. A future write workflow should require:
+`upsert_automation` remains registered only for public-schema compatibility and
+fails closed. The implemented automation write workflow requires:
 
 1. Inspect current config and dependencies.
 2. Create an immutable change plan.
 3. Produce a dry-run/diff.
 4. Bind approval to the exact plan hash.
 5. Revalidate source hashes immediately before execution.
-6. Delegate execution to standard `ha-mcp` where practical.
-7. Verify stored config and runtime behavior.
+6. Execute through the narrow governed direct configuration provider.
+7. Verify stored config, explicit automation identity, and configuration validity.
 8. Record rollback information and an execution receipt.
 
 ## Remove/delegate sequence
@@ -182,9 +184,10 @@ Implement engineering-specific analysis first:
 
 Then implement plan-bound governance.
 
-### Stage 3: Disable by default
+### Stage 3: Fail closed (implemented)
 
-Once replacements and delegation are tested, disable broad direct-write tools by default while allowing an explicit compatibility mode.
+Broad direct-write and execution tools remain schema-visible but have no
+compatibility escape hatch. Missing direct policy means deny.
 
 ### Stage 4: Remove in a major version
 

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 import hashlib
+import ipaddress
 import json
 import logging
+import threading
 import time
 
 from .audit import AuditLogger, AuditRecord
@@ -15,6 +18,10 @@ from .logging_config import get_logger, log_event
 from .models import FailureResponse, Timing
 from .observability import METRICS
 from .request_context import begin_request, current_telemetry, end_request
+
+
+MAX_BUCKET_STORE_SIZE = 1000
+UNKNOWN_CLIENT_IDENTITY = "unknown"
 
 
 class TokenBucket:
@@ -43,8 +50,13 @@ class AuthenticatedMcpGateway:
         self.settings = settings
         self.audit = audit
         self.prefix = f"/{settings.access_secret}"
-        self.clients: dict[str, TokenBucket] = {}
-        self.auth_failures: dict[str, TokenBucket] = {}
+        self.clients: OrderedDict[str, TokenBucket] = OrderedDict()
+        self.auth_failures: OrderedDict[str, TokenBucket] = OrderedDict()
+        self._bucket_lock = threading.Lock()
+        self._trusted_proxy_networks = tuple(
+            ipaddress.ip_network(value, strict=False)
+            for value in settings.trusted_proxy_cidrs
+        )
         self.global_bucket = TokenBucket(
             settings.rate_limit_per_minute * 2, settings.rate_limit_burst * 2
         )
@@ -69,25 +81,36 @@ class AuthenticatedMcpGateway:
         })
         await send({"type": "http.response.body", "body": body})
 
-    @staticmethod
-    def _client_ip(scope) -> str:
-        forwarded = AuthenticatedMcpGateway._header(scope, b"cf-connecting-ip")
-        if forwarded:
-            return forwarded
-        client = scope.get("client")
-        return client[0] if client else "unknown"
+    def _client_ip(self, scope) -> str:
+        return resolve_client_address(
+            scope,
+            trust_cf_connecting_ip=self.settings.trust_cf_connecting_ip,
+            trusted_proxy_networks=self._trusted_proxy_networks,
+        )
 
     @staticmethod
     def _caller_id(client_ip: str) -> str:
         return hashlib.sha256(client_ip.encode("utf-8")).hexdigest()[:12]
 
-    @staticmethod
-    def _bucket(store: dict, key: str, rate: float, burst: float) -> TokenBucket:
-        if key not in store:
-            if len(store) > 1000:
-                store.clear()
-            store[key] = TokenBucket(rate, burst)
-        return store[key]
+    def _bucket(
+        self,
+        store: OrderedDict[str, TokenBucket],
+        key: str,
+        rate: float,
+        burst: float,
+    ) -> TokenBucket:
+        # No await occurs while this lock is held. This keeps creation,
+        # recency updates, and eviction atomic across concurrent ASGI tasks.
+        with self._bucket_lock:
+            existing = store.pop(key, None)
+            if existing is not None:
+                store[key] = existing
+                return existing
+            while len(store) >= MAX_BUCKET_STORE_SIZE:
+                store.popitem(last=False)
+            bucket = TokenBucket(rate, burst)
+            store[key] = bucket
+            return bucket
 
     def _audit_path(self, path: str) -> str:
         secret = self.settings.access_secret
@@ -97,6 +120,9 @@ class AuthenticatedMcpGateway:
         return {
             "tracked_clients": len(self.clients),
             "tracked_auth_failures": len(self.auth_failures),
+            "maximum_tracked_clients": MAX_BUCKET_STORE_SIZE,
+            "forwarded_header_trust_enabled": self.settings.trust_cf_connecting_ip,
+            "trusted_proxy_network_count": len(self._trusted_proxy_networks),
             "global": self.global_bucket.summary(),
         }
 
@@ -271,7 +297,14 @@ class AuthenticatedMcpGateway:
                     if key.endswith("_id") and isinstance(value, (str, int))
                 }
                 audit_parameters = parameters
-                if capability.get("category") == "governance":
+                if tool_name == "upsert_automation":
+                    # Preserve only the bounded target and fail-closed reason;
+                    # the caller-supplied configuration is never audited.
+                    audit_parameters = {
+                        "automation_id": str(parameters.get("automation_id", ""))[:128],
+                        "refusal_reason": "governance_required",
+                    }
+                elif capability.get("category") == "governance":
                     audit_parameters = {
                         key: parameters[key]
                         for key in ("plan_id", "automation_id", "operation", "expiration_minutes")
@@ -411,3 +444,31 @@ class AuthenticatedMcpGateway:
                 secret=self.settings.access_secret,
             )
             end_request(context_token)
+
+
+def resolve_client_address(
+    scope,
+    *,
+    trust_cf_connecting_ip: bool,
+    trusted_proxy_networks: tuple,
+) -> str:
+    """Return a bounded canonical client identity from a trusted network path."""
+
+    client = scope.get("client")
+    direct = _canonical_ip(client[0] if client else None)
+    if direct is None:
+        return UNKNOWN_CLIENT_IDENTITY
+    if not trust_cf_connecting_ip:
+        return direct
+    direct_address = ipaddress.ip_address(direct)
+    if not any(direct_address in network for network in trusted_proxy_networks):
+        return direct
+    forwarded = AuthenticatedMcpGateway._header(scope, b"cf-connecting-ip")
+    return _canonical_ip(forwarded) or direct
+
+
+def _canonical_ip(value) -> str | None:
+    try:
+        return ipaddress.ip_address(str(value).strip()).compressed
+    except (ValueError, TypeError):
+        return None

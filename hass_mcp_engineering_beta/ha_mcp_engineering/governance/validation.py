@@ -43,7 +43,7 @@ def validate_automation(
     ):
         errors.append("authenticated MCP URLs cannot be persisted in a change plan")
     if "id" in proposed and str(proposed["id"]) != automation_id:
-        warnings.append("proposed config id differs from target; target automation_id remains authoritative")
+        errors.append("proposed config id must match target automation_id")
     return not errors, errors, warnings
 
 

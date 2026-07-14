@@ -211,6 +211,48 @@ DIRECT_HA_TOOL_EXCEPTIONS = frozenset(
 )
 
 DIRECT_HA_READ_POLICIES = {
+    "render_template": {
+        "policy_id": "bounded_template_render_read",
+        "capability": ProviderCapability.TEMPLATE_RENDER.value,
+        "access": "read",
+        "justification": "Template validation requires bounded server-side rendering without persisting configuration.",
+    },
+    "list_automation_traces": {
+        "policy_id": "bounded_automation_trace_list_read",
+        "capability": ProviderCapability.AUTOMATION_TRACE.value,
+        "access": "read",
+        "justification": "Retained automation trace headers require the read-only trace WebSocket API.",
+    },
+    "get_automation_trace": {
+        "policy_id": "bounded_automation_trace_read",
+        "capability": ProviderCapability.AUTOMATION_TRACE.value,
+        "access": "read",
+        "justification": "One retained automation trace requires the read-only trace WebSocket API.",
+    },
+    "get_blueprint": {
+        "policy_id": "bounded_blueprint_source_read",
+        "capability": ProviderCapability.BLUEPRINT_SOURCE.value,
+        "access": "read",
+        "justification": "Exact blueprint evidence requires bounded read-only access to the mounted blueprint source.",
+    },
+    "check_config": {
+        "policy_id": "configuration_validation_read",
+        "capability": ProviderCapability.CONFIG_VALIDATION.value,
+        "access": "read",
+        "justification": "Home Assistant configuration validation performs no configuration mutation.",
+    },
+    "get_history": {
+        "policy_id": "bounded_entity_history_read",
+        "capability": ProviderCapability.HISTORY_READ.value,
+        "access": "read",
+        "justification": "Bounded exact entity history requires the Home Assistant history API.",
+    },
+    "get_logbook": {
+        "policy_id": "bounded_logbook_read",
+        "capability": ProviderCapability.LOGBOOK_READ.value,
+        "access": "read",
+        "justification": "Bounded logbook evidence requires the Home Assistant logbook API.",
+    },
     "get_error_log": {
         "policy_id": "structured_system_log_read",
         "capability": ProviderCapability.ERROR_LOG_READ.value,
@@ -222,6 +264,36 @@ DIRECT_HA_READ_POLICIES = {
         "capability": ProviderCapability.CURRENT_ENTITY_STATE.value,
         "access": "read",
         "justification": "Exact state and attributes require entity-ID REST lookup.",
+    },
+    "list_automations": {
+        "policy_id": "bounded_automation_inventory_read",
+        "capability": ProviderCapability.AUTOMATION_LIST.value,
+        "access": "read",
+        "justification": "Automation discovery requires bounded read-only state and configuration inventory access.",
+    },
+    "get_automation_config": {
+        "policy_id": "exact_automation_config_read",
+        "capability": ProviderCapability.AUTOMATION_CONFIG.value,
+        "access": "read",
+        "justification": "Exact automation configuration requires the read-only automation config endpoint.",
+    },
+    "list_devices": {
+        "policy_id": "bounded_device_registry_read",
+        "capability": ProviderCapability.DEVICE_REGISTRY_READ.value,
+        "access": "read",
+        "justification": "Device relationships require bounded read-only device-registry enumeration.",
+    },
+    "list_entity_registry": {
+        "policy_id": "bounded_entity_registry_read",
+        "capability": ProviderCapability.ENTITY_REGISTRY_READ.value,
+        "access": "read",
+        "justification": "Exact registry metadata requires bounded read-only entity-registry enumeration.",
+    },
+    "list_blueprints": {
+        "policy_id": "bounded_blueprint_inventory_read",
+        "capability": ProviderCapability.BLUEPRINT_LIST.value,
+        "access": "read",
+        "justification": "Blueprint discovery requires bounded read-only blueprint inventory access.",
     },
     "list_areas": {
         "policy_id": "complete_area_registry_read",
@@ -244,18 +316,18 @@ DIRECT_HA_READ_POLICIES = {
 }
 
 
-def direct_ha_exception_for_tool(tool_name: str) -> bool:
-    """Return whether a canonical tool has an explicit direct-HA exception."""
+def direct_ha_exception_for_tool(tool_name: str, *, access: str = "read") -> bool:
+    """Return whether a canonical tool has an explicit matching direct-HA policy."""
     if tool_name not in DIRECT_HA_TOOL_EXCEPTIONS:
         return False
-    if policy := DIRECT_HA_READ_POLICIES.get(tool_name):
-        capability = TOOL_CAPABILITY_POLICY.get(tool_name)
-        return bool(
-            capability
-            and policy["access"] == "read"
-            and policy["capability"] == capability.value
-        )
-    return True
+    policy = DIRECT_HA_READ_POLICIES.get(tool_name)
+    capability = TOOL_CAPABILITY_POLICY.get(tool_name)
+    return bool(
+        policy
+        and capability
+        and policy["access"] == access
+        and policy["capability"] == capability.value
+    )
 
 
 def direct_ha_policy_for_tool(tool_name: str) -> dict[str, str] | None:
@@ -300,7 +372,8 @@ class EvidenceRouter:
         return primary
 
     async def _attempt(self, provider_id: str | None, request: EvidenceRequest) -> ProviderResult:
-        dispatched = bool(provider_id and provider_id in self.providers)
+        provider = self.providers.get(provider_id) if provider_id else None
+        dispatched = bool(provider and getattr(provider, "available", True))
         if not dispatched:
             result = ProviderResult(
                 provider_id=provider_id or "none",
@@ -311,7 +384,7 @@ class EvidenceRouter:
             )
         else:
             try:
-                result = await self.providers[provider_id].fetch(request)
+                result = await provider.fetch(request)
             except (asyncio.TimeoutError, TimeoutError):
                 result = ProviderResult(
                     provider_id=provider_id,

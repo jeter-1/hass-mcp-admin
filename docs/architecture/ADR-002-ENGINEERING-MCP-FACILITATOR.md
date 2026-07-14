@@ -125,7 +125,9 @@ provider or a fallback.
 
 ## Intentional direct-HA exceptions
 
-The canonical direct-access allowlist is explicit and fail-closed:
+The canonical direct-access allowlist is explicit and fail-closed. Beta 24
+requires both allowlist membership and a matching tool-specific read policy;
+missing policy or access-type mismatch means deny:
 
 - Transitional evidence: `render_template`, `get_history`, `get_logbook`,
   `get_error_log`, `list_automations`, `list_devices`, `list_entity_registry`, and
@@ -135,8 +137,9 @@ The canonical direct-access allowlist is explicit and fail-closed:
 - Exact engineering configuration: `get_automation_config`,
   `list_automation_traces`, `get_automation_trace`, `get_blueprint`, and
   `check_config`.
-- Legacy configuration write retained during governance migration:
-  `upsert_automation`.
+- The compatibility-visible legacy `upsert_automation` has no direct policy and
+  is refused with `governance_required` before dispatch. Governed plan apply and
+  rollback are separate, narrow `direct_ha_required` operations.
 
 Beta 10 narrows the `get_error_log` exception to the read-only
 `structured_system_log_read` policy. It uses the admin-only `system_log/list`
@@ -176,6 +179,12 @@ ungoverned direct write. A direct read fallback is allowed only where the centra
 explicitly permits it and the evidence request explicitly opts in. Prohibited fallback
 attempts are counted. There is no silent fallback to an unsafe operation.
 
+Provider selection is metadata, not dispatch. A Standard provider known
+unavailable before a call returns `provider_unavailable` and
+`upstream_attempted=false`, but does not increment provider request or failure
+counters. Actual dispatched failures and timeouts remain attributable exactly
+once.
+
 Future analytical tools must state incomplete source coverage and distinguish complete,
 partial, unavailable, and failed provider results. The standard-MCP delegation path must
 not be described as operational until a real transport, authentication boundary, failure
@@ -205,8 +214,9 @@ paying to transmit unchanged evidence on every analytical call.
 
 ## Consequences and follow-up
 
-This phase adds internal architecture only and does not add or remove MCP tools. The
-callable beta count remains 32. Future analysis tools should depend on
+The initial facilitator phase added no public tool. The current Beta 24 catalog
+contains 38 registered and 25 canonical tools with no planned capability.
+Future analysis tools should depend on
 `EngineeringEvidenceProvider`, not REST, WebSocket, or MCP transports directly, and
 should use the bounded response primitives documented in
 [`../TOKEN_EFFICIENCY.md`](../TOKEN_EFFICIENCY.md).

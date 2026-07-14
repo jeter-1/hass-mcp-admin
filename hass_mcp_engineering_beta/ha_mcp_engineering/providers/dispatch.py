@@ -57,20 +57,31 @@ class CanonicalProviderDispatcher:
             if decision.route == CapabilityRoute.STANDARD_MCP_PREFERRED:
                 provider_result = await self._standard(tool_name, decision.capability, arguments)
                 if not provider_result.succeeded:
-                    # A direct compatibility implementation exists, but policy does
-                    # not authorize it as fallback for canonical delegated calls.
-                    METRICS.record_prohibited_fallback()
                     raise _provider_error(provider_result)
                 data, inner_warnings, inner_metadata = _normalize_payload(provider_result.data)
             elif decision.route in {CapabilityRoute.DIRECT_HA_REQUIRED, CapabilityRoute.TRANSITIONAL_DIRECT}:
                 if not direct_ha_exception_for_tool(tool_name):
-                    METRICS.record_prohibited_fallback()
-                    raise GovernanceError(ErrorCode.PROVIDER_PROHIBITED)
+                    if tool_name == "upsert_automation":
+                        raise GovernanceError(
+                            ErrorCode.PROVIDER_PROHIBITED,
+                            "Ungoverned automation replacement is prohibited; use the governed change-plan workflow.",
+                            details={
+                                "reason": "governance_required",
+                                "required_workflow": [
+                                    "create_change_plan",
+                                    "approve_change_plan",
+                                    "apply_change_plan",
+                                ],
+                            },
+                        )
+                    raise GovernanceError(
+                        ErrorCode.PROVIDER_PROHIBITED,
+                        details={"reason": "explicit_direct_policy_required"},
+                    )
                 provider_result, data, inner_warnings, inner_metadata = await self._direct(
                     decision.capability, action
                 )
             elif decision.route == CapabilityRoute.PROHIBITED:
-                METRICS.record_prohibited_fallback()
                 raise GovernanceError(ErrorCode.PROVIDER_PROHIBITED)
             else:
                 # Engineering-native tools are intentionally registered without
@@ -135,6 +146,20 @@ class CanonicalProviderDispatcher:
 
     async def _standard(self, tool_name, capability, arguments) -> ProviderResult:
         started = time.perf_counter()
+        if not getattr(self.standard_provider, "available", True):
+            return ProviderResult(
+                provider_id="standard_ha_mcp",
+                capability=capability,
+                completeness=ProviderCompleteness.UNAVAILABLE,
+                timing_ms=(time.perf_counter() - started) * 1000,
+                warnings=["Standard Home Assistant MCP delegation transport is not configured."],
+                failure=_failure(
+                    ProviderFailureCategory.UNAVAILABLE,
+                    "The standard Home Assistant MCP provider is unavailable.",
+                    False,
+                ),
+                metadata={"implementation": "transitional_unavailable"},
+            )
         try:
             result = await self.standard_provider.fetch(
                 EvidenceRequest(capability=capability, query={"operation": tool_name, "arguments": arguments})

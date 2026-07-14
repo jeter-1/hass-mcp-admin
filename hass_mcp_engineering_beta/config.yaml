@@ -1,5 +1,5 @@
 name: HA MCP Engineering Server Beta
-version: "2.0.0-beta.23"
+version: "2.0.0-beta.24"
 slug: hass_mcp_engineering_beta
 description: Governed Home Assistant engineering analysis with bounded incident correlation
 url: https://github.com/jeter-1/hass-mcp-admin
@@ -19,6 +19,8 @@ options:
   access_secret: ""
   rate_limit_per_minute: 120
   rate_limit_burst: 25
+  trust_cf_connecting_ip: false
+  trusted_proxy_cidrs: []
   audit_enabled: true
   audit_path: /data/audit.jsonl
   audit_max_payload_chars: 8192
@@ -37,6 +39,9 @@ schema:
   access_secret: str
   rate_limit_per_minute: int
   rate_limit_burst: int
+  trust_cf_connecting_ip: bool
+  trusted_proxy_cidrs:
+    - str
   audit_enabled: bool
   audit_path: str
   audit_max_payload_chars: int

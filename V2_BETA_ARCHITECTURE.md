@@ -1,5 +1,15 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## Beta 24 final pre-RC hardening
+
+The governance normalization version separates automation identity metadata from
+behavioral content while still verifying the requested, proposed, and returned
+IDs explicitly. Legacy upsert stays registered but has no direct-write policy and
+fails closed. Every direct Home Assistant exception requires an explicit matching
+read policy. Gateway client identity is direct-peer based by default with optional
+validated trusted-proxy CIDRs, rate stores use bounded LRU eviction, and provider
+metrics require actual dispatch even when a selected provider is unavailable.
+
 ## Beta 23 provider dispatch provenance
 
 The shared observability API requires each provider result to assert that dispatch
@@ -31,7 +41,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-beta.23` |
+| Version | `1.1.2` | `2.0.0-beta.24` |
 | Port | `8099` | `8100` |
 | Options and secret | Production add-on data | Beta add-on data |
 
@@ -121,12 +131,16 @@ unrequested source types do not create false review requirements.
 
 ## Compatibility approach
 
-The beta's compatibility module preserves the current 25 function names,
-argument schemas, docstrings, and implementations. Transport calls are routed
+The beta's compatibility module preserves the current 25 function names and
+argument schemas. Safe read implementations remain routed
 through the v2 REST and WebSocket client boundaries, response serialization
 through the response-model boundary, and server construction through the v2
 FastMCP factory. `server_info` and `list_capabilities` use beta version and
 capability metadata.
+
+Compatibility-visible `call_service`, `delete_automation`, `reload_domain`, and
+`upsert_automation` fail closed. The upsert schema remains unchanged, but the
+handler cannot dispatch; automation writes use only governed plan execution.
 
 The v1.1.2 catalog contains 8 native, 10 transitional, 4 delegated, and 3 deprecated
 tools. Beta 9 truthfully reclassifies the four administrative reads as transitional,
@@ -171,8 +185,8 @@ They are active for beta-native tools and every provider-routed canonical tool.
 6. Add behavior-level regression tests before deleting the compatibility
    implementation.
 7. Do not share production options, secrets, audit state, or runtime ports.
-8. Keep destructive-action confirmation behavior unchanged until governance
-   and approval semantics are implemented and reviewed.
+8. Do not use caller confirmation as write authorization; use immutable governed
+   plans and separate approval for the supported automation-write scope.
 9. New analytical code depends on `EngineeringEvidenceProvider`, never directly on a
    REST, WebSocket, or nested-MCP transport.
 10. A standard-MCP failure never falls back to an ungoverned direct write. Permitted
@@ -181,8 +195,8 @@ They are active for beta-native tools and every provider-routed canonical tool.
 
 ## Known limitations
 
-Beta 15 retains dependency and reliability analysis and adds single-entity
-change-impact analysis, bringing the callable manifest to 35 tools. Exact impact
+Beta 24 retains dependency, reliability, impact, integrity, incident, and handoff
+analysis with 38 registered and 25 canonical tools. Exact impact
 source coverage is documented in
 [`docs/CHANGE_IMPACT_ANALYSIS.md`](docs/CHANGE_IMPACT_ANALYSIS.md).
 
@@ -199,4 +213,4 @@ analytical consumer. It reuses the same dependency-index generation and Beta 16
 snapshot lifecycle, adds one complete state and entity-registry inventory per
 new analysis, and classifies integrity evidence locally. Its orphan findings are
 candidates for review only; it has no registry, configuration, service, plan,
-reload, or restart write path. The callable manifest is 36 tools.
+reload, or restart write path. Beta 24 adds no tool or public schema.

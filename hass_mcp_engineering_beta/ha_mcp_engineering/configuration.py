@@ -9,6 +9,7 @@ from pathlib import Path
 
 OPTIONS_PATH = Path(os.environ.get("HAMCP_OPTIONS_PATH", "/data/options.json"))
 MIN_ACCESS_SECRET_LENGTH = 24
+MAX_TRUSTED_PROXY_CIDRS = 64
 
 DEFAULT_DESTRUCTIVE_SERVICES = (
     "lock.unlock",
@@ -38,6 +39,8 @@ class Settings:
     redaction_enabled: bool = True
     governance_path: str = "/data/governance/change_plans"
     governance_retention_days: int = 90
+    trust_cf_connecting_ip: bool = False
+    trusted_proxy_cidrs: tuple[str, ...] = ()
 
     @property
     def api_url(self) -> str:
@@ -61,6 +64,9 @@ def load_settings() -> Settings:
     token = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HA_TOKEN", "")
     secret = (options.get("access_secret") or os.environ.get("ACCESS_SECRET", "")).strip()
     destructive = options.get("destructive_services") or DEFAULT_DESTRUCTIVE_SERVICES
+    configured_proxies = options.get("trusted_proxy_cidrs", [])
+    if not isinstance(configured_proxies, (list, tuple)):
+        configured_proxies = [configured_proxies]
     return Settings(
         ha_url=ha_url,
         ha_token=token,
@@ -80,4 +86,8 @@ def load_settings() -> Settings:
             "GOVERNANCE_PATH", "/data/governance/change_plans"
         ),
         governance_retention_days=int(os.environ.get("GOVERNANCE_RETENTION_DAYS", "90")),
+        trust_cf_connecting_ip=bool(options.get("trust_cf_connecting_ip", False)),
+        trusted_proxy_cidrs=tuple(
+            str(value).strip() for value in configured_proxies if str(value).strip()
+        ),
     )

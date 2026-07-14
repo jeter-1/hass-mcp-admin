@@ -23,6 +23,8 @@ from ha_mcp_engineering.providers import (  # noqa: E402
     ProviderResult,
     StandardHaMcpGateway,
     DIRECT_HA_READ_POLICIES,
+    DIRECT_HA_TOOL_EXCEPTIONS,
+    direct_ha_exception_for_tool,
     direct_ha_policy_for_tool,
     routing_for_tool,
 )
@@ -81,7 +83,7 @@ class CanonicalRoutingTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_remaining_standard_preferred_unavailable_never_falls_back(self):
         CANONICAL_DISPATCHER.standard_provider = StandardHaMcpGateway()
-        before = Counter(METRICS.snapshot()["provider_routing"]["failures_by_provider"])
+        before = METRICS.snapshot()["provider_routing"]
         with patch.object(compatibility, "rest", new=AsyncMock()) as direct:
             payload = json.loads(await compatibility.search_entities("example"))
         self.assertFalse(payload["success"])
@@ -92,10 +94,13 @@ class CanonicalRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["metadata"]["source_coverage"][0]["completeness"], "unavailable")
         self.assertIn("timing", payload)
         self.assertEqual(payload["request_id"], "canonical-routing-request-123")
+        self.assertFalse(payload["metadata"]["source_coverage"][0]["upstream_attempted"])
         direct.assert_not_awaited()
         metrics = METRICS.snapshot()["provider_routing"]
-        self.assertEqual(metrics["failures_by_provider"]["standard_ha_mcp"] - before["standard_ha_mcp"], 1)
-        self.assertEqual(metrics["prohibited_fallback_attempts"], 1)
+        self.assertEqual(metrics["requests_by_provider"], before["requests_by_provider"])
+        self.assertEqual(metrics["successful_requests_by_provider"], before["successful_requests_by_provider"])
+        self.assertEqual(metrics["failures_by_provider"], before["failures_by_provider"])
+        self.assertEqual(metrics["prohibited_fallback_attempts"], 0)
 
     async def test_transitional_tool_uses_direct_provider_and_updates_counters(self):
         states = [{"entity_id": "automation.example", "state": "on", "attributes": {"id": "example", "friendly_name": "Example"}}]
@@ -205,10 +210,14 @@ class CanonicalRoutingTests(unittest.IsolatedAsyncioTestCase):
         phase3c_reads = {"get_entity", "list_areas", "search_services", "list_services"}
         self.assertTrue(phase3c_reads.issubset(DIRECT_HA_READ_POLICIES))
         self.assertEqual(
-            set(DIRECT_HA_READ_POLICIES) - phase3c_reads,
-            {"get_error_log"},
+            set(DIRECT_HA_TOOL_EXCEPTIONS) - set(DIRECT_HA_READ_POLICIES),
+            {"upsert_automation"},
         )
         self.assertEqual(DIRECT_HA_READ_POLICIES["get_error_log"]["access"], "read")
+        self.assertTrue(direct_ha_exception_for_tool("get_entity", access="read"))
+        self.assertFalse(direct_ha_exception_for_tool("get_entity", access="write"))
+        self.assertFalse(direct_ha_exception_for_tool("upsert_automation"))
+        self.assertIsNone(direct_ha_policy_for_tool("upsert_automation"))
         for name in ("call_service", "delete_automation", "reload_domain"):
             with self.subTest(name=name):
                 self.assertIsNone(direct_ha_policy_for_tool(name))
@@ -221,6 +230,40 @@ class CanonicalRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reload_result["error_code"], "provider_unavailable")
         self.assertEqual(deletion["error_code"], "provider_prohibited")
         direct.assert_not_awaited()
+
+    async def test_upsert_automation_is_compatibility_visible_but_fails_closed(self):
+        with patch.object(compatibility, "rest", new=AsyncMock()) as direct:
+            payload = json.loads(
+                await compatibility.upsert_automation(
+                    "safe_fixture",
+                    json.dumps({"trigger": [], "action": []}),
+                )
+            )
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error_code"], "provider_prohibited")
+        self.assertFalse(payload["retryable"])
+        self.assertEqual(payload["details"]["reason"], "governance_required")
+        self.assertEqual(
+            payload["details"]["required_workflow"],
+            ["create_change_plan", "approve_change_plan", "apply_change_plan"],
+        )
+        self.assertFalse(payload["metadata"]["source_coverage"][0]["upstream_attempted"])
+        direct.assert_not_awaited()
+        metrics = METRICS.snapshot()["provider_routing"]
+        self.assertEqual(metrics["requests_by_provider"], {})
+        self.assertEqual(metrics["failures_by_provider"], {})
+
+    async def test_malformed_upsert_payload_still_refuses_before_dispatch(self):
+        with patch.object(compatibility, "rest", new=AsyncMock()) as direct:
+            payload = json.loads(
+                await compatibility.upsert_automation("safe_fixture", "{not-json")
+            )
+        self.assertEqual(payload["error_code"], "provider_prohibited")
+        self.assertEqual(payload["details"]["reason"], "governance_required")
+        direct.assert_not_awaited()
+        metrics = METRICS.snapshot()["provider_routing"]
+        self.assertEqual(metrics["requests_by_provider"], {})
+        self.assertEqual(metrics["failures_by_provider"], {})
 
     async def test_direct_required_exception_is_attributed_to_direct_provider(self):
         with patch.object(compatibility, "rest", new=AsyncMock(return_value={"result": "valid", "errors": None})):

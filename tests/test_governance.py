@@ -21,6 +21,7 @@ from ha_mcp_engineering.governance.models import (  # noqa: E402
     RiskLevel,
 )
 from ha_mcp_engineering.governance.normalize import (  # noqa: E402
+    AUTOMATION_NORMALIZATION_VERSION,
     normalize_automation,
     stable_hash,
     state_fingerprint,
@@ -60,9 +61,12 @@ class Clock:
 class FakeGateway:
     def __init__(self, configs=None):
         self.configs = copy.deepcopy(configs or {})
+        for automation_id, stored in self.configs.items():
+            stored["id"] = automation_id
         self.write_calls = 0
         self.fail_write = False
         self.read_back_mismatch = False
+        self.wrong_readback_id = False
         self.validation_result = {"result": "valid", "errors": None}
         self.write_started = asyncio.Event()
         self.release_write = None
@@ -78,6 +82,11 @@ class FakeGateway:
         if self.fail_write:
             raise RuntimeError("safe fake write failure")
         stored = copy.deepcopy(config)
+        # Home Assistant injects identity metadata into config read-back even
+        # when the submitted behavioral configuration omits it.
+        stored["id"] = automation_id
+        if self.wrong_readback_id:
+            stored["id"] = f"wrong-{automation_id}"
         if self.read_back_mismatch:
             stored["alias"] = "Unexpected read-back"
         self.configs[automation_id] = stored
@@ -185,6 +194,22 @@ class PlanCreationTests(GovernanceTestCase):
             )
         self.assertEqual(raised.exception.code, ErrorCode.CONFIGURATION_CONFLICT)
 
+    async def test_proposed_wrong_id_is_rejected_before_apply(self):
+        proposed = {**copy.deepcopy(CURRENT), "id": "wrong-id"}
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.create_plan(
+                title="Wrong identity",
+                description="Wrong identity",
+                operation="update_automation",
+                automation_id="porch",
+                proposed_config=proposed,
+            )
+        self.assertEqual(raised.exception.code, ErrorCode.AUTOMATION_VALIDATION_FAILED)
+        self.assertIn(
+            "proposed config id must match target automation_id",
+            raised.exception.details["validation_errors"],
+        )
+
     async def test_missing_update_target(self):
         with self.assertRaises(GovernanceError) as raised:
             await self.service.create_plan(
@@ -240,6 +265,13 @@ class PlanCreationTests(GovernanceTestCase):
 
 
 class NormalizationAndRiskTests(unittest.TestCase):
+    def test_top_level_id_is_identity_metadata_not_behavior(self):
+        without_id = copy.deepcopy(CURRENT)
+        with_id = {**copy.deepcopy(CURRENT), "id": "porch"}
+        self.assertEqual(normalize_automation(with_id), normalize_automation(without_id))
+        self.assertEqual(state_fingerprint(with_id), state_fingerprint(without_id))
+        self.assertFalse(structured_diff(without_id, with_id)["has_changes"])
+
     def test_normalization_is_deterministic_and_preserves_sequence_order(self):
         first = {"actions": [{"service": "notify.one"}, {"delay": 1}], "trigger": [], "condition": []}
         second = {"condition": [], "trigger": [], "action": [{"service": "notify.one"}, {"delay": 1}]}
@@ -371,6 +403,58 @@ class NormalizationAndRiskTests(unittest.TestCase):
 
 
 class ApprovalAndApplyTests(GovernanceTestCase):
+    async def test_correct_id_and_idless_proposals_have_same_behavioral_hash(self):
+        idless = copy.deepcopy(CURRENT)
+        idless["description"] = "Updated"
+        with_id = {**copy.deepcopy(idless), "id": "porch"}
+        first = await self.service.create_plan(
+            title="Idless", description="Idless", operation="update_automation",
+            automation_id="porch", proposed_config=idless,
+        )
+        first_hash = self.repository.get(first["plan_id"]).proposed_config_hash
+        second = await self.service.create_plan(
+            title="With id", description="With id", operation="update_automation",
+            automation_id="porch", proposed_config=with_id,
+        )
+        second_plan = self.repository.get(second["plan_id"])
+        self.assertEqual(first_hash, second_plan.proposed_config_hash)
+        self.assertEqual(
+            second_plan.normalization_version, AUTOMATION_NORMALIZATION_VERSION
+        )
+
+    async def test_beta23_plan_hash_semantics_fail_closed_without_rewrite(self):
+        proposed = {**copy.deepcopy(CURRENT), "id": "porch", "description": "Updated"}
+        created = await self.service.create_plan(
+            title="Legacy plan", description="Legacy plan",
+            operation="update_automation", automation_id="porch",
+            proposed_config=proposed,
+        )
+        path = self.repository._path(created["plan_id"])
+        legacy = json.loads(path.read_text(encoding="utf-8"))
+        legacy.pop("normalization_version", None)
+        legacy_proposed = normalize_automation(legacy["proposed_config"])
+        legacy_proposed["id"] = "porch"
+        legacy_current = normalize_automation(legacy["current_config"])
+        legacy_current["id"] = "porch"
+        legacy["normalized_proposed_config"] = legacy_proposed
+        legacy["normalized_current_config"] = legacy_current
+        legacy["proposed_config_hash"] = stable_hash(legacy_proposed)
+        legacy["current_state_fingerprint"] = stable_hash(legacy_current)
+        path.write_text(json.dumps(legacy), encoding="utf-8")
+
+        readable = self.service.get_plan(created["plan_id"])
+        self.assertEqual(readable["normalization_version"], 1)
+        with self.assertRaises(GovernanceError) as raised:
+            self.service.approve(created["plan_id"], readable["plan_hash"])
+        self.assertEqual(raised.exception.code, ErrorCode.APPROVAL_HASH_MISMATCH)
+        self.assertEqual(
+            raised.exception.details["reason"], "normalization_version_mismatch"
+        )
+        self.assertNotIn(
+            "normalization_version", json.loads(path.read_text(encoding="utf-8"))
+        )
+        self.assertEqual(self.gateway.write_calls, 0)
+
     async def test_successful_apply_invalidates_dependency_index(self):
         created, _ = await self.approved_plan()
         with patch("ha_mcp_engineering.dependency.DEPENDENCY_ANALYSIS.invalidate") as invalidate:
@@ -440,6 +524,8 @@ class ApprovalAndApplyTests(GovernanceTestCase):
         self.assertEqual(plan.verification.status, "passed")
         self.assertEqual(plan.approval.state, ApprovalState.CONSUMED)
         self.assertEqual(plan.apply_request_id, "governance-request-123")
+        self.assertEqual(self.gateway.configs["porch"]["id"], "porch")
+        self.assertNotIn("other:id", plan.verification.mismatch_fields)
 
     async def test_approved_create_applies(self):
         proposed = copy.deepcopy(CURRENT)
@@ -450,7 +536,11 @@ class ApprovalAndApplyTests(GovernanceTestCase):
         self.service.approve(created["plan_id"], created["plan_hash"])
         result = await self.service.apply(created["plan_id"])
         self.assertEqual(result["status"], "applied")
-        self.assertEqual(self.gateway.configs["new"], proposed)
+        self.assertEqual(
+            normalize_automation(self.gateway.configs["new"]),
+            normalize_automation(proposed),
+        )
+        self.assertEqual(self.gateway.configs["new"]["id"], "new")
 
     async def test_apply_without_approval(self):
         created = await self.update_plan()
@@ -527,6 +617,24 @@ class ApprovalAndApplyTests(GovernanceTestCase):
         self.assertEqual(plan.status, PlanStatus.VERIFICATION_FAILED)
         self.assertTrue(plan.rollback.available)
 
+    async def test_wrong_read_back_id_is_explicit_verification_failure(self):
+        created, _ = await self.approved_plan()
+        self.gateway.wrong_readback_id = True
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.apply(created["plan_id"])
+        self.assertEqual(raised.exception.code, ErrorCode.AUTOMATION_VERIFICATION_FAILED)
+        plan = self.repository.get(created["plan_id"])
+        self.assertEqual(plan.verification.mismatch_fields, ["automation_id"])
+
+    async def test_wrong_current_id_is_rejected_before_write(self):
+        created, _ = await self.approved_plan()
+        self.gateway.configs["porch"]["id"] = "different-automation"
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.apply(created["plan_id"])
+        self.assertEqual(raised.exception.code, ErrorCode.AUTOMATION_VERIFICATION_FAILED)
+        self.assertEqual(raised.exception.details["mismatch_fields"], ["automation_id"])
+        self.assertEqual(self.gateway.write_calls, 0)
+
     async def test_config_validation_failure(self):
         created, _ = await self.approved_plan()
         self.gateway.validation_result = {"result": "invalid", "errors": "safe fake error"}
@@ -567,6 +675,7 @@ class RollbackTests(GovernanceTestCase):
         result = await self.service.rollback_change(created["plan_id"], requested["plan_hash"])
         self.assertEqual(result["status"], "rolled_back")
         self.assertEqual(normalize_automation(self.gateway.configs["porch"]), normalize_automation(CURRENT))
+        self.assertEqual(self.gateway.configs["porch"]["id"], "porch")
 
     async def test_rollback_without_approval(self):
         created = await self.applied_update()

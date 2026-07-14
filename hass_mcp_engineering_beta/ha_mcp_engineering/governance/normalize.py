@@ -9,6 +9,7 @@ from typing import Any
 
 ALIASES = {"triggers": "trigger", "conditions": "condition", "actions": "action"}
 OPTIONAL_EMPTY = {"condition": [], "variables": {}, "trace": {}}
+AUTOMATION_NORMALIZATION_VERSION = 2
 DIFF_LABELS = {
     "alias": "alias",
     "description": "description",
@@ -36,6 +37,12 @@ def normalize_automation(config: dict[str, Any] | None) -> dict[str, Any] | None
         return None
     normalized: dict[str, Any] = {}
     for original_key, value in config.items():
+        # Home Assistant injects the top-level automation id on read-back. It
+        # identifies the resource addressed by the config endpoint; it is not
+        # behavioral automation configuration and must not affect hashes or
+        # behavioral diffs. Identity is verified explicitly by governance.
+        if original_key == "id":
+            continue
         key = ALIASES.get(original_key, original_key)
         if key in normalized and original_key != key:
             # Never silently discard an unknown/duplicate representation.

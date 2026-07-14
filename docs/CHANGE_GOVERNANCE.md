@@ -13,7 +13,7 @@ failures or requirements can block a handoff. Full proposed configuration,
 unbounded diffs, secrets, authentication,
 and prior approval as reusable authority are excluded.
 
-Version 2.0.0-beta.18 retains the beta-only approval boundary for controlled
+Version 2.0.0-beta.24 retains the beta-only approval boundary for controlled
 Home Assistant automation creation and updates. It does not alter production
 v1.1.2 and does not govern scripts, scenes, dashboards, helpers, integrations,
 devices, add-ons, system configuration, arbitrary direct service calls, or
@@ -33,10 +33,11 @@ The six governance tools are registered directly with the beta FastMCP server:
 They use separate domain-model, normalization, risk, storage, and lifecycle
 modules under `ha_mcp_engineering/governance`. Home Assistant access passes
 through a narrow automation gateway, which tests replace with an isolated fake.
-The original 25 compatibility tools are untouched. The transitional
-`upsert_automation` tool remains callable with its original schema and behavior;
-it bypasses governance and should not be used by clients that require approval,
-stale-state protection, verification, or rollback evidence.
+The original 25 compatibility tool schemas are unchanged. The transitional
+`upsert_automation` tool remains registered for connector compatibility but
+fails closed with `governance_required` before provider or Home Assistant work.
+Automation writes use only the governed plan, approval, apply, verification,
+and rollback lifecycle.
 
 ## Lifecycle and status transitions
 
@@ -64,7 +65,11 @@ plan so two proposals cannot silently overwrite one another.
 `create_change_plan` accepts only `create_automation` and `update_automation`.
 It validates the target ID and basic automation structure, reads existing state
 for updates, and performs no write. Dictionary ordering is normalized;
-behaviorally significant list ordering is preserved. Empty optional conditions,
+behaviorally significant list ordering is preserved. Top-level automation `id`
+is identity metadata and is removed before canonicalization, state fingerprints,
+proposed-config hashes, plan hashes, and behavioral mismatch comparison. Identity
+is checked separately against the requested target and any proposed or returned
+ID. Empty optional conditions,
 variables, and trace settings are treated consistently, while unknown fields are
 retained. Structured diffs identify known top-level fields and summarize other
 fields without dumping unbounded content.
@@ -77,6 +82,12 @@ mutation changes the hash and invalidates approval.
 
 An update whose normalized current and proposed configurations are equal returns
 `no_change`, creates no approvable plan, and cannot cause a meaningless write.
+
+Beta 24 increments the normalization version. Hashes created with Beta 23 rules
+are not silently rewritten or accepted. **Re-create any pending or approved
+automation change plans after upgrading to Beta 24.** Terminal historical plans
+remain readable; approval or apply of an incompatible record fails closed with
+the existing hash-mismatch contract.
 
 ## Risk model
 
@@ -125,14 +136,17 @@ live current-state fingerprint. It then obtains a per-automation lock, captures
 the pre-change snapshot, consumes approval, writes through Home Assistant's
 automation configuration endpoint, and reads the stored automation back.
 
-Verification requires target existence, normalized desired-versus-read-back
+Verification requires target existence, an explicitly matching automation ID
+when Home Assistant returns one, normalized desired-versus-read-back behavioral
 equivalence, a matching actual fingerprint, Home Assistant configuration
 validation, and recorded duration and mismatch fields. A successful HTTP write
 with failed verification produces `automation_verification_failed`, preserves
 the snapshot, and makes update rollback available. It never reports a successful
 governed change.
 
-If desired state is already present after a completed apply, a duplicate request
+Home Assistant commonly injects the correct top-level `id` into stored readback;
+that does not create an `other:id` behavioral mismatch. A different ID produces
+the explicit `automation_id` mismatch. If desired state is already present after a completed apply, a duplicate request
 returns `already_applied` without another write. Approval is consumed before the
 write so an ambiguous upstream failure cannot be retried as an unrestricted
 duplicate. Per-plan and per-target locks prevent concurrent duplicate writes.

@@ -3,11 +3,17 @@
 import logging
 import os
 import sys
+import ipaddress
 
 import uvicorn
 
 from .audit import AuditLogger
-from .configuration import MIN_ACCESS_SECRET_LENGTH, Settings, load_settings
+from .configuration import (
+    MAX_TRUSTED_PROXY_CIDRS,
+    MIN_ACCESS_SECRET_LENGTH,
+    Settings,
+    load_settings,
+)
 from .errors import ConfigurationError
 from .logging_config import configure_logging, get_logger, log_event
 from .health import HEALTH
@@ -54,6 +60,15 @@ def validate_settings(settings: Settings) -> None:
         errors.append("governance_path is required")
     if not 1 <= settings.governance_retention_days <= 365:
         errors.append("governance_retention_days must be between 1 and 365")
+    if len(settings.trusted_proxy_cidrs) > MAX_TRUSTED_PROXY_CIDRS:
+        errors.append(
+            f"trusted_proxy_cidrs must contain at most {MAX_TRUSTED_PROXY_CIDRS} entries"
+        )
+    for value in settings.trusted_proxy_cidrs:
+        try:
+            ipaddress.ip_network(value, strict=False)
+        except ValueError:
+            errors.append("trusted_proxy_cidrs contains an invalid IP address or CIDR")
     if errors:
         raise ConfigurationError(
             "Beta configuration validation failed.", details={"issues": errors}

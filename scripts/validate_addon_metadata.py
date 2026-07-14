@@ -26,6 +26,8 @@ EXPECTED_BETA_SCHEMA = {
     "access_secret": "str",
     "rate_limit_per_minute": "int",
     "rate_limit_burst": "int",
+    "trust_cf_connecting_ip": "bool",
+    "trusted_proxy_cidrs": ["str"],
     "audit_enabled": "bool",
     "audit_path": "str",
     "audit_max_payload_chars": "int",
@@ -162,6 +164,10 @@ def validate_config_pair(production: dict, beta: dict, *, minimum_secret_length:
         raise MetadataValidationError("Access secrets must not be stored in add-on metadata")
     if options["redaction_enabled"] is not True:
         raise MetadataValidationError("Beta redaction must remain enabled")
+    if options["trust_cf_connecting_ip"] is not False:
+        raise MetadataValidationError("Forwarded client-IP trust must default to disabled")
+    if options["trusted_proxy_cidrs"] != []:
+        raise MetadataValidationError("Trusted proxy CIDRs must default to an empty list")
     for key in ("rate_limit_per_minute", "rate_limit_burst", "audit_max_payload_chars", "response_size_limit"):
         if not isinstance(options[key], int) or isinstance(options[key], bool) or options[key] <= 0:
             raise MetadataValidationError(f"Beta option {key} must be a positive integer")
