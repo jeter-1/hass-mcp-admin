@@ -440,3 +440,13 @@ becoming failed analyses. Validation failures add a failed request but no eviden
 aggregate. When index context is not requested, no index hit or miss is recorded.
 Provider routing attributes orchestration to `engineering` and approved evidence
 reads to their actual provider; no Standard HA MCP success or fallback is claimed.
+
+Beta 20 narrows `source_failures` to actual failed sources or bounded failed source
+operations. A successful partial dependency index, unsupported source type,
+not-requested source, retention limit, truncation, or dynamic-reference uncertainty
+does not increment source or provider failure counters. Such an analysis may still
+increment `partial_count`, and provider routing may record a successful partial
+result. Actual index errors increment `failures_by_provider.engineering`; timeouts
+retain `provider_timeout`, and usable item-level failures retain
+`item_read_failure`. Cursor continuations preserve the frozen source semantics and
+do not repeat terminal, source-failure, hypothesis, or event aggregates.

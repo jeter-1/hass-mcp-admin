@@ -156,11 +156,12 @@ class IncidentCorrelationService:
 
         bundle = result.data
         METRICS.record_provider_result(result.provider_id, result.completeness.value)
-        limitations = [item.source_type for item in bundle.coverage if not item.assessment_complete]
+        missing_evidence, coverage_limitations = _evidence_coverage_semantics(bundle)
         hypotheses, cluster_count = correlate(
             bundle.events,
             correlation_window_minutes=validated["correlation_window_minutes"],
-            coverage_limitations=limitations,
+            missing_evidence=missing_evidence,
+            coverage_limitations=coverage_limitations,
         )
         evidence_fingerprint = bundle.evidence_fingerprint()
         incident_id = stable_id("incident", analysis_timestamp, query_fingerprint, evidence_fingerprint)
@@ -225,6 +226,8 @@ class IncidentCorrelationService:
                 "hypothesis_and_event_aggregates": "whole_new_analysis_once",
                 "unique_counts": "sum_of_per_analysis_unique_values",
                 "cursor_failures_are_failed_new_analyses": False,
+                "source_failures": "actual_failed_sources_or_source_operations_only",
+                "coverage_limitations": "successful_but_incomplete_or_unsupported_evidence",
             },
             "pagination": {
                 "requested_limit": validated["limit"], "effective_limit": effective_limit,
@@ -273,15 +276,24 @@ class IncidentCorrelationService:
                 index_generation=index_generation, index_fingerprint=index_fingerprint, offset=len(page),
             )
 
+        source_failure_count = _source_failure_count(bundle.coverage)
         METRICS.record_incident_terminal(
             partial=partial, hypothesis_count=len(hypotheses), confidence_counts=confidence_counts,
             severity_counts=severity_counts, causal_counts=causal_counts, correlated_event_count=len(bundle.events),
             event_counts=event_counts, unique_entity_count=len(unique_entities), unique_automation_count=len(unique_automations),
-            manual_review_required=manual_review, source_failures=sum(item.failed_items for item in bundle.coverage),
+            manual_review_required=manual_review, source_failures=source_failure_count,
             index_cache_hit=bool(bundle.index.get("requested") and bundle.index.get("cache_hit")),
             index_requested=bool(bundle.index.get("requested")), analysis_timestamp=analysis_timestamp,
         )
-        _set_audit_summary(final_assessment, len(hypotheses), len(bundle.events), not source_partial, "partial" if partial else "success")
+        _set_audit_summary(
+            final_assessment,
+            len(hypotheses),
+            len(bundle.events),
+            not source_partial,
+            "partial" if partial else "success",
+            source_failure_count=source_failure_count,
+            coverage_limitation_count=len(coverage_limitations),
+        )
         return IncidentAnalysisOutput(data=data, warnings=warnings, metadata=metadata, partial=partial)
 
     def _continue_snapshot(self, *, cursor: str, query_fingerprint: str, limit: int, started: float) -> IncidentAnalysisOutput:
@@ -365,6 +377,11 @@ class IncidentCorrelationService:
             payload_part, signature_part = cursor.split(".", 1)
             payload = base64.urlsafe_b64decode(payload_part + "=" * (-len(payload_part) % 4))
             signature = base64.urlsafe_b64decode(signature_part + "=" * (-len(signature_part) % 4))
+            if (
+                base64.urlsafe_b64encode(payload).decode().rstrip("=") != payload_part
+                or base64.urlsafe_b64encode(signature).decode().rstrip("=") != signature_part
+            ):
+                raise ValueError("cursor encoding is not canonical")
             if not hmac.compare_digest(signature, hmac.new(self.cursor_key, payload, hashlib.sha256).digest()):
                 raise ValueError("cursor signature mismatch")
             value = json.loads(payload.decode("utf-8"))
@@ -480,6 +497,43 @@ def _timeline_summary(events, cluster_count):
     }
 
 
+def _evidence_coverage_semantics(bundle: IncidentEvidenceBundle):
+    """Separate truly missing evidence from usable but incomplete coverage."""
+
+    missing: list[str] = []
+    limitations: list[str] = []
+    for item in bundle.coverage:
+        if not item.requested or item.completeness == "not_requested":
+            continue
+        if item.completeness == "failed" or (
+            item.actual_failure and item.items_examined == 0
+        ):
+            missing.append(item.source_type)
+        limitations.extend(item.coverage_limitations)
+        if item.completeness == "not_supported" and not item.coverage_limitations:
+            limitations.append(f"{item.source_type}_unsupported")
+        elif item.completeness == "partial" and not item.coverage_limitations:
+            limitations.append(
+                f"{item.source_type}_partial_item_failure"
+                if item.actual_failure
+                else f"{item.source_type}_partial_coverage"
+            )
+    return (
+        tuple(sorted(dict.fromkeys(missing)))[:10],
+        tuple(sorted(dict.fromkeys(limitations)))[:20],
+    )
+
+
+def _source_failure_count(coverage) -> int:
+    """Count actual failed sources or bounded source operations, never limits."""
+
+    return sum(
+        max(1, int(item.failed_items))
+        for item in coverage
+        if item.actual_failure
+    )
+
+
 def _final_assessment(hypotheses, partial):
     if partial:
         return "assessment_incomplete"
@@ -520,7 +574,16 @@ def _limitations():
     ]
 
 
-def _set_audit_summary(assessment, hypotheses, events, coverage_complete, result_status):
+def _set_audit_summary(
+    assessment,
+    hypotheses,
+    events,
+    coverage_complete,
+    result_status,
+    *,
+    source_failure_count,
+    coverage_limitation_count,
+):
     telemetry = current_telemetry()
     if telemetry:
         telemetry.audit_context["incident_correlation_summary"] = {
@@ -528,5 +591,7 @@ def _set_audit_summary(assessment, hypotheses, events, coverage_complete, result
             "hypothesis_count": hypotheses,
             "correlated_event_count": events,
             "coverage_complete": coverage_complete,
+            "source_failure_count": max(0, int(source_failure_count)),
+            "coverage_limitation_count": max(0, int(coverage_limitation_count)),
             "result_status": result_status,
         }

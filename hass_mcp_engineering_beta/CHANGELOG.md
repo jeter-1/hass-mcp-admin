@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.0.0-beta.20
+
+- Correct incident-correlation coverage so a successfully built, usable but
+  incomplete dependency index has `failure_category=null` rather than
+  `provider_upstream_error`.
+- Distinguish complete, partial usable, failed, item-failed, unsupported,
+  truncated/retention-limited, and not-requested evidence through shared coverage
+  normalization.
+- Separate hypothesis `missing_evidence` from stable bounded
+  `coverage_limitations` while retaining supporting dependency references.
+- Count only actual failed sources or source operations in health and provider
+  failure telemetry; preserve partial assessment and cursor snapshot behavior.
+- Reject non-canonical signed cursor encodings fail-closed without changing valid
+  cursor behavior.
+- Retain 37 registered/25 canonical tools, all existing public schemas, the
+  read-only boundary, planned `handoff_generation`, and production v1.1.2.
+
 ## 2.0.0-beta.19
 
 - Add read-only Engineering-native `incident_correlation`, increasing the beta

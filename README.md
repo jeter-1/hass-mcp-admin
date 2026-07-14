@@ -171,10 +171,10 @@ outcome. Review from chat via the `get_audit_log` tool.
 
 ## Engineering beta analytical milestones
 
-The parallel v2 beta is now `2.0.0-beta.19` with 37 registered tools and 25
-unchanged canonical tools. Beta 19 adds the read-only Engineering-native
-`incident_correlation` capability. It correlates bounded existing evidence into
-ranked, cited hypotheses while preserving contradiction and incomplete coverage;
-it never treats proximity as proof or performs remediation. Production v1.1.2,
+The parallel v2 beta is now `2.0.0-beta.20` with 37 registered tools and 25
+unchanged canonical tools. Beta 20 hardens the read-only Engineering-native
+`incident_correlation` coverage contract: successfully collected partial evidence
+remains usable and is no longer mislabeled as an upstream failure. Missing evidence
+and incomplete coverage are reported separately. Production v1.1.2,
 `hass_mcp_admin`, and port 8099 remain unchanged. See
 [`docs/INCIDENT_CORRELATION.md`](docs/INCIDENT_CORRELATION.md).

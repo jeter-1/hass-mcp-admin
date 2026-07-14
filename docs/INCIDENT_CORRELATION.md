@@ -1,6 +1,7 @@
 # Incident correlation
 
-`incident_correlation` is the Beta 19 Engineering-native, read-only capability for
+`incident_correlation` is the Engineering-native, read-only capability introduced
+in Beta 19 and coverage-corrected in Beta 20 for
 correlating bounded Home Assistant evidence around one entity, one internal
 automation ID, or both. It produces ranked hypotheses with supporting,
 contradicting, missing, and coverage-limited evidence. Correlation is not proof of
@@ -61,6 +62,34 @@ Every source reports `complete`, `partial`, `failed`, `not_supported`, or
 cached provenance, failure category, and whether upstream access occurred.
 Failures are not hidden. Approximate Standard HA MCP delegation is not claimed.
 
+### Beta 20 coverage semantics
+
+Coverage state and failure state are separate:
+
+| Evidence state | Meaning | Failure category |
+| --- | --- | --- |
+| Complete | Requested supported scope was inspected successfully | `null` |
+| Partial but usable | Evidence exists, but unsupported types, retention, truncation, or incomplete successful coverage limits assessment | `null` unless an actual item failed |
+| Missing | Required evidence was absent, failed, or could not be collected | Actual category when a request failed |
+| Unsupported | The independently represented capability cannot be inspected | `null` |
+| Failed | An attempted provider request errored, timed out, authenticated unsuccessfully, or returned an invalid response | Stable actual-failure category |
+| Truncated | Evidence was collected and bounded; truncation is reported separately | `null` unless collection also failed |
+| Not requested | The caller excluded the source | `null` |
+
+Partial coverage is not automatically a provider failure. Unsupported source
+types never produce `provider_upstream_error`. A successfully built partial
+dependency index remains usable evidence and reports `completeness=partial`,
+`assessment_complete=false`, `failed_items=0`, and `failure_category=null`.
+Scripts, scenes, groups, templates, and dashboards remain bounded warnings and the
+stable limitation `dependency_index_unsupported_source_types`.
+
+`missing_evidence` means evidence was actually absent or failed. A partial source
+with usable evidence instead appears under `coverage_limitations`. Actual item
+failures may produce both usable supporting evidence and a bounded partial-item
+limitation. Failure categories are reserved for actual attempted failures, while
+partial coverage may still make `result_status=partial` and
+`final_assessment=assessment_incomplete`.
+
 ## Event normalization
 
 Evidence is normalized into deterministic events: `automation_triggered`,
@@ -107,8 +136,9 @@ clusters remain separate.
 Confidence is `confirmed`, `high`, `medium`, `low`, or `insufficient`.
 `confirmed` requires direct structured linkage, such as a trace explicitly
 identifying the failing target. Proximity alone cannot exceed medium. Free-form
-text alone cannot produce confirmed or high confidence. Missing coverage and
-contradicting evidence lower confidence. Dynamic expressions remain targetless.
+text alone cannot produce confirmed or high confidence. Actually missing evidence
+lowers confidence separately from partial usable coverage; contradiction is a
+third distinct penalty. Dynamic expressions remain targetless.
 
 Causal status is `confirmed_cause`, `probable_contributor`,
 `possible_contributor`, `correlated_condition`, `contradictory_evidence`, or
@@ -177,6 +207,11 @@ hypothesis/event aggregates, per-analysis unique sums, manual-review and source
 failure events, truncation, cursor, index, and last-outcome counters. Request count
 includes continuation. Terminal and whole-analysis aggregates count new analyses
 once. Cursor failures are not failed new analyses. Result caching remains false.
+`source_failures` counts actual failed sources or bounded failed source operations
+only. Unsupported, not-requested, retention-limited, truncated, or otherwise
+successful partial coverage does not increment source or provider failure counts.
+The bounded audit summary records only coverage completeness, source-failure count,
+coverage-limitation count, result, assessment, and whole-analysis counts.
 
 ## Security and limitations
 
@@ -243,3 +278,50 @@ is not a command to change Home Assistant.
 
 Because Beta 19 adds a public tool, reconnect or recreate the beta connector if
 the client retains a cached 36-tool catalog. Never expose the authenticated URL.
+
+## Deployed Beta 20 read-only acceptance
+
+1. Call `server_info`, `list_capabilities`, and `get_server_health`. Verify
+   `2.0.0-beta.20`, 37 registered/25 canonical tools, unchanged Engineering/read
+   metadata and `bounded_incident_correlation_read`, connected HA, no fallback,
+   and planned `handoff_generation`.
+2. Capture incident, provider/source failure, dependency-index, governance-plan,
+   retry, timeout, and audit baselines. Do not call a write-capable tool.
+3. When still present, use automation ID `1782920111688`, automation entity
+   `automation.ha_critical_stale_data_monitor`, focus
+   `climate.mudroom_thermostat`, and related entities
+   `binary_sensor.garage_door_aqara_sensor` and
+   `input_text.ha_stale_alert_signature`. Otherwise select an equivalent existing
+   target through read-only discovery; do not manufacture activity.
+4. Call `incident_correlation` with a 24-hour lookback, 10-minute window, trace
+   limit 10, all contexts, standard detail, `limit=1`, and
+   `refresh_index=true`.
+5. Verify the dependency row is partial, assessment-incomplete, has nonzero
+   examined evidence, zero failed items, and `failure_category=null`. Confirm
+   warnings identify unsupported scripts, scenes, groups, templates, and
+   dashboards, dependency relationships/events remain present, provider/source
+   failure counters do not rise, and the overall assessment may remain partial.
+6. Inspect hypotheses. `dependency_index` must not be in `missing_evidence` when
+   usable dependency evidence was collected. The stable
+   `dependency_index_unsupported_source_types` limitation must be present where
+   relevant; supporting references, conservative confidence, targetless dynamic
+   uncertainty, and contradiction must remain intact.
+7. Follow at least two cursor pages. Confirm identical incident ID, timestamp,
+   totals, coverage, failure categories, limitation identifiers, and index
+   provenance with zero HA calls, provider dispatch, index work, collection,
+   normalization, or recorrelation.
+8. Run an entity-only request with dependency, integrity, and reliability context
+   disabled. Verify dependency coverage is `not_requested`, provider is `none`,
+   no index work occurs, and no dependency missing-evidence or limitation penalty
+   appears.
+9. Exercise missing focus/automation, cursor-plus-refresh, and a tampered cursor.
+   Confirm field-level/fail-closed errors and zero upstream work.
+10. Recheck health and bounded audit. Partial unsupported coverage increments
+    `partial_count`, not source/provider failures; cursor pages do not duplicate
+    aggregates; cursor failures remain separate; governance counts are unchanged.
+11. Confirm audit output contains no full warnings, raw cursor, trace,
+    configuration, logs, secrets, or authenticated URLs.
+12. Confirm no service, trigger, entity/configuration write, governance operation,
+    reload, restart, production access, or production modification occurred.
+
+Beta 20 adds no tool or schema, so connector recreation is not normally required.

@@ -178,3 +178,11 @@ counts, result, and cursor-presence Boolean; it excludes raw cursor material,
 configuration, trace/history/log content, evidence text, authentication data, and
 secrets. Dynamic expressions stay targetless, text-only matches cannot produce
 high confidence, and contradiction lowers confidence rather than being omitted.
+
+Beta 20 changes only coverage truth. Warnings and unsupported-source limits remain
+bounded, deduplicated, non-secret, and non-instructional; they cannot authorize a
+provider call or be promoted into a failure automatically. Audit stores bounded
+counts for source failures and coverage limitations, not full warnings. The same
+read-only policy, provider allowlist, redaction boundary, and prohibition on
+service, entity, registry, automation, governance, reload, restart, remediation,
+and background-monitoring actions remain in force.

@@ -247,3 +247,13 @@ path. The normalized event and hypothesis layers are transport-independent.
 Every source failure stays visible; free-form logs are untrusted evidence;
 temporal proximity alone cannot establish causality. See
 [`../INCIDENT_CORRELATION.md`](../INCIDENT_CORRELATION.md).
+
+Beta 20 separates provider failure from evidence completeness across analytical
+coverage adapters. Successful partial evidence is a provider success with a
+coverage limitation, not an upstream failure. Unsupported and not-requested sources
+carry no failure category. Actual provider errors, timeouts, response-validation
+errors, authentication failures, and failed item reads retain explicit failure
+categories. Incident hypotheses use `missing_evidence` only for absent or failed
+evidence and stable `coverage_limitations` identifiers for usable but incomplete
+evidence. This preserves honest routing attribution and prevents health provider
+failures from being inflated by known capability boundaries.

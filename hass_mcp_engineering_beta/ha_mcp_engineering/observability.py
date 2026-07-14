@@ -784,6 +784,8 @@ class RuntimeMetrics:
                     "unique_counts": "sums_of_per_analysis_unique_values",
                     "cursor_continuations": "bounded_snapshot_page_requests",
                     "cursor_failures_are_terminal_analysis_failures": False,
+                    "source_failures": "actual_failed_sources_or_source_operations_only",
+                    "unsupported_or_partial_coverage_is_source_failure": False,
                     "pagination_snapshots_are_general_result_cache": False,
                 },
             },

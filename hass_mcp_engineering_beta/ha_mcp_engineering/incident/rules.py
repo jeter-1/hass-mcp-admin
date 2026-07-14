@@ -28,18 +28,20 @@ def correlate(
     events: list[IncidentEvent],
     *,
     correlation_window_minutes: int,
+    missing_evidence: Iterable[str] = (),
     coverage_limitations: Iterable[str] = (),
 ) -> tuple[list[IncidentHypothesis], int]:
     """Return stable ranked hypotheses and the number of bounded clusters."""
 
     events = deduplicate_and_sort(events)
+    missing = tuple(dict.fromkeys(str(item)[:128] for item in missing_evidence))[:20]
     limitations = tuple(dict.fromkeys(str(item)[:128] for item in coverage_limitations))[:20]
     clusters = _clusters(events, correlation_window_minutes)
     hypotheses: list[IncidentHypothesis] = []
     for cluster_id, members in clusters:
-        hypotheses.extend(_cluster_rules(cluster_id, members, limitations))
+        hypotheses.extend(_cluster_rules(cluster_id, members, missing, limitations))
 
-    hypotheses.extend(_global_rules(events, limitations))
+    hypotheses.extend(_global_rules(events, missing, limitations))
     deduplicated: dict[tuple[str, tuple[str, ...], tuple[str, ...], str], IncidentHypothesis] = {}
     for item in hypotheses:
         key = (item.rule_id, item.automation_ids, item.affected_entity_ids, _cluster_from_id(item.hypothesis_id))
@@ -72,11 +74,16 @@ def correlate(
     return [replace(item, rank=index + 1) for index, item in enumerate(ordered)], len(clusters)
 
 
-def _cluster_rules(cluster_id: str, events: list[IncidentEvent], limitations: tuple[str, ...]):
+def _cluster_rules(
+    cluster_id: str,
+    events: list[IncidentEvent],
+    missing_evidence: tuple[str, ...],
+    limitations: tuple[str, ...],
+):
     output: list[IncidentHypothesis] = []
     failures = [item for item in events if item.event_type == "automation_action_failed"]
     unavailable = [item for item in events if item.event_type == "entity_became_unavailable"]
-    missing = [item for item in events if item.event_type == "integrity_finding" and "missing" in item.summary.lower()]
+    missing_references = [item for item in events if item.event_type == "integrity_finding" and "missing" in item.summary.lower()]
     services = [item for item in events if item.event_type == "service_call_observed"]
     state_changes = [item for item in events if item.event_type in {"state_changed", "entity_became_unavailable", "entity_recovered"}]
     automation_activity = [item for item in events if item.event_type.startswith("automation_")]
@@ -96,15 +103,15 @@ def _cluster_rules(cluster_id: str, events: list[IncidentEvent], limitations: tu
                 "high" if direct else "medium", "medium", "probable_contributor",
                 "A trace failure and an unavailable related entity were observed in the same bounded incident cluster."
                 + (" The trace directly identifies the dependency." if direct else " Temporal proximity alone does not establish causation."),
-                [*failures, *unavailable], limitations=limitations, entities=shared,
+                [*failures, *unavailable], missing=missing_evidence, limitations=limitations, entities=shared,
             ))
-    if failures and missing:
+    if failures and missing_references:
         output.append(_hypothesis(
             "trace_failure_with_missing_reference", cluster_id, events,
             "A confirmed missing reference may have contributed to the trace failure",
             "high", "medium", "probable_contributor",
             "A trace failure overlaps bounded configuration-integrity evidence for an exact missing reference.",
-            [*failures, *missing], limitations=limitations,
+            [*failures, *missing_references], missing=missing_evidence, limitations=limitations,
         ))
     if services and state_changes:
         output.append(_hypothesis(
@@ -112,7 +119,7 @@ def _cluster_rules(cluster_id: str, events: list[IncidentEvent], limitations: tu
             "A service observation preceded or accompanied a state change",
             "medium", "low", "possible_contributor",
             "A service observation and state transition occurred within the configured correlation window; timing alone is not causal proof.",
-            [*services, *state_changes], limitations=limitations,
+            [*services, *state_changes], missing=missing_evidence, limitations=limitations,
         ))
     if state_changes and automation_activity and not services:
         output.append(_hypothesis(
@@ -120,7 +127,7 @@ def _cluster_rules(cluster_id: str, events: list[IncidentEvent], limitations: tu
             "Entity activity correlated with automation activity",
             "medium", "low", "correlated_condition",
             "Entity and automation activity occurred in the same bounded cluster without direct service context.",
-            [*state_changes, *automation_activity], limitations=limitations,
+            [*state_changes, *automation_activity], missing=missing_evidence, limitations=limitations,
         ))
     if system_errors and (failures or state_changes):
         shared_domain = bool(
@@ -132,7 +139,7 @@ def _cluster_rules(cluster_id: str, events: list[IncidentEvent], limitations: tu
             "A structured integration error correlated with related activity",
             "medium" if shared_domain else "low", "medium", "possible_contributor",
             "Structured warning or error evidence overlaps related incident activity. Free-form text was not used as sole high-confidence evidence.",
-            [*system_errors, *failures, *state_changes], limitations=limitations,
+            [*system_errors, *failures, *state_changes], missing=missing_evidence, limitations=limitations,
         ))
     if integrity:
         output.append(_hypothesis(
@@ -140,7 +147,7 @@ def _cluster_rules(cluster_id: str, events: list[IncidentEvent], limitations: tu
             "Configuration-integrity evidence may contribute to the incident",
             "medium", "medium", "possible_contributor",
             "A bounded configuration-integrity finding is materially related to the focus automation or entity.",
-            integrity, limitations=limitations,
+            integrity, missing=missing_evidence, limitations=limitations,
         ))
     if dynamic:
         output.append(_hypothesis(
@@ -148,7 +155,7 @@ def _cluster_rules(cluster_id: str, events: list[IncidentEvent], limitations: tu
             "Dynamic entity selection limits causal analysis",
             "low", "low", "insufficient_evidence",
             "A dynamic expression may select entity IDs, but no target was invented and manual review is required.",
-            dynamic, limitations=limitations,
+            dynamic, missing=missing_evidence, limitations=limitations,
         ))
     if unavailable and recovered:
         output.append(_hypothesis(
@@ -156,7 +163,7 @@ def _cluster_rules(cluster_id: str, events: list[IncidentEvent], limitations: tu
             "Related activity recovered after an entity became available",
             "medium", "low", "correlated_condition",
             "An unavailable entity later recovered inside the incident window. This supports correlation but not a definitive cause.",
-            [*unavailable, *recovered], limitations=limitations,
+            [*unavailable, *recovered], missing=missing_evidence, limitations=limitations,
         ))
     if failures and completed:
         output.append(_hypothesis(
@@ -164,12 +171,16 @@ def _cluster_rules(cluster_id: str, events: list[IncidentEvent], limitations: tu
             "Both failed and completed automation evidence is present",
             "low", "low", "contradictory_evidence",
             "Successful and failed trace evidence coexist, reducing confidence in a single explanation.",
-            failures, contradicting=completed, limitations=limitations,
+            failures, contradicting=completed, missing=missing_evidence, limitations=limitations,
         ))
     return output
 
 
-def _global_rules(events: list[IncidentEvent], limitations: tuple[str, ...]):
+def _global_rules(
+    events: list[IncidentEvent],
+    missing: tuple[str, ...],
+    limitations: tuple[str, ...],
+):
     failures = [item for item in events if item.event_type == "automation_action_failed"]
     grouped = defaultdict(list)
     for item in failures:
@@ -182,7 +193,7 @@ def _global_rules(events: list[IncidentEvent], limitations: tuple[str, ...]):
             "repeated_trace_failure_pattern", "global", values,
             "A trace failure pattern repeated across distinct runs", "high", "medium", "probable_contributor",
             "The same bounded failure signature occurred in more than one distinct trace run.",
-            values, limitations=limitations,
+            values, missing=missing, limitations=limitations,
         ))
 
     dependency_failures = defaultdict(list)
@@ -196,7 +207,7 @@ def _global_rules(events: list[IncidentEvent], limitations: tuple[str, ...]):
             "shared_dependency_failure", "global", values,
             "Multiple automations share a failing dependency", "high", "medium", "probable_contributor",
             "Distinct automation failures directly identify the same dependency.", values,
-            limitations=limitations, entities=(entity_id,),
+            missing=missing, limitations=limitations, entities=(entity_id,),
         ))
     if not output and not any(item.event_type in {"automation_action_failed", "system_error", "integrity_finding", "entity_became_unavailable"} for item in events):
         supporting = events[:3]
@@ -205,19 +216,37 @@ def _global_rules(events: list[IncidentEvent], limitations: tuple[str, ...]):
             "Available evidence does not establish a correlated anomaly",
             "insufficient", "info", "insufficient_evidence",
             "The bounded sources did not provide enough structured evidence to identify a probable contributor.",
-            supporting, limitations=limitations or ("No qualifying anomaly evidence was observed.",),
+            supporting, missing=missing, limitations=limitations,
         ))
     return output
 
 
 def _hypothesis(rule_id, cluster_id, members, title, confidence, severity, causal_status, explanation,
-                supporting, *, contradicting=(), limitations=(), entities=()):
-    refs = tuple(dict.fromkeys(ref for item in supporting for ref in item.evidence_reference_ids))[:30]
+                supporting, *, contradicting=(), missing=(), limitations=(), entities=()):
+    supporting = list(supporting)
+    primary_entities = {str(item.entity_id) for item in supporting if item.entity_id}
+    primary_automations = {str(item.automation_id) for item in supporting if item.automation_id}
+    dependency_context = [
+        item
+        for item in members
+        if item.event_type == "dependency_relationship"
+        and (
+            (item.entity_id and item.entity_id in primary_entities)
+            or (item.automation_id and item.automation_id in primary_automations)
+        )
+    ]
+    refs = tuple(dict.fromkeys(
+        ref
+        for item in [*supporting, *dependency_context]
+        for ref in item.evidence_reference_ids
+    ))[:30]
     contradict_refs = tuple(dict.fromkeys(ref for item in contradicting for ref in item.evidence_reference_ids))[:20]
     affected = tuple(sorted({*(str(item.entity_id) for item in members if item.entity_id), *entities}))
     automations = tuple(sorted({str(item.automation_id) for item in members if item.automation_id}))
     times = sorted(item.timestamp for item in members if item.timestamp)
     if contradict_refs:
+        confidence = _lower_confidence(confidence)
+    if missing:
         confidence = _lower_confidence(confidence)
     if limitations and confidence in {"confirmed", "high"}:
         confidence = "medium"
@@ -231,7 +260,7 @@ def _hypothesis(rule_id, cluster_id, members, title, confidence, severity, causa
         explanation=explanation[:600],
         supporting_evidence_reference_ids=refs,
         contradicting_evidence_reference_ids=contradict_refs,
-        missing_evidence=tuple(limitations)[:10],
+        missing_evidence=tuple(missing)[:10],
         coverage_limitations=tuple(limitations)[:10],
         affected_entity_ids=affected,
         automation_ids=automations,
