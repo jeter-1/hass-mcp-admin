@@ -40,7 +40,7 @@ from .normalize import (
     structured_diff,
 )
 from .risk import classify_risk
-from .storage import ChangePlanRepository, ChangePlanStorageError
+from .storage import TERMINAL_STATUSES, ChangePlanRepository, ChangePlanStorageError
 from .validation import sanitize_context, validate_automation
 
 
@@ -216,14 +216,10 @@ class ChangeGovernanceService:
         )
 
     def _expire_if_needed(self, plan: ChangePlan) -> bool:
-        if plan.status in {
-            PlanStatus.APPLIED,
-            PlanStatus.ROLLED_BACK,
-            PlanStatus.FAILED,
-            PlanStatus.ROLLBACK_FAILED,
-            PlanStatus.SUPERSEDED,
-            PlanStatus.REJECTED,
-        }:
+        # A terminal plan has already completed its lifecycle transition.  In
+        # particular, an expired plan must never be "expired" again merely
+        # because a read surface inspects it.
+        if plan.status in TERMINAL_STATUSES:
             return False
         if self.now() >= datetime.fromisoformat(plan.expires_at):
             plan.status = PlanStatus.EXPIRED
@@ -239,6 +235,53 @@ class ChangeGovernanceService:
             self._record(plan, "change_plan_expired", "rejected", error_code=ErrorCode.CHANGE_PLAN_EXPIRED.value)
             return True
         return False
+
+    def _challenge_has_expired(self, plan: ChangePlan) -> bool:
+        """Return the effective clock state for an external-pending challenge."""
+
+        if plan.approval.state != ApprovalState.EXTERNAL_PENDING:
+            return False
+        try:
+            return not plan.approval.challenge_expires_at or self.now() >= datetime.fromisoformat(
+                plan.approval.challenge_expires_at
+            )
+        except ValueError:
+            return True
+
+    def _invalidate_terminal_challenge_if_needed(self, plan: ChangePlan) -> bool:
+        """Reconcile an impossible persisted pending challenge on a terminal plan."""
+
+        if (
+            plan.status not in TERMINAL_STATUSES
+            or plan.approval.state != ApprovalState.EXTERNAL_PENDING
+        ):
+            return False
+        plan.approval.state = ApprovalState.INVALIDATED
+        plan.approval.csrf_digest = None
+        self._record(
+            plan,
+            "external_approval_invalidated",
+            "rejected",
+            error_code=(
+                ErrorCode.CHANGE_PLAN_EXPIRED.value
+                if plan.status == PlanStatus.EXPIRED
+                else ErrorCode.EXTERNAL_APPROVAL_INVALID.value
+            ),
+        )
+        return True
+
+    def _resolve_lifecycle(self, plan: ChangePlan) -> tuple[bool, bool]:
+        """Persist each effective plan or challenge expiry transition once.
+
+        Every read and enforcement surface uses this resolver so an expired
+        challenge cannot remain actionable until a later apply attempt.
+        """
+
+        plan_expired = self._expire_if_needed(plan)
+        if self._invalidate_terminal_challenge_if_needed(plan):
+            return plan_expired, False
+        challenge_expired = self._expire_challenge_if_needed(plan)
+        return plan_expired, challenge_expired
 
     def _public(self, plan: ChangePlan, *, include_configs: bool = True) -> dict[str, Any]:
         value = plan.to_dict()
@@ -368,6 +411,7 @@ class ChangeGovernanceService:
 
     def _supersede_prior(self, new_plan: ChangePlan) -> None:
         for plan in self.repository.list():
+            self._resolve_lifecycle(plan)
             if (
                 plan.plan_id != new_plan.plan_id
                 and plan.target_id == new_plan.target_id
@@ -386,13 +430,20 @@ class ChangeGovernanceService:
 
     def get_plan(self, plan_id: str) -> dict[str, Any]:
         plan = self._load(plan_id)
-        self._expire_if_needed(plan)
+        self._resolve_lifecycle(plan)
         return self._public(plan)
+
+    def resolved_plans(self) -> list[ChangePlan]:
+        """Return persisted plans after applying the shared effective lifecycle."""
+
+        plans = self.repository.list()
+        for plan in plans:
+            self._resolve_lifecycle(plan)
+        return plans
 
     def list_plans(self, status: str = "", limit: int = 20) -> dict[str, Any]:
         plans = []
-        for plan in self.repository.list():
-            self._expire_if_needed(plan)
+        for plan in self.resolved_plans():
             if status and plan.status.value != status:
                 continue
             plans.append(self._public(plan, include_configs=False))
@@ -404,7 +455,8 @@ class ChangeGovernanceService:
         """Request external approval without granting authority to the MCP caller."""
 
         plan = self._load(plan_id)
-        if self._expire_if_needed(plan):
+        self._resolve_lifecycle(plan)
+        if plan.status == PlanStatus.EXPIRED:
             raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
         if plan.status == PlanStatus.REJECTED or plan.approval.state == ApprovalState.REJECTED:
             raise GovernanceError(ErrorCode.CHANGE_PLAN_REJECTED)
@@ -429,7 +481,6 @@ class ChangeGovernanceService:
 
         if self._active_challenge_matches(plan, calculated):
             return self._approval_pending_response(plan)
-        self._expire_challenge_if_needed(plan)
         if plan.approval.state == ApprovalState.EXTERNAL_PENDING:
             plan.approval.state = ApprovalState.INVALIDATED
             plan.approval.csrf_digest = None
@@ -486,13 +537,6 @@ class ChangeGovernanceService:
 
     def _active_challenge_matches(self, plan: ChangePlan, calculated: str) -> bool:
         approval = plan.approval
-        try:
-            unexpired = bool(
-                approval.challenge_expires_at
-                and self.now() < datetime.fromisoformat(approval.challenge_expires_at)
-            )
-        except ValueError:
-            unexpired = False
         return bool(
             approval.state == ApprovalState.EXTERNAL_PENDING
             and plan.status in {PlanStatus.AWAITING_APPROVAL, PlanStatus.ROLLBACK_PENDING}
@@ -506,19 +550,11 @@ class ChangeGovernanceService:
             and approval.challenge_risk_level == plan.risk.level.value
             and approval.approval_kind
             == ("rollback" if plan.status == PlanStatus.ROLLBACK_PENDING else "apply")
-            and unexpired
+            and not self._challenge_has_expired(plan)
         )
 
     def _expire_challenge_if_needed(self, plan: ChangePlan) -> bool:
-        if plan.approval.state != ApprovalState.EXTERNAL_PENDING:
-            return False
-        try:
-            expired = not plan.approval.challenge_expires_at or self.now() >= datetime.fromisoformat(
-                plan.approval.challenge_expires_at
-            )
-        except ValueError:
-            expired = True
-        if not expired:
+        if not self._challenge_has_expired(plan):
             return False
         plan.approval.state = ApprovalState.EXPIRED
         plan.approval.csrf_digest = None
@@ -532,9 +568,7 @@ class ChangeGovernanceService:
 
     def pending_external_reviews(self) -> list[dict[str, Any]]:
         reviews: list[dict[str, Any]] = []
-        for plan in self.repository.list():
-            self._expire_if_needed(plan)
-            self._expire_challenge_if_needed(plan)
+        for plan in self.resolved_plans():
             calculated = self.plan_hash(plan)
             if not self._active_challenge_matches(plan, calculated):
                 continue
@@ -603,9 +637,10 @@ class ChangeGovernanceService:
         lock = self._plan_locks.setdefault(plan_id, asyncio.Lock())
         async with lock:
             plan = self._load(plan_id)
-            if self._expire_if_needed(plan):
+            self._resolve_lifecycle(plan)
+            if plan.status == PlanStatus.EXPIRED:
                 raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
-            if self._expire_challenge_if_needed(plan):
+            if plan.approval.state == ApprovalState.EXPIRED:
                 raise GovernanceError(ErrorCode.EXTERNAL_APPROVAL_EXPIRED)
             calculated = self.plan_hash(plan)
             if plan.approval.challenge_id != challenge_id or not self._active_challenge_matches(plan, calculated):
@@ -632,9 +667,10 @@ class ChangeGovernanceService:
         lock = self._plan_locks.setdefault(plan_id, asyncio.Lock())
         async with lock:
             plan = self._load(plan_id)
-            if self._expire_if_needed(plan):
+            self._resolve_lifecycle(plan)
+            if plan.status == PlanStatus.EXPIRED:
                 raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
-            if self._expire_challenge_if_needed(plan):
+            if plan.approval.state == ApprovalState.EXPIRED:
                 raise GovernanceError(ErrorCode.EXTERNAL_APPROVAL_EXPIRED)
             calculated = self.plan_hash(plan)
             approval = plan.approval
@@ -711,7 +747,8 @@ class ChangeGovernanceService:
 
     async def _apply_locked(self, plan: ChangePlan, expected_plan_hash: str) -> dict[str, Any]:
         started = time.perf_counter()
-        if self._expire_if_needed(plan):
+        self._resolve_lifecycle(plan)
+        if plan.status == PlanStatus.EXPIRED:
             raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
         if plan.risk.level == RiskLevel.HIGH:
             self._reject_apply(plan, ErrorCode.HIGH_RISK_CHANGE_REJECTED)
@@ -885,6 +922,9 @@ class ChangeGovernanceService:
         plan_lock = self._plan_locks.setdefault(plan_id, asyncio.Lock())
         async with plan_lock:
             plan = self._load(plan_id)
+            self._resolve_lifecycle(plan)
+            if plan.status == PlanStatus.EXPIRED:
+                raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
             if plan.operation == ChangeOperation.CREATE_AUTOMATION or not plan.snapshot:
                 raise GovernanceError(ErrorCode.ROLLBACK_NOT_AVAILABLE)
             if plan.status in {PlanStatus.APPLIED, PlanStatus.VERIFICATION_FAILED}:
@@ -974,10 +1014,7 @@ class ChangeGovernanceService:
         return {"status": "rolled_back", "plan": self._public(plan, include_configs=False)}
 
     def health_summary(self) -> dict[str, Any]:
-        plans = self.repository.list()
-        for plan in plans:
-            if not self._expire_if_needed(plan):
-                self._expire_challenge_if_needed(plan)
+        plans = self.resolved_plans()
         storage = self.repository.health()
         events = [event.event for plan in plans for event in plan.events]
         approval_failures = sorted(
