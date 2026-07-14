@@ -1,6 +1,6 @@
 # ADR-002: Engineering MCP as a facilitator
 
-## Beta 21 evidence-backed handoffs
+## Beta 22 evidence-backed handoffs
 
 The facilitator may reduce a bounded investigation into a point-in-time handoff.
 `handoff_generation` classifies read evidence, governance lifecycle state,
@@ -8,6 +8,11 @@ conflicts, recommendations, and authorization boundaries. It does not duplicate
 ordinary HA operations, call public MCP tools recursively, monitor continuously,
 or turn a recommendation into authority. Structured output is canonical;
 Markdown is a deterministic projection of the same model.
+
+Multiple internal contexts may reuse one dependency snapshot. The facilitator
+therefore normalizes coverage by logical source and provider capability before
+status, audit, and health calculations. Reuse cannot fabricate a second failure.
+Retained governance history is evidence, not active authorization or pending work.
 
 - Status: Accepted
 - Date: 2026-07-12

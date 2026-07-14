@@ -1,13 +1,15 @@
 # HA MCP Engineering Server Architecture
 
-## Beta 21 handoff boundary
+## Beta 22 handoff boundary
 
 `handoff_generation` is an Engineering-native documentation orchestrator. Its
 provider composes bounded internal read services; it never recursively calls a
 public MCP tool. A separate service validates intent, interprets governance
 lifecycle truth, freezes sanitized pages, renders Markdown from the structured
 model, and records bounded audit/health summaries. This boundary cannot authorize
-or dispatch writes. See [`docs/HANDOFF_GENERATION.md`](docs/HANDOFF_GENERATION.md).
+or dispatch writes. Beta 22 adds a final logical-source coverage normalization
+boundary, active-versus-historical governance classification, and consistent
+resolved automation scope. See [`docs/HANDOFF_GENERATION.md`](docs/HANDOFF_GENERATION.md).
 
 ## Status
 

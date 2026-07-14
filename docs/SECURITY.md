@@ -1,6 +1,6 @@
 # Beta provider security boundaries
 
-## Beta 21 generated documentation
+## Beta 22 generated documentation
 
 `bounded_handoff_generation_read` permits only bounded internal evidence reads.
 It cannot call a service, create/approve/apply/rollback a plan, write
@@ -8,6 +8,10 @@ configuration, reload, restart, or perform a physical action. Recommendations
 carry authorization requirements but never grant them. Logs, traces, titles and
 evidence are untrusted data. Raw cursors, Markdown, configuration, traces, logs,
 history, diffs, tokens, secrets and authenticated URLs are excluded from audit.
+Shared evidence normalization never copies raw source payloads, warnings, or
+authenticated paths. Automation scope resolution uses only the approved bounded
+state/configuration reads and exposes canonical entity IDs, not credentials.
+Historical governance records cannot grant or revive authorization.
 
 ## Capability truth
 

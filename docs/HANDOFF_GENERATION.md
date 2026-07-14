@@ -1,6 +1,6 @@
 # Handoff generation contract
 
-`handoff_generation` is the Beta 21 Engineering-native, read-only documentation
+`handoff_generation` is the Beta 22 Engineering-native, read-only documentation
 capability. It converts a bounded evidence snapshot into a structured handoff and,
 optionally, deterministic Markdown. A handoff helps another engineer or future AI
 session continue without repeating every read. It is not authorization, approval,
@@ -55,6 +55,11 @@ Every inclusion flag is independent. Disabled contexts perform no provider or
 upstream read and appear as `not_requested`; caller-excluded context is not
 silently described as failed or missing.
 
+Successfully resolved internal automation IDs populate `scope.automation_entity_ids`
+in input order. Resolution uses one bounded current-state inventory, keeps every
+successful mapping when another ID is unresolved, and never invents an entity ID.
+The same frozen scope appears in structured output, Markdown, and every cursor page.
+
 ## Evidence and statement model
 
 Applicable bounded sources are server identity, capability catalog, runtime
@@ -84,6 +89,14 @@ Applied work is completed only when required verification passed or direct
 read-back establishes the intended outcome. Verification failure is failed or
 blocked. Rolled-back work is labeled `rolled_back`, never active completion.
 Prior approval cannot be reused for another plan or hash.
+
+Awaiting approval, approved, applying, verification-pending, rollback-pending,
+and unresolved apply/verification failures are active lifecycle states. Expired,
+superseded, rolled-back, rejected, invalidated, cancelled, and terminal
+validation-only plans are retained history. Historical plans may appear as facts,
+but do not become current open work, blockers, risks, or authorization requirements.
+`change_pending` requires at least one active pending plan; `blocked` requires a
+current blocker rather than retained history.
 
 Current state includes the snapshot timestamp. Failed current reads become
 unknown; historical evidence is not silently substituted. Source disagreement
@@ -118,6 +131,13 @@ limitations are not missing evidence, and source-failure counters count actual
 failures only. Material partial coverage can still yield `result_status=partial`
 and `handoff_status=incomplete` or `ready_with_open_items`.
 
+One logical source produces at most one effective coverage row. When handoff and
+incident contexts reuse the same dependency-index snapshot, rows are merged by
+logical source and provider capability. Counts, warnings, limitations, cache
+provenance, and real failures are combined deterministically. A synthetic repeated
+failure cannot override a successfully acquired shared source; a real distinct
+required operation failure remains visible and increments failure telemetry once.
+
 ## Pagination and index provenance
 
 Items use a five-minute signed sanitized snapshot, not a general result cache.
@@ -136,6 +156,11 @@ authorization counts, actual source failures, coverage limitations, truncation,
 cursor failures, and index hit/miss counts. Cursor pages never duplicate terminal
 aggregates; cursor failures are not failed new handoffs.
 
+`open_item_count` counts currently actionable unresolved items.
+`authorization_required_count` counts current actions requiring authorization.
+`risk_count` equals `items_by_section.risks`; operational severity elsewhere is
+reported by `items_by_severity` rather than hidden risk derivation.
+
 Audit records retain bounded intent and counts only: type, focus counts,
 lookback, flags, detail/output, limit, cursor presence, refresh, result/handoff
 status, item/open/risk/source/coverage/authorization counts, request ID, access,
@@ -152,7 +177,7 @@ physical action is applied.
 ## Deployed read-only acceptance
 
 1. Call `server_info`, `list_capabilities`, and `get_server_health`; verify Beta
-   `2.0.0-beta.21`, 38 registered/25 canonical tools, the read/Engineering/no-
+   `2.0.0-beta.22`, 38 registered/25 canonical tools, the read/Engineering/no-
    fallback policy, connected HA, and an empty planned list.
 2. Capture handoff/provider/index/governance/retry/timeout/audit baselines.
 3. Generate a low-limit structured `system_status` handoff with runtime,
@@ -177,5 +202,24 @@ physical action is applied.
    cursor-plus-refresh, and tampered cursor. Verify field errors and zero work.
 10. Recheck health/audit counters and confirm no service, trigger, entity/config
     write, governance mutation, reload, restart, or production access occurred.
+
+Beta 22 stabilization acceptance additionally requires:
+
+- exactly one `dependency_index` coverage row in system-status, focused, and
+  incident handoffs; successful partial coverage has `failed_items=0`, a null
+  failure category, and does not increment source/provider failures;
+- focused and incident scope for internal automation ID `1782920111688` includes
+  `automation.ha_critical_stale_data_monitor` in structured and Markdown output;
+- a change handoff for rolled-back plan `dedce860194d48a288c582df4fcdbdec`
+  and expired dry-run plan `57ac13bb45d74a4ab82cd4b34ee3b9e2`
+  treats both as history, produces no active pending work or authorization, and
+  does not use `change_pending`;
+- `risk_count` equals `items_by_section.risks`, while open and authorization
+  counts include current actionable items only;
+- two cursor continuations preserve scope, lifecycle, totals, coverage, evidence,
+  authorization and index provenance with zero HA/provider/governance/index/
+  resolution/regeneration work;
+- caller-excluded contexts are `not_requested`, validation fails before upstream
+  work, audit remains bounded/redacted, and governance plan counts do not change.
 
 The entire procedure is read-only.

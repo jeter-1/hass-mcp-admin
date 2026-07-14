@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.0.0-beta.22
+
+- Normalize shared handoff evidence to one effective coverage record per logical
+  source, removing synthetic dependency failures while preserving real failures.
+- Treat expired, superseded, rolled-back, and validation-only terminal plans as
+  retained history rather than active pending work or authorization requirements.
+- Resolve automation internal IDs through one bounded state inventory and freeze
+  successful automation entity IDs into structured, Markdown, and cursor scope.
+- Define `risk_count` as the number of handoff items in the `risks` section and
+  keep open/authorization counts limited to current actionable work.
+- Retain 38 registered/25 canonical tools, all public schemas, an empty planned
+  list, the read-only boundary, and production v1.1.2 unchanged.
+
 ## 2.0.0-beta.21
 
 - Add read-only Engineering-native `handoff_generation`, increasing the beta
