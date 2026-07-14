@@ -54,6 +54,16 @@ and do not masquerade as additional user-visible failures.
 
 This contract is beta-only. Production v1.1.2 behavior is unchanged.
 
+Beta 25 adds external-approval governance errors. `external_approval_required`
+means MCP requested review but no valid authority-version-2 Ingress approval is
+available for the exact hash and kind. `approval_authority_mismatch` means an
+active legacy plan must be recreated. `external_approval_invalid` covers a
+wrong/replayed challenge, kind or one-time CSRF; `external_approval_expired`
+covers challenge expiry; and `change_plan_rejected` is terminal. These are local
+governance outcomes: before apply/rollback dispatch they have zero HA time and do
+not increment provider failures. Safe details contain only bounded resource and
+reason categories, never CSRF, cookies, headers, notes, or secrets.
+
 For reliability analysis, malformed internal automation IDs fail local validation
 before any HA request. A syntactically valid missing internal ID remains
 `automation_not_found`. Provider/source failures, retry attempts, and terminal public

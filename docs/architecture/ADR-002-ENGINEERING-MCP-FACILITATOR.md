@@ -1,5 +1,14 @@
 # ADR-002: Engineering MCP as a facilitator
 
+## Beta 25 authority clarification
+
+Facilitation and authenticated MCP access do not imply human change authority.
+The MCP channel may create an immutable plan and request review, while exact-hash
+approval is granted only through a separate Home Assistant admin Ingress
+application. Apply and rollback have distinct grants. This preserves the
+facilitator role while retaining direct Home Assistant configuration writes only
+behind governance, external authority, verification and rollback controls.
+
 ## Beta 23 observability clarification
 
 A routing decision may select `engineering`, `direct_ha_api`, or a future

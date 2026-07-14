@@ -346,7 +346,7 @@ class AddonIsolationTests(unittest.TestCase):
     def test_beta_metadata_is_distinct_and_valid(self):
         self.assertEqual(self.beta["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(self.beta["slug"], "hass_mcp_engineering_beta")
-        self.assertEqual(self.beta["version"], "2.0.0-beta.24")
+        self.assertEqual(self.beta["version"], "2.0.0-beta.25")
         self.assertEqual(self.beta["ports"], {"8100/tcp": 8100})
         self.assertNotEqual(self.beta["slug"], self.production["slug"])
         self.assertNotEqual(set(self.beta["ports"]), set(self.production["ports"]))
@@ -482,7 +482,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
-        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.24")
+        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.25")
         self.assertEqual(result["data"]["tool_count"], 38)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
@@ -1002,7 +1002,6 @@ class BetaApplicationTests(unittest.TestCase):
                 ("get_change_plan", {"plan_id": plan_id}),
                 ("list_change_plans", {"status": "awaiting_approval", "limit": 10}),
                 ("approve_change_plan", {"plan_id": plan_id, "expected_plan_hash": plan_hash}),
-                ("apply_change_plan", {"plan_id": plan_id, "expected_plan_hash": plan_hash}),
             ]
             for index, (name, arguments) in enumerate(calls):
                 _, call = self.rpc(
@@ -1012,6 +1011,29 @@ class BetaApplicationTests(unittest.TestCase):
                 )
                 payload = json.loads(call["result"]["content"][0]["text"])
                 self.assertTrue(payload["success"], (name, payload))
+
+            approval_request = payload["data"]
+            self.assertEqual(approval_request["status"], "approval_pending")
+            _, csrf = asyncio.run(
+                service.issue_external_csrf(plan_id, approval_request["challenge_id"])
+            )
+            asyncio.run(
+                service.decide_external_approval(
+                    plan_id=plan_id,
+                    challenge_id=approval_request["challenge_id"],
+                    expected_plan_hash=plan_hash,
+                    approval_kind="apply",
+                    csrf_nonce=csrf,
+                    decision="approve",
+                    approver_principal="home_assistant_admin_ingress:integration-test",
+                )
+            )
+            _, apply_call = self.rpc(
+                "tools/call",
+                {"name": "apply_change_plan", "arguments": {"plan_id": plan_id, "expected_plan_hash": plan_hash}},
+                request_id="governance-apply-123",
+            )
+            self.assertTrue(json.loads(apply_call["result"]["content"][0]["text"])["success"])
 
             _, rollback_request_call = self.rpc(
                 "tools/call",
@@ -1027,7 +1049,23 @@ class BetaApplicationTests(unittest.TestCase):
                 {"name": "approve_change_plan", "arguments": {"plan_id": plan_id, "expected_plan_hash": rollback_hash}},
                 request_id="governance-rollback-approve-123",
             )
-            self.assertTrue(json.loads(approval_call["result"]["content"][0]["text"])["success"])
+            rollback_approval = json.loads(approval_call["result"]["content"][0]["text"])
+            self.assertTrue(rollback_approval["success"])
+            rollback_pending = rollback_approval["data"]
+            _, csrf = asyncio.run(
+                service.issue_external_csrf(plan_id, rollback_pending["challenge_id"])
+            )
+            asyncio.run(
+                service.decide_external_approval(
+                    plan_id=plan_id,
+                    challenge_id=rollback_pending["challenge_id"],
+                    expected_plan_hash=rollback_hash,
+                    approval_kind="rollback",
+                    csrf_nonce=csrf,
+                    decision="approve",
+                    approver_principal="home_assistant_admin_ingress:integration-test",
+                )
+            )
             _, rollback_call = self.rpc(
                 "tools/call",
                 {"name": "rollback_change", "arguments": {"plan_id": plan_id, "expected_plan_hash": rollback_hash}},

@@ -1,5 +1,19 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## Beta 25 external-approval observability
+
+Governance health additively reports `external_approval_enabled`,
+`ingress_approval_ui_configured`, authority version 2, bounded pending/granted/
+rejected/expired/invalidated/consumed counts and a safe last-failure category.
+These fields never grant authority. A request through `approve_change_plan`
+records `external_approval_requested`; only the private Ingress application can
+record grant or rejection. Preapproval apply/rollback refusals occur before
+provider write dispatch and therefore do not increment provider failures.
+
+Audit excludes CSRF, cookies, raw headers, Ingress credentials, request notes,
+full configuration/diffs and secrets. See
+[`../docs/EXTERNAL_APPROVAL.md`](../docs/EXTERNAL_APPROVAL.md).
+
 ## Beta 24 routing and ingress semantics
 
 A provider selected by policy but known unavailable before dispatch returns an

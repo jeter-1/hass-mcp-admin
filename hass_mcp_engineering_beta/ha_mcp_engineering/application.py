@@ -1,5 +1,6 @@
 """Beta application composition, validation, and structured startup."""
 
+import asyncio
 import logging
 import os
 import sys
@@ -7,6 +8,7 @@ import ipaddress
 
 import uvicorn
 
+from .approval_web import create_approval_application as create_ingress_web_application
 from .audit import AuditLogger
 from .configuration import (
     MAX_TRUSTED_PROXY_CIDRS,
@@ -44,6 +46,10 @@ def validate_settings(settings: Settings) -> None:
         )
     if not 1 <= settings.port <= 65535:
         errors.append("port must be between 1 and 65535")
+    if not 1 <= settings.ingress_port <= 65535:
+        errors.append("ingress_port must be between 1 and 65535")
+    if settings.ingress_port == settings.port:
+        errors.append("ingress_port must be separate from the MCP port")
     if settings.audit_enabled and not settings.audit_path.strip():
         errors.append("audit output path is required when auditing is enabled")
     if settings.audit_max_payload_chars < 512:
@@ -149,6 +155,56 @@ def create_application(settings: Settings | None = None):
     return gateway
 
 
+def create_approval_application():
+    """Create the private Ingress application after governance is configured."""
+
+    return create_ingress_web_application(GOVERNANCE)
+
+
+async def _serve(settings: Settings) -> None:
+    """Run distinct MCP and Ingress listeners in one supervised process."""
+
+    mcp_server = uvicorn.Server(
+        uvicorn.Config(
+            create_application(settings),
+            host="0.0.0.0",
+            port=settings.port,
+            log_level=settings.log_level.lower(),
+            access_log=False,
+        )
+    )
+    approval_server = uvicorn.Server(
+        uvicorn.Config(
+            create_approval_application(),
+            host="0.0.0.0",
+            port=settings.ingress_port,
+            log_level=settings.log_level.lower(),
+            access_log=False,
+        )
+    )
+    # Let the MCP server own process signals. The private listener follows its
+    # lifecycle so container shutdown cannot leave an independent authority
+    # process running.
+    approval_server.install_signal_handlers = lambda: None
+    mcp_task = asyncio.create_task(mcp_server.serve())
+    approval_task = asyncio.create_task(approval_server.serve())
+    try:
+        done, _ = await asyncio.wait(
+            {mcp_task, approval_task}, return_when=asyncio.FIRST_COMPLETED
+        )
+        # Either listener ending is a process-level event. A failed private
+        # authority listener must never leave a seemingly healthy MCP listener
+        # running without its required approval channel.
+        for task in done:
+            exception = task.exception()
+            if exception is not None:
+                raise exception
+    finally:
+        mcp_server.should_exit = True
+        approval_server.should_exit = True
+        await asyncio.gather(mcp_task, approval_task, return_exceptions=True)
+
+
 def main() -> None:
     settings = load_settings()
     configure_logging(settings.log_level)
@@ -172,15 +228,10 @@ def main() -> None:
         "HA MCP Engineering Server Beta is starting.",
         context={
             "port": settings.port,
+            "ingress_port": settings.ingress_port,
             "runtime": "home_assistant_addon" if os.environ.get("SUPERVISOR_TOKEN") else "standalone",
             "redaction_enabled": settings.redaction_enabled,
         },
         secret=settings.access_secret,
     )
-    uvicorn.run(
-        create_application(settings),
-        host="0.0.0.0",
-        port=settings.port,
-        log_level=settings.log_level.lower(),
-        access_log=False,
-    )
+    asyncio.run(_serve(settings))

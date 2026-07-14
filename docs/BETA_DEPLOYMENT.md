@@ -1,14 +1,14 @@
 # Beta deployment and validation
 
 The beta add-on is isolated from production. Production remains **HA MCP
-Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.24
+Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.25
 is **HA MCP Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100).
 The workflow in this document deploys or updates only the beta.
 
-Beta 23 must expose 38 registered/25 canonical tools and no planned feature
+Beta 25 must expose 38 registered/25 canonical tools and no planned feature
 capabilities. It adds no tool or schema, so connector recreation is not normally
 required. Follow the read-only acceptance procedure in
-[`HANDOFF_GENERATION.md`](HANDOFF_GENERATION.md). Rollback affects only beta;
+[`EXTERNAL_APPROVAL.md`](EXTERNAL_APPROVAL.md). Rollback affects only beta;
 production v1.1.2 remains on port 8099.
 
 ## Before opening or merging a beta release
@@ -23,8 +23,8 @@ From a clean branch in Windows PowerShell, run:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.22 `
-  -ExpectedVersion 2.0.0-beta.24 `
+  -DeployedVersion 2.0.0-beta.24 `
+  -ExpectedVersion 2.0.0-beta.25 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -FullTests
 ```
@@ -45,8 +45,8 @@ without supplying authentication material:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.22 `
-  -ExpectedVersion 2.0.0-beta.24 `
+  -DeployedVersion 2.0.0-beta.24 `
+  -ExpectedVersion 2.0.0-beta.25 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -SkipTests -SkipDockerBuild `
   -HealthHost homeassistant.local `
@@ -384,3 +384,32 @@ add-on version in place. If live results show an ungoverned upsert, a false
 `other:id` mismatch, forwarded-header trust without configuration, whole-store
 rate reset, pre-dispatch provider failure accounting, or an unbounded audit read,
 stop acceptance and roll forward.
+
+## Beta 25 external approval deployment
+
+Beta 25 adds no MCP tool or input-schema change. It adds Home Assistant Ingress
+metadata and a second internal listener. MCP remains mapped on port `8100`;
+approval port `8110` is configured only as `ingress_port`, is absent from
+`ports`, and must not be tunnelled or host-mapped. `panel_admin` restricts the
+sidebar panel to administrators. The add-on does not request `auth_api`.
+
+After update, open the Home Assistant sidebar panel as an administrator and
+follow the complete user-run acceptance sequence in
+[`EXTERNAL_APPROVAL.md`](EXTERNAL_APPROVAL.md). Codex/CI must not perform that
+deployed procedure. In particular, prove that MCP-only create/request/apply
+returns `external_approval_required` without a write, then approve through the
+Ingress panel and prove exact-hash apply. Request and approve rollback separately.
+Exercise terminal rejection. Restart-persistence testing requires explicit user
+permission and must restart only Beta, never Home Assistant or production.
+
+All active Beta 24 plans must be recreated because caller approval authority is
+legacy. Terminal history remains readable. If the panel is absent, verify the
+installed version is Beta 25, refresh the add-on repository, check `ingress`,
+`panel_admin` and `ingress_port`, then inspect bounded Beta logs without exposing
+cookies or tokens. Never expose port `8110` to diagnose Ingress.
+
+The blocking `real-ha-contract-tests` CI job uses a disposable official Home
+Assistant Core `2026.7.2` container pinned by immutable manifest digest. It is a
+test environment, not the deployed instance. Version/digest updates must be
+reviewed together and must pass the actual client, id-less automation readback,
+configuration-check, registry/service/state/System Log and trace contracts.

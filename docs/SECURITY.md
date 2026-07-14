@@ -1,5 +1,20 @@
 # Beta provider security boundaries
 
+## Beta 25 principal separation
+
+An authenticated MCP caller can create a plan and request external review but
+cannot approve. The MCP secret authorizes neither the internal Ingress listener
+nor a human decision. Approval routes exist only on unmapped internal port
+`8110`, after Home Assistant Ingress/admin enforcement and an application check
+of the documented Ingress peer/path. Decisions are POST-only and one-time-CSRF
+protected. All review text is bounded, sanitized and HTML escaped.
+
+Authority version 2 binds plan/version/hash/kind/target/operation/risk. Apply and
+rollback require separate external approvals and retain stale-state protection;
+rejection is terminal; legacy caller approvals are not migrated. No log,
+recommendation, request note, challenge identifier or forwarded header is an
+approval credential. See [`EXTERNAL_APPROVAL.md`](EXTERNAL_APPROVAL.md).
+
 ## Beta 24 ingress and execution hardening
 
 The authenticated beta gateway uses the canonical direct socket peer as its

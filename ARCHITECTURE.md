@@ -1,5 +1,15 @@
 # HA MCP Engineering Server Architecture
 
+## Beta 25 external authority boundary
+
+The Engineering MCP listener may create a plan and request approval, but cannot
+grant it. Exact-hash apply and rollback approval is performed by an authenticated
+Home Assistant administrator through a separate internal-only Ingress listener.
+Approval authority version 2, one-time CSRF, challenge binding, persistence and
+single-use consumption preserve principal separation. The MCP secret is not
+authority for that listener. Rejection is terminal and legacy caller approvals
+fail closed. See [`docs/EXTERNAL_APPROVAL.md`](docs/EXTERNAL_APPROVAL.md).
+
 ## Beta 24 pre-RC safety boundary
 
 Automation behavioral normalization excludes top-level `id`; identity is

@@ -1,7 +1,7 @@
 name: HA MCP Engineering Server Beta
-version: "2.0.0-beta.24"
+version: "2.0.0-beta.25"
 slug: hass_mcp_engineering_beta
-description: Governed Home Assistant engineering analysis with bounded incident correlation
+description: Governed Home Assistant engineering with external admin approval
 url: https://github.com/jeter-1/hass-mcp-admin
 arch:
   - amd64
@@ -9,6 +9,11 @@ arch:
   - armv7
 init: false
 homeassistant_api: true
+ingress: true
+ingress_port: 8110
+panel_admin: true
+panel_title: HA MCP Approval
+panel_icon: mdi:shield-check
 map:
   - homeassistant_config:ro
 ports:

@@ -36,7 +36,7 @@ https://BETA_TUNNEL/REDACTED_BETA_SECRET/mcp/
 ```
 
 Direct requests to `/mcp` and `/mcp/` must return `404`. After initialization,
-call `server_info(check_ha=false)` and verify version `2.0.0-beta.24`, then call
+call `server_info(check_ha=false)` and verify version `2.0.0-beta.25`, then call
 `list_capabilities` and verify the preserved 25-tool canonical catalog plus 13
 beta-native tools; MCP `tools/list` should expose 38 callable tools. Beta 17 added the read-only
 `configuration_integrity_analysis` capability; Beta 18 hardens its shared entity
@@ -51,9 +51,11 @@ governance lifecycle, automation scope, and counter semantics for structured and
 Markdown operational handoffs. Beta 23 corrects shared provider accounting;
 Beta 24 hardens governance identity, legacy-write refusal, direct policy, proxy
 identity, rate-store eviction, unavailable-provider accounting, and audit bounds
-without changing the catalog or schemas. Because the public catalog changed, reconnect or
+without changing the catalog or schemas. Beta 25 preserves those contracts and
+makes approval an external Home Assistant administrator action through the
+admin-only Ingress panel. Because the public catalog changed, reconnect or
 recreate a beta connector only when moving from a release before Beta 21 that
-retains a cached `tools/list`; Beta 21 through Beta 24 requires no schema refresh.
+retains a cached `tools/list`; Beta 21 through Beta 25 requires no schema refresh.
 
 Use a separate tunnel ingress or hostname for beta. Route it to port `8100`;
 leave the production ingress on `8099`.
@@ -133,13 +135,21 @@ See [`../docs/BETA_DEPLOYMENT.md`](../docs/BETA_DEPLOYMENT.md) for the validated
 Windows release workflow, Supervisor cache troubleshooting, and rollback steps.
 
 See [`../docs/CHANGE_GOVERNANCE.md`](../docs/CHANGE_GOVERNANCE.md) for the
-approval-based automation change lifecycle, risk model, persistence, audit,
+external-approval automation change lifecycle, risk model, persistence, audit,
 verification, rollback, limitations, and MCP client examples.
 
 Beta 24 changes automation normalization and plan hashes. Re-create pending or
 approved pre-Beta-24 plans; they are not silently migrated. The
 compatibility-visible `upsert_automation` always refuses before provider work.
 See [`../docs/BETA_24_RELEASE_NOTES.md`](../docs/BETA_24_RELEASE_NOTES.md).
+
+Beta 25 keeps MCP on port `8100` and adds an administrator-only Home Assistant
+Ingress approval panel on internal port `8110`. Port `8110` is not host mapped;
+do not expose it through a tunnel. `approve_change_plan` requests review but
+cannot grant approval. Apply and rollback require separate exact-hash Ingress
+decisions. Recreate active pre-Beta-25 plans because legacy caller approvals fail
+closed. See [`../docs/EXTERNAL_APPROVAL.md`](../docs/EXTERNAL_APPROVAL.md) and
+[`../docs/BETA_25_RELEASE_NOTES.md`](../docs/BETA_25_RELEASE_NOTES.md).
 
 See [`../docs/ENTITY_DEPENDENCY_ANALYSIS.md`](../docs/ENTITY_DEPENDENCY_ANALYSIS.md)
 for dependency source coverage, cache/cursor behavior, cautious assessment, limitations,
@@ -173,5 +183,5 @@ required.
 See [`../docs/HANDOFF_GENERATION.md`](../docs/HANDOFF_GENERATION.md) for the
 handoff types, evidence/statement/completion/authorization contracts, structured
 and Markdown output, signed pagination, health/audit behavior, limitations, and
-the entirely read-only deployed acceptance procedure. Beta 24 reports 38
+the entirely read-only deployed acceptance procedure. Beta 25 reports 38
 registered/25 canonical tools and an empty planned capability list.

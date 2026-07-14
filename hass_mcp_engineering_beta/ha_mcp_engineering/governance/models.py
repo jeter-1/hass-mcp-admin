@@ -22,6 +22,7 @@ class PlanStatus(str, Enum):
     ROLLBACK_FAILED = "rollback_failed"
     EXPIRED = "expired"
     SUPERSEDED = "superseded"
+    REJECTED = "rejected"
 
 
 class ChangeOperation(str, Enum):
@@ -37,8 +38,11 @@ class RiskLevel(str, Enum):
 
 class ApprovalState(str, Enum):
     REQUIRED = "required"
+    EXTERNAL_PENDING = "external_pending"
     APPROVED = "approved"
+    REJECTED = "rejected"
     CONSUMED = "consumed"
+    EXPIRED = "expired"
     INVALIDATED = "invalidated"
 
 
@@ -60,12 +64,28 @@ class ChangeRiskAssessment:
 @dataclass
 class ChangeApproval:
     state: ApprovalState = ApprovalState.REQUIRED
+    authority_version: int = 2
+    channel: str | None = None
+    approver_principal: str | None = None
+    principal_separation_enforced: bool = False
     approved_at: str | None = None
     approving_caller_id: str | None = None
     approval_note: str | None = None
     bound_plan_hash: str | None = None
     consumed_at: str | None = None
     approval_kind: str = "apply"
+    approval_expires_at: str | None = None
+    challenge_id: str | None = None
+    challenge_requested_at: str | None = None
+    challenge_expires_at: str | None = None
+    challenge_plan_version: int | None = None
+    challenge_target_type: str | None = None
+    challenge_target_id: str | None = None
+    challenge_operation: str | None = None
+    challenge_risk_level: str | None = None
+    request_note: str | None = None
+    csrf_digest: str | None = None
+    csrf_issued_at: str | None = None
 
 
 @dataclass
@@ -179,6 +199,10 @@ class ChangePlan:
             warnings=list(risk.get("warnings", [])),
         )
         approval = data.get("approval", {})
+        # Beta 24 and earlier approvals were granted by an MCP caller. They
+        # remain readable history but never acquire external authority by
+        # omission or deserialization.
+        approval.setdefault("authority_version", 1)
         approval["state"] = ApprovalState(approval.get("state", "required"))
         data["approval"] = ChangeApproval(**approval)
         data["verification"] = ChangeVerification(**data.get("verification", {}))

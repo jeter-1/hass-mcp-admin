@@ -21,6 +21,7 @@ BETA_NAME = "HA MCP Engineering Server Beta"
 PRODUCTION_VERSION = "1.1.2"
 PRODUCTION_PORT = 8099
 BETA_PORT = 8100
+BETA_INGRESS_PORT = 8110
 MIN_ACCESS_SECRET_LENGTH = 24
 EXPECTED_BETA_SCHEMA = {
     "access_secret": "str",
@@ -144,6 +145,16 @@ def validate_config_pair(production: dict, beta: dict, *, minimum_secret_length:
         raise MetadataValidationError("Beta port changed")
     if production_port == beta_port:
         raise MetadataValidationError("Production and beta ports collide")
+    if beta.get("ingress") is not True:
+        raise MetadataValidationError("Beta external approval Ingress must be enabled")
+    if beta.get("panel_admin") is not True:
+        raise MetadataValidationError("Beta approval panel must remain administrator-only")
+    if beta.get("ingress_port") != BETA_INGRESS_PORT:
+        raise MetadataValidationError("Beta approval Ingress port changed")
+    if f"{BETA_INGRESS_PORT}/tcp" in (beta.get("ports") or {}):
+        raise MetadataValidationError("Beta approval Ingress port must not be host mapped")
+    if beta.get("auth_api"):
+        raise MetadataValidationError("Beta must not enable unnecessary auth_api access")
 
     options = beta.get("options")
     schema = beta.get("schema")

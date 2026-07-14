@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 OPTIONS_PATH = Path(os.environ.get("HAMCP_OPTIONS_PATH", "/data/options.json"))
 MIN_ACCESS_SECRET_LENGTH = 24
@@ -41,6 +42,7 @@ class Settings:
     governance_retention_days: int = 90
     trust_cf_connecting_ip: bool = False
     trusted_proxy_cidrs: tuple[str, ...] = ()
+    ingress_port: int = 8110
 
     @property
     def api_url(self) -> str:
@@ -48,7 +50,14 @@ class Settings:
 
     @property
     def websocket_url(self) -> str:
-        return self.ha_url.replace("http", "ws", 1) + "/websocket"
+        parsed = urlsplit(self.ha_url)
+        scheme = "wss" if parsed.scheme == "https" else "ws"
+        base_path = parsed.path.rstrip("/")
+        if parsed.hostname == "supervisor" and base_path == "/core":
+            path = "/core/websocket"
+        else:
+            path = f"{base_path}/api/websocket"
+        return urlunsplit((scheme, parsed.netloc, path, "", ""))
 
 
 def _read_options(path: Path = OPTIONS_PATH) -> dict:
@@ -90,4 +99,5 @@ def load_settings() -> Settings:
         trusted_proxy_cidrs=tuple(
             str(value).strip() for value in configured_proxies if str(value).strip()
         ),
+        ingress_port=int(os.environ.get("APPROVAL_INGRESS_PORT", "8110")),
     )

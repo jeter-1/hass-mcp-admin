@@ -19,3 +19,11 @@ before provider dispatch. Only the bounded automation ID and
 endpoint categories are absent. Provider policy refusals, authentication/rate
 rejections, and cursor/validation failures are tool or gateway outcomes, not
 fabricated upstream provider failures.
+
+Beta 25 adds bounded external-approval lifecycle events: requested, optionally
+viewed, granted, rejected, expired, invalidated and consumed. Records may include
+safe plan/challenge IDs, kind, channel, bounded principal, result and timestamps.
+They never include CSRF nonces, cookies, Ingress authentication material, raw
+headers, MCP access secrets, request notes, full configuration/diffs, or
+authenticated URLs. A preapproval apply/rollback refusal is not a provider
+failure because no provider write was dispatched.
