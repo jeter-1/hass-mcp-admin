@@ -36,7 +36,7 @@ https://BETA_TUNNEL/REDACTED_BETA_SECRET/mcp/
 ```
 
 Direct requests to `/mcp` and `/mcp/` must return `404`. After initialization,
-call `server_info(check_ha=false)` and verify version `2.0.0-beta.23`, then call
+call `server_info(check_ha=false)` and verify version `2.0.0-beta.24`, then call
 `list_capabilities` and verify the preserved 25-tool canonical catalog plus 13
 beta-native tools; MCP `tools/list` should expose 38 callable tools. Beta 17 added the read-only
 `configuration_integrity_analysis` capability; Beta 18 hardens its shared entity
@@ -48,13 +48,21 @@ Beta 12 added `automation_reliability_analysis`; Beta 13 stabilized its correlat
 Beta 14 unified trace normalization. Beta 15 added read-only single-entity impact
 analysis. Beta 21 added `handoff_generation`; Beta 22 stabilizes its coverage,
 governance lifecycle, automation scope, and counter semantics for structured and
-Markdown operational handoffs. Beta 23 corrects shared provider accounting
+Markdown operational handoffs. Beta 23 corrects shared provider accounting;
+Beta 24 hardens governance identity, legacy-write refusal, direct policy, proxy
+identity, rate-store eviction, unavailable-provider accounting, and audit bounds
 without changing the catalog or schemas. Because the public catalog changed, reconnect or
 recreate a beta connector only when moving from a release before Beta 21 that
-retains a cached `tools/list`; Beta 21 through Beta 23 requires no schema refresh.
+retains a cached `tools/list`; Beta 21 through Beta 24 requires no schema refresh.
 
 Use a separate tunnel ingress or hostname for beta. Route it to port `8100`;
 leave the production ingress on `8099`.
+
+Forwarded client addresses are disabled by default. The direct peer remains the
+rate-limit identity unless `trust_cf_connecting_ip` is enabled and the peer
+matches a validated `trusted_proxy_cidrs` entry. Do not enable this merely because
+the deployment uses Nabu Casa or a tunnel; first confirm the actual proxy path.
+See [`../docs/RATE_LIMITING.md`](../docs/RATE_LIMITING.md).
 
 ## System Log evidence
 
@@ -128,6 +136,11 @@ See [`../docs/CHANGE_GOVERNANCE.md`](../docs/CHANGE_GOVERNANCE.md) for the
 approval-based automation change lifecycle, risk model, persistence, audit,
 verification, rollback, limitations, and MCP client examples.
 
+Beta 24 changes automation normalization and plan hashes. Re-create pending or
+approved pre-Beta-24 plans; they are not silently migrated. The
+compatibility-visible `upsert_automation` always refuses before provider work.
+See [`../docs/BETA_24_RELEASE_NOTES.md`](../docs/BETA_24_RELEASE_NOTES.md).
+
 See [`../docs/ENTITY_DEPENDENCY_ANALYSIS.md`](../docs/ENTITY_DEPENDENCY_ANALYSIS.md)
 for dependency source coverage, cache/cursor behavior, cautious assessment, limitations,
 and connector recreation or `?manifest=beta11` cache-busting guidance.
@@ -160,5 +173,5 @@ required.
 See [`../docs/HANDOFF_GENERATION.md`](../docs/HANDOFF_GENERATION.md) for the
 handoff types, evidence/statement/completion/authorization contracts, structured
 and Markdown output, signed pagination, health/audit behavior, limitations, and
-the entirely read-only deployed acceptance procedure. Beta 23 reports 38
+the entirely read-only deployed acceptance procedure. Beta 24 reports 38
 registered/25 canonical tools and an empty planned capability list.

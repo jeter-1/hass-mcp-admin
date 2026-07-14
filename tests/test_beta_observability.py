@@ -457,7 +457,7 @@ class GatewayAndHealthTests(unittest.TestCase):
             payload = json.loads(asyncio.run(compatibility.get_server_health(check_ha=False)))
         self.assertTrue(payload["success"])
         health = payload["data"]
-        self.assertEqual(health["server"]["version"], "2.0.0-beta.23")
+        self.assertEqual(health["server"]["version"], "2.0.0-beta.24")
         self.assertEqual(health["registered_tool_count"], 38)
         self.assertIn("handoff_generation", health)
         self.assertIn("automation_reliability_analysis", health)

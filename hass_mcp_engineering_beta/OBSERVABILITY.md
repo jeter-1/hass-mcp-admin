@@ -1,5 +1,22 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## Beta 24 routing and ingress semantics
+
+A provider selected by policy but known unavailable before dispatch returns an
+explicit unavailable result with `upstream_attempted=false`. It does not
+increment provider request, success, or failure counters. Actual dispatch still
+increments one request and then one success/partial-success or failure outcome.
+Tool-level recent-error telemetry retains the terminal public unavailable error.
+
+The rate-limiter health section reports the independently bounded client and
+authentication-failure store sizes, the 1,000-entry bound, forwarded-header
+trust state, and trusted-network count. It does not expose addresses. Store
+pressure performs atomic LRU eviction and never resets the whole store.
+
+`get_audit_log` clamps reads to 1–500 lines. Refused legacy automation writes are
+audited as bounded write intent with no payload, HA endpoint, provider request,
+or provider failure.
+
 ## Beta 23 provider-routing counters
 
 Provider selection and provider dispatch are distinct. The shared metrics API

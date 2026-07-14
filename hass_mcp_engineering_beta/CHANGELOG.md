@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.0.0-beta.24
+
+- Treat top-level automation `id` as explicitly verified identity metadata,
+  outside behavioral normalization, fingerprints, and plan hashes.
+- Fail closed for legacy `upsert_automation` before provider dispatch and require
+  the governed plan/approval/apply workflow.
+- Require an explicit matching policy for every direct Home Assistant exception.
+- Make forwarded client identity untrusted by default and add bounded trusted
+  proxy CIDR configuration for validated IPv4/IPv6 forwarding.
+- Replace whole-store rate-bucket resets with atomic bounded LRU eviction.
+- Exclude known-unavailable pre-dispatch providers from provider request/failure
+  counters and clamp audit-log reads to 1–500 records.
+- Preserve 38 registered tools, 25 canonical tools, zero planned capabilities,
+  and all public schemas. Production v1.1.2 remains unchanged.
+
 ## 2.0.0-beta.23
 
 - Require an explicit provider-dispatch assertion before global provider request,

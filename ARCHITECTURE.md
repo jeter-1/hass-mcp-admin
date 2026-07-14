@@ -1,5 +1,19 @@
 # HA MCP Engineering Server Architecture
 
+## Beta 24 pre-RC safety boundary
+
+Automation behavioral normalization excludes top-level `id`; identity is
+versioned and checked separately before and after governed writes. Old pending
+or approved plan hashes are never migrated implicitly. Legacy
+`upsert_automation` and every direct exception lacking a matching read policy
+fail before provider dispatch.
+
+Gateway identity uses the direct peer unless an explicitly trusted proxy network
+supplies one valid forwarded IP. Bounded LRU stores retain rate state under
+identity pressure. Provider selection without dispatch—such as the unavailable
+Standard gateway—does not create provider requests or failures. These changes
+preserve the 38 registered/25 canonical catalog and all public schemas.
+
 ## Beta 23 provider-attribution boundary
 
 Routing selects a preferred provider before input and cursor validation, but

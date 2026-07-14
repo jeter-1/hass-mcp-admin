@@ -1,5 +1,28 @@
 # Beta provider security boundaries
 
+## Beta 24 ingress and execution hardening
+
+The authenticated beta gateway uses the canonical direct socket peer as its
+client identity. `cf-connecting-ip` is ignored unless
+`trust_cf_connecting_ip=true`, the direct peer belongs to one of at most 64
+validated `trusted_proxy_cidrs`, and the forwarded value is one valid IPv4 or
+IPv6 address. Malformed or untrusted forwarding falls back to the direct peer;
+no raw address is emitted in health or audit output. Nabu Casa and tunnel users
+should leave forwarding trust disabled until the actual proxy network is known.
+
+Direct Home Assistant access is fail-closed: membership in an exception set is
+insufficient without a matching explicit read policy and capability. There is no
+direct-write policy for `upsert_automation`; it remains schema-visible but is
+refused before dispatch. `call_service`, `delete_automation`, and
+`reload_domain` also fail closed on this server. A Boolean confirmation is not
+approval of an immutable plan, and evidence or recommendations never authorize a
+write.
+
+Rate-limit bucket pressure evicts a single least-recently-used identity rather
+than clearing all throttling state. See [`RATE_LIMITING.md`](RATE_LIMITING.md).
+Audit reads and refusal records are bounded as documented in
+[`AUDIT_LOG.md`](AUDIT_LOG.md).
+
 ## Beta 23 pre-provider rejection
 
 Authentication and rate-limit checks run before provider dispatch. Rejected

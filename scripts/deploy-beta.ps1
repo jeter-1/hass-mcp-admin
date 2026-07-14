@@ -202,14 +202,15 @@ try {
         "[ ] Refresh the Home Assistant add-on repository.",
         "[ ] Update HA MCP Engineering Server Beta only.",
         "[ ] Confirm /health on port 8100.",
-        "[ ] Refresh or recreate the beta connector if it retains the 35-tool catalog.",
-        "[ ] Use MCP Inspector tools/list and confirm exactly 36 callable tools.",
+        "[ ] Confirm the beta connector exposes exactly 38 tools (reconnect only if its cached catalog is stale).",
+        "[ ] Use MCP Inspector tools/list and confirm exactly 38 callable tools.",
         "[ ] Call server_info and verify version $betaVersion.",
         "[ ] Call list_capabilities.",
         "[ ] Call get_server_health.",
-        "[ ] Run the read-only configuration_integrity_analysis acceptance sequence.",
-        "[ ] Compare list_automation_traces with automation_reliability_analysis for one recent traced automation.",
-        "[ ] Run one intentional HA failure and verify the audit result is error."
+        "[ ] Verify no pending or approved pre-Beta-24 plan was silently migrated; recreate it before use.",
+        "[ ] Verify forwarded-header trust is disabled unless trusted proxy CIDRs were intentionally configured.",
+        "[ ] Run the read-only Beta 24 handoff, cursor, provider-accounting, and audit-bound checks.",
+        "[ ] Execute any governed description-only apply and rollback only after separate explicit approvals."
     ) | ForEach-Object { Write-Host $_ }
 
     Write-Host "`nValidation complete. No production deployment was performed." -ForegroundColor Green
