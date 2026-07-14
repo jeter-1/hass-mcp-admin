@@ -1,6 +1,7 @@
 import asyncio
 from collections import Counter
 from contextlib import redirect_stderr
+import copy
 import importlib.util
 import io
 import json
@@ -345,7 +346,7 @@ class AddonIsolationTests(unittest.TestCase):
     def test_beta_metadata_is_distinct_and_valid(self):
         self.assertEqual(self.beta["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(self.beta["slug"], "hass_mcp_engineering_beta")
-        self.assertEqual(self.beta["version"], "2.0.0-beta.22")
+        self.assertEqual(self.beta["version"], "2.0.0-beta.23")
         self.assertEqual(self.beta["ports"], {"8100/tcp": 8100})
         self.assertNotEqual(self.beta["slug"], self.production["slug"])
         self.assertNotEqual(set(self.beta["ports"]), set(self.production["ports"]))
@@ -481,7 +482,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
-        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.22")
+        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.23")
         self.assertEqual(result["data"]["tool_count"], 38)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
@@ -1206,6 +1207,9 @@ class BetaApplicationTests(unittest.TestCase):
         provider_before = Counter(
             METRICS.snapshot()["provider_routing"]["failures_by_provider"]
         )
+        provider_requests_before = Counter(
+            METRICS.snapshot()["provider_routing"]["requests_by_provider"]
+        )
         stream = io.StringIO()
         handler = logging.StreamHandler(stream)
         handler.setFormatter(JsonFormatter())
@@ -1250,6 +1254,9 @@ class BetaApplicationTests(unittest.TestCase):
         provider_after = Counter(
             METRICS.snapshot()["provider_routing"]["failures_by_provider"]
         )
+        provider_requests_after = Counter(
+            METRICS.snapshot()["provider_routing"]["requests_by_provider"]
+        )
         self.assertEqual(
             errors_after["entity_not_found"] - errors_before["entity_not_found"],
             1,
@@ -1258,12 +1265,20 @@ class BetaApplicationTests(unittest.TestCase):
             provider_after["direct_ha_api"] - provider_before["direct_ha_api"],
             1,
         )
+        self.assertEqual(
+            provider_requests_after["direct_ha_api"]
+            - provider_requests_before["direct_ha_api"],
+            1,
+        )
 
     def test_invalid_entity_is_counted_once_without_upstream_access(self):
         request_id = "entity-invalid-request-123"
         errors_before = Counter(METRICS.snapshot()["recent_error_counts"])
         provider_before = Counter(
             METRICS.snapshot()["provider_routing"]["failures_by_provider"]
+        )
+        provider_requests_before = Counter(
+            METRICS.snapshot()["provider_routing"]["requests_by_provider"]
         )
         with patch.object(compatibility, "rest", new=AsyncMock()) as direct:
             _, call = self.rpc(
@@ -1285,14 +1300,61 @@ class BetaApplicationTests(unittest.TestCase):
         provider_after = Counter(
             METRICS.snapshot()["provider_routing"]["failures_by_provider"]
         )
+        provider_requests_after = Counter(
+            METRICS.snapshot()["provider_routing"]["requests_by_provider"]
+        )
         self.assertEqual(
             errors_after["invalid_request"] - errors_before["invalid_request"],
             1,
         )
         self.assertEqual(
             provider_after["direct_ha_api"] - provider_before["direct_ha_api"],
-            1,
+            0,
         )
+        self.assertEqual(
+            provider_requests_after["direct_ha_api"]
+            - provider_requests_before["direct_ha_api"],
+            0,
+        )
+
+    def test_invalid_handoff_does_not_become_engineering_provider_failure(self):
+        request_id = "handoff-invalid-request-123"
+        routing_before = copy.deepcopy(METRICS.snapshot()["provider_routing"])
+        handoff_before = copy.deepcopy(METRICS.snapshot()["handoff_generation"])
+        _, call = self.rpc(
+            "tools/call",
+            {
+                "name": "handoff_generation",
+                "arguments": {"handoff_type": "focused_review"},
+            },
+            request_id=request_id,
+        )
+        payload = json.loads(call["result"]["content"][0]["text"])
+        routing_after = METRICS.snapshot()["provider_routing"]
+        handoff_after = METRICS.snapshot()["handoff_generation"]
+        audit = self.audit_record(request_id)
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error_code"], "invalid_request")
+        self.assertEqual(payload["timing"]["home_assistant_request_count"], 0)
+        self.assertFalse(payload["timing"]["upstream_attempted"])
+        self.assertEqual(
+            routing_before["requests_by_provider"],
+            routing_after["requests_by_provider"],
+        )
+        self.assertEqual(
+            routing_before["successful_requests_by_provider"],
+            routing_after["successful_requests_by_provider"],
+        )
+        self.assertEqual(
+            routing_before["failures_by_provider"],
+            routing_after["failures_by_provider"],
+        )
+        self.assertEqual(
+            handoff_after["source_failures"] - handoff_before["source_failures"],
+            0,
+        )
+        self.assertEqual(audit["error_code"], "invalid_request")
+        self.assertEqual(audit["ha_endpoint_categories"], [])
 
     def test_exact_entity_500_is_audited_as_upstream_failure(self):
         request_id = "entity-500-request-123"
@@ -1313,9 +1375,19 @@ class BetaApplicationTests(unittest.TestCase):
         self.assertEqual(audit["error_code"], "home_assistant_api_error")
 
     def test_unauthenticated_root_paths_are_rejected(self):
+        provider_before = METRICS.snapshot()["provider_routing"]
         for path in ("/mcp", "/mcp/"):
             with self.subTest(path=path):
                 self.assertEqual(self.initialize(path).status_code, 404)
+        provider_after = METRICS.snapshot()["provider_routing"]
+        self.assertEqual(
+            provider_before["requests_by_provider"],
+            provider_after["requests_by_provider"],
+        )
+        self.assertEqual(
+            provider_before["failures_by_provider"],
+            provider_after["failures_by_provider"],
+        )
 
     def test_secret_is_redacted_from_audit_records(self):
         with tempfile.TemporaryDirectory() as directory:
