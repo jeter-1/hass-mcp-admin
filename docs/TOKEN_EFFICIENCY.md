@@ -85,3 +85,10 @@ events and hypotheses are collapsed with stable IDs while contradiction remains
 separate. Whole-analysis totals, coverage, incident identity, and provenance are
 stored once in a five-minute cursor snapshot; continuation performs no evidence
 collection or recorrelation and never becomes a reusable result cache.
+
+Beta 20 stores normalized coverage semantics in that same bounded snapshot.
+Hypotheses use stable limitation identifiers rather than repeating full source
+warnings, while the coverage matrix carries at most ten bounded deduplicated
+warnings per source. Missing evidence and partial usable evidence are separate, so
+a model does not need to rediscover whether a provider actually failed on every
+page. Continuation performs no coverage normalization or recalculation.

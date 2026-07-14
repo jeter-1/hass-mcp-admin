@@ -288,3 +288,26 @@ or a write occurs, stop testing and roll forward to a newer beta version. Do not
 downgrade metadata in place. Supervisor cache delays can be distinguished from a
 bad image by comparing live `server_info`, add-on logs without secrets, repository
 metadata, and real `tools/list` after a connector refresh.
+
+## Beta 20 coverage-correction deployment
+
+Beta 20 adds no public tool or schema, so a connector refresh is not normally
+required. After merge and publication, refresh the Home Assistant repository,
+update only `hass_mcp_engineering_beta`, and verify `server_info` reports
+`2.0.0-beta.20` while `tools/list` remains 37 registered/25 canonical tools.
+Production remains on port 8099 and must not be updated or restarted.
+
+Use the read-only target and procedure in
+[`INCIDENT_CORRELATION.md`](INCIDENT_CORRELATION.md). A successful partial
+dependency-index row must have zero failed items and `failure_category=null`, with
+unsupported source types retained as warnings and
+`dependency_index_unsupported_source_types`. Follow two cursor pages and confirm
+the same frozen coverage with no HA/provider/index work. Then run the no-index,
+validation, cursor-tamper, health, audit, and non-mutation checks.
+
+If the live add-on still reports Beta 19 after repository refresh, compare
+`server_info`, the add-on store version, repository URL/branch, and image build
+timestamp without printing authenticated URLs or secrets. Restarting Home
+Assistant is not required for repository cache diagnosis. If Beta 20 reports an
+upstream error for successful zero-failure partial coverage, stop acceptance and
+roll forward with a newer beta version rather than editing metadata in place.
