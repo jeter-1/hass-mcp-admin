@@ -174,11 +174,11 @@ class ConfigurationIntegrityAnalysisService:
                 timeout=self.timeout_seconds,
             )
         except (asyncio.TimeoutError, TimeoutError) as exc:
-            METRICS.record_provider_result("engineering", "failed")
+            METRICS.record_provider_result("engineering", "failed", dispatched=True)
             METRICS.record_integrity_analysis_failure("provider_timeout")
             raise GovernanceError(ErrorCode.PROVIDER_TIMEOUT) from exc
         except GovernanceError as exc:
-            METRICS.record_provider_result("engineering", "failed")
+            METRICS.record_provider_result("engineering", "failed", dispatched=True)
             METRICS.record_integrity_analysis_failure(exc.code.value)
             raise
 
@@ -186,7 +186,7 @@ class ConfigurationIntegrityAnalysisService:
             result.data, IntegrityEvidenceBundle
         ):
             METRICS.record_provider_result(
-                result.provider_id, result.completeness.value
+                result.provider_id, result.completeness.value, dispatched=True
             )
             category = (
                 result.failure.category.value
@@ -204,7 +204,7 @@ class ConfigurationIntegrityAnalysisService:
 
         bundle = result.data
         METRICS.record_provider_result(
-            result.provider_id, result.completeness.value
+            result.provider_id, result.completeness.value, dispatched=True
         )
         try:
             findings, evidence_by_model, rule_warnings = classify_integrity(

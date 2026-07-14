@@ -1,5 +1,15 @@
 # ADR-002: Engineering MCP as a facilitator
 
+## Beta 23 observability clarification
+
+A routing decision may select `engineering`, `direct_ha_api`, or a future
+`standard_ha_mcp` provider before any operation is attempted. Selection alone is
+not dispatch. Shared provider metrics require explicit dispatch provenance;
+pre-provider validation/authentication/rate-limit/policy errors and local snapshot
+reads remain application events. This prevents declared capability metadata from
+being mistaken for attempted provider work while retaining actual failure and
+timeout attribution.
+
 ## Beta 22 evidence-backed handoffs
 
 The facilitator may reduce a bounded investigation into a point-in-time handoff.

@@ -115,7 +115,9 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
                 if item.completeness == "partial"
                 else "failed"
             )
-            METRICS.record_provider_result(item.provider, completeness)
+            METRICS.record_provider_result(
+                item.provider, completeness, dispatched=True
+            )
         return ProviderResult(
             provider_id=self.provider_id,
             capability=request.capability,

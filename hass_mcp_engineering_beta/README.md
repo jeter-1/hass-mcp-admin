@@ -36,7 +36,7 @@ https://BETA_TUNNEL/REDACTED_BETA_SECRET/mcp/
 ```
 
 Direct requests to `/mcp` and `/mcp/` must return `404`. After initialization,
-call `server_info(check_ha=false)` and verify version `2.0.0-beta.22`, then call
+call `server_info(check_ha=false)` and verify version `2.0.0-beta.23`, then call
 `list_capabilities` and verify the preserved 25-tool canonical catalog plus 13
 beta-native tools; MCP `tools/list` should expose 38 callable tools. Beta 17 added the read-only
 `configuration_integrity_analysis` capability; Beta 18 hardens its shared entity
@@ -48,9 +48,10 @@ Beta 12 added `automation_reliability_analysis`; Beta 13 stabilized its correlat
 Beta 14 unified trace normalization. Beta 15 added read-only single-entity impact
 analysis. Beta 21 added `handoff_generation`; Beta 22 stabilizes its coverage,
 governance lifecycle, automation scope, and counter semantics for structured and
-Markdown operational handoffs. Because the public catalog changed, reconnect or
+Markdown operational handoffs. Beta 23 corrects shared provider accounting
+without changing the catalog or schemas. Because the public catalog changed, reconnect or
 recreate a beta connector only when moving from a release before Beta 21 that
-retains a cached `tools/list`; Beta 21 to Beta 22 requires no schema refresh.
+retains a cached `tools/list`; Beta 21 through Beta 23 requires no schema refresh.
 
 Use a separate tunnel ingress or hostname for beta. Route it to port `8100`;
 leave the production ingress on `8099`.
@@ -156,8 +157,8 @@ reports `2.0.0-beta.20`, 37 registered tools, and 25 canonical tools. It changes
 no public schema or tool registration, so connector recreation is not normally
 required.
 
-See [`../docs/HANDOFF_GENERATION.md`](../docs/HANDOFF_GENERATION.md) for Beta 22
+See [`../docs/HANDOFF_GENERATION.md`](../docs/HANDOFF_GENERATION.md) for the
 handoff types, evidence/statement/completion/authorization contracts, structured
 and Markdown output, signed pagination, health/audit behavior, limitations, and
-the entirely read-only deployed acceptance procedure. Beta 22 reports 38
+the entirely read-only deployed acceptance procedure. Beta 23 reports 38
 registered/25 canonical tools and an empty planned capability list.

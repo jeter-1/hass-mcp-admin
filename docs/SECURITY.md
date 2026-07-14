@@ -1,5 +1,14 @@
 # Beta provider security boundaries
 
+## Beta 23 pre-provider rejection
+
+Authentication and rate-limit checks run before provider dispatch. Rejected
+requests cannot increment provider request, success, or failure counters and do
+not acquire HA/provider evidence. Semantic validation and signed-cursor checks
+follow the same rule. Audit retains only bounded intent/error data and never turns
+the selected route, untrusted evidence, logs, or errors into proof of dispatch or
+authorization.
+
 ## Beta 22 generated documentation
 
 `bounded_handoff_generation_read` permits only bounded internal evidence reads.

@@ -191,20 +191,22 @@ class ChangeImpactAnalysisService:
                 timeout=self.timeout_seconds,
             )
         except EntityNotFoundError:
-            METRICS.record_provider_result("engineering", "failed")
+            METRICS.record_provider_result("engineering", "failed", dispatched=True)
             METRICS.record_impact_analysis_failure("entity_not_found")
             raise
         except (asyncio.TimeoutError, TimeoutError) as exc:
-            METRICS.record_provider_result("engineering", "failed")
+            METRICS.record_provider_result("engineering", "failed", dispatched=True)
             METRICS.record_impact_analysis_failure("provider_timeout")
             raise GovernanceError(ErrorCode.PROVIDER_TIMEOUT) from exc
         except GovernanceError as exc:
-            METRICS.record_provider_result("engineering", "failed")
+            METRICS.record_provider_result("engineering", "failed", dispatched=True)
             METRICS.record_impact_analysis_failure(exc.code.value)
             raise
 
         if not result.succeeded or not isinstance(result.data, ImpactEvidenceBundle):
-            METRICS.record_provider_result(result.provider_id, result.completeness.value)
+            METRICS.record_provider_result(
+                result.provider_id, result.completeness.value, dispatched=True
+            )
             category = (
                 result.failure.category.value if result.failure else "provider_error"
             )
@@ -218,7 +220,9 @@ class ChangeImpactAnalysisService:
             raise GovernanceError(code)
 
         bundle = result.data
-        METRICS.record_provider_result(result.provider_id, result.completeness.value)
+        METRICS.record_provider_result(
+            result.provider_id, result.completeness.value, dispatched=True
+        )
         try:
             findings = evaluate_impact_rules(bundle)
             _verify_evidence_invariant(findings, bundle)

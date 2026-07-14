@@ -1,5 +1,25 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## Beta 23 provider-routing counters
+
+Provider selection and provider dispatch are distinct. The shared metrics API
+requires an explicit dispatch assertion before it changes
+`requests_by_provider`, `successful_requests_by_provider`, or
+`failures_by_provider`. Request/cursor validation, authentication, rate limiting,
+policy rejection, pre-provider application errors, and local signed-snapshot
+continuations do not affect provider counters. They remain visible through tool,
+cursor, transport, recent-error, and audit telemetry as applicable.
+
+One dispatched complete operation increments request and success once. A usable
+partial provider result also increments request and success once and increments
+`partial_results`; that field describes provider operations returning partial
+evidence, not every whole-tool `result_status=partial`. One attributable failed,
+timed-out, or invalid-response operation increments request and failure once.
+Source failures are evidence-source outcomes and remain separate: unsupported,
+not-requested, retention-limited, or successful partial coverage is not a source
+or provider failure. All provider-routing fields are cumulative process-level
+metrics and reset deterministically on process restart or explicit metric reset.
+
 ## Beta 22 handoff counters
 
 `get_server_health.handoff_generation` counts all requests, while terminal

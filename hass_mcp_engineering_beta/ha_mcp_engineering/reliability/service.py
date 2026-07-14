@@ -150,16 +150,18 @@ class AutomationReliabilityAnalysisService:
                 timeout=self.timeout_seconds,
             )
         except AutomationNotFoundError:
-            METRICS.record_provider_result("engineering", "failed")
+            METRICS.record_provider_result("engineering", "failed", dispatched=True)
             METRICS.record_reliability_analysis_failure("automation_not_found")
             raise
         except (asyncio.TimeoutError, TimeoutError) as exc:
-            METRICS.record_provider_result("engineering", "failed")
+            METRICS.record_provider_result("engineering", "failed", dispatched=True)
             METRICS.record_reliability_analysis_failure("provider_timeout")
             raise GovernanceError(ErrorCode.PROVIDER_TIMEOUT) from exc
 
         if not result.succeeded or not isinstance(result.data, ReliabilityEvidenceBundle):
-            METRICS.record_provider_result(result.provider_id, result.completeness.value)
+            METRICS.record_provider_result(
+                result.provider_id, result.completeness.value, dispatched=True
+            )
             category = result.failure.category.value if result.failure else "provider_error"
             METRICS.record_reliability_analysis_failure(category)
             code = ErrorCode.PROVIDER_TIMEOUT if result.failure and result.failure.category == ProviderFailureCategory.TIMEOUT else ErrorCode.ANALYSIS_UNAVAILABLE
@@ -181,7 +183,9 @@ class AutomationReliabilityAnalysisService:
             and not independent_findings
         ):
             category = trace_source.collection_state or "trace_source_unavailable"
-            METRICS.record_provider_result(result.provider_id, "failed")
+            METRICS.record_provider_result(
+                result.provider_id, "failed", dispatched=True
+            )
             METRICS.record_reliability_analysis_failure(category)
             code = (
                 ErrorCode.PROVIDER_TIMEOUT
@@ -189,7 +193,9 @@ class AutomationReliabilityAnalysisService:
                 else ErrorCode.ANALYSIS_UNAVAILABLE
             )
             raise GovernanceError(code)
-        METRICS.record_provider_result(result.provider_id, result.completeness.value)
+        METRICS.record_provider_result(
+            result.provider_id, result.completeness.value, dispatched=True
+        )
         fingerprint = _analysis_fingerprint(
             bundle.evidence_fingerprint(), analysis_timestamp
         )

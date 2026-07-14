@@ -408,6 +408,7 @@ class OperationLatencyMetricTests(unittest.TestCase):
 
 class GatewayAndHealthTests(unittest.TestCase):
     def test_rate_limit_response_uses_stable_error_mapping(self):
+        provider_before = METRICS.snapshot()["provider_routing"]
         class RecordingApp:
             async def __call__(self, scope, receive, send):
                 raise AssertionError("rate-limited request must not reach app")
@@ -440,6 +441,15 @@ class GatewayAndHealthTests(unittest.TestCase):
             self.assertEqual(start["status"], 429)
             self.assertEqual(payload["error_code"], ErrorCode.RATE_LIMIT_EXCEEDED.value)
             self.assertEqual(payload["request_id"], "rate-request-123")
+            provider_after = METRICS.snapshot()["provider_routing"]
+            self.assertEqual(
+                provider_before["requests_by_provider"],
+                provider_after["requests_by_provider"],
+            )
+            self.assertEqual(
+                provider_before["failures_by_provider"],
+                provider_after["failures_by_provider"],
+            )
 
     def test_get_server_health_returns_safe_data(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -447,7 +457,7 @@ class GatewayAndHealthTests(unittest.TestCase):
             payload = json.loads(asyncio.run(compatibility.get_server_health(check_ha=False)))
         self.assertTrue(payload["success"])
         health = payload["data"]
-        self.assertEqual(health["server"]["version"], "2.0.0-beta.22")
+        self.assertEqual(health["server"]["version"], "2.0.0-beta.23")
         self.assertEqual(health["registered_tool_count"], 38)
         self.assertIn("handoff_generation", health)
         self.assertIn("automation_reliability_analysis", health)

@@ -31,6 +31,10 @@ class RequestTelemetry:
     error_code: str | None = None
     result_status: str | None = None
     completeness: str | None = None
+    provider_dispatch_count: int = 0
+    provider_success_count: int = 0
+    provider_partial_count: int = 0
+    provider_failure_count: int = 0
     caller_id: str = "anonymous"
     audit_context: dict[str, object] = field(default_factory=dict)
 
@@ -53,6 +57,18 @@ class RequestTelemetry:
     def finish_ha_attempt(self, finished: float) -> None:
         self.ha_active_requests = max(0, self.ha_active_requests - 1)
         self.ha_span_finished = finished if self.ha_span_finished is None else max(self.ha_span_finished, finished)
+
+    def record_provider_outcome(self, completeness: str) -> None:
+        """Record one explicitly dispatched provider operation for this request."""
+
+        self.provider_dispatch_count += 1
+        if completeness == "complete":
+            self.provider_success_count += 1
+        elif completeness == "partial":
+            self.provider_success_count += 1
+            self.provider_partial_count += 1
+        else:
+            self.provider_failure_count += 1
 
 
 _REQUEST: ContextVar[RequestTelemetry | None] = ContextVar("engineering_request", default=None)

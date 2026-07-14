@@ -215,7 +215,7 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
                     ref = _reference(evidence, "dependency_index", dynamic.source_id, summary, confidence="low", coverage_status=completeness)
                     items.append(_item("open_questions", "limitation", "Unresolved dynamic entity selection", summary, "open", "medium", confidence="low", automations=(dynamic.source_id,), refs=(ref,), limitations=("dynamic_reference_target_unresolved",), manual=True, key=(dynamic.source_id, dynamic.configuration_path)))
             except Exception:
-                METRICS.record_provider_result("engineering", "failed")
+                METRICS.record_provider_result("engineering", "failed", dispatched=True)
                 coverage.append(_failed("dependency_index", "engineering", "dependency_analysis", upstream=True))
         else:
             coverage.append(_not_requested("dependency_index", "dependency_analysis"))
