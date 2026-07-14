@@ -1,5 +1,21 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## Beta 26 expiry lifecycle observability
+
+`change_plan_expired` and `external_approval_expired` are lifecycle transition
+events, not read counters. Each transition is persisted and audited once.
+Repeated `get_change_plan`, `list_change_plans`, `get_server_health`, Ingress,
+or handoff reads of the same effective state do not update the plan or duplicate
+events, audit entries, or structured logs.
+
+`pending_challenge_count` is computed from the resolved current lifecycle. It
+excludes challenges whose expiry has passed even when the first observation is
+a health call. The same resolver supplies public plan reads, the Ingress inbox,
+approval requests, apply, rollback, and handoff governance context. These
+metrics remain observational and cannot grant authority. No provider failure is
+recorded for a local expired-approval refusal because no provider dispatch
+occurred.
+
 ## Beta 25 external-approval observability
 
 Governance health additively reports `external_approval_enabled`,

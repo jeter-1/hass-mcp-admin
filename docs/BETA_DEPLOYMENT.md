@@ -1,14 +1,14 @@
 # Beta deployment and validation
 
 The beta add-on is isolated from production. Production remains **HA MCP
-Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.25
+Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.26
 is **HA MCP Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100).
 The workflow in this document deploys or updates only the beta.
 
-Beta 25 must expose 38 registered/25 canonical tools and no planned feature
+Beta 26 must expose 38 registered/25 canonical tools and no planned feature
 capabilities. It adds no tool or schema, so connector recreation is not normally
-required. Follow the read-only acceptance procedure in
-[`EXTERNAL_APPROVAL.md`](EXTERNAL_APPROVAL.md). Rollback affects only beta;
+required. Follow the user-run acceptance procedure in
+[`BETA_26_RELEASE_NOTES.md`](BETA_26_RELEASE_NOTES.md). Rollback affects only beta;
 production v1.1.2 remains on port 8099.
 
 ## Before opening or merging a beta release
@@ -23,8 +23,8 @@ From a clean branch in Windows PowerShell, run:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.24 `
-  -ExpectedVersion 2.0.0-beta.25 `
+  -DeployedVersion 2.0.0-beta.25 `
+  -ExpectedVersion 2.0.0-beta.26 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -FullTests
 ```
@@ -45,8 +45,8 @@ without supplying authentication material:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.24 `
-  -ExpectedVersion 2.0.0-beta.25 `
+  -DeployedVersion 2.0.0-beta.25 `
+  -ExpectedVersion 2.0.0-beta.26 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -SkipTests -SkipDockerBuild `
   -HealthHost homeassistant.local `
@@ -384,6 +384,33 @@ add-on version in place. If live results show an ungoverned upsert, a false
 `other:id` mismatch, forwarded-header trust without configuration, whole-store
 rate reset, pre-dispatch provider failure accounting, or an unbounded audit read,
 stop acceptance and roll forward.
+
+## Beta 26 expiry lifecycle deployment and troubleshooting
+
+Beta 26 changes no MCP tool, input schema, input enum, port, Ingress setting, or
+approval authority. Connector recreation is not normally required. After the
+update, confirm `server_info` reports `2.0.0-beta.26`, then use the procedure in
+[`BETA_26_RELEASE_NOTES.md`](BETA_26_RELEASE_NOTES.md) to verify one retained
+expired plan and one expired external challenge.
+
+An expired plan is immutable lifecycle history. If repeated
+`get_server_health`, `list_change_plans`, or `get_change_plan` calls change its
+`updated_at`, event count, expiration-event count, or add expiration audit
+records, stop acceptance and roll forward to a later corrective Beta. Do not
+edit the record or downgrade metadata in place.
+
+An expired challenge must not appear as `external_pending`, contribute to
+`pending_challenge_count`, or appear in the Ingress inbox. If it does, do not
+attempt to approve it. Record only bounded plan/challenge status and request ID,
+stop change testing, and publish a later Beta. An eligible unexpired plan may
+request a fresh challenge, but the old challenge must remain unusable and the
+replacement must not outlive the plan.
+
+Expired-authority apply and rollback refusals are local governance outcomes:
+they must precede Home Assistant/provider write work and must not increment
+provider failure counters. Production v1.1.2 is not part of diagnosis or
+rollback. Rollback means a later Beta that reverts or corrects the defect, never
+lowering the add-on version in place.
 
 ## Beta 25 external approval deployment
 
