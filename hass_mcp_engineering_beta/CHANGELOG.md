@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.0.0-beta.25
+
+- Make `approve_change_plan` request external review without granting approval;
+  the public input schema is unchanged.
+- Add an administrator-only Home Assistant Ingress approval panel on unmapped
+  internal port 8110 with escaped HTML, POST-only decisions, one-time CSRF and
+  strict bounds/security headers.
+- Persist 15-minute authority-version-2 challenges bound to the exact plan hash,
+  kind, target, operation and risk; preserve idempotency, expiry, invalidation,
+  replay resistance and restart recovery.
+- Require separate external apply and rollback approvals and make rejection a
+  terminal historical state.
+- Fail active Beta 24 caller approvals closed; never silently migrate authority.
+- Update handoff, audit and health contracts for external-pending, approved,
+  consumed, rejected, expired and invalidated states.
+- Add disposable, digest-pinned Home Assistant Core 2026.7.2 REST/WebSocket,
+  id-less automation, configuration-validation and trace contract tests.
+- Preserve 38 registered tools, 25 canonical tools, zero planned capabilities,
+  schema version 1 and every existing public input schema. Production v1.1.2 is
+  unchanged.
+
 ## 2.0.0-beta.24
 
 - Treat top-level automation `id` as explicitly verified identity metadata,

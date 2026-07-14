@@ -13,7 +13,7 @@ failures or requirements can block a handoff. Full proposed configuration,
 unbounded diffs, secrets, authentication,
 and prior approval as reusable authority are excluded.
 
-Version 2.0.0-beta.24 retains the beta-only approval boundary for controlled
+Version 2.0.0-beta.25 requires external Home Assistant administrator approval for controlled
 Home Assistant automation creation and updates. It does not alter production
 v1.1.2 and does not govern scripts, scenes, dashboards, helpers, integrations,
 devices, add-ons, system configuration, arbitrary direct service calls, or
@@ -43,21 +43,24 @@ and rollback lifecycle.
 
 ```text
 draft -> validation_failed
-      -> awaiting_approval -> approved -> applying -> applied
-                                      |            -> verification_failed
-                                      |            -> failed
-                                      -> expired / superseded
+      -> awaiting_approval -> external_pending -> approved -> applying -> applied
+                            |                  |            -> verification_failed
+                            |                  |            -> failed
+                            |                  -> rejected
+                            -> expired / superseded
 
 applied or verification_failed
-  -> rollback_pending -> separately approved -> rolled_back
-                                          |     -> rollback_failed
-                                          -> expired
+  -> rollback_pending -> external_pending -> separately approved -> rolled_back
+                                           |                    -> rollback_failed
+                                           -> rejected / expired
 ```
 
 Persisted statuses are `draft`, `validation_failed`, `awaiting_approval`,
 `approved`, `applying`, `applied`, `verification_failed`, `failed`,
 `rollback_pending`, `rolled_back`, `rollback_failed`, `expired`, and
-`superseded`. A newer plan for the same automation supersedes an older pending
+`superseded`, plus terminal `rejected`. Approval states are `required`,
+`external_pending`, `approved`, `rejected`, `consumed`, `expired`, and
+`invalidated`. A newer plan for the same automation supersedes an older pending
 plan so two proposals cannot silently overwrite one another.
 
 ## Planning, normalization, and fingerprints
@@ -77,7 +80,8 @@ fields without dumping unbounded content.
 The current-state fingerprint and proposed-config hash are SHA-256 hashes of
 canonical JSON. They do not include the access secret. The approval-bound plan
 hash also covers the plan ID and version, operation, target, expiry, risk,
-current-state fingerprint, proposed content, and approval kind. A material plan
+current-state fingerprint, proposed content, approval kind, and approval
+authority version. A material plan
 mutation changes the hash and invalidates approval.
 
 An update whose normalized current and proposed configurations are equal returns
@@ -117,21 +121,32 @@ Governed configuration reads, writes, verification, and rollback are
 `direct_ha_required` facilitator capabilities. They do not route through ordinary
 service execution or fall back to an unverified write. See ADR-002 for provider rules.
 
-## Approval and expiration
+## External approval and expiration
 
-Approval is an explicit, separate MCP operation. The client must pass the exact
-`plan_hash` returned by planning or rollback request. Approval records the safe
-caller identity and timestamp and is single-use. It does not write Home
-Assistant state. A plan defaults to a 60-minute expiry; clients may request 5 to
-1,440 minutes. Expired plans cannot be approved or applied.
+Approval authority version 2 is external to MCP. The client must pass the exact
+`plan_hash` returned by planning or rollback request to
+`approve_change_plan`, but that call only creates or returns a 15-minute bounded
+external review challenge and reports `approval_pending`. It never marks the
+plan approved. Repeated requests are idempotent and do not extend an active
+challenge. `approval_note` is untrusted request context, not human approval.
 
-This separation gives the reviewer a stable diff and risk record before any
-write, prevents a generic `confirm=true` from authorizing mutable content, and
-supports an auditable handoff between planning and execution.
+An authenticated Home Assistant administrator reviews the bounded escaped plan
+through the admin-only Ingress panel on internal port `8110`. Approval or
+rejection is POST-only, protected by a one-time CSRF nonce, and revalidates the
+exact persisted plan/version/hash/kind/target/operation/risk. Approval records
+the honest Ingress principal and principal-separation flag. It is single-use.
+Rejection is terminal. A plan defaults to a 60-minute expiry; clients may
+request 5 to 1,440 minutes. Neither a plan nor a challenge can be approved after
+expiry.
+
+The MCP access secret does not authorize the approval listener, and approval
+routes are absent from port `8100`. See
+[`EXTERNAL_APPROVAL.md`](EXTERNAL_APPROVAL.md) for the complete boundary.
 
 ## Apply, verification, and concurrency
 
-`apply_change_plan` rechecks expiry, approval use, approval hash, risk, and the
+`apply_change_plan` rechecks expiry, approval authority version, external
+channel/principal and separation flag, approval use, kind, hash, risk, and the
 live current-state fingerprint. It then obtains a per-automation lock, captures
 the pre-change snapshot, consumes approval, writes through Home Assistant's
 automation configuration endpoint, and reads the stored automation back.
@@ -157,8 +172,10 @@ Current-state fingerprints reject stale plans. On restart, an abandoned
 
 Rollback is available only for governed updates with a pre-change snapshot.
 The first `rollback_change(plan_id)` call creates `rollback_pending` state and a
-new plan hash. The client must approve that exact rollback hash with
-`approve_change_plan`, then call `rollback_change` again with the hash.
+new plan hash. The client requests review of that exact rollback hash with
+`approve_change_plan`; a human separately approves kind `rollback` in Ingress;
+then the client calls `rollback_change` again with the hash. Apply authority
+never authorizes rollback.
 
 Before restoring the exact snapshot, rollback verifies that live state still
 matches the post-apply fingerprint. It writes, reads back, compares normalized
@@ -183,11 +200,15 @@ never use the secret.
 ## Audit, health, and stable errors
 
 Lifecycle events include `change_plan_created`,
-`change_plan_validation_failed`, `change_plan_approved`,
+`change_plan_validation_failed`,
 `change_plan_expired`, `change_apply_started`, `change_apply_rejected`,
 `change_apply_succeeded`, `change_apply_failed`,
-`change_verification_failed`, `rollback_requested`, `rollback_approved`,
-`rollback_started`, `rollback_succeeded`, and `rollback_failed`.
+`change_verification_failed`, `rollback_requested`, `rollback_started`,
+`rollback_succeeded`, and `rollback_failed`, plus
+`external_approval_requested`, optional `external_approval_viewed`,
+`external_approval_granted`, `external_approval_rejected`,
+`external_approval_expired`, `external_approval_invalidated`, and
+`external_approval_consumed`.
 
 Events contain only request ID, plan ID, target type/ID, operation, risk,
 result status, stable error code, duration, caller ID, and approval state. The
@@ -201,8 +222,13 @@ Stable error codes are:
 change_plan_not_found
 change_plan_expired
 change_plan_not_approved
+change_plan_rejected
 approval_hash_mismatch
 approval_already_consumed
+external_approval_required
+approval_authority_mismatch
+external_approval_invalid
+external_approval_expired
 stale_target_state
 change_in_progress
 unsupported_change_operation
@@ -250,15 +276,27 @@ These examples use generic IDs and no credentials or private entity names.
 ```
 
 2. Review the diff, risk, warnings, validation, expiry, fingerprints, and hash.
-3. Call `approve_change_plan(plan_id, expected_plan_hash)` with the exact hash.
-4. Call `apply_change_plan(plan_id, expected_plan_hash)`.
-5. Confirm `applied`, verification `passed`, and matching request IDs.
-6. Call `rollback_change(plan_id)` to request rollback and review its new hash.
-7. Approve that hash, call `rollback_change` with it, and confirm `rolled_back`.
+3. Call `approve_change_plan(plan_id, expected_plan_hash)` with the exact hash;
+   confirm it reports `approval_pending`, not approved.
+4. A Home Assistant administrator reviews and approves the exact plan through
+   the Ingress panel.
+5. Call `apply_change_plan(plan_id, expected_plan_hash)`.
+6. Confirm `applied`, verification `passed`, and matching request IDs.
+7. Call `rollback_change(plan_id)` to request rollback and review its new hash.
+8. Request review of that hash, have the administrator approve the separate
+   rollback in Ingress, call `rollback_change` with it, and confirm `rolled_back`.
 
 Clients should always present diff, risk reasons, expiry, and exact hash before
-approval. Create a new plan after expiry, stale-state rejection, ambiguous apply
+external review. Create a new plan after rejection, expiry, stale-state rejection, ambiguous apply
 failure, or external target changes.
+
+## Beta 25 migration
+
+New plans use approval authority version 2. Beta 24 pending or MCP-approved
+records use legacy authority version 1 (including a missing field) and cannot be
+applied. They are not silently upgraded or rehashed; recreate active plans.
+Terminal historical applied, rolled-back, expired, superseded and failed records
+remain readable. Automation behavioral normalization remains version 2.
 
 Successful governed apply and rollback now invalidate the process-local entity
 dependency index so the next analysis rebuilds configuration evidence. This adds no

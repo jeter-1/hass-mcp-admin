@@ -44,6 +44,12 @@ Beta 24 makes the compatibility-visible legacy upsert and every missing direct
 policy fail closed, while preserving the same catalog. No planned feature capability remains. All existing public
 schemas remain unchanged.
 
+Beta 25 keeps all 38 tools and their schemas. `approve_change_plan` remains
+registered but requests an external Home Assistant administrator review; it does
+not grant authority. Only the separate internal Ingress application can record
+authority-version-2 approval. This is a governance semantic correction, not a
+new MCP capability or provider route.
+
 Classifications:
 
 - **Keep** — uniquely useful or strategically important to the Engineering server.

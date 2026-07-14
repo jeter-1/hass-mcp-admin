@@ -96,13 +96,20 @@ read-back establishes the intended outcome. Verification failure is failed or
 blocked. Rolled-back work is labeled `rolled_back`, never active completion.
 Prior approval cannot be reused for another plan or hash.
 
-Awaiting approval, approved, applying, verification-pending, rollback-pending,
+Awaiting approval, external-pending, approved, applying, verification-pending, rollback-pending,
 and unresolved apply/verification failures are active lifecycle states. Expired,
 superseded, rolled-back, rejected, invalidated, cancelled, and terminal
 validation-only plans are retained history. Historical plans may appear as facts,
 but do not become current open work, blockers, risks, or authorization requirements.
 `change_pending` requires at least one active pending plan; `blocked` requires a
 current blocker rather than retained history.
+
+In Beta 25, `external_pending` is current authorization work and externally
+approved-but-unapplied work remains pending, never completed. Rejected plans are
+terminal history and do not count as open work, pending authorization or a
+blocker. Expired/invalidated/consumed approvals do not count as pending unless a
+current replacement challenge exists. Handoffs expose no challenge ID, CSRF,
+Ingress material, or approver credential.
 
 Current state includes the snapshot timestamp. Failed current reads become
 unknown; historical evidence is not silently substituted. Source disagreement

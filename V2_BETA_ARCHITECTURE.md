@@ -1,5 +1,13 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## Beta 25 external approval authority
+
+The beta runs two isolated application listeners: MCP on mapped port `8100` and
+the administrator review UI on Ingress-only port `8110`. Approval routes are not
+mounted on MCP. The Ingress panel renders bounded escaped plans and accepts only
+POST decisions protected by one-time CSRF. Authority version 2 binds the exact
+plan hash and approval kind; apply and rollback require separate grants.
+
 ## Beta 24 final pre-RC hardening
 
 The governance normalization version separates automation identity metadata from
@@ -41,8 +49,8 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-beta.24` |
-| Port | `8099` | `8100` |
+| Version | `1.1.2` | `2.0.0-beta.25` |
+| Port | `8099` | MCP `8100`; internal Ingress `8110` |
 | Options and secret | Production add-on data | Beta add-on data |
 
 Home Assistant derives a distinct internal service/DNS name from each add-on
