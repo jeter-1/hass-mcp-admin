@@ -718,6 +718,11 @@ class ChangeImpactAnalysisService:
             signature = base64.urlsafe_b64decode(
                 signature_part + "=" * (-len(signature_part) % 4)
             )
+            if (
+                base64.urlsafe_b64encode(payload).decode().rstrip("=") != payload_part
+                or base64.urlsafe_b64encode(signature).decode().rstrip("=") != signature_part
+            ):
+                raise ValueError("cursor encoding is not canonical")
             expected = hmac.new(self.cursor_key, payload, hashlib.sha256).digest()
             if not hmac.compare_digest(signature, expected):
                 raise ValueError("cursor signature mismatch")

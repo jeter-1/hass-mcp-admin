@@ -7,6 +7,8 @@ import hashlib
 import json
 from typing import Any
 
+from ..source_coverage import assessment_complete
+
 
 FINDING_TYPES = (
     "missing_entity_reference",
@@ -47,9 +49,9 @@ class IntegritySourceCoverage:
 
     @property
     def assessment_complete(self) -> bool:
-        return (
-            not self.required_for_assessment
-            or self.completeness in {"complete", "not_requested"}
+        return assessment_complete(
+            completeness=self.completeness,
+            required=self.required_for_assessment,
         )
 
     def public(self) -> dict[str, Any]:

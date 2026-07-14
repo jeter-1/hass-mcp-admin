@@ -7,6 +7,8 @@ import hashlib
 import json
 from typing import Any
 
+from ..source_coverage import assessment_complete
+
 
 EVENT_TYPES = (
     "automation_triggered",
@@ -155,13 +157,18 @@ class IncidentSourceCoverage:
     cached_provenance: bool = False
     failure_category: str | None = None
     upstream_attempted: bool = False
+    coverage_limitations: list[str] = field(default_factory=list)
 
     @property
     def assessment_complete(self) -> bool:
-        return not self.required_for_assessment or self.completeness in {
-            "complete",
-            "not_requested",
-        }
+        return assessment_complete(
+            completeness=self.completeness,
+            required=self.required_for_assessment,
+        )
+
+    @property
+    def actual_failure(self) -> bool:
+        return bool(self.failure_category or self.failed_items)
 
     def public(self) -> dict[str, Any]:
         return {
@@ -179,6 +186,10 @@ class IncidentSourceCoverage:
             "cached_provenance": self.cached_provenance,
             "failure_category": self.failure_category,
             "upstream_attempted": self.upstream_attempted,
+            "coverage_limitations": [
+                str(item)[:128]
+                for item in sorted(dict.fromkeys(self.coverage_limitations))[:10]
+            ],
         }
 
 
@@ -204,7 +215,14 @@ class IncidentEvidenceBundle:
             "focus": self.focus,
             "events": [(item.event_id, item.timestamp, item.event_type) for item in self.events],
             "coverage": [
-                (item.source_type, item.completeness, item.items_examined, item.failed_items)
+                (
+                    item.source_type,
+                    item.completeness,
+                    item.items_examined,
+                    item.failed_items,
+                    item.failure_category,
+                    tuple(sorted(item.coverage_limitations)),
+                )
                 for item in self.coverage
             ],
             "index": {

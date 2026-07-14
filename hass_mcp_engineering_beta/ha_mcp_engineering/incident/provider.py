@@ -29,6 +29,7 @@ from ..providers import (
 from ..reliability.rules import evaluate_rules
 from ..reliability.timestamps import normalize_timestamp, parse_timestamp
 from ..sanitization import sanitize_untrusted_data
+from ..source_coverage import normalize_coverage
 from .models import IncidentEvidenceBundle, IncidentSourceCoverage
 from .normalization import (
     deduplicate_and_sort,
@@ -105,7 +106,7 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
         required = [item for item in bundle.coverage if item.required_for_assessment]
         missing = tuple(item.source_type for item in required if not item.assessment_complete)
         for item in bundle.coverage:
-            if not item.requested or item.provider == "none":
+            if not item.requested or not item.upstream_attempted or item.provider == "none":
                 continue
             completeness = (
                 "complete"
@@ -252,6 +253,7 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
             ],
             (time.perf_counter() - system_log_started) * 1000, False,
             "provider_upstream_error" if system_log_failed else None, True,
+            [] if system_log_failed else ["system_log_retention_limited"],
         ))
 
         index_requested = bool(query.get("include_dependency_context") or query.get("include_integrity_context"))
@@ -259,16 +261,27 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
         rebuilt = False
         lookup_ms = 0.0
         if index_requested:
-            snapshot, rebuilt, lookup_ms = await self.index.get(refresh=bool(query.get("refresh_index")))
-            index_coverage = _index_coverage(snapshot, rebuilt, lookup_ms)
-            coverage.append(index_coverage)
-            scoped_findings = _scoped_dependency_findings(snapshot, entity_ids, automation_id)
-            if query.get("include_dependency_context"):
-                for item in scoped_findings[:200]:
-                    events.append(event(evidence, source_type="dependency_index", source_object=item.source_id,
-                        event_type="dependency_relationship", summary=f"{item.source_type} {item.source_id} has an exact dependency on {item.target_entity_id}.",
-                        entity_id=item.target_entity_id, automation_id=automation_id if item.source_id == automation_id else None,
-                        severity="info", confidence="exact", coverage_status="complete"))
+            try:
+                snapshot, rebuilt, lookup_ms = await self.index.get(refresh=bool(query.get("refresh_index")))
+                index_coverage = _index_coverage(snapshot, rebuilt, lookup_ms)
+                coverage.append(index_coverage)
+                scoped_findings = _scoped_dependency_findings(snapshot, entity_ids, automation_id)
+                if query.get("include_dependency_context"):
+                    for item in scoped_findings[:200]:
+                        events.append(event(evidence, source_type="dependency_index", source_object=item.source_id,
+                            event_type="dependency_relationship", summary=f"{item.source_type} {item.source_id} has an exact dependency on {item.target_entity_id}.",
+                            entity_id=item.target_entity_id, automation_id=automation_id if item.source_id == automation_id else None,
+                            severity="info", confidence="exact", coverage_status=index_coverage.completeness))
+            except (asyncio.TimeoutError, TimeoutError):
+                coverage.append(_failed_coverage(
+                    "dependency_index", "dependency_analysis", True,
+                    provider="engineering", failure_category="provider_timeout",
+                ))
+            except Exception:
+                coverage.append(_failed_coverage(
+                    "dependency_index", "dependency_analysis", True,
+                    provider="engineering", failure_category="provider_upstream_error",
+                ))
         else:
             coverage.append(_not_requested("dependency_index", "dependency_analysis"))
 
@@ -476,9 +489,20 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
 def _coverage(source_type, capability, requested, examined, failed, duration):
     if not requested:
         return _not_requested(source_type, capability)
-    return IncidentSourceCoverage(source_type, "direct_ha_api", capability, "complete" if failed == 0 else "partial",
-        True, True, examined, failed, [] if failed == 0 else [f"{failed} bounded request(s) failed."], duration,
-        False, None if failed == 0 else "provider_upstream_error", True)
+    normalized = normalize_coverage(
+        source_type=source_type,
+        completeness="complete" if failed == 0 else "partial",
+        requested=True,
+        required=True,
+        items_examined=examined,
+        failed_items=failed,
+    )
+    return IncidentSourceCoverage(
+        source_type, "direct_ha_api", capability, normalized.completeness,
+        True, True, examined, normalized.failed_items,
+        [] if failed == 0 else [f"{failed} bounded request(s) failed."], duration,
+        False, normalized.failure_category, True, list(normalized.coverage_limitations),
+    )
 
 
 def _merge_activity_coverage(item, values):
@@ -489,19 +513,34 @@ def _merge_activity_coverage(item, values):
     item.failed_items += max(0, int(failed))
     item.duration_ms += max(0.0, float(duration))
     item.upstream_attempted = True
-    if item.failed_items:
-        item.completeness = "partial"
-        item.failure_category = "provider_upstream_error"
-        item.warnings = [f"{item.failed_items} bounded request(s) failed."]
-    else:
-        item.completeness = "complete"
+    normalized = normalize_coverage(
+        source_type=item.source_type,
+        completeness="partial" if item.failed_items else "complete",
+        requested=True,
+        required=item.required_for_assessment,
+        items_examined=item.items_examined,
+        failed_items=item.failed_items,
+    )
+    item.completeness = normalized.completeness
+    item.failed_items = normalized.failed_items
+    item.failure_category = normalized.failure_category
+    item.coverage_limitations = list(normalized.coverage_limitations)
+    item.warnings = [f"{item.failed_items} bounded request(s) failed."] if item.failed_items else []
 
 
-def _failed_coverage(source_type, capability, required, started=None):
-    return IncidentSourceCoverage(source_type, "direct_ha_api", capability, "failed", True, required, 0, 1,
+def _failed_coverage(
+    source_type,
+    capability,
+    required,
+    started=None,
+    *,
+    provider="direct_ha_api",
+    failure_category="provider_upstream_error",
+):
+    return IncidentSourceCoverage(source_type, provider, capability, "failed", True, required, 0, 1,
         [f"{source_type.replace('_', ' ').title()} evidence was unavailable."],
         (time.perf_counter() - started) * 1000 if isinstance(started, float) else 0.0,
-        False, "provider_upstream_error", True)
+        False, failure_category, True)
 
 
 def _not_requested(source_type, capability):
@@ -512,17 +551,68 @@ def _from_reliability(source_type, item, required):
     if item is None:
         return _failed_coverage(source_type, source_type, required)
     completeness = item.completeness if item.completeness in {"complete", "partial", "failed", "not_supported", "not_requested"} else "failed"
-    return IncidentSourceCoverage(source_type, item.provider, item.provider_capability, completeness, True, required,
-        item.items_examined, item.failed_items, list(item.warnings), item.duration_ms, False,
-        None if completeness in {"complete", "not_requested"} else "provider_upstream_error", completeness != "not_requested")
+    normalized = normalize_coverage(
+        source_type=source_type,
+        completeness=completeness,
+        requested=completeness != "not_requested",
+        required=required,
+        items_examined=item.items_examined,
+        failed_items=item.failed_items,
+        failure_category=(
+            "provider_upstream_error"
+            if completeness == "failed"
+            else None
+        ),
+        unsupported=completeness == "not_supported",
+    )
+    return IncidentSourceCoverage(source_type, item.provider, item.provider_capability, normalized.completeness,
+        completeness != "not_requested", required, item.items_examined, normalized.failed_items,
+        list(item.warnings), item.duration_ms, False, normalized.failure_category,
+        completeness not in {"not_requested", "not_supported"}, list(normalized.coverage_limitations))
 
 
 def _index_coverage(snapshot, rebuilt, lookup_ms):
-    partial = any(item.completeness != "complete" for item in snapshot.coverage if item.completeness != "not_requested")
-    return IncidentSourceCoverage("dependency_index", "engineering", "dependency_analysis", "partial" if partial else "complete",
-        True, True, len(snapshot.findings), sum(item.failed_item_count for item in snapshot.coverage),
-        [warning for item in snapshot.coverage for warning in item.warnings][:10], lookup_ms, not rebuilt,
-        "provider_upstream_error" if partial else None, True)
+    requested = [item for item in snapshot.coverage if item.completeness != "not_requested"]
+    failed_items = sum(max(0, int(item.failed_item_count)) for item in requested)
+    unsupported_types = sorted(
+        item.source_type
+        for item in requested
+        if item.provider == "none"
+        and item.failed_item_count == 0
+        and item.completeness in {"unavailable", "unsupported", "not_supported"}
+    )
+    partial = bool(
+        failed_items
+        or unsupported_types
+        or any(item.completeness == "partial" for item in requested)
+    )
+    limitation_ids = (
+        ["dependency_index_unsupported_source_types"]
+        if unsupported_types
+        else []
+    )
+    normalized = normalize_coverage(
+        source_type="dependency_index",
+        completeness="partial" if partial else "complete",
+        requested=True,
+        required=True,
+        items_examined=len(snapshot.findings),
+        failed_items=failed_items,
+        failure_category="item_read_failure" if failed_items else None,
+        limitation_ids=limitation_ids,
+    )
+    warnings = sorted(dict.fromkeys(
+        str(warning)[:240]
+        for item in requested
+        for warning in item.warnings
+        if str(warning).strip()
+    ))[:10]
+    return IncidentSourceCoverage(
+        "dependency_index", "engineering", "dependency_analysis",
+        normalized.completeness, True, True, len(snapshot.findings),
+        normalized.failed_items, warnings, lookup_ms, not rebuilt,
+        normalized.failure_category, True, list(normalized.coverage_limitations),
+    )
 
 
 def _scoped_dependency_findings(snapshot, entity_ids, automation_id):
