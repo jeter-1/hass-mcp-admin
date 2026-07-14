@@ -165,13 +165,13 @@ multi-architecture digest
 
 The stage verifies id-less automation create/update/readback, exact returned ID,
 not-found conversion, configuration validation, the application's REST
-`/api/states` inventory contract, WebSocket entity and area registries, the
-service catalog, the System Log command, and actual trace list/detail shape
-after a harmless event in the disposable instance. Home Assistant 2026.7.2 does
-not expose a `get_states` WebSocket command, and the Engineering server does not
-use one; the contract test therefore exercises the real REST state-inventory
-provider rather than inventing an unsupported WebSocket mapping. The job has a
-bounded timeout and never contacts the deployed Home Assistant environment. To
+`/api/states` inventory contract, Home Assistant's core WebSocket state command,
+WebSocket entity and area registries, the service catalog, the System Log
+command, and actual trace list/detail shape after a harmless event in the
+disposable instance. The job waits for Core to report `RUNNING` and for every
+required integration to finish setup before testing integration-owned commands;
+its startup and execution are bounded, and it never contacts the deployed Home
+Assistant environment. To
 update the baseline, review the new Home Assistant release, resolve its immutable
 GHCR manifest digest, update both version and digest together in `ci.yml`, run
 all contracts, and document the compatibility decision.

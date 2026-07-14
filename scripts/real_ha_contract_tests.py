@@ -141,6 +141,28 @@ def settings(token: str) -> Settings:
     )
 
 
+async def wait_for_runtime_ready(rest: HomeAssistantRestClient) -> dict:
+    """Wait for Core and the required integrations to finish starting."""
+
+    required_components = {"automation", "config", "system_log", "websocket_api"}
+    for _ in range(120):
+        try:
+            runtime_config = await rest.request("GET", "/config")
+            components = set(runtime_config.get("components", []))
+            if (
+                runtime_config.get("state") == "RUNNING"
+                and required_components.issubset(components)
+            ):
+                return runtime_config
+        except Exception:
+            # Startup may briefly reject authenticated API requests. The
+            # bounded deadline below turns persistent failure into a contract
+            # failure without exposing a response body or credential.
+            pass
+        await asyncio.sleep(1)
+    raise RuntimeError("Disposable Home Assistant did not finish required integration setup")
+
+
 async def run_contracts() -> None:
     phase = "bootstrap"
     try:
@@ -149,6 +171,8 @@ async def run_contracts() -> None:
         rest = HomeAssistantRestClient(configured)
         websocket = HomeAssistantWebSocketClient(configured)
         gateway = AutomationGateway(rest)
+        phase = "runtime_readiness"
+        await wait_for_runtime_ready(rest)
     except Exception as exc:
         setattr(exc, "contract_phase", phase)
         raise
@@ -191,18 +215,24 @@ async def run_contracts() -> None:
         assert runtime_config.get("version") == "2026.7.2"
         states = await rest.request("GET", "/states")
         assert isinstance(states, list)
+        websocket_states = await websocket.command({"type": "get_states"})
         entity_registry = await websocket.command({"type": "config/entity_registry/list"})
         area_registry = await websocket.command({"type": "config/area_registry/list"})
         services = await websocket.command({"type": "get_services"})
         system_log = await websocket.command({"type": "system_log/list"})
         assert isinstance(entity_registry, list)
         assert isinstance(area_registry, list)
+        assert isinstance(websocket_states, list)
         assert isinstance(services, dict)
         assert isinstance(system_log, list)
         assert services
         assert all(
             isinstance(item, dict) and "entity_id" in item and "state" in item
             for item in states
+        )
+        assert all(
+            isinstance(item, dict) and "entity_id" in item and "state" in item
+            for item in websocket_states
         )
         assert all(
             isinstance(item, dict) and "area_id" in item and "name" in item
