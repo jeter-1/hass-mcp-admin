@@ -109,6 +109,7 @@ class IncidentCorrelationService:
     async def analyze(self, **values) -> IncidentAnalysisOutput:
         started = time.perf_counter()
         METRICS.record_incident_request()
+        dependency_snapshot = values.pop("_dependency_snapshot", None)
         cursor = values.get("cursor") if isinstance(values.get("cursor"), str) else ""
         try:
             validated = _validate_inputs(**values)
@@ -135,7 +136,11 @@ class IncidentCorrelationService:
                 self.provider.fetch(
                     EvidenceRequest(
                         capability=ProviderCapability.INCIDENT_CORRELATION,
-                        query={**validated, "analysis_timestamp": analysis_timestamp},
+                        query={
+                            **validated,
+                            "analysis_timestamp": analysis_timestamp,
+                            "_dependency_snapshot": dependency_snapshot,
+                        },
                         max_evidence=MAX_PAGE_LIMIT,
                         detail_level=DetailLevel(validated["detail_level"]),
                     )

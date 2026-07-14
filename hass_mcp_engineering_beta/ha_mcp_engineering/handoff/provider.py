@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-from collections import Counter
 from datetime import datetime, timezone
 import time
 from typing import Any
 
 from ..capabilities import build_capability_catalog
+from ..dependency.extraction import valid_entity_id
 from ..incident.models import IncidentSourceCoverage
+from ..observability import METRICS
 from ..providers import (
     EngineeringEvidenceProvider, EvidenceRequest, ProviderCapability,
     ProviderCompleteness, ProviderCoverage, ProviderError,
@@ -214,13 +215,19 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
                     ref = _reference(evidence, "dependency_index", dynamic.source_id, summary, confidence="low", coverage_status=completeness)
                     items.append(_item("open_questions", "limitation", "Unresolved dynamic entity selection", summary, "open", "medium", confidence="low", automations=(dynamic.source_id,), refs=(ref,), limitations=("dynamic_reference_target_unresolved",), manual=True, key=(dynamic.source_id, dynamic.configuration_path)))
             except Exception:
+                METRICS.record_provider_result("engineering", "failed")
                 coverage.append(_failed("dependency_index", "engineering", "dependency_analysis", upstream=True))
         else:
             coverage.append(_not_requested("dependency_index", "dependency_analysis"))
 
         if query["include_integrity_context"]:
             if index_snapshot is None:
-                coverage.append(_failed("configuration_integrity", "engineering", "configuration_integrity_analysis", upstream=index_requested))
+                coverage.append(IncidentSourceCoverage(
+                    "configuration_integrity", "engineering", "configuration_integrity_analysis",
+                    "partial", True, False, 0, 0,
+                    ["Scoped integrity context was unavailable because its dependency evidence was unavailable."],
+                    0.0, False, None, False, ["dependency_index_context_unavailable"],
+                ))
             else:
                 coverage.append(IncidentSourceCoverage(
                     "configuration_integrity", "engineering", "configuration_integrity_analysis",
@@ -237,7 +244,9 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
             coverage.append(_not_requested("automation_reliability", "reliability_analysis"))
 
         if query["include_incident_context"] and (focus_entities or automation_ids):
-            incident_items, incident_evidence, incident_coverage, incident_payload = await self._incident_context(query)
+            incident_items, incident_evidence, incident_coverage, incident_payload = await self._incident_context(
+                query, dependency_snapshot=index_snapshot
+            )
             items.extend(incident_items)
             evidence.update(incident_evidence)
             coverage.extend(incident_coverage)
@@ -288,10 +297,25 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
             "current_index_build_duration_ms": round(index_snapshot.build_duration_ms if index_snapshot is not None and rebuilt else 0.0, 3),
             "original_index_build_duration_ms": round(index_snapshot.build_duration_ms if index_snapshot is not None else 0.0, 3),
         }
+        automation_entity_ids = []
+        for automation_id in automation_ids:
+            entity_id = str(
+                payloads.get("automation_configs", {}).get(automation_id, {}).get("entity_id") or ""
+            )
+            if valid_entity_id(entity_id) and entity_id.startswith("automation.") and entity_id not in automation_entity_ids:
+                automation_entity_ids.append(entity_id)
+        incident_entity_id = str(payloads.get("incident", {}).get("automation_entity_id") or "")
+        if (
+            valid_entity_id(incident_entity_id)
+            and incident_entity_id.startswith("automation.")
+            and incident_entity_id not in automation_entity_ids
+        ):
+            automation_entity_ids.append(incident_entity_id)
+
         scope = {
             "focus_entity_ids": focus_entities,
             "automation_ids": automation_ids,
-            "automation_entity_ids": [str(value.get("entity_id") or "") for value in payloads.get("automation_configs", {}).values() if value.get("entity_id")],
+            "automation_entity_ids": automation_entity_ids,
             "change_plan_ids": query["change_plan_ids"],
             "lookback_hours": query["lookback_hours"],
             "contexts_requested": [name for name, enabled in (
@@ -303,6 +327,7 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
                 ("incident", query["include_incident_context"]),
             ) if enabled],
         }
+        coverage = _normalize_coverage(coverage)
         return HandoffEvidenceBundle(scope, items, evidence, coverage, index_info, payloads, (time.perf_counter() - started) * 1000, item_truncated)
 
     def _governance_plans(self, query):
@@ -319,24 +344,44 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
             return [], _failed("governance_plans", "engineering", "governance_persistence", upstream=False)
 
     def _plan_item(self, plan, evidence):
-        status = plan.status.value
-        verified = status == "applied" and plan.verification.status == "passed"
-        rolled_back = status == "rolled_back"
-        failed = status in {"failed", "verification_failed", "rollback_failed", "validation_failed"}
-        section = "completed_work" if verified else "confirmed_findings" if rolled_back else "outstanding_work"
-        public_status = "verified" if verified else "rolled_back" if rolled_back else "failed" if failed else "pending"
-        severity = "high" if failed else "medium" if not verified and not rolled_back else "info"
-        summary = (
-            f"Plan {plan.plan_id} was applied and verification passed."
-            if verified else f"Plan {plan.plan_id} was rolled back and is not active completed work."
-            if rolled_back else f"Plan {plan.plan_id} is {status}; it is not verified completed work."
-        )
+        status = _value(getattr(plan, "status", "unknown"))
+        verification_status = str(getattr(getattr(plan, "verification", None), "status", "not_run"))
+        verified = status == "applied" and verification_status == "passed"
+        historical = status in {
+            "draft", "validation_failed", "expired", "superseded", "rolled_back",
+            "rejected", "invalidated", "cancelled",
+        }
+        active_failure = status in {"failed", "verification_failed", "rollback_failed"}
+        active_pending = status in {
+            "awaiting_approval", "approved", "applying", "applied", "rollback_pending",
+        } and not verified
+
+        if verified:
+            section, public_status, severity = "completed_work", "verified", "info"
+            summary = f"Plan {plan.plan_id} was applied and verification passed."
+        elif historical:
+            section = "confirmed_findings"
+            public_status = "rolled_back" if status == "rolled_back" else "not_applicable"
+            severity = "info"
+            summary = _historical_plan_summary(plan.plan_id, status)
+        elif active_failure:
+            section, public_status, severity = "risks", "failed", "high"
+            summary = f"Plan {plan.plan_id} has an unresolved current {status.replace('_', ' ')} state."
+        elif active_pending:
+            section, public_status, severity = "outstanding_work", "pending", "medium"
+            summary = f"Plan {plan.plan_id} is active with lifecycle state {status}; it is not verified completed work."
+        else:
+            section, public_status, severity = "confirmed_findings", "unknown", "low"
+            summary = f"Plan {plan.plan_id} has unrecognized lifecycle state {status}; manual classification is required."
+
+        requires_authorization = status in {"awaiting_approval", "rollback_pending"} or active_failure
+        authorization_type = "governed_change_plan" if status in {"awaiting_approval", "rollback_pending"} else "manual_review" if active_failure else "none"
         ref = _reference(evidence, "governance_plans", plan.plan_id, summary, timestamp=plan.updated_at)
         return _item(section, "fact", f"Change plan: {plan.title[:120]}", summary, public_status, severity,
-                     plans=(plan.plan_id,), refs=(ref,), manual=failed or not verified,
-                     requires_authorization=not verified and not rolled_back,
-                     authorization_type="governed_change_plan" if not verified and not rolled_back else "none",
-                     key=(plan.plan_id, status, plan.verification.status), timestamp=plan.updated_at)
+                     plans=(plan.plan_id,), refs=(ref,), manual=active_failure,
+                     requires_authorization=requires_authorization,
+                     authorization_type=authorization_type,
+                     key=(plan.plan_id, status, verification_status), timestamp=plan.updated_at)
 
     async def _states(self, entity_ids):
         semaphore = asyncio.Semaphore(MAX_CONCURRENT_HA_REQUESTS)
@@ -369,12 +414,63 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
             except Exception:
                 return automation_id, None, True
         values = await asyncio.gather(*(one(automation_id) for automation_id in automation_ids))
-        configs = {key: value for key, value, failed in values if not failed and value is not None}
+        configs = {key: dict(value) for key, value, failed in values if not failed and value is not None}
         failures = sum(failed for _, _, failed in values)
-        completeness = "complete" if failures == 0 else "partial" if configs else "failed"
-        return configs, IncidentSourceCoverage("automation_config", "direct_ha_api", "automation_config", completeness, True, True, len(configs), failures, [f"{failures} bounded automation configuration read(s) failed."] if failures else [], 0.0, False, "item_read_failure" if failures and configs else "provider_upstream_error" if failures else None, True)
 
-    async def _incident_context(self, query):
+        state_inventory_failed = False
+        state_by_internal_id = {}
+        try:
+            raw_states = await self.rest_client.request("GET", "/states")
+            if not isinstance(raw_states, list):
+                raise TypeError("invalid state inventory response")
+            safe_states = sanitize_untrusted_data(
+                raw_states, known_secrets=(self.secret, self.ha_token), max_string=500
+            )
+            if safe_states.failed_closed or not isinstance(safe_states.value, list):
+                raise TypeError("invalid sanitized state inventory")
+            for state in safe_states.value:
+                if not isinstance(state, dict):
+                    continue
+                entity_id = str(state.get("entity_id") or "")
+                attributes = state.get("attributes") if isinstance(state.get("attributes"), dict) else {}
+                internal_id = str(attributes.get("id") or "")
+                if internal_id and valid_entity_id(entity_id) and entity_id.startswith("automation."):
+                    state_by_internal_id.setdefault(internal_id, entity_id)
+        except Exception:
+            state_inventory_failed = True
+
+        unresolved = []
+        for automation_id, config in configs.items():
+            entity_id = str(config.get("entity_id") or state_by_internal_id.get(automation_id) or "")
+            if valid_entity_id(entity_id) and entity_id.startswith("automation."):
+                config["entity_id"] = entity_id
+            else:
+                config.pop("entity_id", None)
+                unresolved.append(automation_id)
+
+        actual_failures = failures + int(state_inventory_failed)
+        completeness = "failed" if not configs and failures else "partial" if actual_failures or unresolved else "complete"
+        warnings = []
+        limitations = []
+        if failures:
+            warnings.append(f"{failures} bounded automation configuration read(s) failed.")
+        if state_inventory_failed:
+            warnings.append("Automation entity-ID resolution could not read the bounded state inventory.")
+        elif unresolved:
+            warnings.append(f"{len(unresolved)} automation entity ID(s) could not be resolved from current state evidence.")
+            limitations.append("automation_entity_resolution_incomplete")
+        failure_category = (
+            "provider_upstream_error" if not configs and failures
+            else "item_read_failure" if actual_failures
+            else None
+        )
+        return configs, IncidentSourceCoverage(
+            "automation_config", "direct_ha_api", "automation_config", completeness,
+            True, True, len(configs), actual_failures, warnings, 0.0, False,
+            failure_category, True, limitations,
+        )
+
+    async def _incident_context(self, query, *, dependency_snapshot=None):
         try:
             result = await self.incident.analyze(
                 focus_entity_id=query["focus_entity_ids"][0] if query["focus_entity_ids"] else "",
@@ -386,6 +482,7 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
                 include_integrity_context=query["include_integrity_context"],
                 include_reliability_context=query["include_reliability_context"],
                 detail_level="standard", limit=100, cursor="", refresh_index=False,
+                _dependency_snapshot=dependency_snapshot,
             )
             evidence = {}
             items = []
@@ -427,7 +524,12 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
             for source, capability in (("entity_registry", "entity_registry_read"), ("entity_history", "history_read"), ("logbook", "logbook_read"), ("automation_traces", "automation_trace"), ("system_log", "error_log_read")):
                 if source not in present:
                     coverage.append(_not_requested(source, capability))
-            return items, evidence, coverage, {"final_assessment": result.data.get("final_assessment"), "incident_id": result.data.get("incident_id")}
+            focus = result.data.get("focus") if isinstance(result.data.get("focus"), dict) else {}
+            return items, evidence, coverage, {
+                "final_assessment": result.data.get("final_assessment"),
+                "incident_id": result.data.get("incident_id"),
+                "automation_entity_id": focus.get("automation_entity_id"),
+            }
         except Exception:
             return [], {}, [_failed("incident_correlation", "engineering", "incident_correlation", upstream=True)], {}
 
@@ -461,6 +563,86 @@ def _not_requested(source, capability):
 
 def _coverage_warnings(coverage):
     return list(dict.fromkeys(str(warning)[:240] for item in coverage for warning in item.warnings if str(warning).strip()))[:20]
+
+
+def _normalize_coverage(coverage):
+    """Return one deterministic effective row for each logical evidence source."""
+    normalized = {}
+    order = []
+    for row in coverage:
+        key = str(row.source_type)
+        if key not in normalized:
+            normalized[key] = row
+            order.append(key)
+            continue
+        normalized[key] = _merge_coverage_rows(normalized[key], row)
+    return [normalized[key] for key in order]
+
+
+def _merge_coverage_rows(left, right):
+    same_shared_operation = left.provider_capability == right.provider_capability
+    left_usable = left.completeness in {"complete", "partial"} and not left.actual_failure
+    right_usable = right.completeness in {"complete", "partial"} and not right.actual_failure
+
+    # A synthetic or repeated failure for the same shared source must not
+    # override evidence already acquired from that exact logical operation.
+    if same_shared_operation and left_usable != right_usable:
+        usable = left if left_usable else right
+        failed = right if left_usable else left
+        if failed.completeness == "failed":
+            return IncidentSourceCoverage(
+                usable.source_type, usable.provider, usable.provider_capability,
+                usable.completeness, usable.requested, usable.required_for_assessment,
+                usable.items_examined, usable.failed_items,
+                _bounded_unique(usable.warnings), max(usable.duration_ms, failed.duration_ms),
+                usable.cached_provenance or failed.cached_provenance,
+                usable.failure_category, usable.upstream_attempted or failed.upstream_attempted,
+                _bounded_unique(usable.coverage_limitations, limit=10, length=128),
+            )
+
+    precedence = {"failed": 5, "partial": 4, "complete": 3, "not_supported": 2, "not_requested": 1}
+    primary = left if precedence.get(left.completeness, 0) >= precedence.get(right.completeness, 0) else right
+    secondary = right if primary is left else left
+    requested = left.requested or right.requested
+    actual_failure = left.actual_failure or right.actual_failure
+    completeness = primary.completeness
+    if actual_failure and (left_usable or right_usable):
+        completeness = "partial"
+    provider = primary.provider if primary.provider != "none" else secondary.provider
+    capability = primary.provider_capability or secondary.provider_capability
+    failure_category = (primary.failure_category or secondary.failure_category) if actual_failure else None
+    failed_items = max(left.failed_items, right.failed_items) if same_shared_operation else left.failed_items + right.failed_items
+    items_examined = max(left.items_examined, right.items_examined) if same_shared_operation else left.items_examined + right.items_examined
+    return IncidentSourceCoverage(
+        primary.source_type, provider, capability, completeness, requested,
+        left.required_for_assessment or right.required_for_assessment,
+        items_examined, failed_items,
+        _bounded_unique([*left.warnings, *right.warnings]),
+        max(left.duration_ms, right.duration_ms),
+        left.cached_provenance or right.cached_provenance,
+        failure_category, left.upstream_attempted or right.upstream_attempted,
+        _bounded_unique([*left.coverage_limitations, *right.coverage_limitations], limit=10, length=128),
+    )
+
+
+def _bounded_unique(values, *, limit=10, length=240):
+    return list(dict.fromkeys(str(value)[:length] for value in values if str(value).strip()))[:limit]
+
+
+def _value(value):
+    return str(getattr(value, "value", value))
+
+
+def _historical_plan_summary(plan_id, status):
+    if status == "expired":
+        return f"Plan {plan_id} expired; its authorization and execution window ended and it is retained as history."
+    if status == "superseded":
+        return f"Plan {plan_id} was superseded and is retained as historical intent, not active pending work."
+    if status == "rolled_back":
+        return f"Plan {plan_id} was rolled back and is historical, not active completed work."
+    if status == "validation_failed":
+        return f"Plan {plan_id} recorded a terminal validation failure before application and is retained as history."
+    return f"Plan {plan_id} has terminal historical lifecycle state {status}; it is not active pending work."
 
 
 def _dedupe_order(items):
