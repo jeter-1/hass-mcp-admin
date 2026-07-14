@@ -9,6 +9,7 @@ from ..dependency import DEPENDENCY_ANALYSIS
 from ..impact import CHANGE_IMPACT_ANALYSIS
 from ..integrity import CONFIGURATION_INTEGRITY_ANALYSIS
 from ..incident import INCIDENT_CORRELATION
+from ..handoff import HANDOFF_GENERATION
 from ..reliability import RELIABILITY_ANALYSIS
 from ..errors import ErrorCode, map_exception
 from ..models import FailureResponse, SuccessResponse
@@ -429,39 +430,108 @@ async def incident_correlation(
             telemetry.result_status = "failure"
             telemetry.completeness = "failed"
         local_validation = code in {
-            ErrorCode.INVALID_REQUEST,
-            ErrorCode.VALIDATION_FAILURE,
-            ErrorCode.INVALID_CURSOR,
-            ErrorCode.STALE_CURSOR,
+            ErrorCode.INVALID_REQUEST, ErrorCode.VALIDATION_FAILURE,
+            ErrorCode.INVALID_CURSOR, ErrorCode.STALE_CURSOR,
         }
         return FailureResponse(
-            operation="incident_correlation",
-            error=type(exc).__name__,
-            error_code=code.value,
-            message=message,
-            details=details,
+            operation="incident_correlation", error=type(exc).__name__,
+            error_code=code.value, message=message, details=details,
             retryable=retryable,
             metadata={
                 "routing": {
-                    "lifecycle_status": "beta_native",
-                    "classification": "engineering_native",
-                    "provider": "engineering",
-                    "policy": "bounded_incident_correlation_read",
-                    "access": "read",
-                    "fallback_occurred": False,
+                    "lifecycle_status": "beta_native", "classification": "engineering_native",
+                    "provider": "engineering", "policy": "bounded_incident_correlation_read",
+                    "access": "read", "fallback_occurred": False,
                 },
-                "source_coverage": [
-                    {
-                        "source_type": "request_validation" if local_validation else "incident_evidence",
-                        "provider": "engineering",
-                        "completeness": "failed",
-                        "failure_category": "request_validation" if local_validation else "provider_error",
-                        "upstream_attempted": bool(telemetry and telemetry.ha_request_count > 0),
-                    }
-                ],
+                "source_coverage": [{
+                    "source_type": "request_validation" if local_validation else "incident_evidence",
+                    "provider": "engineering", "completeness": "failed",
+                    "failure_category": "request_validation" if local_validation else "provider_error",
+                    "upstream_attempted": bool(telemetry and telemetry.ha_request_count > 0),
+                }],
             },
-            timing=timing_since(started),
-            request_id=current_request_id(),
+            timing=timing_since(started), request_id=current_request_id(),
+        ).to_json(SETTINGS.response_size_limit)
+
+
+async def handoff_generation(
+    handoff_type: Literal["system_status", "focused_review", "incident", "change"] = "system_status",
+    title: Annotated[str, Field(max_length=200)] = "",
+    focus_entity_ids: Annotated[list[str], Field(max_length=20)] = [],
+    automation_ids: Annotated[list[str], Field(max_length=20)] = [],
+    change_plan_ids: Annotated[list[str], Field(max_length=20)] = [],
+    lookback_hours: Annotated[int, Field(ge=1, le=720)] = 168,
+    include_runtime_health: bool = True,
+    include_governance_context: bool = True,
+    include_dependency_context: bool = True,
+    include_integrity_context: bool = True,
+    include_reliability_context: bool = True,
+    include_incident_context: bool = True,
+    include_recommendations: bool = True,
+    detail_level: Literal["summary", "standard", "evidence"] = "standard",
+    output_format: Literal["structured", "markdown", "both"] = "structured",
+    limit: Annotated[int, Field(ge=1, le=100)] = 20,
+    cursor: Annotated[str, Field(max_length=8192)] = "",
+    refresh_index: bool = False,
+) -> str:
+    """Generate one bounded evidence-backed operational handoff.
+
+    A handoff is documentation, never authorization. Facts, inferences,
+    recommendations, limitations, current state, completed work, open work, and
+    authorization boundaries remain distinct. The operation performs no write,
+    service call, physical action, remediation, or background monitoring.
+    """
+    started = time.perf_counter()
+    telemetry = current_telemetry()
+    try:
+        output = await HANDOFF_GENERATION.require().generate(
+            handoff_type=handoff_type, title=title,
+            focus_entity_ids=focus_entity_ids, automation_ids=automation_ids,
+            change_plan_ids=change_plan_ids, lookback_hours=lookback_hours,
+            include_runtime_health=include_runtime_health,
+            include_governance_context=include_governance_context,
+            include_dependency_context=include_dependency_context,
+            include_integrity_context=include_integrity_context,
+            include_reliability_context=include_reliability_context,
+            include_incident_context=include_incident_context,
+            include_recommendations=include_recommendations,
+            detail_level=detail_level, output_format=output_format, limit=limit,
+            cursor=cursor, refresh_index=refresh_index,
+        )
+        if telemetry:
+            telemetry.result_status = "partial" if output.partial else "success"
+            telemetry.completeness = "partial" if output.partial else "complete"
+        return SuccessResponse(
+            operation="handoff_generation",
+            summary="Generated a bounded evidence-backed handoff with open or incomplete context." if output.partial else "Generated a bounded evidence-backed handoff.",
+            data=output.data, warnings=output.warnings, metadata=output.metadata,
+            timing=timing_since(started), request_id=current_request_id(),
+        ).to_json(SETTINGS.response_size_limit)
+    except Exception as exc:
+        code, message, retryable, details = map_exception(exc)
+        if telemetry:
+            telemetry.error_code = code.value
+            telemetry.result_status = "failure"
+            telemetry.completeness = "failed"
+        local = code in {ErrorCode.INVALID_REQUEST, ErrorCode.VALIDATION_FAILURE, ErrorCode.INVALID_CURSOR, ErrorCode.STALE_CURSOR}
+        return FailureResponse(
+            operation="handoff_generation", error=type(exc).__name__,
+            error_code=code.value, message=message, details=details,
+            retryable=retryable,
+            metadata={
+                "routing": {
+                    "lifecycle_status": "beta_native", "classification": "engineering_native",
+                    "provider": "engineering", "policy": "bounded_handoff_generation_read",
+                    "access": "read", "fallback_occurred": False,
+                },
+                "source_coverage": [{
+                    "source_type": "request_validation" if local else "handoff_evidence",
+                    "provider": "engineering", "completeness": "failed",
+                    "failure_category": "request_validation" if local else "provider_error",
+                    "upstream_attempted": bool(telemetry and telemetry.ha_request_count > 0),
+                }],
+            },
+            timing=timing_since(started), request_id=current_request_id(),
         ).to_json(SETTINGS.response_size_limit)
 ANALYSIS_TOOLS = (
     entity_dependency_analysis,
@@ -469,4 +539,5 @@ ANALYSIS_TOOLS = (
     change_impact_analysis,
     configuration_integrity_analysis,
     incident_correlation,
+    handoff_generation,
 )

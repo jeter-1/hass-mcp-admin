@@ -22,6 +22,7 @@ class HealthRegistry:
     impact: Any = None
     integrity: Any = None
     incident: Any = None
+    handoff: Any = None
 
     def configure(
         self,
@@ -34,6 +35,7 @@ class HealthRegistry:
         impact=None,
         integrity=None,
         incident=None,
+        handoff=None,
     ) -> None:
         self.settings = settings
         self.audit = audit
@@ -45,6 +47,7 @@ class HealthRegistry:
         self.impact = impact
         self.integrity = integrity
         self.incident = incident
+        self.handoff = handoff
 
     def snapshot(self, ha_connection: dict[str, Any]) -> dict[str, Any]:
         metrics = METRICS.snapshot()
@@ -108,6 +111,12 @@ class HealthRegistry:
                 **metrics["incident_correlation"],
                 "runtime": self.incident.health()
                 if self.incident
+                else {"configured": False},
+            },
+            "handoff_generation": {
+                **metrics["handoff_generation"],
+                "runtime": self.handoff.health()
+                if self.handoff
                 else {"configured": False},
             },
             "rate_limiter": self.gateway.rate_limiter_state() if self.gateway else {"configured": False},

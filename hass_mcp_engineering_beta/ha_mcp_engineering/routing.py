@@ -340,6 +340,27 @@ class AuthenticatedMcpGateway:
                             "cursor_present": bool(parameters.get("cursor")),
                         }
                     )
+                elif tool_name == "handoff_generation":
+                    # Handoff source objects, Markdown, evidence and raw cursor
+                    # are excluded. Retain only bounded validated intent.
+                    audit_parameters = {
+                        key: parameters[key]
+                        for key in (
+                            "handoff_type", "lookback_hours",
+                            "include_runtime_health", "include_governance_context",
+                            "include_dependency_context", "include_integrity_context",
+                            "include_reliability_context", "include_incident_context",
+                            "include_recommendations", "detail_level", "output_format",
+                            "limit", "refresh_index",
+                        )
+                        if key in parameters
+                    }
+                    audit_parameters.update({
+                        "focus_entity_count": len(parameters.get("focus_entity_ids") or []) if isinstance(parameters.get("focus_entity_ids"), list) else 0,
+                        "automation_count": len(parameters.get("automation_ids") or []) if isinstance(parameters.get("automation_ids"), list) else 0,
+                        "change_plan_count": len(parameters.get("change_plan_ids") or []) if isinstance(parameters.get("change_plan_ids"), list) else 0,
+                        "cursor_present": bool(parameters.get("cursor")),
+                    })
                 self.audit.write(AuditRecord(
                     request_id=request_id,
                     tool_name=tool_name,
@@ -367,6 +388,7 @@ class AuthenticatedMcpGateway:
                             "change_impact_analysis",
                             "configuration_integrity_analysis",
                             "incident_correlation",
+                            "handoff_generation",
                         }
                         else {}
                     ),

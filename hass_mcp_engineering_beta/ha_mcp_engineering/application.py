@@ -19,6 +19,7 @@ from .reliability import RELIABILITY_ANALYSIS
 from .impact import CHANGE_IMPACT_ANALYSIS
 from .integrity import CONFIGURATION_INTEGRITY_ANALYSIS
 from .incident import INCIDENT_CORRELATION
+from .handoff import HANDOFF_GENERATION
 from .routing import AuthenticatedMcpGateway
 from .tools import get_registered_server
 
@@ -108,6 +109,16 @@ def create_application(settings: Settings | None = None):
         ha_token=settings.ha_token,
         timeout=settings.ha_timeout_seconds,
     )
+    HANDOFF_GENERATION.configure(
+        governance=GOVERNANCE,
+        incident=INCIDENT_CORRELATION.require(),
+        dependency_index=DEPENDENCY_ANALYSIS.require().index,
+        rest_client=HomeAssistantRestClient(settings),
+        health=HEALTH,
+        secret=settings.access_secret,
+        ha_token=settings.ha_token,
+        timeout=settings.ha_timeout_seconds,
+    )
     HEALTH.configure(
         settings,
         audit,
@@ -118,6 +129,7 @@ def create_application(settings: Settings | None = None):
         CHANGE_IMPACT_ANALYSIS,
         CONFIGURATION_INTEGRITY_ANALYSIS,
         INCIDENT_CORRELATION,
+        HANDOFF_GENERATION,
     )
     return gateway
 
