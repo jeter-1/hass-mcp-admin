@@ -17,7 +17,10 @@ import os
 import re
 import sys
 import time
+from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
+import ipaddress
+import threading
 from typing import Any, Optional
 
 import uvicorn
@@ -34,6 +37,7 @@ from ..models.responses import dump_json
 from ..sanitization import sanitize_untrusted_data
 from ..trace_normalization import fetch_normalized_trace_list
 from ..tool_framework import run_structured
+from ..routing import MAX_BUCKET_STORE_SIZE, resolve_client_address
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -101,10 +105,11 @@ INSTRUCTIONS = """Operating procedure for this Home Assistant admin server:
    inputs alone do not describe the logic.
 3. Test every Jinja template with render_template against live state before
    placing it in any automation or script config.
-4. After upsert_automation, verify the stored_config_read_back matches intent;
-   run check_config after any structural change.
-5. Never call a destructive service (confirm=true) unless the user explicitly
-   requested that physical action in the current conversation.
+4. Automation configuration changes require create_change_plan, exact-hash
+   approval, and apply_change_plan; upsert_automation is compatibility-visible
+   but always refuses execution.
+5. call_service, delete_automation, and reload_domain fail closed here. Use the
+   standard Home Assistant MCP for ordinary supported execution.
 6. Prefer narrow queries (filters, limits, short history windows) over broad
    dumps; output is truncated at 60k characters."""
 
@@ -787,11 +792,18 @@ async def get_audit_log(lines: int = 50, event: str = "") -> str:
     path = os.environ.get("AUDIT_PATH", "/data/audit.jsonl")
     if not os.path.exists(path):
         return "No audit log yet."
+    effective_lines = max(1, min(int(lines), 500))
+    from collections import deque
+
+    rows = deque(maxlen=effective_lines)
     with open(path, encoding="utf-8") as f:
-        rows = f.readlines()
-    if event:
-        rows = [r for r in rows if f'"event": "{event}"' in r or f'"event":"{event}"' in r]
-    return "".join(rows[-min(lines, 500):]) or "No matching entries."
+        for row in f:
+            if event and not (
+                f'"event": "{event}"' in row or f'"event":"{event}"' in row
+            ):
+                continue
+            rows.append(row)
+    return "".join(rows) or "No matching entries."
 
 
 # ---------------------------------------------------------------------------
@@ -854,27 +866,43 @@ class Gateway:
     def __init__(self, app, secret: str):
         self.app = app
         self.prefix = f"/{secret}"
-        self.clients: dict[str, TokenBucket] = {}
+        self.clients: OrderedDict[str, TokenBucket] = OrderedDict()
         self.global_bucket = TokenBucket(RATE_PER_MINUTE * 2, RATE_BURST * 2)
-        self.auth_fail: dict[str, TokenBucket] = {}
+        self.auth_fail: OrderedDict[str, TokenBucket] = OrderedDict()
+        self._bucket_lock = threading.Lock()
+        self._trusted_proxy_networks = tuple(
+            ipaddress.ip_network(value, strict=False)
+            for value in SETTINGS.trusted_proxy_cidrs
+        )
 
     def _redact_path(self, path: str) -> str:
         """Remove the complete credential from any path written to audit logs."""
         return path.replace(self.prefix, "/<access_secret>")[:64]
 
     def _client_ip(self, scope) -> str:
-        for name, value in scope.get("headers", []):
-            if name == b"cf-connecting-ip":
-                return value.decode("latin-1")
-        client = scope.get("client")
-        return client[0] if client else "unknown"
+        return resolve_client_address(
+            scope,
+            trust_cf_connecting_ip=SETTINGS.trust_cf_connecting_ip,
+            trusted_proxy_networks=self._trusted_proxy_networks,
+        )
 
-    def _bucket(self, store: dict, key: str, per_minute: float, burst: float) -> TokenBucket:
-        if key not in store:
-            if len(store) > 1000:
-                store.clear()  # crude pruning; keys are IPs, state is advisory
-            store[key] = TokenBucket(per_minute, burst)
-        return store[key]
+    def _bucket(
+        self,
+        store: OrderedDict[str, TokenBucket],
+        key: str,
+        per_minute: float,
+        burst: float,
+    ) -> TokenBucket:
+        with self._bucket_lock:
+            existing = store.pop(key, None)
+            if existing is not None:
+                store[key] = existing
+                return existing
+            while len(store) >= MAX_BUCKET_STORE_SIZE:
+                store.popitem(last=False)
+            bucket = TokenBucket(per_minute, burst)
+            store[key] = bucket
+            return bucket
 
     @staticmethod
     async def _respond(send, status: int, body: bytes):
