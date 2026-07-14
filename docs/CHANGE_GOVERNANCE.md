@@ -1,12 +1,16 @@
 # Beta automation change governance
 
-## Beta 21 handoff lifecycle interpretation
+## Beta 22 handoff lifecycle interpretation
 
 Change handoffs read persisted plan state without changing it. Proposed,
 awaiting-approval, approved, and applying plans remain pending. `applied` counts
 as completed only when required verification is `passed`. Verification failure is
 failed/blocked; rolled-back work is labeled rolled back rather than active
-completion. Full proposed configuration, unbounded diffs, secrets, authentication,
+completion. Expired, superseded, rolled-back, and terminal validation-only plans
+are historical facts, not current pending work, blockers, or authorization needs.
+Only active pending states can produce `change_pending`; only current unresolved
+failures or requirements can block a handoff. Full proposed configuration,
+unbounded diffs, secrets, authentication,
 and prior approval as reusable authority are excluded.
 
 Version 2.0.0-beta.18 retains the beta-only approval boundary for controlled

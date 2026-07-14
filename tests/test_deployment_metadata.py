@@ -112,12 +112,12 @@ class AddonMetadataValidationTests(unittest.TestCase):
         report = VALIDATOR.validate_repository(
             ROOT,
             base_ref="origin/main",
-            expected_version="2.0.0-beta.21",
+            expected_version="2.0.0-beta.22",
             deployed_version="2.0.0-beta.8",
             paths={"hass_mcp_engineering_beta/config.yaml"},
         )
         self.assertEqual(report.production_version, "1.1.2")
-        self.assertEqual(report.beta_version, "2.0.0-beta.21")
+        self.assertEqual(report.beta_version, "2.0.0-beta.22")
 
 
 class DeploymentScriptTests(unittest.TestCase):

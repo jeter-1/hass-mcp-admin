@@ -1,8 +1,11 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
-## Beta 21 handoff generation
+## Beta 22 handoff stabilization
 
-The `handoff/` package separates composition (`runtime.py`), bounded internal
+The Beta 22 `handoff/` boundary normalizes shared evidence into one effective
+coverage row per logical source, classifies retained governance history separately
+from active work, and freezes resolved automation entity IDs in scope. The package
+separates composition (`runtime.py`), bounded internal
 evidence acquisition (`provider.py`), stable item/evidence contracts (`models.py`),
 and validation, lifecycle interpretation, signed pagination and rendering
 (`service.py`). It reuses internal runtime, governance, incident and dependency
@@ -18,7 +21,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-beta.21` |
+| Version | `1.1.2` | `2.0.0-beta.22` |
 | Port | `8099` | `8100` |
 | Options and secret | Production add-on data | Beta add-on data |
 
@@ -117,7 +120,7 @@ capability metadata.
 
 The v1.1.2 catalog contains 8 native, 10 transitional, 4 delegated, and 3 deprecated
 tools. Beta 9 truthfully reclassifies the four administrative reads as transitional,
-producing 8 native, 14 transitional, and 3 deprecated canonical tools. Beta 21 has
+producing 8 native, 14 transitional, and 3 deprecated canonical tools. Beta 22 has
 13 additive beta-native tools and no remaining planned feature capabilities. The often
 quoted transitional count of 9 is inconsistent with the checked-in 25-tool
 catalog; v2 intentionally preserves the source catalog rather than

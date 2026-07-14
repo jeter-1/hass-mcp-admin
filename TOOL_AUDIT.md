@@ -38,8 +38,9 @@ category `analysis`, risk `read`, routed `engineering_native`. Beta 12 likewise 
 `automation_reliability_analysis` into additive `beta_native`. Beta 15 adds
 `change_impact_analysis`, and Beta 17 adds the read-only
 `configuration_integrity_analysis`; Beta 19 adds `incident_correlation`, and Beta
-21 adds `handoff_generation`. No planned feature capability remains. All existing
-public schemas remain unchanged; the Beta 21 tool is additive.
+21 adds `handoff_generation`. Beta 22 stabilizes that tool without changing the
+catalog or schemas. No planned feature capability remains. All existing public
+schemas remain unchanged.
 
 Classifications:
 

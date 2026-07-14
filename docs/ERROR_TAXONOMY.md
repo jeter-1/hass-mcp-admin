@@ -1,6 +1,6 @@
 # Beta error taxonomy
 
-Beta 21 validation returns `invalid_request` with bounded field/reason/operation
+Beta 22 validation returns `invalid_request` with bounded field/reason/operation
 details before HA, provider, governance-storage, index or snapshot work. Signed
 cursor tampering/mismatch uses `invalid_cursor`; unavailable/expired snapshots or
 replaced index state use `stale_cursor`. Partial or unsupported coverage is not a

@@ -262,7 +262,13 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
         lookup_ms = 0.0
         if index_requested:
             try:
-                snapshot, rebuilt, lookup_ms = await self.index.get(refresh=bool(query.get("refresh_index")))
+                provided_snapshot = query.get("_dependency_snapshot")
+                if provided_snapshot is not None:
+                    if not all(hasattr(provided_snapshot, name) for name in ("generation", "fingerprint", "findings", "coverage")):
+                        raise TypeError("invalid internal dependency snapshot")
+                    snapshot, rebuilt, lookup_ms = provided_snapshot, False, 0.0
+                else:
+                    snapshot, rebuilt, lookup_ms = await self.index.get(refresh=bool(query.get("refresh_index")))
                 index_coverage = _index_coverage(snapshot, rebuilt, lookup_ms)
                 coverage.append(index_coverage)
                 scoped_findings = _scoped_dependency_findings(snapshot, entity_ids, automation_id)

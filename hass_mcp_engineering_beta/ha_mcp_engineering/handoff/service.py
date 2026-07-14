@@ -202,6 +202,9 @@ class HandoffGenerationService:
                 "cursor_failures_are_failed_new_handoffs": False,
                 "source_failures": "actual_failed_sources_or_operations_only",
                 "coverage_limitations": "successful_but_incomplete_or_unsupported_evidence",
+                "open_item_count": "currently_actionable_unresolved_items_only",
+                "risk_count": "handoff_items_in_the_risks_section",
+                "authorization_required_count": "current_items_requiring_authorization_only",
             },
             "pagination": {
                 "requested_limit": query["limit"], "effective_limit": effective_limit,
@@ -346,6 +349,9 @@ class HandoffGenerationService:
         try:
             padded = cursor + "=" * (-len(cursor) % 4)
             raw = base64.urlsafe_b64decode(padded.encode())
+            canonical = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+            if cursor != canonical:
+                raise ValueError
             if len(raw) <= 32:
                 raise ValueError
             body, signature = raw[:-32], raw[-32:]
@@ -453,7 +459,7 @@ def _counts(items):
         "by_status": {key: by_status.get(key, 0) for key in ITEM_STATUSES},
         "by_severity": {key: by_severity.get(key, 0) for key in SEVERITIES},
         "open_item_count": sum(item.status in {"open", "pending", "blocked", "failed", "unknown"} for item in items),
-        "risk_count": sum(item.section == "risks" or item.severity in {"high", "medium"} and item.status in {"open", "blocked", "failed"} for item in items),
+        "risk_count": by_section.get("risks", 0),
         "recommendation_count": sum(item.statement_type == "recommendation" for item in items),
         "authorization_required_count": sum(item.requires_authorization for item in items),
         "manual_review_required": any(item.manual_review_required for item in items),
@@ -474,10 +480,12 @@ def _status_and_assessment(handoff_type, items, partial, failures, payloads):
     if handoff_type == "change":
         if any(item.status == "failed" for item in items):
             assessment = "change_failed"
-        elif any(item.status == "verified" for item in items) and not open_items:
+        elif any(item.status == "pending" for item in items):
+            assessment = "change_pending"
+        elif any(item.status == "verified" for item in items):
             assessment = "change_verified"
         else:
-            assessment = "change_pending"
+            assessment = "no_material_findings"
     elif handoff_type == "incident":
         incident = payloads.get("incident", {}).get("final_assessment")
         assessment = "incident_unresolved" if incident not in {"no_correlated_anomaly"} else "no_material_findings"
@@ -535,7 +543,17 @@ def _markdown(data):
         ("Known Limitations", "known_limitations"),
         ("Authorization Boundaries", "authorization_boundaries"),
     ]
-    lines = [f"# {data['title']}", "", "## Scope", "", f"Type: `{data['handoff_type']}`. Snapshot: `{data['generated_at']}`.", "", "## Executive Summary", "", f"Status: `{data['handoff_status']}`. Assessment: `{data['final_assessment']}`."]
+    scope = data.get("scope", {})
+    scope_parts = [f"Type: `{data['handoff_type']}`.", f"Snapshot: `{data['generated_at']}`."]
+    if scope.get("focus_entity_ids"):
+        scope_parts.append("Entities: " + ", ".join(f"`{value}`" for value in scope["focus_entity_ids"]) + ".")
+    if scope.get("automation_ids"):
+        scope_parts.append("Automation IDs: " + ", ".join(f"`{value}`" for value in scope["automation_ids"]) + ".")
+    if scope.get("automation_entity_ids"):
+        scope_parts.append("Automation entities: " + ", ".join(f"`{value}`" for value in scope["automation_entity_ids"]) + ".")
+    if scope.get("change_plan_ids"):
+        scope_parts.append("Change plans: " + ", ".join(f"`{value}`" for value in scope["change_plan_ids"]) + ".")
+    lines = [f"# {data['title']}", "", "## Scope", "", " ".join(scope_parts), "", "## Executive Summary", "", f"Status: `{data['handoff_status']}`. Assessment: `{data['final_assessment']}`."]
     by_section = {}
     for item in data.get("handoff_items", []):
         by_section.setdefault(item["section"], []).append(item)

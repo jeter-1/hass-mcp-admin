@@ -171,10 +171,11 @@ outcome. Review from chat via the `get_audit_log` tool.
 
 ## Engineering beta analytical milestones
 
-The parallel v2 beta is now `2.0.0-beta.21` with 38 registered tools and 25
-unchanged canonical tools. Beta 21 adds read-only `handoff_generation`, producing
-bounded structured and optional Markdown handoffs with explicit evidence,
-completion, conflict, recommendation, and authorization semantics. No planned
+The parallel v2 beta is now `2.0.0-beta.22` with 38 registered tools and 25
+unchanged canonical tools. Beta 22 stabilizes read-only `handoff_generation` by
+normalizing shared coverage, separating active governance work from retained
+history, freezing resolved automation entity IDs in scope, and reconciling risk
+counts with the `risks` section. No planned
 feature capability remains. Production v1.1.2, `hass_mcp_admin`, and port 8099
 remain unchanged. See [`docs/HANDOFF_GENERATION.md`](docs/HANDOFF_GENERATION.md)
-and [`docs/BETA_21_RELEASE_NOTES.md`](docs/BETA_21_RELEASE_NOTES.md).
+and [`docs/BETA_22_RELEASE_NOTES.md`](docs/BETA_22_RELEASE_NOTES.md).

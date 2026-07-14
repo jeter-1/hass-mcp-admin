@@ -1,6 +1,6 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
-## Beta 21 handoff counters
+## Beta 22 handoff counters
 
 `get_server_health.handoff_generation` counts all requests, while terminal
 outcomes and item aggregates count new handoffs only. Cursor failures and pages
@@ -8,6 +8,12 @@ are separate. `source_failures` counts actual failed operations;
 `coverage_limitation_events` counts successful incomplete coverage. Open/risk/
 recommendation/authorization/manual-review, truncation and index hit/miss counts
 remain bounded and identity-free.
+
+Coverage is normalized before counters are recorded, so one shared dependency
+snapshot cannot create duplicate source failures. `risk_count` is exactly the
+number of items in `items_by_section.risks`; `open_item_count` and
+`authorization_required_count` include only current actionable items. Retained
+expired, superseded, rolled-back, or validation-only history does not inflate them.
 
 These contracts apply only to `hass_mcp_engineering_beta`. Production v1.1.2
 runtime behavior and logging remain unchanged.

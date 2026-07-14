@@ -1,13 +1,13 @@
 # Beta deployment and validation
 
 The beta add-on is isolated from production. Production remains **HA MCP
-Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.21
+Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.22
 is **HA MCP Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100).
 The workflow in this document deploys or updates only the beta.
 
-Beta 21 must expose 38 registered/25 canonical tools and no planned feature
-capabilities. Because it adds `handoff_generation`, reconnect or recreate a beta
-connector that caches `tools/list`. Follow the read-only acceptance procedure in
+Beta 22 must expose 38 registered/25 canonical tools and no planned feature
+capabilities. It adds no tool or schema, so connector recreation is not normally
+required. Follow the read-only acceptance procedure in
 [`HANDOFF_GENERATION.md`](HANDOFF_GENERATION.md). Rollback affects only beta;
 production v1.1.2 remains on port 8099.
 
@@ -23,8 +23,8 @@ From a clean branch in Windows PowerShell, run:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.17 `
-  -ExpectedVersion 2.0.0-beta.21 `
+  -DeployedVersion 2.0.0-beta.21 `
+  -ExpectedVersion 2.0.0-beta.22 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -FullTests
 ```
@@ -45,8 +45,8 @@ without supplying authentication material:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.17 `
-  -ExpectedVersion 2.0.0-beta.21 `
+  -DeployedVersion 2.0.0-beta.21 `
+  -ExpectedVersion 2.0.0-beta.22 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -SkipTests -SkipDockerBuild `
   -HealthHost homeassistant.local `
@@ -317,3 +317,20 @@ timestamp without printing authenticated URLs or secrets. Restarting Home
 Assistant is not required for repository cache diagnosis. If Beta 20 reports an
 upstream error for successful zero-failure partial coverage, stop acceptance and
 roll forward with a newer beta version rather than editing metadata in place.
+
+## Beta 22 handoff-stabilization deployment
+
+Beta 22 adds no tool or schema, so a connector refresh is not normally required.
+Refresh the repository, update only `hass_mcp_engineering_beta`, and verify
+`server_info` reports `2.0.0-beta.22` with 38 registered/25 canonical tools and
+an empty planned list. Production remains untouched on port 8099.
+
+Run the read-only procedure in [`HANDOFF_GENERATION.md`](HANDOFF_GENERATION.md).
+Focused and incident handoffs must contain one effective `dependency_index` row;
+successful partial coverage has zero failed items and a null failure category.
+Expired, superseded, rolled-back, and terminal validation-only plans must not
+inflate open, risk, or authorization counts. Verify resolved automation entity IDs
+in both structured and Markdown scope, then follow two pages and confirm frozen
+scope/lifecycle/coverage with zero upstream work. If live metadata remains Beta 21,
+compare repository metadata and `server_info` without printing the secret path;
+roll forward rather than editing a deployed version in place.
