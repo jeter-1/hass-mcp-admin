@@ -345,7 +345,7 @@ class AddonIsolationTests(unittest.TestCase):
     def test_beta_metadata_is_distinct_and_valid(self):
         self.assertEqual(self.beta["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(self.beta["slug"], "hass_mcp_engineering_beta")
-        self.assertEqual(self.beta["version"], "2.0.0-beta.20")
+        self.assertEqual(self.beta["version"], "2.0.0-beta.21")
         self.assertEqual(self.beta["ports"], {"8100/tcp": 8100})
         self.assertNotEqual(self.beta["slug"], self.production["slug"])
         self.assertNotEqual(set(self.beta["ports"]), set(self.production["ports"]))
@@ -427,7 +427,7 @@ class ToolParityTests(unittest.TestCase):
 
     def test_all_25_tools_are_registered(self):
         self.assertEqual(len(self.production_tools), 25)
-        self.assertEqual(len(self.beta_tools), 37)
+        self.assertEqual(len(self.beta_tools), 38)
         self.assertEqual(
             set(self.production_tools),
             set(self.beta_tools)
@@ -444,6 +444,7 @@ class ToolParityTests(unittest.TestCase):
                 "change_impact_analysis",
                 "configuration_integrity_analysis",
                 "incident_correlation",
+                "handoff_generation",
             },
         )
 
@@ -473,15 +474,15 @@ class ToolParityTests(unittest.TestCase):
             counts,
             {"native": 8, "transitional": 14, "deprecated": 3},
         )
-        self.assertEqual(len(PLANNED_CAPABILITIES), 1)
+        self.assertEqual(len(PLANNED_CAPABILITIES), 0)
 
     def test_server_info_reports_beta_identity(self):
         result = json.loads(asyncio.run(compatibility.server_info(check_ha=False)))
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
-        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.20")
-        self.assertEqual(result["data"]["tool_count"], 37)
+        self.assertEqual(result["data"]["server"]["version"], "2.0.0-beta.21")
+        self.assertEqual(result["data"]["tool_count"], 38)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
     def test_list_capabilities_reports_expected_catalog(self):
@@ -489,8 +490,8 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         catalog = result["data"]
         self.assertEqual(catalog["count"], 25)
-        self.assertEqual(catalog["registered_count"], 37)
-        self.assertEqual(len(catalog["planned"]), 1)
+        self.assertEqual(catalog["registered_count"], 38)
+        self.assertEqual(len(catalog["planned"]), 0)
         self.assertEqual(
             [item["tool"] for item in catalog["beta_native"]],
             [
@@ -506,13 +507,14 @@ class ToolParityTests(unittest.TestCase):
                 "change_impact_analysis",
                 "configuration_integrity_analysis",
                 "incident_correlation",
+                "handoff_generation",
             ],
         )
         self.assertEqual(
             Counter(item["status"] for item in catalog["tools"]),
             {"native": 8, "transitional": 14, "deprecated": 3},
         )
-        self.assertEqual(len(catalog["provider_matrix"]), 7)
+        self.assertEqual(len(catalog["provider_matrix"]), 8)
         self.assertEqual(
             {item["selected_provider"] for item in catalog["provider_matrix"]},
             {"direct_ha_api", "engineering"},
@@ -591,7 +593,7 @@ class BetaApplicationTests(unittest.TestCase):
         )
         names = [tool["name"] for tool in listing["result"]["tools"]]
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(names), 37)
+        self.assertEqual(len(names), 38)
         expected_beta_native = {
             "get_server_health",
             "create_change_plan",
@@ -605,6 +607,7 @@ class BetaApplicationTests(unittest.TestCase):
             "change_impact_analysis",
             "configuration_integrity_analysis",
             "incident_correlation",
+            "handoff_generation",
         }
         self.assertTrue(expected_beta_native.issubset(names))
         dependency_schema = next(
@@ -735,6 +738,43 @@ class BetaApplicationTests(unittest.TestCase):
         self.assertNotIn(raw_cursor, audit_text)
         self.assertNotIn("incident-evidence-safe", audit_text)
         self.assertNotIn("bounded evidence", audit_text)
+
+    def test_handoff_generation_calls_through_real_mcp_with_bounded_audit(self):
+        request_id = "handoff-generation-request-123"
+        response, call = self.rpc(
+            "tools/call",
+            {
+                "name": "handoff_generation",
+                "arguments": {
+                    "handoff_type": "system_status",
+                    "include_runtime_health": False,
+                    "include_governance_context": False,
+                    "include_dependency_context": False,
+                    "include_integrity_context": False,
+                    "include_reliability_context": False,
+                    "include_incident_context": False,
+                    "include_recommendations": True,
+                    "output_format": "both",
+                    "limit": 10,
+                },
+            },
+            request_id=request_id,
+        )
+        payload = json.loads(call["result"]["content"][0]["text"])
+        audit = self.audit_record(request_id)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["operation"], "handoff_generation")
+        self.assertIn("rendered_markdown", payload["data"])
+        self.assertFalse(payload["data"]["authorization_boundaries"]["handoff_is_authorization"])
+        self.assertEqual(audit["access"], "read")
+        self.assertEqual(audit["capability_classification"], "beta_native")
+        self.assertEqual(audit["parameters"]["focus_entity_count"], 0)
+        self.assertFalse(audit["parameters"]["cursor_present"])
+        audit_text = json.dumps(audit)
+        self.assertNotIn("rendered_markdown", audit_text)
+        self.assertNotIn("handoff_items", audit_text)
+        self.assertNotIn("evidence_references", audit_text)
 
     def test_change_impact_analysis_calls_through_real_mcp_without_auditing_evidence(self):
         previous = CHANGE_IMPACT_ANALYSIS.service
