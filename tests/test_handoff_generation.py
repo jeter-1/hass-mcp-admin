@@ -231,10 +231,11 @@ class GovernanceInterpretationTests(unittest.TestCase):
             health=SimpleNamespace(),
         )
 
-    def plan(self, status, verification="not_run", plan_id="plan-1"):
+    def plan(self, status, verification="not_run", plan_id="plan-1", approval_state="required"):
         return SimpleNamespace(
             plan_id=plan_id, title="Test plan", updated_at="2026-07-13T00:00:00Z",
             status=SimpleNamespace(value=status), verification=SimpleNamespace(status=verification),
+            approval=SimpleNamespace(state=SimpleNamespace(value=approval_state)),
         )
 
     def test_only_applied_and_verified_is_completed(self):
@@ -262,7 +263,7 @@ class GovernanceInterpretationTests(unittest.TestCase):
         provider = self.provider()
         items = [
             provider._plan_item(self.plan(status, plan_id=f"plan-{status}"), {})
-            for status in ("expired", "superseded", "rolled_back", "validation_failed")
+            for status in ("expired", "superseded", "rolled_back", "validation_failed", "rejected")
         ]
         counts = _counts(items)
         self.assertEqual(counts["open_item_count"], 0)
@@ -272,6 +273,15 @@ class GovernanceInterpretationTests(unittest.TestCase):
         status, assessment = _status_and_assessment("change", items, False, 0, {})
         self.assertEqual(status, "ready")
         self.assertEqual(assessment, "no_material_findings")
+
+    def test_external_pending_is_open_authorization_work_without_challenge_material(self):
+        item = self.provider()._plan_item(
+            self.plan("awaiting_approval", approval_state="external_pending"), {}
+        )
+        self.assertEqual(item.section, "outstanding_work")
+        self.assertTrue(item.requires_authorization)
+        self.assertIn("Home Assistant administrator", item.summary)
+        self.assertNotIn("challenge", item.summary.lower())
 
     def test_active_failure_is_current_risk_and_blocker(self):
         item = self.provider()._plan_item(self.plan("verification_failed", "failed"), {})

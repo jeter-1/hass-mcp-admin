@@ -131,8 +131,22 @@ class GovernanceTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def approved_plan(self, proposed=None):
         created = await self.update_plan(proposed)
-        approved = self.service.approve(created["plan_id"], created["plan_hash"])
+        approved = await self.externally_approve(created["plan_id"], created["plan_hash"])
         return created, approved
+
+    async def externally_approve(self, plan_id, plan_hash, note="Reviewed in test Ingress"):
+        pending = self.service.approve(plan_id, plan_hash, note)
+        self.assertEqual(pending["status"], "approval_pending")
+        _, csrf = await self.service.issue_external_csrf(plan_id, pending["challenge_id"])
+        return await self.service.decide_external_approval(
+            plan_id=plan_id,
+            challenge_id=pending["challenge_id"],
+            expected_plan_hash=plan_hash,
+            approval_kind=pending["approval_kind"],
+            csrf_nonce=csrf,
+            decision="approve",
+            approver_principal="home_assistant_admin_ingress:test-user",
+        )
 
 
 class PlanCreationTests(GovernanceTestCase):
@@ -461,10 +475,11 @@ class ApprovalAndApplyTests(GovernanceTestCase):
             await self.service.apply(created["plan_id"], created["plan_hash"])
         invalidate.assert_called_once()
 
-    async def test_valid_approval_is_separate_from_apply(self):
+    async def test_mcp_approval_request_is_separate_from_external_approval_and_apply(self):
         created = await self.update_plan()
-        approved = self.service.approve(created["plan_id"], created["plan_hash"], "Reviewed")
-        self.assertEqual(approved["status"], "approved")
+        pending = self.service.approve(created["plan_id"], created["plan_hash"], "Reviewed")
+        self.assertEqual(pending["status"], "approval_pending")
+        self.assertEqual(self.repository.get(created["plan_id"]).approval.state, ApprovalState.EXTERNAL_PENDING)
         self.assertEqual(self.gateway.write_calls, 0)
 
     async def test_wrong_plan_hash(self):
@@ -499,12 +514,13 @@ class ApprovalAndApplyTests(GovernanceTestCase):
             self.service.approve(created["plan_id"], created["plan_hash"])
         self.assertEqual(raised.exception.code, ErrorCode.HIGH_RISK_CHANGE_REJECTED)
 
-    async def test_repeated_approval_is_rejected(self):
+    async def test_repeated_approval_request_is_idempotent(self):
         created = await self.update_plan()
-        self.service.approve(created["plan_id"], created["plan_hash"])
-        with self.assertRaises(GovernanceError) as raised:
-            self.service.approve(created["plan_id"], created["plan_hash"])
-        self.assertEqual(raised.exception.code, ErrorCode.APPROVAL_ALREADY_CONSUMED)
+        first = self.service.approve(created["plan_id"], created["plan_hash"])
+        second = self.service.approve(created["plan_id"], created["plan_hash"], "human approved")
+        self.assertEqual(first["challenge_id"], second["challenge_id"])
+        self.assertEqual(first["challenge_expires_at"], second["challenge_expires_at"])
+        self.assertEqual(self.repository.get(created["plan_id"]).approval.state, ApprovalState.EXTERNAL_PENDING)
 
     async def test_plan_mutation_invalidates_approval(self):
         created, _ = await self.approved_plan()
@@ -533,7 +549,7 @@ class ApprovalAndApplyTests(GovernanceTestCase):
             title="Create", description="Create", operation="create_automation",
             automation_id="new", proposed_config=proposed,
         )
-        self.service.approve(created["plan_id"], created["plan_hash"])
+        await self.externally_approve(created["plan_id"], created["plan_hash"])
         result = await self.service.apply(created["plan_id"])
         self.assertEqual(result["status"], "applied")
         self.assertEqual(
@@ -546,11 +562,11 @@ class ApprovalAndApplyTests(GovernanceTestCase):
         created = await self.update_plan()
         with self.assertRaises(GovernanceError) as raised:
             await self.service.apply(created["plan_id"])
-        self.assertEqual(raised.exception.code, ErrorCode.CHANGE_PLAN_NOT_APPROVED)
+        self.assertEqual(raised.exception.code, ErrorCode.EXTERNAL_APPROVAL_REQUIRED)
         audit = [json.loads(line) for line in self.audit_path.read_text().splitlines()]
         self.assertEqual(audit[-1]["event"], "change_apply_rejected")
         self.assertEqual(audit[-1]["result_status"], "rejected")
-        self.assertEqual(audit[-1]["error_code"], "change_plan_not_approved")
+        self.assertEqual(audit[-1]["error_code"], "external_approval_required")
 
     async def test_expired_approval_cannot_apply(self):
         created, _ = await self.approved_plan()
@@ -657,7 +673,7 @@ class RollbackTests(GovernanceTestCase):
         created, _ = await self.approved_plan()
         await self.service.apply(created["plan_id"], created["plan_hash"])
         pending = await self.service.rollback_change(created["plan_id"])
-        self.service.approve(created["plan_id"], pending["plan_hash"])
+        await self.externally_approve(created["plan_id"], pending["plan_hash"])
         with patch("ha_mcp_engineering.dependency.DEPENDENCY_ANALYSIS.invalidate") as invalidate:
             await self.service.rollback_change(created["plan_id"], pending["plan_hash"])
         invalidate.assert_called_once()
@@ -671,7 +687,7 @@ class RollbackTests(GovernanceTestCase):
         created = await self.applied_update()
         requested = await self.service.rollback_change(created["plan_id"])
         self.assertEqual(requested["status"], "rollback_pending")
-        self.service.approve(created["plan_id"], requested["plan_hash"])
+        await self.externally_approve(created["plan_id"], requested["plan_hash"])
         result = await self.service.rollback_change(created["plan_id"], requested["plan_hash"])
         self.assertEqual(result["status"], "rolled_back")
         self.assertEqual(normalize_automation(self.gateway.configs["porch"]), normalize_automation(CURRENT))
@@ -682,12 +698,12 @@ class RollbackTests(GovernanceTestCase):
         await self.service.rollback_change(created["plan_id"])
         with self.assertRaises(GovernanceError) as raised:
             await self.service.rollback_change(created["plan_id"])
-        self.assertEqual(raised.exception.code, ErrorCode.ROLLBACK_APPROVAL_REQUIRED)
+        self.assertEqual(raised.exception.code, ErrorCode.EXTERNAL_APPROVAL_REQUIRED)
 
     async def test_rollback_after_external_change(self):
         created = await self.applied_update()
         requested = await self.service.rollback_change(created["plan_id"])
-        self.service.approve(created["plan_id"], requested["plan_hash"])
+        await self.externally_approve(created["plan_id"], requested["plan_hash"])
         self.gateway.configs["porch"]["alias"] = "External"
         with self.assertRaises(GovernanceError) as raised:
             await self.service.rollback_change(created["plan_id"], requested["plan_hash"])
@@ -696,7 +712,7 @@ class RollbackTests(GovernanceTestCase):
     async def test_rollback_write_failure(self):
         created = await self.applied_update()
         requested = await self.service.rollback_change(created["plan_id"])
-        self.service.approve(created["plan_id"], requested["plan_hash"])
+        await self.externally_approve(created["plan_id"], requested["plan_hash"])
         self.gateway.fail_write = True
         with self.assertRaises(GovernanceError) as raised:
             await self.service.rollback_change(created["plan_id"], requested["plan_hash"])
@@ -705,7 +721,7 @@ class RollbackTests(GovernanceTestCase):
     async def test_rollback_verification_failure(self):
         created = await self.applied_update()
         requested = await self.service.rollback_change(created["plan_id"])
-        self.service.approve(created["plan_id"], requested["plan_hash"])
+        await self.externally_approve(created["plan_id"], requested["plan_hash"])
         self.gateway.read_back_mismatch = True
         with self.assertRaises(GovernanceError) as raised:
             await self.service.rollback_change(created["plan_id"], requested["plan_hash"])
@@ -717,7 +733,7 @@ class RollbackTests(GovernanceTestCase):
             title="Create", description="Create", operation="create_automation",
             automation_id="new", proposed_config=config,
         )
-        self.service.approve(created["plan_id"], created["plan_hash"])
+        await self.externally_approve(created["plan_id"], created["plan_hash"])
         await self.service.apply(created["plan_id"])
         with self.assertRaises(GovernanceError) as raised:
             await self.service.rollback_change(created["plan_id"])

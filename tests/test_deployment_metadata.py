@@ -61,6 +61,24 @@ class AddonMetadataValidationTests(unittest.TestCase):
         with self.assertRaises(VALIDATOR.MetadataValidationError):
             self.validate(beta=beta)
 
+    def test_external_approval_ingress_must_be_admin_only_and_not_host_mapped(self):
+        self.assertTrue(self.beta["ingress"])
+        self.assertTrue(self.beta["panel_admin"])
+        self.assertEqual(self.beta["ingress_port"], 8110)
+        self.assertNotIn("8110/tcp", self.beta["ports"])
+        for field, value in (("ingress", False), ("panel_admin", False), ("ingress_port", 8100)):
+            with self.subTest(field=field):
+                beta = copy.deepcopy(self.beta)
+                beta[field] = value
+                with self.assertRaises(VALIDATOR.MetadataValidationError):
+                    self.validate(beta=beta)
+
+    def test_unnecessary_auth_api_is_rejected(self):
+        beta = copy.deepcopy(self.beta)
+        beta["auth_api"] = True
+        with self.assertRaises(VALIDATOR.MetadataValidationError):
+            self.validate(beta=beta)
+
     def test_access_secret_must_be_required(self):
         beta = copy.deepcopy(self.beta)
         beta["schema"]["access_secret"] = "str?"
@@ -112,12 +130,12 @@ class AddonMetadataValidationTests(unittest.TestCase):
         report = VALIDATOR.validate_repository(
             ROOT,
             base_ref="origin/main",
-            expected_version="2.0.0-beta.24",
+            expected_version="2.0.0-beta.25",
             deployed_version="2.0.0-beta.8",
             paths={"hass_mcp_engineering_beta/config.yaml"},
         )
         self.assertEqual(report.production_version, "1.1.2")
-        self.assertEqual(report.beta_version, "2.0.0-beta.24")
+        self.assertEqual(report.beta_version, "2.0.0-beta.25")
 
 
 class DeploymentScriptTests(unittest.TestCase):

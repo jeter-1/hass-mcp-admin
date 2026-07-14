@@ -142,6 +142,9 @@ class ErrorTaxonomyTests(unittest.TestCase):
             "change_plan_not_found", "change_plan_expired",
             "change_plan_not_approved", "approval_hash_mismatch",
             "approval_already_consumed", "stale_target_state",
+            "external_approval_required", "approval_authority_mismatch",
+            "external_approval_invalid", "external_approval_expired",
+            "change_plan_rejected",
             "change_in_progress", "unsupported_change_operation",
             "high_risk_change_rejected", "automation_validation_failed",
             "automation_apply_failed", "automation_verification_failed",
@@ -457,7 +460,7 @@ class GatewayAndHealthTests(unittest.TestCase):
             payload = json.loads(asyncio.run(compatibility.get_server_health(check_ha=False)))
         self.assertTrue(payload["success"])
         health = payload["data"]
-        self.assertEqual(health["server"]["version"], "2.0.0-beta.24")
+        self.assertEqual(health["server"]["version"], "2.0.0-beta.25")
         self.assertEqual(health["registered_tool_count"], 38)
         self.assertIn("handoff_generation", health)
         self.assertIn("automation_reliability_analysis", health)
