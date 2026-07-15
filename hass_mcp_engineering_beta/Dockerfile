@@ -7,6 +7,10 @@ ENV HAMCP_BUILD_SHA=${HAMCP_BUILD_SHA} \
     MCP_PORT=8100 \
     PYTHONDONTWRITEBYTECODE=1
 
+LABEL org.opencontainers.image.revision="${HAMCP_BUILD_SHA}" \
+      org.opencontainers.image.created="${HAMCP_BUILD_TIME}" \
+      org.opencontainers.image.source="https://github.com/jeter-1/hass-mcp-admin"
+
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

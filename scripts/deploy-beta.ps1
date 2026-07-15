@@ -72,6 +72,28 @@ function Get-BetaVersion {
     return $match.Matches[0].Groups[1].Value
 }
 
+function Get-BuildProvenance {
+    $previousErrorPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $buildSha = (& git -C $RepoRoot rev-parse HEAD 2>&1 | Out-String).Trim()
+        $gitExitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorPreference
+    }
+    if ($gitExitCode -ne 0 -or $buildSha -notmatch '^[0-9a-f]{40}$') {
+        throw "Unable to determine the exact source commit for the beta/RC image."
+    }
+    return @{
+        Sha = $buildSha
+        Time = [DateTime]::UtcNow.ToString(
+            "yyyy-MM-ddTHH:mm:ssZ",
+            [Globalization.CultureInfo]::InvariantCulture
+        )
+    }
+}
+
 function Assert-CleanWorkingTree {
     Write-Step "Validate repository working tree"
     $previousErrorPreference = $ErrorActionPreference
@@ -187,8 +209,12 @@ try {
         Write-Host "Skipped by request."
     }
     else {
+        $build = Get-BuildProvenance
         Invoke-External -Label "Build beta Docker image" -Executable "docker" -Arguments @(
-            "build", "--pull", "-t", "hass-mcp-engineering-beta:$betaVersion", "./hass_mcp_engineering_beta"
+            "build", "--pull",
+            "--build-arg", "HAMCP_BUILD_SHA=$($build.Sha)",
+            "--build-arg", "HAMCP_BUILD_TIME=$($build.Time)",
+            "-t", "hass-mcp-engineering-beta:$betaVersion", "./hass_mcp_engineering_beta"
         )
     }
 

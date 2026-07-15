@@ -38,7 +38,15 @@ jobs:
       - name: Build production image
         run: docker build -t hass-mcp-admin:test ./hass_mcp_admin
       - name: Build beta image
-        run: docker build -t hass-mcp-engineering-beta:test ./hass_mcp_engineering_beta
+        shell: bash
+        run: |
+          build_sha="$(git rev-parse HEAD)"
+          build_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          docker build \
+            --build-arg "HAMCP_BUILD_SHA=$build_sha" \
+            --build-arg "HAMCP_BUILD_TIME=$build_time" \
+            -t hass-mcp-engineering-beta:test \
+            ./hass_mcp_engineering_beta
 
   real-ha-contract-tests:
     runs-on: ubuntu-latest
