@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.0.0-rc.1
+
+- Freeze the accepted Beta 26 public catalog, schemas, routing, direct-access
+  policy, governance semantics, and external authority version 2 for release
+  candidate validation.
+- Add deterministic image-build provenance for the existing `build_sha` and
+  `build_time` fields, with safe `unknown` fallbacks for local development.
+- Add clean-install and persisted Beta 26 upgrade compatibility coverage plus
+  the RC1 deployment, acceptance, soak, and rollback procedures.
+- Preserve 38 registered tools, 25 canonical tools, zero planned capabilities,
+  schema version 1, the Beta/RC ports and slug, and production v1.1.2 unchanged.
+
 ## 2.0.0-beta.26
 
 - Make plan expiration a single terminal transition; repeated plan, list,

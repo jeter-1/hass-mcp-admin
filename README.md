@@ -1,7 +1,7 @@
 # HA MCP Engineering Server
 
 > The stable production add-on remains v1.1.2 at `hass_mcp_admin` on port
-> `8099`. An isolated v2 beta scaffold is available at
+> `8099`. An isolated v2 beta/RC add-on is available at
 > [`hass_mcp_engineering_beta/`](hass_mcp_engineering_beta/) on port `8100`.
 > See [`V2_BETA_ARCHITECTURE.md`](V2_BETA_ARCHITECTURE.md) before installing or
 > migrating tools. Beta release and cache-refresh procedures are documented in
@@ -27,7 +27,10 @@
 > [`docs/EXTERNAL_APPROVAL.md`](docs/EXTERNAL_APPROVAL.md) and
 > [`docs/BETA_25_RELEASE_NOTES.md`](docs/BETA_25_RELEASE_NOTES.md). Beta 26
 > expiry lifecycle hardening is documented in
-> [`docs/BETA_26_RELEASE_NOTES.md`](docs/BETA_26_RELEASE_NOTES.md).
+> [`docs/BETA_26_RELEASE_NOTES.md`](docs/BETA_26_RELEASE_NOTES.md). RC1 release
+> and deployed acceptance procedures are in
+> [`docs/RC1_RELEASE_NOTES.md`](docs/RC1_RELEASE_NOTES.md) and
+> [`docs/RC1_ACCEPTANCE.md`](docs/RC1_ACCEPTANCE.md).
 
 A focused Model Context Protocol server for Home Assistant engineering, diagnostics,
 and controlled administration, packaged as a Home Assistant OS add-on. It works with
@@ -186,18 +189,19 @@ HTTP 200 — the log records the attempt and whether `confirm` was set, not the 
 outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 1–500 lines. See [`docs/AUDIT_LOG.md`](docs/AUDIT_LOG.md).
 
-## Engineering beta analytical milestones
+## Engineering beta/RC analytical milestones
 
-The parallel v2 beta is now `2.0.0-beta.26` with 38 registered tools and 25
-unchanged canonical tools. Beta 26 preserves Beta 25 external human approval and
-makes plan/challenge expiry effective and idempotent across public reads,
-Ingress, health, enforcement, and handoff generation. Apply and rollback still
-require distinct exact-hash approvals; rejection and plan expiry are terminal.
-Active pre-Beta-25 plans must be recreated because caller-granted legacy
-authority is never migrated. Signed cursors are process-local and invalid after
-an add-on restart.
+The parallel v2 add-on is now `2.0.0-rc.1` with 38 registered tools and 25
+unchanged canonical tools. RC1 freezes the accepted Beta 26 catalog, schemas,
+provider policies, external human approval, and idempotent plan/challenge
+expiry lifecycle. Apply and rollback still require distinct exact-hash
+approvals; rejection and plan expiry are terminal. Active pre-Beta-25 plans
+must be recreated because caller-granted legacy authority is never migrated.
+Signed cursors are process-local and invalid after an add-on restart.
 No planned feature capability remains. Production v1.1.2, `hass_mcp_admin`, and
 port 8099 remain unchanged. See
+[`docs/RC1_RELEASE_NOTES.md`](docs/RC1_RELEASE_NOTES.md),
+[`docs/RC1_ACCEPTANCE.md`](docs/RC1_ACCEPTANCE.md),
 [`docs/BETA_26_RELEASE_NOTES.md`](docs/BETA_26_RELEASE_NOTES.md),
 [`docs/EXTERNAL_APPROVAL.md`](docs/EXTERNAL_APPROVAL.md), and
 [`hass_mcp_engineering_beta/OBSERVABILITY.md`](hass_mcp_engineering_beta/OBSERVABILITY.md).

@@ -1,6 +1,6 @@
 # External human approval authority
 
-Version `2.0.0-beta.26` preserves the Beta 25 separation between an
+Version `2.0.0-rc.1` preserves the Beta 25 separation between an
 authenticated MCP caller and the human authority that approves governed Home
 Assistant changes. A caller may create a
 plan and request review, but only an authenticated Home Assistant administrator
@@ -10,8 +10,13 @@ access secret is never accepted by the approval listener.
 This boundary does not prove that an automation will behave correctly. Apply
 verification proves that Home Assistant stored the intended configuration,
 returned the expected automation identity, and accepted its configuration.
-Beta 26 adds no behavioral observation window, mobile notification, service-call
+RC1 adds no behavioral observation window, mobile notification, service-call
 tool, or background monitor.
+
+RC1 also preserves Beta 26 persisted lifecycle behavior: no startup migration,
+authority upgrade, approval grant/consumption/replacement/revival, terminal
+rewrite, or duplicate expiry event occurs. See the exact deployed procedure in
+[`RC1_ACCEPTANCE.md`](RC1_ACCEPTANCE.md).
 
 ## Listener and authentication boundary
 
@@ -207,11 +212,12 @@ validation cannot change the deployed add-on route.
 
 ## Deployed acceptance procedure
 
-Run this only after the user installs Beta 26. Implementation and CI must not
+Run this only after the user installs RC1. Implementation and CI must not
 access the deployed environment.
 
 1. Call `server_info`, `list_capabilities`, and `get_server_health`. Confirm
-   `2.0.0-beta.26`, 38 registered/25 canonical/zero planned capabilities, HA
+   `2.0.0-rc.1`, the exact build SHA and UTC build time, 38 registered/25
+   canonical/zero planned capabilities, HA
    connectivity, healthy governance storage, authority version 2, enabled
    external approval/Ingress UI, zero baseline pending challenges, captured
    provider counters, and no production access.
