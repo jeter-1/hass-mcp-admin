@@ -1,14 +1,24 @@
 # Changelog
 
+## 2.0.0-rc.2
+
+- Supersede immutable RC1 because Home Assistant could continue resolving the
+  original `2.0.0-rc.1` image after the reviewed source correction retained the
+  same add-on version and image tag.
+- Publish the already reviewed `search_entities` correction under a distinct
+  installable version: explicit `transitional_direct` routing to
+  `direct_ha_api`, policy `bounded_entity_state_search`, one bounded read-only
+  `/states` inventory, deterministic slim results, and no fallback.
+- Preserve the Beta 26 public schemas and enums, 38 registered tools, 25
+  canonical tools, zero planned capabilities, schema version 1, external
+  approval authority version 2, and production v1.1.2 unchanged.
+- Retain deterministic multi-architecture GHCR provenance and publication for
+  amd64, arm64, and arm/v7 with immutable version and source-commit tags.
+
 ## 2.0.0-rc.1
 
 - Freeze the accepted Beta 26 public catalog, schemas, governance semantics, and
   external authority version 2 for release candidate validation.
-- Correct the deployed `search_entities` RC blocker by routing broad entity
-  search through explicit read-only policy `bounded_entity_state_search` to
-  `direct_ha_api`, with one `/states` inventory, validated bounds, deterministic
-  slim results, explicit truncation, no implicit fallback, and no Standard HA
-  MCP availability claim. Its public input schema is unchanged.
 - Add deterministic image-build provenance for the existing `build_sha` and
   `build_time` fields, with safe `unknown` fallbacks for local development.
 - Add clean-install and persisted Beta 26 upgrade compatibility coverage plus
