@@ -3,6 +3,7 @@ import importlib.util
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import Mock, patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -166,6 +167,45 @@ class AddonMetadataValidationTests(unittest.TestCase):
                 paths={"hass_mcp_engineering_beta/config.yaml"},
             )
 
+    def test_unreleased_same_version_requires_explicit_integrity_check(self):
+        current = str(self.beta["version"])
+        integrity_check = Mock()
+        report = VALIDATOR.validate_repository(
+            ROOT,
+            base_ref="origin/main",
+            deployed_version=current,
+            paths={"hass_mcp_engineering_beta/ha_mcp_engineering/providers/routing.py"},
+            unreleased_integrity_check=integrity_check,
+        )
+        integrity_check.assert_called_once_with(ROOT, current)
+        self.assertTrue(report.same_version_correction)
+
+    def test_unreleased_same_version_check_failure_is_fail_closed(self):
+        current = str(self.beta["version"])
+        integrity_check = Mock(
+            side_effect=VALIDATOR.MetadataValidationError("release already exists")
+        )
+        with self.assertRaises(VALIDATOR.MetadataValidationError):
+            VALIDATOR.validate_repository(
+                ROOT,
+                base_ref="origin/main",
+                deployed_version=current,
+                paths={"hass_mcp_engineering_beta/config.yaml"},
+                unreleased_integrity_check=integrity_check,
+            )
+
+    def test_unreleased_check_cannot_allow_an_older_version(self):
+        integrity_check = Mock()
+        with self.assertRaises(VALIDATOR.MetadataValidationError):
+            VALIDATOR.validate_repository(
+                ROOT,
+                base_ref="origin/main",
+                deployed_version="2.0.0-rc.2",
+                paths={"hass_mcp_engineering_beta/config.yaml"},
+                unreleased_integrity_check=integrity_check,
+            )
+        integrity_check.assert_not_called()
+
     def test_beta_release_passes_with_expected_version(self):
         report = VALIDATOR.validate_repository(
             ROOT,
@@ -176,6 +216,105 @@ class AddonMetadataValidationTests(unittest.TestCase):
         )
         self.assertEqual(report.production_version, "1.1.2")
         self.assertEqual(report.beta_version, "2.0.0-rc.1")
+
+
+class UnreleasedRcIntegrityTests(unittest.TestCase):
+    @staticmethod
+    def result(returncode, stdout="", stderr=""):
+        return VALIDATOR.subprocess.CompletedProcess(
+            args=[], returncode=returncode, stdout=stdout, stderr=stderr
+        )
+
+    @patch.object(VALIDATOR.subprocess, "run")
+    def test_exact_tag_and_image_absence_are_both_required(self, run):
+        run.side_effect = [
+            self.result(2),
+            self.result(
+                1,
+                stderr=(
+                    "ERROR: ghcr.io/jeter-1/hass-mcp-engineering-beta:"
+                    "2.0.0-rc.1: not found"
+                ),
+            ),
+        ]
+        VALIDATOR.assert_unreleased_rc(ROOT, VALIDATOR.BETA_VERSION)
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(
+            run.call_args_list[0].args[0],
+            [
+                "git",
+                "ls-remote",
+                "--exit-code",
+                "--tags",
+                "origin",
+                "refs/tags/v2.0.0-rc.1",
+            ],
+        )
+        self.assertEqual(
+            run.call_args_list[1].args[0],
+            [
+                "docker",
+                "buildx",
+                "imagetools",
+                "inspect",
+                "ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc.1",
+            ],
+        )
+        docker_env = run.call_args_list[1].kwargs["env"]
+        self.assertIn("hamcp-rc-integrity-", docker_env["DOCKER_CONFIG"])
+
+    @patch.object(VALIDATOR.subprocess, "run")
+    def test_existing_release_tag_fails_before_registry_inspection(self, run):
+        run.return_value = self.result(0, stdout="tag exists")
+        with self.assertRaises(VALIDATOR.MetadataValidationError):
+            VALIDATOR.assert_unreleased_rc(ROOT, VALIDATOR.BETA_VERSION)
+        self.assertEqual(run.call_count, 1)
+
+    @patch.object(VALIDATOR.subprocess, "run")
+    def test_existing_version_image_is_rejected(self, run):
+        run.side_effect = [self.result(2), self.result(0, stdout="manifest")]
+        with self.assertRaises(VALIDATOR.MetadataValidationError):
+            VALIDATOR.assert_unreleased_rc(ROOT, VALIDATOR.BETA_VERSION)
+
+    @patch.object(VALIDATOR.subprocess, "run")
+    def test_ambiguous_tag_or_registry_failure_is_rejected(self, run):
+        for side_effect in (
+            [self.result(128, stderr="network unavailable")],
+            [self.result(2), self.result(1, stderr="unauthorized")],
+            [self.result(2), self.result(1, stderr="ERROR: credential: not found")],
+        ):
+            with self.subTest(side_effect=side_effect):
+                run.reset_mock(side_effect=True)
+                run.side_effect = side_effect
+                with self.assertRaises(VALIDATOR.MetadataValidationError):
+                    VALIDATOR.assert_unreleased_rc(ROOT, VALIDATOR.BETA_VERSION)
+
+    @patch.object(VALIDATOR.subprocess, "run")
+    def test_remote_check_timeout_is_rejected(self, run):
+        run.side_effect = VALIDATOR.subprocess.TimeoutExpired(
+            cmd=["git", "ls-remote"],
+            timeout=VALIDATOR.EXTERNAL_CHECK_TIMEOUT_SECONDS,
+        )
+        with self.assertRaises(VALIDATOR.MetadataValidationError):
+            VALIDATOR.assert_unreleased_rc(ROOT, VALIDATOR.BETA_VERSION)
+
+
+class CIWorkflowTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+
+    def test_same_version_gate_has_anonymous_registry_inspection_before_metadata(self):
+        buildx = self.workflow.index("Set up Docker Buildx")
+        metadata = self.workflow.index("Validate deployment metadata")
+        self.assertLess(buildx, metadata)
+        self.assertIn("--allow-unreleased-same-version", self.workflow)
+
+    def test_ci_still_has_no_registry_login_or_push(self):
+        self.assertNotIn("docker/login-action", self.workflow)
+        self.assertNotIn("push: true", self.workflow)
 
 
 class DeploymentScriptTests(unittest.TestCase):

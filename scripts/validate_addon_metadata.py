@@ -5,11 +5,13 @@ from __future__ import annotations
 import argparse
 import ast
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import re
 import subprocess
 import sys
-from typing import Iterable
+import tempfile
+from typing import Callable, Iterable
 
 import yaml
 
@@ -25,6 +27,7 @@ PRODUCTION_PORT = 8099
 BETA_PORT = 8100
 BETA_INGRESS_PORT = 8110
 MIN_ACCESS_SECRET_LENGTH = 24
+EXTERNAL_CHECK_TIMEOUT_SECONDS = 60
 EXPECTED_BETA_SCHEMA = {
     "access_secret": "str",
     "rate_limit_per_minute": "int",
@@ -44,6 +47,11 @@ SEMVER = re.compile(
     r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)"
     r"(?:-(?P<prerelease>[0-9A-Za-z.-]+))?$"
 )
+REGISTRY_TAG_NOT_FOUND = re.compile(
+    r"manifest unknown|no such manifest|"
+    r"unexpected status from HEAD request.+404 Not Found",
+    re.IGNORECASE,
+)
 
 
 class MetadataValidationError(RuntimeError):
@@ -57,6 +65,7 @@ class ValidationReport:
     compared_version: str | None
     beta_changed: bool
     production_changed: bool
+    same_version_correction: bool
 
 
 def read_yaml(path: Path) -> dict:
@@ -239,6 +248,82 @@ def version_from_ref(repo_root: Path, base_ref: str) -> str:
         raise MetadataValidationError("Unable to read beta version from base ref") from exc
 
 
+def _run_external(
+    repo_root: Path,
+    *args: str,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            list(args),
+            cwd=repo_root,
+            text=True,
+            capture_output=True,
+            check=False,
+            env=env,
+            timeout=EXTERNAL_CHECK_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise MetadataValidationError(
+            "Unable to execute the unreleased RC integrity check"
+        ) from exc
+
+
+def assert_unreleased_rc(repo_root: Path, version: str) -> None:
+    match = SEMVER.fullmatch(version)
+    if version != BETA_VERSION or not match or not match.group("prerelease"):
+        raise MetadataValidationError(
+            "Same-version correction is restricted to the configured RC prerelease"
+        )
+
+    release_tag = f"v{version}"
+    tag_result = _run_external(
+        repo_root,
+        "git",
+        "ls-remote",
+        "--exit-code",
+        "--tags",
+        "origin",
+        f"refs/tags/{release_tag}",
+    )
+    if tag_result.returncode == 0:
+        raise MetadataValidationError(
+            f"Same-version correction is prohibited after tag {release_tag} exists"
+        )
+    if tag_result.returncode != 2 or tag_result.stdout.strip():
+        raise MetadataValidationError(
+            f"Unable to prove release tag {release_tag} is absent"
+        )
+
+    version_image = f"{BETA_IMAGE}:{version}"
+    with tempfile.TemporaryDirectory(prefix="hamcp-rc-integrity-") as docker_config:
+        anonymous_env = dict(os.environ)
+        anonymous_env["DOCKER_CONFIG"] = docker_config
+        image_result = _run_external(
+            repo_root,
+            "docker",
+            "buildx",
+            "imagetools",
+            "inspect",
+            version_image,
+            env=anonymous_env,
+        )
+    image_output = "\n".join((image_result.stdout, image_result.stderr))
+    if image_result.returncode == 0:
+        raise MetadataValidationError(
+            f"Same-version correction is prohibited after image {version_image} exists"
+        )
+    exact_image_not_found = re.search(
+        rf"(?:^|\s)ERROR:\s+{re.escape(version_image)}:\s+not found(?:\s|$)",
+        image_output,
+        re.IGNORECASE,
+    )
+    if not REGISTRY_TAG_NOT_FOUND.search(image_output) and not exact_image_not_found:
+        raise MetadataValidationError(
+            f"Unable to prove registry image {version_image} is absent"
+        )
+
+
 def validate_repository(
     repo_root: Path,
     *,
@@ -246,6 +331,7 @@ def validate_repository(
     expected_version: str | None = None,
     deployed_version: str | None = None,
     paths: Iterable[str] | None = None,
+    unreleased_integrity_check: Callable[[Path, str], None] | None = None,
 ) -> ValidationReport:
     production = read_yaml(repo_root / "hass_mcp_admin" / "config.yaml")
     beta = read_yaml(repo_root / "hass_mcp_engineering_beta" / "config.yaml")
@@ -283,9 +369,20 @@ def validate_repository(
         raise MetadataValidationError("Production add-on files were modified")
 
     comparison = deployed_version or version_from_ref(repo_root, base_ref)
+    same_version_correction = False
     if deployed_version or beta_changed:
         if not is_newer_version(beta_version, comparison):
-            raise MetadataValidationError("Beta version was not bumped above the deployed/base version")
+            if (
+                beta_changed
+                and beta_version == comparison
+                and unreleased_integrity_check is not None
+            ):
+                unreleased_integrity_check(repo_root, beta_version)
+                same_version_correction = True
+            else:
+                raise MetadataValidationError(
+                    "Beta version was not bumped above the deployed/base version"
+                )
 
     return ValidationReport(
         production_version=str(production.get("version", "")),
@@ -293,6 +390,7 @@ def validate_repository(
         compared_version=comparison,
         beta_changed=beta_changed,
         production_changed=production_changed,
+        same_version_correction=same_version_correction,
     )
 
 
@@ -302,6 +400,11 @@ def parse_args(argv: list[str] | None = None):
     parser.add_argument("--base-ref", default="origin/main")
     parser.add_argument("--expected-version")
     parser.add_argument("--deployed-version")
+    parser.add_argument(
+        "--allow-unreleased-same-version",
+        action="store_true",
+        help="Allow an equal-version RC correction only after fail-closed remote tag and registry checks.",
+    )
     return parser.parse_args(argv)
 
 
@@ -313,6 +416,9 @@ def main(argv: list[str] | None = None) -> int:
             base_ref=args.base_ref,
             expected_version=args.expected_version,
             deployed_version=args.deployed_version,
+            unreleased_integrity_check=(
+                assert_unreleased_rc if args.allow_unreleased_same_version else None
+            ),
         )
     except MetadataValidationError as exc:
         print(f"Metadata validation failed: {exc}", file=sys.stderr)
@@ -322,6 +428,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Beta: {BETA_SLUG} v{report.beta_version} port {BETA_PORT}")
     if report.compared_version:
         print(f"Version comparison baseline: {report.compared_version}")
+    if report.same_version_correction:
+        print("Unreleased same-version RC integrity gate: passed")
     return 0
 
 
