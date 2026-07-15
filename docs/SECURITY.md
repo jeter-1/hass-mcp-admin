@@ -74,14 +74,22 @@ Provider labels describe the transport actually used. A direct Home Assistant RE
 WebSocket call is always labeled `direct_ha_api`; it is never relabeled as
 `standard_ha_mcp`. Approximate upstream tool matching is prohibited.
 
-Phase 3C permits four narrowly scoped administrative reads, unchanged in Beta 12:
+RC1 permits five narrowly scoped administrative reads. The fifth is the
+release-blocking entity-search correction; the original four remain unchanged:
 
 | Tool | Direct policy | Allowed operation |
 | --- | --- | --- |
+| `search_entities` | `bounded_entity_state_search` | One `GET /states` inventory with validated filters and bounded slim output |
 | `get_entity` | `exact_entity_state_read` | `GET /states/{entity_id}` |
 | `list_areas` | `complete_area_registry_read` | `config/area_registry/list` WebSocket command |
 | `search_services` | `bounded_service_catalog_search` | Bounded `GET /services` search |
 | `list_services` | `bounded_service_schema_read` | Bounded `GET /services` schema enumeration |
+
+`search_entities` validates its exact domain and 1-through-100 limit before
+dispatch, matches only entity ID and friendly name, and returns only entity ID,
+state, and friendly name. Additional matches set `truncated=true` and partial
+completeness. Standard HA MCP remains unavailable, and this explicit direct
+policy is not a fallback.
 
 These policies do not authorize calls to services, automation writes, deletion,
 reloads, restarts, physical actions, or destructive operations. Governed configuration

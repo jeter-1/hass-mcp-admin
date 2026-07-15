@@ -49,7 +49,6 @@ _ENGINEERING_NATIVE = {
     ProviderCapability.HANDOFF_GENERATION,
 }
 _STANDARD_PREFERRED = {
-    ProviderCapability.BROAD_ENTITY_SEARCH,
     ProviderCapability.ORDINARY_SERVICE_EXECUTION,
 }
 _DIRECT_REQUIRED = {
@@ -62,6 +61,7 @@ _DIRECT_REQUIRED = {
     ProviderCapability.GOVERNED_ROLLBACK,
 }
 _TRANSITIONAL_DIRECT = {
+    ProviderCapability.BROAD_ENTITY_SEARCH,
     ProviderCapability.TEMPLATE_RENDER,
     ProviderCapability.HISTORY_READ,
     ProviderCapability.LOGBOOK_READ,
@@ -204,6 +204,7 @@ DIRECT_HA_TOOL_EXCEPTIONS = frozenset(
         "upsert_automation",
         "list_blueprints",
         "get_entity",
+        "search_entities",
         "list_areas",
         "search_services",
         "list_services",
@@ -264,6 +265,12 @@ DIRECT_HA_READ_POLICIES = {
         "capability": ProviderCapability.CURRENT_ENTITY_STATE.value,
         "access": "read",
         "justification": "Exact state and attributes require entity-ID REST lookup.",
+    },
+    "search_entities": {
+        "policy_id": "bounded_entity_state_search",
+        "capability": ProviderCapability.BROAD_ENTITY_SEARCH.value,
+        "access": "read",
+        "justification": "Bounded entity discovery requires one read-only Home Assistant state inventory while Standard HA MCP delegation is unavailable.",
     },
     "list_automations": {
         "policy_id": "bounded_automation_inventory_read",

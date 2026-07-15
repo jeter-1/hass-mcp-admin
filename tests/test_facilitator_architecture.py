@@ -79,7 +79,7 @@ class RoutingPolicyTests(unittest.TestCase):
             ProviderCapability.AUDIT: CapabilityRoute.ENGINEERING_NATIVE,
             ProviderCapability.HANDOFF_GENERATION: CapabilityRoute.ENGINEERING_NATIVE,
             ProviderCapability.CURRENT_ENTITY_STATE: CapabilityRoute.TRANSITIONAL_DIRECT,
-            ProviderCapability.BROAD_ENTITY_SEARCH: CapabilityRoute.STANDARD_MCP_PREFERRED,
+            ProviderCapability.BROAD_ENTITY_SEARCH: CapabilityRoute.TRANSITIONAL_DIRECT,
             ProviderCapability.AREA_LOOKUP: CapabilityRoute.TRANSITIONAL_DIRECT,
             ProviderCapability.SERVICE_DISCOVERY: CapabilityRoute.TRANSITIONAL_DIRECT,
             ProviderCapability.ORDINARY_SERVICE_EXECUTION: CapabilityRoute.STANDARD_MCP_PREFERRED,
@@ -160,16 +160,23 @@ class RoutingPolicyTests(unittest.TestCase):
         self.assertEqual(metrics["fallback_attempts"], 0)
         self.assertEqual(metrics["fallback_successes"], 0)
 
+    def test_broad_entity_search_selects_direct_without_fallback(self):
+        decision = self.policy.resolve(ProviderCapability.BROAD_ENTITY_SEARCH)
+        self.assertEqual(decision.route, CapabilityRoute.TRANSITIONAL_DIRECT)
+        self.assertEqual(decision.preferred_provider, "direct_ha_api")
+        self.assertEqual(decision.fallback_providers, ())
+        self.assertFalse(decision.explicit_direct_fallback_allowed)
+
     def test_provider_evidence_is_bounded_and_truncation_counted(self):
         refs = [EvidenceReference(f"ref:{index}", "standard_ha_mcp", "state", "Finding") for index in range(5)]
         complete = result(
             "standard_ha_mcp",
-            ProviderCapability.BROAD_ENTITY_SEARCH,
+            ProviderCapability.ORDINARY_SERVICE_EXECUTION,
             evidence=refs,
         )
         router = EvidenceRouter([FakeProvider("standard_ha_mcp", complete)])
         response = asyncio.run(router.fetch(EvidenceRequest(
-            ProviderCapability.BROAD_ENTITY_SEARCH,
+            ProviderCapability.ORDINARY_SERVICE_EXECUTION,
             max_evidence=2,
         )))
         self.assertEqual(response.completeness, ProviderCompleteness.PARTIAL)

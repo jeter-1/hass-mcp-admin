@@ -59,6 +59,7 @@ from ha_mcp_engineering.version import SCHEMA_VERSION  # noqa: E402
 
 BETA26_BASELINE_SHA = "b64db57ddffc5108b9078717ce720440f5361412"
 BETA26_SCHEMA_SHA256 = "eeec35d49f6d8c59fb1215694e54314b21bb6fd4a723d65e956e8e438699876a"
+BETA26_SEARCH_ENTITIES_SCHEMA_SHA256 = "050632a52cb5baf438cfe71edfdb59ad2a715013d7684d2958cc40f4a2d00850"
 BETA26_ENUM_SHA256 = "465924bf56992b93019184e30b5a322582e9d2789ca670fc3742004e8daa0cfb"
 BETA26_CLASSIFICATION_SHA256 = "1a9dd62cd6a5c737b4cc65265b6f4f03e5532881f6d38b0e6f79994fa90a9684"
 BETA26_ROUTING_SHA256 = "3fb2e0444b4d2af078499e4cdf2305067982438b3e68fdd9597edc0fcbad268e"
@@ -145,12 +146,16 @@ class RC1PublicContractTests(unittest.TestCase):
             enums.extend(enum_rows(schema, name))
         self.assertEqual(names, BETA26_TOOL_NAMES)
         self.assertEqual(canonical_sha256(schemas), BETA26_SCHEMA_SHA256)
+        self.assertEqual(
+            canonical_sha256(schemas["search_entities"]),
+            BETA26_SEARCH_ENTITIES_SCHEMA_SHA256,
+        )
         self.assertEqual(canonical_sha256(enums), BETA26_ENUM_SHA256)
         self.assertEqual(len(enums), 13)
 
-    def test_catalog_classification_routing_and_direct_policy_are_frozen(self):
+    def test_only_search_entities_has_the_authorized_routing_correction(self):
         classifications = {
-            item["tool"]: item for item in (*CAPABILITIES, *BETA_NATIVE_CAPABILITIES)
+            item["tool"]: dict(item) for item in (*CAPABILITIES, *BETA_NATIVE_CAPABILITIES)
         }
         routing = {}
         for tool_name in sorted(TOOL_CAPABILITY_POLICY):
@@ -162,13 +167,69 @@ class RC1PublicContractTests(unittest.TestCase):
                 "fallback_providers": list(decision.fallback_providers),
                 "explicit_direct_fallback_allowed": decision.explicit_direct_fallback_allowed,
             }
-        direct_policy = {
-            "exceptions": sorted(DIRECT_HA_TOOL_EXCEPTIONS),
-            "policies": DIRECT_HA_READ_POLICIES,
+        self.assertEqual(
+            classifications["search_entities"],
+            {
+                "tool": "search_entities",
+                "category": "discovery",
+                "status": "transitional",
+                "routing": "transitional_direct",
+                "provider": "direct_ha_api",
+                "risk": "read",
+            },
+        )
+        self.assertEqual(
+            routing["search_entities"],
+            {
+                "capability": "broad_entity_search",
+                "route": "transitional_direct",
+                "preferred_provider": "direct_ha_api",
+                "fallback_providers": [],
+                "explicit_direct_fallback_allowed": False,
+            },
+        )
+        self.assertIn("search_entities", DIRECT_HA_TOOL_EXCEPTIONS)
+        self.assertEqual(
+            DIRECT_HA_READ_POLICIES["search_entities"],
+            {
+                "policy_id": "bounded_entity_state_search",
+                "capability": "broad_entity_search",
+                "access": "read",
+                "justification": "Bounded entity discovery requires one read-only Home Assistant state inventory while Standard HA MCP delegation is unavailable.",
+            },
+        )
+
+        baseline_classifications = {
+            name: dict(item) for name, item in classifications.items()
         }
-        self.assertEqual(canonical_sha256(classifications), BETA26_CLASSIFICATION_SHA256)
-        self.assertEqual(canonical_sha256(routing), BETA26_ROUTING_SHA256)
-        self.assertEqual(canonical_sha256(direct_policy), BETA26_DIRECT_POLICY_SHA256)
+        baseline_classifications["search_entities"].pop("routing")
+        baseline_classifications["search_entities"].pop("provider")
+        baseline_routing = {name: dict(item) for name, item in routing.items()}
+        baseline_routing["search_entities"].update(
+            {
+                "route": "standard_mcp_preferred",
+                "preferred_provider": "standard_ha_mcp",
+            }
+        )
+        baseline_direct_policy = {
+            "exceptions": sorted(
+                set(DIRECT_HA_TOOL_EXCEPTIONS) - {"search_entities"}
+            ),
+            "policies": {
+                name: dict(policy)
+                for name, policy in DIRECT_HA_READ_POLICIES.items()
+                if name != "search_entities"
+            },
+        }
+        self.assertEqual(
+            canonical_sha256(baseline_classifications),
+            BETA26_CLASSIFICATION_SHA256,
+        )
+        self.assertEqual(canonical_sha256(baseline_routing), BETA26_ROUTING_SHA256)
+        self.assertEqual(
+            canonical_sha256(baseline_direct_policy),
+            BETA26_DIRECT_POLICY_SHA256,
+        )
         self.assertEqual(len(CAPABILITIES), 25)
         self.assertEqual(len(classifications), 38)
         self.assertEqual(PLANNED_CAPABILITIES, ())

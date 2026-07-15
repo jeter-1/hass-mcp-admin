@@ -80,6 +80,7 @@ class HealthRegistry:
                 "standard_ha_mcp_delegation": "unavailable",
                 "direct_fallback_requires_explicit_policy": True,
                 "approved_direct_read_tools": [
+                    "search_entities",
                     "get_entity",
                     "list_areas",
                     "search_services",

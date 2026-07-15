@@ -15,9 +15,9 @@ central routing policy maps all 38 beta tools to these execution/evidence routes
 | Route | Existing tools/capabilities |
 | --- | --- |
 | `engineering_native` | server/capability diagnostics, audit, plan creation/risk, plan reads/list/approval |
-| `standard_mcp_preferred` | broad entity search and ordinary execution/reload pending exact upstream coverage |
+| `standard_mcp_preferred` | ordinary execution/reload pending exact upstream coverage |
 | `direct_ha_required` | automation config, traces, blueprint source, config check, governed apply/verification/rollback |
-| `transitional_direct` | exact entity/area/service-catalog reads, template/history/logbook/error log, list automations/devices/entity registry/blueprints; legacy upsert is classified here but denied without a read policy |
+| `transitional_direct` | bounded entity search, exact entity/area/service-catalog reads, template/history/logbook/error log, list automations/devices/entity registry/blueprints; legacy upsert is classified here but denied without a read policy |
 | `prohibited` | ungoverned destructive automation deletion in the target architecture and secret-bearing diagnostics |
 
 Beta 8 preserves every public schema but enforces the routing overlay at runtime.
@@ -32,6 +32,12 @@ Beta 9 corrects the remaining capability-truth mismatch. `get_entity`, `list_are
 does not provide their exact semantics; `GetLiveContext` is not substituted. The four
 policies are read-only and do not authorize service execution, reload, deletion, or any
 physical action.
+
+RC1 adds only `search_entities` to that explicit direct-read set after deployed
+acceptance exposed an immediate `provider_unavailable` routing failure. Policy
+`bounded_entity_state_search` permits one read-only `/states` inventory, validated
+query/domain/limit input, deterministic slim results, and explicit truncation. It
+does not enable Standard HA MCP transport or any fallback.
 
 Beta 7 moves `entity_dependency_analysis` from planned to additive `beta_native`,
 category `analysis`, risk `read`, routed `engineering_native`. Beta 12 likewise moves
@@ -74,7 +80,7 @@ The server's strongest current capabilities are automation traces, blueprint ins
 | Tool | Class | Current purpose | Main issue | Recommended destination |
 |---|---|---|---|---|
 | `get_entity` | Delegate | Read one entity's state and attributes. | Standard `ha-mcp` already provides richer structured state retrieval and projections. | Use standard `ha_get_state`; retain only as an internal primitive if an analysis tool needs direct HA access. |
-| `search_entities` | Redesign | Search state machine by ID/friendly name/domain. | Reads every state, truncates at first `limit`, lacks pagination, registry metadata, partial-state indicators, and fuzzy matching. | Replace publicly with analysis-oriented entity discovery or an internal indexed evidence provider. |
+| `search_entities` | Redesign | Search state machine by ID/friendly name/domain. | Reads one state inventory and returns deterministic bounded slim results with explicit truncation; it still lacks pagination, registry metadata, and fuzzy matching. | Replace publicly with analysis-oriented entity discovery or an internal indexed evidence provider. |
 | `get_history` | Redesign | Fetch recent recorder history for one entity. | String refusal, no explicit pagination, no end time, no statistics source, and full HA payload shape. | Keep internally for incident analysis; expose through `analyze_incident` or structured evidence retrieval. |
 | `get_logbook` | Redesign | Fetch recent logbook events. | No result limit/pagination or compact schema; output may be noisy. | Internal evidence source for incident timelines and behavioral verification. |
 | `get_error_log` | Transitional | Return bounded structured HA System Log warning/error entries. | The System Log buffer is deduplicated and is not the complete raw Core journal. | Recursively sanitize the complete upstream result before reduction; keep fail-closed redaction, truncation, source attribution, untrusted marking, and correlation mandatory. |

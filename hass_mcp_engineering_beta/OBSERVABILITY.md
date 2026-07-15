@@ -337,14 +337,19 @@ paths, private request payloads, or raw audit/log records.
 The delegation diagnostic reflects current reality: Beta 12 verifies the Home Assistant
 MCP endpoint but does not configure or call it because Assist lacks exact mappings for
 the approved administrative reads. It must not be interpreted as a Home Assistant API
-connectivity failure. Provider failures and partial coverage remain visible; the four
+connectivity failure. Provider failures and partial coverage remain visible; the five
 administrative reads select explicit direct policies without fallback, while direct
 write expansion remains prohibited.
 
-Every provider-routed canonical call contributes to these counters. `get_entity`,
-`list_areas`, `search_services`, and `list_services` are attributed to `direct_ha_api`;
-they never claim `standard_ha_mcp`. Other transitional and direct-required exceptions
-are likewise attributed to the provider actually used.
+Every provider-routed canonical call contributes to these counters.
+`search_entities`, `get_entity`, `list_areas`, `search_services`, and
+`list_services` are attributed to `direct_ha_api`; they never claim
+`standard_ha_mcp`. Entity search performs one provider request for its one
+`GET /states` inventory. A truncated successful search increments success and
+`partial_results`, not provider failures. Locally invalid domain or limit input
+does not increment provider requests or failures. Fallback and prohibited-fallback
+counters remain zero. Other transitional and direct-required exceptions are
+likewise attributed to the provider actually used.
 Lifecycle labels do not substitute for runtime provider attribution.
 
 Dependency timing separates current request duration, cache lookup duration, original
