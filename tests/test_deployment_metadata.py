@@ -311,6 +311,20 @@ class UnreleasedRcIntegrityTests(unittest.TestCase):
             VALIDATOR.assert_unreleased_rc(ROOT, VALIDATOR.BETA_VERSION)
         self.assertEqual(run.call_count, 1)
 
+    @patch.dict(
+        VALIDATOR.os.environ,
+        {"HAMCP_GHCR_READ_TOKEN": "", "GITHUB_ACTOR": "test-actor"},
+        clear=False,
+    )
+    @patch.object(VALIDATOR.subprocess, "run")
+    def test_global_github_actor_without_scoped_token_uses_anonymous_probe(self, run):
+        run.side_effect = [
+            self.result(2),
+            self.result(1, stderr="manifest unknown"),
+        ]
+        VALIDATOR.assert_unreleased_rc(ROOT, VALIDATOR.BETA_VERSION)
+        self.assertEqual(run.call_count, 2)
+
     @patch.object(VALIDATOR.subprocess, "run")
     def test_existing_version_image_is_rejected(self, run):
         run.side_effect = [self.result(2), self.result(0, stdout="manifest")]

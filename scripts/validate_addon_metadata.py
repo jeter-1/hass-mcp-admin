@@ -303,7 +303,7 @@ def assert_unreleased_rc(repo_root: Path, version: str) -> None:
         anonymous_env["DOCKER_CONFIG"] = docker_config
         registry_token = os.environ.get("HAMCP_GHCR_READ_TOKEN", "")
         registry_actor = os.environ.get("GITHUB_ACTOR", "")
-        if bool(registry_token) != bool(registry_actor):
+        if registry_token and not registry_actor:
             raise MetadataValidationError(
                 "Authenticated registry integrity check is incompletely configured"
             )
