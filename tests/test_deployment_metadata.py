@@ -27,6 +27,9 @@ class VersionComparisonTests(unittest.TestCase):
     def test_release_is_newer_than_prerelease(self):
         self.assertTrue(VALIDATOR.is_newer_version("2.0.0", "2.0.0-beta.14"))
 
+    def test_rc_is_newer_than_beta(self):
+        self.assertTrue(VALIDATOR.is_newer_version("2.0.0-rc.1", "2.0.0-beta.26"))
+
     def test_invalid_version_is_rejected(self):
         with self.assertRaises(VALIDATOR.MetadataValidationError):
             VALIDATOR.version_key("beta-latest")
@@ -130,12 +133,12 @@ class AddonMetadataValidationTests(unittest.TestCase):
         report = VALIDATOR.validate_repository(
             ROOT,
             base_ref="origin/main",
-            expected_version="2.0.0-beta.26",
+            expected_version="2.0.0-rc.1",
             deployed_version="2.0.0-beta.8",
             paths={"hass_mcp_engineering_beta/config.yaml"},
         )
         self.assertEqual(report.production_version, "1.1.2")
-        self.assertEqual(report.beta_version, "2.0.0-beta.26")
+        self.assertEqual(report.beta_version, "2.0.0-rc.1")
 
 
 class DeploymentScriptTests(unittest.TestCase):
