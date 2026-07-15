@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
+    branches:
+      - "**"
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
@@ -35,6 +38,12 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Validate add-on YAML
         run: python -c "import pathlib,yaml; yaml.safe_load(pathlib.Path('hass_mcp_admin/config.yaml').read_text()); yaml.safe_load(pathlib.Path('hass_mcp_engineering_beta/config.yaml').read_text()); yaml.safe_load(pathlib.Path('repository.yaml').read_text())"
+      - name: Set up QEMU for declared RC architectures
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+        with:
+          platforms: arm64,arm
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - name: Build production image
         run: docker build -t hass-mcp-admin:test ./hass_mcp_admin
       - name: Build beta image
@@ -43,9 +52,22 @@ jobs:
           build_sha="$(git rev-parse HEAD)"
           build_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           docker build \
+            --build-arg "BUILD_VERSION=2.0.0-rc.1" \
             --build-arg "HAMCP_BUILD_SHA=$build_sha" \
             --build-arg "HAMCP_BUILD_TIME=$build_time" \
             -t hass-mcp-engineering-beta:test \
+            ./hass_mcp_engineering_beta
+      - name: Validate beta image on every declared architecture without pushing
+        shell: bash
+        run: |
+          build_sha="$(git rev-parse HEAD)"
+          build_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          docker buildx build \
+            --platform "linux/amd64,linux/arm64,linux/arm/v7" \
+            --build-arg "BUILD_VERSION=2.0.0-rc.1" \
+            --build-arg "HAMCP_BUILD_SHA=$build_sha" \
+            --build-arg "HAMCP_BUILD_TIME=$build_time" \
+            --output=type=cacheonly \
             ./hass_mcp_engineering_beta
 
   real-ha-contract-tests:

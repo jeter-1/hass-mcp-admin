@@ -1,0 +1,231 @@
+name: Publish RC image
+
+on:
+  push:
+    tags:
+      - "v2.0.0-rc.1"
+
+permissions: {}
+
+concurrency:
+  group: publish-hass-mcp-engineering-beta-2.0.0-rc.1
+  cancel-in-progress: false
+
+env:
+  IMAGE_REPOSITORY: ghcr.io/jeter-1/hass-mcp-engineering-beta
+  EXPECTED_VERSION: 2.0.0-rc.1
+
+jobs:
+  validate:
+    name: Complete validation gate
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  release-metadata:
+    name: Verify release metadata before registry login
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      build_sha: ${{ steps.release.outputs.build_sha }}
+      build_time: ${{ steps.release.outputs.build_time }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact tag, main ancestry, and version agreement
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          expected_tag="v${EXPECTED_VERSION}"
+          if [[ "$GITHUB_REF_TYPE" != "tag" || "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
+            echo "::error::Publication requires the exact tag $expected_tag."
+            exit 1
+          fi
+
+          config_version="$(sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' hass_mcp_engineering_beta/config.yaml)"
+          server_version="$(sed -nE 's/^SERVER_VERSION[[:space:]]*=[[:space:]]*"([^"]+)"[[:space:]]*$/\1/p' hass_mcp_engineering_beta/ha_mcp_engineering/version.py)"
+          if [[ "$config_version" != "$EXPECTED_VERSION" || "$server_version" != "$EXPECTED_VERSION" ]]; then
+            echo "::error::Tag ($expected_tag), config version ($config_version), and server version ($server_version) must agree."
+            exit 1
+          fi
+
+          build_sha="$(git rev-parse HEAD)"
+          git fetch --no-tags origin "refs/heads/main:refs/remotes/origin/main"
+          if ! git merge-base --is-ancestor "$build_sha" refs/remotes/origin/main; then
+            echo "::error::The tagged commit must already be present on main."
+            exit 1
+          fi
+
+          build_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          if [[ ! "$build_sha" =~ ^[0-9a-f]{40}$ || ! "$build_time" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+            echo "::error::Resolved release provenance is not bounded SHA/UTC RFC3339 metadata."
+            exit 1
+          fi
+
+          echo "build_sha=$build_sha" >> "$GITHUB_OUTPUT"
+          echo "build_time=$build_time" >> "$GITHUB_OUTPUT"
+          echo "version=$EXPECTED_VERSION" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Validated RC image metadata"
+            echo "- Version: $EXPECTED_VERSION"
+            echo "- Source commit: $build_sha"
+            echo "- Created: $build_time"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Publish immutable multi-architecture image
+    needs:
+      - validate
+      - release-metadata
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build-and-push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify publication checkout
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ needs.release-metadata.outputs.build_sha }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          if [[ "$actual_sha" != "$EXPECTED_SHA" ]]; then
+            echo "::error::Publication checkout does not match the validated source commit."
+            exit 1
+          fi
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+        with:
+          platforms: arm64,arm
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Refuse to overwrite immutable image tags
+        shell: bash
+        env:
+          BUILD_SHA: ${{ needs.release-metadata.outputs.build_sha }}
+          VERSION: ${{ needs.release-metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          version_image="${IMAGE_REPOSITORY}:${VERSION}"
+          sha_image="${IMAGE_REPOSITORY}:sha-${BUILD_SHA}"
+          bash scripts/assert_registry_tags_absent.sh "$version_image" "$sha_image"
+      - name: Build and push version and source-commit tags
+        id: build-and-push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: ./hass_mcp_engineering_beta
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          push: true
+          build-args: |
+            BUILD_VERSION=${{ needs.release-metadata.outputs.version }}
+            HAMCP_BUILD_SHA=${{ needs.release-metadata.outputs.build_sha }}
+            HAMCP_BUILD_TIME=${{ needs.release-metadata.outputs.build_time }}
+          tags: |
+            ghcr.io/jeter-1/hass-mcp-engineering-beta:${{ needs.release-metadata.outputs.version }}
+            ghcr.io/jeter-1/hass-mcp-engineering-beta:sha-${{ needs.release-metadata.outputs.build_sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/jeter-1/hass-mcp-admin
+            org.opencontainers.image.revision=${{ needs.release-metadata.outputs.build_sha }}
+            org.opencontainers.image.created=${{ needs.release-metadata.outputs.build_time }}
+            org.opencontainers.image.version=${{ needs.release-metadata.outputs.version }}
+
+  verify-anonymous-pull:
+    name: Verify public multi-architecture image anonymously
+    needs:
+      - release-metadata
+      - publish
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Set up Docker Buildx without registry credentials
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Inspect manifests and pull without authentication
+        shell: bash
+        env:
+          BUILD_SHA: ${{ needs.release-metadata.outputs.build_sha }}
+          EXPECTED_DIGEST: ${{ needs.publish.outputs.digest }}
+          VERSION: ${{ needs.release-metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          version_image="${IMAGE_REPOSITORY}:${VERSION}"
+          sha_image="${IMAGE_REPOSITORY}:sha-${BUILD_SHA}"
+          manifest_json="$RUNNER_TEMP/rc-manifest.json"
+          version_inspect="$RUNNER_TEMP/version-inspect.txt"
+          sha_inspect="$RUNNER_TEMP/sha-inspect.txt"
+
+          docker_config="${DOCKER_CONFIG:-$HOME/.docker}/config.json"
+          if [[ -f "$docker_config" ]] && grep -q 'ghcr\.io' "$docker_config"; then
+            echo "::error::Anonymous verification runner unexpectedly contains GHCR credentials."
+            exit 1
+          fi
+
+          if ! docker buildx imagetools inspect --raw "$version_image" > "$manifest_json"; then
+            echo "::error title=GHCR package is not public::Make the hass-mcp-engineering-beta package Public at https://github.com/users/jeter-1/packages/container/hass-mcp-engineering-beta/settings, then re-run only this anonymous verification job. Do not refresh Home Assistant yet."
+            exit 1
+          fi
+
+          python - "$manifest_json" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          manifest = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          actual = {
+              (
+                  item.get("platform", {}).get("os"),
+                  item.get("platform", {}).get("architecture"),
+                  item.get("platform", {}).get("variant"),
+              )
+              for item in manifest.get("manifests", [])
+          }
+          required = {
+              ("linux", "amd64", None),
+              ("linux", "arm64", None),
+              ("linux", "arm", "v7"),
+          }
+          missing = required - actual
+          if missing:
+              raise SystemExit(f"multi-architecture manifest is missing: {sorted(missing)!r}")
+          PY
+
+          docker buildx imagetools inspect "$version_image" > "$version_inspect"
+          docker buildx imagetools inspect "$sha_image" > "$sha_inspect"
+          version_digest="$(awk '$1 == "Digest:" { print $2; exit }' "$version_inspect")"
+          sha_digest="$(awk '$1 == "Digest:" { print $2; exit }' "$sha_inspect")"
+          if [[ -z "$EXPECTED_DIGEST" || "$version_digest" != "$EXPECTED_DIGEST" || "$sha_digest" != "$EXPECTED_DIGEST" ]]; then
+            echo "::error::Version and source-commit tags must resolve to the published manifest digest."
+            exit 1
+          fi
+
+          if ! docker pull --platform linux/amd64 "$version_image"; then
+            echo "::error title=Anonymous pull failed::The GHCR package must be publicly pullable before Home Assistant is refreshed."
+            exit 1
+          fi
+
+          {
+            echo "### Anonymous registry verification passed"
+            echo "- Version image: $version_image"
+            echo "- Commit image: $sha_image"
+            echo "- Manifest digest: $EXPECTED_DIGEST"
+            echo "- Platforms: linux/amd64, linux/arm64, linux/arm/v7"
+          } >> "$GITHUB_STEP_SUMMARY"

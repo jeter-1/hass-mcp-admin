@@ -19,6 +19,8 @@ BETA_SLUG = "hass_mcp_engineering_beta"
 PRODUCTION_NAME = "HA MCP Engineering Server"
 BETA_NAME = "HA MCP Engineering Server Beta"
 PRODUCTION_VERSION = "1.1.2"
+BETA_VERSION = "2.0.0-rc.1"
+BETA_IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 PRODUCTION_PORT = 8099
 BETA_PORT = 8100
 BETA_INGRESS_PORT = 8110
@@ -136,6 +138,12 @@ def validate_config_pair(production: dict, beta: dict, *, minimum_secret_length:
         raise MetadataValidationError("Production and beta slugs collide")
     if str(production.get("version")) != PRODUCTION_VERSION:
         raise MetadataValidationError("Production version changed")
+    if "image" in production:
+        raise MetadataValidationError("Production image publication metadata is not approved")
+    if str(beta.get("version")) != BETA_VERSION:
+        raise MetadataValidationError("Beta/RC version changed")
+    if beta.get("image") != BETA_IMAGE:
+        raise MetadataValidationError("Beta/RC registry image is missing or invalid")
 
     production_port = configured_port(production)
     beta_port = configured_port(beta)
