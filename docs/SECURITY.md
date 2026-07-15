@@ -1,9 +1,10 @@
 # Beta provider security boundaries
 
-## RC1 frozen security boundary
+## RC2 frozen security boundary
 
-RC1 changes no approval authority, listener, provider, route, direct-access
-policy, write policy, redaction rule, or Home Assistant behavior. Build
+RC2 changes no approval authority, listener, write policy, redaction rule, or
+Home Assistant behavior. Its only provider/direct-policy correction is the
+bounded read-only `search_entities` route documented below. Build
 provenance is limited to a validated complete Git commit and UTC RFC3339 build
 time supplied by the image pipeline. Invalid/unbounded values fail closed to
 `unknown`; no runtime repository lookup or credential is used.
@@ -74,7 +75,7 @@ Provider labels describe the transport actually used. A direct Home Assistant RE
 WebSocket call is always labeled `direct_ha_api`; it is never relabeled as
 `standard_ha_mcp`. Approximate upstream tool matching is prohibited.
 
-RC1 permits five narrowly scoped administrative reads. The fifth is the
+RC2 permits five narrowly scoped administrative reads. The fifth is the
 release-blocking entity-search correction; the original four remain unchanged:
 
 | Tool | Direct policy | Allowed operation |

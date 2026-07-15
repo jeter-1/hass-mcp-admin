@@ -1,13 +1,19 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
-## RC1 release freeze and provenance
+## RC2 release freeze and provenance
 
-RC1 retains the beta slug and listener layout while freezing the accepted Beta
+RC2 retains the beta slug and listener layout while freezing the accepted Beta
 26 contract. CI and the beta/RC deployment script inject the exact checked-out
 commit and a UTC RFC3339 build time into the existing `server_info` fields and
 OCI labels. The runtime never derives provenance from mutable repository state.
 Local builds without valid supplied metadata report `unknown`. No production
 v1.1.2 file or image path is changed.
+
+The only canonical provider-route correction from the accepted Beta 26
+baseline is `search_entities`: one explicit transitional direct-read policy
+uses a bounded `/states` inventory with no fallback. RC2 gives that reviewed
+source correction a new installable Home Assistant version after RC1 had
+already been built or deployed.
 
 ## Beta 25 external approval authority
 
@@ -58,7 +64,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-rc.1` |
+| Version | `1.1.2` | `2.0.0-rc.2` |
 | Port | `8099` | MCP `8100`; internal Ingress `8110` |
 | Options and secret | Production add-on data | Beta add-on data |
 

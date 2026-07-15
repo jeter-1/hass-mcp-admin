@@ -33,7 +33,7 @@ does not provide their exact semantics; `GetLiveContext` is not substituted. The
 policies are read-only and do not authorize service execution, reload, deletion, or any
 physical action.
 
-RC1 adds only `search_entities` to that explicit direct-read set after deployed
+RC2 adds only `search_entities` to that explicit direct-read set after deployed
 acceptance exposed an immediate `provider_unavailable` routing failure. Policy
 `bounded_entity_state_search` permits one read-only `/states` inventory, validated
 query/domain/limit input, deterministic slim results, and explicit truncation. It

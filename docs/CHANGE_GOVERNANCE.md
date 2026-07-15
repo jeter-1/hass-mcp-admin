@@ -1,8 +1,8 @@
 # Beta automation change governance
 
-## RC1 governance freeze
+## RC2 governance freeze
 
-Version `2.0.0-rc.1` preserves the accepted Beta 26 lifecycle byte-for-byte at
+Version `2.0.0-rc.2` preserves the accepted Beta 26 lifecycle byte-for-byte at
 the public contract boundary. Persisted Beta 26 records load without migration,
 terminal history is not rewritten, hashes and authority versions are preserved,
 expired challenges are not actionable, and repeated reads remain idempotent.
@@ -22,7 +22,7 @@ failures or requirements can block a handoff. Full proposed configuration,
 unbounded diffs, secrets, authentication,
 and prior approval as reusable authority are excluded.
 
-Version 2.0.0-rc.1 requires external Home Assistant administrator approval for controlled
+Version 2.0.0-rc.2 requires external Home Assistant administrator approval for controlled
 Home Assistant automation creation and updates. It does not alter production
 v1.1.2 and does not govern scripts, scenes, dashboards, helpers, integrations,
 devices, add-ons, system configuration, arbitrary direct service calls, or

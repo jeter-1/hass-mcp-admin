@@ -1,5 +1,11 @@
 # HA MCP Engineering Server 2.0.0-rc.1 release notes
 
+> **Immutable historical release:** RC1 had already been built or deployed
+> before the later `search_entities` source correction could be observed through
+> Home Assistant. Do not recreate its tag or overwrite its image. The corrected
+> source is released only as `2.0.0-rc.2`; see
+> [`RC2_RELEASE_NOTES.md`](RC2_RELEASE_NOTES.md).
+
 ## Release identity
 
 - Version: `2.0.0-rc.1`

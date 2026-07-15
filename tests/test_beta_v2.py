@@ -408,6 +408,8 @@ class AddonIsolationTests(unittest.TestCase):
         self.assertTrue((ROOT / "V2_BETA_ARCHITECTURE.md").is_file())
         self.assertTrue((ROOT / "docs" / "CHANGE_GOVERNANCE.md").is_file())
         self.assertTrue((ROOT / "docs" / "SECURITY.md").is_file())
+        self.assertTrue((ROOT / "docs" / "RC2_RELEASE_NOTES.md").is_file())
+        self.assertTrue((ROOT / "docs" / "RC2_ACCEPTANCE.md").is_file())
         self.assertTrue((ROOT / "docs" / "TOKEN_EFFICIENCY.md").is_file())
         self.assertTrue(
             (ROOT / "docs" / "CONFIGURATION_INTEGRITY_ANALYSIS.md").is_file()

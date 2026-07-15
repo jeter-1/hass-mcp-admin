@@ -1,5 +1,9 @@
 # HA MCP Engineering Server 2.0.0-rc.1 deployed acceptance
 
+> **Historical only:** this procedure cannot establish the later entity-search
+> correction for an already installed RC1 runtime. RC1 remains immutable. Use
+> [`RC2_ACCEPTANCE.md`](RC2_ACCEPTANCE.md) after installing `2.0.0-rc.2`.
+
 This is a post-deployment, human-operated acceptance procedure for the isolated
 beta/RC add-on. It must not be run by implementation CI against a deployed Home
 Assistant instance. Begin only after completing steps 1 through 10 of the exact

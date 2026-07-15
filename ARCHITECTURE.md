@@ -1,15 +1,17 @@
 # HA MCP Engineering Server Architecture
 
-## RC1 release-freeze boundary
+## RC2 release-freeze boundary
 
-Version `2.0.0-rc.1` is built from accepted Beta 26 commit
+Version `2.0.0-rc.2` is built from accepted Beta 26 commit
 `b64db57ddffc5108b9078717ce720440f5361412`. It changes no tool, schema, enum,
-classification, provider route, direct-access policy, governance state, or Home
-Assistant behavior. Build-time commit and UTC timestamp values populate the
+governance state, approval behavior, or Home Assistant write boundary. Its only
+canonical routing correction makes `search_entities` an explicit bounded
+read-only `direct_ha_api` policy while Standard HA MCP is unavailable. Build-time
+commit and UTC timestamp values populate the
 existing `server_info` provenance fields; invalid or absent local values remain
 `unknown`. The frozen contract remains 38 registered/25 canonical/zero planned
 capabilities, schema version 1, and external authority version 2. See
-[`docs/RC1_RELEASE_NOTES.md`](docs/RC1_RELEASE_NOTES.md).
+[`docs/RC2_RELEASE_NOTES.md`](docs/RC2_RELEASE_NOTES.md).
 
 ## Beta 25 external authority boundary
 
