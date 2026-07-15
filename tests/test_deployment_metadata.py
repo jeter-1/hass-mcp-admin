@@ -29,7 +29,7 @@ class VersionComparisonTests(unittest.TestCase):
         self.assertTrue(VALIDATOR.is_newer_version("2.0.0", "2.0.0-beta.14"))
 
     def test_rc_is_newer_than_beta(self):
-        self.assertTrue(VALIDATOR.is_newer_version("2.0.0-rc.1", "2.0.0-beta.26"))
+        self.assertTrue(VALIDATOR.is_newer_version("2.0.0-rc.2", "2.0.0-rc.1"))
 
     def test_invalid_version_is_rejected(self):
         with self.assertRaises(VALIDATOR.MetadataValidationError):
@@ -58,14 +58,14 @@ class AddonMetadataValidationTests(unittest.TestCase):
         self.assertEqual(self.beta["image"], VALIDATOR.BETA_IMAGE)
         self.assertEqual(
             f'{self.beta["image"]}:{self.beta["version"]}',
-            "ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc.1",
+            "ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc.2",
         )
 
     def test_registry_image_is_required_and_cannot_be_arch_templated(self):
         for image in (
             None,
             "ghcr.io/jeter-1/hass-mcp-engineering-beta-{arch}",
-            "ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc.1",
+            "ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc.2",
             "ghcr.io/jeter-1/hass-mcp-admin",
         ):
             with self.subTest(image=image):
@@ -79,7 +79,7 @@ class AddonMetadataValidationTests(unittest.TestCase):
 
     def test_rc_version_is_pinned_by_metadata_validation(self):
         beta = copy.deepcopy(self.beta)
-        beta["version"] = "2.0.0-rc.2"
+        beta["version"] = "2.0.0-rc.3"
         with self.assertRaises(VALIDATOR.MetadataValidationError):
             self.validate(beta=beta)
 
@@ -200,7 +200,7 @@ class AddonMetadataValidationTests(unittest.TestCase):
             VALIDATOR.validate_repository(
                 ROOT,
                 base_ref="origin/main",
-                deployed_version="2.0.0-rc.2",
+                deployed_version="2.0.0-rc.3",
                 paths={"hass_mcp_engineering_beta/config.yaml"},
                 unreleased_integrity_check=integrity_check,
             )
@@ -210,12 +210,12 @@ class AddonMetadataValidationTests(unittest.TestCase):
         report = VALIDATOR.validate_repository(
             ROOT,
             base_ref="origin/main",
-            expected_version="2.0.0-rc.1",
+            expected_version="2.0.0-rc.2",
             deployed_version="2.0.0-beta.8",
             paths={"hass_mcp_engineering_beta/config.yaml"},
         )
         self.assertEqual(report.production_version, "1.1.2")
-        self.assertEqual(report.beta_version, "2.0.0-rc.1")
+        self.assertEqual(report.beta_version, "2.0.0-rc.2")
 
 
 class UnreleasedRcIntegrityTests(unittest.TestCase):
@@ -233,7 +233,7 @@ class UnreleasedRcIntegrityTests(unittest.TestCase):
                 1,
                 stderr=(
                     "ERROR: ghcr.io/jeter-1/hass-mcp-engineering-beta:"
-                    "2.0.0-rc.1: not found"
+                    "2.0.0-rc.2: not found"
                 ),
             ),
         ]
@@ -247,7 +247,7 @@ class UnreleasedRcIntegrityTests(unittest.TestCase):
                 "--exit-code",
                 "--tags",
                 "origin",
-                "refs/tags/v2.0.0-rc.1",
+                "refs/tags/v2.0.0-rc.2",
             ],
         )
         self.assertEqual(
@@ -257,7 +257,7 @@ class UnreleasedRcIntegrityTests(unittest.TestCase):
                 "buildx",
                 "imagetools",
                 "inspect",
-                "ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc.1",
+                "ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc.2",
             ],
         )
         docker_env = run.call_args_list[1].kwargs["env"]
@@ -361,15 +361,15 @@ class CIWorkflowTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-    def test_same_version_gate_has_registry_inspection_before_metadata(self):
+    def test_version_bump_metadata_gate_precedes_docker_setup(self):
         buildx = self.workflow.index("Set up Docker Buildx")
         metadata = self.workflow.index("Validate deployment metadata")
-        self.assertLess(buildx, metadata)
-        self.assertIn("--allow-unreleased-same-version", self.workflow)
+        self.assertLess(metadata, buildx)
+        self.assertNotIn("--allow-unreleased-same-version", self.workflow)
 
-    def test_same_version_gate_has_read_only_package_permission_and_token(self):
-        self.assertIn("packages: read", self.workflow)
-        self.assertIn("HAMCP_GHCR_READ_TOKEN: ${{ github.token }}", self.workflow)
+    def test_pr_ci_has_no_package_permission_or_registry_token(self):
+        self.assertNotIn("packages:", self.workflow)
+        self.assertNotIn("HAMCP_GHCR_READ_TOKEN", self.workflow)
 
     def test_ci_still_has_no_registry_login_or_push(self):
         self.assertNotIn("docker/login-action", self.workflow)

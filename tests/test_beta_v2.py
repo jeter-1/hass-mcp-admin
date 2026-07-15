@@ -347,7 +347,7 @@ class AddonIsolationTests(unittest.TestCase):
     def test_beta_metadata_is_distinct_and_valid(self):
         self.assertEqual(self.beta["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(self.beta["slug"], "hass_mcp_engineering_beta")
-        self.assertEqual(self.beta["version"], "2.0.0-rc.1")
+        self.assertEqual(self.beta["version"], "2.0.0-rc.2")
         self.assertEqual(self.beta["ports"], {"8100/tcp": 8100})
         self.assertNotEqual(self.beta["slug"], self.production["slug"])
         self.assertNotEqual(set(self.beta["ports"]), set(self.production["ports"]))
@@ -408,6 +408,8 @@ class AddonIsolationTests(unittest.TestCase):
         self.assertTrue((ROOT / "V2_BETA_ARCHITECTURE.md").is_file())
         self.assertTrue((ROOT / "docs" / "CHANGE_GOVERNANCE.md").is_file())
         self.assertTrue((ROOT / "docs" / "SECURITY.md").is_file())
+        self.assertTrue((ROOT / "docs" / "RC2_RELEASE_NOTES.md").is_file())
+        self.assertTrue((ROOT / "docs" / "RC2_ACCEPTANCE.md").is_file())
         self.assertTrue((ROOT / "docs" / "TOKEN_EFFICIENCY.md").is_file())
         self.assertTrue(
             (ROOT / "docs" / "CONFIGURATION_INTEGRITY_ANALYSIS.md").is_file()
@@ -492,7 +494,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
-        self.assertEqual(result["data"]["server"]["version"], "2.0.0-rc.1")
+        self.assertEqual(result["data"]["server"]["version"], "2.0.0-rc.2")
         self.assertEqual(result["data"]["tool_count"], 38)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 

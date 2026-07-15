@@ -1,12 +1,15 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
-## RC1 build provenance and compatibility
+## RC2 build provenance and compatibility
 
 The existing `server_info` fields `build_sha` and `build_time` report validated
 image-build inputs in deployed RC images. They do not appear in health,
 capability, audit-redaction, provider, or governance counters. Missing or
-invalid local inputs report `unknown`. RC1 otherwise preserves every Beta 26
+invalid local inputs report `unknown`. RC2 otherwise preserves every Beta 26
 observability field and counter meaning, including idempotent expiry events.
+The explicit `search_entities` direct route increments direct request/success or
+failure exactly once, treats truncation as a partial result rather than a
+provider failure, and never increments Standard HA MCP or fallback counters.
 
 ## Beta 26 expiry lifecycle observability
 

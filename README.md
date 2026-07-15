@@ -27,10 +27,10 @@
 > [`docs/EXTERNAL_APPROVAL.md`](docs/EXTERNAL_APPROVAL.md) and
 > [`docs/BETA_25_RELEASE_NOTES.md`](docs/BETA_25_RELEASE_NOTES.md). Beta 26
 > expiry lifecycle hardening is documented in
-> [`docs/BETA_26_RELEASE_NOTES.md`](docs/BETA_26_RELEASE_NOTES.md). RC1 release
+> [`docs/BETA_26_RELEASE_NOTES.md`](docs/BETA_26_RELEASE_NOTES.md). RC2 release
 > and deployed acceptance procedures are in
-> [`docs/RC1_RELEASE_NOTES.md`](docs/RC1_RELEASE_NOTES.md) and
-> [`docs/RC1_ACCEPTANCE.md`](docs/RC1_ACCEPTANCE.md).
+> [`docs/RC2_RELEASE_NOTES.md`](docs/RC2_RELEASE_NOTES.md) and
+> [`docs/RC2_ACCEPTANCE.md`](docs/RC2_ACCEPTANCE.md).
 
 A focused Model Context Protocol server for Home Assistant engineering, diagnostics,
 and controlled administration, packaged as a Home Assistant OS add-on. It works with
@@ -191,8 +191,8 @@ outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 
 ## Engineering beta/RC analytical milestones
 
-The parallel v2 add-on is now `2.0.0-rc.1` with 38 registered tools and 25
-unchanged canonical tools. RC1 freezes the accepted Beta 26 catalog, schemas,
+The parallel v2 add-on is now `2.0.0-rc.2` with 38 registered tools and 25
+unchanged canonical tools. RC2 freezes the accepted Beta 26 catalog, schemas,
 provider policies, external human approval, and idempotent plan/challenge
 expiry lifecycle. Apply and rollback still require distinct exact-hash
 approvals; rejection and plan expiry are terminal. Active pre-Beta-25 plans
@@ -200,8 +200,8 @@ must be recreated because caller-granted legacy authority is never migrated.
 Signed cursors are process-local and invalid after an add-on restart.
 No planned feature capability remains. Production v1.1.2, `hass_mcp_admin`, and
 port 8099 remain unchanged. See
-[`docs/RC1_RELEASE_NOTES.md`](docs/RC1_RELEASE_NOTES.md),
-[`docs/RC1_ACCEPTANCE.md`](docs/RC1_ACCEPTANCE.md),
+[`docs/RC2_RELEASE_NOTES.md`](docs/RC2_RELEASE_NOTES.md),
+[`docs/RC2_ACCEPTANCE.md`](docs/RC2_ACCEPTANCE.md),
 [`docs/BETA_26_RELEASE_NOTES.md`](docs/BETA_26_RELEASE_NOTES.md),
 [`docs/EXTERNAL_APPROVAL.md`](docs/EXTERNAL_APPROVAL.md), and
 [`hass_mcp_engineering_beta/OBSERVABILITY.md`](hass_mcp_engineering_beta/OBSERVABILITY.md).

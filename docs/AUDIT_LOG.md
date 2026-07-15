@@ -1,6 +1,6 @@
 # Audit-log contract
 
-RC1 does not change this contract. Build SHA and build time remain
+RC2 does not change this contract. Build SHA and build time remain
 `server_info` identity fields and are not added to secret-redaction paths or to
 health/capability output. Image provenance never contains a token, credential,
 authenticated URL, or branch credential. Clean governance initialization and

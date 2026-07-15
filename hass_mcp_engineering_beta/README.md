@@ -36,7 +36,7 @@ https://BETA_TUNNEL/REDACTED_BETA_SECRET/mcp/
 ```
 
 Direct requests to `/mcp` and `/mcp/` must return `404`. After initialization,
-call `server_info(check_ha=false)` and verify version `2.0.0-rc.1`, the expected
+call `server_info(check_ha=false)` and verify version `2.0.0-rc.2`, the expected
 complete build SHA, and its UTC build time, then call
 `list_capabilities` and verify the preserved 25-tool canonical catalog plus 13
 beta-native tools; MCP `tools/list` should expose 38 callable tools. Beta 17 added the read-only
@@ -55,12 +55,14 @@ identity, rate-store eviction, unavailable-provider accounting, and audit bounds
 without changing the catalog or schemas. Beta 25 preserves those contracts and
 makes approval an external Home Assistant administrator action through the
 admin-only Ingress panel. Beta 26 makes plan and challenge expiry idempotent and
-immediately effective on reads without changing the catalog or schemas. RC1
-freezes those contracts and adds only deterministic build provenance, release
-compatibility tests, and release documentation. Because
+immediately effective on reads without changing the catalog or schemas. RC2
+freezes those contracts, gives the reviewed direct-read `search_entities`
+correction a distinct installable version, and preserves deterministic build
+provenance and release compatibility tests. Because
 the public catalog changed, reconnect or
 recreate a beta connector only when moving from a release before Beta 21 that
-retains a cached `tools/list`; Beta 21 through RC1 requires no schema refresh.
+retains a cached `tools/list`; Beta 21 through RC2 requires no schema refresh,
+although the Engineering connector must be reconnected after the add-on update.
 
 Use a separate tunnel ingress or hostname for beta. Route it to port `8100`;
 leave the production ingress on `8099`.
@@ -194,8 +196,8 @@ required.
 See [`../docs/HANDOFF_GENERATION.md`](../docs/HANDOFF_GENERATION.md) for the
 handoff types, evidence/statement/completion/authorization contracts, structured
 and Markdown output, signed pagination, health/audit behavior, limitations, and
-the entirely read-only deployed acceptance procedure. RC1 reports 38
+the entirely read-only deployed acceptance procedure. RC2 reports 38
 registered/25 canonical tools and an empty planned capability list. See
-[`../docs/RC1_RELEASE_NOTES.md`](../docs/RC1_RELEASE_NOTES.md) and
-[`../docs/RC1_ACCEPTANCE.md`](../docs/RC1_ACCEPTANCE.md) for release-freeze,
+[`../docs/RC2_RELEASE_NOTES.md`](../docs/RC2_RELEASE_NOTES.md) and
+[`../docs/RC2_ACCEPTANCE.md`](../docs/RC2_ACCEPTANCE.md) for release-freeze,
 upgrade, provenance, deployed acceptance, soak, and rollback instructions.

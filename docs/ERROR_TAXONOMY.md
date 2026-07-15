@@ -1,6 +1,6 @@
 # Beta error taxonomy
 
-RC1 adds no public error or failure category. Invalid or unbounded optional
+RC2 adds no public error or failure category. Invalid or unbounded optional
 build provenance is safely represented by the established `unknown` value and
 does not become a new tool, provider, health, or audit error contract.
 
