@@ -270,6 +270,47 @@ class UnreleasedRcIntegrityTests(unittest.TestCase):
             VALIDATOR.assert_unreleased_rc(ROOT, VALIDATOR.BETA_VERSION)
         self.assertEqual(run.call_count, 1)
 
+    @patch.dict(
+        VALIDATOR.os.environ,
+        {"HAMCP_GHCR_READ_TOKEN": "test-token", "GITHUB_ACTOR": "test-actor"},
+        clear=False,
+    )
+    @patch.object(VALIDATOR.subprocess, "run")
+    def test_ci_authenticates_read_only_registry_check_without_token_in_args(self, run):
+        run.side_effect = [
+            self.result(2),
+            self.result(0, stdout="Login Succeeded"),
+            self.result(1, stderr="manifest unknown"),
+        ]
+        VALIDATOR.assert_unreleased_rc(ROOT, VALIDATOR.BETA_VERSION)
+        self.assertEqual(run.call_count, 3)
+        login = run.call_args_list[1]
+        self.assertEqual(
+            login.args[0],
+            [
+                "docker",
+                "login",
+                "ghcr.io",
+                "--username",
+                "test-actor",
+                "--password-stdin",
+            ],
+        )
+        self.assertEqual(login.kwargs["input"], "test-token")
+        self.assertNotIn("test-token", login.args[0])
+
+    @patch.dict(
+        VALIDATOR.os.environ,
+        {"HAMCP_GHCR_READ_TOKEN": "test-token", "GITHUB_ACTOR": ""},
+        clear=False,
+    )
+    @patch.object(VALIDATOR.subprocess, "run")
+    def test_incomplete_registry_auth_configuration_fails_closed(self, run):
+        run.return_value = self.result(2)
+        with self.assertRaises(VALIDATOR.MetadataValidationError):
+            VALIDATOR.assert_unreleased_rc(ROOT, VALIDATOR.BETA_VERSION)
+        self.assertEqual(run.call_count, 1)
+
     @patch.object(VALIDATOR.subprocess, "run")
     def test_existing_version_image_is_rejected(self, run):
         run.side_effect = [self.result(2), self.result(0, stdout="manifest")]
@@ -306,11 +347,15 @@ class CIWorkflowTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-    def test_same_version_gate_has_anonymous_registry_inspection_before_metadata(self):
+    def test_same_version_gate_has_registry_inspection_before_metadata(self):
         buildx = self.workflow.index("Set up Docker Buildx")
         metadata = self.workflow.index("Validate deployment metadata")
         self.assertLess(buildx, metadata)
         self.assertIn("--allow-unreleased-same-version", self.workflow)
+
+    def test_same_version_gate_has_read_only_package_permission_and_token(self):
+        self.assertIn("packages: read", self.workflow)
+        self.assertIn("HAMCP_GHCR_READ_TOKEN: ${{ github.token }}", self.workflow)
 
     def test_ci_still_has_no_registry_login_or_push(self):
         self.assertNotIn("docker/login-action", self.workflow)

@@ -112,7 +112,8 @@ class RC1PublicationWorkflowTests(unittest.TestCase):
     def test_pull_request_ci_builds_every_architecture_without_login_or_push(self):
         events = workflow_events(self.ci)
         self.assertIn("pull_request", events)
-        self.assertNotIn("packages", self.ci.get("permissions", {}))
+        self.assertEqual(self.ci.get("permissions", {}).get("packages"), "read")
+        self.assertNotEqual(self.ci.get("permissions", {}).get("packages"), "write")
 
         ci_jobs = self.ci["jobs"].values()
         ci_actions = [

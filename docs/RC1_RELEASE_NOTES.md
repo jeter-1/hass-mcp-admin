@@ -99,10 +99,12 @@ in [`BETA_DEPLOYMENT.md`](BETA_DEPLOYMENT.md).
 If an RC1 correction is reviewed after the original RC pull request merged but
 before the exact tag or version image exists, CI may retain `2.0.0-rc.1` only
 through the explicit unreleased same-version gate. The gate checks the exact
-remote Git tag and anonymously inspects the exact GHCR version image. An
-existing tag or image, an authentication ambiguity, or a network/registry
-failure rejects the correction. The exception is inactive when no beta files
-changed and cannot make an older version valid.
+remote Git tag and inspects the exact GHCR version image using the CI token's
+read-only package permission. This authenticated probe prevents a private
+existing image from being mistaken for an absent public image. An existing tag
+or image, an authentication ambiguity, or a network/registry failure rejects
+the correction. The exception is inactive when no beta files changed and
+cannot make an older version valid.
 
 ## Compatibility freeze
 

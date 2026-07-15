@@ -252,6 +252,7 @@ def _run_external(
     repo_root: Path,
     *args: str,
     env: dict[str, str] | None = None,
+    input_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
@@ -261,6 +262,7 @@ def _run_external(
             capture_output=True,
             check=False,
             env=env,
+            input=input_text,
             timeout=EXTERNAL_CHECK_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -299,6 +301,28 @@ def assert_unreleased_rc(repo_root: Path, version: str) -> None:
     with tempfile.TemporaryDirectory(prefix="hamcp-rc-integrity-") as docker_config:
         anonymous_env = dict(os.environ)
         anonymous_env["DOCKER_CONFIG"] = docker_config
+        registry_token = os.environ.get("HAMCP_GHCR_READ_TOKEN", "")
+        registry_actor = os.environ.get("GITHUB_ACTOR", "")
+        if bool(registry_token) != bool(registry_actor):
+            raise MetadataValidationError(
+                "Authenticated registry integrity check is incompletely configured"
+            )
+        if registry_token:
+            login_result = _run_external(
+                repo_root,
+                "docker",
+                "login",
+                "ghcr.io",
+                "--username",
+                registry_actor,
+                "--password-stdin",
+                env=anonymous_env,
+                input_text=registry_token,
+            )
+            if login_result.returncode != 0:
+                raise MetadataValidationError(
+                    "Unable to authenticate the read-only registry integrity check"
+                )
         image_result = _run_external(
             repo_root,
             "docker",
