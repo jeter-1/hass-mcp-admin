@@ -70,6 +70,11 @@ Confirm:
 - Home Assistant connectivity is connected and reports safe bounded metadata;
 - the catalog contains exactly 38 registered tools, 25 canonical tools, and
   zero planned capabilities;
+- `search_entities` reports lifecycle `transitional`, route
+  `transitional_direct`, and provider `direct_ha_api`;
+- health lists `search_entities` in `approved_direct_read_tools`, while
+  `standard_ha_mcp_delegation` remains `unavailable`, exact mapping count
+  remains zero, and explicit direct policy remains required;
 - authority version is `2`, storage is healthy, and no initialization-only plan,
   challenge, counter, or audit event appeared; and
 - health and capabilities contain no new provenance fields.
@@ -106,8 +111,32 @@ Use narrow bounds and real, non-sensitive identifiers. Run each tool once and
 confirm it performs no mutation, returns the established response envelope, and
 reports honest timing/provider coverage:
 
+Before the general reads, capture provider counters and run these
+`search_entities` checks in order:
+
+1. Call
+   `search_entities({"query":"garage","domain":"cover","limit":10})`.
+   Confirm success, provider `direct_ha_api`, classification
+   `transitional_direct`, policy `bounded_entity_state_search`, no
+   `provider_unavailable`, exactly one Home Assistant request, and results
+   containing only `entity_id`, `state`, and `friendly_name`. Completeness is
+   `complete`, or `partial` only when `truncated=true`.
+2. Call
+   `search_entities({"query":"","domain":"sensor","limit":5})`. Confirm no
+   more than five results, deterministic `entity_id` order, `truncated=true`
+   when more matches exist, partial completeness only when truncated, and no
+   provider failure.
+3. Use a unique nonexistent query. Confirm `count=0`, `results=[]`,
+   `truncated=false`, and complete coverage.
+4. Use an invalid domain or a limit outside 1 through 100. Confirm local
+   `invalid_request`, zero Home Assistant requests, and no change to direct
+   provider request or failure counters.
+5. Re-read health and audit. Confirm successful direct-provider request
+   accounting is exact, no Standard HA MCP request occurred, fallback and
+   prohibited-fallback attempts remain zero, no timeout or write occurred, and
+   audit records bounded intent without entity attributes or secrets.
+
 - `get_entity({"entity_id":"<existing_entity_id>"})`
-- `search_entities({"query":"<narrow term>","domain":""})`
 - `list_areas({})`
 - `list_devices({"query":"","limit":20})`
 - `list_entity_registry({"query":"","limit":20})`

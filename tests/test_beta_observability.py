@@ -8,7 +8,7 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import aiohttp
 
@@ -410,6 +410,44 @@ class OperationLatencyMetricTests(unittest.TestCase):
 
 
 class GatewayAndHealthTests(unittest.TestCase):
+    def test_successful_direct_entity_search_reconciles_provider_counters(self):
+        METRICS.reset()
+        before = METRICS.snapshot()["provider_routing"]
+        states = [
+            {
+                "entity_id": "sensor.example",
+                "state": "on",
+                "attributes": {"friendly_name": "Example"},
+            }
+        ]
+        with patch.object(
+            compatibility, "rest", new=AsyncMock(return_value=states)
+        ) as direct:
+            payload = json.loads(asyncio.run(compatibility.search_entities("example")))
+        after = METRICS.snapshot()["provider_routing"]
+        self.assertTrue(payload["success"])
+        direct.assert_awaited_once_with("GET", "/states")
+        self.assertEqual(
+            after["requests_by_provider"].get("direct_ha_api", 0)
+            - before["requests_by_provider"].get("direct_ha_api", 0),
+            1,
+        )
+        self.assertEqual(
+            after["successful_requests_by_provider"].get("direct_ha_api", 0)
+            - before["successful_requests_by_provider"].get("direct_ha_api", 0),
+            1,
+        )
+        self.assertEqual(
+            after["failures_by_provider"].get("direct_ha_api", 0)
+            - before["failures_by_provider"].get("direct_ha_api", 0),
+            0,
+        )
+        self.assertEqual(after["fallback_attempts"], before["fallback_attempts"])
+        self.assertEqual(
+            after["prohibited_fallback_attempts"],
+            before["prohibited_fallback_attempts"],
+        )
+
     def test_rate_limit_response_uses_stable_error_mapping(self):
         provider_before = METRICS.snapshot()["provider_routing"]
         class RecordingApp:
@@ -480,7 +518,13 @@ class GatewayAndHealthTests(unittest.TestCase):
         )
         self.assertEqual(
             set(health["provider_routing"]["approved_direct_read_tools"]),
-            {"get_entity", "list_areas", "search_services", "list_services"},
+            {
+                "search_entities",
+                "get_entity",
+                "list_areas",
+                "search_services",
+                "list_services",
+            },
         )
         self.assertEqual(health["provider_routing"]["standard_ha_mcp_exact_mapping_count"], 0)
         self.assertIn("dependency_analysis", health)

@@ -2,9 +2,13 @@
 
 ## 2.0.0-rc.1
 
-- Freeze the accepted Beta 26 public catalog, schemas, routing, direct-access
-  policy, governance semantics, and external authority version 2 for release
-  candidate validation.
+- Freeze the accepted Beta 26 public catalog, schemas, governance semantics, and
+  external authority version 2 for release candidate validation.
+- Correct the deployed `search_entities` RC blocker by routing broad entity
+  search through explicit read-only policy `bounded_entity_state_search` to
+  `direct_ha_api`, with one `/states` inventory, validated bounds, deterministic
+  slim results, explicit truncation, no implicit fallback, and no Standard HA
+  MCP availability claim. Its public input schema is unchanged.
 - Add deterministic image-build provenance for the existing `build_sha` and
   `build_time` fields, with safe `unknown` fallbacks for local development.
 - Add clean-install and persisted Beta 26 upgrade compatibility coverage plus

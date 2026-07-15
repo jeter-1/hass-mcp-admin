@@ -237,20 +237,60 @@ async def search_entities(query: str = "", domain: str = "", limit: int = 50) ->
     friendly_name, optionally restricted to a domain (e.g. 'binary_sensor').
     Returns entity_id, state, and friendly_name only — use get_entity for
     full attributes."""
+    if not isinstance(query, str):
+        raise ValueError("query must be a string")
+    if not isinstance(domain, str):
+        raise ValueError("domain must be a string")
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+        raise ValueError("limit must be an integer from 1 through 100")
+
+    q = query.strip().casefold()
+    normalized_domain = domain.strip().lower()
+    if normalized_domain and not re.fullmatch(r"[a-z0-9_]+", normalized_domain):
+        raise ValueError("domain must be empty or a canonical Home Assistant domain")
+
     states = await rest("GET", "/states")
-    q = query.lower()
-    results = []
-    for s in states:
-        eid = s["entity_id"]
-        if domain and not eid.startswith(domain + "."):
+    if not isinstance(states, list):
+        raise HomeAssistantApiError(
+            details={"endpoint_category": "states_inventory", "status": "malformed_response"}
+        )
+
+    matches = []
+    for state_item in states:
+        if not isinstance(state_item, dict):
             continue
-        name = (s.get("attributes", {}).get("friendly_name") or "")
-        if q and q not in eid.lower() and q not in name.lower():
+        entity_id = state_item.get("entity_id")
+        if not isinstance(entity_id, str) or not re.fullmatch(
+            r"[a-z0-9_]+\.[a-z0-9_]+", entity_id
+        ):
             continue
-        results.append({"entity_id": eid, "state": s.get("state"), "friendly_name": name})
-        if len(results) >= limit:
-            break
-    return dump({"count": len(results), "results": results})
+        entity_domain = entity_id.partition(".")[0]
+        if normalized_domain and entity_domain != normalized_domain:
+            continue
+        attributes = state_item.get("attributes")
+        attributes = attributes if isinstance(attributes, dict) else {}
+        friendly_name = attributes.get("friendly_name")
+        friendly_name = friendly_name if isinstance(friendly_name, str) else ""
+        if q and q not in entity_id.casefold() and q not in friendly_name.casefold():
+            continue
+        state = state_item.get("state")
+        matches.append(
+            {
+                "entity_id": entity_id,
+                "state": state if isinstance(state, str) else None,
+                "friendly_name": friendly_name,
+            }
+        )
+
+    matches.sort(key=lambda item: item["entity_id"])
+    results = matches[:limit]
+    return dump(
+        {
+            "count": len(results),
+            "results": results,
+            "truncated": len(matches) > limit,
+        }
+    )
 
 
 @mcp.tool()

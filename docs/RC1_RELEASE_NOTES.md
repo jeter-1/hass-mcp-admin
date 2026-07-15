@@ -13,14 +13,31 @@
 - stable production coexistence target: `hass_mcp_admin` v1.1.2 on port `8099`
 
 RC1 is a release freeze and validation milestone. It is not a feature release.
-The accepted Beta 26 lifecycle, schemas, enums, classifications, provider
-routing, direct-access policies, Home Assistant behavior, and governance trust
-boundary are preserved.
+The accepted Beta 26 lifecycle, schemas, enums, Home Assistant behavior, and
+governance trust boundary are preserved. The only provider-routing and
+direct-access-policy correction is the explicit `search_entities` direct-read
+path described below.
 
 ## Changes from Beta 26
 
-RC1 changes only release metadata, deterministic RC image provenance, release
-compatibility tests, and release/acceptance documentation.
+RC1 changes only release metadata, deterministic RC image provenance, the
+`search_entities` release-blocker correction, release compatibility tests, and
+release/acceptance documentation.
+
+Deployed acceptance found that `search_entities` returned
+`provider_unavailable` immediately while direct Home Assistant reads remained
+healthy. The capability was incorrectly classified as
+`standard_mcp_preferred` even though the Standard HA MCP gateway is unavailable
+and its compatibility handler already implements a read-only state search. RC1
+now routes only this capability as `transitional_direct` to `direct_ha_api`
+under policy `bounded_entity_state_search`, with no fallback. The handler makes
+exactly one `GET /states` request, matches `entity_id` and `friendly_name`
+case-insensitively, supports an optional exact domain filter, sorts by
+`entity_id`, returns only `entity_id`, `state`, and `friendly_name`, and enforces
+the existing runtime limit of 1 through 100. `truncated=true` produces honest
+partial completeness when additional matches exist. The public input schema is
+unchanged, Standard HA MCP is not claimed as available, no write or service call
+is authorized, and the 38/25/0 catalog remains unchanged.
 
 RC1 is installed from a prebuilt multi-architecture GHCR image rather than a
 container built locally by Home Assistant. Its app metadata uses the generic
@@ -79,6 +96,16 @@ pull has passed before the post-merge `v2.0.0-rc.1` workflow actually runs and
 the corresponding checks succeed. Follow the complete ordered operator sequence
 in [`BETA_DEPLOYMENT.md`](BETA_DEPLOYMENT.md).
 
+If an RC1 correction is reviewed after the original RC pull request merged but
+before the exact tag or version image exists, CI may retain `2.0.0-rc.1` only
+through the explicit unreleased same-version gate. The gate checks the exact
+remote Git tag and inspects the exact GHCR version image using the CI token's
+read-only package permission. This authenticated probe prevents a private
+existing image from being mistaken for an absent public image. An existing tag
+or image, an authentication ambiguity, or a network/registry failure rejects
+the correction. The exception is inactive when no beta files changed and
+cannot make an older version valid.
+
 ## Compatibility freeze
 
 RC1 pins the Beta 26 public contract by exact SHA-256 snapshots of:
@@ -87,8 +114,10 @@ RC1 pins the Beta 26 public contract by exact SHA-256 snapshots of:
 - every complete public input schema;
 - every public input enum;
 - all canonical and beta-native lifecycle classifications;
-- every tool-to-capability provider-routing decision; and
-- the complete direct-HA exception and read-policy mapping.
+- every tool-to-capability provider-routing decision except the single reviewed
+  `search_entities` correction; and
+- the complete direct-HA exception and read-policy mapping, with only
+  `bounded_entity_state_search` added.
 
 The governance compatibility fixture contains an expired plan, active external
 challenge, expired challenge, approved plan, consumed approval, applied plan,

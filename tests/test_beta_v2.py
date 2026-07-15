@@ -49,6 +49,7 @@ from ha_mcp_engineering.integrity import CONFIGURATION_INTEGRITY_ANALYSIS  # noq
 from ha_mcp_engineering.integrity.models import IntegrityAnalysisOutput  # noqa: E402
 from ha_mcp_engineering.incident import INCIDENT_CORRELATION  # noqa: E402
 from ha_mcp_engineering.incident.models import IncidentAnalysisOutput  # noqa: E402
+from ha_mcp_engineering.providers import CANONICAL_DISPATCHER, StandardHaMcpGateway  # noqa: E402
 from ha_mcp_engineering.tools import compatibility  # noqa: E402
 from ha_mcp_engineering.tools.registry import get_registered_server  # noqa: E402
 
@@ -464,7 +465,16 @@ class ToolParityTests(unittest.TestCase):
         }
         beta_catalog = {item["tool"]: item for item in CAPABILITIES}
         changed = {name for name in beta_catalog if beta_catalog[name] != production_catalog[name]}
-        self.assertEqual(changed, {"get_entity", "list_areas", "search_services", "list_services"})
+        self.assertEqual(
+            changed,
+            {
+                "search_entities",
+                "get_entity",
+                "list_areas",
+                "search_services",
+                "list_services",
+            },
+        )
         for name in changed:
             self.assertEqual(beta_catalog[name]["status"], "transitional")
             self.assertEqual(beta_catalog[name]["routing"], "transitional_direct")
@@ -515,7 +525,7 @@ class ToolParityTests(unittest.TestCase):
             Counter(item["status"] for item in catalog["tools"]),
             {"native": 8, "transitional": 14, "deprecated": 3},
         )
-        self.assertEqual(len(catalog["provider_matrix"]), 8)
+        self.assertEqual(len(catalog["provider_matrix"]), 9)
         self.assertEqual(
             {item["selected_provider"] for item in catalog["provider_matrix"]},
             {"direct_ha_api", "engineering"},
@@ -910,6 +920,49 @@ class BetaApplicationTests(unittest.TestCase):
         self.assertEqual(payload["metadata"]["routing"]["classification"], "transitional_direct")
         self.assertEqual(payload["request_id"], request_id)
         direct.assert_awaited_once_with("GET", "/states/sensor.facilitated")
+
+    def test_entity_search_routes_direct_via_real_mcp_when_standard_is_unavailable(self):
+        request_id = "direct-search-provider-integration-123"
+        gateway = StandardHaMcpGateway()
+        self.assertFalse(gateway.available)
+        previous = CANONICAL_DISPATCHER.standard_provider
+        CANONICAL_DISPATCHER.standard_provider = gateway
+        states = [
+            {
+                "entity_id": "cover.garage",
+                "state": "closed",
+                "attributes": {"friendly_name": "Garage Door", "arbitrary": "omit"},
+            }
+        ]
+        try:
+            with patch.object(gateway, "fetch", new=AsyncMock()) as standard, patch.object(
+                compatibility, "rest", new=AsyncMock(return_value=states)
+            ) as direct:
+                response, call = self.rpc(
+                    "tools/call",
+                    {
+                        "name": "search_entities",
+                        "arguments": {"query": "garage", "domain": "cover", "limit": 10},
+                    },
+                    request_id=request_id,
+                )
+        finally:
+            CANONICAL_DISPATCHER.standard_provider = previous
+        payload = json.loads(call["result"]["content"][0]["text"])
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["data"]["count"], 1)
+        self.assertFalse(payload["data"]["truncated"])
+        self.assertEqual(payload["metadata"]["routing"]["provider"], "direct_ha_api")
+        self.assertEqual(payload["metadata"]["routing"]["classification"], "transitional_direct")
+        self.assertEqual(
+            payload["metadata"]["routing"]["direct_access_policy"]["policy_id"],
+            "bounded_entity_state_search",
+        )
+        self.assertNotEqual(payload.get("error_code"), "provider_unavailable")
+        self.assertEqual(payload["request_id"], request_id)
+        direct.assert_awaited_once_with("GET", "/states")
+        standard.assert_not_awaited()
 
     def test_system_log_payload_is_sanitized_before_response_logging_and_audit(self):
         request_id = "beta11-system-log-audit-123"

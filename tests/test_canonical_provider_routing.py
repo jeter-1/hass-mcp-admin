@@ -15,12 +15,6 @@ from ha_mcp_engineering.observability import METRICS  # noqa: E402
 from ha_mcp_engineering.errors import HomeAssistantUnavailableError  # noqa: E402
 from ha_mcp_engineering.providers import (  # noqa: E402
     CANONICAL_DISPATCHER,
-    EngineeringEvidenceProvider,
-    ProviderCompleteness,
-    ProviderCoverage,
-    ProviderError,
-    ProviderFailureCategory,
-    ProviderResult,
     StandardHaMcpGateway,
     DIRECT_HA_READ_POLICIES,
     DIRECT_HA_TOOL_EXCEPTIONS,
@@ -30,32 +24,6 @@ from ha_mcp_engineering.providers import (  # noqa: E402
 )
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
 from ha_mcp_engineering.tools import compatibility, get_registered_server  # noqa: E402
-
-
-class FakeStandardProvider(EngineeringEvidenceProvider):
-    provider_id = "standard_ha_mcp"
-    capabilities = frozenset()
-
-    def __init__(self, *, data=None, completeness=ProviderCompleteness.COMPLETE, failure=None):
-        self.data = data
-        self.completeness = completeness
-        self.failure = failure
-        self.requests = []
-
-    @property
-    def available(self):
-        return self.completeness != ProviderCompleteness.UNAVAILABLE
-
-    async def fetch(self, request):
-        self.requests.append(request)
-        return ProviderResult(
-            provider_id=self.provider_id,
-            capability=request.capability,
-            completeness=self.completeness,
-            failure=self.failure,
-            coverage=ProviderCoverage(1, 1 if self.completeness == ProviderCompleteness.COMPLETE else 0),
-            data=self.data,
-        )
 
 
 class CanonicalRoutingTests(unittest.IsolatedAsyncioTestCase):
@@ -68,38 +36,143 @@ class CanonicalRoutingTests(unittest.IsolatedAsyncioTestCase):
         CANONICAL_DISPATCHER.standard_provider = self.previous
         end_request(self.token)
 
-    async def test_remaining_standard_preferred_tool_uses_available_provider(self):
-        provider = FakeStandardProvider(data={"count": 1, "results": [{"entity_id": "sensor.example"}]})
-        CANONICAL_DISPATCHER.standard_provider = provider
-        with patch.object(compatibility, "rest", new=AsyncMock()) as direct:
+    async def test_search_entities_routes_direct_when_standard_is_unavailable(self):
+        gateway = StandardHaMcpGateway()
+        self.assertFalse(gateway.available)
+        CANONICAL_DISPATCHER.standard_provider = gateway
+        states = [
+            {
+                "entity_id": "sensor.example",
+                "state": "on",
+                "attributes": {"friendly_name": "Example", "secret_attribute": "omit"},
+            }
+        ]
+        with patch.object(gateway, "fetch", new=AsyncMock()) as standard, patch.object(
+            compatibility, "rest", new=AsyncMock(return_value=states)
+        ) as direct:
             payload = json.loads(await compatibility.search_entities("example"))
         self.assertTrue(payload["success"])
-        self.assertEqual(payload["metadata"]["routing"]["provider"], "standard_ha_mcp")
-        self.assertEqual(provider.requests[0].query["operation"], "search_entities")
-        direct.assert_not_awaited()
+        self.assertEqual(payload["data"]["count"], 1)
+        self.assertFalse(payload["data"]["truncated"])
+        direct.assert_awaited_once_with("GET", "/states")
+        standard.assert_not_awaited()
+        self._assert_capability_truth(payload, "bounded_entity_state_search")
         metrics = METRICS.snapshot()["provider_routing"]
-        self.assertEqual(metrics["requests_by_provider"]["standard_ha_mcp"], 1)
-        self.assertEqual(metrics["successful_requests_by_provider"]["standard_ha_mcp"], 1)
+        self.assertEqual(metrics["requests_by_provider"]["direct_ha_api"], 1)
+        self.assertEqual(metrics["successful_requests_by_provider"]["direct_ha_api"], 1)
+        self.assertEqual(metrics["requests_by_provider"].get("standard_ha_mcp", 0), 0)
+        self.assertEqual(metrics["fallback_attempts"], 0)
+        self.assertEqual(metrics["prohibited_fallback_attempts"], 0)
 
-    async def test_remaining_standard_preferred_unavailable_never_falls_back(self):
-        CANONICAL_DISPATCHER.standard_provider = StandardHaMcpGateway()
-        before = METRICS.snapshot()["provider_routing"]
-        with patch.object(compatibility, "rest", new=AsyncMock()) as direct:
-            payload = json.loads(await compatibility.search_entities("example"))
-        self.assertFalse(payload["success"])
-        self.assertEqual(payload["operation"], "search_entities")
-        self.assertEqual(payload["error_code"], "provider_unavailable")
-        self.assertFalse(payload["retryable"])
-        self.assertEqual(payload["metadata"]["routing"]["provider"], "standard_ha_mcp")
-        self.assertEqual(payload["metadata"]["source_coverage"][0]["completeness"], "unavailable")
-        self.assertIn("timing", payload)
-        self.assertEqual(payload["request_id"], "canonical-routing-request-123")
-        self.assertFalse(payload["metadata"]["source_coverage"][0]["upstream_attempted"])
-        direct.assert_not_awaited()
+    async def test_search_entities_filters_case_insensitively_orders_and_slims_results(self):
+        states = [
+            {
+                "entity_id": "sensor.z_garage",
+                "state": "open",
+                "attributes": {"friendly_name": "Other", "arbitrary": "omit"},
+            },
+            {"entity_id": "cover.alpha", "state": "closed", "attributes": {"friendly_name": "Garage Door"}},
+            {"entity_id": "light.unmatched", "state": "on", "attributes": {"friendly_name": "Kitchen"}},
+            None,
+            {"entity_id": 5, "attributes": {}},
+            {"entity_id": "malformed", "attributes": {}},
+        ]
+        with patch.object(compatibility, "rest", new=AsyncMock(return_value=states)) as direct:
+            payload = json.loads(await compatibility.search_entities("  GARAGE  "))
+        self.assertEqual(
+            [item["entity_id"] for item in payload["data"]["results"]],
+            ["cover.alpha", "sensor.z_garage"],
+        )
+        for result in payload["data"]["results"]:
+            self.assertEqual(set(result), {"entity_id", "state", "friendly_name"})
+        self.assertNotIn("arbitrary", json.dumps(payload["data"]))
+        direct.assert_awaited_once_with("GET", "/states")
+
+    async def test_search_entities_applies_exact_domain_with_empty_query(self):
+        states = [
+            {"entity_id": "cover.garage", "state": "open", "attributes": {}},
+            {"entity_id": "covering.garage", "state": "open", "attributes": {}},
+            {"entity_id": "sensor.garage", "state": "open", "attributes": {}},
+        ]
+        with patch.object(compatibility, "rest", new=AsyncMock(return_value=states)):
+            payload = json.loads(await compatibility.search_entities("", "  COVER  "))
+        self.assertEqual(payload["data"]["count"], 1)
+        self.assertEqual(payload["data"]["results"][0]["entity_id"], "cover.garage")
+        self.assertFalse(payload["data"]["truncated"])
+
+    async def test_search_entities_no_matches_is_complete(self):
+        states = [{"entity_id": "sensor.example", "state": "on", "attributes": {}}]
+        with patch.object(compatibility, "rest", new=AsyncMock(return_value=states)):
+            payload = json.loads(await compatibility.search_entities("does-not-exist"))
+        self.assertEqual(payload["data"], {"count": 0, "results": [], "truncated": False})
+        self.assertEqual(payload["metadata"]["source_coverage"][0]["completeness"], "complete")
+
+    async def test_search_entities_limit_one_is_partial_without_provider_failure(self):
+        states = [
+            {"entity_id": "sensor.z", "state": "on", "attributes": {}},
+            {"entity_id": "sensor.a", "state": "off", "attributes": {}},
+        ]
+        with patch.object(compatibility, "rest", new=AsyncMock(return_value=states)) as direct:
+            payload = json.loads(await compatibility.search_entities(limit=1))
+        self.assertEqual(payload["data"]["count"], 1)
+        self.assertEqual(payload["data"]["results"][0]["entity_id"], "sensor.a")
+        self.assertTrue(payload["data"]["truncated"])
+        self.assertEqual(payload["metadata"]["source_coverage"][0]["completeness"], "partial")
+        direct.assert_awaited_once_with("GET", "/states")
         metrics = METRICS.snapshot()["provider_routing"]
-        self.assertEqual(metrics["requests_by_provider"], before["requests_by_provider"])
-        self.assertEqual(metrics["successful_requests_by_provider"], before["successful_requests_by_provider"])
-        self.assertEqual(metrics["failures_by_provider"], before["failures_by_provider"])
+        self.assertEqual(metrics["requests_by_provider"]["direct_ha_api"], 1)
+        self.assertEqual(metrics["successful_requests_by_provider"]["direct_ha_api"], 1)
+        self.assertEqual(metrics["failures_by_provider"].get("direct_ha_api", 0), 0)
+        self.assertEqual(metrics["partial_results"], 1)
+        self.assertEqual(metrics["fallback_attempts"], 0)
+        self.assertEqual(metrics["prohibited_fallback_attempts"], 0)
+
+    async def test_search_entities_validation_precedes_ha_and_provider_accounting(self):
+        before = METRICS.snapshot()["provider_routing"]
+        invalid_inputs = (
+            {"limit": 0},
+            {"limit": 101},
+            {"limit": True},
+            {"domain": "sensor.bad"},
+            {"domain": "sensor-bad"},
+        )
+        with patch.object(compatibility, "rest", new=AsyncMock()) as direct:
+            for arguments in invalid_inputs:
+                with self.subTest(arguments=arguments):
+                    payload = json.loads(await compatibility.search_entities(**arguments))
+                    self.assertFalse(payload["success"])
+                    self.assertEqual(payload["error_code"], "invalid_request")
+        direct.assert_not_awaited()
+        after = METRICS.snapshot()["provider_routing"]
+        self.assertEqual(after["requests_by_provider"], before["requests_by_provider"])
+        self.assertEqual(after["successful_requests_by_provider"], before["successful_requests_by_provider"])
+        self.assertEqual(after["failures_by_provider"], before["failures_by_provider"])
+
+    async def test_search_entities_malformed_inventory_is_stable_provider_failure(self):
+        with patch.object(compatibility, "rest", new=AsyncMock(return_value={"not": "a list"})) as direct:
+            payload = json.loads(await compatibility.search_entities())
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error_code"], "home_assistant_api_error")
+        self.assertEqual(payload["metadata"]["routing"]["provider"], "direct_ha_api")
+        direct.assert_awaited_once_with("GET", "/states")
+        metrics = METRICS.snapshot()["provider_routing"]
+        self.assertEqual(metrics["requests_by_provider"]["direct_ha_api"], 1)
+        self.assertEqual(metrics["failures_by_provider"]["direct_ha_api"], 1)
+
+    async def test_search_entities_upstream_failure_is_counted_once(self):
+        with patch.object(
+            compatibility,
+            "rest",
+            new=AsyncMock(side_effect=HomeAssistantUnavailableError()),
+        ) as direct:
+            payload = json.loads(await compatibility.search_entities("garage"))
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error_code"], "home_assistant_unavailable")
+        direct.assert_awaited_once_with("GET", "/states")
+        metrics = METRICS.snapshot()["provider_routing"]
+        self.assertEqual(metrics["requests_by_provider"]["direct_ha_api"], 1)
+        self.assertEqual(metrics["failures_by_provider"]["direct_ha_api"], 1)
+        self.assertEqual(metrics["fallback_attempts"], 0)
         self.assertEqual(metrics["prohibited_fallback_attempts"], 0)
 
     async def test_transitional_tool_uses_direct_provider_and_updates_counters(self):
@@ -176,11 +249,12 @@ class CanonicalRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(metrics["failures_by_provider"]["direct_ha_api"] - before["direct_ha_api"], 1)
         self.assertNotIn("standard_ha_mcp", payload["metadata"]["routing"]["provider"])
 
-    async def test_four_administrative_reads_increment_direct_counters_by_four(self):
+    async def test_five_transitional_discovery_reads_increment_direct_counters_by_five(self):
         catalog = [{"domain": "light", "services": {"turn_on": {"fields": {}}}}]
         rest = AsyncMock(
             side_effect=[
                 {"entity_id": "sensor.example", "state": "on", "attributes": {}},
+                [{"entity_id": "sensor.example", "state": "on", "attributes": {}}],
                 catalog,
                 catalog,
             ]
@@ -192,6 +266,7 @@ class CanonicalRoutingTests(unittest.IsolatedAsyncioTestCase):
         ):
             results = [
                 json.loads(await compatibility.get_entity("sensor.example")),
+                json.loads(await compatibility.search_entities("example")),
                 json.loads(await compatibility.list_areas()),
                 json.loads(await compatibility.search_services("light.turn_on")),
                 json.loads(await compatibility.list_services("light")),
@@ -202,18 +277,30 @@ class CanonicalRoutingTests(unittest.IsolatedAsyncioTestCase):
             {"direct_ha_api"},
         )
         metrics = METRICS.snapshot()["provider_routing"]
-        self.assertEqual(metrics["requests_by_provider"]["direct_ha_api"], 4)
-        self.assertEqual(metrics["successful_requests_by_provider"]["direct_ha_api"], 4)
+        self.assertEqual(metrics["requests_by_provider"]["direct_ha_api"], 5)
+        self.assertEqual(metrics["successful_requests_by_provider"]["direct_ha_api"], 5)
         self.assertEqual(metrics["requests_by_provider"].get("standard_ha_mcp", 0), 0)
 
     async def test_direct_read_policy_does_not_expand_write_boundaries(self):
-        phase3c_reads = {"get_entity", "list_areas", "search_services", "list_services"}
+        phase3c_reads = {
+            "search_entities",
+            "get_entity",
+            "list_areas",
+            "search_services",
+            "list_services",
+        }
         self.assertTrue(phase3c_reads.issubset(DIRECT_HA_READ_POLICIES))
         self.assertEqual(
             set(DIRECT_HA_TOOL_EXCEPTIONS) - set(DIRECT_HA_READ_POLICIES),
             {"upsert_automation"},
         )
         self.assertEqual(DIRECT_HA_READ_POLICIES["get_error_log"]["access"], "read")
+        self.assertEqual(
+            DIRECT_HA_READ_POLICIES["search_entities"]["policy_id"],
+            "bounded_entity_state_search",
+        )
+        self.assertTrue(direct_ha_exception_for_tool("search_entities", access="read"))
+        self.assertFalse(direct_ha_exception_for_tool("search_entities", access="write"))
         self.assertTrue(direct_ha_exception_for_tool("get_entity", access="read"))
         self.assertFalse(direct_ha_exception_for_tool("get_entity", access="write"))
         self.assertFalse(direct_ha_exception_for_tool("upsert_automation"))
@@ -272,35 +359,22 @@ class CanonicalRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["metadata"]["routing"]["classification"], "direct_ha_required")
         self.assertEqual(payload["metadata"]["routing"]["provider"], "direct_ha_api")
 
-    async def test_partial_standard_result_is_enveloped_and_counted(self):
-        provider = FakeStandardProvider(
-            data={"results": []},
-            completeness=ProviderCompleteness.PARTIAL,
-        )
-        CANONICAL_DISPATCHER.standard_provider = provider
-        payload = json.loads(await compatibility.search_entities())
-        self.assertTrue(payload["success"])
-        self.assertEqual(payload["metadata"]["source_coverage"][0]["completeness"], "partial")
-        self.assertEqual(METRICS.snapshot()["provider_routing"]["partial_results"], 1)
-
-    async def test_provider_timeout_is_stable_and_retryable(self):
-        class TimeoutProvider(FakeStandardProvider):
-            async def fetch(self, request):
-                raise TimeoutError
-
-        CANONICAL_DISPATCHER.standard_provider = TimeoutProvider()
-        payload = json.loads(await compatibility.search_entities("light"))
-        self.assertFalse(payload["success"])
-        self.assertEqual(payload["error_code"], "provider_timeout")
-        self.assertTrue(payload["retryable"])
-
     async def test_bounded_routed_response_records_truncation(self):
-        CANONICAL_DISPATCHER.standard_provider = FakeStandardProvider(
-            data={"services": ["x" * 2000]}
-        )
         rendered = await CANONICAL_DISPATCHER.execute(
             "search_entities",
-            AsyncMock(),
+            AsyncMock(
+                return_value={
+                    "count": 1,
+                    "results": [
+                        {
+                            "entity_id": "sensor.example",
+                            "state": "on",
+                            "friendly_name": "x" * 2000,
+                        }
+                    ],
+                    "truncated": False,
+                }
+            ),
             arguments={},
             response_limit=300,
         )

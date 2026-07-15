@@ -79,6 +79,7 @@ exception, and report the provider actually used.
 
 | Capability type | Preferred provider | Permitted fallback |
 | --- | --- | --- |
+| Bounded entity state search | Direct HA REST API | None |
 | Exact entity-ID state | Direct HA REST API | None |
 | Complete area registry | Direct HA WebSocket API | None |
 | Service discovery/schema | Direct HA REST API, bounded | None |
@@ -97,6 +98,7 @@ exception, and report the provider actually used.
 
 | Engineering capability | Required semantics | Standard HA MCP coverage | Direct HA coverage | Selected provider | Completeness | Fallback | Security justification |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| `search_entities` / broad entity search | Bounded state-machine search by entity ID/friendly name with optional exact domain filter | Unavailable | One complete state inventory with bounded slim output | `direct_ha_api` | Complete within requested bound or explicitly truncated | None | Single read-only inventory; validated input; no attributes or writes |
 | `get_entity` / current entity state | Exact state and attributes by `entity_id` | Unavailable; `GetLiveContext` filters names/domains/areas | Exact REST state endpoint | `direct_ha_api` | Complete | None | Single read-only entity endpoint |
 | `list_areas` / area lookup | Complete area registry | Unavailable; exposed context is not the registry | Exact registry WebSocket command | `direct_ha_api` | Complete | None | Read-only registry command |
 | `search_services` / service discovery | Bounded catalog search | Unavailable | Complete catalog with enforced result limit | `direct_ha_api` | Complete within requested bound | None | Read-only catalog endpoint |
@@ -110,12 +112,12 @@ specific direct-read policy.
 
 - `engineering_native`: governance persistence, risk assessment, analysis,
   auditing, and handoff generation.
-- `standard_mcp_preferred`: broad entity search and ordinary service execution where an
-  exact upstream contract is available.
+- `standard_mcp_preferred`: ordinary service execution where an exact upstream
+  contract is available.
 - `direct_ha_required`: exact automation configuration, traces, blueprint source,
   configuration checks, governed apply, verification, and rollback.
 - `transitional_direct`: an existing direct read/write retained for compatibility
-  while migration is incomplete.
+  while migration is incomplete, including the bounded entity-state search.
 - `unsupported`: no approved provider or reliable implementation exists.
 - `prohibited`: silent ungoverned actions, destructive fallback, and secret-bearing
   diagnostics.
@@ -141,8 +143,10 @@ missing policy or access-type mismatch means deny:
 - Transitional evidence: `render_template`, `get_history`, `get_logbook`,
   `get_error_log`, `list_automations`, `list_devices`, `list_entity_registry`, and
   `list_blueprints`.
-- Exact administrative reads: `get_entity`, `list_areas`, `search_services`, and
-  `list_services`. Each has a distinct read-only policy and no fallback.
+- Exact administrative reads: `search_entities`, `get_entity`, `list_areas`,
+  `search_services`, and `list_services`. Each has a distinct read-only policy
+  and no fallback. Entity search uses `bounded_entity_state_search`, one
+  `GET /states` inventory, deterministic ordering, and explicit truncation.
 - Exact engineering configuration: `get_automation_config`,
   `list_automation_traces`, `get_automation_trace`, `get_blueprint`, and
   `check_config`.
@@ -153,8 +157,8 @@ missing policy or access-type mismatch means deny:
 Beta 10 narrows the `get_error_log` exception to the read-only
 `structured_system_log_read` policy. It uses the admin-only `system_log/list`
 WebSocket command and does not authorize Supervisor journal access, raw log-file
-mounts, frontend scraping, or any log-triggered action. The existing Phase 3C four-read
-capability-truth matrix is otherwise unchanged.
+mounts, frontend scraping, or any log-triggered action. The original Phase 3C
+four-read capability-truth matrix is otherwise unchanged.
 
 Beta 11 makes the System Log trust boundary explicit: the complete recursive upstream
 result is sanitized before evidence selection or response reduction. Unknown fields,
