@@ -1,0 +1,151 @@
+# HA MCP Engineering Server 2.0.0-rc.1 release notes
+
+## Release identity
+
+- Version: `2.0.0-rc.1`
+- Beta 26 baseline commit: `b64db57ddffc5108b9078717ce720440f5361412`
+- Add-on slug: `hass_mcp_engineering_beta`
+- MCP port: `8100`
+- administrator-only Ingress approval port: `8110` (not host mapped)
+- public schema version: `1`
+- catalog: 38 registered tools, 25 canonical tools, zero planned capabilities
+- external approval authority version: `2`
+- stable production coexistence target: `hass_mcp_admin` v1.1.2 on port `8099`
+
+RC1 is a release freeze and validation milestone. It is not a feature release.
+The accepted Beta 26 lifecycle, schemas, enums, classifications, provider
+routing, direct-access policies, Home Assistant behavior, and governance trust
+boundary are preserved.
+
+## Changes from Beta 26
+
+RC1 changes only release metadata, deterministic RC image provenance, release
+compatibility tests, and release/acceptance documentation.
+
+The existing `server_info.server.build_sha` and `build_time` fields are now
+populated when the RC image is built by CI or `scripts/deploy-beta.ps1`:
+
+- `build_sha` is the complete lowercase Git commit ID checked out for the image;
+- `build_time` is the build pipeline's UTC RFC3339 timestamp with second
+  precision;
+- both values are passed as Docker build arguments and immutable container
+  environment values, rather than read from runtime repository state;
+- OCI revision, creation-time, and public source labels carry the same
+  non-secret metadata;
+- an absent, malformed, non-UTC, or unbounded value fails closed to the existing
+  `unknown` fallback used for local development.
+
+No token, credential, authenticated URL, branch credential, or secret is part
+of build provenance. The public response structure is unchanged. Provenance is
+not added to health, capabilities, audit secret fields, or redaction categories.
+The production v1.1.2 Dockerfile and runtime are unchanged.
+
+## Compatibility freeze
+
+RC1 pins the Beta 26 public contract by exact SHA-256 snapshots of:
+
+- all 38 tool names;
+- every complete public input schema;
+- every public input enum;
+- all canonical and beta-native lifecycle classifications;
+- every tool-to-capability provider-routing decision; and
+- the complete direct-HA exception and read-policy mapping.
+
+The governance compatibility fixture contains an expired plan, active external
+challenge, expired challenge, approved plan, consumed approval, applied plan,
+rollback-pending plan, rolled-back plan, rejected plan, legacy authority-v1
+terminal history, and an active legacy authority-v1 record used to prove
+fail-closed execution. RC1 reads the persisted records without migration,
+preserves historical hashes and authority versions, leaves terminal records
+unchanged, excludes expired challenges from actionable views, and keeps
+repeated reads idempotent. Authority-v2 external approval behavior remains the
+only executable approval path.
+
+## External approval trust boundary
+
+An MCP caller may create a plan and request review but cannot grant approval.
+Only a Home Assistant administrator authenticated through the separate Ingress
+listener can approve or reject an exact plan hash. The MCP access secret is not
+approval authority. Apply and rollback require separate single-use grants,
+principal separation, exact-hash binding, and stale-state checks. Rejection is
+terminal. Expired or replaced challenges are unusable. Legacy authority-v1
+active records fail closed and must be recreated.
+
+## Upgrade from Beta 26
+
+Perform an in-place update of **HA MCP Engineering Server Beta** only. Keep the
+existing Beta 26 connector initially: because the tool catalog and public
+schemas are identical, connector recreation is not normally required. Confirm
+that it reconnects and discovers RC1 metadata. Then create a separate fresh RC1
+connector for an independent exact-schema discovery comparison. Remove the
+temporary fresh connector after acceptance if it is not needed.
+
+RC1 starts directly against the Beta 26 governance repository. Startup does
+not grant, consume, replace, revive, migrate, rehash, or silently upgrade any
+approval. Persisted pending and terminal classifications remain authoritative.
+An already expired lifecycle state remains idempotent; a newly observed expiry
+is persisted once under the existing Beta 26 contract.
+
+## Clean install
+
+An empty governance directory initializes with healthy storage, zero counters,
+no plans, no challenges, an empty Ingress review collection, and no audit write
+caused solely by initialization or inspection. Configure a new beta/RC-only
+`access_secret`; do not reuse the production secret.
+
+## Known limitations
+
+- `server_info` reports `unknown` provenance for local images built without the
+  supplied build arguments.
+- Signed analysis cursors and in-memory snapshots are process-local and become
+  stale after an add-on restart.
+- The standard Home Assistant MCP transport has no approved exact mapping in
+  this release and is not used as a hidden fallback.
+- Existing connector metadata can be cached; reconnect it if RC1 identity is
+  stale, but do not recreate it unless reconnection fails.
+- Apply verification proves exact stored configuration and identity readback,
+  not a behavioral observation window.
+- There is no notification support, assistant-native elicitation, mobile
+  approval action, background monitoring, or result cache.
+
+## Production coexistence and rollback
+
+Production v1.1.2 remains installed independently as `hass_mcp_admin` on port
+`8099`. Do not update, stop, restart, replace, disable, or modify it while
+deploying or accepting RC1. RC1 continues to use slug
+`hass_mcp_engineering_beta`, MCP port `8100`, and internal Ingress port `8110`.
+
+Before updating, retain the accepted Beta 26 add-on image/version reference and
+back up the beta-only `/data` governance and audit files according to the normal
+Home Assistant backup procedure. If RC1 fails an acceptance criterion, stop
+testing, make no new approval decisions, roll back only the beta/RC add-on to
+the accepted Beta 26 build, reconnect the existing connector, and verify Beta
+26 identity, health, catalog, governance readability, and zero active test
+plans. Never use production v1.1.2 as the RC rollback mechanism.
+
+## Acceptance, soak, and stable-release exit
+
+Run the exact post-deployment sequence in
+[`RC1_ACCEPTANCE.md`](RC1_ACCEPTANCE.md). The procedure includes the existing
+connector, a fresh connector, representative reads, all six Engineering-native
+tools, governed apply/rollback/rejection/persistence, security checks, and final
+reconciliation.
+
+After acceptance, soak RC1 for at least 48 hours under normal read-only
+Engineering use. Inspect `get_server_health` and bounded `get_audit_log` at the
+start, after 24 hours, and at the end. Do not leave a test plan or challenge
+pending. Stable `2.0.0` may proceed only when:
+
+- every blocking CI job, Docker build, and pinned Home Assistant 2026.7.2
+  contract job passes for the final commit;
+- the existing and fresh connectors agree on the exact frozen schema;
+- no RC-blocking catalog, routing, governance, security, persistence,
+  provenance, or coexistence defect is found;
+- final governance health has zero pending challenges, active applies,
+  rollback-pending plans, failed applies, storage corruption, audit write
+  failures, and prohibited fallbacks;
+- the test automation is exactly restored and no active test plan remains;
+- production v1.1.2 is confirmed untouched; and
+- any defect discovered during the soak is either resolved by the smallest
+  reviewed RC-blocking fix with the full gate rerun or explicitly defers the
+  stable release.

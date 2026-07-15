@@ -1,5 +1,13 @@
 # Beta provider security boundaries
 
+## RC1 frozen security boundary
+
+RC1 changes no approval authority, listener, provider, route, direct-access
+policy, write policy, redaction rule, or Home Assistant behavior. Build
+provenance is limited to a validated complete Git commit and UTC RFC3339 build
+time supplied by the image pipeline. Invalid/unbounded values fail closed to
+`unknown`; no runtime repository lookup or credential is used.
+
 ## Beta 25 principal separation
 
 An authenticated MCP caller can create a plan and request external review but

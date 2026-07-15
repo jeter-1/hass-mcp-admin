@@ -1,5 +1,13 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## RC1 build provenance and compatibility
+
+The existing `server_info` fields `build_sha` and `build_time` report validated
+image-build inputs in deployed RC images. They do not appear in health,
+capability, audit-redaction, provider, or governance counters. Missing or
+invalid local inputs report `unknown`. RC1 otherwise preserves every Beta 26
+observability field and counter meaning, including idempotent expiry events.
+
 ## Beta 26 expiry lifecycle observability
 
 `change_plan_expired` and `external_approval_expired` are lifecycle transition

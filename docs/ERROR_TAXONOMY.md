@@ -1,5 +1,9 @@
 # Beta error taxonomy
 
+RC1 adds no public error or failure category. Invalid or unbounded optional
+build provenance is safely represented by the established `unknown` value and
+does not become a new tool, provider, health, or audit error contract.
+
 Beta 23 separates terminal tool errors from provider outcomes. An
 `invalid_request`, `invalid_cursor`, authentication failure, or pre-dispatch rate
 limit rejection may increment its tool/transport error category, but it does not

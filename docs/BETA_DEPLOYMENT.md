@@ -1,14 +1,14 @@
 # Beta deployment and validation
 
 The beta add-on is isolated from production. Production remains **HA MCP
-Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). Beta v2.0.0-beta.26
+Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). RC v2.0.0-rc.1
 is **HA MCP Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100).
 The workflow in this document deploys or updates only the beta.
 
-Beta 26 must expose 38 registered/25 canonical tools and no planned feature
+RC1 must expose 38 registered/25 canonical tools and no planned feature
 capabilities. It adds no tool or schema, so connector recreation is not normally
 required. Follow the user-run acceptance procedure in
-[`BETA_26_RELEASE_NOTES.md`](BETA_26_RELEASE_NOTES.md). Rollback affects only beta;
+[`RC1_ACCEPTANCE.md`](RC1_ACCEPTANCE.md). Rollback affects only beta/RC;
 production v1.1.2 remains on port 8099.
 
 ## Before opening or merging a beta release
@@ -23,8 +23,8 @@ From a clean branch in Windows PowerShell, run:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.25 `
-  -ExpectedVersion 2.0.0-beta.26 `
+  -DeployedVersion 2.0.0-beta.26 `
+  -ExpectedVersion 2.0.0-rc.1 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -FullTests
 ```
@@ -45,8 +45,8 @@ without supplying authentication material:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-beta.ps1 `
-  -DeployedVersion 2.0.0-beta.25 `
-  -ExpectedVersion 2.0.0-beta.26 `
+  -DeployedVersion 2.0.0-beta.26 `
+  -ExpectedVersion 2.0.0-rc.1 `
   -PythonExecutable .\.venv\Scripts\python.exe `
   -SkipTests -SkipDockerBuild `
   -HealthHost homeassistant.local `
@@ -384,6 +384,21 @@ add-on version in place. If live results show an ungoverned upsert, a false
 `other:id` mismatch, forwarded-header trust without configuration, whole-store
 rate reset, pre-dispatch provider failure accounting, or an unbounded audit read,
 stop acceptance and roll forward.
+
+## RC1 deployment and provenance
+
+The deployment script builds only `hass_mcp_engineering_beta` and passes the
+clean checkout's complete `git rev-parse HEAD` plus the current UTC RFC3339
+build time as Docker build arguments. After update, `server_info` must report
+those exact values. An `unknown` deployed value, branch name, short SHA,
+non-UTC timestamp, or mismatch is an acceptance failure. OCI labels contain
+the same public revision/time metadata and no credential.
+
+Keep the existing Beta 26 connector for the in-place upgrade, then compare it
+with one fresh RC1 connector as described in
+[`RC1_ACCEPTANCE.md`](RC1_ACCEPTANCE.md). RC1 starts directly on persisted Beta
+26 governance data without migration or startup rewrite. Production v1.1.2 is
+outside deployment, acceptance, and rollback.
 
 ## Beta 26 expiry lifecycle deployment and troubleshooting
 
