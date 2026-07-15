@@ -52,6 +52,36 @@ class AddonMetadataValidationTests(unittest.TestCase):
     def test_repository_metadata_is_valid(self):
         self.validate()
 
+    def test_rc_uses_exact_generic_registry_image_and_version(self):
+        self.assertEqual(self.beta["version"], VALIDATOR.BETA_VERSION)
+        self.assertEqual(self.beta["image"], VALIDATOR.BETA_IMAGE)
+        self.assertEqual(
+            f'{self.beta["image"]}:{self.beta["version"]}',
+            "ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc.1",
+        )
+
+    def test_registry_image_is_required_and_cannot_be_arch_templated(self):
+        for image in (
+            None,
+            "ghcr.io/jeter-1/hass-mcp-engineering-beta-{arch}",
+            "ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc.1",
+            "ghcr.io/jeter-1/hass-mcp-admin",
+        ):
+            with self.subTest(image=image):
+                beta = copy.deepcopy(self.beta)
+                if image is None:
+                    beta.pop("image", None)
+                else:
+                    beta["image"] = image
+                with self.assertRaises(VALIDATOR.MetadataValidationError):
+                    self.validate(beta=beta)
+
+    def test_rc_version_is_pinned_by_metadata_validation(self):
+        beta = copy.deepcopy(self.beta)
+        beta["version"] = "2.0.0-rc.2"
+        with self.assertRaises(VALIDATOR.MetadataValidationError):
+            self.validate(beta=beta)
+
     def test_slug_collision_is_rejected(self):
         beta = copy.deepcopy(self.beta)
         beta["slug"] = self.production["slug"]
@@ -107,6 +137,13 @@ class AddonMetadataValidationTests(unittest.TestCase):
     def test_production_version_is_fixed(self):
         production = copy.deepcopy(self.production)
         production["version"] = "1.1.3"
+        with self.assertRaises(VALIDATOR.MetadataValidationError):
+            self.validate(production=production)
+
+    def test_production_has_no_registry_image(self):
+        self.assertNotIn("image", self.production)
+        production = copy.deepcopy(self.production)
+        production["image"] = "ghcr.io/jeter-1/hass-mcp-admin"
         with self.assertRaises(VALIDATOR.MetadataValidationError):
             self.validate(production=production)
 

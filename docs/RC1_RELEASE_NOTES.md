@@ -22,16 +22,26 @@ boundary are preserved.
 RC1 changes only release metadata, deterministic RC image provenance, release
 compatibility tests, and release/acceptance documentation.
 
-The existing `server_info.server.build_sha` and `build_time` fields are now
-populated when the RC image is built by CI or `scripts/deploy-beta.ps1`:
+RC1 is installed from a prebuilt multi-architecture GHCR image rather than a
+container built locally by Home Assistant. Its app metadata uses the generic
+image name `ghcr.io/jeter-1/hass-mcp-engineering-beta`, and the app version
+`2.0.0-rc.1` selects the exact version image
+`ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc.1`. The published manifest
+must contain `linux/amd64`, `linux/arm64`, and `linux/arm/v7`, corresponding to
+the RC app's declared `amd64`, `aarch64`, and `armv7` architectures. The same
+image is also tagged `sha-<commit>` for the exact accepted source commit.
+
+The existing `server_info.server.build_sha` and `build_time` fields are
+populated by the controlled release image build:
 
 - `build_sha` is the complete lowercase Git commit ID checked out for the image;
-- `build_time` is the build pipeline's UTC RFC3339 timestamp with second
-  precision;
+- `build_time` is one bounded UTC RFC3339 timestamp generated once for the
+  publishing run and shared by all architecture builds;
 - both values are passed as Docker build arguments and immutable container
   environment values, rather than read from runtime repository state;
-- OCI revision, creation-time, and public source labels carry the same
-  non-secret metadata;
+- `BUILD_VERSION` is `2.0.0-rc.1` for every architecture build;
+- OCI source, revision, creation-time, and version labels carry the same
+  public, non-secret release metadata;
 - an absent, malformed, non-UTC, or unbounded value fails closed to the existing
   `unknown` fallback used for local development.
 
@@ -39,6 +49,35 @@ No token, credential, authenticated URL, branch credential, or secret is part
 of build provenance. The public response structure is unchanged. Provenance is
 not added to health, capabilities, audit secret fields, or redaction categories.
 The production v1.1.2 Dockerfile and runtime are unchanged.
+
+## Controlled publication and installation gate
+
+Merging the RC1 pull request does not publish the immutable RC image and does
+not authorize a Home Assistant repository refresh or update. After the accepted
+commit is on `main`, create the exact Git tag `v2.0.0-rc.1` on that commit. Only
+that controlled release tag may push the version and `sha-<commit>` tags. The
+publication workflow must first prove that the Git tag, `config.yaml` version,
+and server version are all `2.0.0-rc.1`; any disagreement must fail before
+registry login or publication.
+
+The GHCR package must be public because Home Assistant must be able to pull it
+without registry credentials. A successful authenticated push or pull is not
+evidence of public accessibility. Publication is not complete until a separate,
+unauthenticated pull or manifest inspection of
+`ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc.1` succeeds. If the first
+publish creates the package as private and `GITHUB_TOKEN` cannot safely change
+its visibility, a package administrator must perform the one-time GitHub UI
+change: open the `jeter-1` profile's **Packages** tab, select
+`hass-mcp-engineering-beta`, open **Package settings**, and under **Danger
+Zone** choose **Change visibility** > **Public**, type the package name, and
+confirm. Then rerun or repeat the unauthenticated verification. Do not refresh
+the Home Assistant repository until that check passes.
+
+The repository and release candidate must not claim that GHCR publication,
+multi-architecture manifest verification, digest verification, or anonymous
+pull has passed before the post-merge `v2.0.0-rc.1` workflow actually runs and
+the corresponding checks succeed. Follow the complete ordered operator sequence
+in [`BETA_DEPLOYMENT.md`](BETA_DEPLOYMENT.md).
 
 ## Compatibility freeze
 
@@ -73,12 +112,17 @@ active records fail closed and must be recreated.
 
 ## Upgrade from Beta 26
 
-Perform an in-place update of **HA MCP Engineering Server Beta** only. Keep the
-existing Beta 26 connector initially: because the tool catalog and public
-schemas are identical, connector recreation is not normally required. Confirm
-that it reconnects and discovers RC1 metadata. Then create a separate fresh RC1
-connector for an independent exact-schema discovery comparison. Remove the
-temporary fresh connector after acceptance if it is not needed.
+Only after the exact release tag workflow, three-platform manifest check,
+unauthenticated pull, and expected-digest check all pass, refresh the Home
+Assistant repository and perform an in-place update of **HA MCP Engineering
+Server Beta** only. Keep the existing Beta 26 connector initially: because the
+tool catalog and public schemas are identical, connector recreation is not
+normally required. Reconnect it and call `server_info` before any other
+acceptance test. It must report version `2.0.0-rc.1`, a non-`unknown`
+`build_sha` equal to the tagged source commit, and a non-`unknown` valid UTC
+RFC3339 `build_time`. Then create a separate fresh RC1 connector for an
+independent exact-schema discovery comparison. Remove the temporary fresh
+connector after acceptance if it is not needed.
 
 RC1 starts directly against the Beta 26 governance repository. Startup does
 not grant, consume, replace, revive, migrate, rehash, or silently upgrade any
@@ -97,6 +141,9 @@ caused solely by initialization or inspection. Configure a new beta/RC-only
 
 - `server_info` reports `unknown` provenance for local images built without the
   supplied build arguments.
+- A newly created GHCR package may initially be private and require the one-time
+  manual visibility change documented above before anonymous validation and
+  Home Assistant installation can proceed.
 - Signed analysis cursors and in-memory snapshots are process-local and become
   stale after an add-on restart.
 - The standard Home Assistant MCP transport has no approved exact mapping in
@@ -111,8 +158,9 @@ caused solely by initialization or inspection. Configure a new beta/RC-only
 ## Production coexistence and rollback
 
 Production v1.1.2 remains installed independently as `hass_mcp_admin` on port
-`8099`. Do not update, stop, restart, replace, disable, or modify it while
-deploying or accepting RC1. RC1 continues to use slug
+`8099` and remains running throughout RC publication and testing. Do not update,
+stop, restart, replace, disable, or modify it while deploying or accepting RC1.
+RC1 continues to use slug
 `hass_mcp_engineering_beta`, MCP port `8100`, and internal Ingress port `8110`.
 
 Before updating, retain the accepted Beta 26 add-on image/version reference and
@@ -138,6 +186,9 @@ pending. Stable `2.0.0` may proceed only when:
 
 - every blocking CI job, Docker build, and pinned Home Assistant 2026.7.2
   contract job passes for the final commit;
+- the post-merge `v2.0.0-rc.1` publication workflow succeeds, the manifest
+  contains amd64, arm64, and arm/v7, and unauthenticated access and the expected
+  version-image digest are verified before Home Assistant is refreshed;
 - the existing and fresh connectors agree on the exact frozen schema;
 - no RC-blocking catalog, routing, governance, security, persistence,
   provenance, or coexistence defect is found;

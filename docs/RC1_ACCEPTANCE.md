@@ -2,30 +2,58 @@
 
 This is a post-deployment, human-operated acceptance procedure for the isolated
 beta/RC add-on. It must not be run by implementation CI against a deployed Home
-Assistant instance. Use a dedicated harmless automation and non-sensitive test
-entities. Do not access, restart, update, or modify production v1.1.2.
+Assistant instance. Begin only after completing steps 1 through 10 of the exact
+post-merge sequence in [`BETA_DEPLOYMENT.md`](BETA_DEPLOYMENT.md): the accepted
+commit is tagged `v2.0.0-rc.1`, the prebuilt image publication workflow passes,
+the three-platform manifest and expected digest are verified, an unauthenticated
+pull succeeds, and only the beta/RC app is updated and reconnected. Merging the
+pull request alone does not authorize this procedure or a Home Assistant update.
 
-Record the expected RC source commit before building or installing the image.
-Redact connector secrets, Supervisor tokens, cookies, CSRF values, authenticated
-URLs, raw traces, full configurations, and audit payloads from acceptance notes.
+Use a dedicated harmless automation and non-sensitive test entities. Production
+v1.1.2 must remain installed and running as `hass_mcp_admin` on port `8099`.
+Do not access, restart, update, reconfigure, disable, or otherwise modify it.
+
+Before installing the image, record the accepted tagged source commit, the
+published manifest-list digest, and the exact version image
+`ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc.1`. The exact commit image
+must also exist as
+`ghcr.io/jeter-1/hass-mcp-engineering-beta:sha-<commit>`. Do not claim that
+publication or anonymous access passed unless the post-merge release workflow
+and clean unauthenticated verification actually succeeded. Redact connector
+secrets, Supervisor tokens, cookies, CSRF values, authenticated URLs, raw
+traces, full configurations, and audit payloads from acceptance notes.
 
 ## 1. Preconditions
 
-1. Confirm the installed target is `hass_mcp_engineering_beta`, not
+1. Confirm `v2.0.0-rc.1` points to the accepted `main` commit and the publication
+   and validation jobs passed for that tag.
+2. Confirm the generic image is
+   `ghcr.io/jeter-1/hass-mcp-engineering-beta`, the version image is
+   `ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc.1`, and the matching
+   `sha-<commit>` tag exists.
+3. Confirm the version-tag manifest contains `linux/amd64`, `linux/arm64`, and
+   `linux/arm/v7`, its manifest-list digest matches the publisher's recorded
+   digest, and an unauthenticated pull or inspection succeeded from a separate
+   job or clean environment. Stop if the package is private or any result is
+   missing or mismatched.
+4. Confirm the installed target is `hass_mcp_engineering_beta`, not
    `hass_mcp_admin`.
-2. Confirm MCP remains mapped on `8100`; Ingress is enabled on internal port
+5. Confirm MCP remains mapped on `8100`; Ingress is enabled on internal port
    `8110`; `panel_admin` is true; and `8110` is absent from host port mappings.
-3. Confirm production `hass_mcp_admin` remains v1.1.2 on port `8099` and was not
-   stopped, restarted, updated, or reconfigured.
-4. Record one existing harmless automation internal ID, one existing entity ID,
+6. Confirm production `hass_mcp_admin` remains installed and running at v1.1.2
+   on port `8099` and was not stopped, restarted, updated, reconfigured, or
+   disabled.
+7. Record one existing harmless automation internal ID, one existing entity ID,
    its exact automation configuration/fingerprint, and current governance
    health. The acceptance change will modify only the automation description.
-5. Confirm no pre-existing active test plan, pending challenge, active apply, or
+8. Confirm no pre-existing active test plan, pending challenge, active apply, or
    rollback-pending plan can be confused with this acceptance run.
 
 ## 2. Foundation and provenance
 
-Run these calls in order through the existing upgraded connector:
+After updating only the beta/RC app and reconnecting the existing Engineering
+connector, call `server_info` before `tools/list`, a health check, or any other
+acceptance operation. Then run the remaining calls in this order:
 
 1. `server_info({"check_ha": true})`
 2. `list_capabilities({})`
@@ -35,10 +63,10 @@ Run these calls in order through the existing upgraded connector:
 Confirm:
 
 - server version is exactly `2.0.0-rc.1` and schema version is `1`;
-- `build_sha` is the complete expected source commit, not `unknown`, a branch
-  name, or a short SHA;
-- `build_time` is a UTC RFC3339 value ending in `Z` and corresponds to the image
-  build, not container startup;
+- `build_sha` is non-`unknown` and is the complete accepted commit referenced by
+  `v2.0.0-rc.1`, not an annotated tag object, branch name, or short SHA;
+- `build_time` is non-`unknown`, bounded UTC RFC3339 ending in `Z`, and
+  corresponds to the shared image publication time, not container startup;
 - Home Assistant connectivity is connected and reports safe bounded metadata;
 - the catalog contains exactly 38 registered tools, 25 canonical tools, and
   zero planned capabilities;
@@ -50,8 +78,8 @@ Confirm:
 
 ### Existing Beta 26 connector
 
-1. Upgrade the add-on in place and reconnect the existing connector without
-   deleting it.
+1. Keep the existing connector that was reconnected after the in-place beta/RC
+   update; do not delete it.
 2. Repeat the four foundation calls.
 3. Confirm all 38 tools remain callable and their cached argument schemas do not
    produce a mismatch.
@@ -299,7 +327,7 @@ Run `server_info`, `list_capabilities`, `get_server_health`, and a bounded
 - exact automation configuration/fingerprint restored;
 - no unintended entity, registry, service, automation, add-on, or Home
   Assistant mutation; and
-- production v1.1.2 remains untouched.
+- production v1.1.2 remains installed, running, and untouched.
 
 If any item fails, stop the soak, retain bounded evidence, make no new approval
 decision, and follow the rollback strategy in

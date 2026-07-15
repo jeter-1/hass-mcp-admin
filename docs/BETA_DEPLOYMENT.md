@@ -59,26 +59,105 @@ change the machine or user execution policy.
 `-HealthHost` accepts a hostname or IP address only. Do not put a URL, MCP
 authenticated path, credential, or secret in the argument.
 
-## Normal GitHub add-on repository deployment
+## RC1 registry publication and Home Assistant update
 
-1. Push the release branch and open a pull request to `main`.
-2. Confirm CI tests and both add-on image builds pass, then merge the pull
-   request. Do not deploy production.
-3. In Home Assistant, open **Settings > Add-ons > Add-on Store**, open the menu,
-   and choose **Check for updates**. Refresh the custom repository if needed.
-4. Open **HA MCP Engineering Server Beta** and choose **Update**. Verify the
-   beta slug and port before proceeding; do not update or reinstall the stable
-   add-on as part of this workflow.
-5. Start beta and confirm `/health` on port 8100.
-6. With MCP Inspector connected through the secret-prefixed MCP URL, run
-   `tools/list`, then call `server_info`, `list_capabilities`, and
-   `get_server_health`. `server_info` must report the expected beta version.
-7. Make one intentional request for a nonexistent HA entity. Confirm the client
-   request ID matches the structured log and audit record, whose status must be
-   `error` with a stable error code.
+RC1 uses a prebuilt multi-architecture GHCR image. The RC app metadata declares
+the generic image name, following Home Assistant's
+[registry-backed app configuration](https://developers.home-assistant.io/docs/apps/configuration/):
+
+```text
+ghcr.io/jeter-1/hass-mcp-engineering-beta
+```
+
+Home Assistant combines that `image` value with `version: "2.0.0-rc.1"`, so the
+installed version image is exactly:
+
+```text
+ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc.1
+```
+
+The `config.yaml` version, published image tag, and server version must always
+agree. The controlled publisher also creates
+`ghcr.io/jeter-1/hass-mcp-engineering-beta:sha-<commit>` for the exact source
+commit and publishes one manifest covering `linux/amd64`, `linux/arm64`, and
+`linux/arm/v7` for the declared `amd64`, `aarch64`, and `armv7` app
+architectures. Production v1.1.2 has no registry-image change.
+
+Pull-request CI builds and validates the RC image and all declared
+architectures without pushing. Merging the pull request alone neither publishes
+the immutable RC version tag nor authorizes a Home Assistant repository refresh
+or update. Publication is controlled exclusively by creating the exact Git tag
+`v2.0.0-rc.1` on the accepted `main` commit. Before registry login or any push,
+the release workflow must verify that the Git tag, app version, and server
+version all resolve to `2.0.0-rc.1`.
+
+The publisher resolves the checked-out commit with `git rev-parse HEAD` and
+generates one bounded UTC RFC3339 build time for the run. It supplies that same
+`HAMCP_BUILD_SHA`, `HAMCP_BUILD_TIME`, and `BUILD_VERSION=2.0.0-rc.1` to every
+architecture build. This binds `server_info` and the OCI source, revision,
+creation-time, and version labels to the published source without embedding a
+token, credential, authenticated URL, or other secret.
+
+### Public-package release gate
+
+The Home Assistant host must be able to pull the version image anonymously.
+An authenticated publishing job reading its own image does not satisfy this
+gate. After publication, a separate job or clean environment with no registry
+credentials must pull or inspect
+`ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc.1`, verify its manifest and
+digest, and record the result.
+
+GHCR packages are private by default on first publication. If `GITHUB_TOKEN`
+cannot safely change package visibility, an administrator must perform this
+one-time GitHub setting after the first publish, following GitHub's
+[package-visibility procedure](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility):
+
+1. Open the
+   [`hass-mcp-engineering-beta` package settings](https://github.com/users/jeter-1/packages/container/hass-mcp-engineering-beta/settings),
+   or open the `jeter-1` GitHub profile, select **Packages**, select
+   `hass-mcp-engineering-beta`, and open **Package settings**.
+2. Under **Danger Zone**, select **Change visibility**, choose **Public**, type
+   `hass-mcp-engineering-beta`, and confirm the visibility change.
+3. Rerun or repeat the unauthenticated pull or manifest inspection from a clean
+   environment.
+
+Changing a GHCR package from private to public cannot be reversed. If the
+anonymous check fails, the release checklist fails: do not refresh the Home
+Assistant repository and do not offer the RC update. At pull-request time,
+GHCR publication, manifest verification, digest verification, and anonymous
+pull are pending and must not be reported as passed; they can pass only after
+the post-merge `v2.0.0-rc.1` workflow actually runs.
+
+### Required operator sequence
+
+Perform these steps in this exact order:
+
+1. Merge the corrected RC1 PR.
+2. Confirm `main` contains the expected merged commit.
+3. Create the exact tag `v2.0.0-rc.1` on that accepted `main` commit.
+4. Wait for all image publication and validation jobs to pass.
+5. Confirm the multi-architecture manifest includes amd64, arm64, and arm/v7.
+6. Confirm unauthenticated pull of the version tag succeeds.
+7. Confirm the version image resolves to the expected digest.
+8. Only then refresh the Home Assistant add-on repository.
+9. Update **HA MCP Engineering Server Beta/RC** only.
+10. Reconnect the Engineering connector.
+11. Call `server_info` before any other acceptance test.
+12. Verify `build_sha` matches the tagged source commit.
+13. Verify `build_time` is populated and valid UTC RFC3339.
+14. Continue the documented RC1 deployed acceptance.
+15. Do not modify or disable production v1.1.2.
+
+For step 7, compare the manifest-list digest returned without credentials with
+the digest recorded by the publishing job for the immutable version tag. Do
+not substitute a single-platform child-manifest digest. In step 11,
+`server_info` must report version `2.0.0-rc.1`, a non-`unknown` `build_sha`
+equal to the accepted tagged commit, and a non-`unknown` UTC RFC3339
+`build_time`. A mismatch is an acceptance failure; stop before any other test.
 
 The unauthenticated health endpoint proves that a process is responding. It
-does not replace `server_info` for verifying the running server version.
+does not replace `server_info` for verifying the running server version and
+provenance.
 
 Beta 18 must return 36 serializable tools from the server's real `tools/list`, including
 `entity_dependency_analysis`, `automation_reliability_analysis`, and
@@ -118,14 +197,18 @@ Home Assistant production system.
 If Home Assistant does not offer the new beta version:
 
 1. Confirm the merged `main` branch contains the new beta `config.yaml` version.
-2. Confirm GitHub Actions successfully built both images for that commit.
-3. Use **Check for updates** in the Add-on Store and reload the store page.
-4. Confirm the repository URL is correct and inspect Supervisor logs for fetch,
+2. For RC1, confirm the exact `v2.0.0-rc.1` publication workflow passed, the
+   version manifest contains all three required platforms, the package is
+   public, and an unauthenticated pull resolves to the recorded digest.
+3. Confirm the accepted `main` metadata contains the generic image
+   `ghcr.io/jeter-1/hass-mcp-engineering-beta` and version `2.0.0-rc.1`.
+4. Use **Check for updates** in the Add-on Store and reload the store page.
+5. Confirm the repository URL is correct and inspect Supervisor logs for fetch,
    manifest, architecture, or registry errors. Do not publish logs until secret
    paths and tokens have been redacted.
-5. Allow time for repository and image-manifest caches, then check again. Restart
+6. Allow time for repository and image-manifest caches, then check again. Restart
    the Supervisor only during an approved maintenance window.
-6. As a last resort, remove and re-add the custom repository entry. This is a
+7. As a last resort, remove and re-add the custom repository entry. This is a
    repository-index action; do not uninstall the production add-on.
 
 An installed add-on card can show repository metadata before a new container is
@@ -387,18 +470,29 @@ stop acceptance and roll forward.
 
 ## RC1 deployment and provenance
 
-The deployment script builds only `hass_mcp_engineering_beta` and passes the
-clean checkout's complete `git rev-parse HEAD` plus the current UTC RFC3339
-build time as Docker build arguments. After update, `server_info` must report
-those exact values. An `unknown` deployed value, branch name, short SHA,
-non-UTC timestamp, or mismatch is an acceptance failure. OCI labels contain
-the same public revision/time metadata and no credential.
+The normal RC1 deployment path is the prebuilt multi-architecture image
+`ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc.1`; it is not a local
+Supervisor build. The exact `v2.0.0-rc.1` release workflow passes the checked
+out commit from `git rev-parse HEAD` and one shared UTC RFC3339 build time into
+all three platform images. After update, `server_info` must report those exact
+values. An `unknown` deployed value, branch name, short SHA, non-UTC timestamp,
+or mismatch is an acceptance failure. OCI labels contain the same public
+source, version, revision, and creation-time metadata and no credential.
+
+Do not begin this deployment because the pull request merged. Complete the
+ordered registry publication, public visibility, anonymous pull, manifest, and
+digest gates in **Required operator sequence** above first. Local
+`scripts/deploy-beta.ps1` builds remain useful for validation, but they do not
+publish the immutable RC image and are not the standard Home Assistant RC1
+installation path. Local builds without supplied provenance safely report
+`unknown` and must not be used for deployed RC1 acceptance.
 
 Keep the existing Beta 26 connector for the in-place upgrade, then compare it
 with one fresh RC1 connector as described in
 [`RC1_ACCEPTANCE.md`](RC1_ACCEPTANCE.md). RC1 starts directly on persisted Beta
-26 governance data without migration or startup rewrite. Production v1.1.2 is
-outside deployment, acceptance, and rollback.
+26 governance data without migration or startup rewrite. Production v1.1.2
+remains installed and running throughout RC testing and is outside RC
+deployment, acceptance, and rollback.
 
 ## Beta 26 expiry lifecycle deployment and troubleshooting
 
