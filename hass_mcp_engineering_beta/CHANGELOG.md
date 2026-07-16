@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.0.0-rc2-dev2
+
+- Add the reviewed `ha_mcp_7_13_dashboard_read_v1` trust profile for upstream
+  `ha-mcp` 7.13.0 at commit
+  `f4eb53621ccb814cb7123d2811e06eda3577129c`.
+- Distinguish contract-level read-only trust from the explicit
+  `reviewed_argument_constrained` exception for the mixed-operation dashboard
+  tool.
+- Pin initialize identity, version, protocol, exact annotations, input schema,
+  and the complete canonical tool contract.
+- Construct only non-screenshot inventory and exact-configuration argument
+  shapes; reject rendering, preferences, unknown arguments, and other tools
+  before transport dispatch.
+- Preserve the verified upstream 16-character optimistic-lock hash and
+  independent 64-character Engineering evidence hash.
+- Stage dev2 in `.release/next-version` while leaving Home Assistant metadata at
+  dev1 until the image is built, anonymously verified, and atomically promoted.
+- Replace manual tag-first publication with one main-only, repository-locked
+  promotion transaction that publishes and verifies before pushing the release
+  commit and annotated tag.
+- Preserve 40 registered/25 canonical/zero planned capabilities, public input
+  schemas, governance, external approval, audit, direct-HA policies,
+  unavailable Standard HA MCP delegation, and production v1.1.2.
+
 ## 2.0.0-rc2-dev1
 
 - Add the RC3A read-only `upstream_dashboard` provider using the maintained

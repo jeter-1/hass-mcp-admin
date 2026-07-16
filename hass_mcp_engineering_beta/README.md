@@ -40,7 +40,8 @@ https://BETA_TUNNEL/REDACTED_BETA_SECRET/mcp/
 
 Direct requests to `/mcp` and `/mcp/` must return `404`. After initialization,
 call `server_info(check_ha=false)` and verify version
-`2.0.0-rc2-dev1`, the expected complete build SHA, and its UTC build time,
+`2.0.0-rc2-dev2` after automated promotion, the expected complete release
+commit SHA, and its UTC build time,
 then call `list_capabilities` and verify the preserved 25-tool canonical catalog
 plus 15 beta-native tools; MCP `tools/list` should expose 40 callable tools.
 Beta 17 added the read-only
@@ -62,10 +63,13 @@ admin-only Ingress panel. Beta 26 makes plan and challenge expiry idempotent and
 immediately effective on reads without changing the catalog or schemas. RC2
 freezes those contracts, gives the reviewed direct-read `search_entities`
 correction a distinct installable version, and preserves deterministic build
-provenance and release compatibility tests. RC3A adds only read-only dashboard
-inventory and exact configuration evidence through the distinct
-`upstream_dashboard` provider. The generic Standard HA MCP gateway remains
-unavailable and no dashboard write or arbitrary forwarding path exists. RC3A
+provenance and release compatibility tests. RC3A adds dashboard inventory and
+exact configuration evidence through a version-pinned,
+`reviewed_argument_constrained` upstream profile. The mixed upstream tool is
+not described as globally read-only; Engineering constructs only exact
+non-screenshot read forms. The generic Standard HA MCP gateway remains
+unavailable and no screenshot, preference write, dashboard write, or arbitrary
+forwarding path exists. RC3A
 changes the public catalog, so reconnect the Engineering connector after the
 add-on update.
 

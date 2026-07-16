@@ -5,19 +5,35 @@
 `upstream_dashboard` is separate from the unavailable generic
 `standard_ha_mcp` gateway. It accepts one password-style, operator-configured
 secret endpoint and exposes exactly one allowlisted upstream tool:
-`ha_config_get_dashboard`. Inventory and exact configuration reads use fixed
-argument shapes. Set/delete dashboard, backup, service, reload, automation
-write, physical-action, and arbitrary tool names fail before network dispatch.
+`ha_config_get_dashboard`.
 
-The provider records the sanitized MCP server identity and validates the
-required dashboard tool, schema, and read-only annotations. The
-operator-configured endpoint is trusted based on schema compatibility; RC3A
-does not pin a server name or implementation family. Raw tool schemas and
-endpoint material never appear in health. Full URL, host, port, secret path,
-query, credentials, and reconstructed fragments are excluded from logs, audit,
-responses, errors, tracebacks, and startup output. Upstream dashboard titles,
-card text, configuration, and warnings are untrusted data and cannot authorize
-or construct another tool call.
+The preferred `contract_read_only` mode still requires
+`readOnlyHint=true`. The explicit
+`reviewed_argument_constrained` exception applies only to
+`ha_mcp_7_13_dashboard_read_v1`. It pins server name `ha-mcp`, version
+`7.13.0`, protocol `2025-03-26`, exact tool name, exact reviewed annotations,
+and the full canonical tool-contract fingerprint generated from upstream
+commit `f4eb53621ccb814cb7123d2811e06eda3577129c`.
+
+The 7.13.0 tool is mixed-operation: screenshots can persist rendering
+preferences. Engineering therefore constructs only the reviewed non-screenshot
+forms. Inventory sends `list_only=true` and `include_screenshot=false`. Exact
+configuration reads send a validated canonical path, `list_only=false`, a
+Boolean `force_reload`, and `include_screenshot=false`. Any other key or value
+fails before network dispatch. The transport repeats the shape check directly
+before `tools/call`.
+
+Set/delete dashboard, backup, service, reload, automation write,
+physical-action, screenshots, view selection, rendering preferences, and
+arbitrary tool names remain unreachable. The provider does not describe the
+whole upstream tool as read-only.
+
+Raw contract fixtures, schemas, and endpoint material never appear in health.
+Full URL, host, port, secret path, query, credentials, and reconstructed
+fragments are excluded from logs, audit, responses, errors, tracebacks, and
+startup output. Upstream dashboard titles, card text, configuration, and
+warnings are untrusted data and cannot authorize or construct another tool
+call.
 
 HTTP 401/403 failures report `authentication_failed`; HTTP 404 reports the
 neutral `endpoint_rejected` category because the client cannot distinguish an
@@ -27,7 +43,9 @@ route failures report `connection_failed`; genuine deadline expiry reports
 
 The provider adds no Supervisor permission and performs no discovery. Existing
 direct-HA policies, governance, external approval, and production v1.1.2 remain
-unchanged. See [`RC3A_RELEASE_NOTES.md`](RC3A_RELEASE_NOTES.md).
+unchanged. See
+[`ADR-003`](architecture/ADR-003-REVIEWED-ARGUMENT-CONSTRAINED-DASHBOARD-READS.md)
+and [`RC3A_RELEASE_NOTES.md`](RC3A_RELEASE_NOTES.md).
 
 ## RC2 frozen security boundary
 

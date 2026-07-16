@@ -1,17 +1,24 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
-## RC3A read-only dashboard provider
+## RC3A reviewed argument-constrained dashboard provider
 
-RC3A development version `2.0.0-rc2-dev1` adds a distinct
+RC3A stages development version `2.0.0-rc2-dev2` while Home Assistant metadata
+continues advertising published dev1 until automated promotion. It adds a distinct
 `upstream_dashboard` boundary. It uses the existing pinned MCP client to
 initialize, list and validate the live upstream catalog, then call only
 `ha_config_get_dashboard` in inventory or exact-read mode. The configured URL
 is password-style secret input and never appears in health, audit, logs,
 responses, startup summaries, or exceptions.
 
-The sanitized observed MCP server name and version are diagnostic evidence,
-not an identity pin. RC3A trusts the operator-configured endpoint when its
-required dashboard tool, schema, and read-only annotations are compatible.
+The preferred `contract_read_only` mode requires `readOnlyHint=true`. The
+reviewed 7.13.0 exception instead pins name `ha-mcp`, version `7.13.0`, protocol
+`2025-03-26`, exact reviewed annotations, and the complete canonical tool
+contract. It reports `reviewed_argument_constrained` and profile
+`ha_mcp_7_13_dashboard_read_v1`.
+
+The upstream tool is mixed-operation because screenshot rendering can persist
+preferences. Engineering can construct only exact non-screenshot calls and
+rejects all rendering fields before network dispatch.
 
 The public additions are `list_dashboards` and `get_dashboard_config`. Both are
 beta-native read tools routed directly to `upstream_dashboard`, with no
@@ -83,7 +90,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-rc2-dev1` |
+| Version | `1.1.2` | advertised `2.0.0-rc2-dev1`; promotion target `2.0.0-rc2-dev2` |
 | Port | `8099` | MCP `8100`; internal Ingress `8110` |
 | Options and secret | Production add-on data | Beta add-on data |
 

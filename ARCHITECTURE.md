@@ -2,20 +2,22 @@
 
 ## RC3A dashboard-provider boundary
 
-Development version `2.0.0-rc2-dev1` adds a separate
-`upstream_dashboard` provider without making `standard_ha_mcp` available. The
-provider consumes one operator-configured secret streamable-HTTP endpoint and
-exposes only fixed typed inventory and exact-configuration reads through
-upstream `ha_config_get_dashboard`. The provider records the sanitized observed
-initialize identity and validates tool discovery, read-only annotations,
-required argument types, and schema/catalog fingerprints before each tool
-dispatch. The operator-configured endpoint is trusted by schema compatibility;
-RC3A does not pin a server name or implementation family.
+RC3A stages `2.0.0-rc2-dev2` while leaving Home Assistant metadata at
+published dev1 until automated promotion succeeds. The separate
+`upstream_dashboard` provider does not make `standard_ha_mcp` available.
+
+For upstream `ha-mcp` 7.13.0, the provider uses the explicit
+`reviewed_argument_constrained` profile documented in
+[`ADR-003`](docs/architecture/ADR-003-REVIEWED-ARGUMENT-CONSTRAINED-DASHBOARD-READS.md).
+It pins identity, version, protocol, annotations, and the complete reviewed tool
+contract, then constructs only exact non-screenshot inventory or configuration
+reads. The upstream tool is mixed-operation and is not described as globally
+read-only.
 
 The two additive tools raise the catalog to 40 registered while retaining 25
-canonical and zero planned capabilities. No generic forwarding, dashboard
-mutation, service call, physical action, Supervisor discovery, approval change,
-or production v1.1.2 change is present. See
+canonical and zero planned capabilities. No generic forwarding, screenshot,
+preference persistence, dashboard mutation, service call, physical action,
+Supervisor discovery, approval change, or production v1.1.2 change is present. See
 [`docs/RC3A_RELEASE_NOTES.md`](docs/RC3A_RELEASE_NOTES.md).
 
 ## RC2 release-freeze boundary

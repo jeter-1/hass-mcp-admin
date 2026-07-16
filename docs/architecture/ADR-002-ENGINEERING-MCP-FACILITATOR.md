@@ -4,8 +4,10 @@
 
 RC3A introduces a provider-specific exception to the still-unavailable generic
 Standard HA MCP path. `upstream_dashboard` is not a general delegated gateway:
-it validates one upstream read tool and offers only typed dashboard inventory
-and exact configuration evidence operations. Its route is
+it validates one reviewed upstream tool contract and offers only typed,
+argument-constrained dashboard inventory and exact configuration evidence
+operations. The upstream 7.13.0 tool is mixed-operation, but Engineering cannot
+construct its screenshot/write form. Its route is
 `upstream_dashboard`, its fallback is none, and its write allowlist is empty.
 
 This preserves the facilitator decision: the Engineering server may acquire
@@ -96,7 +98,7 @@ exception, and report the provider actually used.
 | Exact entity-ID state | Direct HA REST API | None |
 | Complete area registry | Direct HA WebSocket API | None |
 | Service discovery/schema | Direct HA REST API, bounded | None |
-| Dashboard inventory/config evidence | Fixed `upstream_dashboard` read adapter | None |
+| Dashboard inventory/config evidence | Version-pinned, reviewed argument-constrained `upstream_dashboard` adapter | None |
 | Ordinary service execution | Standard HA MCP | None by default |
 | Automation config | Direct HA config API | No generic fallback |
 | Automation traces | Direct HA trace API | No generic fallback |
