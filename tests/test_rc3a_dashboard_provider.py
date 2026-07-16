@@ -100,6 +100,7 @@ def dashboard_schema(**overrides):
         },
         "list_only": {"type": "boolean", "default": False},
         "force_reload": {"type": "boolean", "default": False},
+        "include_screenshot": {"type": "boolean", "default": False},
     }
     properties.update(overrides.pop("properties", {}))
     schema = {"type": "object", "properties": properties}
@@ -421,7 +422,7 @@ class McpTransportLifecycleTests(unittest.IsolatedAsyncioTestCase):
             patch("ha_mcp_engineering.clients.mcp.ClientSession", Session),
         ):
             result = await transport.execute_dashboard_read(
-                {"url_path": None, "list_only": True},
+                {"list_only": True, "include_screenshot": False},
                 lambda value: self.assertEqual(
                     value.server_name, "Synthetic Upstream"
                 ),
@@ -442,7 +443,7 @@ class McpTransportLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 await transport.execute_dashboard_read(
                     {"tool_name": "ha_config_set_dashboard"}, lambda _value: None
                 )
-        self.assertEqual(caught.exception.category, "protocol_error")
+        self.assertEqual(caught.exception.category, "prohibited_argument")
         stream.assert_not_called()
 
     def test_transport_exception_categories(self):
@@ -593,6 +594,8 @@ class CapabilityAndAllowlistTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(health["required_tool_present"])
         self.assertTrue(health["required_schema_compatible"])
         self.assertEqual(health["capability_status"], "available")
+        self.assertEqual(health["trust_mode"], "contract_read_only")
+        self.assertIsNone(health["trust_profile"])
         self.assertEqual(health["upstream_server_version"], "7.12.3")
         self.assertRegex(health["required_schema_fingerprint"], r"^[0-9a-f]{64}$")
         self.assertRegex(health["catalog_fingerprint"], r"^[0-9a-f]{64}$")
@@ -784,7 +787,7 @@ class PublicDashboardToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transport.tool_dispatch_count, 1)
         self.assertEqual(
             transport.arguments[0],
-            {"url_path": None, "list_only": True},
+            {"list_only": True, "include_screenshot": False},
         )
 
     async def test_no_dashboards_is_complete(self):
@@ -857,6 +860,7 @@ class PublicDashboardToolTests(unittest.IsolatedAsyncioTestCase):
                 "url_path": "lovelace-home",
                 "list_only": False,
                 "force_reload": True,
+                "include_screenshot": False,
             },
         )
 
@@ -917,7 +921,7 @@ class PublicDashboardToolTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(result["success"])
                 self.assertEqual(
                     result["error_code"],
-                    "upstream_dashboard_invalid_response",
+                    "upstream_dashboard_hash_contract_mismatch",
                 )
                 self.assertEqual(result["details"]["hash_validation"], detail)
                 self.assertEqual(
@@ -979,7 +983,7 @@ class PublicDashboardToolTests(unittest.IsolatedAsyncioTestCase):
             "configuration_not_json",
         )
 
-    async def test_force_reload_is_omitted_when_upstream_does_not_support_it(self):
+    async def test_force_reload_support_is_required_before_dispatch(self):
         schema = dashboard_schema()
         schema["properties"].pop("force_reload")
         transport = FakeTransport(
@@ -995,11 +999,12 @@ class PublicDashboardToolTests(unittest.IsolatedAsyncioTestCase):
         result = json.loads(
             await dashboard_tools.get_dashboard_config("lovelace-home")
         )
-        self.assertTrue(result["success"])
+        self.assertFalse(result["success"])
         self.assertEqual(
-            transport.arguments[0],
-            {"url_path": "lovelace-home", "list_only": False},
+            result["error_code"],
+            "upstream_dashboard_schema_incompatible",
         )
+        self.assertEqual(transport.tool_dispatch_count, 0)
 
     async def test_dashboard_instructions_remain_untrusted_returned_data(self):
         embedded_instruction = (

@@ -4,25 +4,36 @@
 
 `get_server_health.upstream_dashboard` reports configured/credential state,
 reachability, capability status, sanitized live upstream identity, MCP protocol,
-tool count, required-tool/schema compatibility, schema/catalog fingerprints,
+tool count, required-tool/schema compatibility, schema/contract/catalog fingerprints,
 last success timestamps, connection and tool-call latency, request/success/
 timeout/reconnect counts, categorized failures, session state, and
 `writes_allowed=false`.
+
+Trust reporting distinguishes `contract_read_only` from
+`reviewed_argument_constrained`. The reviewed 7.13.0 profile reports its bounded
+profile ID, pinned name/version, contract-match state, active argument
+constraints, and explicit `screenshots_allowed=false`,
+`preference_writes_allowed=false`, and `writes_allowed=false`. It never claims
+that the mixed upstream tool is globally read-only.
 
 It never reports the endpoint, host, port, secret path, query, credentials,
 headers, raw schemas, or raw exception text. Stable transport categories
 distinguish `authentication_failed`, neutral `endpoint_rejected`,
 `connection_failed`, and genuine `timeout`, followed by protocol, response,
-capability, upstream, response-size, and internal failures. Dashboard calls add
+capability, identity, version, reviewed-contract, reviewed-annotation,
+prohibited-argument, hash-contract, upstream, response-size, and internal
+failures. Dashboard calls add
 separate upstream duration/count fields to response timing without changing
 direct Home Assistant timing semantics. Audit records contain only the list
 limit or exact canonical dashboard path, force-reload flag, and provider; they
 exclude endpoint and dashboard content.
 
-The provider records sanitized observed server name/version and validates the
-required tool, schema, and read-only annotations. It does not pin an upstream
-name or implementation family; the operator-selected endpoint is trusted when
-the bounded schema contract is compatible.
+The normal contract-level mode requires `readOnlyHint=true`. The reviewed
+argument-constrained mode requires exact `ha-mcp` identity, exact 7.13.0
+version/protocol, the committed full tool-contract fingerprint, exact reviewed
+annotations, and exact non-screenshot invocation shapes. Any drift makes the
+capability unavailable without returning the fixture, full schema, or raw
+description.
 
 `standard_ha_mcp_delegation` remains `unavailable`. The two new beta-native
 tools raise the registered count to 40; the canonical count remains 25.

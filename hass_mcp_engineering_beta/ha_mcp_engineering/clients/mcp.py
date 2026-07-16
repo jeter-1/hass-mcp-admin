@@ -17,7 +17,7 @@ from mcp.client.streamable_http import streamablehttp_client
 
 REQUIRED_DASHBOARD_TOOL = "ha_config_get_dashboard"
 ALLOWED_DASHBOARD_ARGUMENTS = frozenset(
-    {"url_path", "list_only", "force_reload"}
+    {"url_path", "list_only", "force_reload", "include_screenshot"}
 )
 MAX_TOOL_CATALOG_SIZE = 500
 MAX_TOOL_CATALOG_PAGES = 20
@@ -99,9 +99,7 @@ class McpDashboardTransport:
         arguments: dict[str, Any],
         capability_validator: CapabilityValidator,
     ) -> McpDashboardRead:
-        unknown = set(arguments) - ALLOWED_DASHBOARD_ARGUMENTS
-        if unknown:
-            raise DashboardTransportError("protocol_error")
+        validate_dashboard_read_arguments(arguments)
         result = await self._run(
             arguments=dict(arguments),
             capability_validator=capability_validator,
@@ -144,6 +142,7 @@ class McpDashboardTransport:
                     if arguments is None:
                         return handshake
                     capability_validator(handshake)
+                    validate_dashboard_read_arguments(arguments)
                     call_started = time.perf_counter()
                     call_result = await session.call_tool(
                         REQUIRED_DASHBOARD_TOOL,
@@ -190,6 +189,32 @@ class McpDashboardTransport:
                 raise DashboardTransportError("protocol_error")
             seen_cursors.add(cursor)
         raise DashboardTransportError("invalid_response")
+
+
+def validate_dashboard_read_arguments(arguments: dict[str, Any]) -> None:
+    """Accept only the two reviewed non-screenshot dashboard call forms."""
+
+    if not isinstance(arguments, dict):
+        raise DashboardTransportError("prohibited_argument")
+    if set(arguments) - ALLOWED_DASHBOARD_ARGUMENTS:
+        raise DashboardTransportError("prohibited_argument")
+    if arguments == {"list_only": True, "include_screenshot": False}:
+        return
+    if set(arguments) != {
+        "url_path",
+        "list_only",
+        "force_reload",
+        "include_screenshot",
+    }:
+        raise DashboardTransportError("prohibited_argument")
+    if (
+        not isinstance(arguments.get("url_path"), str)
+        or not arguments["url_path"]
+        or arguments.get("list_only") is not False
+        or not isinstance(arguments.get("force_reload"), bool)
+        or arguments.get("include_screenshot") is not False
+    ):
+        raise DashboardTransportError("prohibited_argument")
 
 
 def _iter_exceptions(exc: BaseException):

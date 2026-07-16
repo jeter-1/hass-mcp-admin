@@ -24,6 +24,8 @@ BETA_NAME = "HA MCP Engineering Server Beta"
 PRODUCTION_VERSION = "1.1.2"
 BETA_VERSION = "2.0.0-rc2-dev1"
 BETA_IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
+FINAL_RC3_VERSION = "2.0.0-rc.3"
+NEXT_VERSION_PATH = Path(".release/next-version")
 PRODUCTION_PORT = 8099
 BETA_PORT = 8100
 BETA_INGRESS_PORT = 8110
@@ -68,6 +70,7 @@ class ValidationReport:
     beta_changed: bool
     production_changed: bool
     same_version_correction: bool
+    staged_release_version: str | None
 
 
 def read_yaml(path: Path) -> dict:
@@ -122,6 +125,30 @@ def version_key(version: str):
 
 def is_newer_version(candidate: str, deployed: str) -> bool:
     return version_key(candidate) > version_key(deployed)
+
+
+def staged_release_version(repo_root: Path, advertised_version: str) -> str | None:
+    declaration = repo_root / NEXT_VERSION_PATH
+    if not declaration.exists():
+        return None
+    try:
+        lines = declaration.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise MetadataValidationError("Unable to read staged release declaration") from exc
+    if len(lines) != 1 or not lines[0] or lines[0] != lines[0].strip():
+        raise MetadataValidationError(
+            "Staged release declaration must contain exactly one version"
+        )
+    candidate = lines[0]
+    if not is_newer_version(candidate, advertised_version):
+        raise MetadataValidationError(
+            "Staged release version must be newer than advertised metadata"
+        )
+    if not version_key(candidate) < version_key(FINAL_RC3_VERSION):
+        raise MetadataValidationError(
+            "Staged development version must remain below final RC3"
+        )
+    return candidate
 
 
 def validate_config_pair(production: dict, beta: dict, *, minimum_secret_length: int) -> None:
@@ -371,6 +398,7 @@ def validate_repository(
 
     beta_version = str(beta.get("version", ""))
     version_key(beta_version)
+    staged_version = staged_release_version(repo_root, beta_version)
     if beta_version_py != beta_version:
         raise MetadataValidationError("Beta add-on and server versions differ")
     if expected_version and beta_version != expected_version:
@@ -389,6 +417,12 @@ def validate_repository(
             if (
                 beta_changed
                 and beta_version == comparison
+                and staged_version is not None
+            ):
+                pass
+            elif (
+                beta_changed
+                and beta_version == comparison
                 and unreleased_integrity_check is not None
             ):
                 unreleased_integrity_check(repo_root, beta_version)
@@ -405,6 +439,7 @@ def validate_repository(
         beta_changed=beta_changed,
         production_changed=production_changed,
         same_version_correction=same_version_correction,
+        staged_release_version=staged_version,
     )
 
 
@@ -444,6 +479,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Version comparison baseline: {report.compared_version}")
     if report.same_version_correction:
         print("Unreleased same-version RC integrity gate: passed")
+    if report.staged_release_version:
+        print(
+            "Staged release declaration: "
+            f"{report.beta_version} -> {report.staged_release_version}"
+        )
     return 0
 
 

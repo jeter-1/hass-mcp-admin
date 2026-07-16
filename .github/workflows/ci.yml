@@ -50,10 +50,11 @@ jobs:
       - name: Build beta image
         shell: bash
         run: |
+          beta_version="$(sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' hass_mcp_engineering_beta/config.yaml)"
           build_sha="$(git rev-parse HEAD)"
           build_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           docker build \
-            --build-arg "BUILD_VERSION=2.0.0-rc2-dev1" \
+            --build-arg "BUILD_VERSION=$beta_version" \
             --build-arg "HAMCP_BUILD_SHA=$build_sha" \
             --build-arg "HAMCP_BUILD_TIME=$build_time" \
             -t hass-mcp-engineering-beta:test \
@@ -61,11 +62,12 @@ jobs:
       - name: Validate beta image on every declared architecture without pushing
         shell: bash
         run: |
+          beta_version="$(sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' hass_mcp_engineering_beta/config.yaml)"
           build_sha="$(git rev-parse HEAD)"
           build_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           docker buildx build \
             --platform "linux/amd64,linux/arm64,linux/arm/v7" \
-            --build-arg "BUILD_VERSION=2.0.0-rc2-dev1" \
+            --build-arg "BUILD_VERSION=$beta_version" \
             --build-arg "HAMCP_BUILD_SHA=$build_sha" \
             --build-arg "HAMCP_BUILD_TIME=$build_time" \
             --output=type=cacheonly \
