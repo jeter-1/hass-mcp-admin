@@ -41,6 +41,16 @@ class VersionComparisonTests(unittest.TestCase):
         self.assertFalse(
             VALIDATOR.is_newer_version("2.0.0-rc.2.rc3a.1", "2.0.0-rc.2")
         )
+        self.assertTrue(
+            VALIDATOR.is_newer_version(
+                "2.0.0-rc2-dev2", "2.0.0-rc2-dev1"
+            )
+        )
+        self.assertTrue(
+            VALIDATOR.is_newer_version(
+                "2.0.0-rc.3", "2.0.0-rc2-dev2"
+            )
+        )
 
     def test_version_comparison_uses_awesomeversion_25_8_0(self):
         requirements = (ROOT / "tests" / "requirements.txt").read_text(
@@ -79,7 +89,7 @@ class AddonMetadataValidationTests(unittest.TestCase):
         self.assertEqual(self.beta["image"], VALIDATOR.BETA_IMAGE)
         self.assertEqual(
             f'{self.beta["image"]}:{self.beta["version"]}',
-            "ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc2-dev1",
+            f"{VALIDATOR.BETA_IMAGE}:{VALIDATOR.BETA_VERSION}",
         )
 
     def test_registry_image_is_required_and_cannot_be_arch_templated(self):
@@ -178,17 +188,25 @@ class AddonMetadataValidationTests(unittest.TestCase):
                 paths={"hass_mcp_admin/config.yaml"},
             )
 
-    def test_beta_version_must_advance(self):
+    def test_staged_release_allows_feature_pr_to_keep_advertised_version(self):
+        declaration = ROOT / VALIDATOR.NEXT_VERSION_PATH
+        if not declaration.exists():
+            self.skipTest("staged declaration is consumed on the promoted release commit")
         current = str(self.beta["version"])
-        with self.assertRaises(VALIDATOR.MetadataValidationError):
-            VALIDATOR.validate_repository(
-                ROOT,
-                base_ref="origin/main",
-                deployed_version=current,
-                paths={"hass_mcp_engineering_beta/config.yaml"},
-            )
+        report = VALIDATOR.validate_repository(
+            ROOT,
+            base_ref="origin/main",
+            deployed_version=current,
+            paths={"hass_mcp_engineering_beta/config.yaml"},
+        )
+        self.assertEqual(report.beta_version, VALIDATOR.BETA_VERSION)
+        self.assertEqual(
+            report.staged_release_version,
+            declaration.read_text(encoding="utf-8").strip(),
+        )
 
-    def test_unreleased_same_version_requires_explicit_integrity_check(self):
+    @patch.object(VALIDATOR, "staged_release_version", return_value=None)
+    def test_unreleased_same_version_requires_explicit_integrity_check(self, _staged):
         current = str(self.beta["version"])
         integrity_check = Mock()
         report = VALIDATOR.validate_repository(
@@ -201,7 +219,8 @@ class AddonMetadataValidationTests(unittest.TestCase):
         integrity_check.assert_called_once_with(ROOT, current)
         self.assertTrue(report.same_version_correction)
 
-    def test_unreleased_same_version_check_failure_is_fail_closed(self):
+    @patch.object(VALIDATOR, "staged_release_version", return_value=None)
+    def test_unreleased_same_version_check_failure_is_fail_closed(self, _staged):
         current = str(self.beta["version"])
         integrity_check = Mock(
             side_effect=VALIDATOR.MetadataValidationError("release already exists")
@@ -215,7 +234,8 @@ class AddonMetadataValidationTests(unittest.TestCase):
                 unreleased_integrity_check=integrity_check,
             )
 
-    def test_unreleased_check_cannot_allow_an_older_version(self):
+    @patch.object(VALIDATOR, "staged_release_version", return_value=None)
+    def test_unreleased_check_cannot_allow_an_older_version(self, _staged):
         integrity_check = Mock()
         with self.assertRaises(VALIDATOR.MetadataValidationError):
             VALIDATOR.validate_repository(
@@ -231,12 +251,12 @@ class AddonMetadataValidationTests(unittest.TestCase):
         report = VALIDATOR.validate_repository(
             ROOT,
             base_ref="origin/main",
-            expected_version="2.0.0-rc2-dev1",
+            expected_version=VALIDATOR.BETA_VERSION,
             deployed_version="2.0.0-beta.8",
             paths={"hass_mcp_engineering_beta/config.yaml"},
         )
         self.assertEqual(report.production_version, "1.1.2")
-        self.assertEqual(report.beta_version, "2.0.0-rc2-dev1")
+        self.assertEqual(report.beta_version, VALIDATOR.BETA_VERSION)
 
 
 class UnreleasedRcIntegrityTests(unittest.TestCase):
@@ -254,7 +274,7 @@ class UnreleasedRcIntegrityTests(unittest.TestCase):
                 1,
                 stderr=(
                     "ERROR: ghcr.io/jeter-1/hass-mcp-engineering-beta:"
-                    "2.0.0-rc2-dev1: not found"
+                    f"{VALIDATOR.BETA_VERSION}: not found"
                 ),
             ),
         ]
@@ -268,7 +288,7 @@ class UnreleasedRcIntegrityTests(unittest.TestCase):
                 "--exit-code",
                 "--tags",
                 "origin",
-                "refs/tags/v2.0.0-rc2-dev1",
+                f"refs/tags/v{VALIDATOR.BETA_VERSION}",
             ],
         )
         self.assertEqual(
@@ -278,7 +298,7 @@ class UnreleasedRcIntegrityTests(unittest.TestCase):
                 "buildx",
                 "imagetools",
                 "inspect",
-                "ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc2-dev1",
+                f"{VALIDATOR.BETA_IMAGE}:{VALIDATOR.BETA_VERSION}",
             ],
         )
         docker_env = run.call_args_list[1].kwargs["env"]

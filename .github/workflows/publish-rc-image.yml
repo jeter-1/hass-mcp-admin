@@ -1,19 +1,18 @@
-name: Publish RC image
+name: Promote staged Engineering release
 
 on:
   push:
-    tags:
-      - "v2.0.0-rc2-dev1"
+    branches:
+      - main
 
 permissions: {}
 
 concurrency:
-  group: publish-hass-mcp-engineering-beta-2.0.0-rc2-dev1
+  group: hass-mcp-engineering-release-promotion
   cancel-in-progress: false
 
 env:
   IMAGE_REPOSITORY: ghcr.io/jeter-1/hass-mcp-engineering-beta
-  EXPECTED_VERSION: 2.0.0-rc2-dev1
 
 jobs:
   validate:
@@ -22,167 +21,187 @@ jobs:
     permissions:
       contents: read
 
-  release-metadata:
-    name: Verify release metadata before registry login
+  detect-release:
+    name: Detect staged release declaration
     needs: validate
     runs-on: ubuntu-latest
     permissions:
       contents: read
     outputs:
-      build_sha: ${{ steps.release.outputs.build_sha }}
-      build_time: ${{ steps.release.outputs.build_time }}
-      version: ${{ steps.release.outputs.version }}
+      should_promote: ${{ steps.detect.outputs.should_promote }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - name: Verify exact tag, main ancestry, and version agreement
-        id: release
+      - id: detect
         shell: bash
         run: |
           set -euo pipefail
-
-          expected_tag="v${EXPECTED_VERSION}"
-          if [[ "$GITHUB_REF_TYPE" != "tag" || "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
-            echo "::error::Publication requires the exact tag $expected_tag."
-            exit 1
+          if [[ -f .release/next-version ]]; then
+            echo "should_promote=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_promote=false" >> "$GITHUB_OUTPUT"
+            echo "No staged Engineering release declaration is present." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-          config_version="$(sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' hass_mcp_engineering_beta/config.yaml)"
-          server_version="$(sed -nE 's/^SERVER_VERSION[[:space:]]*=[[:space:]]*"([^"]+)"[[:space:]]*$/\1/p' hass_mcp_engineering_beta/ha_mcp_engineering/version.py)"
-          if [[ "$config_version" != "$EXPECTED_VERSION" || "$server_version" != "$EXPECTED_VERSION" ]]; then
-            echo "::error::Tag ($expected_tag), config version ($config_version), and server version ($server_version) must agree."
-            exit 1
-          fi
-
-          build_sha="$(git rev-parse HEAD)"
-          git fetch --no-tags origin "refs/heads/main:refs/remotes/origin/main"
-          if ! git merge-base --is-ancestor "$build_sha" refs/remotes/origin/main; then
-            echo "::error::The tagged commit must already be present on main."
-            exit 1
-          fi
-
-          build_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          if [[ ! "$build_sha" =~ ^[0-9a-f]{40}$ || ! "$build_time" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
-            echo "::error::Resolved release provenance is not bounded SHA/UTC RFC3339 metadata."
-            exit 1
-          fi
-
-          echo "build_sha=$build_sha" >> "$GITHUB_OUTPUT"
-          echo "build_time=$build_time" >> "$GITHUB_OUTPUT"
-          echo "version=$EXPECTED_VERSION" >> "$GITHUB_OUTPUT"
-          {
-            echo "### Validated RC image metadata"
-            echo "- Version: $EXPECTED_VERSION"
-            echo "- Source commit: $build_sha"
-            echo "- Created: $build_time"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  publish:
-    name: Publish immutable multi-architecture image
+  promote:
+    name: Publish, verify, and atomically promote
     needs:
       - validate
-      - release-metadata
+      - detect-release
+    if: needs.detect-release.outputs.should_promote == 'true'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
     outputs:
-      digest: ${{ steps.build-and-push.outputs.digest }}
+      version: ${{ steps.prepare.outputs.version }}
+      release_sha: ${{ steps.prepare.outputs.release_sha }}
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
-          persist-credentials: false
-      - name: Verify publication checkout
+
+      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            hass_mcp_admin/requirements-dev.txt
+            hass_mcp_engineering_beta/requirements.txt
+            tests/requirements.txt
+
+      - name: Install release validation dependencies
+        run: >-
+          python -m pip install
+          -r hass_mcp_admin/requirements-dev.txt
+          -r hass_mcp_engineering_beta/requirements.txt
+          -r tests/requirements.txt
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Prepare local immutable release commit
+        id: prepare
         shell: bash
-        env:
-          EXPECTED_SHA: ${{ needs.release-metadata.outputs.build_sha }}
         run: |
           set -euo pipefail
-          actual_sha="$(git rev-parse HEAD)"
-          if [[ "$actual_sha" != "$EXPECTED_SHA" ]]; then
-            echo "::error::Publication checkout does not match the validated source commit."
+
+          source_main_sha="$(git rev-parse HEAD)"
+          remote_main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          if [[ "$source_main_sha" != "$GITHUB_SHA" || "$remote_main_sha" != "$source_main_sha" ]]; then
+            echo "::error::The workflow checkout is not the exact current main commit."
             exit 1
           fi
+
+          current_version="$(sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' hass_mcp_engineering_beta/config.yaml)"
+          python scripts/promote_next_release.py
+          version="$(tr -d '\r\n' < .release/next-version)"
+          release_tag="v${version}"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${release_tag}" >/dev/null 2>&1; then
+            echo "::error::The immutable release tag ${release_tag} already exists."
+            exit 1
+          fi
+
+          bash scripts/assert_registry_tags_absent.sh \
+            "${IMAGE_REPOSITORY}:${version}"
+
+          python scripts/promote_next_release.py --apply
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- \
+            hass_mcp_engineering_beta/config.yaml \
+            hass_mcp_engineering_beta/ha_mcp_engineering/version.py \
+            scripts/validate_addon_metadata.py
+          git add -A -- .release/next-version
+          git commit -m "Promote HA MCP Engineering Server ${version}"
+          release_sha="$(git rev-parse HEAD)"
+          build_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+          if [[ ! "$release_sha" =~ ^[0-9a-f]{40}$ || ! "$build_time" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+            echo "::error::Release provenance is not a bounded commit SHA and UTC RFC3339 timestamp."
+            exit 1
+          fi
+
+          bash scripts/assert_registry_tags_absent.sh \
+            "${IMAGE_REPOSITORY}:sha-${release_sha}"
+
+          python scripts/validate_addon_metadata.py \
+            --repo-root . \
+            --base-ref "$source_main_sha" \
+            --expected-version "$version" \
+            --deployed-version "$current_version"
+          python -m compileall -q hass_mcp_admin hass_mcp_engineering_beta tests
+          python -m unittest discover -s tests -v
+          git diff --check "$source_main_sha..HEAD"
+
+          {
+            echo "source_main_sha=$source_main_sha"
+            echo "current_version=$current_version"
+            echo "version=$version"
+            echo "release_tag=$release_tag"
+            echo "release_sha=$release_sha"
+            echo "build_time=$build_time"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
         with:
           platforms: arm64,arm
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Refuse to overwrite immutable image tags
-        shell: bash
-        env:
-          BUILD_SHA: ${{ needs.release-metadata.outputs.build_sha }}
-          VERSION: ${{ needs.release-metadata.outputs.version }}
-        run: |
-          set -euo pipefail
-          version_image="${IMAGE_REPOSITORY}:${VERSION}"
-          sha_image="${IMAGE_REPOSITORY}:sha-${BUILD_SHA}"
-          bash scripts/assert_registry_tags_absent.sh "$version_image" "$sha_image"
-      - name: Build and push version and source-commit tags
-        id: build-and-push
+
+      - name: Build and publish local release commit
+        id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: ./hass_mcp_engineering_beta
           platforms: linux/amd64,linux/arm64,linux/arm/v7
           push: true
           build-args: |
-            BUILD_VERSION=${{ needs.release-metadata.outputs.version }}
-            HAMCP_BUILD_SHA=${{ needs.release-metadata.outputs.build_sha }}
-            HAMCP_BUILD_TIME=${{ needs.release-metadata.outputs.build_time }}
+            BUILD_VERSION=${{ steps.prepare.outputs.version }}
+            HAMCP_BUILD_SHA=${{ steps.prepare.outputs.release_sha }}
+            HAMCP_BUILD_TIME=${{ steps.prepare.outputs.build_time }}
           tags: |
-            ghcr.io/jeter-1/hass-mcp-engineering-beta:${{ needs.release-metadata.outputs.version }}
-            ghcr.io/jeter-1/hass-mcp-engineering-beta:sha-${{ needs.release-metadata.outputs.build_sha }}
+            ghcr.io/jeter-1/hass-mcp-engineering-beta:${{ steps.prepare.outputs.version }}
+            ghcr.io/jeter-1/hass-mcp-engineering-beta:sha-${{ steps.prepare.outputs.release_sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/jeter-1/hass-mcp-admin
-            org.opencontainers.image.revision=${{ needs.release-metadata.outputs.build_sha }}
-            org.opencontainers.image.created=${{ needs.release-metadata.outputs.build_time }}
-            org.opencontainers.image.version=${{ needs.release-metadata.outputs.version }}
+            org.opencontainers.image.revision=${{ steps.prepare.outputs.release_sha }}
+            org.opencontainers.image.created=${{ steps.prepare.outputs.build_time }}
+            org.opencontainers.image.version=${{ steps.prepare.outputs.version }}
 
-  verify-anonymous-pull:
-    name: Verify public multi-architecture image anonymously
-    needs:
-      - release-metadata
-      - publish
-    runs-on: ubuntu-latest
-    permissions: {}
-    steps:
-      - name: Set up Docker Buildx without registry credentials
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-      - name: Inspect manifests and pull without authentication
+      - name: Verify immutable tags, architectures, and provenance anonymously
         shell: bash
         env:
-          BUILD_SHA: ${{ needs.release-metadata.outputs.build_sha }}
-          EXPECTED_DIGEST: ${{ needs.publish.outputs.digest }}
-          VERSION: ${{ needs.release-metadata.outputs.version }}
+          EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
+          RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
+          BUILD_TIME: ${{ steps.prepare.outputs.build_time }}
+          VERSION: ${{ steps.prepare.outputs.version }}
         run: |
           set -euo pipefail
 
+          anonymous_config="$RUNNER_TEMP/anonymous-docker"
+          mkdir -p "$anonymous_config"
           version_image="${IMAGE_REPOSITORY}:${VERSION}"
-          sha_image="${IMAGE_REPOSITORY}:sha-${BUILD_SHA}"
-          manifest_json="$RUNNER_TEMP/rc-manifest.json"
+          sha_image="${IMAGE_REPOSITORY}:sha-${RELEASE_SHA}"
+          manifest_json="$RUNNER_TEMP/release-manifest.json"
           version_inspect="$RUNNER_TEMP/version-inspect.txt"
           sha_inspect="$RUNNER_TEMP/sha-inspect.txt"
 
-          docker_config="${DOCKER_CONFIG:-$HOME/.docker}/config.json"
-          if [[ -f "$docker_config" ]] && grep -q 'ghcr\.io' "$docker_config"; then
-            echo "::error::Anonymous verification runner unexpectedly contains GHCR credentials."
-            exit 1
-          fi
-
-          if ! docker buildx imagetools inspect --raw "$version_image" > "$manifest_json"; then
-            echo "::error title=GHCR package is not public::Make the hass-mcp-engineering-beta package Public at https://github.com/users/jeter-1/packages/container/hass-mcp-engineering-beta/settings, then re-run only this anonymous verification job. Do not refresh Home Assistant yet."
-            exit 1
-          fi
+          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect --raw \
+            "$version_image" > "$manifest_json"
+          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
+            "$version_image" > "$version_inspect"
+          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
+            "$sha_image" > "$sha_inspect"
 
           python - "$manifest_json" <<'PY'
           import json
@@ -208,24 +227,86 @@ jobs:
               raise SystemExit(f"multi-architecture manifest is missing: {sorted(missing)!r}")
           PY
 
-          docker buildx imagetools inspect "$version_image" > "$version_inspect"
-          docker buildx imagetools inspect "$sha_image" > "$sha_inspect"
           version_digest="$(awk '$1 == "Digest:" { print $2; exit }' "$version_inspect")"
           sha_digest="$(awk '$1 == "Digest:" { print $2; exit }' "$sha_inspect")"
           if [[ -z "$EXPECTED_DIGEST" || "$version_digest" != "$EXPECTED_DIGEST" || "$sha_digest" != "$EXPECTED_DIGEST" ]]; then
-            echo "::error::Version and source-commit tags must resolve to the published manifest digest."
+            echo "::error::The version and release-commit tags do not share the published immutable digest."
             exit 1
           fi
 
-          if ! docker pull --platform linux/amd64 "$version_image"; then
-            echo "::error title=Anonymous pull failed::The GHCR package must be publicly pullable before Home Assistant is refreshed."
+          DOCKER_CONFIG="$anonymous_config" docker pull --platform linux/amd64 "$version_image"
+          actual_revision="$(docker image inspect "$version_image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+          actual_created="$(docker image inspect "$version_image" --format '{{ index .Config.Labels "org.opencontainers.image.created" }}')"
+          actual_version="$(docker image inspect "$version_image" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
+          actual_source="$(docker image inspect "$version_image" --format '{{ index .Config.Labels "org.opencontainers.image.source" }}')"
+          if [[ "$actual_revision" != "$RELEASE_SHA" || "$actual_created" != "$BUILD_TIME" || "$actual_version" != "$VERSION" || "$actual_source" != "https://github.com/jeter-1/hass-mcp-admin" ]]; then
+            echo "::error::The anonymously pulled image provenance does not match the local release commit."
             exit 1
           fi
 
+      - name: Atomically push release commit and annotated tag
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
+          RELEASE_TAG: ${{ steps.prepare.outputs.release_tag }}
+          SOURCE_MAIN_SHA: ${{ steps.prepare.outputs.source_main_sha }}
+        run: |
+          set -euo pipefail
+
+          remote_main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          if [[ "$remote_main_sha" != "$SOURCE_MAIN_SHA" ]]; then
+            echo "::error::Main changed after publication; refusing to promote or overwrite it."
+            exit 1
+          fi
+          if [[ "$(git rev-parse HEAD)" != "$RELEASE_SHA" ]]; then
+            echo "::error::The local release commit changed after image publication."
+            exit 1
+          fi
+
+          git tag -a "$RELEASE_TAG" "$RELEASE_SHA" \
+            -m "HA MCP Engineering Server ${{ steps.prepare.outputs.version }}"
+          git push --atomic origin \
+            "HEAD:refs/heads/main" \
+            "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+
+          promoted_main="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          promoted_tag="$(git ls-remote origin "refs/tags/${RELEASE_TAG}^{}" | awk '{print $1}')"
+          if [[ "$promoted_main" != "$RELEASE_SHA" || "$promoted_tag" != "$RELEASE_SHA" ]]; then
+            echo "::error::Remote main and the annotated release tag do not resolve to the release commit."
+            exit 1
+          fi
+
+      - name: Write successful promotion summary
+        shell: bash
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
+          RELEASE_TAG: ${{ steps.prepare.outputs.release_tag }}
+          VERSION: ${{ steps.prepare.outputs.version }}
+        run: |
           {
-            echo "### Anonymous registry verification passed"
-            echo "- Version image: $version_image"
-            echo "- Commit image: $sha_image"
-            echo "- Manifest digest: $EXPECTED_DIGEST"
-            echo "- Platforms: linux/amd64, linux/arm64, linux/arm/v7"
+            echo "### Engineering release promoted"
+            echo "- Version: $VERSION"
+            echo "- Tag: $RELEASE_TAG"
+            echo "- Release commit: $RELEASE_SHA"
+            echo "- Version image: ${IMAGE_REPOSITORY}:${VERSION}"
+            echo "- Commit image: ${IMAGE_REPOSITORY}:sha-${RELEASE_SHA}"
+            echo "- OCI digest: $DIGEST"
+            echo "- Architectures: linux/amd64, linux/arm64, linux/arm/v7"
+            echo "- Anonymous verification: passed"
+            echo "- Operator action: refresh the Home Assistant add-on store if needed, then update Engineering Beta."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write fail-closed reconciliation summary
+        if: failure()
+        shell: bash
+        run: |
+          {
+            echo "### Engineering release promotion requires reconciliation"
+            echo "- Candidate version: ${{ steps.prepare.outputs.version || 'unavailable' }}"
+            echo "- Source main commit: ${{ steps.prepare.outputs.source_main_sha || github.sha }}"
+            echo "- Local release commit: ${{ steps.prepare.outputs.release_sha || 'not-created' }}"
+            echo "- Published digest: ${{ steps.build.outputs.digest || 'not-published' }}"
+            echo "- The workflow did not force-push or overwrite main."
+            echo "- If an immutable image tag was published, do not reuse it silently; make an explicit recovery decision."
           } >> "$GITHUB_STEP_SUMMARY"

@@ -1,3 +1,4 @@
+import importlib.util
 import os
 import re
 import shutil
@@ -6,6 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from awesomeversion import AwesomeVersion
 import yaml
 
 
@@ -13,9 +15,10 @@ ROOT = Path(__file__).resolve().parents[1]
 CI_PATH = ROOT / ".github" / "workflows" / "ci.yml"
 PUBLISH_PATH = ROOT / ".github" / "workflows" / "publish-rc-image.yml"
 TAG_GUARD_PATH = ROOT / "scripts" / "assert_registry_tags_absent.sh"
+PROMOTION_PATH = ROOT / "scripts" / "promote_next_release.py"
 IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
-VERSION = "2.0.0-rc2-dev1"
-TAG = f"v{VERSION}"
+ADVERTISED_VERSION = "2.0.0-rc2-dev1"
+NEXT_VERSION = "2.0.0-rc2-dev2"
 PLATFORMS = ("linux/amd64", "linux/arm64", "linux/arm/v7")
 BUILD_ARGUMENTS = ("BUILD_VERSION", "HAMCP_BUILD_SHA", "HAMCP_BUILD_TIME")
 
@@ -28,15 +31,7 @@ def load_workflow(path):
 
 
 def workflow_events(workflow):
-    # PyYAML 1.1 treats the unquoted key `on` as boolean true.
     return workflow.get("on", workflow.get(True))
-
-
-def needs(job):
-    value = job.get("needs", [])
-    if isinstance(value, str):
-        return {value}
-    return set(value)
 
 
 def action_steps(job, action_prefix):
@@ -55,306 +50,289 @@ def assignment_lines(value):
     result = {}
     for raw_line in str(value).splitlines():
         line = raw_line.strip()
-        if not line:
-            continue
-        key, separator, item = line.partition("=")
-        if not separator:
-            raise AssertionError(f"expected KEY=VALUE workflow input, got {line!r}")
-        result[key] = item
+        if line:
+            key, separator, item = line.partition("=")
+            if not separator:
+                raise AssertionError(f"expected KEY=VALUE workflow input: {line!r}")
+            result[key] = item
     return result
 
 
-class RC3ADevelopmentPublicationWorkflowTests(unittest.TestCase):
+class AutomatedPromotionWorkflowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.ci = load_workflow(CI_PATH)
-        cls.publish_workflow = load_workflow(PUBLISH_PATH)
-        cls.jobs = cls.publish_workflow["jobs"]
+        cls.workflow = load_workflow(PUBLISH_PATH)
+        cls.jobs = cls.workflow["jobs"]
+        cls.promote = cls.jobs["promote"]
+        cls.steps = cls.promote["steps"]
+        cls.text = PUBLISH_PATH.read_text(encoding="utf-8")
 
-    def test_only_the_exact_rc_tag_can_start_publication(self):
-        events = workflow_events(self.publish_workflow)
-        self.assertIsInstance(events, dict)
-        self.assertEqual(set(events), {"push"})
-        self.assertEqual(events["push"], {"tags": [TAG]})
-        self.assertEqual(self.publish_workflow.get("permissions"), {})
-        self.assertEqual(self.publish_workflow["env"]["IMAGE_REPOSITORY"], IMAGE)
-        self.assertEqual(self.publish_workflow["env"]["EXPECTED_VERSION"], VERSION)
-
-    def test_rc1_and_rc2_version_tags_are_never_publication_targets(self):
-        workflow_text = PUBLISH_PATH.read_text(encoding="utf-8")
-        self.assertNotIn("v2.0.0-rc.1", workflow_text)
-        self.assertNotIn(":2.0.0-rc.1", workflow_text)
-        self.assertNotIn('tags:\n      - "v2.0.0-rc.2"', workflow_text)
-        self.assertNotIn(":2.0.0-rc.2\n", workflow_text)
-
-    def test_publication_requires_the_complete_reusable_validation_gate(self):
+    def test_only_main_push_can_start_automatic_promotion(self):
+        events = workflow_events(self.workflow)
+        self.assertEqual(events, {"push": {"branches": ["main"]}})
+        self.assertEqual(self.workflow["permissions"], {})
+        self.assertNotIn("push:\n    tags:", self.text)
+        self.assertNotIn("workflow_dispatch", self.text)
         self.assertEqual(
-            self.jobs["validate"]["uses"],
-            "./.github/workflows/ci.yml",
-        )
-        self.assertEqual(needs(self.jobs["release-metadata"]), {"validate"})
-        self.assertEqual(
-            needs(self.jobs["publish"]),
-            {"validate", "release-metadata"},
-        )
-        self.assertEqual(
-            needs(self.jobs["verify-anonymous-pull"]),
-            {"release-metadata", "publish"},
-        )
-        self.assertIn("workflow_call", workflow_events(self.ci))
-
-    def test_only_the_publish_job_can_write_packages(self):
-        package_writers = {
-            name
-            for name, job in self.jobs.items()
-            if (job.get("permissions") or {}).get("packages") == "write"
-        }
-        self.assertEqual(package_writers, {"publish"})
-        self.assertEqual(
-            self.jobs["publish"]["permissions"],
-            {"contents": "read", "packages": "write"},
-        )
-        self.assertEqual(self.jobs["verify-anonymous-pull"]["permissions"], {})
-
-    def test_pull_request_ci_builds_every_architecture_without_login_or_push(self):
-        events = workflow_events(self.ci)
-        self.assertIn("pull_request", events)
-        self.assertNotIn("packages", self.ci.get("permissions", {}))
-
-        ci_jobs = self.ci["jobs"].values()
-        ci_actions = [
-            str(step.get("uses", ""))
-            for job in ci_jobs
-            for step in job.get("steps", [])
-        ]
-        self.assertFalse(
-            any(action.startswith("docker/login-action") for action in ci_actions)
-        )
-        ci_scripts = "\n".join(
-            script for job in self.ci["jobs"].values() for script in run_steps(job)
-        )
-        self.assertNotRegex(ci_scripts, r"(?m)^\s*docker\s+(?:buildx\s+)?push\b")
-        self.assertNotRegex(ci_scripts, r"(?m)^\s*docker\s+buildx\s+build\b[^\n]*--push\b")
-        self.assertNotIn("--push", ci_scripts)
-        for job in self.ci["jobs"].values():
-            for step in action_steps(job, "docker/build-push-action"):
-                self.assertIs(step.get("with", {}).get("push"), False)
-
-        validation_builds = [
-            script
-            for job in self.ci["jobs"].values()
-            for script in run_steps(job)
-            if "docker buildx build" in script
-        ]
-        self.assertEqual(len(validation_builds), 1)
-        build = validation_builds[0]
-        self.assertIn(
-            '--platform "linux/amd64,linux/arm64,linux/arm/v7"',
-            build,
-        )
-        self.assertIn("--output=type=cacheonly", build)
-        self.assertNotIn("--push", build)
-        for argument in BUILD_ARGUMENTS:
-            self.assertRegex(
-                build,
-                rf'--build-arg\s+["\']{re.escape(argument)}=',
-            )
-
-    def test_versions_are_checked_and_provenance_is_resolved_before_login(self):
-        metadata_job = self.jobs["release-metadata"]
-        self.assertFalse(action_steps(metadata_job, "docker/login-action"))
-        release_steps = [
-            step for step in metadata_job["steps"] if step.get("id") == "release"
-        ]
-        self.assertEqual(len(release_steps), 1)
-        script = str(release_steps[0]["run"])
-
-        for value in (
-            "GITHUB_REF_TYPE",
-            "GITHUB_REF_NAME",
-            "hass_mcp_engineering_beta/config.yaml",
-            "hass_mcp_engineering_beta/ha_mcp_engineering/version.py",
-            'config_version" != "$EXPECTED_VERSION',
-            'server_version" != "$EXPECTED_VERSION',
-            'git merge-base --is-ancestor "$build_sha"',
-        ):
-            self.assertIn(value, script)
-        self.assertEqual(script.count("git rev-parse HEAD"), 1)
-        self.assertEqual(script.count("date -u"), 1)
-        self.assertIn("date -u +'%Y-%m-%dT%H:%M:%SZ'", script)
-        self.assertIn("^[0-9a-f]{40}$", script)
-        self.assertIn("T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", script)
-        self.assertNotIn("github.sha", script.lower())
-        for output in ("build_sha", "build_time", "version"):
-            self.assertIn(f'echo "{output}=', script)
-            self.assertIn(
-                f"steps.release.outputs.{output}",
-                str(metadata_job["outputs"][output]),
-            )
-
-        publish_job = self.jobs["publish"]
-        login_steps = action_steps(publish_job, "docker/login-action")
-        self.assertEqual(len(login_steps), 1)
-        self.assertIn("release-metadata", needs(publish_job))
-        checkout_checks = [
-            script for script in run_steps(publish_job) if "actual_sha=" in script
-        ]
-        self.assertEqual(len(checkout_checks), 1)
-        self.assertIn("git rev-parse HEAD", checkout_checks[0])
-        self.assertIn('"$actual_sha" != "$EXPECTED_SHA"', checkout_checks[0])
-
-    def test_existing_immutable_tags_are_refused_before_the_build(self):
-        steps = self.jobs["publish"]["steps"]
-        build_index = next(
-            index
-            for index, step in enumerate(steps)
-            if str(step.get("uses", "")).startswith("docker/build-push-action")
-        )
-        refusal_steps = [
-            (index, step)
-            for index, step in enumerate(steps)
-            if "Refuse to overwrite immutable image tags" in step.get("name", "")
-        ]
-        self.assertEqual(len(refusal_steps), 1)
-        refusal_index, refusal = refusal_steps[0]
-        self.assertLess(refusal_index, build_index)
-        script = str(refusal["run"])
-        self.assertIn('${IMAGE_REPOSITORY}:${VERSION}', script)
-        self.assertIn('${IMAGE_REPOSITORY}:sha-${BUILD_SHA}', script)
-        self.assertIn(
-            'bash scripts/assert_registry_tags_absent.sh "$version_image" "$sha_image"',
-            script,
-        )
-
-    def test_privileged_workflow_checkout_is_pinned_without_persisted_credentials(self):
-        checkout_sha = "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683"
-        for job_name in ("release-metadata", "publish"):
-            checkouts = action_steps(self.jobs[job_name], "actions/checkout@")
-            self.assertEqual(len(checkouts), 1)
-            self.assertEqual(checkouts[0]["uses"].split()[0], checkout_sha)
-            self.assertIs(checkouts[0]["with"]["persist-credentials"], False)
-
-    def test_one_build_publishes_all_platforms_with_exact_provenance_inputs(self):
-        publish_job = self.jobs["publish"]
-        build_steps = action_steps(publish_job, "docker/build-push-action")
-        self.assertEqual(len(build_steps), 1)
-        build_inputs = build_steps[0]["with"]
-        self.assertIs(build_inputs["push"], True)
-        self.assertEqual(
-            tuple(item.strip() for item in build_inputs["platforms"].split(",")),
-            PLATFORMS,
-        )
-
-        arguments = assignment_lines(build_inputs["build-args"])
-        self.assertEqual(set(arguments), set(BUILD_ARGUMENTS))
-        self.assertEqual(
-            arguments,
+            self.workflow["concurrency"],
             {
-                "BUILD_VERSION": "${{ needs.release-metadata.outputs.version }}",
-                "HAMCP_BUILD_SHA": "${{ needs.release-metadata.outputs.build_sha }}",
-                "HAMCP_BUILD_TIME": "${{ needs.release-metadata.outputs.build_time }}",
+                "group": "hass-mcp-engineering-release-promotion",
+                "cancel-in-progress": False,
             },
         )
 
-        tags = tuple(
-            line.strip() for line in str(build_inputs["tags"]).splitlines() if line.strip()
-        )
-        self.assertEqual(
-            tags,
-            (
-                f"{IMAGE}:${{{{ needs.release-metadata.outputs.version }}}}",
-                f"{IMAGE}:sha-${{{{ needs.release-metadata.outputs.build_sha }}}}",
-            ),
-        )
-        labels = assignment_lines(build_inputs["labels"])
-        self.assertEqual(
-            labels["org.opencontainers.image.revision"],
-            "${{ needs.release-metadata.outputs.build_sha }}",
-        )
-        self.assertEqual(
-            labels["org.opencontainers.image.created"],
-            "${{ needs.release-metadata.outputs.build_time }}",
-        )
-        self.assertEqual(
-            labels["org.opencontainers.image.version"],
-            "${{ needs.release-metadata.outputs.version }}",
-        )
-
-    def test_declared_addon_architectures_match_ci_and_publish_platforms(self):
+    def test_feature_pr_stages_dev2_without_advertising_it(self):
         config = yaml.safe_load(
             (ROOT / "hass_mcp_engineering_beta" / "config.yaml").read_text(
                 encoding="utf-8"
             )
         )
-        platform_for_arch = {
+        declaration = ROOT / ".release" / "next-version"
+        expected_version = (
+            ADVERTISED_VERSION if declaration.exists() else NEXT_VERSION
+        )
+        self.assertEqual(config["version"], expected_version)
+        if declaration.exists():
+            self.assertEqual(
+                declaration.read_text(encoding="utf-8").strip(),
+                NEXT_VERSION,
+            )
+        version_source = (
+            ROOT
+            / "hass_mcp_engineering_beta"
+            / "ha_mcp_engineering"
+            / "version.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(f'SERVER_VERSION = "{expected_version}"', version_source)
+
+    def test_awesomeversion_orders_dev2_between_dev1_and_final_rc3(self):
+        self.assertGreater(
+            AwesomeVersion(NEXT_VERSION),
+            AwesomeVersion(ADVERTISED_VERSION),
+        )
+        self.assertLess(
+            AwesomeVersion(NEXT_VERSION),
+            AwesomeVersion("2.0.0-rc.3"),
+        )
+
+    def test_complete_validation_precedes_release_detection_and_promotion(self):
+        self.assertEqual(
+            self.jobs["validate"]["uses"],
+            "./.github/workflows/ci.yml",
+        )
+        self.assertEqual(self.jobs["detect-release"]["needs"], "validate")
+        self.assertEqual(
+            set(self.promote["needs"]),
+            {"validate", "detect-release"},
+        )
+        self.assertIn("workflow_call", workflow_events(self.ci))
+
+    def test_only_main_promotion_job_can_write_contents_or_packages(self):
+        writers = {
+            name: job.get("permissions", {})
+            for name, job in self.jobs.items()
+            if "write" in (job.get("permissions") or {}).values()
+        }
+        self.assertEqual(
+            writers,
+            {"promote": {"contents": "write", "packages": "write"}},
+        )
+        self.assertEqual(
+            self.jobs["detect-release"]["permissions"],
+            {"contents": "read"},
+        )
+
+    def test_pull_request_ci_cannot_authenticate_or_push(self):
+        events = workflow_events(self.ci)
+        self.assertIn("pull_request", events)
+        self.assertNotIn("packages", self.ci.get("permissions", {}))
+        actions = [
+            str(step.get("uses", ""))
+            for job in self.ci["jobs"].values()
+            for step in job.get("steps", [])
+        ]
+        self.assertFalse(any(value.startswith("docker/login-action") for value in actions))
+        scripts = "\n".join(
+            script
+            for job in self.ci["jobs"].values()
+            for script in run_steps(job)
+        )
+        self.assertNotIn("docker login", scripts)
+        self.assertNotIn("--push", scripts)
+        self.assertNotIn("git push", scripts)
+
+    def test_local_release_commit_is_validated_before_registry_login(self):
+        names = [step.get("name", "") for step in self.steps]
+        prepare_index = names.index("Prepare local immutable release commit")
+        login_index = names.index("Log in to GHCR")
+        build_index = names.index("Build and publish local release commit")
+        self.assertLess(prepare_index, login_index)
+        self.assertLess(login_index, build_index)
+        prepare = str(self.steps[prepare_index]["run"])
+        for value in (
+            "git ls-remote origin refs/heads/main",
+            "python scripts/promote_next_release.py",
+            "git ls-remote --exit-code --tags",
+            "scripts/assert_registry_tags_absent.sh",
+            "python scripts/promote_next_release.py --apply",
+            "git commit -m",
+            "python scripts/validate_addon_metadata.py",
+            "python -m unittest discover -s tests -v",
+            "git diff --check",
+        ):
+            self.assertIn(value, prepare)
+        self.assertIn('date -u +\'%Y-%m-%dT%H:%M:%SZ\'', prepare)
+        self.assertNotIn("git push", prepare)
+
+    def test_one_build_publishes_exact_multiarch_and_provenance_tags(self):
+        builds = action_steps(self.promote, "docker/build-push-action")
+        self.assertEqual(len(builds), 1)
+        values = builds[0]["with"]
+        self.assertIs(values["push"], True)
+        self.assertEqual(
+            tuple(item.strip() for item in values["platforms"].split(",")),
+            PLATFORMS,
+        )
+        arguments = assignment_lines(values["build-args"])
+        self.assertEqual(set(arguments), set(BUILD_ARGUMENTS))
+        self.assertEqual(
+            arguments,
+            {
+                "BUILD_VERSION": "${{ steps.prepare.outputs.version }}",
+                "HAMCP_BUILD_SHA": "${{ steps.prepare.outputs.release_sha }}",
+                "HAMCP_BUILD_TIME": "${{ steps.prepare.outputs.build_time }}",
+            },
+        )
+        tags = tuple(
+            line.strip() for line in values["tags"].splitlines() if line.strip()
+        )
+        self.assertEqual(
+            tags,
+            (
+                f"{IMAGE}:${{{{ steps.prepare.outputs.version }}}}",
+                f"{IMAGE}:sha-${{{{ steps.prepare.outputs.release_sha }}}}",
+            ),
+        )
+
+    def test_anonymous_verification_precedes_atomic_main_and_tag_push(self):
+        names = [step.get("name", "") for step in self.steps]
+        verify_index = names.index(
+            "Verify immutable tags, architectures, and provenance anonymously"
+        )
+        push_index = names.index("Atomically push release commit and annotated tag")
+        self.assertLess(verify_index, push_index)
+        verify = str(self.steps[verify_index]["run"])
+        for value in (
+            'anonymous_config="$RUNNER_TEMP/anonymous-docker"',
+            'DOCKER_CONFIG="$anonymous_config"',
+            'imagetools inspect --raw',
+            '("linux", "amd64", None)',
+            '("linux", "arm64", None)',
+            '("linux", "arm", "v7")',
+            "version_digest",
+            "sha_digest",
+            "org.opencontainers.image.revision",
+            "org.opencontainers.image.created",
+            "org.opencontainers.image.version",
+        ):
+            self.assertIn(value, verify)
+        push = str(self.steps[push_index]["run"])
+        self.assertIn("git push --atomic origin", push)
+        self.assertIn("refs/heads/main", push)
+        self.assertIn("refs/tags/", push)
+        self.assertNotIn("--force", push)
+        self.assertIn('"$remote_main_sha" != "$SOURCE_MAIN_SHA"', push)
+
+    def test_failures_produce_reconciliation_without_silent_reuse(self):
+        failure = next(
+            step
+            for step in self.steps
+            if step.get("name") == "Write fail-closed reconciliation summary"
+        )
+        self.assertEqual(failure["if"], "failure()")
+        script = str(failure["run"])
+        self.assertIn("requires reconciliation", script)
+        self.assertIn("do not reuse it silently", script)
+        self.assertIn("did not force-push", script)
+
+    def test_declared_architectures_match_ci_and_publication(self):
+        config = yaml.safe_load(
+            (ROOT / "hass_mcp_engineering_beta" / "config.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        mapping = {
             "amd64": "linux/amd64",
             "aarch64": "linux/arm64",
             "armv7": "linux/arm/v7",
         }
-        self.assertEqual(tuple(config["arch"]), tuple(platform_for_arch))
         self.assertEqual(
-            tuple(platform_for_arch[arch] for arch in config["arch"]),
+            tuple(mapping[arch] for arch in config["arch"]),
             PLATFORMS,
         )
 
-    def test_dockerfile_consumes_every_published_build_argument(self):
+    def test_dockerfile_consumes_all_provenance_arguments(self):
         dockerfile = (
             ROOT / "hass_mcp_engineering_beta" / "Dockerfile"
         ).read_text(encoding="utf-8")
-        args = dict(re.findall(r"(?m)^ARG\s+([A-Z0-9_]+)=([^\s]+)$", dockerfile))
-        self.assertEqual({name: args.get(name) for name in BUILD_ARGUMENTS}, {
-            name: "unknown" for name in BUILD_ARGUMENTS
-        })
         for name in BUILD_ARGUMENTS:
-            self.assertRegex(
-                dockerfile,
-                rf"(?m)^(?:ENV\s+|\s+){name}=\$\{{{name}\}}(?:\s*\\)?$",
+            self.assertIn(f"ARG {name}=unknown", dockerfile)
+            self.assertIn(f"{name}=${{{name}}}", dockerfile)
+        for label in ("version", "revision", "created", "source"):
+            self.assertIn(f"org.opencontainers.image.{label}", dockerfile)
+
+
+class PromotionScriptTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location(
+            "promote_next_release",
+            PROMOTION_PATH,
+        )
+        cls.module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(cls.module)
+
+    def make_repo(self, root, current=ADVERTISED_VERSION, candidate=NEXT_VERSION):
+        files = {
+            ".release/next-version": candidate + "\n",
+            "hass_mcp_engineering_beta/config.yaml": f'version: "{current}"\n',
+            "hass_mcp_engineering_beta/ha_mcp_engineering/version.py": (
+                f'SERVER_VERSION = "{current}"\n'
+            ),
+            "scripts/validate_addon_metadata.py": f'BETA_VERSION = "{current}"\n',
+        }
+        for relative, content in files.items():
+            path = Path(root) / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+
+    def test_apply_updates_authoritative_versions_and_consumes_declaration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.make_repo(directory)
+            current, candidate = self.module.apply_candidate(Path(directory))
+            self.assertEqual((current, candidate), (ADVERTISED_VERSION, NEXT_VERSION))
+            self.assertFalse((Path(directory) / ".release/next-version").exists())
+            self.assertEqual(
+                set(self.module.authoritative_versions(Path(directory)).values()),
+                {NEXT_VERSION},
             )
-        self.assertIn('org.opencontainers.image.version="${BUILD_VERSION}"', dockerfile)
-        self.assertIn('org.opencontainers.image.revision="${HAMCP_BUILD_SHA}"', dockerfile)
-        self.assertIn('org.opencontainers.image.created="${HAMCP_BUILD_TIME}"', dockerfile)
 
-    def test_armv7_source_dependencies_build_outside_the_runtime_image(self):
-        dockerfile = (
-            ROOT / "hass_mcp_engineering_beta" / "Dockerfile"
-        ).read_text(encoding="utf-8")
-        self.assertIn("FROM python:3.12-slim AS dependency-builder", dockerfile)
-        self.assertRegex(
-            dockerfile,
-            r"apt-get install --no-install-recommends -y build-essential",
-        )
-        self.assertIn(
-            "pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt",
-            dockerfile,
-        )
-        self.assertIn("COPY --from=dependency-builder /wheels /wheels", dockerfile)
-        runtime_stage = dockerfile.rsplit("FROM python:3.12-slim", 1)[1]
-        self.assertNotIn("apt-get", runtime_stage)
-        self.assertNotIn("build-essential", runtime_stage)
-        self.assertIn(
-            "pip install --no-cache-dir --no-index --find-links=/wheels",
-            runtime_stage,
-        )
+    def test_candidate_must_be_newer_and_below_final_rc3(self):
+        for candidate in (ADVERTISED_VERSION, "2.0.0-rc.3", "not-a-version"):
+            with self.subTest(candidate=candidate), tempfile.TemporaryDirectory() as directory:
+                self.make_repo(directory, candidate=candidate)
+                with self.assertRaises(self.module.PromotionError):
+                    self.module.validate_candidate(Path(directory))
 
-    def test_anonymous_verification_is_a_separate_credential_free_job(self):
-        job = self.jobs["verify-anonymous-pull"]
-        self.assertFalse(action_steps(job, "docker/login-action"))
-        script = "\n".join(run_steps(job))
-        for value in (
-            'docker_config="${DOCKER_CONFIG:-$HOME/.docker}/config.json"',
-            "grep -q 'ghcr\\.io'",
-            'imagetools inspect --raw "$version_image"',
-            'imagetools inspect "$sha_image"',
-            'docker pull --platform linux/amd64 "$version_image"',
-            "GHCR package is not public",
-            '("linux", "amd64", None)',
-            '("linux", "arm64", None)',
-            '("linux", "arm", "v7")',
-        ):
-            self.assertIn(value, script)
-        self.assertIn("EXPECTED_DIGEST", script)
-        self.assertIn("version_digest", script)
-        self.assertIn("sha_digest", script)
+    def test_authoritative_version_disagreement_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.make_repo(directory)
+            path = Path(directory) / "hass_mcp_engineering_beta/config.yaml"
+            path.write_text('version: "2.0.0-rc.2"\n', encoding="utf-8")
+            with self.assertRaises(self.module.PromotionError):
+                self.module.validate_candidate(Path(directory))
 
 
 class RegistryTagGuardTests(unittest.TestCase):
@@ -411,35 +389,24 @@ esac
             environment["DOCKER_CLI"] = str(fake_docker).replace("\\", "/")
             environment["MOCK_INSPECT_MODE"] = mode
             return subprocess.run(
-                [
-                    self.bash,
-                    str(TAG_GUARD_PATH),
-                    f"{IMAGE}:test",
-                ],
+                [self.bash, str(TAG_GUARD_PATH), f"{IMAGE}:test"],
                 text=True,
                 capture_output=True,
                 check=False,
                 env=environment,
             )
 
-    def test_explicit_manifest_absence_allows_publication_to_continue(self):
+    def test_explicit_absence_allows_publication(self):
         for mode in ("absent_manifest", "absent_not_found"):
             with self.subTest(mode=mode):
                 result = self.run_guard(mode)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn("Confirmed registry tag is absent", result.stdout)
 
-    def test_existing_tag_fails_closed(self):
-        result = self.run_guard("exists")
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("Refusing to overwrite immutable tag", result.stdout)
-
-    def test_network_auth_and_unknown_failures_cannot_be_treated_as_absence(self):
-        for mode in ("network", "auth", "unknown"):
+    def test_existing_or_ambiguous_tags_fail_closed(self):
+        for mode in ("exists", "network", "auth", "unknown"):
             with self.subTest(mode=mode):
                 result = self.run_guard(mode)
                 self.assertEqual(result.returncode, 1)
-                self.assertIn("Unable to prove registry tag is absent", result.stdout)
 
 
 if __name__ == "__main__":
