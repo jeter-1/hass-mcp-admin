@@ -1761,13 +1761,20 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ToolCompatibilityTests(unittest.TestCase):
-    def test_exactly_38_tools_and_all_prior_schemas_unchanged(self):
+    def test_exactly_40_tools_and_all_prior_schemas_unchanged(self):
         tools = get_registered_server()._tool_manager.list_tools()
-        self.assertEqual(len(tools), 38)
+        self.assertEqual(len(tools), 40)
         current = {item.name: item for item in tools}
         self.assertEqual(
             set(current) - set(BETA14_SCHEMA_HASHES),
-            {"change_impact_analysis", "configuration_integrity_analysis", "incident_correlation", "handoff_generation"},
+            {
+                "change_impact_analysis",
+                "configuration_integrity_analysis",
+                "incident_correlation",
+                "handoff_generation",
+                "list_dashboards",
+                "get_dashboard_config",
+            },
         )
         for name, expected in BETA14_SCHEMA_HASHES.items():
             digest = hashlib.sha256(

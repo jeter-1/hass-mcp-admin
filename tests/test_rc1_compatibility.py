@@ -104,6 +104,10 @@ BETA26_TOOL_NAMES = (
     "server_info",
     "upsert_automation",
 )
+RC3A_ADDITIVE_TOOL_NAMES = (
+    "get_dashboard_config",
+    "list_dashboards",
+)
 
 NOW = datetime(2026, 7, 14, 12, 0, tzinfo=timezone.utc)
 FUTURE = (NOW + timedelta(hours=4)).isoformat()
@@ -141,11 +145,18 @@ class RC1PublicContractTests(unittest.TestCase):
         tools = get_registered_server()._tool_manager.list_tools()
         names = tuple(sorted(tool.name for tool in tools))
         schemas = {tool.name: tool.parameters for tool in tools}
+        beta26_schemas = {
+            name: schemas[name]
+            for name in BETA26_TOOL_NAMES
+        }
         enums = []
-        for name, schema in sorted(schemas.items()):
+        for name, schema in sorted(beta26_schemas.items()):
             enums.extend(enum_rows(schema, name))
-        self.assertEqual(names, BETA26_TOOL_NAMES)
-        self.assertEqual(canonical_sha256(schemas), BETA26_SCHEMA_SHA256)
+        self.assertEqual(
+            names,
+            tuple(sorted((*BETA26_TOOL_NAMES, *RC3A_ADDITIVE_TOOL_NAMES))),
+        )
+        self.assertEqual(canonical_sha256(beta26_schemas), BETA26_SCHEMA_SHA256)
         self.assertEqual(
             canonical_sha256(schemas["search_entities"]),
             BETA26_SEARCH_ENTITIES_SCHEMA_SHA256,
@@ -153,7 +164,7 @@ class RC1PublicContractTests(unittest.TestCase):
         self.assertEqual(canonical_sha256(enums), BETA26_ENUM_SHA256)
         self.assertEqual(len(enums), 13)
 
-    def test_only_search_entities_has_the_authorized_routing_correction(self):
+    def test_rc2_routing_is_frozen_and_rc3a_adds_only_dashboard_routes(self):
         classifications = {
             item["tool"]: dict(item) for item in (*CAPABILITIES, *BETA_NATIVE_CAPABILITIES)
         }
@@ -198,13 +209,57 @@ class RC1PublicContractTests(unittest.TestCase):
                 "justification": "Bounded entity discovery requires one read-only Home Assistant state inventory while Standard HA MCP delegation is unavailable.",
             },
         )
+        self.assertEqual(
+            classifications["list_dashboards"],
+            {
+                "tool": "list_dashboards",
+                "category": "discovery",
+                "status": "beta_native",
+                "risk": "read",
+                "additive": True,
+                "routing": "upstream_dashboard",
+                "provider": "upstream_dashboard",
+                "policy": "dashboard_inventory_read",
+                "fallback": "none",
+            },
+        )
+        self.assertEqual(
+            classifications["get_dashboard_config"],
+            {
+                "tool": "get_dashboard_config",
+                "category": "evidence",
+                "status": "beta_native",
+                "risk": "read",
+                "additive": True,
+                "routing": "upstream_dashboard",
+                "provider": "upstream_dashboard",
+                "policy": "exact_dashboard_configuration_read",
+                "fallback": "none",
+            },
+        )
+        for tool_name, capability in (
+            ("list_dashboards", "dashboard_inventory"),
+            ("get_dashboard_config", "dashboard_configuration_evidence"),
+        ):
+            self.assertEqual(
+                routing[tool_name],
+                {
+                    "capability": capability,
+                    "route": "upstream_dashboard",
+                    "preferred_provider": "upstream_dashboard",
+                    "fallback_providers": [],
+                    "explicit_direct_fallback_allowed": False,
+                },
+            )
 
         baseline_classifications = {
-            name: dict(item) for name, item in classifications.items()
+            name: dict(classifications[name]) for name in BETA26_TOOL_NAMES
         }
         baseline_classifications["search_entities"].pop("routing")
         baseline_classifications["search_entities"].pop("provider")
-        baseline_routing = {name: dict(item) for name, item in routing.items()}
+        baseline_routing = {
+            name: dict(routing[name]) for name in BETA26_TOOL_NAMES
+        }
         baseline_routing["search_entities"].update(
             {
                 "route": "standard_mcp_preferred",
@@ -231,7 +286,7 @@ class RC1PublicContractTests(unittest.TestCase):
             BETA26_DIRECT_POLICY_SHA256,
         )
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(classifications), 38)
+        self.assertEqual(len(classifications), 40)
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

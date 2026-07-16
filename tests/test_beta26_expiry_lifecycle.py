@@ -411,12 +411,16 @@ class Beta26LifecycleTests(unittest.IsolatedAsyncioTestCase):
 class Beta26PublicCompatibilityTests(unittest.TestCase):
     def test_beta25_public_schema_snapshot_and_catalog_are_unchanged(self):
         tools = get_registered_server()._tool_manager.list_tools()
-        schemas = {tool.name: tool.parameters for tool in tools}
+        schemas = {
+            tool.name: tool.parameters
+            for tool in tools
+            if tool.name not in {"list_dashboards", "get_dashboard_config"}
+        }
         encoded = json.dumps(schemas, sort_keys=True, separators=(",", ":")).encode()
         self.assertEqual(hashlib.sha256(encoded).hexdigest(), BETA25_PUBLIC_SCHEMA_SHA256)
-        self.assertEqual(len(tools), 38)
+        self.assertEqual(len(tools), 40)
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES), 38)
+        self.assertEqual(len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES), 40)
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 
