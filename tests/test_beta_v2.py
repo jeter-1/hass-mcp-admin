@@ -56,7 +56,11 @@ from ha_mcp_engineering.clients.mcp import (  # noqa: E402
     McpDashboardRead,
     REQUIRED_DASHBOARD_TOOL,
 )
-from ha_mcp_engineering.providers.upstream_dashboard import UPSTREAM_DASHBOARD  # noqa: E402
+from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
+    UPSTREAM_DASHBOARD,
+    _engineering_config_hash,
+    _upstream_config_hash,
+)
 from ha_mcp_engineering.tools import compatibility  # noqa: E402
 from ha_mcp_engineering.tools.registry import get_registered_server  # noqa: E402
 
@@ -158,18 +162,20 @@ class FakeDashboardMcpTransport:
                 "count": 1,
             }
         else:
+            config = {
+                "views": [
+                    {
+                        "title": "Fixture",
+                        "cards": [{"type": "entities"}],
+                    }
+                ]
+            }
             payload = {
                 "success": True,
                 "action": "get",
                 "url_path": arguments["url_path"],
-                "config": {
-                    "views": [
-                        {
-                            "title": "Fixture",
-                            "cards": [{"type": "entities"}],
-                        }
-                    ]
-                },
+                "config": config,
+                "config_hash": _upstream_config_hash(config),
             }
         return McpDashboardRead(
             handshake=self.handshake,
@@ -431,7 +437,7 @@ class AddonIsolationTests(unittest.TestCase):
     def test_beta_metadata_is_distinct_and_valid(self):
         self.assertEqual(self.beta["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(self.beta["slug"], "hass_mcp_engineering_beta")
-        self.assertEqual(self.beta["version"], "2.0.0-rc.2.rc3a.1")
+        self.assertEqual(self.beta["version"], "2.0.0-rc2-dev1")
         self.assertEqual(self.beta["ports"], {"8100/tcp": 8100})
         self.assertNotEqual(self.beta["slug"], self.production["slug"])
         self.assertNotEqual(set(self.beta["ports"]), set(self.production["ports"]))
@@ -586,7 +592,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(
-            result["data"]["server"]["version"], "2.0.0-rc.2.rc3a.1"
+            result["data"]["server"]["version"], "2.0.0-rc2-dev1"
         )
         self.assertEqual(result["data"]["tool_count"], 40)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
@@ -779,7 +785,15 @@ class BetaApplicationTests(unittest.TestCase):
         self.assertTrue(list_payload["success"])
         self.assertTrue(config_payload["success"])
         self.assertEqual(list_payload["metadata"]["provider"], "upstream_dashboard")
-        self.assertRegex(config_payload["data"]["config_hash"], r"^[0-9a-f]{64}$")
+        self.assertRegex(config_payload["data"]["config_hash"], r"^[0-9a-f]{16}$")
+        self.assertRegex(
+            config_payload["data"]["engineering_config_hash"],
+            r"^[0-9a-f]{64}$",
+        )
+        self.assertEqual(
+            config_payload["data"]["engineering_config_hash"],
+            _engineering_config_hash(config_payload["data"]["configuration"]),
+        )
         self.assertEqual(len(transport.calls), 2)
         list_audit = self.audit_record("dashboard-list-request-123")
         config_audit = self.audit_record("dashboard-config-request-123")

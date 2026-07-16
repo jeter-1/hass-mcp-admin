@@ -2,20 +2,22 @@
 
 ## Stage identity
 
-- Development version: `2.0.0-rc.2.rc3a.1`
-- Proposed release tag: `v2.0.0-rc.2.rc3a.1`
+- Development version: `2.0.0-rc2-dev1`
+- Proposed release tag: `v2.0.0-rc2-dev1`
 - Generic image: `ghcr.io/jeter-1/hass-mcp-engineering-beta`
 - Proposed version image:
-  `ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc.2.rc3a.1`
+  `ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc2-dev1`
 - Proposed source image:
   `ghcr.io/jeter-1/hass-mcp-engineering-beta:sha-<accepted-commit>`
 - Rollback image:
   `ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc.2`
 
-`2.0.0-rc.2.rc3a.1` is an intentionally non-final RC3 development version.
-The repository's semantic-version validator accepts it, Home Assistant sees it
-as newer than RC2, and final `2.0.0-rc.3` remains newer. RC3A, RC3B, and RC3C
-must complete before the final RC3 version is created.
+`2.0.0-rc2-dev1` is an intentionally non-final RC3 development version.
+AwesomeVersion 25.8.0, matching Home Assistant 2026.7.2, orders it newer than
+`2.0.0-rc.2` and older than final `2.0.0-rc.3`. The rejected
+`2.0.0-rc.2.rc3a.1` form is syntactically valid but incomparable under that
+library and must never be tagged or published. RC3A, RC3B, and RC3C must
+complete before the final RC3 version is created.
 
 No RC3A tag or image is created by the implementation pull request. Pull-request
 CI validates images without pushing them.
@@ -80,8 +82,8 @@ unknown tool names are rejected before transport dispatch.
 
 ## Capability discovery
 
-Every dashboard operation validates the live upstream contract before tool
-dispatch:
+Every dashboard operation records the live sanitized MCP identity and validates
+the upstream capability contract before tool dispatch:
 
 - actual sanitized initialize server name and version;
 - negotiated MCP protocol version;
@@ -98,8 +100,11 @@ A changed required type, unknown required argument, missing read-only hint, or
 destructive hint fails closed. RC3A records SHA-256 fingerprints for the
 required schema and bounded catalog but does not expose raw schemas in health.
 
-The implementation does not hard-code the deployed upstream server identity.
-Live acceptance records the sanitized identity returned by `initialize`.
+The implementation does not hard-code or pin the deployed upstream server
+identity. A differently named operator-configured endpoint is accepted when the
+required tool, schema, and read-only annotations are compatible. Live
+acceptance records the sanitized identity returned by `initialize`; identity
+pinning is an explicit RC3B decision.
 
 ## New read-only tools
 
@@ -135,14 +140,37 @@ The URL path must be an exact lowercase canonical path containing only letters,
 digits, underscore, or hyphen. Titles, fuzzy matching, slashes, queries, and
 arbitrary upstream arguments are rejected locally. The tool returns the
 sanitized configuration as untrusted data, the canonicalized path returned by
-upstream when valid, an Engineering-computed stable SHA-256 configuration hash,
-source metadata, and completeness.
+upstream when valid, two explicit hashes, source metadata, and completeness:
+
+- `config_hash` is the authoritative upstream-compatible optimistic-lock value.
+  Engineering independently serializes the complete raw configuration with
+  sorted keys, compact separators, and default JSON ASCII escaping, computes
+  SHA-256, takes the first 16 lowercase hexadecimal characters, and requires an
+  exact match with the upstream-supplied value. Missing, malformed, or
+  mismatched upstream values fail closed as `invalid_response`.
+- `engineering_config_hash` is a full 64-character lowercase SHA-256 evidence
+  fingerprint. It uses sorted keys, compact separators, UTF-8 JSON with
+  `ensure_ascii=false`, and strict JSON-compatible values. It is computed from
+  the complete raw configuration before sanitation or omission and is not an
+  optimistic-lock token.
+
+Example bounded data:
+
+```json
+{
+  "url_path": "lovelace",
+  "configuration": {"views": []},
+  "config_hash": "dbbb0f164dc1cb81",
+  "engineering_config_hash": "dbbb0f164dc1cb81872f523bc78bcd517993dea55a9d4f97fc8f854795bc521e",
+  "configuration_returned": true
+}
+```
 
 When a configuration cannot fit the Engineering response limit, RC3A returns a
-structured `response_too_large` failure with the hash when safely available,
-estimated size, configured response limit, and
-`configuration_returned=false`. It never presents malformed truncated JSON as
-a complete configuration.
+structured `response_too_large` failure with both verified hashes, estimated
+size, configured response limit, and `configuration_returned=false`. It never
+hashes sanitized or truncated JSON. When the lower MCP transport limit prevents
+receipt of the complete configuration, neither hash is claimed.
 
 ## Health and errors
 
@@ -164,6 +192,7 @@ Stable failure categories are:
 
 - `not_configured`
 - `authentication_failed`
+- `endpoint_rejected`
 - `connection_failed`
 - `timeout`
 - `protocol_error`
@@ -211,6 +240,8 @@ pinned client otherwise logs full streamable-HTTP URLs.
   recovery over connection pooling.
 - Live upstream identity, schema, and latency evidence cannot be claimed until
   post-deployment acceptance.
+- RC3A records but does not pin the observed MCP server identity; RC3B must
+  decide whether identity or implementation-family pinning is warranted.
 - A configured but unavailable provider does not prevent the Engineering server
   or existing tools from starting.
 

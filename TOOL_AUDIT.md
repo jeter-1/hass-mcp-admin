@@ -43,6 +43,10 @@ does not enable Standard HA MCP transport or any fallback.
 RC3A adds `list_dashboards` and `get_dashboard_config` as beta-native read tools
 routed only to `upstream_dashboard`. That adapter allowlists
 `ha_config_get_dashboard` and validates its schema and read-only annotations.
+Exact configuration evidence verifies the upstream-compatible 16-character
+optimistic-lock hash and separately returns a full 64-character Engineering
+evidence hash calculated from complete raw JSON before sanitization or response
+omission.
 No set/delete/backup/service/physical-action or arbitrary upstream tool can
 dispatch. The generic Standard HA MCP gateway remains unavailable.
 

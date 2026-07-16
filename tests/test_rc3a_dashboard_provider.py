@@ -1,11 +1,16 @@
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
+import hashlib
+import http.server
 import io
 import json
 import logging
 from pathlib import Path
+import socket
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -50,6 +55,8 @@ from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
     UPSTREAM_DASHBOARD,
     UpstreamDashboardProvider,
     _compatible_dashboard_schema,
+    _engineering_config_hash,
+    _upstream_config_hash,
     ensure_dashboard_tool_allowed,
 )
 from ha_mcp_engineering.sanitization import sanitize_untrusted_data  # noqa: E402
@@ -128,6 +135,59 @@ def call_result(payload, *, is_error=False):
     }
 
 
+@contextmanager
+def fake_http_endpoint(
+    *,
+    status: int,
+    body: bytes = b"",
+    body_factory=None,
+    content_type: str = "application/json",
+    delay_seconds: float = 0,
+):
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            request_length = int(self.headers.get("Content-Length", "0"))
+            request_body = self.rfile.read(request_length)
+            response_body = (
+                body_factory(request_body)
+                if body_factory is not None
+                else body
+            )
+            if delay_seconds:
+                time.sleep(delay_seconds)
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(response_body)))
+            self.end_headers()
+            if response_body:
+                try:
+                    self.wfile.write(response_body)
+                except (
+                    BrokenPipeError,
+                    ConnectionAbortedError,
+                    ConnectionResetError,
+                ):
+                    pass
+
+        def log_message(self, _format, *_args):
+            return
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        yield (
+            f"http://{host}:{port}/"
+            "synthetic-upstream-dashboard-secret-path/mcp"
+            "?credential=synthetic-query-secret"
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
 class FakeTransport:
     def __init__(
         self,
@@ -135,14 +195,23 @@ class FakeTransport:
         handshake_value=None,
         payload=None,
         error_category=None,
+        auto_config_hash=True,
     ):
         self.handshake = handshake_value or handshake()
-        self.payload = payload or {
+        self.payload = dict(payload) if payload is not None else {
             "success": True,
             "action": "list",
             "dashboards": [],
             "count": 0,
         }
+        if (
+            auto_config_hash
+            and isinstance(self.payload.get("config"), dict)
+            and "config_hash" not in self.payload
+        ):
+            self.payload["config_hash"] = _upstream_config_hash(
+                self.payload["config"]
+            )
         self.error_category = error_category
         self.discovery_count = 0
         self.session_count = 0
@@ -249,6 +318,33 @@ class ConfigurationAndRedactionTests(unittest.TestCase):
 
 
 class McpTransportLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    def test_fractional_timeout_is_bounded_to_one_complete_second(self):
+        transport = McpDashboardTransport(
+            SECRET_URL,
+            timeout_seconds=0.1,
+            client_version=SERVER_VERSION,
+        )
+        self.assertIn("timeout_seconds=1.0", repr(transport))
+
+    async def _discover_failure(self, url, *, timeout_seconds=2):
+        transport = McpDashboardTransport(
+            url,
+            timeout_seconds=timeout_seconds,
+            client_version=SERVER_VERSION,
+        )
+        with self.assertRaises(DashboardTransportError) as caught:
+            await transport.discover()
+        encoded = repr(caught.exception)
+        for fragment in (
+            url,
+            "127.0.0.1",
+            "synthetic-upstream-dashboard-secret-path",
+            "synthetic-query-secret",
+            "credential=",
+        ):
+            self.assertNotIn(fragment, encoded)
+        return caught.exception.category
+
     async def test_initialize_tools_list_call_and_clean_close(self):
         events = []
 
@@ -355,15 +451,137 @@ class McpTransportLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
         auth = RuntimeError("secret URL must not be surfaced")
         auth.response = Response()
+        rejected = RuntimeError("secret URL must not be surfaced")
+        rejected.response = type("Response", (), {"status_code": 404})()
         cases = (
             (auth, "authentication_failed"),
+            (rejected, "endpoint_rejected"),
             (ConnectionRefusedError(), "connection_failed"),
             (asyncio.TimeoutError(), "timeout"),
             (json.JSONDecodeError("bad", "x", 0), "invalid_response"),
+            (
+                ExceptionGroup(
+                    "mixed",
+                    [asyncio.TimeoutError(), ConnectionRefusedError()],
+                ),
+                "connection_failed",
+            ),
         )
         for exc, category in cases:
             with self.subTest(category=category):
                 self.assertEqual(_classify_transport_exception(exc), category)
+
+    async def test_http_401_and_403_are_authentication_failures(self):
+        for status in (401, 403):
+            with self.subTest(status=status), fake_http_endpoint(status=status) as url:
+                self.assertEqual(
+                    await self._discover_failure(url),
+                    "authentication_failed",
+                )
+
+    async def test_http_404_and_incorrect_secret_path_are_endpoint_rejected(self):
+        for label in ("missing_endpoint", "incorrect_secret_path"):
+            with self.subTest(label=label), fake_http_endpoint(status=404) as url:
+                self.assertEqual(
+                    await self._discover_failure(url),
+                    "endpoint_rejected",
+                )
+
+    async def test_connection_refusal_is_not_misclassified_as_timeout(self):
+        @asynccontextmanager
+        async def connection_refused(*_args, **_kwargs):
+            raise ConnectionRefusedError("synthetic refused connection")
+            yield
+
+        transport = McpDashboardTransport(
+            SECRET_URL,
+            timeout_seconds=2,
+            client_version=SERVER_VERSION,
+        )
+        with patch(
+            "ha_mcp_engineering.clients.mcp.streamablehttp_client",
+            connection_refused,
+        ):
+            with self.assertRaises(DashboardTransportError) as caught:
+                await transport.discover()
+        self.assertEqual(caught.exception.category, "connection_failed")
+        self.assertNotIn(SECRET_URL, repr(caught.exception))
+
+    async def test_dns_failure_is_connection_failed(self):
+        @asynccontextmanager
+        async def dns_failure(*_args, **_kwargs):
+            raise socket.gaierror("synthetic DNS failure")
+            yield
+
+        transport = McpDashboardTransport(
+            SECRET_URL,
+            timeout_seconds=2,
+            client_version=SERVER_VERSION,
+        )
+        with patch(
+            "ha_mcp_engineering.clients.mcp.streamablehttp_client",
+            dns_failure,
+        ):
+            with self.assertRaises(DashboardTransportError) as caught:
+                await transport.discover()
+        self.assertEqual(caught.exception.category, "connection_failed")
+        self.assertNotIn(SECRET_URL, repr(caught.exception))
+
+    async def test_delayed_response_is_timeout(self):
+        with fake_http_endpoint(
+            status=200,
+            body=b"{}",
+            delay_seconds=1.5,
+        ) as url:
+            self.assertEqual(
+                await self._discover_failure(url, timeout_seconds=1),
+                "timeout",
+            )
+
+    async def test_malformed_mcp_response_is_invalid_response(self):
+        def malformed_initialize(request_body):
+            request = json.loads(request_body)
+            return json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": request["id"],
+                    "result": {
+                        "protocolVersion": "2025-03-26",
+                        "capabilities": {},
+                    },
+                }
+            ).encode("utf-8")
+
+        with fake_http_endpoint(
+            status=200,
+            body_factory=malformed_initialize,
+        ) as url:
+            self.assertEqual(
+                await self._discover_failure(url),
+                "invalid_response",
+            )
+
+    async def test_mixed_connection_refusal_and_timeout_prefers_connection(self):
+        @asynccontextmanager
+        async def mixed_failure(*_args, **_kwargs):
+            raise ExceptionGroup(
+                "mixed transport failure",
+                [asyncio.TimeoutError(), ConnectionRefusedError()],
+            )
+            yield
+
+        transport = McpDashboardTransport(
+            SECRET_URL,
+            timeout_seconds=2,
+            client_version=SERVER_VERSION,
+        )
+        with patch(
+            "ha_mcp_engineering.clients.mcp.streamablehttp_client",
+            mixed_failure,
+        ):
+            with self.assertRaises(DashboardTransportError) as caught:
+                await transport.discover()
+        self.assertEqual(caught.exception.category, "connection_failed")
 
 
 class CapabilityAndAllowlistTests(unittest.IsolatedAsyncioTestCase):
@@ -382,6 +600,29 @@ class CapabilityAndAllowlistTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(health["writes_allowed"])
         self.assertEqual(health["allowlisted_tool_count"], 1)
         self.assertNotIn("url", json.dumps(health).lower())
+
+    async def test_differently_named_schema_compatible_endpoint_is_accepted(self):
+        provider = UpstreamDashboardProvider()
+        provider.configure(
+            settings(),
+            transport=FakeTransport(
+                handshake_value=handshake(
+                    name="Operator Selected Dashboard MCP",
+                    version="unrelated-implementation-1",
+                )
+            ),
+        )
+        await provider.refresh_capabilities()
+        health = provider.health_snapshot()
+        self.assertEqual(health["capability_status"], "available")
+        self.assertEqual(
+            health["upstream_server_name"],
+            "Operator Selected Dashboard MCP",
+        )
+        self.assertEqual(
+            health["upstream_server_version"],
+            "unrelated-implementation-1",
+        )
 
     async def test_required_tool_missing_rejects_before_tool_dispatch(self):
         transport = FakeTransport(handshake_value=handshake(tools=[]))
@@ -578,7 +819,6 @@ class PublicDashboardToolTests(unittest.IsolatedAsyncioTestCase):
                 "action": "get",
                 "url_path": "lovelace-home",
                 "config": config,
-                "config_hash": "upstream-hash-is-not-trusted",
             }
         )
         UPSTREAM_DASHBOARD.configure(settings(), transport=transport)
@@ -593,7 +833,23 @@ class PublicDashboardToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             first["data"]["config_hash"], second["data"]["config_hash"]
         )
-        self.assertRegex(first["data"]["config_hash"], r"^[0-9a-f]{64}$")
+        self.assertEqual(
+            first["data"]["engineering_config_hash"],
+            second["data"]["engineering_config_hash"],
+        )
+        self.assertEqual(
+            first["data"]["config_hash"],
+            _upstream_config_hash(config),
+        )
+        self.assertEqual(
+            first["data"]["engineering_config_hash"],
+            _engineering_config_hash(config),
+        )
+        self.assertRegex(first["data"]["config_hash"], r"^[0-9a-f]{16}$")
+        self.assertRegex(
+            first["data"]["engineering_config_hash"],
+            r"^[0-9a-f]{64}$",
+        )
         self.assertTrue(first["data"]["configuration_returned"])
         self.assertEqual(
             transport.arguments[0],
@@ -602,6 +858,125 @@ class PublicDashboardToolTests(unittest.IsolatedAsyncioTestCase):
                 "list_only": False,
                 "force_reload": True,
             },
+        )
+
+    def test_hash_algorithms_match_upstream_ascii_unicode_and_key_order(self):
+        for config in (
+            {"title": "ASCII", "views": [{"cards": []}]},
+            {"title": "Café 東京", "views": [{"cards": []}]},
+        ):
+            with self.subTest(config=config):
+                upstream_serialized = json.dumps(
+                    config,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                expected_upstream = hashlib.sha256(
+                    upstream_serialized.encode("utf-8")
+                ).hexdigest()[:16]
+                self.assertEqual(
+                    _upstream_config_hash(config),
+                    expected_upstream,
+                )
+        left = {"title": "Order", "views": [], "mode": "storage"}
+        right = {"mode": "storage", "views": [], "title": "Order"}
+        self.assertEqual(
+            _upstream_config_hash(left),
+            _upstream_config_hash(right),
+        )
+        self.assertEqual(
+            _engineering_config_hash(left),
+            _engineering_config_hash(right),
+        )
+
+    async def test_upstream_hash_must_be_present_well_formed_and_matching(self):
+        config = {"title": "Hash contract", "views": []}
+        cases = (
+            ("missing", None, "missing_or_malformed"),
+            ("malformed", "NOT-A-HASH", "missing_or_malformed"),
+            ("mismatch", "0" * 16, "mismatch"),
+        )
+        for label, supplied, detail in cases:
+            with self.subTest(label=label):
+                payload = {
+                    "success": True,
+                    "action": "get",
+                    "url_path": "hash-contract",
+                    "config": config,
+                }
+                if supplied is not None:
+                    payload["config_hash"] = supplied
+                transport = FakeTransport(
+                    payload=payload,
+                    auto_config_hash=False,
+                )
+                UPSTREAM_DASHBOARD.configure(settings(), transport=transport)
+                result = json.loads(
+                    await dashboard_tools.get_dashboard_config("hash-contract")
+                )
+                self.assertFalse(result["success"])
+                self.assertEqual(
+                    result["error_code"],
+                    "upstream_dashboard_invalid_response",
+                )
+                self.assertEqual(result["details"]["hash_validation"], detail)
+                self.assertEqual(
+                    result["metadata"]["completeness"],
+                    "unavailable",
+                )
+
+    async def test_sanitization_does_not_change_raw_configuration_hashes(self):
+        config = {
+            "title": "Secret-bearing evidence",
+            "views": [{"cards": [{"content": HA_TOKEN}]}],
+        }
+        transport = FakeTransport(
+            payload={
+                "success": True,
+                "action": "get",
+                "url_path": "sanitized-dashboard",
+                "config": config,
+            }
+        )
+        UPSTREAM_DASHBOARD.configure(settings(), transport=transport)
+        result = json.loads(
+            await dashboard_tools.get_dashboard_config("sanitized-dashboard")
+        )
+        self.assertTrue(result["success"])
+        self.assertNotIn(HA_TOKEN, json.dumps(result))
+        self.assertEqual(
+            result["data"]["config_hash"],
+            _upstream_config_hash(config),
+        )
+        self.assertEqual(
+            result["data"]["engineering_config_hash"],
+            _engineering_config_hash(config),
+        )
+
+    async def test_non_json_configuration_fails_as_invalid_response(self):
+        config = {"views": [], "invalid_number": float("nan")}
+        transport = FakeTransport(
+            payload={
+                "success": True,
+                "action": "get",
+                "url_path": "invalid-json",
+                "config": config,
+                "config_hash": "0" * 16,
+            },
+            auto_config_hash=False,
+        )
+        UPSTREAM_DASHBOARD.configure(settings(), transport=transport)
+        result = json.loads(
+            await dashboard_tools.get_dashboard_config("invalid-json")
+        )
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["error_code"],
+            "upstream_dashboard_invalid_response",
+        )
+        self.assertEqual(
+            result["details"]["hash_validation"],
+            "configuration_not_json",
         )
 
     async def test_force_reload_is_omitted_when_upstream_does_not_support_it(self):
@@ -693,12 +1068,13 @@ class PublicDashboardToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transport.tool_dispatch_count, 0)
 
     async def test_large_configuration_returns_structured_omission(self):
+        config = {"views": [{"cards": ["x" * 10_000]}]}
         transport = FakeTransport(
             payload={
                 "success": True,
                 "action": "get",
                 "url_path": "large-dashboard",
-                "config": {"views": [{"cards": ["x" * 10_000]}]},
+                "config": config,
             }
         )
         UPSTREAM_DASHBOARD.configure(
@@ -717,8 +1093,40 @@ class PublicDashboardToolTests(unittest.IsolatedAsyncioTestCase):
             result["error_code"], "upstream_dashboard_response_too_large"
         )
         self.assertFalse(result["details"]["configuration_returned"])
-        self.assertRegex(result["details"]["config_hash"], r"^[0-9a-f]{64}$")
+        self.assertEqual(
+            result["details"]["config_hash"],
+            _upstream_config_hash(config),
+        )
+        self.assertEqual(
+            result["details"]["engineering_config_hash"],
+            _engineering_config_hash(config),
+        )
+        self.assertRegex(result["details"]["config_hash"], r"^[0-9a-f]{16}$")
+        self.assertRegex(
+            result["details"]["engineering_config_hash"],
+            r"^[0-9a-f]{64}$",
+        )
         self.assertNotIn('"configuration":', json.dumps(result))
+
+    async def test_transport_limit_failure_returns_no_unverified_hashes(self):
+        UPSTREAM_DASHBOARD.configure(
+            settings(),
+            transport=FakeTransport(error_category="response_too_large"),
+        )
+        result = json.loads(
+            await dashboard_tools.get_dashboard_config("transport-limited")
+        )
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["error_code"],
+            "upstream_dashboard_response_too_large",
+        )
+        self.assertNotIn("config_hash", result["details"])
+        self.assertNotIn("engineering_config_hash", result["details"])
+        self.assertEqual(
+            result["metadata"]["completeness"],
+            "unavailable",
+        )
 
     async def test_upstream_warnings_are_retained_and_sanitized(self):
         transport = FakeTransport(
@@ -749,6 +1157,7 @@ class PublicDashboardToolTests(unittest.IsolatedAsyncioTestCase):
         )
         for category, expected in (
             ("authentication_failed", "upstream_dashboard_authentication_failed"),
+            ("endpoint_rejected", "upstream_dashboard_endpoint_rejected"),
             ("connection_failed", "upstream_dashboard_connection_failed"),
             ("timeout", "upstream_dashboard_timeout"),
             ("protocol_error", "upstream_dashboard_protocol_error"),

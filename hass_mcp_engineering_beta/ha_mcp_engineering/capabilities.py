@@ -150,7 +150,7 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
     {
         "tool": "get_dashboard_config",
         "capability": "dashboard_configuration_evidence",
-        "required_semantics": "Exact dashboard configuration read by canonical URL path with stable hash and bounded response handling.",
+        "required_semantics": "Exact dashboard configuration read by canonical URL path with a verified upstream-compatible optimistic-lock hash, a distinct full Engineering evidence hash, and bounded response handling.",
         "standard_ha_mcp_coverage": "unavailable",
         "direct_ha_coverage": "not_used",
         "selected_provider": "upstream_dashboard",

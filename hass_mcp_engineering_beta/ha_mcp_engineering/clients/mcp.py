@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 import json
 import logging
+import socket
 import time
 from typing import Any, Callable
 
@@ -60,7 +61,10 @@ class McpDashboardTransport:
 
     def __init__(self, url: str, *, timeout_seconds: float, client_version: str):
         self._url = url
-        self._timeout = timedelta(seconds=max(0.1, float(timeout_seconds)))
+        # mcp 1.9.0 reads timedelta.seconds, which truncates fractional values.
+        # Keep the lower bound at one complete second to avoid an unintended
+        # zero-second connect deadline.
+        self._timeout = timedelta(seconds=max(1.0, float(timeout_seconds)))
         self._client_info = types.Implementation(
             name="hass-mcp-engineering-dashboard",
             version=client_version,
@@ -199,28 +203,60 @@ def _iter_exceptions(exc: BaseException):
 def _classify_transport_exception(exc: BaseException) -> str:
     leaves = tuple(_iter_exceptions(exc))
     for leaf in leaves:
-        if isinstance(leaf, (asyncio.TimeoutError, TimeoutError)):
-            return "timeout"
-        if "timeout" in type(leaf).__name__.lower():
-            return "timeout"
-    for leaf in leaves:
         response = getattr(leaf, "response", None)
         status = getattr(response, "status_code", None)
         if status in {401, 403}:
             return "authentication_failed"
+        if status == 404:
+            return "endpoint_rejected"
+    for leaf in leaves:
+        error = getattr(leaf, "error", None)
+        if (
+            getattr(error, "code", None) == 32600
+            and getattr(error, "message", None) == "Session terminated"
+        ):
+            # mcp 1.9.0 converts an HTTP 404 during a fresh streamable-HTTP
+            # request into this synthetic MCP error and discards the status.
+            return "endpoint_rejected"
     for leaf in leaves:
         name = type(leaf).__name__.lower()
-        if isinstance(leaf, (ConnectionError, OSError)) or any(
+        if isinstance(leaf, (asyncio.TimeoutError, TimeoutError)):
+            continue
+        if isinstance(leaf, (ConnectionError, socket.gaierror, OSError)) or any(
             term in name
-            for term in ("connecterror", "networkerror", "remoteprotocolerror")
+            for term in (
+                "connecterror",
+                "connectionrefused",
+                "networkerror",
+                "gaierror",
+                "nameorservice",
+                "noroutetohost",
+            )
         ):
             return "connection_failed"
+    for leaf in leaves:
+        if isinstance(leaf, (asyncio.TimeoutError, TimeoutError)):
+            return "timeout"
+        if "timeout" in type(leaf).__name__.lower():
+            return "timeout"
+        error = getattr(leaf, "error", None)
+        if getattr(error, "code", None) == 408:
+            return "timeout"
     for leaf in leaves:
         name = type(leaf).__name__.lower()
         if isinstance(leaf, (json.JSONDecodeError, UnicodeDecodeError)):
             return "invalid_response"
         if any(term in name for term in ("validationerror", "decodeerror")):
             return "invalid_response"
-        if any(term in name for term in ("mcperror", "protocolerror")):
+        if any(
+            term in name
+            for term in ("mcperror", "protocolerror", "remoteprotocolerror")
+        ):
             return "protocol_error"
+    for leaf in leaves:
+        response = getattr(leaf, "response", None)
+        if isinstance(getattr(response, "status_code", None), int):
+            return "upstream_error"
+        if "httperror" in type(leaf).__name__.lower():
+            return "upstream_error"
     return "internal_error"

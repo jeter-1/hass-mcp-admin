@@ -9,9 +9,9 @@ accepted, merged, tagged, published, and anonymously pullable.
 Record:
 
 - accepted commit SHA;
-- tag `v2.0.0-rc.2.rc3a.1`;
+- tag `v2.0.0-rc2-dev1`;
 - image
-  `ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc.2.rc3a.1`;
+  `ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc2-dev1`;
 - immutable `sha-<accepted-commit>` image;
 - version-image manifest digest;
 - rollback image
@@ -46,7 +46,7 @@ Expected new health section: `upstream_dashboard`. The generic
 
 1. Merge the accepted RC3A PR.
 2. Confirm `main` contains the accepted commit.
-3. Create exact tag `v2.0.0-rc.2.rc3a.1` on that commit.
+3. Create exact tag `v2.0.0-rc2-dev1` on that commit.
 4. Wait for validation and image publication.
 5. Confirm version and `sha-<commit>` tags share one digest.
 6. Confirm the manifest contains `linux/amd64`, `linux/arm64`, and
@@ -64,7 +64,7 @@ Expected new health section: `upstream_dashboard`. The generic
 
 Call `server_info` first and require:
 
-- version `2.0.0-rc.2.rc3a.1`;
+- version `2.0.0-rc2-dev1`;
 - build SHA equal to the accepted tagged commit;
 - populated UTC RFC3339 build time;
 - Home Assistant connection healthy;
@@ -85,6 +85,7 @@ Call `get_server_health(check_ha=true)` and require:
 - MCP protocol version present;
 - required tool present;
 - required schema compatible;
+- sanitized observed identity recorded without claiming identity pinning;
 - schema and catalog fingerprints present;
 - `writes_allowed=false`;
 - no endpoint, host, port, path, query, credential, or raw schema present.
@@ -137,15 +138,18 @@ through `get_dashboard_config`. Require:
 - exact URL-path addressing, not title matching;
 - provider/routing/classification `upstream_dashboard`;
 - configuration returned only as untrusted data;
-- stable config hash;
+- verified 16-character `config_hash` matching the upstream optimistic-lock
+  value;
+- stable 64-character `engineering_config_hash` calculated from complete raw
+  JSON before sanitization;
 - source timestamp, schema fingerprint, and completeness;
 - sanitized upstream warnings retained when present;
 - no endpoint or credential material;
 - no dashboard change.
 
-Perform a second unchanged read. Require the same configuration hash. A changed
-source timestamp is expected; an unchanged configuration must not produce a
-different hash.
+Perform a second unchanged read. Require both hashes to remain identical. A
+changed source timestamp is expected; an unchanged configuration must not
+produce a different hash.
 
 Use an invalid path such as one containing `/`, `?`, whitespace, or uppercase.
 Require local validation failure with `upstream_dispatch_occurred=false` and no
@@ -153,8 +157,10 @@ provider request/failure increment.
 
 If a configuration exceeds the response limit, require a valid structured
 `response_too_large` response with `configuration_returned=false`, estimated
-size, response limit, and hash when available. Do not accept syntactically
-truncated JSON or complete coverage.
+size, response limit, verified `config_hash`, and
+`engineering_config_hash`. Do not accept syntactically truncated JSON or
+complete coverage. If the lower MCP transport limit prevented receipt of the
+complete configuration, require that neither unverified hash is claimed.
 
 ## Security and redaction review
 
@@ -221,6 +227,8 @@ configuration or the upstream Home Assistant MCP server.
 Before RC3B, decide from recorded RC3A evidence:
 
 - whether to pin a specific sanitized upstream identity;
+- whether to pin an implementation family in addition to or instead of an
+  observed server name/version;
 - whether schema fingerprints require an explicit operator approval process;
 - whether connection reuse is justified by measured latency and restart
   behavior;

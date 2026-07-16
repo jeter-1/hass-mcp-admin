@@ -9,12 +9,21 @@ secret endpoint and exposes exactly one allowlisted upstream tool:
 argument shapes. Set/delete dashboard, backup, service, reload, automation
 write, physical-action, and arbitrary tool names fail before network dispatch.
 
-The live initialize identity and required schema are sanitized and validated.
-Raw tool schemas and endpoint material never appear in health. Full URL, host,
-port, secret path, query, credentials, and reconstructed fragments are excluded
-from logs, audit, responses, errors, tracebacks, and startup output. Upstream
-dashboard titles, card text, configuration, and warnings are untrusted data and
-cannot authorize or construct another tool call.
+The provider records the sanitized MCP server identity and validates the
+required dashboard tool, schema, and read-only annotations. The
+operator-configured endpoint is trusted based on schema compatibility; RC3A
+does not pin a server name or implementation family. Raw tool schemas and
+endpoint material never appear in health. Full URL, host, port, secret path,
+query, credentials, and reconstructed fragments are excluded from logs, audit,
+responses, errors, tracebacks, and startup output. Upstream dashboard titles,
+card text, configuration, and warnings are untrusted data and cannot authorize
+or construct another tool call.
+
+HTTP 401/403 failures report `authentication_failed`; HTTP 404 reports the
+neutral `endpoint_rejected` category because the client cannot distinguish an
+incorrect secret path from an absent endpoint. Connection refusal and DNS or
+route failures report `connection_failed`; genuine deadline expiry reports
+`timeout`. These categories never include raw endpoint or exception text.
 
 The provider adds no Supervisor permission and performs no discovery. Existing
 direct-HA policies, governance, external approval, and production v1.1.2 remain

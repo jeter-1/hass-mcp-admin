@@ -53,6 +53,7 @@ class ErrorCode(str, Enum):
     UPSTREAM_DASHBOARD_AUTHENTICATION_FAILED = (
         "upstream_dashboard_authentication_failed"
     )
+    UPSTREAM_DASHBOARD_ENDPOINT_REJECTED = "upstream_dashboard_endpoint_rejected"
     UPSTREAM_DASHBOARD_CONNECTION_FAILED = "upstream_dashboard_connection_failed"
     UPSTREAM_DASHBOARD_TIMEOUT = "upstream_dashboard_timeout"
     UPSTREAM_DASHBOARD_PROTOCOL_ERROR = "upstream_dashboard_protocol_error"
@@ -138,6 +139,12 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
     ),
     ErrorCode.UPSTREAM_DASHBOARD_AUTHENTICATION_FAILED: ErrorDefinition(
         "The upstream dashboard provider rejected authentication.",
+        False,
+        502,
+        "internal_error",
+    ),
+    ErrorCode.UPSTREAM_DASHBOARD_ENDPOINT_REJECTED: ErrorDefinition(
+        "The configured upstream dashboard endpoint or secret path was rejected.",
         False,
         502,
         "internal_error",

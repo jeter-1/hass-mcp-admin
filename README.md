@@ -192,12 +192,15 @@ outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 ## Engineering beta/RC analytical milestones
 
 The parallel v2 add-on RC3A development stage is
-`2.0.0-rc.2.rc3a.1` with 40 registered tools and 25 unchanged canonical tools.
+`2.0.0-rc2-dev1` with 40 registered tools and 25 unchanged canonical tools.
 It adds only `list_dashboards` and `get_dashboard_config`, backed by an optional
 secret-configured `upstream_dashboard` MCP provider whose allowlist contains
 only the read-only `ha_config_get_dashboard` operation. The generic
 `StandardHaMcpGateway` remains unavailable. No dashboard write, service,
 physical-action, arbitrary forwarding, or Supervisor discovery path is added.
+Exact configuration evidence verifies the upstream-compatible 16-character
+optimistic-lock hash and separately returns a full 64-character Engineering
+evidence hash calculated before sanitization.
 RC2 governance, external approval, direct-HA policies, and idempotent
 plan/challenge expiry remain intact. No planned feature capability remains.
 Production v1.1.2, `hass_mcp_admin`, and port 8099 remain unchanged. See

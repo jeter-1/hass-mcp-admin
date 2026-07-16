@@ -2,13 +2,15 @@
 
 ## RC3A dashboard-provider boundary
 
-Development version `2.0.0-rc.2.rc3a.1` adds a separate
+Development version `2.0.0-rc2-dev1` adds a separate
 `upstream_dashboard` provider without making `standard_ha_mcp` available. The
 provider consumes one operator-configured secret streamable-HTTP endpoint and
 exposes only fixed typed inventory and exact-configuration reads through
-upstream `ha_config_get_dashboard`. Initialize identity, tool discovery,
-read-only annotations, required argument types, and schema/catalog fingerprints
-are validated before each tool dispatch.
+upstream `ha_config_get_dashboard`. The provider records the sanitized observed
+initialize identity and validates tool discovery, read-only annotations,
+required argument types, and schema/catalog fingerprints before each tool
+dispatch. The operator-configured endpoint is trusted by schema compatibility;
+RC3A does not pin a server name or implementation family.
 
 The two additive tools raise the catalog to 40 registered while retaining 25
 canonical and zero planned capabilities. No generic forwarding, dashboard

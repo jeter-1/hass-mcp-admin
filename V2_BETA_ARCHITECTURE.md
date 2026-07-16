@@ -2,12 +2,16 @@
 
 ## RC3A read-only dashboard provider
 
-RC3A development version `2.0.0-rc.2.rc3a.1` adds a distinct
+RC3A development version `2.0.0-rc2-dev1` adds a distinct
 `upstream_dashboard` boundary. It uses the existing pinned MCP client to
 initialize, list and validate the live upstream catalog, then call only
 `ha_config_get_dashboard` in inventory or exact-read mode. The configured URL
 is password-style secret input and never appears in health, audit, logs,
 responses, startup summaries, or exceptions.
+
+The sanitized observed MCP server name and version are diagnostic evidence,
+not an identity pin. RC3A trusts the operator-configured endpoint when its
+required dashboard tool, schema, and read-only annotations are compatible.
 
 The public additions are `list_dashboards` and `get_dashboard_config`. Both are
 beta-native read tools routed directly to `upstream_dashboard`, with no
@@ -79,7 +83,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-rc.2.rc3a.1` |
+| Version | `1.1.2` | `2.0.0-rc2-dev1` |
 | Port | `8099` | MCP `8100`; internal Ingress `8110` |
 | Options and secret | Production add-on data | Beta add-on data |
 

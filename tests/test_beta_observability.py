@@ -155,6 +155,7 @@ class ErrorTaxonomyTests(unittest.TestCase):
             "provider_prohibited",
             "upstream_dashboard_not_configured",
             "upstream_dashboard_authentication_failed",
+            "upstream_dashboard_endpoint_rejected",
             "upstream_dashboard_connection_failed",
             "upstream_dashboard_timeout",
             "upstream_dashboard_protocol_error",
@@ -192,6 +193,7 @@ class ErrorTaxonomyTests(unittest.TestCase):
             ErrorCode.PROVIDER_PROHIBITED,
             ErrorCode.UPSTREAM_DASHBOARD_NOT_CONFIGURED,
             ErrorCode.UPSTREAM_DASHBOARD_AUTHENTICATION_FAILED,
+            ErrorCode.UPSTREAM_DASHBOARD_ENDPOINT_REJECTED,
             ErrorCode.UPSTREAM_DASHBOARD_REQUIRED_TOOL_MISSING,
             ErrorCode.UPSTREAM_DASHBOARD_SCHEMA_INCOMPATIBLE,
         ):
@@ -517,7 +519,7 @@ class GatewayAndHealthTests(unittest.TestCase):
         self.assertTrue(payload["success"])
         health = payload["data"]
         self.assertEqual(
-            health["server"]["version"], "2.0.0-rc.2.rc3a.1"
+            health["server"]["version"], "2.0.0-rc2-dev1"
         )
         self.assertEqual(health["registered_tool_count"], 40)
         self.assertIn("handoff_generation", health)
@@ -579,6 +581,7 @@ class GatewayAndHealthTests(unittest.TestCase):
                 "failure_counts": {
                     "not_configured": 0,
                     "authentication_failed": 0,
+                    "endpoint_rejected": 0,
                     "connection_failed": 0,
                     "timeout": 0,
                     "protocol_error": 0,

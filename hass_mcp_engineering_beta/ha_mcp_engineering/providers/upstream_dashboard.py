@@ -6,6 +6,7 @@ from collections import Counter, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import hashlib
+import hmac
 import json
 import re
 import statistics
@@ -42,6 +43,7 @@ PROHIBITED_UPSTREAM_TOOLS = frozenset(
 FAILURE_CATEGORIES = (
     "not_configured",
     "authentication_failed",
+    "endpoint_rejected",
     "connection_failed",
     "timeout",
     "protocol_error",
@@ -60,6 +62,7 @@ RESPONSE_ENVELOPE_RESERVE = 16_000
 _ERROR_CODES = {
     "not_configured": ErrorCode.UPSTREAM_DASHBOARD_NOT_CONFIGURED,
     "authentication_failed": ErrorCode.UPSTREAM_DASHBOARD_AUTHENTICATION_FAILED,
+    "endpoint_rejected": ErrorCode.UPSTREAM_DASHBOARD_ENDPOINT_REJECTED,
     "connection_failed": ErrorCode.UPSTREAM_DASHBOARD_CONNECTION_FAILED,
     "timeout": ErrorCode.UPSTREAM_DASHBOARD_TIMEOUT,
     "protocol_error": ErrorCode.UPSTREAM_DASHBOARD_PROTOCOL_ERROR,
@@ -297,10 +300,39 @@ class UpstreamDashboardProvider:
             config = payload.get("config")
             if not isinstance(config, dict):
                 self._raise("invalid_response", dispatched=True)
-            config_hash = _stable_hash(config)
-            serialized_size = len(
-                json.dumps(config, sort_keys=True, separators=(",", ":"), default=str)
-            )
+            try:
+                upstream_serialized = _canonical_json(
+                    config,
+                    ensure_ascii=True,
+                )
+                expected_config_hash = _upstream_config_hash(config)
+                engineering_config_hash = _engineering_config_hash(config)
+            except (TypeError, ValueError, OverflowError):
+                self._raise(
+                    "invalid_response",
+                    dispatched=True,
+                    details={"hash_validation": "configuration_not_json"},
+                )
+            supplied_config_hash = payload.get("config_hash")
+            if (
+                not isinstance(supplied_config_hash, str)
+                or not re.fullmatch(r"[0-9a-f]{16}", supplied_config_hash)
+            ):
+                self._raise(
+                    "invalid_response",
+                    dispatched=True,
+                    details={"hash_validation": "missing_or_malformed"},
+                )
+            if not hmac.compare_digest(
+                supplied_config_hash,
+                expected_config_hash,
+            ):
+                self._raise(
+                    "invalid_response",
+                    dispatched=True,
+                    details={"hash_validation": "mismatch"},
+                )
+            serialized_size = len(upstream_serialized.encode("utf-8"))
             canonical_path = payload.get("url_path")
             if not isinstance(canonical_path, str) or not CANONICAL_DASHBOARD_PATH.fullmatch(
                 canonical_path
@@ -320,7 +352,8 @@ class UpstreamDashboardProvider:
                     "response_too_large",
                     dispatched=True,
                     details={
-                        "config_hash": config_hash,
+                        "config_hash": supplied_config_hash,
+                        "engineering_config_hash": engineering_config_hash,
                         "estimated_serialized_size": serialized_size,
                         "response_limit": response_limit,
                         "configuration_returned": False,
@@ -337,7 +370,8 @@ class UpstreamDashboardProvider:
             data = {
                 "url_path": canonical_path or url_path,
                 "configuration": safe_config,
-                "config_hash": config_hash,
+                "config_hash": supplied_config_hash,
+                "engineering_config_hash": engineering_config_hash,
                 "estimated_serialized_size": serialized_size,
                 "configuration_returned": True,
             }
@@ -640,6 +674,7 @@ class UpstreamDashboardProvider:
                 self._state.timeout_count += 1
             if category in {
                 "authentication_failed",
+                "endpoint_rejected",
                 "connection_failed",
                 "timeout",
                 "protocol_error",
@@ -773,15 +808,36 @@ def _schema_types(schema: dict[str, Any]) -> set[str]:
     return values
 
 
-def _stable_hash(value: Any) -> str:
-    encoded = json.dumps(
+def _canonical_json(value: Any, *, ensure_ascii: bool) -> str:
+    """Serialize JSON data canonically without coercing unsupported values."""
+
+    return json.dumps(
         value,
         sort_keys=True,
         separators=(",", ":"),
-        ensure_ascii=False,
-        default=str,
-    ).encode("utf-8")
+        ensure_ascii=ensure_ascii,
+        allow_nan=False,
+    )
+
+
+def _upstream_config_hash(value: Any) -> str:
+    """Match homeassistant-ai/ha-mcp 7.12.3 optimistic-lock hashing."""
+
+    encoded = _canonical_json(value, ensure_ascii=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:16]
+
+
+def _engineering_config_hash(value: Any) -> str:
+    """Return the full Engineering evidence hash for complete raw JSON data."""
+
+    encoded = _canonical_json(value, ensure_ascii=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _stable_hash(value: Any) -> str:
+    """Canonical full fingerprint used for schemas and bounded catalogs."""
+
+    return _engineering_config_hash(value)
 
 
 def _latency_summary(values: deque[float]) -> dict[str, float | int | None]:
