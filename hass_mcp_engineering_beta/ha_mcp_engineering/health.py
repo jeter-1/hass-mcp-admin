@@ -99,6 +99,13 @@ class HealthRegistry:
                     "credential_present": False,
                     "reachable": False,
                     "capability_status": "unconfigured",
+                    "trust_mode": None,
+                    "trust_profile": None,
+                    "reviewed_contract_match": False,
+                    "argument_constraints_active": True,
+                    "screenshots_allowed": False,
+                    "preference_writes_allowed": False,
+                    "writes_allowed": False,
                 }
             ),
             "dependency_analysis": {

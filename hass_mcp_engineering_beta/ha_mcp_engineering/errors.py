@@ -64,6 +64,27 @@ class ErrorCode(str, Enum):
     UPSTREAM_DASHBOARD_SCHEMA_INCOMPATIBLE = (
         "upstream_dashboard_schema_incompatible"
     )
+    UPSTREAM_DASHBOARD_SERVER_IDENTITY_MISMATCH = (
+        "upstream_dashboard_server_identity_mismatch"
+    )
+    UPSTREAM_DASHBOARD_VERSION_MISMATCH = (
+        "upstream_dashboard_version_mismatch"
+    )
+    UPSTREAM_DASHBOARD_REVIEWED_CONTRACT_MISMATCH = (
+        "upstream_dashboard_reviewed_contract_mismatch"
+    )
+    UPSTREAM_DASHBOARD_REVIEWED_ANNOTATION_MISMATCH = (
+        "upstream_dashboard_reviewed_annotation_mismatch"
+    )
+    UPSTREAM_DASHBOARD_UNSUPPORTED_TRUST_PROFILE = (
+        "upstream_dashboard_unsupported_trust_profile"
+    )
+    UPSTREAM_DASHBOARD_PROHIBITED_ARGUMENT = (
+        "upstream_dashboard_prohibited_argument"
+    )
+    UPSTREAM_DASHBOARD_HASH_CONTRACT_MISMATCH = (
+        "upstream_dashboard_hash_contract_mismatch"
+    )
     UPSTREAM_DASHBOARD_UPSTREAM_ERROR = "upstream_dashboard_upstream_error"
     UPSTREAM_DASHBOARD_RESPONSE_TOO_LARGE = "upstream_dashboard_response_too_large"
     UPSTREAM_DASHBOARD_INTERNAL_ERROR = "upstream_dashboard_internal_error"
@@ -183,6 +204,48 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
         "The required upstream dashboard read schema is incompatible.",
         False,
         503,
+        "internal_error",
+    ),
+    ErrorCode.UPSTREAM_DASHBOARD_SERVER_IDENTITY_MISMATCH: ErrorDefinition(
+        "The upstream dashboard server identity does not match the reviewed profile.",
+        False,
+        503,
+        "internal_error",
+    ),
+    ErrorCode.UPSTREAM_DASHBOARD_VERSION_MISMATCH: ErrorDefinition(
+        "The upstream dashboard server version does not match the reviewed profile.",
+        False,
+        503,
+        "internal_error",
+    ),
+    ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_CONTRACT_MISMATCH: ErrorDefinition(
+        "The upstream dashboard tool contract does not match the reviewed profile.",
+        False,
+        503,
+        "internal_error",
+    ),
+    ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_ANNOTATION_MISMATCH: ErrorDefinition(
+        "The upstream dashboard annotations do not match the reviewed profile.",
+        False,
+        503,
+        "internal_error",
+    ),
+    ErrorCode.UPSTREAM_DASHBOARD_UNSUPPORTED_TRUST_PROFILE: ErrorDefinition(
+        "The upstream dashboard endpoint does not satisfy a supported trust profile.",
+        False,
+        503,
+        "internal_error",
+    ),
+    ErrorCode.UPSTREAM_DASHBOARD_PROHIBITED_ARGUMENT: ErrorDefinition(
+        "The dashboard provider rejected a prohibited upstream argument.",
+        False,
+        403,
+        "invalid_request",
+    ),
+    ErrorCode.UPSTREAM_DASHBOARD_HASH_CONTRACT_MISMATCH: ErrorDefinition(
+        "The upstream dashboard hash contract could not be verified.",
+        False,
+        502,
         "internal_error",
     ),
     ErrorCode.UPSTREAM_DASHBOARD_UPSTREAM_ERROR: ErrorDefinition(

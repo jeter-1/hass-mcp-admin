@@ -44,6 +44,7 @@ from ha_mcp_engineering.request_context import (  # noqa: E402
 from ha_mcp_engineering.routing import AuthenticatedMcpGateway  # noqa: E402
 from ha_mcp_engineering.tool_framework import run_structured  # noqa: E402
 from ha_mcp_engineering.tools import compatibility  # noqa: E402
+from ha_mcp_engineering.version import SERVER_VERSION  # noqa: E402
 
 
 SECRET = "observability-test-access-secret"
@@ -162,6 +163,13 @@ class ErrorTaxonomyTests(unittest.TestCase):
             "upstream_dashboard_invalid_response",
             "upstream_dashboard_required_tool_missing",
             "upstream_dashboard_schema_incompatible",
+            "upstream_dashboard_server_identity_mismatch",
+            "upstream_dashboard_version_mismatch",
+            "upstream_dashboard_reviewed_contract_mismatch",
+            "upstream_dashboard_reviewed_annotation_mismatch",
+            "upstream_dashboard_unsupported_trust_profile",
+            "upstream_dashboard_prohibited_argument",
+            "upstream_dashboard_hash_contract_mismatch",
             "upstream_dashboard_upstream_error",
             "upstream_dashboard_response_too_large",
             "upstream_dashboard_internal_error",
@@ -518,9 +526,7 @@ class GatewayAndHealthTests(unittest.TestCase):
             payload = json.loads(asyncio.run(compatibility.get_server_health(check_ha=False)))
         self.assertTrue(payload["success"])
         health = payload["data"]
-        self.assertEqual(
-            health["server"]["version"], "2.0.0-rc2-dev1"
-        )
+        self.assertEqual(health["server"]["version"], SERVER_VERSION)
         self.assertEqual(health["registered_tool_count"], 40)
         self.assertIn("handoff_generation", health)
         self.assertIn("automation_reliability_analysis", health)
@@ -563,7 +569,17 @@ class GatewayAndHealthTests(unittest.TestCase):
                 "required_tool_present": False,
                 "required_schema_compatible": False,
                 "required_schema_fingerprint": None,
+                "required_contract_fingerprint": None,
                 "catalog_fingerprint": None,
+                "trust_mode": None,
+                "trust_profile": None,
+                "pinned_server_name": "ha-mcp",
+                "pinned_server_version": "7.13.0",
+                "reviewed_contract_match": False,
+                "validation_reason": None,
+                "argument_constraints_active": True,
+                "screenshots_allowed": False,
+                "preference_writes_allowed": False,
                 "last_successful_handshake_timestamp": None,
                 "last_successful_dashboard_call_timestamp": None,
                 "connection_latency": {
@@ -588,6 +604,13 @@ class GatewayAndHealthTests(unittest.TestCase):
                     "invalid_response": 0,
                     "required_tool_missing": 0,
                     "schema_incompatible": 0,
+                    "server_identity_mismatch": 0,
+                    "upstream_version_mismatch": 0,
+                    "reviewed_contract_mismatch": 0,
+                    "reviewed_annotation_mismatch": 0,
+                    "unsupported_trust_profile": 0,
+                    "prohibited_argument": 0,
+                    "hash_contract_mismatch": 0,
                     "upstream_error": 0,
                     "response_too_large": 0,
                     "internal_error": 0,

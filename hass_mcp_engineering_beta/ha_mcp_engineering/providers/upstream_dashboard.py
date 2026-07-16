@@ -20,6 +20,7 @@ from ..clients.mcp import (
     McpDashboardRead,
     McpDashboardTransport,
     REQUIRED_DASHBOARD_TOOL,
+    validate_dashboard_read_arguments,
 )
 from ..configuration import Settings, parse_upstream_dashboard_endpoint
 from ..errors import DashboardProviderError, ErrorCode, GovernanceError
@@ -29,6 +30,25 @@ from ..sanitization import sanitize_untrusted_data
 
 
 PROVIDER_ID = "upstream_dashboard"
+TRUST_MODE_CONTRACT_READ_ONLY = "contract_read_only"
+TRUST_MODE_REVIEWED_ARGUMENT_CONSTRAINED = "reviewed_argument_constrained"
+REVIEWED_TRUST_PROFILE = "ha_mcp_7_13_dashboard_read_v1"
+REVIEWED_SERVER_NAME = "ha-mcp"
+REVIEWED_SERVER_VERSION = "7.13.0"
+REVIEWED_PROTOCOL_VERSION = "2025-03-26"
+REVIEWED_UPSTREAM_COMMIT = "f4eb53621ccb814cb7123d2811e06eda3577129c"
+REVIEWED_SCHEMA_FINGERPRINT = (
+    "7f2b6a086faec129c182fe6f791722beda9fffc659a507f55a3b20d72e2155a6"
+)
+REVIEWED_CONTRACT_FINGERPRINT = (
+    "170c2aac1d6437d5c42b7f1d48f5322fef4736c414654c4cc4f7830138e959ca"
+)
+REVIEWED_ANNOTATIONS = {
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": False,
+    "title": "Get Dashboard",
+}
 ALLOWED_UPSTREAM_TOOLS = frozenset({REQUIRED_DASHBOARD_TOOL})
 PROHIBITED_UPSTREAM_TOOLS = frozenset(
     {
@@ -50,6 +70,13 @@ FAILURE_CATEGORIES = (
     "invalid_response",
     "required_tool_missing",
     "schema_incompatible",
+    "server_identity_mismatch",
+    "upstream_version_mismatch",
+    "reviewed_contract_mismatch",
+    "reviewed_annotation_mismatch",
+    "unsupported_trust_profile",
+    "prohibited_argument",
+    "hash_contract_mismatch",
     "upstream_error",
     "response_too_large",
     "internal_error",
@@ -69,6 +96,23 @@ _ERROR_CODES = {
     "invalid_response": ErrorCode.UPSTREAM_DASHBOARD_INVALID_RESPONSE,
     "required_tool_missing": ErrorCode.UPSTREAM_DASHBOARD_REQUIRED_TOOL_MISSING,
     "schema_incompatible": ErrorCode.UPSTREAM_DASHBOARD_SCHEMA_INCOMPATIBLE,
+    "server_identity_mismatch": (
+        ErrorCode.UPSTREAM_DASHBOARD_SERVER_IDENTITY_MISMATCH
+    ),
+    "upstream_version_mismatch": ErrorCode.UPSTREAM_DASHBOARD_VERSION_MISMATCH,
+    "reviewed_contract_mismatch": (
+        ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_CONTRACT_MISMATCH
+    ),
+    "reviewed_annotation_mismatch": (
+        ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_ANNOTATION_MISMATCH
+    ),
+    "unsupported_trust_profile": (
+        ErrorCode.UPSTREAM_DASHBOARD_UNSUPPORTED_TRUST_PROFILE
+    ),
+    "prohibited_argument": ErrorCode.UPSTREAM_DASHBOARD_PROHIBITED_ARGUMENT,
+    "hash_contract_mismatch": (
+        ErrorCode.UPSTREAM_DASHBOARD_HASH_CONTRACT_MISMATCH
+    ),
     "upstream_error": ErrorCode.UPSTREAM_DASHBOARD_UPSTREAM_ERROR,
     "response_too_large": ErrorCode.UPSTREAM_DASHBOARD_RESPONSE_TOO_LARGE,
     "internal_error": ErrorCode.UPSTREAM_DASHBOARD_INTERNAL_ERROR,
@@ -81,6 +125,14 @@ class DashboardProviderResult:
     warnings: list[str]
     metadata: dict[str, Any]
     completeness: str
+
+
+@dataclass(frozen=True)
+class DashboardTrustDecision:
+    mode: str
+    profile: str | None
+    reviewed_contract_match: bool
+    force_reload_supported: bool
 
 
 @dataclass
@@ -96,7 +148,12 @@ class DashboardProviderState:
     required_tool_present: bool = False
     required_schema_compatible: bool = False
     required_schema_fingerprint: str | None = None
+    required_contract_fingerprint: str | None = None
     catalog_fingerprint: str | None = None
+    trust_mode: str | None = None
+    trust_profile: str | None = None
+    reviewed_contract_match: bool = False
+    validation_reason: str | None = None
     force_reload_supported: bool = False
     last_successful_handshake_timestamp: str | None = None
     last_successful_dashboard_call_timestamp: str | None = None
@@ -130,7 +187,7 @@ def ensure_dashboard_tool_allowed(tool_name: str) -> None:
 
 
 class UpstreamDashboardProvider:
-    """Typed dashboard adapter over a fixed, read-only MCP operation."""
+    """Typed dashboard adapter over fixed non-screenshot MCP invocations."""
 
     def __init__(self) -> None:
         self._transport: McpDashboardTransport | Any | None = None
@@ -272,7 +329,10 @@ class UpstreamDashboardProvider:
 
         return await self._execute(
             operation="list_dashboards",
-            arguments={"url_path": None, "list_only": True},
+            arguments={
+                "list_only": True,
+                "include_screenshot": False,
+            },
             normalizer=normalize,
         )
 
@@ -319,7 +379,7 @@ class UpstreamDashboardProvider:
                 or not re.fullmatch(r"[0-9a-f]{16}", supplied_config_hash)
             ):
                 self._raise(
-                    "invalid_response",
+                    "hash_contract_mismatch",
                     dispatched=True,
                     details={"hash_validation": "missing_or_malformed"},
                 )
@@ -328,7 +388,7 @@ class UpstreamDashboardProvider:
                 expected_config_hash,
             ):
                 self._raise(
-                    "invalid_response",
+                    "hash_contract_mismatch",
                     dispatched=True,
                     details={"hash_validation": "mismatch"},
                 )
@@ -390,11 +450,9 @@ class UpstreamDashboardProvider:
         arguments: dict[str, Any] = {
             "url_path": url_path,
             "list_only": False,
+            "force_reload": force_reload,
+            "include_screenshot": False,
         }
-        # Capability support is learned by the validator callback in this same
-        # session. The callback removes this optional argument before dispatch
-        # when an otherwise-compatible upstream omits it.
-        arguments["force_reload"] = force_reload
 
         return await self._execute(
             operation="get_dashboard_config",
@@ -415,15 +473,15 @@ class UpstreamDashboardProvider:
             self._record_failure("not_configured", dispatched=False)
             self._raise("not_configured", dispatched=False)
         ensure_dashboard_tool_allowed(REQUIRED_DASHBOARD_TOOL)
+        try:
+            validate_dashboard_read_arguments(arguments)
+        except DashboardTransportError:
+            self._raise("prohibited_argument", dispatched=False)
         started = self._begin_request()
         failure_recorded = False
         try:
             def validate(handshake: McpDashboardHandshake) -> None:
                 self._validate_handshake(handshake)
-                with self._lock:
-                    force_reload_supported = self._state.force_reload_supported
-                if not force_reload_supported:
-                    arguments.pop("force_reload", None)
 
             exchange = await self._transport.execute_dashboard_read(
                 arguments, validate
@@ -512,20 +570,42 @@ class UpstreamDashboardProvider:
             with self._lock:
                 self._state.required_schema_compatible = False
                 self._state.capability_status = "unavailable"
+                self._state.validation_reason = "required_tool_missing"
             raise DashboardTransportError("required_tool_missing")
 
         schema = tool.get("inputSchema")
-        schema_fingerprint = _stable_hash(schema)
-        compatible, force_reload_supported = _compatible_dashboard_schema(tool)
+        try:
+            schema_fingerprint = _stable_hash(schema)
+            contract_fingerprint = _stable_hash(tool)
+        except (TypeError, ValueError, OverflowError):
+            with self._lock:
+                self._state.required_schema_compatible = False
+                self._state.capability_status = "unavailable"
+                self._state.validation_reason = "reviewed_contract_mismatch"
+            raise DashboardTransportError("reviewed_contract_mismatch") from None
+        try:
+            decision = _select_trust_profile(handshake, tool)
+        except DashboardTransportError as exc:
+            with self._lock:
+                self._state.required_schema_fingerprint = schema_fingerprint
+                self._state.required_contract_fingerprint = contract_fingerprint
+                self._state.required_schema_compatible = False
+                self._state.reviewed_contract_match = False
+                self._state.validation_reason = exc.category
+                self._state.capability_status = "unavailable"
+            raise
         with self._lock:
             self._state.required_schema_fingerprint = schema_fingerprint
-            self._state.required_schema_compatible = compatible
-            self._state.force_reload_supported = force_reload_supported
-            self._state.capability_status = (
-                "available" if compatible else "unavailable"
+            self._state.required_contract_fingerprint = contract_fingerprint
+            self._state.required_schema_compatible = True
+            self._state.force_reload_supported = decision.force_reload_supported
+            self._state.trust_mode = decision.mode
+            self._state.trust_profile = decision.profile
+            self._state.reviewed_contract_match = (
+                decision.reviewed_contract_match
             )
-        if not compatible:
-            raise DashboardTransportError("schema_incompatible")
+            self._state.validation_reason = None
+            self._state.capability_status = "available"
 
     def _decode_call_result(self, result: dict[str, Any]) -> dict[str, Any]:
         content = result.get("content")
@@ -625,7 +705,13 @@ class UpstreamDashboardProvider:
                 handshake.protocol_version, max_chars=64
             ),
             "schema_fingerprint": self._state.required_schema_fingerprint,
+            "contract_fingerprint": self._state.required_contract_fingerprint,
             "catalog_fingerprint": self._state.catalog_fingerprint,
+            "trust_mode": self._state.trust_mode,
+            "trust_profile": self._state.trust_profile,
+            "argument_constraints_active": True,
+            "screenshots_allowed": False,
+            "preference_writes_allowed": False,
             "completeness": completeness,
             "upstream_dispatch_occurred": True,
             "content_is_untrusted_data": True,
@@ -685,8 +771,15 @@ class UpstreamDashboardProvider:
             if category in {
                 "required_tool_missing",
                 "schema_incompatible",
+                "server_identity_mismatch",
+                "upstream_version_mismatch",
+                "reviewed_contract_mismatch",
+                "reviewed_annotation_mismatch",
+                "unsupported_trust_profile",
+                "hash_contract_mismatch",
                 "not_configured",
             }:
+                self._state.validation_reason = category
                 self._state.capability_status = (
                     "unconfigured" if category == "not_configured" else "unavailable"
                 )
@@ -729,7 +822,19 @@ class UpstreamDashboardProvider:
                 "required_tool_present": state.required_tool_present,
                 "required_schema_compatible": state.required_schema_compatible,
                 "required_schema_fingerprint": state.required_schema_fingerprint,
+                "required_contract_fingerprint": (
+                    state.required_contract_fingerprint
+                ),
                 "catalog_fingerprint": state.catalog_fingerprint,
+                "trust_mode": state.trust_mode,
+                "trust_profile": state.trust_profile,
+                "pinned_server_name": REVIEWED_SERVER_NAME,
+                "pinned_server_version": REVIEWED_SERVER_VERSION,
+                "reviewed_contract_match": state.reviewed_contract_match,
+                "validation_reason": state.validation_reason,
+                "argument_constraints_active": True,
+                "screenshots_allowed": False,
+                "preference_writes_allowed": False,
                 "last_successful_handshake_timestamp": (
                     state.last_successful_handshake_timestamp
                 ),
@@ -757,7 +862,65 @@ class UpstreamDashboardProvider:
             }
 
 
-def _compatible_dashboard_schema(tool: dict[str, Any]) -> tuple[bool, bool]:
+def _select_trust_profile(
+    handshake: McpDashboardHandshake,
+    tool: dict[str, Any],
+) -> DashboardTrustDecision:
+    strict_compatible, force_reload_supported = (
+        _strict_contract_read_only_schema(tool)
+    )
+    annotations = tool.get("annotations")
+    declares_contract_read_only = bool(
+        isinstance(annotations, dict)
+        and annotations.get("readOnlyHint") is True
+    )
+    if strict_compatible:
+        return DashboardTrustDecision(
+            mode=TRUST_MODE_CONTRACT_READ_ONLY,
+            profile=None,
+            reviewed_contract_match=False,
+            force_reload_supported=force_reload_supported,
+        )
+    if declares_contract_read_only:
+        raise DashboardTransportError("schema_incompatible")
+    return _reviewed_argument_constrained_profile(handshake, tool)
+
+
+def _reviewed_argument_constrained_profile(
+    handshake: McpDashboardHandshake,
+    tool: dict[str, Any],
+) -> DashboardTrustDecision:
+    if handshake.server_name != REVIEWED_SERVER_NAME:
+        raise DashboardTransportError("server_identity_mismatch")
+    if handshake.server_version != REVIEWED_SERVER_VERSION:
+        raise DashboardTransportError("upstream_version_mismatch")
+    if handshake.protocol_version != REVIEWED_PROTOCOL_VERSION:
+        raise DashboardTransportError("unsupported_trust_profile")
+    if tool.get("name") != REQUIRED_DASHBOARD_TOOL:
+        raise DashboardTransportError("required_tool_missing")
+    if tool.get("annotations") != REVIEWED_ANNOTATIONS:
+        raise DashboardTransportError("reviewed_annotation_mismatch")
+    try:
+        schema_fingerprint = _stable_hash(tool.get("inputSchema"))
+        contract_fingerprint = _stable_hash(tool)
+    except (TypeError, ValueError, OverflowError):
+        raise DashboardTransportError("reviewed_contract_mismatch") from None
+    if (
+        schema_fingerprint != REVIEWED_SCHEMA_FINGERPRINT
+        or contract_fingerprint != REVIEWED_CONTRACT_FINGERPRINT
+    ):
+        raise DashboardTransportError("reviewed_contract_mismatch")
+    return DashboardTrustDecision(
+        mode=TRUST_MODE_REVIEWED_ARGUMENT_CONSTRAINED,
+        profile=REVIEWED_TRUST_PROFILE,
+        reviewed_contract_match=True,
+        force_reload_supported=True,
+    )
+
+
+def _strict_contract_read_only_schema(
+    tool: dict[str, Any],
+) -> tuple[bool, bool]:
     schema = tool.get("inputSchema")
     if not isinstance(schema, dict):
         return False, False
@@ -772,7 +935,14 @@ def _compatible_dashboard_schema(tool: dict[str, Any]) -> tuple[bool, bool]:
         return False, False
     required = schema.get("required", [])
     if not isinstance(required, list) or any(
-        name not in {"url_path", "list_only", "force_reload"} for name in required
+        name
+        not in {
+            "url_path",
+            "list_only",
+            "force_reload",
+            "include_screenshot",
+        }
+        for name in required
     ):
         return False, False
     annotations = tool.get("annotations")
@@ -787,7 +957,19 @@ def _compatible_dashboard_schema(tool: dict[str, Any]) -> tuple[bool, bool]:
         isinstance(force_reload, dict)
         and "boolean" in _schema_types(force_reload)
     )
-    return True, force_reload_supported
+    include_screenshot = properties.get("include_screenshot")
+    screenshot_false_supported = bool(
+        isinstance(include_screenshot, dict)
+        and "boolean" in _schema_types(include_screenshot)
+    )
+    compatible = force_reload_supported and screenshot_false_supported
+    return compatible, force_reload_supported
+
+
+def _compatible_dashboard_schema(tool: dict[str, Any]) -> tuple[bool, bool]:
+    """Backward-compatible alias for strict contract-level validation."""
+
+    return _strict_contract_read_only_schema(tool)
 
 
 def _schema_types(schema: dict[str, Any]) -> set[str]:
@@ -821,7 +1003,7 @@ def _canonical_json(value: Any, *, ensure_ascii: bool) -> str:
 
 
 def _upstream_config_hash(value: Any) -> str:
-    """Match homeassistant-ai/ha-mcp 7.12.3 optimistic-lock hashing."""
+    """Match reviewed homeassistant-ai/ha-mcp 7.13.0 optimistic-lock hashing."""
 
     encoded = _canonical_json(value, ensure_ascii=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()[:16]
