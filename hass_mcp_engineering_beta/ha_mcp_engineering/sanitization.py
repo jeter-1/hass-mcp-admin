@@ -35,6 +35,7 @@ _TOKEN_KEYS = frozenset(
         "credentials",
         "authorization_code",
         "auth_code",
+        "upstream_dashboard_mcp_url",
     }
 )
 _PASSWORD_KEYS = frozenset({"password", "passwd", "passphrase"})

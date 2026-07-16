@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote, urlsplit, urlunsplit
 
 OPTIONS_PATH = Path(os.environ.get("HAMCP_OPTIONS_PATH", "/data/options.json"))
 MIN_ACCESS_SECRET_LENGTH = 24
@@ -43,6 +43,7 @@ class Settings:
     trust_cf_connecting_ip: bool = False
     trusted_proxy_cidrs: tuple[str, ...] = ()
     ingress_port: int = 8110
+    upstream_dashboard_mcp_url: str = field(default="", repr=False)
 
     @property
     def api_url(self) -> str:
@@ -58,6 +59,91 @@ class Settings:
         else:
             path = f"{base_path}/api/websocket"
         return urlunsplit((scheme, parsed.netloc, path, "", ""))
+
+
+@dataclass(frozen=True)
+class UpstreamDashboardEndpoint:
+    """Validated secret-bearing upstream MCP endpoint.
+
+    The complete URL and derived secret values are deliberately excluded from
+    representations so configuration diagnostics cannot expose them.
+    """
+
+    url: str = field(repr=False)
+    credential_present: bool
+    secret_values: tuple[str, ...] = field(repr=False)
+
+
+def parse_upstream_dashboard_endpoint(
+    value: str | None,
+) -> UpstreamDashboardEndpoint | None:
+    """Validate the optional dashboard MCP URL without returning it in errors."""
+
+    candidate = (value or "").strip()
+    if not candidate:
+        return None
+    try:
+        parsed = urlsplit(candidate)
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("The upstream dashboard MCP URL is malformed.") from exc
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError(
+            "The upstream dashboard MCP URL must use http or https and include a host."
+        )
+    if parsed.fragment:
+        raise ValueError("The upstream dashboard MCP URL must not include a fragment.")
+    if port is not None and not 1 <= port <= 65535:
+        raise ValueError("The upstream dashboard MCP URL contains an invalid port.")
+
+    generic_segments = {"mcp", "sse"}
+    path_segments = tuple(
+        segment for segment in parsed.path.split("/") if segment
+    )
+    credential_segments = tuple(
+        segment
+        for segment in path_segments
+        if segment.lower() not in generic_segments and len(segment) >= 8
+    )
+    credential_present = bool(
+        parsed.username
+        or parsed.password
+        or parsed.query
+        or credential_segments
+    )
+    if not credential_present:
+        raise ValueError(
+            "The upstream dashboard MCP URL must contain a secret-bearing path or credential."
+        )
+
+    secrets = [candidate]
+    if parsed.netloc:
+        secrets.append(parsed.netloc)
+    if parsed.hostname:
+        secrets.append(parsed.hostname)
+    if parsed.path and parsed.path != "/":
+        secrets.append(parsed.path)
+        decoded_path = unquote(parsed.path)
+        if decoded_path != parsed.path:
+            secrets.append(decoded_path)
+    if parsed.query:
+        secrets.append(parsed.query)
+        for key, item in parse_qsl(parsed.query, keep_blank_values=True):
+            secrets.extend((key, item))
+    if parsed.username:
+        secrets.append(parsed.username)
+    if parsed.password:
+        secrets.append(parsed.password)
+    secrets.extend(
+        value
+        for segment in credential_segments
+        for value in (segment, unquote(segment))
+    )
+    return UpstreamDashboardEndpoint(
+        url=candidate,
+        credential_present=True,
+        secret_values=tuple(dict.fromkeys(secret for secret in secrets if secret)),
+    )
 
 
 def _read_options(path: Path = OPTIONS_PATH) -> dict:
@@ -100,4 +186,11 @@ def load_settings() -> Settings:
             str(value).strip() for value in configured_proxies if str(value).strip()
         ),
         ingress_port=int(os.environ.get("APPROVAL_INGRESS_PORT", "8110")),
+        upstream_dashboard_mcp_url=str(
+            options.get(
+                "upstream_dashboard_mcp_url",
+                os.environ.get("UPSTREAM_DASHBOARD_MCP_URL", ""),
+            )
+            or ""
+        ).strip(),
     )

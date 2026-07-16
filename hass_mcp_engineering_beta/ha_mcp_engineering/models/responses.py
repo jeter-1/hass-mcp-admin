@@ -20,6 +20,9 @@ class Timing:
     home_assistant_wall_clock_span_ms: float | None = None
     home_assistant_request_count: int = 0
     upstream_attempted: bool = False
+    upstream_ms: float = 0.0
+    upstream_wall_clock_span_ms: float = 0.0
+    upstream_request_count: int = 0
     provider_operations_concurrent: bool = False
     retry_count: int = 0
     timeout_occurred: bool = False

@@ -15,6 +15,7 @@ from .configuration import (
     MIN_ACCESS_SECRET_LENGTH,
     Settings,
     load_settings,
+    parse_upstream_dashboard_endpoint,
 )
 from .errors import ConfigurationError
 from .logging_config import configure_logging, get_logger, log_event
@@ -29,6 +30,7 @@ from .integrity import CONFIGURATION_INTEGRITY_ANALYSIS
 from .incident import INCIDENT_CORRELATION
 from .handoff import HANDOFF_GENERATION
 from .routing import AuthenticatedMcpGateway
+from .providers.upstream_dashboard import UPSTREAM_DASHBOARD
 from .tools import get_registered_server
 
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
@@ -75,6 +77,12 @@ def validate_settings(settings: Settings) -> None:
             ipaddress.ip_network(value, strict=False)
         except ValueError:
             errors.append("trusted_proxy_cidrs contains an invalid IP address or CIDR")
+    try:
+        parse_upstream_dashboard_endpoint(settings.upstream_dashboard_mcp_url)
+    except ValueError:
+        errors.append(
+            "upstream_dashboard_mcp_url is malformed or lacks a secret-bearing credential"
+        )
     if errors:
         raise ConfigurationError(
             "Beta configuration validation failed.", details={"issues": errors}
@@ -140,6 +148,7 @@ def create_application(settings: Settings | None = None):
         ha_token=settings.ha_token,
         timeout=settings.ha_timeout_seconds,
     )
+    UPSTREAM_DASHBOARD.configure(settings)
     HEALTH.configure(
         settings,
         audit,
@@ -151,6 +160,7 @@ def create_application(settings: Settings | None = None):
         CONFIGURATION_INTEGRITY_ANALYSIS,
         INCIDENT_CORRELATION,
         HANDOFF_GENERATION,
+        UPSTREAM_DASHBOARD,
     )
     return gateway
 
@@ -231,6 +241,14 @@ def main() -> None:
             "ingress_port": settings.ingress_port,
             "runtime": "home_assistant_addon" if os.environ.get("SUPERVISOR_TOKEN") else "standalone",
             "redaction_enabled": settings.redaction_enabled,
+            "upstream_dashboard": {
+                "configured": bool(settings.upstream_dashboard_mcp_url),
+                "credential_present": bool(
+                    parse_upstream_dashboard_endpoint(
+                        settings.upstream_dashboard_mcp_url
+                    )
+                ),
+            },
         },
         secret=settings.access_secret,
     )

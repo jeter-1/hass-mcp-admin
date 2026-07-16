@@ -23,6 +23,7 @@ class HealthRegistry:
     integrity: Any = None
     incident: Any = None
     handoff: Any = None
+    upstream_dashboard: Any = None
 
     def configure(
         self,
@@ -36,6 +37,7 @@ class HealthRegistry:
         integrity=None,
         incident=None,
         handoff=None,
+        upstream_dashboard=None,
     ) -> None:
         self.settings = settings
         self.audit = audit
@@ -48,6 +50,7 @@ class HealthRegistry:
         self.integrity = integrity
         self.incident = incident
         self.handoff = handoff
+        self.upstream_dashboard = upstream_dashboard
 
     def snapshot(self, ha_connection: dict[str, Any]) -> dict[str, Any]:
         metrics = METRICS.snapshot()
@@ -88,6 +91,16 @@ class HealthRegistry:
                 ],
                 "standard_ha_mcp_exact_mapping_count": 0,
             },
+            "upstream_dashboard": (
+                self.upstream_dashboard.health_snapshot()
+                if self.upstream_dashboard
+                else {
+                    "configured": False,
+                    "credential_present": False,
+                    "reachable": False,
+                    "capability_status": "unconfigured",
+                }
+            ),
             "dependency_analysis": {
                 **metrics["dependency_analysis"],
                 "index": self.dependency.health() if self.dependency else {"configured": False},
