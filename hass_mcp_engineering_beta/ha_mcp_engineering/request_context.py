@@ -24,6 +24,12 @@ class RequestTelemetry:
     ha_max_concurrent_requests: int = 0
     ha_span_started: float | None = None
     ha_span_finished: float | None = None
+    upstream_duration_ms: float = 0.0
+    upstream_request_count: int = 0
+    upstream_active_requests: int = 0
+    upstream_max_concurrent_requests: int = 0
+    upstream_span_started: float | None = None
+    upstream_span_finished: float | None = None
     retry_count: int = 0
     timeout_occurred: bool = False
     response_status: int | None = None
@@ -48,6 +54,15 @@ class RequestTelemetry:
             return 0.0
         return round(max(0.0, self.ha_span_finished - self.ha_span_started) * 1000, 3)
 
+    @property
+    def upstream_wall_clock_span_ms(self) -> float:
+        if self.upstream_span_started is None or self.upstream_span_finished is None:
+            return 0.0
+        return round(
+            max(0.0, self.upstream_span_finished - self.upstream_span_started) * 1000,
+            3,
+        )
+
     def begin_ha_attempt(self, started: float) -> None:
         self.ha_request_count += 1
         self.ha_active_requests += 1
@@ -57,6 +72,27 @@ class RequestTelemetry:
     def finish_ha_attempt(self, finished: float) -> None:
         self.ha_active_requests = max(0, self.ha_active_requests - 1)
         self.ha_span_finished = finished if self.ha_span_finished is None else max(self.ha_span_finished, finished)
+
+    def begin_upstream_attempt(self, started: float) -> None:
+        self.upstream_request_count += 1
+        self.upstream_active_requests += 1
+        self.upstream_max_concurrent_requests = max(
+            self.upstream_max_concurrent_requests, self.upstream_active_requests
+        )
+        self.upstream_span_started = (
+            started
+            if self.upstream_span_started is None
+            else min(self.upstream_span_started, started)
+        )
+
+    def finish_upstream_attempt(self, finished: float, duration_ms: float) -> None:
+        self.upstream_active_requests = max(0, self.upstream_active_requests - 1)
+        self.upstream_duration_ms += max(0.0, duration_ms)
+        self.upstream_span_finished = (
+            finished
+            if self.upstream_span_finished is None
+            else max(self.upstream_span_finished, finished)
+        )
 
     def record_provider_outcome(self, completeness: str) -> None:
         """Record one explicitly dispatched provider operation for this request."""

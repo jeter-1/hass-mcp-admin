@@ -31,6 +31,27 @@ class VersionComparisonTests(unittest.TestCase):
     def test_rc_is_newer_than_beta(self):
         self.assertTrue(VALIDATOR.is_newer_version("2.0.0-rc.2", "2.0.0-rc.1"))
 
+    def test_rc3a_development_version_orders_between_rc2_and_final_rc3(self):
+        self.assertTrue(
+            VALIDATOR.is_newer_version("2.0.0-rc2-dev1", "2.0.0-rc.2")
+        )
+        self.assertTrue(
+            VALIDATOR.is_newer_version("2.0.0-rc.3", "2.0.0-rc2-dev1")
+        )
+        self.assertFalse(
+            VALIDATOR.is_newer_version("2.0.0-rc.2.rc3a.1", "2.0.0-rc.2")
+        )
+
+    def test_version_comparison_uses_awesomeversion_25_8_0(self):
+        requirements = (ROOT / "tests" / "requirements.txt").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("awesomeversion==25.8.0", requirements)
+        self.assertEqual(
+            VALIDATOR.version_key("2.0.0-rc2-dev1").strategy.name,
+            "SEMVER",
+        )
+
     def test_invalid_version_is_rejected(self):
         with self.assertRaises(VALIDATOR.MetadataValidationError):
             VALIDATOR.version_key("beta-latest")
@@ -58,7 +79,7 @@ class AddonMetadataValidationTests(unittest.TestCase):
         self.assertEqual(self.beta["image"], VALIDATOR.BETA_IMAGE)
         self.assertEqual(
             f'{self.beta["image"]}:{self.beta["version"]}',
-            "ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc.2",
+            "ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc2-dev1",
         )
 
     def test_registry_image_is_required_and_cannot_be_arch_templated(self):
@@ -210,12 +231,12 @@ class AddonMetadataValidationTests(unittest.TestCase):
         report = VALIDATOR.validate_repository(
             ROOT,
             base_ref="origin/main",
-            expected_version="2.0.0-rc.2",
+            expected_version="2.0.0-rc2-dev1",
             deployed_version="2.0.0-beta.8",
             paths={"hass_mcp_engineering_beta/config.yaml"},
         )
         self.assertEqual(report.production_version, "1.1.2")
-        self.assertEqual(report.beta_version, "2.0.0-rc.2")
+        self.assertEqual(report.beta_version, "2.0.0-rc2-dev1")
 
 
 class UnreleasedRcIntegrityTests(unittest.TestCase):
@@ -233,7 +254,7 @@ class UnreleasedRcIntegrityTests(unittest.TestCase):
                 1,
                 stderr=(
                     "ERROR: ghcr.io/jeter-1/hass-mcp-engineering-beta:"
-                    "2.0.0-rc.2: not found"
+                    "2.0.0-rc2-dev1: not found"
                 ),
             ),
         ]
@@ -247,7 +268,7 @@ class UnreleasedRcIntegrityTests(unittest.TestCase):
                 "--exit-code",
                 "--tags",
                 "origin",
-                "refs/tags/v2.0.0-rc.2",
+                "refs/tags/v2.0.0-rc2-dev1",
             ],
         )
         self.assertEqual(
@@ -257,7 +278,7 @@ class UnreleasedRcIntegrityTests(unittest.TestCase):
                 "buildx",
                 "imagetools",
                 "inspect",
-                "ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc.2",
+                "ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc2-dev1",
             ],
         )
         docker_env = run.call_args_list[1].kwargs["env"]

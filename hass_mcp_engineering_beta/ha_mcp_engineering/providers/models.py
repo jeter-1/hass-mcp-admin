@@ -40,6 +40,8 @@ class ProviderCapability(str, Enum):
     INCIDENT_CORRELATION = "incident_correlation"
     AUDIT = "audit"
     HANDOFF_GENERATION = "handoff_generation"
+    DASHBOARD_INVENTORY = "dashboard_inventory"
+    DASHBOARD_CONFIGURATION_EVIDENCE = "dashboard_configuration_evidence"
     UNGOVERNED_PHYSICAL_ACTION = "ungoverned_physical_action"
     SECRET_BEARING_DIAGNOSTICS = "secret_bearing_diagnostics"
     UNSUPPORTED_EXPERIMENTAL = "unsupported_experimental"

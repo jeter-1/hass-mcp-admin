@@ -394,6 +394,17 @@ class AuthenticatedMcpGateway:
                         "change_plan_count": len(parameters.get("change_plan_ids") or []) if isinstance(parameters.get("change_plan_ids"), list) else 0,
                         "cursor_present": bool(parameters.get("cursor")),
                     })
+                elif tool_name == "list_dashboards":
+                    audit_parameters = {
+                        "limit": parameters.get("limit", 100),
+                        "provider": "upstream_dashboard",
+                    }
+                elif tool_name == "get_dashboard_config":
+                    audit_parameters = {
+                        "url_path": str(parameters.get("url_path", ""))[:256],
+                        "force_reload": bool(parameters.get("force_reload", True)),
+                        "provider": "upstream_dashboard",
+                    }
                 self.audit.write(AuditRecord(
                     request_id=request_id,
                     tool_name=tool_name,

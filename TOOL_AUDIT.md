@@ -10,7 +10,7 @@ This document classifies every tool currently exposed by the custom HA MCP Engin
 
 Lifecycle classification and provider routing answer different questions. The existing
 `native`, `transitional`, `delegated`, and `deprecated` labels remain unchanged. The
-central routing policy maps all 38 beta tools to these execution/evidence routes:
+central routing policy maps all 40 beta tools to these execution/evidence routes:
 
 | Route | Existing tools/capabilities |
 | --- | --- |
@@ -18,6 +18,7 @@ central routing policy maps all 38 beta tools to these execution/evidence routes
 | `standard_mcp_preferred` | ordinary execution/reload pending exact upstream coverage |
 | `direct_ha_required` | automation config, traces, blueprint source, config check, governed apply/verification/rollback |
 | `transitional_direct` | bounded entity search, exact entity/area/service-catalog reads, template/history/logbook/error log, list automations/devices/entity registry/blueprints; legacy upsert is classified here but denied without a read policy |
+| `upstream_dashboard` | read-only dashboard inventory and exact dashboard configuration evidence through one fixed upstream tool |
 | `prohibited` | ungoverned destructive automation deletion in the target architecture and secret-bearing diagnostics |
 
 Beta 8 preserves every public schema but enforces the routing overlay at runtime.
@@ -39,6 +40,16 @@ acceptance exposed an immediate `provider_unavailable` routing failure. Policy
 query/domain/limit input, deterministic slim results, and explicit truncation. It
 does not enable Standard HA MCP transport or any fallback.
 
+RC3A adds `list_dashboards` and `get_dashboard_config` as beta-native read tools
+routed only to `upstream_dashboard`. That adapter allowlists
+`ha_config_get_dashboard` and validates its schema and read-only annotations.
+Exact configuration evidence verifies the upstream-compatible 16-character
+optimistic-lock hash and separately returns a full 64-character Engineering
+evidence hash calculated from complete raw JSON before sanitization or response
+omission.
+No set/delete/backup/service/physical-action or arbitrary upstream tool can
+dispatch. The generic Standard HA MCP gateway remains unavailable.
+
 Beta 7 moves `entity_dependency_analysis` from planned to additive `beta_native`,
 category `analysis`, risk `read`, routed `engineering_native`. Beta 12 likewise moves
 `automation_reliability_analysis` into additive `beta_native`. Beta 15 adds
@@ -50,7 +61,9 @@ Beta 24 makes the compatibility-visible legacy upsert and every missing direct
 policy fail closed, while preserving the same catalog. No planned feature capability remains. All existing public
 schemas remain unchanged.
 
-Beta 25 keeps all 38 tools and their schemas. `approve_change_plan` remains
+Beta 25 keeps all 38 tools and their schemas. RC3A intentionally raises the
+registered count to 40 while preserving every prior schema.
+`approve_change_plan` remains
 registered but requests an external Home Assistant administrator review; it does
 not grant authority. Only the separate internal Ingress application can record
 authority-version-2 approval. This is a governance semantic correction, not a

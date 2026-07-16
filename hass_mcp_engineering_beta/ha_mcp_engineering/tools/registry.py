@@ -6,6 +6,7 @@ import inspect
 from . import compatibility
 from .governance import GOVERNANCE_TOOLS
 from .analysis import ANALYSIS_TOOLS
+from .dashboard import DASHBOARD_TOOLS
 from ..capabilities import CAPABILITIES
 from ..providers.dispatch import CANONICAL_DISPATCHER
 from ..providers.routing import CapabilityRoute, routing_for_tool
@@ -28,6 +29,11 @@ _registered = {tool.name for tool in _SERVER._tool_manager.list_tools()}
 for analysis_tool in ANALYSIS_TOOLS:
     if analysis_tool.__name__ not in _registered:
         _SERVER.tool()(analysis_tool)
+
+_registered = {tool.name for tool in _SERVER._tool_manager.list_tools()}
+for dashboard_tool in DASHBOARD_TOOLS:
+    if dashboard_tool.__name__ not in _registered:
+        _SERVER.tool()(dashboard_tool)
 
 
 def _routed_wrapper(tool_name, original):

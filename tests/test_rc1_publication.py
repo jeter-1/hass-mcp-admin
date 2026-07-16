@@ -14,7 +14,7 @@ CI_PATH = ROOT / ".github" / "workflows" / "ci.yml"
 PUBLISH_PATH = ROOT / ".github" / "workflows" / "publish-rc-image.yml"
 TAG_GUARD_PATH = ROOT / "scripts" / "assert_registry_tags_absent.sh"
 IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
-VERSION = "2.0.0-rc.2"
+VERSION = "2.0.0-rc2-dev1"
 TAG = f"v{VERSION}"
 PLATFORMS = ("linux/amd64", "linux/arm64", "linux/arm/v7")
 BUILD_ARGUMENTS = ("BUILD_VERSION", "HAMCP_BUILD_SHA", "HAMCP_BUILD_TIME")
@@ -64,7 +64,7 @@ def assignment_lines(value):
     return result
 
 
-class RC2PublicationWorkflowTests(unittest.TestCase):
+class RC3ADevelopmentPublicationWorkflowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.ci = load_workflow(CI_PATH)
@@ -80,10 +80,12 @@ class RC2PublicationWorkflowTests(unittest.TestCase):
         self.assertEqual(self.publish_workflow["env"]["IMAGE_REPOSITORY"], IMAGE)
         self.assertEqual(self.publish_workflow["env"]["EXPECTED_VERSION"], VERSION)
 
-    def test_rc1_version_and_tag_are_never_publication_targets(self):
+    def test_rc1_and_rc2_version_tags_are_never_publication_targets(self):
         workflow_text = PUBLISH_PATH.read_text(encoding="utf-8")
         self.assertNotIn("v2.0.0-rc.1", workflow_text)
         self.assertNotIn(":2.0.0-rc.1", workflow_text)
+        self.assertNotIn('tags:\n      - "v2.0.0-rc.2"', workflow_text)
+        self.assertNotIn(":2.0.0-rc.2\n", workflow_text)
 
     def test_publication_requires_the_complete_reusable_validation_gate(self):
         self.assertEqual(

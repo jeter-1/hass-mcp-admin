@@ -25,6 +25,15 @@ from .routing import (
 )
 from .standard_mcp import StandardHaMcpGateway
 from .dispatch import CANONICAL_DISPATCHER, CanonicalProviderDispatcher
+from .upstream_dashboard import (
+    ALLOWED_UPSTREAM_TOOLS,
+    FAILURE_CATEGORIES,
+    PROVIDER_ID as UPSTREAM_DASHBOARD_PROVIDER_ID,
+    UPSTREAM_DASHBOARD,
+    DashboardProviderResult,
+    UpstreamDashboardProvider,
+    ensure_dashboard_tool_allowed,
+)
 
 __all__ = [
     "CapabilityRoute",
@@ -49,4 +58,11 @@ __all__ = [
     "routing_for_tool",
     "CANONICAL_DISPATCHER",
     "CanonicalProviderDispatcher",
+    "ALLOWED_UPSTREAM_TOOLS",
+    "DashboardProviderResult",
+    "FAILURE_CATEGORIES",
+    "UPSTREAM_DASHBOARD",
+    "UPSTREAM_DASHBOARD_PROVIDER_ID",
+    "UpstreamDashboardProvider",
+    "ensure_dashboard_tool_allowed",
 ]

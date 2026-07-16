@@ -2,6 +2,7 @@ import asyncio
 from collections import Counter
 from contextlib import redirect_stderr
 import copy
+from dataclasses import replace
 import importlib.util
 import io
 import json
@@ -50,6 +51,16 @@ from ha_mcp_engineering.integrity.models import IntegrityAnalysisOutput  # noqa:
 from ha_mcp_engineering.incident import INCIDENT_CORRELATION  # noqa: E402
 from ha_mcp_engineering.incident.models import IncidentAnalysisOutput  # noqa: E402
 from ha_mcp_engineering.providers import CANONICAL_DISPATCHER, StandardHaMcpGateway  # noqa: E402
+from ha_mcp_engineering.clients.mcp import (  # noqa: E402
+    McpDashboardHandshake,
+    McpDashboardRead,
+    REQUIRED_DASHBOARD_TOOL,
+)
+from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
+    UPSTREAM_DASHBOARD,
+    _engineering_config_hash,
+    _upstream_config_hash,
+)
 from ha_mcp_engineering.tools import compatibility  # noqa: E402
 from ha_mcp_engineering.tools.registry import get_registered_server  # noqa: E402
 
@@ -95,6 +106,85 @@ class FakeSession:
 
     def request(self, *args, **kwargs):
         return FakeResponse(self.status, self.body)
+
+
+class FakeDashboardMcpTransport:
+    def __init__(self):
+        self.calls = []
+        self.handshake = McpDashboardHandshake(
+            protocol_version="2025-03-26",
+            server_name="Synthetic Home Assistant MCP",
+            server_version="7.12.3",
+            tools=(
+                {
+                    "name": REQUIRED_DASHBOARD_TOOL,
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "url_path": {
+                                "anyOf": [
+                                    {"type": "string"},
+                                    {"type": "null"},
+                                ]
+                            },
+                            "list_only": {"type": "boolean"},
+                            "force_reload": {"type": "boolean"},
+                        },
+                    },
+                    "annotations": {
+                        "readOnlyHint": True,
+                        "destructiveHint": False,
+                    },
+                },
+            ),
+            connection_latency_ms=1.5,
+        )
+
+    async def discover(self):
+        return self.handshake
+
+    async def execute_dashboard_read(self, arguments, validator):
+        validator(self.handshake)
+        self.calls.append(dict(arguments))
+        if arguments.get("list_only"):
+            payload = {
+                "success": True,
+                "action": "list",
+                "dashboards": [
+                    {
+                        "id": "fixture_dashboard",
+                        "url_path": "fixture-dashboard",
+                        "title": "Fixture dashboard",
+                        "show_in_sidebar": True,
+                        "require_admin": False,
+                    }
+                ],
+                "count": 1,
+            }
+        else:
+            config = {
+                "views": [
+                    {
+                        "title": "Fixture",
+                        "cards": [{"type": "entities"}],
+                    }
+                ]
+            }
+            payload = {
+                "success": True,
+                "action": "get",
+                "url_path": arguments["url_path"],
+                "config": config,
+                "config_hash": _upstream_config_hash(config),
+            }
+        return McpDashboardRead(
+            handshake=self.handshake,
+            call_result={
+                "content": [{"type": "text", "text": json.dumps(payload)}],
+                "isError": False,
+            },
+            tool_call_latency_ms=1.0,
+        )
 
 
 def beta_settings(audit_path: str) -> Settings:
@@ -347,7 +437,7 @@ class AddonIsolationTests(unittest.TestCase):
     def test_beta_metadata_is_distinct_and_valid(self):
         self.assertEqual(self.beta["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(self.beta["slug"], "hass_mcp_engineering_beta")
-        self.assertEqual(self.beta["version"], "2.0.0-rc.2")
+        self.assertEqual(self.beta["version"], "2.0.0-rc2-dev1")
         self.assertEqual(self.beta["ports"], {"8100/tcp": 8100})
         self.assertNotEqual(self.beta["slug"], self.production["slug"])
         self.assertNotEqual(set(self.beta["ports"]), set(self.production["ports"]))
@@ -371,6 +461,7 @@ class AddonIsolationTests(unittest.TestCase):
             "routing.py",
             "clients/rest.py",
             "clients/websocket.py",
+            "clients/mcp.py",
             "configuration.py",
             "models/responses.py",
             "models/failures.py",
@@ -390,6 +481,7 @@ class AddonIsolationTests(unittest.TestCase):
             "providers/routing.py",
             "providers/standard_mcp.py",
             "providers/direct_ha.py",
+            "providers/upstream_dashboard.py",
             "dependency/models.py",
             "dependency/extraction.py",
             "dependency/provider.py",
@@ -401,6 +493,7 @@ class AddonIsolationTests(unittest.TestCase):
             "integrity/service.py",
             "integrity/runtime.py",
             "tools/analysis.py",
+            "tools/dashboard.py",
         ):
             self.assertTrue((package / relative_path).is_file(), relative_path)
         self.assertTrue((BETA_DIR / "README.md").is_file())
@@ -410,6 +503,8 @@ class AddonIsolationTests(unittest.TestCase):
         self.assertTrue((ROOT / "docs" / "SECURITY.md").is_file())
         self.assertTrue((ROOT / "docs" / "RC2_RELEASE_NOTES.md").is_file())
         self.assertTrue((ROOT / "docs" / "RC2_ACCEPTANCE.md").is_file())
+        self.assertTrue((ROOT / "docs" / "RC3A_RELEASE_NOTES.md").is_file())
+        self.assertTrue((ROOT / "docs" / "RC3A_ACCEPTANCE.md").is_file())
         self.assertTrue((ROOT / "docs" / "TOKEN_EFFICIENCY.md").is_file())
         self.assertTrue(
             (ROOT / "docs" / "CONFIGURATION_INTEGRITY_ANALYSIS.md").is_file()
@@ -431,12 +526,14 @@ class ToolParityTests(unittest.TestCase):
 
     def test_all_25_tools_are_registered(self):
         self.assertEqual(len(self.production_tools), 25)
-        self.assertEqual(len(self.beta_tools), 38)
+        self.assertEqual(len(self.beta_tools), 40)
         self.assertEqual(
             set(self.production_tools),
             set(self.beta_tools)
             - {
                 "get_server_health",
+                "list_dashboards",
+                "get_dashboard_config",
                 "create_change_plan",
                 "get_change_plan",
                 "list_change_plans",
@@ -494,8 +591,10 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
-        self.assertEqual(result["data"]["server"]["version"], "2.0.0-rc.2")
-        self.assertEqual(result["data"]["tool_count"], 38)
+        self.assertEqual(
+            result["data"]["server"]["version"], "2.0.0-rc2-dev1"
+        )
+        self.assertEqual(result["data"]["tool_count"], 40)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
     def test_list_capabilities_reports_expected_catalog(self):
@@ -503,12 +602,14 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         catalog = result["data"]
         self.assertEqual(catalog["count"], 25)
-        self.assertEqual(catalog["registered_count"], 38)
+        self.assertEqual(catalog["registered_count"], 40)
         self.assertEqual(len(catalog["planned"]), 0)
         self.assertEqual(
             [item["tool"] for item in catalog["beta_native"]],
             [
                 "get_server_health",
+                "list_dashboards",
+                "get_dashboard_config",
                 "create_change_plan",
                 "get_change_plan",
                 "list_change_plans",
@@ -527,10 +628,10 @@ class ToolParityTests(unittest.TestCase):
             Counter(item["status"] for item in catalog["tools"]),
             {"native": 8, "transitional": 14, "deprecated": 3},
         )
-        self.assertEqual(len(catalog["provider_matrix"]), 9)
+        self.assertEqual(len(catalog["provider_matrix"]), 11)
         self.assertEqual(
             {item["selected_provider"] for item in catalog["provider_matrix"]},
-            {"direct_ha_api", "engineering"},
+            {"direct_ha_api", "engineering", "upstream_dashboard"},
         )
 
 
@@ -606,9 +707,11 @@ class BetaApplicationTests(unittest.TestCase):
         )
         names = [tool["name"] for tool in listing["result"]["tools"]]
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(names), 38)
+        self.assertEqual(len(names), 40)
         expected_beta_native = {
             "get_server_health",
+            "list_dashboards",
+            "get_dashboard_config",
             "create_change_plan",
             "get_change_plan",
             "list_change_plans",
@@ -643,6 +746,69 @@ class BetaApplicationTests(unittest.TestCase):
         self.assertTrue(tool_payload["success"])
         self.assertEqual(tool_payload["operation"], "get_server_health")
         self.assertEqual(tool_payload["request_id"], "health-call-request-123")
+
+    def test_dashboard_reads_call_through_real_mcp_with_bounded_audit(self):
+        initialized = self.initialize(f"/{SECRET}/mcp")
+        self.assertEqual(initialized.status_code, 200)
+        transport = FakeDashboardMcpTransport()
+        configured = replace(
+            beta_settings(str(Path(self.tempdir.name) / "audit.jsonl")),
+            upstream_dashboard_mcp_url=(
+                "http://ha-mcp:9583/"
+                "synthetic-fastmcp-dashboard-secret/mcp"
+            ),
+        )
+        UPSTREAM_DASHBOARD.configure(configured, transport=transport)
+        try:
+            response, listing = self.rpc(
+                "tools/call",
+                {"name": "list_dashboards", "arguments": {"limit": 10}},
+                request_id="dashboard-list-request-123",
+            )
+            list_payload = json.loads(listing["result"]["content"][0]["text"])
+            response2, config = self.rpc(
+                "tools/call",
+                {
+                    "name": "get_dashboard_config",
+                    "arguments": {
+                        "url_path": "fixture-dashboard",
+                        "force_reload": True,
+                    },
+                },
+                request_id="dashboard-config-request-123",
+            )
+            config_payload = json.loads(config["result"]["content"][0]["text"])
+        finally:
+            UPSTREAM_DASHBOARD.configure(beta_settings("audit.jsonl"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response2.status_code, 200)
+        self.assertTrue(list_payload["success"])
+        self.assertTrue(config_payload["success"])
+        self.assertEqual(list_payload["metadata"]["provider"], "upstream_dashboard")
+        self.assertRegex(config_payload["data"]["config_hash"], r"^[0-9a-f]{16}$")
+        self.assertRegex(
+            config_payload["data"]["engineering_config_hash"],
+            r"^[0-9a-f]{64}$",
+        )
+        self.assertEqual(
+            config_payload["data"]["engineering_config_hash"],
+            _engineering_config_hash(config_payload["data"]["configuration"]),
+        )
+        self.assertEqual(len(transport.calls), 2)
+        list_audit = self.audit_record("dashboard-list-request-123")
+        config_audit = self.audit_record("dashboard-config-request-123")
+        self.assertEqual(list_audit["access"], "read")
+        self.assertEqual(config_audit["access"], "read")
+        self.assertEqual(
+            config_audit["parameters"],
+            {
+                "force_reload": True,
+                "provider": "upstream_dashboard",
+                "url_path": "fixture-dashboard",
+            },
+        )
+        audit_text = json.dumps([list_audit, config_audit])
+        self.assertNotIn("synthetic-fastmcp-dashboard-secret", audit_text)
 
     def test_entity_dependency_analysis_calls_through_real_mcp(self):
         initialized = self.initialize(f"/{SECRET}/mcp")

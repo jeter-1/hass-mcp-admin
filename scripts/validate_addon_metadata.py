@@ -13,6 +13,7 @@ import sys
 import tempfile
 from typing import Callable, Iterable
 
+from awesomeversion import AwesomeVersion
 import yaml
 
 
@@ -21,7 +22,7 @@ BETA_SLUG = "hass_mcp_engineering_beta"
 PRODUCTION_NAME = "HA MCP Engineering Server"
 BETA_NAME = "HA MCP Engineering Server Beta"
 PRODUCTION_VERSION = "1.1.2"
-BETA_VERSION = "2.0.0-rc.2"
+BETA_VERSION = "2.0.0-rc2-dev1"
 BETA_IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 PRODUCTION_PORT = 8099
 BETA_PORT = 8100
@@ -30,6 +31,7 @@ MIN_ACCESS_SECRET_LENGTH = 24
 EXTERNAL_CHECK_TIMEOUT_SECONDS = 60
 EXPECTED_BETA_SCHEMA = {
     "access_secret": "str",
+    "upstream_dashboard_mcp_url": "password",
     "rate_limit_per_minute": "int",
     "rate_limit_burst": "int",
     "trust_cf_connecting_ip": "bool",
@@ -109,25 +111,13 @@ def configured_port(config: dict) -> int:
     return host_port
 
 
-def _prerelease_key(value: str | None):
-    if value is None:
-        return (1,)
-    parts = []
-    for identifier in value.split("."):
-        parts.append((0, int(identifier)) if identifier.isdigit() else (1, identifier))
-    return (0, *parts)
-
-
 def version_key(version: str):
-    match = SEMVER.fullmatch(version)
-    if not match:
+    if not SEMVER.fullmatch(version):
         raise MetadataValidationError(f"Invalid semantic version: {version}")
-    return (
-        int(match.group("major")),
-        int(match.group("minor")),
-        int(match.group("patch")),
-        _prerelease_key(match.group("prerelease")),
-    )
+    try:
+        return AwesomeVersion(version)
+    except Exception as exc:
+        raise MetadataValidationError(f"Invalid semantic version: {version}") from exc
 
 
 def is_newer_version(candidate: str, deployed: str) -> bool:

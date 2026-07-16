@@ -25,8 +25,9 @@ jobs:
             hass_mcp_admin/requirements.txt
             hass_mcp_admin/requirements-dev.txt
             hass_mcp_engineering_beta/requirements.txt
+            tests/requirements.txt
       - name: Install dependencies
-        run: python -m pip install -r hass_mcp_admin/requirements-dev.txt -r hass_mcp_engineering_beta/requirements.txt
+        run: python -m pip install -r hass_mcp_admin/requirements-dev.txt -r hass_mcp_engineering_beta/requirements.txt -r tests/requirements.txt
       - name: Compile Python
         run: python -m compileall -q hass_mcp_admin hass_mcp_engineering_beta tests
       - name: Validate deployment metadata
@@ -52,7 +53,7 @@ jobs:
           build_sha="$(git rev-parse HEAD)"
           build_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           docker build \
-            --build-arg "BUILD_VERSION=2.0.0-rc.2" \
+            --build-arg "BUILD_VERSION=2.0.0-rc2-dev1" \
             --build-arg "HAMCP_BUILD_SHA=$build_sha" \
             --build-arg "HAMCP_BUILD_TIME=$build_time" \
             -t hass-mcp-engineering-beta:test \
@@ -64,7 +65,7 @@ jobs:
           build_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           docker buildx build \
             --platform "linux/amd64,linux/arm64,linux/arm/v7" \
-            --build-arg "BUILD_VERSION=2.0.0-rc.2" \
+            --build-arg "BUILD_VERSION=2.0.0-rc2-dev1" \
             --build-arg "HAMCP_BUILD_SHA=$build_sha" \
             --build-arg "HAMCP_BUILD_TIME=$build_time" \
             --output=type=cacheonly \

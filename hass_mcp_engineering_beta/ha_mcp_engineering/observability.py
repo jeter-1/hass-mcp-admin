@@ -193,7 +193,14 @@ class RuntimeMetrics:
 
         if not dispatched:
             return
-        provider = provider_id if provider_id in {"engineering", "standard_ha_mcp", "direct_ha_api", "policy", "none"} else "other"
+        provider = provider_id if provider_id in {
+            "engineering",
+            "standard_ha_mcp",
+            "direct_ha_api",
+            "upstream_dashboard",
+            "policy",
+            "none",
+        } else "other"
         self.provider_requests[provider] += 1
         if completeness == "complete":
             self.provider_successes[provider] += 1

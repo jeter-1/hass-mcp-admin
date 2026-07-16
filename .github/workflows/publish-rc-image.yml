@@ -3,17 +3,17 @@ name: Publish RC image
 on:
   push:
     tags:
-      - "v2.0.0-rc.2"
+      - "v2.0.0-rc2-dev1"
 
 permissions: {}
 
 concurrency:
-  group: publish-hass-mcp-engineering-beta-2.0.0-rc.2
+  group: publish-hass-mcp-engineering-beta-2.0.0-rc2-dev1
   cancel-in-progress: false
 
 env:
   IMAGE_REPOSITORY: ghcr.io/jeter-1/hass-mcp-engineering-beta
-  EXPECTED_VERSION: 2.0.0-rc.2
+  EXPECTED_VERSION: 2.0.0-rc2-dev1
 
 jobs:
   validate:

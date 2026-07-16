@@ -153,6 +153,18 @@ class ErrorTaxonomyTests(unittest.TestCase):
             "invalid_cursor", "stale_cursor", "analysis_unavailable",
             "provider_unavailable", "provider_timeout", "provider_error",
             "provider_prohibited",
+            "upstream_dashboard_not_configured",
+            "upstream_dashboard_authentication_failed",
+            "upstream_dashboard_endpoint_rejected",
+            "upstream_dashboard_connection_failed",
+            "upstream_dashboard_timeout",
+            "upstream_dashboard_protocol_error",
+            "upstream_dashboard_invalid_response",
+            "upstream_dashboard_required_tool_missing",
+            "upstream_dashboard_schema_incompatible",
+            "upstream_dashboard_upstream_error",
+            "upstream_dashboard_response_too_large",
+            "upstream_dashboard_internal_error",
         }
         self.assertEqual({code.value for code in ERROR_CATALOG}, expected)
         for definition in ERROR_CATALOG.values():
@@ -169,6 +181,9 @@ class ErrorTaxonomyTests(unittest.TestCase):
             ErrorCode.ANALYSIS_UNAVAILABLE,
             ErrorCode.PROVIDER_TIMEOUT,
             ErrorCode.PROVIDER_ERROR,
+            ErrorCode.UPSTREAM_DASHBOARD_CONNECTION_FAILED,
+            ErrorCode.UPSTREAM_DASHBOARD_TIMEOUT,
+            ErrorCode.UPSTREAM_DASHBOARD_UPSTREAM_ERROR,
         ):
             self.assertTrue(error_definition(code).retryable)
         for code in (
@@ -176,6 +191,11 @@ class ErrorTaxonomyTests(unittest.TestCase):
             ErrorCode.AUTHENTICATION_FAILURE,
             ErrorCode.PROVIDER_UNAVAILABLE,
             ErrorCode.PROVIDER_PROHIBITED,
+            ErrorCode.UPSTREAM_DASHBOARD_NOT_CONFIGURED,
+            ErrorCode.UPSTREAM_DASHBOARD_AUTHENTICATION_FAILED,
+            ErrorCode.UPSTREAM_DASHBOARD_ENDPOINT_REJECTED,
+            ErrorCode.UPSTREAM_DASHBOARD_REQUIRED_TOOL_MISSING,
+            ErrorCode.UPSTREAM_DASHBOARD_SCHEMA_INCOMPATIBLE,
         ):
             self.assertFalse(error_definition(code).retryable)
 
@@ -498,8 +518,10 @@ class GatewayAndHealthTests(unittest.TestCase):
             payload = json.loads(asyncio.run(compatibility.get_server_health(check_ha=False)))
         self.assertTrue(payload["success"])
         health = payload["data"]
-        self.assertEqual(health["server"]["version"], "2.0.0-rc.2")
-        self.assertEqual(health["registered_tool_count"], 38)
+        self.assertEqual(
+            health["server"]["version"], "2.0.0-rc2-dev1"
+        )
+        self.assertEqual(health["registered_tool_count"], 40)
         self.assertIn("handoff_generation", health)
         self.assertIn("automation_reliability_analysis", health)
         self.assertIn("governance", health)
@@ -527,6 +549,57 @@ class GatewayAndHealthTests(unittest.TestCase):
             },
         )
         self.assertEqual(health["provider_routing"]["standard_ha_mcp_exact_mapping_count"], 0)
+        self.assertEqual(
+            health["upstream_dashboard"],
+            {
+                "configured": False,
+                "credential_present": False,
+                "reachable": False,
+                "capability_status": "unconfigured",
+                "upstream_server_name": None,
+                "upstream_server_version": None,
+                "mcp_protocol_version": None,
+                "upstream_tool_count": 0,
+                "required_tool_present": False,
+                "required_schema_compatible": False,
+                "required_schema_fingerprint": None,
+                "catalog_fingerprint": None,
+                "last_successful_handshake_timestamp": None,
+                "last_successful_dashboard_call_timestamp": None,
+                "connection_latency": {
+                    "count": 0,
+                    "average_ms": None,
+                    "maximum_ms": None,
+                },
+                "tool_call_latency": {
+                    "count": 0,
+                    "average_ms": None,
+                    "maximum_ms": None,
+                },
+                "request_count": 0,
+                "success_count": 0,
+                "failure_counts": {
+                    "not_configured": 0,
+                    "authentication_failed": 0,
+                    "endpoint_rejected": 0,
+                    "connection_failed": 0,
+                    "timeout": 0,
+                    "protocol_error": 0,
+                    "invalid_response": 0,
+                    "required_tool_missing": 0,
+                    "schema_incompatible": 0,
+                    "upstream_error": 0,
+                    "response_too_large": 0,
+                    "internal_error": 0,
+                },
+                "timeout_count": 0,
+                "reconnect_count": 0,
+                "session_state": "unconfigured",
+                "required_tool": "ha_config_get_dashboard",
+                "allowlisted_tool_count": 1,
+                "writes_allowed": False,
+            },
+        )
         self.assertIn("dependency_analysis", health)
         dependency = health["dependency_analysis"]
         self.assertIn("findings_truncation_event_count", dependency)

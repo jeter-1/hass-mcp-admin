@@ -38,6 +38,7 @@ from ..sanitization import sanitize_untrusted_data
 from ..trace_normalization import fetch_normalized_trace_list
 from ..tool_framework import run_structured
 from ..routing import MAX_BUCKET_STORE_SIZE, resolve_client_address
+from ..providers.upstream_dashboard import UPSTREAM_DASHBOARD
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -203,6 +204,19 @@ async def get_server_health(check_ha: bool = True) -> str:
                     "status": "unavailable",
                     "error_category": type(exc).__name__,
                 }
+        upstream_health = UPSTREAM_DASHBOARD.health_snapshot()
+        if (
+            check_ha
+            and upstream_health.get("configured")
+            and upstream_health.get("capability_status") == "unknown"
+        ):
+            try:
+                await UPSTREAM_DASHBOARD.refresh_capabilities()
+            except Exception:
+                # Dashboard-provider errors are already normalized and recorded
+                # in its own secret-free health state. Core health remains
+                # available even when the optional provider is unavailable.
+                pass
         return HEALTH.snapshot(connection)
 
     return await run_structured(

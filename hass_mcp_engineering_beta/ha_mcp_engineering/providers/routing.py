@@ -24,6 +24,7 @@ class CapabilityRoute(str, Enum):
     STANDARD_MCP_PREFERRED = "standard_mcp_preferred"
     DIRECT_HA_REQUIRED = "direct_ha_required"
     TRANSITIONAL_DIRECT = "transitional_direct"
+    UPSTREAM_DASHBOARD = "upstream_dashboard"
     UNSUPPORTED = "unsupported"
     PROHIBITED = "prohibited"
 
@@ -75,6 +76,10 @@ _TRANSITIONAL_DIRECT = {
     ProviderCapability.AREA_LOOKUP,
     ProviderCapability.SERVICE_DISCOVERY,
 }
+_UPSTREAM_DASHBOARD = {
+    ProviderCapability.DASHBOARD_INVENTORY,
+    ProviderCapability.DASHBOARD_CONFIGURATION_EVIDENCE,
+}
 _PROHIBITED = {
     ProviderCapability.UNGOVERNED_PHYSICAL_ACTION,
     ProviderCapability.SECRET_BEARING_DIAGNOSTICS,
@@ -95,6 +100,12 @@ class RoutingPolicy:
             return RoutingDecision(capability, CapabilityRoute.DIRECT_HA_REQUIRED, "direct_ha_api")
         if capability in _TRANSITIONAL_DIRECT:
             return RoutingDecision(capability, CapabilityRoute.TRANSITIONAL_DIRECT, "direct_ha_api")
+        if capability in _UPSTREAM_DASHBOARD:
+            return RoutingDecision(
+                capability,
+                CapabilityRoute.UPSTREAM_DASHBOARD,
+                "upstream_dashboard",
+            )
         if capability in _PROHIBITED:
             return RoutingDecision(capability, CapabilityRoute.PROHIBITED, None)
         return RoutingDecision(capability, CapabilityRoute.UNSUPPORTED, None)
@@ -139,6 +150,8 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "configuration_integrity_analysis": ProviderCapability.CONFIGURATION_INTEGRITY_ANALYSIS,
     "incident_correlation": ProviderCapability.INCIDENT_CORRELATION,
     "handoff_generation": ProviderCapability.HANDOFF_GENERATION,
+    "list_dashboards": ProviderCapability.DASHBOARD_INVENTORY,
+    "get_dashboard_config": ProviderCapability.DASHBOARD_CONFIGURATION_EVIDENCE,
 }
 
 ANALYTICAL_PROVIDER_POLICIES = {

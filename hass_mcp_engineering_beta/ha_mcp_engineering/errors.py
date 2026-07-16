@@ -49,6 +49,24 @@ class ErrorCode(str, Enum):
     PROVIDER_TIMEOUT = "provider_timeout"
     PROVIDER_ERROR = "provider_error"
     PROVIDER_PROHIBITED = "provider_prohibited"
+    UPSTREAM_DASHBOARD_NOT_CONFIGURED = "upstream_dashboard_not_configured"
+    UPSTREAM_DASHBOARD_AUTHENTICATION_FAILED = (
+        "upstream_dashboard_authentication_failed"
+    )
+    UPSTREAM_DASHBOARD_ENDPOINT_REJECTED = "upstream_dashboard_endpoint_rejected"
+    UPSTREAM_DASHBOARD_CONNECTION_FAILED = "upstream_dashboard_connection_failed"
+    UPSTREAM_DASHBOARD_TIMEOUT = "upstream_dashboard_timeout"
+    UPSTREAM_DASHBOARD_PROTOCOL_ERROR = "upstream_dashboard_protocol_error"
+    UPSTREAM_DASHBOARD_INVALID_RESPONSE = "upstream_dashboard_invalid_response"
+    UPSTREAM_DASHBOARD_REQUIRED_TOOL_MISSING = (
+        "upstream_dashboard_required_tool_missing"
+    )
+    UPSTREAM_DASHBOARD_SCHEMA_INCOMPATIBLE = (
+        "upstream_dashboard_schema_incompatible"
+    )
+    UPSTREAM_DASHBOARD_UPSTREAM_ERROR = "upstream_dashboard_upstream_error"
+    UPSTREAM_DASHBOARD_RESPONSE_TOO_LARGE = "upstream_dashboard_response_too_large"
+    UPSTREAM_DASHBOARD_INTERNAL_ERROR = "upstream_dashboard_internal_error"
 
 
 @dataclass(frozen=True)
@@ -113,6 +131,78 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
     ErrorCode.PROVIDER_TIMEOUT: ErrorDefinition("The capability provider timed out.", True, 504, "internal_error"),
     ErrorCode.PROVIDER_ERROR: ErrorDefinition("The capability provider failed.", True, 502, "internal_error"),
     ErrorCode.PROVIDER_PROHIBITED: ErrorDefinition("Provider policy prohibits this operation or fallback.", False, 403, "invalid_request"),
+    ErrorCode.UPSTREAM_DASHBOARD_NOT_CONFIGURED: ErrorDefinition(
+        "The upstream dashboard provider is not configured.",
+        False,
+        503,
+        "internal_error",
+    ),
+    ErrorCode.UPSTREAM_DASHBOARD_AUTHENTICATION_FAILED: ErrorDefinition(
+        "The upstream dashboard provider rejected authentication.",
+        False,
+        502,
+        "internal_error",
+    ),
+    ErrorCode.UPSTREAM_DASHBOARD_ENDPOINT_REJECTED: ErrorDefinition(
+        "The configured upstream dashboard endpoint or secret path was rejected.",
+        False,
+        502,
+        "internal_error",
+    ),
+    ErrorCode.UPSTREAM_DASHBOARD_CONNECTION_FAILED: ErrorDefinition(
+        "The upstream dashboard provider could not be reached.",
+        True,
+        503,
+        "internal_error",
+    ),
+    ErrorCode.UPSTREAM_DASHBOARD_TIMEOUT: ErrorDefinition(
+        "The upstream dashboard provider timed out.",
+        True,
+        504,
+        "internal_error",
+    ),
+    ErrorCode.UPSTREAM_DASHBOARD_PROTOCOL_ERROR: ErrorDefinition(
+        "The upstream dashboard provider returned an incompatible MCP protocol response.",
+        False,
+        502,
+        "internal_error",
+    ),
+    ErrorCode.UPSTREAM_DASHBOARD_INVALID_RESPONSE: ErrorDefinition(
+        "The upstream dashboard provider returned an invalid response.",
+        False,
+        502,
+        "internal_error",
+    ),
+    ErrorCode.UPSTREAM_DASHBOARD_REQUIRED_TOOL_MISSING: ErrorDefinition(
+        "The required upstream dashboard read tool is unavailable.",
+        False,
+        503,
+        "internal_error",
+    ),
+    ErrorCode.UPSTREAM_DASHBOARD_SCHEMA_INCOMPATIBLE: ErrorDefinition(
+        "The required upstream dashboard read schema is incompatible.",
+        False,
+        503,
+        "internal_error",
+    ),
+    ErrorCode.UPSTREAM_DASHBOARD_UPSTREAM_ERROR: ErrorDefinition(
+        "The upstream dashboard read failed.",
+        True,
+        502,
+        "internal_error",
+    ),
+    ErrorCode.UPSTREAM_DASHBOARD_RESPONSE_TOO_LARGE: ErrorDefinition(
+        "The dashboard configuration exceeds the Engineering response limit.",
+        False,
+        413,
+        "invalid_request",
+    ),
+    ErrorCode.UPSTREAM_DASHBOARD_INTERNAL_ERROR: ErrorDefinition(
+        "The upstream dashboard provider encountered an internal error.",
+        False,
+        500,
+        "internal_error",
+    ),
 }
 
 
@@ -176,6 +266,21 @@ class GovernanceError(EngineeringServerError):
     ):
         self.code = code
         super().__init__(message, details=details)
+
+
+class DashboardProviderError(EngineeringServerError):
+    """Safe dashboard-provider error with a stable public code."""
+
+    def __init__(
+        self,
+        code: ErrorCode,
+        *,
+        details: dict[str, Any] | None = None,
+    ):
+        if not code.value.startswith("upstream_dashboard_"):
+            raise ValueError("DashboardProviderError requires a dashboard error code")
+        self.code = code
+        super().__init__(details=details)
 
 
 # Compatibility name retained for the scaffold imports.

@@ -1,5 +1,32 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## RC3A dashboard-provider observability
+
+`get_server_health.upstream_dashboard` reports configured/credential state,
+reachability, capability status, sanitized live upstream identity, MCP protocol,
+tool count, required-tool/schema compatibility, schema/catalog fingerprints,
+last success timestamps, connection and tool-call latency, request/success/
+timeout/reconnect counts, categorized failures, session state, and
+`writes_allowed=false`.
+
+It never reports the endpoint, host, port, secret path, query, credentials,
+headers, raw schemas, or raw exception text. Stable transport categories
+distinguish `authentication_failed`, neutral `endpoint_rejected`,
+`connection_failed`, and genuine `timeout`, followed by protocol, response,
+capability, upstream, response-size, and internal failures. Dashboard calls add
+separate upstream duration/count fields to response timing without changing
+direct Home Assistant timing semantics. Audit records contain only the list
+limit or exact canonical dashboard path, force-reload flag, and provider; they
+exclude endpoint and dashboard content.
+
+The provider records sanitized observed server name/version and validates the
+required tool, schema, and read-only annotations. It does not pin an upstream
+name or implementation family; the operator-selected endpoint is trusted when
+the bounded schema contract is compatible.
+
+`standard_ha_mcp_delegation` remains `unavailable`. The two new beta-native
+tools raise the registered count to 40; the canonical count remains 25.
+
 ## RC2 build provenance and compatibility
 
 The existing `server_info` fields `build_sha` and `build_time` report validated

@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.0.0-rc2-dev1
+
+- Add the RC3A read-only `upstream_dashboard` provider using the maintained
+  `mcp==1.9.0` streamable-HTTP client already present in the image.
+- Add bounded `list_dashboards` and `get_dashboard_config` tools backed only by
+  upstream `ha_config_get_dashboard`.
+- Verify the upstream 16-character dashboard optimistic-lock hash against an
+  exact local recomputation and expose a distinct 64-character Engineering
+  evidence hash calculated from complete raw JSON before sanitization.
+- Classify rejected endpoint/secret paths, connection failures, and genuine
+  timeouts deterministically without exposing endpoint details.
+- Use AwesomeVersion 25.8.0 to select the installable RC3A development version
+  `2.0.0-rc2-dev1`; the rejected `2.0.0-rc.2.rc3a.1` form is incomparable.
+- Validate the upstream read annotation and minimum input schema, record
+  sanitized identity and schema/catalog fingerprints, and fail closed on
+  missing or incompatible capabilities.
+- Treat the complete upstream URL as a password-style secret and exclude it
+  from responses, health, logs, audit records, errors, and tracebacks.
+- Preserve all 25 canonical tool contracts, Standard HA MCP unavailability,
+  direct-HA policies, governance, external approval authority version 2, and
+  production v1.1.2.
+- Add no dashboard write, delete, backup, service, physical-action, generic
+  upstream forwarding, or live deployment path.
+
 ## 2.0.0-rc.2
 
 - Supersede immutable RC1 because Home Assistant could continue resolving the
