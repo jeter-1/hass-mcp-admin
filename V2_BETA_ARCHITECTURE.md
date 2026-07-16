@@ -1,5 +1,20 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## RC3A read-only dashboard provider
+
+RC3A development version `2.0.0-rc.2.rc3a.1` adds a distinct
+`upstream_dashboard` boundary. It uses the existing pinned MCP client to
+initialize, list and validate the live upstream catalog, then call only
+`ha_config_get_dashboard` in inventory or exact-read mode. The configured URL
+is password-style secret input and never appears in health, audit, logs,
+responses, startup summaries, or exceptions.
+
+The public additions are `list_dashboards` and `get_dashboard_config`. Both are
+beta-native read tools routed directly to `upstream_dashboard`, with no
+fallback. The generic Standard HA MCP gateway remains unavailable. The catalog
+is 40 registered/25 canonical/zero planned. No dashboard mutation or arbitrary
+upstream dispatch exists.
+
 ## RC2 release freeze and provenance
 
 RC2 retains the beta slug and listener layout while freezing the accepted Beta
@@ -64,7 +79,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-rc.2` |
+| Version | `1.1.2` | `2.0.0-rc.2.rc3a.1` |
 | Port | `8099` | MCP `8100`; internal Ingress `8110` |
 | Options and secret | Production add-on data | Beta add-on data |
 

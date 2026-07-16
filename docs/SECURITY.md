@@ -1,5 +1,25 @@
 # Beta provider security boundaries
 
+## RC3A upstream dashboard boundary
+
+`upstream_dashboard` is separate from the unavailable generic
+`standard_ha_mcp` gateway. It accepts one password-style, operator-configured
+secret endpoint and exposes exactly one allowlisted upstream tool:
+`ha_config_get_dashboard`. Inventory and exact configuration reads use fixed
+argument shapes. Set/delete dashboard, backup, service, reload, automation
+write, physical-action, and arbitrary tool names fail before network dispatch.
+
+The live initialize identity and required schema are sanitized and validated.
+Raw tool schemas and endpoint material never appear in health. Full URL, host,
+port, secret path, query, credentials, and reconstructed fragments are excluded
+from logs, audit, responses, errors, tracebacks, and startup output. Upstream
+dashboard titles, card text, configuration, and warnings are untrusted data and
+cannot authorize or construct another tool call.
+
+The provider adds no Supervisor permission and performs no discovery. Existing
+direct-HA policies, governance, external approval, and production v1.1.2 remain
+unchanged. See [`RC3A_RELEASE_NOTES.md`](RC3A_RELEASE_NOTES.md).
+
 ## RC2 frozen security boundary
 
 RC2 changes no approval authority, listener, write policy, redaction rule, or

@@ -1,5 +1,18 @@
 # ADR-002: Engineering MCP as a facilitator
 
+## RC3A dashboard evidence decision
+
+RC3A introduces a provider-specific exception to the still-unavailable generic
+Standard HA MCP path. `upstream_dashboard` is not a general delegated gateway:
+it validates one upstream read tool and offers only typed dashboard inventory
+and exact configuration evidence operations. Its route is
+`upstream_dashboard`, its fallback is none, and its write allowlist is empty.
+
+This preserves the facilitator decision: the Engineering server may acquire
+bounded, exact dashboard evidence needed for later engineering analysis, while
+dashboard mutation, service execution, physical action, and arbitrary upstream
+tool forwarding remain outside the boundary.
+
 ## Beta 25 authority clarification
 
 Facilitation and authenticated MCP access do not imply human change authority.
@@ -83,6 +96,7 @@ exception, and report the provider actually used.
 | Exact entity-ID state | Direct HA REST API | None |
 | Complete area registry | Direct HA WebSocket API | None |
 | Service discovery/schema | Direct HA REST API, bounded | None |
+| Dashboard inventory/config evidence | Fixed `upstream_dashboard` read adapter | None |
 | Ordinary service execution | Standard HA MCP | None by default |
 | Automation config | Direct HA config API | No generic fallback |
 | Automation traces | Direct HA trace API | No generic fallback |

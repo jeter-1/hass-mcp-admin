@@ -1,5 +1,21 @@
 # HA MCP Engineering Server Architecture
 
+## RC3A dashboard-provider boundary
+
+Development version `2.0.0-rc.2.rc3a.1` adds a separate
+`upstream_dashboard` provider without making `standard_ha_mcp` available. The
+provider consumes one operator-configured secret streamable-HTTP endpoint and
+exposes only fixed typed inventory and exact-configuration reads through
+upstream `ha_config_get_dashboard`. Initialize identity, tool discovery,
+read-only annotations, required argument types, and schema/catalog fingerprints
+are validated before each tool dispatch.
+
+The two additive tools raise the catalog to 40 registered while retaining 25
+canonical and zero planned capabilities. No generic forwarding, dashboard
+mutation, service call, physical action, Supervisor discovery, approval change,
+or production v1.1.2 change is present. See
+[`docs/RC3A_RELEASE_NOTES.md`](docs/RC3A_RELEASE_NOTES.md).
+
 ## RC2 release-freeze boundary
 
 Version `2.0.0-rc.2` is built from accepted Beta 26 commit

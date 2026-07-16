@@ -52,7 +52,7 @@ jobs:
           build_sha="$(git rev-parse HEAD)"
           build_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           docker build \
-            --build-arg "BUILD_VERSION=2.0.0-rc.2" \
+            --build-arg "BUILD_VERSION=2.0.0-rc.2.rc3a.1" \
             --build-arg "HAMCP_BUILD_SHA=$build_sha" \
             --build-arg "HAMCP_BUILD_TIME=$build_time" \
             -t hass-mcp-engineering-beta:test \
@@ -64,7 +64,7 @@ jobs:
           build_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           docker buildx build \
             --platform "linux/amd64,linux/arm64,linux/arm/v7" \
-            --build-arg "BUILD_VERSION=2.0.0-rc.2" \
+            --build-arg "BUILD_VERSION=2.0.0-rc.2.rc3a.1" \
             --build-arg "HAMCP_BUILD_SHA=$build_sha" \
             --build-arg "HAMCP_BUILD_TIME=$build_time" \
             --output=type=cacheonly \
