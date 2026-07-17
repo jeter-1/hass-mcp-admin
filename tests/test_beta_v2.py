@@ -708,6 +708,77 @@ class BetaApplicationTests(unittest.TestCase):
         names = [tool["name"] for tool in listing["result"]["tools"]]
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(names), 40)
+        dashboard_descriptors = {
+            tool["name"]: tool
+            for tool in listing["result"]["tools"]
+            if tool["name"] in {"list_dashboards", "get_dashboard_config"}
+        }
+        self.assertEqual(
+            set(dashboard_descriptors),
+            {"list_dashboards", "get_dashboard_config"},
+        )
+        # Registration is invariant: an unconfigured/unavailable provider must
+        # fail calls safely, never make its public tools disappear.
+        provider_health = UPSTREAM_DASHBOARD.health_snapshot()
+        self.assertFalse(provider_health["configured"])
+        self.assertEqual(provider_health["capability_status"], "unconfigured")
+        self.assertEqual(
+            set(
+                dashboard_descriptors["list_dashboards"]["inputSchema"][
+                    "properties"
+                ]
+            ),
+            {"limit"},
+        )
+        self.assertEqual(
+            dashboard_descriptors["list_dashboards"]["inputSchema"][
+                "properties"
+            ]["limit"],
+            {
+                "default": 100,
+                "maximum": 200,
+                "minimum": 1,
+                "title": "Limit",
+                "type": "integer",
+            },
+        )
+        self.assertEqual(
+            set(
+                dashboard_descriptors["get_dashboard_config"]["inputSchema"][
+                    "properties"
+                ]
+            ),
+            {"url_path", "force_reload"},
+        )
+        self.assertEqual(
+            dashboard_descriptors["get_dashboard_config"]["inputSchema"][
+                "required"
+            ],
+            ["url_path"],
+        )
+        for descriptor in dashboard_descriptors.values():
+            annotations = descriptor["annotations"]
+            self.assertIs(annotations["readOnlyHint"], True)
+            self.assertIs(annotations["destructiveHint"], False)
+            self.assertIs(annotations["idempotentHint"], True)
+            self.assertIs(annotations["openWorldHint"], False)
+            encoded = json.dumps(
+                {
+                    "description": descriptor.get("description"),
+                    "inputSchema": descriptor["inputSchema"],
+                }
+            ).lower()
+            for prohibited in (
+                "bearer",
+                "credential",
+                "password",
+                "secret",
+                "token",
+                "upstream_dashboard_mcp_url",
+                "http://",
+                "https://",
+            ):
+                self.assertNotIn(prohibited, encoded)
         expected_beta_native = {
             "get_server_health",
             "list_dashboards",

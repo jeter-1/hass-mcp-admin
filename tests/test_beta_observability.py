@@ -570,6 +570,26 @@ class GatewayAndHealthTests(unittest.TestCase):
                 "required_schema_compatible": False,
                 "required_schema_fingerprint": None,
                 "required_contract_fingerprint": None,
+                "expected_input_schema_fingerprint": (
+                    "7f2b6a086faec129c182fe6f791722beda9fffc659a507f55a3b20d72e2155a6"
+                ),
+                "observed_input_schema_fingerprint": None,
+                "input_schema_match": False,
+                "expected_reviewed_security_contract_fingerprint": (
+                    "c4395cfa63e9de34a672cfdfe34f93541b407766c81b9dcbe82bf4f82c3e7b86"
+                ),
+                "observed_reviewed_security_contract_fingerprint": None,
+                "reviewed_security_contract_match": False,
+                "expected_fixture_runtime_descriptor_fingerprint": (
+                    "170c2aac1d6437d5c42b7f1d48f5322fef4736c414654c4cc4f7830138e959ca"
+                ),
+                "expected_published_runtime_descriptor_fingerprint": (
+                    "dd12cba02e59bf98e5b251ddf516c5a7fbea5fbd5f37d053cd8a9cc549827157"
+                ),
+                "observed_runtime_descriptor_fingerprint": None,
+                "runtime_descriptor_match": False,
+                "published_runtime_descriptor_match": False,
+                "runtime_descriptor_drift": "not_observed",
                 "catalog_fingerprint": None,
                 "trust_mode": None,
                 "trust_profile": None,
@@ -608,6 +628,11 @@ class GatewayAndHealthTests(unittest.TestCase):
                     "upstream_version_mismatch": 0,
                     "reviewed_contract_mismatch": 0,
                     "reviewed_annotation_mismatch": 0,
+                    "input_schema_mismatch": 0,
+                    "security_contract_mismatch": 0,
+                    "runtime_descriptor_semantic_drift": 0,
+                    "annotation_mismatch": 0,
+                    "output_contract_mismatch": 0,
                     "unsupported_trust_profile": 0,
                     "prohibited_argument": 0,
                     "hash_contract_mismatch": 0,

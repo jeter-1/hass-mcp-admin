@@ -3,6 +3,8 @@
 from functools import wraps
 import inspect
 
+from mcp.types import ToolAnnotations
+
 from . import compatibility
 from .governance import GOVERNANCE_TOOLS
 from .analysis import ANALYSIS_TOOLS
@@ -31,9 +33,17 @@ for analysis_tool in ANALYSIS_TOOLS:
         _SERVER.tool()(analysis_tool)
 
 _registered = {tool.name for tool in _SERVER._tool_manager.list_tools()}
+_DASHBOARD_READ_ANNOTATIONS = ToolAnnotations(
+    readOnlyHint=True,
+    destructiveHint=False,
+    idempotentHint=True,
+    openWorldHint=False,
+)
 for dashboard_tool in DASHBOARD_TOOLS:
     if dashboard_tool.__name__ not in _registered:
-        _SERVER.tool()(dashboard_tool)
+        _SERVER.tool(
+            annotations=_DASHBOARD_READ_ANNOTATIONS
+        )(dashboard_tool)
 
 
 def _routed_wrapper(tool_name, original):

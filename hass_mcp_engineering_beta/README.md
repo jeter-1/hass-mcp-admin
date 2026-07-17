@@ -40,7 +40,7 @@ https://BETA_TUNNEL/REDACTED_BETA_SECRET/mcp/
 
 Direct requests to `/mcp` and `/mcp/` must return `404`. After initialization,
 call `server_info(check_ha=false)` and verify version
-`2.0.0-rc2-dev2` after automated promotion, the expected complete release
+`2.0.0-rc2-dev3` after automated promotion, the expected complete release
 commit SHA, and its UTC build time,
 then call `list_capabilities` and verify the preserved 25-tool canonical catalog
 plus 15 beta-native tools; MCP `tools/list` should expose 40 callable tools.
@@ -71,7 +71,11 @@ non-screenshot read forms. The generic Standard HA MCP gateway remains
 unavailable and no screenshot, preference write, dashboard write, or arbitrary
 forwarding path exists. RC3A
 changes the public catalog, so reconnect the Engineering connector after the
-add-on update.
+add-on update. The raw server-side MCP `tools/list` returns all 40 tools even
+when the dashboard provider is unavailable. If a refreshed ChatGPT connector
+still exposes only 38, treat it as connector schema caching and reconnect or
+recreate that connector; the server does not dynamically remove the dashboard
+tools.
 
 Use a separate tunnel ingress or hostname for beta. Route it to port `8100`;
 leave the production ingress on `8099`.

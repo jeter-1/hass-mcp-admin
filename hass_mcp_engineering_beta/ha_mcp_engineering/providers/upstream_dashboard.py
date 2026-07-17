@@ -40,14 +40,25 @@ REVIEWED_UPSTREAM_COMMIT = "f4eb53621ccb814cb7123d2811e06eda3577129c"
 REVIEWED_SCHEMA_FINGERPRINT = (
     "7f2b6a086faec129c182fe6f791722beda9fffc659a507f55a3b20d72e2155a6"
 )
-REVIEWED_CONTRACT_FINGERPRINT = (
+REVIEWED_FIXTURE_RUNTIME_DESCRIPTOR_FINGERPRINT = (
     "170c2aac1d6437d5c42b7f1d48f5322fef4736c414654c4cc4f7830138e959ca"
+)
+REVIEWED_PUBLISHED_RUNTIME_DESCRIPTOR_FINGERPRINT = (
+    "dd12cba02e59bf98e5b251ddf516c5a7fbea5fbd5f37d053cd8a9cc549827157"
+)
+REVIEWED_SECURITY_CONTRACT_FINGERPRINT = (
+    "c4395cfa63e9de34a672cfdfe34f93541b407766c81b9dcbe82bf4f82c3e7b86"
 )
 REVIEWED_ANNOTATIONS = {
     "destructiveHint": False,
     "idempotentHint": True,
     "openWorldHint": False,
     "title": "Get Dashboard",
+}
+REVIEWED_SAFETY_ANNOTATIONS = {
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": False,
 }
 ALLOWED_UPSTREAM_TOOLS = frozenset({REQUIRED_DASHBOARD_TOOL})
 PROHIBITED_UPSTREAM_TOOLS = frozenset(
@@ -74,6 +85,11 @@ FAILURE_CATEGORIES = (
     "upstream_version_mismatch",
     "reviewed_contract_mismatch",
     "reviewed_annotation_mismatch",
+    "input_schema_mismatch",
+    "security_contract_mismatch",
+    "runtime_descriptor_semantic_drift",
+    "annotation_mismatch",
+    "output_contract_mismatch",
     "unsupported_trust_profile",
     "prohibited_argument",
     "hash_contract_mismatch",
@@ -105,6 +121,21 @@ _ERROR_CODES = {
     ),
     "reviewed_annotation_mismatch": (
         ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_ANNOTATION_MISMATCH
+    ),
+    "input_schema_mismatch": (
+        ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_CONTRACT_MISMATCH
+    ),
+    "security_contract_mismatch": (
+        ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_CONTRACT_MISMATCH
+    ),
+    "runtime_descriptor_semantic_drift": (
+        ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_CONTRACT_MISMATCH
+    ),
+    "annotation_mismatch": (
+        ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_ANNOTATION_MISMATCH
+    ),
+    "output_contract_mismatch": (
+        ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_CONTRACT_MISMATCH
     ),
     "unsupported_trust_profile": (
         ErrorCode.UPSTREAM_DASHBOARD_UNSUPPORTED_TRUST_PROFILE
@@ -149,10 +180,17 @@ class DashboardProviderState:
     required_schema_compatible: bool = False
     required_schema_fingerprint: str | None = None
     required_contract_fingerprint: str | None = None
+    reviewed_security_contract_fingerprint: str | None = None
+    runtime_descriptor_fingerprint: str | None = None
     catalog_fingerprint: str | None = None
     trust_mode: str | None = None
     trust_profile: str | None = None
     reviewed_contract_match: bool = False
+    input_schema_match: bool = False
+    reviewed_security_contract_match: bool = False
+    runtime_descriptor_match: bool = False
+    published_runtime_descriptor_match: bool = False
+    runtime_descriptor_drift: str = "not_observed"
     validation_reason: str | None = None
     force_reload_supported: bool = False
     last_successful_handshake_timestamp: str | None = None
@@ -576,33 +614,105 @@ class UpstreamDashboardProvider:
         schema = tool.get("inputSchema")
         try:
             schema_fingerprint = _stable_hash(schema)
-            contract_fingerprint = _stable_hash(tool)
+            runtime_descriptor_fingerprint = _stable_hash(tool)
+            security_contract_fingerprint = _stable_hash(
+                _reviewed_security_contract_projection(tool)
+            )
         except (TypeError, ValueError, OverflowError):
             with self._lock:
                 self._state.required_schema_compatible = False
                 self._state.capability_status = "unavailable"
                 self._state.validation_reason = "reviewed_contract_mismatch"
             raise DashboardTransportError("reviewed_contract_mismatch") from None
+        input_schema_match = (
+            schema_fingerprint == REVIEWED_SCHEMA_FINGERPRINT
+        )
+        security_contract_match = (
+            security_contract_fingerprint
+            == REVIEWED_SECURITY_CONTRACT_FINGERPRINT
+        )
+        runtime_descriptor_match = (
+            runtime_descriptor_fingerprint
+            == REVIEWED_FIXTURE_RUNTIME_DESCRIPTOR_FINGERPRINT
+        )
+        published_runtime_descriptor_match = (
+            runtime_descriptor_fingerprint
+            == REVIEWED_PUBLISHED_RUNTIME_DESCRIPTOR_FINGERPRINT
+        )
+        runtime_descriptor_drift = _runtime_descriptor_drift(
+            runtime_descriptor_match=runtime_descriptor_match,
+            security_contract_match=security_contract_match,
+        )
         try:
             decision = _select_trust_profile(handshake, tool)
         except DashboardTransportError as exc:
             with self._lock:
                 self._state.required_schema_fingerprint = schema_fingerprint
-                self._state.required_contract_fingerprint = contract_fingerprint
+                self._state.required_contract_fingerprint = (
+                    runtime_descriptor_fingerprint
+                )
+                self._state.reviewed_security_contract_fingerprint = (
+                    security_contract_fingerprint
+                )
+                self._state.runtime_descriptor_fingerprint = (
+                    runtime_descriptor_fingerprint
+                )
                 self._state.required_schema_compatible = False
                 self._state.reviewed_contract_match = False
+                self._state.input_schema_match = input_schema_match
+                self._state.reviewed_security_contract_match = (
+                    security_contract_match
+                )
+                self._state.runtime_descriptor_match = runtime_descriptor_match
+                self._state.published_runtime_descriptor_match = (
+                    published_runtime_descriptor_match
+                )
+                self._state.runtime_descriptor_drift = runtime_descriptor_drift
                 self._state.validation_reason = exc.category
                 self._state.capability_status = "unavailable"
             raise
         with self._lock:
             self._state.required_schema_fingerprint = schema_fingerprint
-            self._state.required_contract_fingerprint = contract_fingerprint
+            self._state.required_contract_fingerprint = (
+                runtime_descriptor_fingerprint
+            )
+            self._state.reviewed_security_contract_fingerprint = (
+                security_contract_fingerprint
+            )
+            self._state.runtime_descriptor_fingerprint = (
+                runtime_descriptor_fingerprint
+            )
             self._state.required_schema_compatible = True
             self._state.force_reload_supported = decision.force_reload_supported
             self._state.trust_mode = decision.mode
             self._state.trust_profile = decision.profile
             self._state.reviewed_contract_match = (
                 decision.reviewed_contract_match
+            )
+            self._state.input_schema_match = (
+                input_schema_match
+                if decision.mode == TRUST_MODE_REVIEWED_ARGUMENT_CONSTRAINED
+                else False
+            )
+            self._state.reviewed_security_contract_match = (
+                security_contract_match
+                if decision.mode == TRUST_MODE_REVIEWED_ARGUMENT_CONSTRAINED
+                else False
+            )
+            self._state.runtime_descriptor_match = (
+                runtime_descriptor_match
+                if decision.mode == TRUST_MODE_REVIEWED_ARGUMENT_CONSTRAINED
+                else False
+            )
+            self._state.published_runtime_descriptor_match = (
+                published_runtime_descriptor_match
+                if decision.mode == TRUST_MODE_REVIEWED_ARGUMENT_CONSTRAINED
+                else False
+            )
+            self._state.runtime_descriptor_drift = (
+                runtime_descriptor_drift
+                if decision.mode == TRUST_MODE_REVIEWED_ARGUMENT_CONSTRAINED
+                else "not_applicable"
             )
             self._state.validation_reason = None
             self._state.capability_status = "available"
@@ -706,6 +816,12 @@ class UpstreamDashboardProvider:
             ),
             "schema_fingerprint": self._state.required_schema_fingerprint,
             "contract_fingerprint": self._state.required_contract_fingerprint,
+            "reviewed_security_contract_fingerprint": (
+                self._state.reviewed_security_contract_fingerprint
+            ),
+            "runtime_descriptor_fingerprint": (
+                self._state.runtime_descriptor_fingerprint
+            ),
             "catalog_fingerprint": self._state.catalog_fingerprint,
             "trust_mode": self._state.trust_mode,
             "trust_profile": self._state.trust_profile,
@@ -775,6 +891,11 @@ class UpstreamDashboardProvider:
                 "upstream_version_mismatch",
                 "reviewed_contract_mismatch",
                 "reviewed_annotation_mismatch",
+                "input_schema_mismatch",
+                "security_contract_mismatch",
+                "runtime_descriptor_semantic_drift",
+                "annotation_mismatch",
+                "output_contract_mismatch",
                 "unsupported_trust_profile",
                 "hash_contract_mismatch",
                 "not_configured",
@@ -825,6 +946,36 @@ class UpstreamDashboardProvider:
                 "required_contract_fingerprint": (
                     state.required_contract_fingerprint
                 ),
+                "expected_input_schema_fingerprint": (
+                    REVIEWED_SCHEMA_FINGERPRINT
+                ),
+                "observed_input_schema_fingerprint": (
+                    state.required_schema_fingerprint
+                ),
+                "input_schema_match": state.input_schema_match,
+                "expected_reviewed_security_contract_fingerprint": (
+                    REVIEWED_SECURITY_CONTRACT_FINGERPRINT
+                ),
+                "observed_reviewed_security_contract_fingerprint": (
+                    state.reviewed_security_contract_fingerprint
+                ),
+                "reviewed_security_contract_match": (
+                    state.reviewed_security_contract_match
+                ),
+                "expected_fixture_runtime_descriptor_fingerprint": (
+                    REVIEWED_FIXTURE_RUNTIME_DESCRIPTOR_FINGERPRINT
+                ),
+                "expected_published_runtime_descriptor_fingerprint": (
+                    REVIEWED_PUBLISHED_RUNTIME_DESCRIPTOR_FINGERPRINT
+                ),
+                "observed_runtime_descriptor_fingerprint": (
+                    state.runtime_descriptor_fingerprint
+                ),
+                "runtime_descriptor_match": state.runtime_descriptor_match,
+                "published_runtime_descriptor_match": (
+                    state.published_runtime_descriptor_match
+                ),
+                "runtime_descriptor_drift": state.runtime_descriptor_drift,
                 "catalog_fingerprint": state.catalog_fingerprint,
                 "trust_mode": state.trust_mode,
                 "trust_profile": state.trust_profile,
@@ -898,18 +1049,40 @@ def _reviewed_argument_constrained_profile(
         raise DashboardTransportError("unsupported_trust_profile")
     if tool.get("name") != REQUIRED_DASHBOARD_TOOL:
         raise DashboardTransportError("required_tool_missing")
-    if tool.get("annotations") != REVIEWED_ANNOTATIONS:
-        raise DashboardTransportError("reviewed_annotation_mismatch")
+    annotations = tool.get("annotations")
+    if not isinstance(annotations, dict):
+        raise DashboardTransportError("annotation_mismatch")
+    if any(
+        key not in annotations or annotations.get(key) is not expected
+        for key, expected in REVIEWED_SAFETY_ANNOTATIONS.items()
+    ):
+        raise DashboardTransportError("annotation_mismatch")
+    if "readOnlyHint" in annotations:
+        # The reviewed exception is specifically for the mixed-operation
+        # descriptor. A future pure-read declaration must re-enter the strict
+        # contract validator rather than silently matching this profile.
+        raise DashboardTransportError("annotation_mismatch")
+    if set(annotations) - {*REVIEWED_SAFETY_ANNOTATIONS, "title"}:
+        raise DashboardTransportError("annotation_mismatch")
     try:
         schema_fingerprint = _stable_hash(tool.get("inputSchema"))
-        contract_fingerprint = _stable_hash(tool)
+        security_contract_fingerprint = _stable_hash(
+            _reviewed_security_contract_projection(tool)
+        )
     except (TypeError, ValueError, OverflowError):
-        raise DashboardTransportError("reviewed_contract_mismatch") from None
+        raise DashboardTransportError("security_contract_mismatch") from None
+    if schema_fingerprint != REVIEWED_SCHEMA_FINGERPRINT:
+        raise DashboardTransportError("input_schema_mismatch")
+    if "outputSchema" in tool:
+        # The reviewed 7.13.0 runtime omits an output schema. Adding one can
+        # change the structured-result contract Engineering relies on, so it
+        # requires a new review even if it appears additive.
+        raise DashboardTransportError("output_contract_mismatch")
     if (
-        schema_fingerprint != REVIEWED_SCHEMA_FINGERPRINT
-        or contract_fingerprint != REVIEWED_CONTRACT_FINGERPRINT
+        security_contract_fingerprint
+        != REVIEWED_SECURITY_CONTRACT_FINGERPRINT
     ):
-        raise DashboardTransportError("reviewed_contract_mismatch")
+        raise DashboardTransportError("security_contract_mismatch")
     return DashboardTrustDecision(
         mode=TRUST_MODE_REVIEWED_ARGUMENT_CONSTRAINED,
         profile=REVIEWED_TRUST_PROFILE,
@@ -1020,6 +1193,119 @@ def _stable_hash(value: Any) -> str:
     """Canonical full fingerprint used for schemas and bounded catalogs."""
 
     return _engineering_config_hash(value)
+
+
+def _reviewed_security_contract_projection(
+    tool: dict[str, Any],
+) -> dict[str, Any]:
+    """Project only fields that can change reviewed dispatch safety.
+
+    The complete input schema remains in the projection, so argument names,
+    required status, types, defaults, ``additionalProperties``, and even
+    schema-local descriptions remain exact. Output-schema presence is explicit
+    because omitted and null are different runtime contracts. Safety
+    annotations record both presence and value; unknown annotations and
+    unknown top-level metadata fail closed.
+
+    Exclusions are intentionally narrow:
+
+    * top-level ``title`` and ``description`` are display/documentation text;
+    * ``annotations.title`` is a display label, not a safety hint;
+    * ``_meta.fastmcp.tags`` is tool grouping/search presentation metadata;
+    * ``_meta.ha_mcp.llm_api_exposed`` and ``pinned`` control how the upstream
+      exposes tools to its own conversation-agent integration. Engineering
+      neither selects nor dispatches from those values.
+
+    Every other unexpected field is retained in the projection and therefore
+    changes the blocking security fingerprint.
+    """
+
+    if not isinstance(tool, dict):
+        raise TypeError("tool descriptor must be an object")
+    annotations = tool.get("annotations")
+    if not isinstance(annotations, dict):
+        annotations = {"__malformed__": annotations}
+
+    safety_keys = (
+        "readOnlyHint",
+        "destructiveHint",
+        "idempotentHint",
+        "openWorldHint",
+    )
+    annotation_projection = {
+        "safety": {
+            key: {
+                "present": key in annotations,
+                "value": annotations.get(key),
+            }
+            for key in safety_keys
+        },
+        "unreviewed": {
+            key: value
+            for key, value in annotations.items()
+            if key not in {*safety_keys, "title"}
+        },
+    }
+
+    meta = tool.get("_meta")
+    unreviewed_meta: dict[str, Any] = {}
+    if meta is not None:
+        if not isinstance(meta, dict):
+            unreviewed_meta["__malformed__"] = meta
+        else:
+            for namespace, value in meta.items():
+                if not isinstance(value, dict):
+                    unreviewed_meta[namespace] = value
+                    continue
+                excluded = (
+                    {"tags"}
+                    if namespace == "fastmcp"
+                    else {"llm_api_exposed", "pinned"}
+                    if namespace == "ha_mcp"
+                    else set()
+                )
+                remaining = {
+                    key: item for key, item in value.items() if key not in excluded
+                }
+                if remaining:
+                    unreviewed_meta[namespace] = remaining
+
+    known_top_level = {
+        "name",
+        "title",
+        "description",
+        "inputSchema",
+        "outputSchema",
+        "annotations",
+        "_meta",
+    }
+    return {
+        "name": tool.get("name"),
+        "inputSchema": tool.get("inputSchema"),
+        "outputSchema": {
+            "present": "outputSchema" in tool,
+            "value": tool.get("outputSchema"),
+        },
+        "annotations": annotation_projection,
+        "unreviewedTopLevel": {
+            key: value
+            for key, value in tool.items()
+            if key not in known_top_level
+        },
+        "unreviewedMetadata": unreviewed_meta,
+    }
+
+
+def _runtime_descriptor_drift(
+    *,
+    runtime_descriptor_match: bool,
+    security_contract_match: bool,
+) -> str:
+    if runtime_descriptor_match:
+        return "none"
+    if security_contract_match:
+        return "descriptive_metadata_only"
+    return "runtime_descriptor_semantic_drift"
 
 
 def _latency_summary(values: deque[float]) -> dict[str, float | int | None]:

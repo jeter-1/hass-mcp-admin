@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased - staged 2.0.0-rc2-dev3
+
+- Reproduce the exact public `ha-mcp` 7.13.0 add-on runtime descriptor and
+  record its immutable artifact and dependency evidence.
+- Separate the complete input-schema and reviewed security-contract blocking
+  fingerprints from the complete runtime-descriptor observability fingerprint.
+- Permit only the proven presentation-only `_meta.ha_mcp` exposure/pinning
+  delta while preserving exact identity, version, protocol, input schema,
+  safety annotations, output contract, argument builders, and tool allowlist.
+- Report expected/observed component fingerprints and bounded descriptive
+  versus semantic runtime drift without exposing schemas or endpoint data.
+- Publish `readOnlyHint=true` on both Engineering dashboard tools and prove the
+  raw server-side MCP `tools/list` contains all 40 tools even while the provider
+  is unavailable; clients may need connector refresh after schema caching.
+- Stage dev3 in `.release/next-version` while Home Assistant metadata remains
+  at published dev2 until the image is built, anonymously verified, and
+  atomically promoted.
+
 ## 2.0.0-rc2-dev2
 
 - Add the reviewed `ha_mcp_7_13_dashboard_read_v1` trust profile for upstream

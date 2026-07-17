@@ -4,7 +4,8 @@
 
 `get_server_health.upstream_dashboard` reports configured/credential state,
 reachability, capability status, sanitized live upstream identity, MCP protocol,
-tool count, required-tool/schema compatibility, schema/contract/catalog fingerprints,
+tool count, required-tool/schema compatibility, expected and observed input-schema,
+reviewed-security-contract, runtime-descriptor, and catalog fingerprints,
 last success timestamps, connection and tool-call latency, request/success/
 timeout/reconnect counts, categorized failures, session state, and
 `writes_allowed=false`.
@@ -20,7 +21,8 @@ It never reports the endpoint, host, port, secret path, query, credentials,
 headers, raw schemas, or raw exception text. Stable transport categories
 distinguish `authentication_failed`, neutral `endpoint_rejected`,
 `connection_failed`, and genuine `timeout`, followed by protocol, response,
-capability, identity, version, reviewed-contract, reviewed-annotation,
+capability, identity, version, input-schema, security-contract, annotation,
+output-contract,
 prohibited-argument, hash-contract, upstream, response-size, and internal
 failures. Dashboard calls add
 separate upstream duration/count fields to response timing without changing
@@ -30,10 +32,20 @@ exclude endpoint and dashboard content.
 
 The normal contract-level mode requires `readOnlyHint=true`. The reviewed
 argument-constrained mode requires exact `ha-mcp` identity, exact 7.13.0
-version/protocol, the committed full tool-contract fingerprint, exact reviewed
-annotations, and exact non-screenshot invocation shapes. Any drift makes the
-capability unavailable without returning the fixture, full schema, or raw
+version/protocol, the committed complete input-schema and security-contract
+fingerprints, exact reviewed safety annotations, and exact non-screenshot
+invocation shapes. Full runtime-descriptor drift is separately reported.
+`descriptive_metadata_only` drift is non-blocking only while the security
+projection remains exact; semantic drift makes the capability unavailable.
+Health does not return the fixture, full schema, raw descriptor, or raw
 description.
+
+The reviewed fixture raw descriptor is `170c2aac...`; the reproduced published
+7.13.0 runtime is `dd12cba0...` because upstream middleware adds only bounded
+conversation-agent exposure/pinning metadata. Health reports both the fixture
+and published expected hashes, the observed hash, exact match Booleans, and the
+bounded drift classification. This warning does not count as a provider
+failure.
 
 `standard_ha_mcp_delegation` remains `unavailable`. The two new beta-native
 tools raise the registered count to 40; the canonical count remains 25.
