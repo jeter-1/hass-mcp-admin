@@ -1,0 +1,35 @@
+{
+  "artifact": {
+    "image": "ghcr.io/homeassistant-ai/ha-mcp-addon-amd64:7.13.0",
+    "index_digest": "sha256:f6c0d3379b625687757f55be51e786ecbc46ab7ad96c994208aec9dc2344396a",
+    "manifest_digest": "sha256:bf5ff84e0490c9a081a4ae27022a5bb192e5b8bad90a09f65f51edb45ec61bcc",
+    "config_digest": "sha256:874ff9ad120de550b357c5634c0fb6839eef283d7256e852d5c39af6ad434b32",
+    "created": "2026-07-16T14:56:33.667002593Z",
+    "reviewed_source_revision": "f4eb53621ccb814cb7123d2811e06eda3577129c",
+    "installed_dashboard_source_sha256": "b971165c232207f6e3467656288228552b554df1786d0f3798d95e6effe9a8c5"
+  },
+  "runtime": {
+    "python": "3.13.12",
+    "fastmcp": "3.4.4",
+    "mcp": "1.24.0",
+    "pydantic": "2.13.4",
+    "json_schema_behavior": "Pydantic 2.13.4 schema generation serialized by FastMCP 3.4.4 and MCP 1.24.0"
+  },
+  "base_fixture_runtime_descriptor_fingerprint": "170c2aac1d6437d5c42b7f1d48f5322fef4736c414654c4cc4f7830138e959ca",
+  "published_runtime_descriptor_fingerprint": "dd12cba02e59bf98e5b251ddf516c5a7fbea5fbd5f37d053cd8a9cc549827157",
+  "input_schema_fingerprint": "7f2b6a086faec129c182fe6f791722beda9fffc659a507f55a3b20d72e2155a6",
+  "descriptor_delta": {
+    "added": {
+      "/_meta/ha_mcp": {
+        "llm_api_exposed": true,
+        "pinned": false
+      }
+    },
+    "removed": {},
+    "changed": {}
+  },
+  "classification": {
+    "/_meta/ha_mcp/llm_api_exposed": "presentation_only",
+    "/_meta/ha_mcp/pinned": "presentation_only"
+  }
+}
