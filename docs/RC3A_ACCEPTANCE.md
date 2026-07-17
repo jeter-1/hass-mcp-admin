@@ -11,16 +11,16 @@ The main-push promotion workflow must:
 1. acquire the repository-wide release lock;
 2. validate the accepted main commit;
 3. read `.release/next-version`;
-4. prove dev2 is newer than dev1 and below final RC3 with AwesomeVersion 25.8.0;
-5. prove the dev2 Git tag and GHCR image are absent;
+4. prove dev3 is newer than dev2 and below final RC3 with AwesomeVersion 25.8.0;
+5. prove the dev3 Git tag and GHCR image are absent;
 6. create a local release commit updating authoritative version metadata;
 7. rerun compile, metadata, and complete repository tests on that local commit;
 8. build `linux/amd64`, `linux/arm64`, and `linux/arm/v7`;
-9. publish dev2 and `sha-<release-commit>`;
+9. publish dev3 and `sha-<release-commit>`;
 10. anonymously verify both tags, the shared digest, architectures, and OCI
     provenance;
 11. verify main has not changed;
-12. atomically push the release commit and annotated dev2 tag.
+12. atomically push the release commit and annotated dev3 tag.
 
 If any pre-promotion check fails, neither main nor a tag is pushed. If an image
 was published before a later failure, treat it as immutable reconciliation
@@ -28,8 +28,8 @@ evidence and do not silently reuse it.
 
 Record from the successful workflow summary:
 
-- version `2.0.0-rc2-dev2`;
-- annotated tag `v2.0.0-rc2-dev2`;
+- version `2.0.0-rc2-dev3`;
+- annotated tag `v2.0.0-rc2-dev3`;
 - release commit SHA;
 - version and SHA image tags;
 - immutable OCI digest;
@@ -47,7 +47,7 @@ Record from the successful workflow summary:
 
 Require:
 
-- version `2.0.0-rc2-dev2`;
+- version `2.0.0-rc2-dev3`;
 - build SHA matching the automated release commit;
 - populated UTC RFC3339 build time;
 - Home Assistant connection healthy;
@@ -68,6 +68,11 @@ Call `get_server_health(check_ha=true)` and require:
 - MCP protocol `2025-03-26`;
 - required tool present;
 - required schema compatible;
+- `input_schema_match=true`;
+- `reviewed_security_contract_match=true`;
+- `runtime_descriptor_match=false`;
+- `published_runtime_descriptor_match=true`;
+- `runtime_descriptor_drift=descriptive_metadata_only`;
 - `trust_mode=reviewed_argument_constrained`;
 - `trust_profile=ha_mcp_7_13_dashboard_read_v1`;
 - `reviewed_contract_match=true`;
@@ -77,7 +82,8 @@ Call `get_server_health(check_ha=true)` and require:
 - `writes_allowed=false`;
 - Standard HA MCP delegation still unavailable.
 
-Record the schema, reviewed contract, and catalog fingerprints. Do not record
+Record the expected and observed input-schema, security-contract,
+runtime-descriptor, and catalog fingerprints. Do not record
 the configured endpoint or any recognizable secret-bearing fragment.
 
 ## Dashboard read acceptance
@@ -124,11 +130,21 @@ If validation fails:
 2. retain only sanitized health, reason codes, fingerprints, and workflow
    evidence;
 3. reinstall immutable image
-   `ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc2-dev1`;
+   `ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc2-dev2`;
 4. reconnect only the Engineering connector;
 5. confirm governance, external approval, audit, redaction, and existing
    automation workflows remain healthy;
 6. leave production v1.1.2 unchanged.
 
-Rollback removes the reviewed 7.13.0 exception and does not modify dashboards
-or the upstream server.
+Rollback restores dev2's fail-closed full-descriptor gate and does not modify
+dashboards or the upstream server.
+
+## Connector discovery
+
+After reconnecting, require the client to expose all 40 server-side tools,
+including `list_dashboards` and `get_dashboard_config`. Both dashboard tools
+must advertise `readOnlyHint=true` and only their narrow public inputs. If raw
+Engineering `tools/list` returns 40 while a ChatGPT connector still shows 38,
+classify that discrepancy as connector schema caching and refresh, reconnect,
+or recreate the connector before dashboard acceptance. Provider unavailability
+does not remove either dashboard tool from server-side discovery.

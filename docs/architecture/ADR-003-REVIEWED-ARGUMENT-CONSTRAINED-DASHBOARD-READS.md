@@ -26,6 +26,16 @@ inventory, and search calls when `include_screenshot` is absent or false and
 classifies screenshot rendering as a write because the rendering client can
 persist preferences. This assertion is not generalized to any other version.
 
+The reviewed fixture originally hashed to `170c2aac...`, while the exact
+published runtime hashed to `dd12cba0...`. Reproduction with the public
+`ha-mcp-addon-amd64:7.13.0` OCI index
+`sha256:f6c0d3379b625687757f55be51e786ecbc46ab7ad96c994208aec9dc2344396a`
+proved the only field addition was `_meta.ha_mcp` with conversation-agent
+exposure and pinning values. Upstream describes this middleware stamp as
+additive metadata for its Home Assistant LLM API; it does not alter a regular
+MCP client's tool call. The complete input schema and safety annotations were
+unchanged.
+
 Reviewed source:
 
 - [`ha_config_get_dashboard`](https://github.com/homeassistant-ai/ha-mcp/blob/f4eb53621ccb814cb7123d2811e06eda3577129c/src/ha_mcp/tools/tools_config_dashboards.py#L1258)
@@ -57,15 +67,30 @@ It requires exact agreement on:
 - server version `7.13.0`;
 - MCP protocol `2025-03-26`;
 - tool name `ha_config_get_dashboard`;
-- the complete reviewed tool contract fingerprint;
+- the complete input-schema fingerprint;
+- the reviewed security-contract projection fingerprint;
 - the exact reviewed annotation object;
 - Engineering-owned exact invocation builders.
 
-The reviewed contract fingerprint is SHA-256 over the complete JSON-compatible
-tool object returned by `tools/list`, serialized with sorted keys, compact
-separators, `ensure_ascii=false`, UTF-8 encoding, and no implicit value
-coercion. It is not the catalog fingerprint and is unaffected by unrelated tool
-additions.
+Three fingerprints are maintained. All use SHA-256 over JSON-compatible values
+serialized with sorted keys, compact separators, `ensure_ascii=false`, UTF-8,
+and no implicit value coercion.
+
+1. The complete input-schema fingerprint is an exact blocking gate.
+2. The reviewed security-contract fingerprint is an exact blocking gate over
+   tool name, complete input schema, output-schema presence/value, safety-hint
+   presence/value, and all otherwise-unreviewed top-level or metadata fields.
+3. The complete runtime-descriptor fingerprint is observability evidence. It
+   may drift without blocking only when the security projection still matches.
+
+The projection excludes only top-level display title/description,
+`annotations.title`, `_meta.fastmcp.tags`, and
+`_meta.ha_mcp.{llm_api_exposed,pinned}`. The first three are display,
+documentation, and grouping data. The last two affect only upstream
+conversation-agent exposure/pinning; Engineering does not select tools or
+construct arguments from them. Unknown annotation keys, unknown metadata
+fields, output-schema changes, and every input-schema field remain blocking.
+This exclusion list is closed rather than pattern-based.
 
 Allowed calls are only:
 
@@ -96,7 +121,9 @@ fail before network dispatch.
 - The provider does not claim the upstream tool is read-only.
 - Health reports the selected trust mode and profile.
 - Any upstream identity, version, protocol, annotation, input/output contract,
-  or full reviewed contract drift makes the capability unavailable.
+  or reviewed security-contract drift makes the capability unavailable.
+- Complete-descriptor presentation drift remains visible with expected and
+  observed fingerprints and a bounded `descriptive_metadata_only` status.
 - The complete upstream catalog remains observability evidence, not a security
   pin.
 - The dual dashboard-hash contract remains unchanged.
@@ -114,6 +141,9 @@ range, implementation-family guess, or arbitrary argument forwarder.
 - Accepting any missing `readOnlyHint`: this would trust unrelated endpoints.
 - Pinning only the input-schema fingerprint: annotations and other dispatch
   metadata could drift independently.
+- Pinning the complete serialized descriptor: upstream presentation middleware
+  adds `_meta` values that do not change Engineering dispatch safety and caused
+  the dev2 live false negative.
 - Pinning the whole catalog: unrelated upstream tool additions would
   unnecessarily disable the reviewed dashboard operation.
 - Enabling screenshot mode: preference persistence is outside RC3A.

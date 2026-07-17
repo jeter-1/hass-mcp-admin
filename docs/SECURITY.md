@@ -12,8 +12,20 @@ The preferred `contract_read_only` mode still requires
 `reviewed_argument_constrained` exception applies only to
 `ha_mcp_7_13_dashboard_read_v1`. It pins server name `ha-mcp`, version
 `7.13.0`, protocol `2025-03-26`, exact tool name, exact reviewed annotations,
-and the full canonical tool-contract fingerprint generated from upstream
-commit `f4eb53621ccb814cb7123d2811e06eda3577129c`.
+the complete input schema, output-schema presence, and the reviewed
+security-contract projection generated from upstream commit
+`f4eb53621ccb814cb7123d2811e06eda3577129c`.
+
+The complete runtime descriptor is retained as observability evidence, not a
+dispatch gate. The published 7.13.0 runtime adds
+`_meta.ha_mcp.llm_api_exposed` and `_meta.ha_mcp.pinned`; those values only
+control upstream conversation-agent exposure and pinning. Along with display
+title/description, annotation display title, and FastMCP grouping tags, they
+are the complete closed exclusion list for the security projection. Every
+input-schema field, safety-hint presence/value, output-schema change, unknown
+annotation, unknown metadata field, and unknown top-level field remains
+blocking. A descriptive-only raw descriptor mismatch is reported in health;
+semantic or security drift makes the provider unavailable.
 
 The 7.13.0 tool is mixed-operation: screenshots can persist rendering
 preferences. Engineering therefore constructs only the reviewed non-screenshot

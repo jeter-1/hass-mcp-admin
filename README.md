@@ -192,12 +192,13 @@ outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 ## Engineering beta/RC analytical milestones
 
 The parallel v2 add-on RC3A development stage is
-staging `2.0.0-rc2-dev2` while metadata remains at published dev1 until
+staging `2.0.0-rc2-dev3` while metadata remains at published dev2 until
 automated promotion. It has 40 registered tools and 25 unchanged canonical tools.
 It adds only `list_dashboards` and `get_dashboard_config`, backed by an optional
 secret-configured `upstream_dashboard` MCP provider whose allowlist contains
 only `ha_config_get_dashboard`. For `ha-mcp` 7.13.0, identity, version,
-protocol, annotations, and the full reviewed contract are pinned, and
+protocol, annotations, complete input schema, and the reviewed security
+contract are pinned; the complete runtime descriptor remains drift evidence.
 Engineering constructs only exact non-screenshot read forms. The mixed upstream
 tool is not described as globally read-only. The generic
 `StandardHaMcpGateway` remains unavailable. No dashboard write, service,
