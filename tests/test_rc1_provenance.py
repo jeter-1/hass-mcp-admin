@@ -16,6 +16,7 @@ def metadata_from_fresh_process(**environment):
     env = os.environ.copy()
     env.pop("HAMCP_BUILD_SHA", None)
     env.pop("HAMCP_BUILD_TIME", None)
+    env.pop("HAMCP_BUILD_DIRTY", None)
     env.update(environment)
     env["PYTHONPATH"] = str(BETA_ROOT)
     program = (
@@ -41,18 +42,22 @@ class ProvenanceValueTests(unittest.TestCase):
         metadata = metadata_from_fresh_process(
             HAMCP_BUILD_SHA=VALID_SHA,
             HAMCP_BUILD_TIME=VALID_TIME,
+            HAMCP_BUILD_DIRTY="false",
         )
         self.assertEqual(metadata["server"]["build_sha"], VALID_SHA)
         self.assertEqual(metadata["server"]["build_time"], VALID_TIME)
+        self.assertIs(metadata["server"]["build_dirty"], False)
         self.assertEqual(metadata["server"]["schema_version"], "1")
         self.assertEqual(set(metadata["server"]), {
-            "id", "name", "version", "schema_version", "build_sha", "build_time"
+            "id", "name", "version", "schema_version", "build_sha", "build_time",
+            "build_dirty"
         })
 
     def test_missing_local_provenance_uses_established_safe_fallback(self):
         metadata = metadata_from_fresh_process()
         self.assertEqual(metadata["server"]["build_sha"], "unknown")
         self.assertEqual(metadata["server"]["build_time"], "unknown")
+        self.assertEqual(metadata["server"]["build_dirty"], "unknown")
 
     def test_invalid_or_unbounded_provenance_fails_closed(self):
         invalid_values = (
@@ -114,10 +119,13 @@ class ProvenancePipelineTests(unittest.TestCase):
         for value in (
             "ARG HAMCP_BUILD_SHA=unknown",
             "ARG HAMCP_BUILD_TIME=unknown",
+            "ARG HAMCP_BUILD_DIRTY=unknown",
             "HAMCP_BUILD_SHA=${HAMCP_BUILD_SHA}",
             "HAMCP_BUILD_TIME=${HAMCP_BUILD_TIME}",
+            "HAMCP_BUILD_DIRTY=${HAMCP_BUILD_DIRTY}",
             'org.opencontainers.image.revision="${HAMCP_BUILD_SHA}"',
             'org.opencontainers.image.created="${HAMCP_BUILD_TIME}"',
+            'io.hass-mcp.build.dirty="${HAMCP_BUILD_DIRTY}"',
         ):
             self.assertIn(value, self.dockerfile)
 
@@ -126,6 +134,7 @@ class ProvenancePipelineTests(unittest.TestCase):
         self.assertIn("date -u +'%Y-%m-%dT%H:%M:%SZ'", self.workflow)
         self.assertIn('"HAMCP_BUILD_SHA=$build_sha"', self.workflow)
         self.assertIn('"HAMCP_BUILD_TIME=$build_time"', self.workflow)
+        self.assertIn('"HAMCP_BUILD_DIRTY=false"', self.workflow)
         self.assertIn("git -C $RepoRoot rev-parse HEAD", self.deployment)
         self.assertIn("yyyy-MM-ddTHH:mm:ssZ", self.deployment)
         self.assertIn('"HAMCP_BUILD_SHA=$($build.Sha)"', self.deployment)

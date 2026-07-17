@@ -22,16 +22,18 @@ jobs:
       contents: read
 
   detect-release:
-    name: Detect staged release declaration
+    name: Detect Engineering release transition
     needs: validate
     runs-on: ubuntu-latest
     permissions:
       contents: read
     outputs:
       should_promote: ${{ steps.detect.outputs.should_promote }}
+      release_mode: ${{ steps.detect.outputs.release_mode }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          fetch-depth: 0
           persist-credentials: false
       - id: detect
         shell: bash
@@ -39,9 +41,26 @@ jobs:
           set -euo pipefail
           if [[ -f .release/next-version ]]; then
             echo "should_promote=true" >> "$GITHUB_OUTPUT"
-          else
+            echo "release_mode=staged" >> "$GITHUB_OUTPUT"
+          elif [[ "$(git log -1 --pretty=%s)" == "Promote HA MCP Engineering Server "* ]]; then
             echo "should_promote=false" >> "$GITHUB_OUTPUT"
-            echo "No staged Engineering release declaration is present." >> "$GITHUB_STEP_SUMMARY"
+            echo "release_mode=none" >> "$GITHUB_OUTPUT"
+            echo "The atomic release commit is already promoted." >> "$GITHUB_STEP_SUMMARY"
+          else
+            before="${{ github.event.before }}"
+            current_version="$(sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' hass_mcp_engineering_beta/config.yaml)"
+            previous_version=""
+            if [[ "$before" =~ ^[0-9a-f]{40}$ ]] && git cat-file -e "${before}^{commit}" 2>/dev/null; then
+              previous_version="$(git show "${before}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
+            fi
+            if [[ -n "$current_version" && -n "$previous_version" && "$current_version" != "$previous_version" ]]; then
+              echo "should_promote=true" >> "$GITHUB_OUTPUT"
+              echo "release_mode=preversioned" >> "$GITHUB_OUTPUT"
+            else
+              echo "should_promote=false" >> "$GITHUB_OUTPUT"
+              echo "release_mode=none" >> "$GITHUB_OUTPUT"
+              echo "No staged declaration or Engineering version transition is present." >> "$GITHUB_STEP_SUMMARY"
+            fi
           fi
 
   promote:
@@ -51,6 +70,8 @@ jobs:
       - detect-release
     if: needs.detect-release.outputs.should_promote == 'true'
     runs-on: ubuntu-latest
+    env:
+      RELEASE_MODE: ${{ needs.detect-release.outputs.release_mode }}
     permissions:
       contents: write
       packages: write
@@ -96,8 +117,19 @@ jobs:
           fi
 
           current_version="$(sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' hass_mcp_engineering_beta/config.yaml)"
-          python scripts/promote_next_release.py
-          version="$(tr -d '\r\n' < .release/next-version)"
+          validation_base="$source_main_sha"
+          deployed_version="$current_version"
+          if [[ "$RELEASE_MODE" == "staged" ]]; then
+            python scripts/promote_next_release.py
+            version="$(tr -d '\r\n' < .release/next-version)"
+          elif [[ "$RELEASE_MODE" == "preversioned" ]]; then
+            validation_base="${{ github.event.before }}"
+            deployed_version="$(git show "${validation_base}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
+            version="$current_version"
+          else
+            echo "::error::The release detector returned an unsupported mode."
+            exit 1
+          fi
           release_tag="v${version}"
 
           if git ls-remote --exit-code --tags origin "refs/tags/${release_tag}" >/dev/null 2>&1; then
@@ -108,15 +140,20 @@ jobs:
           bash scripts/assert_registry_tags_absent.sh \
             "${IMAGE_REPOSITORY}:${version}"
 
-          python scripts/promote_next_release.py --apply
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- \
-            hass_mcp_engineering_beta/config.yaml \
-            hass_mcp_engineering_beta/ha_mcp_engineering/version.py \
-            scripts/validate_addon_metadata.py
-          git add -A -- .release/next-version
-          git commit -m "Promote HA MCP Engineering Server ${version}"
+          if [[ "$RELEASE_MODE" == "staged" ]]; then
+            python scripts/promote_next_release.py --apply
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -- \
+              hass_mcp_engineering_beta/config.yaml \
+              hass_mcp_engineering_beta/ha_mcp_engineering/version.py \
+              scripts/validate_addon_metadata.py
+            git add -A -- .release/next-version
+            git commit -m "Promote HA MCP Engineering Server ${version}"
+          elif [[ -n "$(git status --porcelain)" ]]; then
+            echo "::error::The reviewed pre-versioned release checkout is not clean."
+            exit 1
+          fi
           release_sha="$(git rev-parse HEAD)"
           build_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
@@ -130,16 +167,18 @@ jobs:
 
           python scripts/validate_addon_metadata.py \
             --repo-root . \
-            --base-ref "$source_main_sha" \
+            --base-ref "$validation_base" \
             --expected-version "$version" \
-            --deployed-version "$current_version"
+            --deployed-version "$deployed_version"
           python -m compileall -q hass_mcp_admin hass_mcp_engineering_beta tests
           python -m unittest discover -s tests -v
-          git diff --check "$source_main_sha..HEAD"
+          git diff --check "$validation_base..HEAD"
 
           {
             echo "source_main_sha=$source_main_sha"
             echo "current_version=$current_version"
+            echo "deployed_version=$deployed_version"
+            echo "release_mode=$RELEASE_MODE"
             echo "version=$version"
             echo "release_tag=$release_tag"
             echo "release_sha=$release_sha"
@@ -169,6 +208,7 @@ jobs:
             BUILD_VERSION=${{ steps.prepare.outputs.version }}
             HAMCP_BUILD_SHA=${{ steps.prepare.outputs.release_sha }}
             HAMCP_BUILD_TIME=${{ steps.prepare.outputs.build_time }}
+            HAMCP_BUILD_DIRTY=false
           tags: |
             ghcr.io/jeter-1/hass-mcp-engineering-beta:${{ steps.prepare.outputs.version }}
             ghcr.io/jeter-1/hass-mcp-engineering-beta:sha-${{ steps.prepare.outputs.release_sha }}
@@ -177,6 +217,7 @@ jobs:
             org.opencontainers.image.revision=${{ steps.prepare.outputs.release_sha }}
             org.opencontainers.image.created=${{ steps.prepare.outputs.build_time }}
             org.opencontainers.image.version=${{ steps.prepare.outputs.version }}
+            io.hass-mcp.build.dirty=false
 
       - name: Verify immutable tags, architectures, and provenance anonymously
         shell: bash

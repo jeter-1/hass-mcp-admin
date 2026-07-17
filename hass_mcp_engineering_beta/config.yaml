@@ -1,5 +1,5 @@
 name: HA MCP Engineering Server Beta
-version: "2.0.0-rc2-dev3"
+version: "2.0.0-rc2-dev4"
 slug: hass_mcp_engineering_beta
 description: Governed Home Assistant engineering with external admin approval
 url: https://github.com/jeter-1/hass-mcp-admin
@@ -24,6 +24,7 @@ ports_description:
 options:
   access_secret: ""
   upstream_dashboard_mcp_url: ""
+  dependency_index_prewarm: false
   rate_limit_per_minute: 120
   rate_limit_burst: 25
   trust_cf_connecting_ip: false
@@ -45,6 +46,7 @@ options:
 schema:
   access_secret: str
   upstream_dashboard_mcp_url: password
+  dependency_index_prewarm: bool
   rate_limit_per_minute: int
   rate_limit_burst: int
   trust_cf_connecting_ip: bool

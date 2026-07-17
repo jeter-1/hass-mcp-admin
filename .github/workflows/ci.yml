@@ -57,8 +57,14 @@ jobs:
             --build-arg "BUILD_VERSION=$beta_version" \
             --build-arg "HAMCP_BUILD_SHA=$build_sha" \
             --build-arg "HAMCP_BUILD_TIME=$build_time" \
+            --build-arg "HAMCP_BUILD_DIRTY=false" \
             -t hass-mcp-engineering-beta:test \
             ./hass_mcp_engineering_beta
+          docker run --rm --entrypoint python \
+            -e "EXPECTED_BUILD_SHA=$build_sha" \
+            -e "EXPECTED_BUILD_VERSION=$beta_version" \
+            hass-mcp-engineering-beta:test -c \
+            'import os; from ha_mcp_engineering.version import BUILD_DIRTY, BUILD_SHA, SERVER_VERSION; assert BUILD_SHA == os.environ["EXPECTED_BUILD_SHA"]; assert SERVER_VERSION == os.environ["EXPECTED_BUILD_VERSION"]; assert BUILD_DIRTY is False'
       - name: Validate beta image on every declared architecture without pushing
         shell: bash
         run: |
@@ -70,6 +76,7 @@ jobs:
             --build-arg "BUILD_VERSION=$beta_version" \
             --build-arg "HAMCP_BUILD_SHA=$build_sha" \
             --build-arg "HAMCP_BUILD_TIME=$build_time" \
+            --build-arg "HAMCP_BUILD_DIRTY=false" \
             --output=type=cacheonly \
             ./hass_mcp_engineering_beta
 

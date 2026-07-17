@@ -22,7 +22,7 @@ BETA_SLUG = "hass_mcp_engineering_beta"
 PRODUCTION_NAME = "HA MCP Engineering Server"
 BETA_NAME = "HA MCP Engineering Server Beta"
 PRODUCTION_VERSION = "1.1.2"
-BETA_VERSION = "2.0.0-rc2-dev3"
+BETA_VERSION = "2.0.0-rc2-dev4"
 BETA_IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 FINAL_RC3_VERSION = "2.0.0-rc.3"
 NEXT_VERSION_PATH = Path(".release/next-version")
@@ -34,6 +34,7 @@ EXTERNAL_CHECK_TIMEOUT_SECONDS = 60
 EXPECTED_BETA_SCHEMA = {
     "access_secret": "str",
     "upstream_dashboard_mcp_url": "password",
+    "dependency_index_prewarm": "bool",
     "rate_limit_per_minute": "int",
     "rate_limit_burst": "int",
     "trust_cf_connecting_ip": "bool",
@@ -213,6 +214,8 @@ def validate_config_pair(production: dict, beta: dict, *, minimum_secret_length:
         raise MetadataValidationError("Forwarded client-IP trust must default to disabled")
     if options["trusted_proxy_cidrs"] != []:
         raise MetadataValidationError("Trusted proxy CIDRs must default to an empty list")
+    if options["dependency_index_prewarm"] is not False:
+        raise MetadataValidationError("Dependency index prewarm must default to disabled")
     for key in ("rate_limit_per_minute", "rate_limit_burst", "audit_max_payload_chars", "response_size_limit"):
         if not isinstance(options[key], int) or isinstance(options[key], bool) or options[key] <= 0:
             raise MetadataValidationError(f"Beta option {key} must be a positive integer")

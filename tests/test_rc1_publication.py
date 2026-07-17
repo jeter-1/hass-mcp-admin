@@ -17,10 +17,15 @@ PUBLISH_PATH = ROOT / ".github" / "workflows" / "publish-rc-image.yml"
 TAG_GUARD_PATH = ROOT / "scripts" / "assert_registry_tags_absent.sh"
 PROMOTION_PATH = ROOT / "scripts" / "promote_next_release.py"
 IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
-ADVERTISED_VERSION = "2.0.0-rc2-dev2"
-NEXT_VERSION = "2.0.0-rc2-dev3"
+ADVERTISED_VERSION = "2.0.0-rc2-dev3"
+NEXT_VERSION = "2.0.0-rc2-dev4"
 PLATFORMS = ("linux/amd64", "linux/arm64", "linux/arm/v7")
-BUILD_ARGUMENTS = ("BUILD_VERSION", "HAMCP_BUILD_SHA", "HAMCP_BUILD_TIME")
+BUILD_ARGUMENTS = (
+    "BUILD_VERSION",
+    "HAMCP_BUILD_SHA",
+    "HAMCP_BUILD_TIME",
+    "HAMCP_BUILD_DIRTY",
+)
 
 
 def load_workflow(path):
@@ -82,7 +87,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             },
         )
 
-    def test_feature_pr_stages_dev3_without_advertising_it(self):
+    def test_feature_pr_or_promoted_source_is_version_consistent(self):
         config = yaml.safe_load(
             (ROOT / "hass_mcp_engineering_beta" / "config.yaml").read_text(
                 encoding="utf-8"
@@ -106,7 +111,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn(f'SERVER_VERSION = "{expected_version}"', version_source)
 
-    def test_awesomeversion_orders_dev3_between_dev2_and_final_rc3(self):
+    def test_awesomeversion_orders_dev4_between_dev3_and_final_rc3(self):
         self.assertGreater(
             AwesomeVersion(NEXT_VERSION),
             AwesomeVersion(ADVERTISED_VERSION),
@@ -127,6 +132,21 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             {"validate", "detect-release"},
         )
         self.assertIn("workflow_call", workflow_events(self.ci))
+
+    def test_preversioned_release_transition_is_detected_and_validated(self):
+        detect = str(self.jobs["detect-release"]["steps"][-1]["run"])
+        prepare = str(next(
+            step["run"]
+            for step in self.steps
+            if step.get("name") == "Prepare local immutable release commit"
+        ))
+        self.assertIn("github.event.before", detect)
+        self.assertIn("release_mode=preversioned", detect)
+        self.assertIn('RELEASE_MODE" == "preversioned', prepare)
+        self.assertIn('version="$current_version"', prepare)
+        self.assertIn('--deployed-version "$deployed_version"', prepare)
+        self.assertIn('--base-ref "$validation_base"', prepare)
+        self.assertIn('git status --porcelain', prepare)
 
     def test_only_main_promotion_job_can_write_contents_or_packages(self):
         writers = {
@@ -202,6 +222,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                 "BUILD_VERSION": "${{ steps.prepare.outputs.version }}",
                 "HAMCP_BUILD_SHA": "${{ steps.prepare.outputs.release_sha }}",
                 "HAMCP_BUILD_TIME": "${{ steps.prepare.outputs.build_time }}",
+                "HAMCP_BUILD_DIRTY": "false",
             },
         )
         tags = tuple(
