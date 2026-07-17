@@ -314,9 +314,9 @@ class Beta26LifecycleTests(unittest.IsolatedAsyncioTestCase):
             "expired": ErrorCode.EXTERNAL_APPROVAL_REQUIRED,
             "invalidated": ErrorCode.EXTERNAL_APPROVAL_REQUIRED,
             "missing": ErrorCode.EXTERNAL_APPROVAL_REQUIRED,
-            "wrong_kind": ErrorCode.EXTERNAL_APPROVAL_REQUIRED,
+            "wrong_kind": ErrorCode.APPROVAL_HASH_MISMATCH,
             "consumed": ErrorCode.APPROVAL_ALREADY_CONSUMED,
-            "legacy": ErrorCode.APPROVAL_AUTHORITY_MISMATCH,
+            "legacy": ErrorCode.APPROVAL_HASH_MISMATCH,
         }
         with patch("ha_mcp_engineering.dependency.DEPENDENCY_ANALYSIS.invalidate") as invalidate:
             for index, (case, expected) in enumerate(expected_codes.items()):

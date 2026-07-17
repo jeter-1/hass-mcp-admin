@@ -95,12 +95,14 @@ FAILURE_CATEGORIES = (
     "hash_contract_mismatch",
     "upstream_error",
     "response_too_large",
+    "dashboard_not_found",
     "internal_error",
 )
 CANONICAL_DASHBOARD_PATH = re.compile(r"^[a-z0-9_-]{1,256}$")
 MAX_IDENTITY_CHARS = 128
 MAX_WARNING_CHARS = 512
 RESPONSE_ENVELOPE_RESERVE = 16_000
+REACHABILITY_FRESHNESS_SECONDS = 120.0
 
 _ERROR_CODES = {
     "not_configured": ErrorCode.UPSTREAM_DASHBOARD_NOT_CONFIGURED,
@@ -146,6 +148,7 @@ _ERROR_CODES = {
     ),
     "upstream_error": ErrorCode.UPSTREAM_DASHBOARD_UPSTREAM_ERROR,
     "response_too_large": ErrorCode.UPSTREAM_DASHBOARD_RESPONSE_TOO_LARGE,
+    "dashboard_not_found": ErrorCode.DASHBOARD_NOT_FOUND,
     "internal_error": ErrorCode.UPSTREAM_DASHBOARD_INTERNAL_ERROR,
 }
 
@@ -195,6 +198,10 @@ class DashboardProviderState:
     force_reload_supported: bool = False
     last_successful_handshake_timestamp: str | None = None
     last_successful_dashboard_call_timestamp: str | None = None
+    reachability_checked_at: str | None = None
+    reachability_source: str | None = None
+    last_failed_call_at: str | None = None
+    last_failure_category: str | None = None
     connection_latencies: deque[float] = field(
         default_factory=lambda: deque(maxlen=100)
     )
@@ -536,9 +543,14 @@ class UpstreamDashboardProvider:
             return result
         except DashboardProviderError as exc:
             category = _category_for_code(exc.code)
-            self._record_failure(category, dispatched=True)
-            failure_recorded = True
-            METRICS.record_provider_result(PROVIDER_ID, "failed", dispatched=True)
+            if category == "dashboard_not_found":
+                self._record_domain_outcome(category)
+                METRICS.record_classified_outcome(category)
+                METRICS.record_provider_result(PROVIDER_ID, "complete", dispatched=True)
+            else:
+                self._record_failure(category, dispatched=True)
+                failure_recorded = True
+                METRICS.record_provider_result(PROVIDER_ID, "failed", dispatched=True)
             raise
         except DashboardTransportError as exc:
             category = _normalized_category(exc.category)
@@ -602,6 +614,8 @@ class UpstreamDashboardProvider:
             state.catalog_fingerprint = catalog_fingerprint
             state.required_tool_present = tool is not None
             state.last_successful_handshake_timestamp = _utc_now()
+            state.reachability_checked_at = _utc_now()
+            state.reachability_source = "active_probe"
             state.connection_latencies.append(handshake.connection_latency_ms)
 
         if tool is None:
@@ -738,6 +752,8 @@ class UpstreamDashboardProvider:
         if not isinstance(payload, dict):
             self._raise("invalid_response", dispatched=True)
         if result.get("isError") or payload.get("success") is False:
+            if _upstream_error_code(payload) in {"RESOURCE_NOT_FOUND", "DASHBOARD_NOT_FOUND"}:
+                self._raise("dashboard_not_found", dispatched=True)
             self._raise("upstream_error", dispatched=True)
         return payload
 
@@ -865,12 +881,27 @@ class UpstreamDashboardProvider:
                 self._state.tool_call_latencies.append(tool_call_latency_ms)
             if dashboard_call:
                 self._state.last_successful_dashboard_call_timestamp = _utc_now()
+            self._state.reachability_checked_at = _utc_now()
+            self._state.reachability_source = "tool_call" if dashboard_call else "active_probe"
+            self._state.last_failure_category = None
+            self._state.session_state = "idle"
+
+    def _record_domain_outcome(self, category: str) -> None:
+        """Record an upstream domain answer without degrading provider health."""
+        with self._lock:
+            self._state.reachable = True
+            self._state.reachability_checked_at = _utc_now()
+            self._state.reachability_source = "tool_call"
             self._state.session_state = "idle"
 
     def _record_failure(self, category: str, *, dispatched: bool) -> None:
         category = _normalized_category(category)
         with self._lock:
             self._state.failure_counts[category] += 1
+            self._state.last_failed_call_at = _utc_now()
+            self._state.last_failure_category = category
+            self._state.reachability_checked_at = _utc_now()
+            self._state.reachability_source = "tool_call"
             self._state.session_state = "failed"
             if category == "timeout":
                 self._state.timeout_count += 1
@@ -931,10 +962,39 @@ class UpstreamDashboardProvider:
     def health_snapshot(self) -> dict[str, Any]:
         with self._lock:
             state = self._state
+            reachability_age = _timestamp_age_seconds(state.reachability_checked_at)
+            fresh = bool(
+                reachability_age is not None
+                and reachability_age <= REACHABILITY_FRESHNESS_SECONDS
+            )
+            operational_status = (
+                "unavailable"
+                if not state.configured or (fresh and state.reachable is False)
+                else "available"
+                if fresh and state.reachable
+                else "unknown"
+            )
+            contract_status = (
+                "valid"
+                if state.required_schema_compatible
+                else "invalid"
+                if state.validation_reason and state.validation_reason != "not_configured"
+                else "unknown"
+            )
             return {
                 "configured": state.configured,
                 "credential_present": state.credential_present,
-                "reachable": state.reachable,
+                "reachable": state.reachable if fresh else None,
+                "operational_status": operational_status,
+                "contract_status": contract_status,
+                "reachability_source": state.reachability_source or "cached",
+                "reachability_checked_at": state.reachability_checked_at,
+                "reachability_age_seconds": reachability_age,
+                "reachability_freshness_seconds": REACHABILITY_FRESHNESS_SECONDS,
+                "last_successful_handshake_at": state.last_successful_handshake_timestamp,
+                "last_successful_call_at": state.last_successful_dashboard_call_timestamp,
+                "last_failed_call_at": state.last_failed_call_at,
+                "last_failure_category": state.last_failure_category,
                 "capability_status": state.capability_status,
                 "upstream_server_name": state.upstream_server_name,
                 "upstream_server_version": state.upstream_server_version,
@@ -1327,6 +1387,31 @@ def _category_for_code(code: ErrorCode) -> str:
         if candidate == code:
             return category
     return "internal_error"
+
+
+def _upstream_error_code(payload: dict[str, Any]) -> str | None:
+    """Extract only bounded structured domain codes; never inspect messages."""
+    candidates: list[Any] = [payload.get("error_code"), payload.get("code")]
+    error = payload.get("error")
+    if isinstance(error, dict):
+        candidates.extend((error.get("code"), error.get("error_code")))
+    data = payload.get("data")
+    if isinstance(data, dict) and isinstance(data.get("error"), dict):
+        candidates.append(data["error"].get("code"))
+    for value in candidates:
+        if isinstance(value, str):
+            return value.strip().upper()[:64]
+    return None
+
+
+def _timestamp_age_seconds(value: str | None) -> float | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return round(max(0.0, (datetime.now(timezone.utc) - parsed).total_seconds()), 3)
+    except (TypeError, ValueError):
+        return None
 
 
 def _utc_now() -> str:

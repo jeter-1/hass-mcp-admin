@@ -44,6 +44,7 @@ class Settings:
     trusted_proxy_cidrs: tuple[str, ...] = ()
     ingress_port: int = 8110
     upstream_dashboard_mcp_url: str = field(default="", repr=False)
+    dependency_index_prewarm: bool = False
 
     @property
     def api_url(self) -> str:
@@ -193,4 +194,5 @@ def load_settings() -> Settings:
             )
             or ""
         ).strip(),
+        dependency_index_prewarm=bool(options.get("dependency_index_prewarm", False)),
     )

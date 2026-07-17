@@ -82,7 +82,24 @@ class CanonicalProviderDispatcher:
                     decision.capability, action
                 )
             elif decision.route == CapabilityRoute.PROHIBITED:
-                raise GovernanceError(ErrorCode.PROVIDER_PROHIBITED)
+                if tool_name == "upsert_automation":
+                    raise GovernanceError(
+                        ErrorCode.PROVIDER_PROHIBITED,
+                        "Ungoverned automation replacement is prohibited; use the governed change-plan workflow.",
+                        details={
+                            "reason": "governance_required",
+                            "replacement": "create_change_plan",
+                            "required_workflow": [
+                                "create_change_plan",
+                                "approve_change_plan",
+                                "apply_change_plan",
+                            ],
+                        },
+                    )
+                raise GovernanceError(
+                    ErrorCode.PROVIDER_PROHIBITED,
+                    details={"reason": "operation_prohibited", "fallback": "none"},
+                )
             else:
                 # Engineering-native tools are intentionally registered without
                 # this wrapper; unsupported routes fail closed if encountered.
@@ -210,7 +227,12 @@ class CanonicalProviderDispatcher:
             return result, data, warnings, metadata
         except Exception as exc:
             code, _, _, _ = map_exception(exc)
-            if code not in {ErrorCode.INVALID_REQUEST, ErrorCode.VALIDATION_FAILURE}:
+            if code in {ErrorCode.ENTITY_NOT_FOUND, ErrorCode.AUTOMATION_NOT_FOUND}:
+                METRICS.record_classified_outcome(code.value)
+                METRICS.record_provider_result(
+                    "direct_ha_api", "complete", dispatched=True
+                )
+            elif code not in {ErrorCode.INVALID_REQUEST, ErrorCode.VALIDATION_FAILURE}:
                 METRICS.record_provider_result(
                     "direct_ha_api", "failed", dispatched=True
                 )

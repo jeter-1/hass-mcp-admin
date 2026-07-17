@@ -528,10 +528,16 @@ class ServiceContractTests(unittest.IsolatedAsyncioTestCase):
                 "configuration_integrity_analysis",
             )
         self.assertEqual(provider.calls, [])
-        health = METRICS.snapshot()["configuration_integrity_analysis"]
-        self.assertEqual(health["failed_count"], len(cases) - 1)
+        snapshot = METRICS.snapshot()
+        health = snapshot["configuration_integrity_analysis"]
+        self.assertEqual(health["failed_count"], 0)
         self.assertEqual(health["cursor_failure_count"], 1)
         self.assertEqual(health["finding_count"], 0)
+        self.assertEqual(
+            snapshot["validation_error_counts"]["request_validation"],
+            len(cases) - 1,
+        )
+        self.assertEqual(snapshot["cursor_error_counts"]["invalid_cursor"], 1)
 
 
 class ProviderAndPublicContractTests(unittest.IsolatedAsyncioTestCase):

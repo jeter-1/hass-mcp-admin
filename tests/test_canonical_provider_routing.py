@@ -292,7 +292,7 @@ class CanonicalRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(phase3c_reads.issubset(DIRECT_HA_READ_POLICIES))
         self.assertEqual(
             set(DIRECT_HA_TOOL_EXCEPTIONS) - set(DIRECT_HA_READ_POLICIES),
-            {"upsert_automation"},
+            set(),
         )
         self.assertEqual(DIRECT_HA_READ_POLICIES["get_error_log"]["access"], "read")
         self.assertEqual(

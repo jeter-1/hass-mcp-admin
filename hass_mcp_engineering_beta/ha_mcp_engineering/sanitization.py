@@ -44,6 +44,7 @@ _WEBHOOK_KEYS = frozenset({"webhook_id", "webhook_secret", "webhook_token"})
 _AUTH_FLOW_KEYS = frozenset(
     {
         "login_flow_id",
+        "login_flow",
         "auth_flow_id",
         "authentication_flow_id",
         "auth_session_id",
@@ -81,7 +82,7 @@ _JWT = re.compile(r"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[
 _URL_USERINFO = re.compile(r"(?i)(https?://)([^/@\s:]+):([^/@\s]+)@")
 _URL_ENCODED_USERINFO = re.compile(r"(?i)(https?://)([^/@\s]+%3A[^/@\s]+)@")
 _URL_CREDENTIAL_PARAMETER = re.compile(
-    r"(?i)([?&#;](?:access(?:%5[fF]|_)token|refresh(?:%5[fF]|_)token|token|api(?:%5[fF]|_)(?:key|secret)|client(?:%5[fF]|_)secret|password|credential|authorization(?:%5[fF]|_)code)(?:=|%3[dD]))([^&#;\s]+)"
+    r"(?i)([?&#;](?:access(?:%5[fF]|_)token|refresh(?:%5[fF]|_)token|token|api(?:%5[fF]|_)(?:key|secret)|client(?:%5[fF]|_)secret|password|credential|authorization(?:%5[fF]|_)code|signature|sig|x-amz-signature|x-goog-signature)(?:=|%3[dD]))([^&#;\s]+)"
 )
 _WEBHOOK_PATH = re.compile(r"(?i)(/api/webhook/)([^/?#\s'\"\]}]+)")
 _LOGIN_FLOW_PATH = re.compile(r"(?i)(/auth/login_flow/)([^/?#\s'\"\]}]+)")

@@ -21,6 +21,10 @@ class RuntimeMetrics:
     ha_latencies: deque[float] = field(default_factory=lambda: deque(maxlen=100))
     operation_methods: Counter = field(default_factory=Counter)
     errors: Counter = field(default_factory=Counter)
+    domain_outcome_counts: Counter = field(default_factory=Counter)
+    validation_error_counts: Counter = field(default_factory=Counter)
+    authorization_error_counts: Counter = field(default_factory=Counter)
+    cursor_error_counts: Counter = field(default_factory=Counter)
     provider_requests: Counter = field(default_factory=Counter)
     provider_successes: Counter = field(default_factory=Counter)
     provider_failures: Counter = field(default_factory=Counter)
@@ -176,6 +180,33 @@ class RuntimeMetrics:
     def record_error(self, code: str) -> None:
         self.errors[code] += 1
 
+    def record_classified_outcome(self, category: str) -> bool:
+        """Record expected outcomes separately from operational failures.
+
+        Returns true when the category must not increment a terminal analysis
+        or provider-health failure counter.
+        """
+        value = str(category)[:64]
+        if value in {
+            "entity_not_found", "automation_not_found", "dashboard_not_found",
+            "change_plan_not_found",
+        }:
+            self.domain_outcome_counts[value] += 1
+            return True
+        if value in {"request_validation", "invalid_request", "validation_failure"}:
+            self.validation_error_counts[value] += 1
+            return True
+        if value in {
+            "authentication_failure", "authorization_failure", "external_approval_required",
+            "approval_hash_mismatch", "approval_authority_mismatch", "provider_prohibited",
+        }:
+            self.authorization_error_counts[value] += 1
+            return True
+        if value in {"invalid_cursor", "stale_cursor"}:
+            self.cursor_error_counts[value] += 1
+            return True
+        return False
+
     def record_provider_result(
         self,
         provider_id: str,
@@ -237,7 +268,9 @@ class RuntimeMetrics:
     def record_dependency_analysis_partial(self) -> None:
         self.dependency_analysis_partial += 1
 
-    def record_dependency_analysis_failure(self) -> None:
+    def record_dependency_analysis_failure(self, category: str = "analysis_failure") -> None:
+        if self.record_classified_outcome(category):
+            return
         self.dependency_analysis_failures += 1
 
     def record_dependency_index_build(self) -> None:
@@ -304,6 +337,8 @@ class RuntimeMetrics:
         )
 
     def record_reliability_analysis_failure(self, category: str) -> None:
+        if self.record_classified_outcome(category):
+            return
         self.reliability_analysis_failures += 1
         self.reliability_last_failure_category = str(category)[:64]
 
@@ -365,6 +400,8 @@ class RuntimeMetrics:
         self.impact_last_successful_analysis = str(analysis_timestamp)[:64]
 
     def record_impact_analysis_failure(self, category: str) -> None:
+        if self.record_classified_outcome(category):
+            return
         self.impact_analysis_failures += 1
         self.impact_last_failure_category = str(category)[:64]
 
@@ -376,6 +413,7 @@ class RuntimeMetrics:
         self.impact_cursor_continuations += 1
 
     def record_impact_cursor_event(self, category: str) -> None:
+        self.record_classified_outcome(category)
         if category == "stale_cursor":
             self.impact_stale_cursor_events += 1
         else:
@@ -431,6 +469,8 @@ class RuntimeMetrics:
         self.integrity_last_successful_analysis = str(analysis_timestamp)[:64]
 
     def record_integrity_analysis_failure(self, category: str) -> None:
+        if self.record_classified_outcome(category):
+            return
         self.integrity_analysis_failures += 1
         self.integrity_last_failure_category = str(category)[:64]
 
@@ -442,6 +482,7 @@ class RuntimeMetrics:
         self.integrity_cursor_continuations += 1
 
     def record_integrity_cursor_event(self, category: str) -> None:
+        self.record_classified_outcome(category)
         if category == "stale_cursor":
             self.integrity_stale_cursor_events += 1
         else:
@@ -491,6 +532,8 @@ class RuntimeMetrics:
         self.incident_last_successful_analysis = str(analysis_timestamp)[:64]
 
     def record_incident_failure(self, category: str) -> None:
+        if self.record_classified_outcome(category):
+            return
         self.incident_failures += 1
         self.incident_last_failure_category = str(category)[:64]
 
@@ -540,6 +583,8 @@ class RuntimeMetrics:
         self.handoff_last_failure_category = None
 
     def record_handoff_failure(self, category: str) -> None:
+        if self.record_classified_outcome(category):
+            return
         self.handoff_failures += 1
         self.handoff_last_failure_category = str(category)[:128]
 
@@ -573,6 +618,10 @@ class RuntimeMetrics:
         self.ha_latencies.clear()
         self.operation_methods.clear()
         self.errors.clear()
+        self.domain_outcome_counts.clear()
+        self.validation_error_counts.clear()
+        self.authorization_error_counts.clear()
+        self.cursor_error_counts.clear()
         self.provider_requests.clear()
         self.provider_successes.clear()
         self.provider_failures.clear()
@@ -703,10 +752,15 @@ class RuntimeMetrics:
             "home_assistant_latency": self._summary(self.ha_latencies),
             "mcp_operation_methods": dict(self.operation_methods),
             "recent_error_counts": dict(self.errors),
+            "domain_outcome_counts": dict(self.domain_outcome_counts),
+            "validation_error_counts": dict(self.validation_error_counts),
+            "authorization_error_counts": dict(self.authorization_error_counts),
+            "cursor_error_counts": dict(self.cursor_error_counts),
             "provider_routing": {
                 "requests_by_provider": dict(self.provider_requests),
                 "successful_requests_by_provider": dict(self.provider_successes),
                 "failures_by_provider": dict(self.provider_failures),
+                "provider_operational_failures": dict(self.provider_failures),
                 "partial_results": self.provider_partial_results,
                 "fallback_attempts": self.fallback_attempts,
                 "fallback_successes": self.fallback_successes,

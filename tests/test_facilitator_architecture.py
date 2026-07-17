@@ -93,7 +93,7 @@ class RoutingPolicyTests(unittest.TestCase):
             ProviderCapability.EXACT_VERIFICATION: CapabilityRoute.DIRECT_HA_REQUIRED,
             ProviderCapability.GOVERNED_ROLLBACK: CapabilityRoute.DIRECT_HA_REQUIRED,
             ProviderCapability.HISTORY_READ: CapabilityRoute.TRANSITIONAL_DIRECT,
-            ProviderCapability.LEGACY_AUTOMATION_WRITE: CapabilityRoute.TRANSITIONAL_DIRECT,
+            ProviderCapability.LEGACY_AUTOMATION_WRITE: CapabilityRoute.PROHIBITED,
             ProviderCapability.UNGOVERNED_PHYSICAL_ACTION: CapabilityRoute.PROHIBITED,
             ProviderCapability.SECRET_BEARING_DIAGNOSTICS: CapabilityRoute.PROHIBITED,
             ProviderCapability.UNSUPPORTED_EXPERIMENTAL: CapabilityRoute.UNSUPPORTED,

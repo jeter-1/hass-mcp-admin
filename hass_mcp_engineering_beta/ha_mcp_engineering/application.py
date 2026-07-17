@@ -198,6 +198,11 @@ async def _serve(settings: Settings) -> None:
     approval_server.install_signal_handlers = lambda: None
     mcp_task = asyncio.create_task(mcp_server.serve())
     approval_task = asyncio.create_task(approval_server.serve())
+    prewarm_task = (
+        DEPENDENCY_ANALYSIS.start_prewarm()
+        if settings.dependency_index_prewarm
+        else None
+    )
     try:
         done, _ = await asyncio.wait(
             {mcp_task, approval_task}, return_when=asyncio.FIRST_COMPLETED
@@ -212,7 +217,11 @@ async def _serve(settings: Settings) -> None:
     finally:
         mcp_server.should_exit = True
         approval_server.should_exit = True
+        if prewarm_task is not None and not prewarm_task.done():
+            prewarm_task.cancel()
         await asyncio.gather(mcp_task, approval_task, return_exceptions=True)
+        if prewarm_task is not None:
+            await asyncio.gather(prewarm_task, return_exceptions=True)
 
 
 def main() -> None:

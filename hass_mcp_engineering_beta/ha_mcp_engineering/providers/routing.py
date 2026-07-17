@@ -71,7 +71,6 @@ _TRANSITIONAL_DIRECT = {
     ProviderCapability.DEVICE_REGISTRY_READ,
     ProviderCapability.ENTITY_REGISTRY_READ,
     ProviderCapability.BLUEPRINT_LIST,
-    ProviderCapability.LEGACY_AUTOMATION_WRITE,
     ProviderCapability.CURRENT_ENTITY_STATE,
     ProviderCapability.AREA_LOOKUP,
     ProviderCapability.SERVICE_DISCOVERY,
@@ -81,6 +80,7 @@ _UPSTREAM_DASHBOARD = {
     ProviderCapability.DASHBOARD_CONFIGURATION_EVIDENCE,
 }
 _PROHIBITED = {
+    ProviderCapability.LEGACY_AUTOMATION_WRITE,
     ProviderCapability.UNGOVERNED_PHYSICAL_ACTION,
     ProviderCapability.SECRET_BEARING_DIAGNOSTICS,
 }
@@ -214,7 +214,6 @@ DIRECT_HA_TOOL_EXCEPTIONS = frozenset(
         "get_automation_config",
         "list_devices",
         "list_entity_registry",
-        "upsert_automation",
         "list_blueprints",
         "get_entity",
         "search_entities",

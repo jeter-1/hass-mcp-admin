@@ -97,6 +97,7 @@ class DependencyScanResult:
     dynamic_references: list[DynamicReference]
     target_metadata: dict[str, dict[str, Any]]
     coverage: list[SourceCoverageItem]
+    profile: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -110,6 +111,7 @@ class DependencyIndexSnapshot:
     target_metadata: dict[str, dict[str, Any]]
     coverage: tuple[SourceCoverageItem, ...]
     build_duration_ms: float = 0.0
+    build_profile: dict[str, Any] = field(default_factory=dict)
 
 
 def evidence_id(*parts: Any) -> str:

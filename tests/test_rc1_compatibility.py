@@ -259,8 +259,41 @@ class RC1PublicContractTests(unittest.TestCase):
         baseline_classifications = {
             name: dict(classifications[name]) for name in BETA26_TOOL_NAMES
         }
+        for item in baseline_classifications.values():
+            item.pop("operation_class", None)
         baseline_classifications["search_entities"].pop("routing")
         baseline_classifications["search_entities"].pop("provider")
+        baseline_classifications.update(
+            {
+                "upsert_automation": {
+                    "tool": "upsert_automation",
+                    "category": "configuration",
+                    "status": "transitional",
+                    "risk": "behavioral_write",
+                },
+                "delete_automation": {
+                    "tool": "delete_automation",
+                    "category": "configuration",
+                    "status": "deprecated",
+                    "delegate": "ha-mcp",
+                    "risk": "destructive",
+                },
+                "call_service": {
+                    "tool": "call_service",
+                    "category": "execution",
+                    "status": "deprecated",
+                    "delegate": "ha-mcp",
+                    "risk": "physical_action",
+                },
+                "reload_domain": {
+                    "tool": "reload_domain",
+                    "category": "execution",
+                    "status": "deprecated",
+                    "delegate": "ha-mcp",
+                    "risk": "infrastructure",
+                },
+            }
+        )
         baseline_routing = {
             name: dict(routing[name]) for name in BETA26_TOOL_NAMES
         }
@@ -270,9 +303,16 @@ class RC1PublicContractTests(unittest.TestCase):
                 "preferred_provider": "standard_ha_mcp",
             }
         )
+        baseline_routing["upsert_automation"].update(
+            {
+                "route": "transitional_direct",
+                "preferred_provider": "direct_ha_api",
+            }
+        )
         baseline_direct_policy = {
             "exceptions": sorted(
-                set(DIRECT_HA_TOOL_EXCEPTIONS) - {"search_entities"}
+                (set(DIRECT_HA_TOOL_EXCEPTIONS) - {"search_entities"})
+                | {"upsert_automation"}
             ),
             "policies": {
                 name: dict(policy)

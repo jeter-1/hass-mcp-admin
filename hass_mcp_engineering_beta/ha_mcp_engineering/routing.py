@@ -184,6 +184,14 @@ class AuthenticatedMcpGateway:
                     timing=Timing(total_ms=telemetry.total_duration_ms),
                     request_id=request_id,
                 )
+                self.audit.write({
+                    "event": "rate_limited",
+                    "request_id": request_id,
+                    "authenticated": True,
+                    "caller_id": caller_id,
+                    "result_status": "rejected",
+                    "error_code": telemetry.error_code,
+                })
                 return await self._respond(
                     send,
                     429,

@@ -30,7 +30,7 @@ from ..clients import HomeAssistantRestClient, HomeAssistantWebSocketClient
 from ..configuration import load_settings
 from ..health import HEALTH
 from ..dependency import DEPENDENCY_ANALYSIS
-from ..errors import HomeAssistantApiError
+from ..errors import ErrorCode, GovernanceError, HomeAssistantApiError
 from ..logging_config import get_logger, log_event
 from ..mcp_server import create_mcp_server
 from ..models.responses import dump_json
@@ -595,54 +595,28 @@ async def get_blueprint(path: str, domain: str = "automation") -> str:
 
 @mcp.tool()
 async def upsert_automation(automation_id: str, config_json: str) -> str:
-    """Create or replace an automation. automation_id: internal id (for a new
-    automation, use a new unique string, e.g. a timestamp). config_json: the
-    full automation config as a JSON object with alias, description, mode,
-    triggers, conditions, actions. HA validates the schema server-side before
-    persisting and reloads automations automatically. The response includes a
-    read-back of the stored config — verify it matches intent. After any
-    structural change, also run check_config."""
-    try:
-        config = json.loads(config_json)
-    except json.JSONDecodeError as e:
-        return (
-            f"Refused: config_json is not valid JSON — {e.msg} at line {e.lineno}, "
-            f"column {e.colno}. Fix the JSON and retry; nothing was written."
-        )
-    if not isinstance(config, dict):
-        return "Refused: config_json must be a JSON object, not a list or scalar."
-    has_trigger = any(k in config for k in ("trigger", "triggers"))
-    has_action = any(k in config for k in ("action", "actions"))
-    missing = []
-    if not has_trigger:
-        missing.append("triggers")
-    if not has_action:
-        missing.append("actions")
-    if missing:
-        return (
-            f"Refused: config is missing required key(s): {', '.join(missing)}. "
-            "Nothing was written."
-        )
-    write_result = await rest("POST", f"/config/automation/config/{automation_id}", config)
-    stored = await rest("GET", f"/config/automation/config/{automation_id}")
-    DEPENDENCY_ANALYSIS.invalidate()
-    return dump(
-        {
-            "write_result": write_result,
-            "stored_config_read_back": stored,
-            "note": "Verify stored config matches intent. Run check_config after structural changes.",
-        }
+    """Compatibility schema only; direct automation writes are prohibited."""
+    raise GovernanceError(
+        ErrorCode.PROVIDER_PROHIBITED,
+        details={
+            "reason": "governance_required",
+            "replacement": "create_change_plan",
+            "required_workflow": [
+                "create_change_plan",
+                "approve_change_plan",
+                "apply_change_plan",
+            ],
+        },
     )
 
 
 @mcp.tool()
 async def delete_automation(automation_id: str, confirm: bool = False) -> str:
-    """Delete an automation by internal id. Requires confirm=true."""
-    if not confirm:
-        return "Refused: pass confirm=true to delete this automation."
-    result = await rest("DELETE", f"/config/automation/config/{automation_id}")
-    DEPENDENCY_ANALYSIS.invalidate()
-    return dump(result)
+    """Compatibility schema only; automation deletion is prohibited."""
+    raise GovernanceError(
+        ErrorCode.PROVIDER_PROHIBITED,
+        details={"reason": "operation_prohibited", "fallback": "none"},
+    )
 
 
 @mcp.tool()
@@ -654,37 +628,20 @@ async def check_config() -> str:
 
 @mcp.tool()
 async def call_service(domain: str, service: str, data_json: str = "{}", confirm: bool = False) -> str:
-    """Call any HA service. data_json is the JSON service data, e.g.
-    '{"entity_id": "light.office"}'. Services on the destructive list
-    (locks, garage doors, alarm disarm, core restart) additionally require
-    confirm=true."""
-    key = f"{domain}.{service}"
-    if key in DESTRUCTIVE_SERVICES and not confirm:
-        return (
-            f"Refused: '{key}' is on the destructive-services list. "
-            "Re-call with confirm=true only if the user explicitly asked for this action."
-        )
-    data = json.loads(data_json) if data_json else {}
-    result = await rest("POST", f"/services/{domain}/{service}", data)
-    return dump(result)
+    """Compatibility schema only; the standard execution provider is unavailable."""
+    raise GovernanceError(
+        ErrorCode.PROVIDER_UNAVAILABLE,
+        details={"provider": "standard_ha_mcp", "fallback": "none"},
+    )
 
 
 @mcp.tool()
 async def reload_domain(domain: str) -> str:
-    """Reload config for a domain without restarting HA. Allowed:
-    automation, script, scene, template, input_boolean, input_number,
-    input_select, input_datetime, input_text, timer, group."""
-    allowed = {
-        "automation", "script", "scene", "template", "input_boolean",
-        "input_number", "input_select", "input_datetime", "input_text",
-        "timer", "group",
-    }
-    if domain not in allowed:
-        return f"Refused: '{domain}' not in reloadable set {sorted(allowed)}."
-    await rest("POST", f"/services/{domain}/reload", {})
-    if domain in {"automation", "script", "scene", "template", "group"}:
-        DEPENDENCY_ANALYSIS.invalidate()
-    return f"Reloaded {domain}."
+    """Compatibility schema only; the standard execution provider is unavailable."""
+    raise GovernanceError(
+        ErrorCode.PROVIDER_UNAVAILABLE,
+        details={"provider": "standard_ha_mcp", "fallback": "none"},
+    )
 
 
 # ----- Registries ------------------------------------------------------------
