@@ -41,7 +41,7 @@ def redact_data(
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
-        payload = {
+        untrusted_payload = {
             "level": record.levelname.lower(),
             "request_id": getattr(record, "request_id", None) or current_request_id(),
             "subsystem": getattr(record, "subsystem", record.name),
@@ -50,8 +50,14 @@ class JsonFormatter(logging.Formatter):
             "context": getattr(record, "safe_context", {}),
         }
         if record.exc_info:
-            payload["exception_type"] = record.exc_info[0].__name__
-        return json.dumps(payload, default=str, sort_keys=True)
+            untrusted_payload["exception_type"] = record.exc_info[0].__name__
+        sanitized = sanitize_untrusted_data(untrusted_payload, max_string=2048)
+        payload = sanitized.value
+        if isinstance(payload, dict):
+            payload["redaction_applied"] = sanitized.redaction_applied
+            payload["redacted_field_count"] = sanitized.redacted_field_count
+            payload["redaction_categories"] = list(sanitized.redaction_categories)
+        return json.dumps(payload, sort_keys=True)
 
 
 def configure_logging(level: str) -> None:

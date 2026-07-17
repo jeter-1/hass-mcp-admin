@@ -1,9 +1,15 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## RC2dev4 release hardening
+
+The current Engineering Beta source is `2.0.0-rc2-dev4`. It preserves the RC3A
+dashboard provider and 40/25/0 catalog while hardening governance lifecycle
+truth, legacy dispatch barriers, dependency-index construction and health,
+outcome classification, sanitization, and bounded responses.
+
 ## RC3A reviewed argument-constrained dashboard provider
 
-RC3A stages development version `2.0.0-rc2-dev2` while Home Assistant metadata
-continues advertising published dev1 until automated promotion. It adds a distinct
+RC3A was established through the earlier dev2/dev3 promotion sequence. It adds a distinct
 `upstream_dashboard` boundary. It uses the existing pinned MCP client to
 initialize, list and validate the live upstream catalog, then call only
 `ha_config_get_dashboard` in inventory or exact-read mode. The configured URL
@@ -90,7 +96,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | advertised `2.0.0-rc2-dev1`; promotion target `2.0.0-rc2-dev2` |
+| Version | `1.1.2` | `2.0.0-rc2-dev4` release-hardening candidate |
 | Port | `8099` | MCP `8100`; internal Ingress `8110` |
 | Options and secret | Production add-on data | Beta add-on data |
 

@@ -40,3 +40,9 @@ eviction are atomic across concurrent ASGI tasks.
 The health response reports bounded store sizes, the maximum, whether forwarded
 trust is enabled, and the number of configured trusted networks. It never
 returns peer addresses or forwarded header values.
+
+RC2dev4 audits structured `rate_limited` events without request bodies, secret
+paths, credentials, or client addresses. Run the local fixture bake with
+`python scripts/rc2dev4_bake_harness.py --scenario auth` and
+`--scenario rate-limit`. Network probes require an explicitly configured
+local/test endpoint and never perform a Home Assistant state change.

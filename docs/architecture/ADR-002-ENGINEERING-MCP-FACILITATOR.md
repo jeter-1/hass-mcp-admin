@@ -320,3 +320,11 @@ categories. Incident hypotheses use `missing_evidence` only for absent or failed
 evidence and stable `coverage_limitations` identifiers for usable but incomplete
 evidence. This preserves honest routing attribution and prevents health provider
 failures from being inflated by known capability boundaries.
+
+RC2dev4 makes compatibility enforcement explicit: legacy mutation schemas are
+retained only for input compatibility, while routing rejects before their
+neutered bodies, every fallback, and every Home Assistant action. Governed
+proposal, external-approval request, apply, and rollback are distinct operation
+classes. Standard HA MCP remains unavailable; the separately reviewed dashboard
+adapter remains argument-constrained. Dependency construction uses one
+single-flight shared snapshot rather than a second provider abstraction.

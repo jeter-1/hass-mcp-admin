@@ -67,7 +67,9 @@ class ChangeApproval:
     authority_version: int = 2
     channel: str | None = None
     approver_principal: str | None = None
-    principal_separation_enforced: bool = False
+    # None means no external approver exists yet, so separation has not been
+    # evaluated. False is reserved for a completed evaluation that failed.
+    principal_separation_enforced: bool | None = None
     approved_at: str | None = None
     approving_caller_id: str | None = None
     approval_note: str | None = None
@@ -204,6 +206,12 @@ class ChangePlan:
         # omission or deserialization.
         approval.setdefault("authority_version", 1)
         approval["state"] = ApprovalState(approval.get("state", "required"))
+        if (
+            approval.get("principal_separation_enforced") is False
+            and not approval.get("approver_principal")
+            and approval["state"] in {ApprovalState.REQUIRED, ApprovalState.EXTERNAL_PENDING}
+        ):
+            approval["principal_separation_enforced"] = None
         data["approval"] = ChangeApproval(**approval)
         data["verification"] = ChangeVerification(**data.get("verification", {}))
         data["rollback"] = ChangeRollback(**data.get("rollback", {}))

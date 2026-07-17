@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .version import (
+    BUILD_DIRTY,
     BUILD_SHA,
     BUILD_TIME,
     SCHEMA_VERSION,
@@ -32,15 +33,41 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
     {"tool": "list_devices", "category": "discovery", "status": "transitional", "risk": "read"},
     {"tool": "list_entity_registry", "category": "discovery", "status": "transitional", "risk": "read"},
     {"tool": "search_entities", "category": "discovery", "status": "transitional", "routing": "transitional_direct", "provider": "direct_ha_api", "risk": "read"},
-    {"tool": "upsert_automation", "category": "configuration", "status": "transitional", "risk": "behavioral_write"},
+    {
+        "tool": "upsert_automation",
+        "category": "configuration",
+        "status": "transitional",
+        "risk": "behavioral_write",
+        "operation_class": "governed_redirect",
+        "enforcement": "governed_redirect",
+        "replacement": "create_change_plan",
+        "routing": "prohibited",
+        "provider": None,
+        "fallback": "none",
+        "direct_write_allowed": False,
+    },
     {"tool": "get_entity", "category": "discovery", "status": "transitional", "routing": "transitional_direct", "provider": "direct_ha_api", "risk": "read"},
     {"tool": "search_services", "category": "discovery", "status": "transitional", "routing": "transitional_direct", "provider": "direct_ha_api", "risk": "read"},
     {"tool": "list_services", "category": "discovery", "status": "transitional", "routing": "transitional_direct", "provider": "direct_ha_api", "risk": "read"},
     {"tool": "list_areas", "category": "discovery", "status": "transitional", "routing": "transitional_direct", "provider": "direct_ha_api", "risk": "read"},
     {"tool": "list_blueprints", "category": "discovery", "status": "transitional", "risk": "read"},
-    {"tool": "call_service", "category": "execution", "status": "deprecated", "delegate": "ha-mcp", "risk": "physical_action"},
-    {"tool": "delete_automation", "category": "configuration", "status": "deprecated", "delegate": "ha-mcp", "risk": "destructive"},
-    {"tool": "reload_domain", "category": "execution", "status": "deprecated", "delegate": "ha-mcp", "risk": "infrastructure"},
+    {
+        "tool": "call_service", "category": "execution", "status": "deprecated",
+        "risk": "physical_action", "operation_class": "provider_unavailable",
+        "enforcement": "provider_unavailable", "routing": "standard_mcp_preferred",
+        "provider": "standard_ha_mcp", "fallback": "none", "direct_write_allowed": False,
+    },
+    {
+        "tool": "delete_automation", "category": "configuration", "status": "deprecated",
+        "risk": "destructive", "operation_class": "prohibited", "enforcement": "prohibited",
+        "routing": "prohibited", "provider": None, "fallback": "none", "direct_write_allowed": False,
+    },
+    {
+        "tool": "reload_domain", "category": "execution", "status": "deprecated",
+        "risk": "infrastructure", "operation_class": "provider_unavailable",
+        "enforcement": "provider_unavailable", "routing": "standard_mcp_preferred",
+        "provider": "standard_ha_mcp", "fallback": "none", "direct_write_allowed": False,
+    },
 )
 
 PLANNED_CAPABILITIES: tuple[dict[str, str], ...] = ()
@@ -79,12 +106,12 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "trust_mode": "reviewed_argument_constrained",
         "trust_profile": "ha_mcp_7_13_dashboard_read_v1",
     },
-    {"tool": "create_change_plan", "category": "governance", "status": "beta_native", "risk": "behavioral_write", "additive": True},
+    {"tool": "create_change_plan", "category": "governance", "status": "beta_native", "risk": "behavioral_write", "additive": True, "operation_class": "proposal"},
     {"tool": "get_change_plan", "category": "governance", "status": "beta_native", "risk": "read", "additive": True},
     {"tool": "list_change_plans", "category": "governance", "status": "beta_native", "risk": "read", "additive": True},
-    {"tool": "approve_change_plan", "category": "governance", "status": "beta_native", "risk": "behavioral_write", "additive": True},
-    {"tool": "apply_change_plan", "category": "governance", "status": "beta_native", "risk": "behavioral_write", "additive": True},
-    {"tool": "rollback_change", "category": "governance", "status": "beta_native", "risk": "behavioral_write", "additive": True},
+    {"tool": "approve_change_plan", "category": "governance", "status": "beta_native", "risk": "behavioral_write", "additive": True, "operation_class": "external_approval_request"},
+    {"tool": "apply_change_plan", "category": "governance", "status": "beta_native", "risk": "behavioral_write", "additive": True, "operation_class": "governed_apply"},
+    {"tool": "rollback_change", "category": "governance", "status": "beta_native", "risk": "behavioral_write", "additive": True, "operation_class": "governed_rollback"},
     {"tool": "entity_dependency_analysis", "category": "analysis", "status": "beta_native", "risk": "read", "additive": True},
     {
         "tool": "automation_reliability_analysis",
@@ -271,7 +298,9 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
 def capability_for_tool(tool_name: str | None) -> dict[str, Any]:
     for item in (*CAPABILITIES, *BETA_NATIVE_CAPABILITIES):
         if item["tool"] == tool_name:
-            return dict(item)
+            value = dict(item)
+            value.setdefault("operation_class", "read" if item.get("risk") == "read" else "prohibited")
+            return value
     return {}
 
 
@@ -285,6 +314,7 @@ def build_server_metadata(*, ha_url: str, runtime_mode: str, ha_connection: dict
             "schema_version": SCHEMA_VERSION,
             "build_sha": BUILD_SHA,
             "build_time": BUILD_TIME,
+            "build_dirty": BUILD_DIRTY,
         },
         "runtime": {
             "mode": runtime_mode,
@@ -301,7 +331,7 @@ def build_capability_catalog(*, status: str = "", category: str = "") -> dict[st
     normalized_status = status.strip().lower()
     normalized_category = category.strip().lower()
     tools = [
-        dict(item)
+        {**dict(item), "operation_class": item.get("operation_class", "read" if item.get("risk") == "read" else "prohibited")}
         for item in CAPABILITIES
         if (not normalized_status or item["status"] == normalized_status)
         and (not normalized_category or item["category"] == normalized_category)
@@ -314,7 +344,10 @@ def build_capability_catalog(*, status: str = "", category: str = "") -> dict[st
         },
         "tools": tools,
         "planned": [dict(item) for item in PLANNED_CAPABILITIES],
-        "beta_native": [dict(item) for item in BETA_NATIVE_CAPABILITIES],
+        "beta_native": [
+            {**dict(item), "operation_class": item.get("operation_class", "read" if item.get("risk") == "read" else "prohibited")}
+            for item in BETA_NATIVE_CAPABILITIES
+        ],
         "provider_matrix": [dict(item) for item in CAPABILITY_PROVIDER_MATRIX],
         "registered_count": len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES),
         "status_values": ["native", "transitional", "delegated", "deprecated", "beta_native", "planned", "unavailable"],

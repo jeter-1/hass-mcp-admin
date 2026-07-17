@@ -44,32 +44,50 @@ class EntityDependencyAnalysisService:
         METRICS.record_dependency_analysis_request()
         target = entity_id.strip().lower()
         if not valid_entity_id(target):
-            METRICS.record_dependency_analysis_failure()
+            METRICS.record_dependency_analysis_failure("request_validation")
             raise InvalidRequestError(details={"operation": "entity_dependency_analysis"})
         if detail_level not in {"summary", "standard", "evidence"}:
-            METRICS.record_dependency_analysis_failure()
+            METRICS.record_dependency_analysis_failure("request_validation")
             raise InvalidRequestError(details={"operation": "entity_dependency_analysis"})
         try:
             max_depth = int(max_depth)
             limit = int(limit)
         except (TypeError, ValueError) as exc:
-            METRICS.record_dependency_analysis_failure()
+            METRICS.record_dependency_analysis_failure("request_validation")
             raise InvalidRequestError(details={"operation": "entity_dependency_analysis"}) from exc
         if not 1 <= max_depth <= 3 or not 1 <= limit <= 100:
-            METRICS.record_dependency_analysis_failure()
+            METRICS.record_dependency_analysis_failure("request_validation")
             raise InvalidRequestError(details={"operation": "entity_dependency_analysis"})
         requested = list(dict.fromkeys(source_types or SOURCE_TYPES))
         if any(item not in SOURCE_TYPES for item in requested):
-            METRICS.record_dependency_analysis_failure()
+            METRICS.record_dependency_analysis_failure("request_validation")
             raise InvalidRequestError(details={"operation": "entity_dependency_analysis"})
+
+        query_fingerprint = _query_fingerprint(target, detail_level, include_indirect, max_depth, requested)
+        offset = 0
+        if cursor:
+            try:
+                if refresh_index:
+                    raise GovernanceError(ErrorCode.STALE_CURSOR)
+                identity = self.index.active_identity()
+                offset = _decode_cursor(
+                    cursor,
+                    str(identity.get("fingerprint") or ""),
+                    query_fingerprint,
+                )
+                if not identity.get("valid"):
+                    raise GovernanceError(ErrorCode.STALE_CURSOR)
+            except GovernanceError as exc:
+                METRICS.record_dependency_analysis_failure(exc.code.value)
+                raise
 
         try:
             snapshot, rebuilt, lookup_duration_ms = await self.index.get(refresh=refresh_index)
         except EngineeringServerError:
-            METRICS.record_dependency_analysis_failure()
+            METRICS.record_dependency_analysis_failure("provider_operational_failure")
             raise
         except Exception as exc:
-            METRICS.record_dependency_analysis_failure()
+            METRICS.record_dependency_analysis_failure("internal_error")
             raise GovernanceError(ErrorCode.ANALYSIS_UNAVAILABLE) from exc
 
         direct, findings = select_dependency_findings(
@@ -80,8 +98,8 @@ class EntityDependencyAnalysisService:
             max_depth=max_depth,
         )
 
-        query_fingerprint = _query_fingerprint(target, detail_level, include_indirect, max_depth, requested)
-        offset = _decode_cursor(cursor, snapshot.fingerprint, query_fingerprint) if cursor else 0
+        if cursor and snapshot.fingerprint != str(self.index.active_identity().get("fingerprint") or ""):
+            raise GovernanceError(ErrorCode.STALE_CURSOR)
         requested_limit = limit
         effective_limit = min(requested_limit, 100)
         page = findings[offset : offset + effective_limit]
@@ -127,7 +145,12 @@ class EntityDependencyAnalysisService:
                 "possible_stale_reference": possible_stale,
             },
             "assessment": {"rename_or_removal_status": assessment_status, "reason": reason},
-            "findings": [item.public(include_excerpt=detail_level == "evidence") for item in page],
+            "findings": [
+                _summary_finding(item)
+                if detail_level == "summary"
+                else item.public(include_excerpt=detail_level == "evidence")
+                for item in page
+            ],
             "source_coverage": [item.public() for item in coverage],
             "pagination": {
                 "requested_limit": requested_limit,
@@ -294,6 +317,22 @@ def _assessment(direct: bool, indirect: bool, partial: bool, stale: bool):
 def _safe_target_metadata(value):
     allowed = {"entity_id", "entity_exists", "registry_entry_exists", "domain", "platform", "device_id", "area_id", "disabled", "hidden", "friendly_name", "state"}
     return {key: value.get(key) for key in allowed if key in value}
+
+
+def _summary_finding(item: DependencyFinding) -> dict[str, Any]:
+    value = {
+        "evidence_id": item.evidence_id,
+        "source_type": item.source_type,
+        "source_id": item.source_id,
+        "source_name": item.source_name,
+        "relation": item.relation,
+        "direct": item.direct,
+        "depth": item.depth,
+        "configuration_path": item.config_path,
+    }
+    if not item.direct:
+        value["evidence_path"] = list(item.evidence_path)
+    return value
 
 
 def _query_fingerprint(*parts):

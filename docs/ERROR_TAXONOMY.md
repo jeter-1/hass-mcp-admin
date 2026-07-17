@@ -98,3 +98,10 @@ Validation occurs before provider dispatch, HA access, dependency-index access,
 or snapshot creation. An intact cursor bound to changed query semantics, an
 expired snapshot, or a replaced index returns `stale_cursor`; malformed or
 tampered cursor material returns `invalid_cursor`.
+
+RC2dev4 separates rejected validation, expected domain outcomes, authorization,
+cursor errors, provider operational failures, and internal defects. Exact
+`entity_not_found`, `automation_not_found`, `dashboard_not_found`, and
+`change_plan_not_found` outcomes are non-retryable domain answers and do not
+degrade provider reachability. Connection, authentication, timeout, protocol,
+invalid-response, and upstream-internal failures remain operational failures.

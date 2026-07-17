@@ -87,6 +87,7 @@ class ErrorCode(str, Enum):
     )
     UPSTREAM_DASHBOARD_UPSTREAM_ERROR = "upstream_dashboard_upstream_error"
     UPSTREAM_DASHBOARD_RESPONSE_TOO_LARGE = "upstream_dashboard_response_too_large"
+    DASHBOARD_NOT_FOUND = "dashboard_not_found"
     UPSTREAM_DASHBOARD_INTERNAL_ERROR = "upstream_dashboard_internal_error"
 
 
@@ -120,6 +121,7 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
     ErrorCode.RATE_LIMIT_EXCEEDED: ErrorDefinition("The request rate limit was exceeded.", True, 429, "server_error"),
     ErrorCode.INTERNAL_SERVER_ERROR: ErrorDefinition("An internal server error occurred.", False, 500, "internal_error"),
     ErrorCode.CHANGE_PLAN_NOT_FOUND: ErrorDefinition("The change plan was not found.", False, 404, "invalid_params"),
+    ErrorCode.DASHBOARD_NOT_FOUND: ErrorDefinition("The dashboard was not found.", False, 404, "invalid_params"),
     ErrorCode.CHANGE_PLAN_EXPIRED: ErrorDefinition("The change plan has expired.", False, 409, "invalid_request"),
     ErrorCode.CHANGE_PLAN_NOT_APPROVED: ErrorDefinition("The change plan is not approved.", False, 409, "invalid_request"),
     ErrorCode.APPROVAL_HASH_MISMATCH: ErrorDefinition("The approval does not match the immutable plan content.", False, 409, "invalid_request"),
@@ -340,7 +342,7 @@ class DashboardProviderError(EngineeringServerError):
         *,
         details: dict[str, Any] | None = None,
     ):
-        if not code.value.startswith("upstream_dashboard_"):
+        if not code.value.startswith("upstream_dashboard_") and code != ErrorCode.DASHBOARD_NOT_FOUND:
             raise ValueError("DashboardProviderError requires a dashboard error code")
         self.code = code
         super().__init__(details=details)

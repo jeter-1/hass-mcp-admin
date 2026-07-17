@@ -23,6 +23,7 @@ RULES: tuple[dict[str, Any], ...] = (
     {"rule_id": "missing_referenced_entity", "required_evidence": ("entity_state",), "severity": "high"},
     {"rule_id": "unavailable_referenced_entity", "required_evidence": ("entity_state",), "severity": "medium"},
     {"rule_id": "unknown_referenced_entity", "required_evidence": ("entity_state",), "severity": "low"},
+    {"rule_id": "intentional_unavailable_state_trigger", "required_evidence": ("entity_state",), "severity": "info"},
     {"rule_id": "disabled_referenced_entity", "required_evidence": ("entity_registry",), "severity": "medium"},
     {"rule_id": "repeated_trace_failure", "required_evidence": ("automation_traces",), "severity": "high"},
     {"rule_id": "repeated_condition_stop", "required_evidence": ("automation_traces",), "severity": "info"},
@@ -78,7 +79,8 @@ def build_root_cause_groups(findings: list[ReliabilityFinding]) -> list[Reliabil
             timestamp for item in members for timestamp in (item.first_observed, item.last_observed)
         )
         occurrences = {value for item in members for value in item.occurrence_ids if value}
-        refs = tuple(dict.fromkeys(value for item in ordered for value in item.evidence_references))[:20]
+        all_refs = tuple(dict.fromkeys(value for item in ordered for value in item.evidence_references))
+        refs = all_refs[:20]
         values.append(ReliabilityRootCauseGroup(
             root_cause_group_id=group_id,
             primary_finding_id=ordered[0].finding_id,
@@ -90,6 +92,7 @@ def build_root_cause_groups(findings: list[ReliabilityFinding]) -> list[Reliabil
             affected_step=next((item.trace_step for item in ordered if item.trace_step), None),
             affected_dependency=next((item.affected_dependency for item in ordered if item.affected_dependency), None),
             evidence_references=refs,
+            affected_reference_count=len(all_refs),
         ))
     return sorted(values, key=lambda item: (_SEVERITY_ORDER[item.highest_severity], item.root_cause_group_id))
 
@@ -142,14 +145,49 @@ def _entity_rules(bundle):
         for status in statuses:
             if status not in mapping:
                 continue
-            rule_id, title, severity, finding_status, explanation = mapping[status]
             entity_id, config_path = item.get("entity_id"), item.get("config_path")
+            if status == "unknown" and str(entity_id).split(".", 1)[0] == "button":
+                continue
+            intentional_unavailable_trigger = bool(
+                status == "unavailable"
+                and _observes_unavailable_state(bundle.configuration, str(entity_id))
+                and str(item.get("relation", "")).lower() == "trigger"
+            )
+            rule_id, title, severity, finding_status, explanation = mapping[status]
+            if intentional_unavailable_trigger:
+                rule_id = "intentional_unavailable_state_trigger"
+                title = "Unavailable state is an intentional trigger input"
+                severity = "info"
+                finding_status = "intentional"
+                explanation = (
+                    "The entity is currently unavailable, and this automation explicitly observes "
+                    "the unavailable transition. The current recovery target remains unavailable, "
+                    "but the reference itself is not a separate configuration defect."
+                )
             ref = _reference(bundle, source_type="entity_reference", source_id=entity_id, summary=f"{entity_id} is {status}.", config_path=config_path)
             findings.append(_finding(bundle, rule_id, title, severity, "exact", finding_status, explanation,
-                key=entity_id, refs=(ref,), configuration_path=config_path, affected_dependency=entity_id,
+                key=entity_id, root_key=f"entity_state:{entity_id}:{status}", refs=(ref,), configuration_path=config_path, affected_dependency=entity_id,
                 operational_impact="The referenced step may not evaluate or execute as configured.",
                 recommended_next_investigation=f"Inspect {entity_id} and the cited configuration path.", governed_change_required=status in {"missing", "disabled"}))
     return findings
+
+
+def _observes_unavailable_state(configuration: dict[str, Any], entity_id: str) -> bool:
+    triggers = configuration.get("triggers", configuration.get("trigger", []))
+    stack = list(triggers) if isinstance(triggers, list) else [triggers]
+    while stack:
+        value = stack.pop()
+        if isinstance(value, dict):
+            encoded_entities = value.get("entity_id")
+            entities = encoded_entities if isinstance(encoded_entities, list) else [encoded_entities]
+            if entity_id in entities and any(
+                str(value.get(key, "")).lower() == "unavailable" for key in ("from", "to")
+            ):
+                return True
+            stack.extend(value.values())
+        elif isinstance(value, list):
+            stack.extend(value)
+    return False
 
 
 def _trace_rules(bundle):

@@ -257,7 +257,9 @@ class ServiceAndMetricsContractTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(telemetry.ha_duration_ms, 0.0)
         finally:
             end_request(token)
-        self.assertEqual(METRICS.snapshot()["automation_reliability_analysis"]["failed_count"], 1)
+        snapshot = METRICS.snapshot()
+        self.assertEqual(snapshot["automation_reliability_analysis"]["failed_count"], 0)
+        self.assertEqual(snapshot["validation_error_counts"]["request_validation"], 1)
 
         METRICS.reset()
         with self.assertRaises(AutomationNotFoundError):
@@ -266,7 +268,8 @@ class ServiceAndMetricsContractTests(unittest.IsolatedAsyncioTestCase):
             )
         metrics = METRICS.snapshot()["automation_reliability_analysis"]
         self.assertEqual(metrics["request_count"], 1)
-        self.assertEqual(metrics["failed_count"], 1)
+        self.assertEqual(metrics["failed_count"], 0)
+        self.assertEqual(METRICS.snapshot()["domain_outcome_counts"]["automation_not_found"], 1)
 
 
 class TraceSanitizationTests(unittest.TestCase):

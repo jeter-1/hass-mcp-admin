@@ -574,13 +574,24 @@ class ToolParityTests(unittest.TestCase):
                 "list_areas",
                 "search_services",
                 "list_services",
+                "upsert_automation",
+                "delete_automation",
+                "call_service",
+                "reload_domain",
             },
         )
-        for name in changed:
+        for name in {"search_entities", "get_entity", "list_areas", "search_services", "list_services"}:
             self.assertEqual(beta_catalog[name]["status"], "transitional")
             self.assertEqual(beta_catalog[name]["routing"], "transitional_direct")
             self.assertEqual(beta_catalog[name]["provider"], "direct_ha_api")
             self.assertEqual(beta_catalog[name]["risk"], "read")
+        self.assertEqual(beta_catalog["upsert_automation"]["enforcement"], "governed_redirect")
+        self.assertEqual(beta_catalog["upsert_automation"]["replacement"], "create_change_plan")
+        self.assertEqual(beta_catalog["delete_automation"]["enforcement"], "prohibited")
+        for name in ("call_service", "reload_domain"):
+            self.assertEqual(beta_catalog[name]["enforcement"], "provider_unavailable")
+            self.assertEqual(beta_catalog[name]["provider"], "standard_ha_mcp")
+            self.assertEqual(beta_catalog[name]["fallback"], "none")
         counts = Counter(item["status"] for item in CAPABILITIES)
         self.assertEqual(
             counts,
@@ -1593,7 +1604,7 @@ class BetaApplicationTests(unittest.TestCase):
         )
         self.assertEqual(
             provider_after["direct_ha_api"] - provider_before["direct_ha_api"],
-            1,
+            0,
         )
         self.assertEqual(
             provider_requests_after["direct_ha_api"]

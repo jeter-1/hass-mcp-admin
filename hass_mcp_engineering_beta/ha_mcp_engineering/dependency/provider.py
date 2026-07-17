@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import abstractmethod
 import asyncio
+from collections import Counter, defaultdict
 from pathlib import Path
 import time
 from typing import Any
@@ -44,7 +45,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         }
     )
 
-    def __init__(self, rest_client, websocket_client, *, secret: str = "", concurrency: int = 5, timeout: float = 60.0):
+    def __init__(self, rest_client, websocket_client, *, secret: str = "", concurrency: int = 8, timeout: float = 60.0):
         self.rest_client = rest_client
         self.websocket_client = websocket_client
         self.secret = secret
@@ -78,14 +79,39 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         )
 
     async def scan(self) -> DependencyScanResult:
+        scan_started = time.perf_counter()
         findings = []
         dynamic = []
         metadata: dict[str, dict[str, Any]] = {}
         coverage: list[SourceCoverageItem] = []
+        request_counts: Counter[str] = Counter()
+        request_time_ms: dict[str, float] = defaultdict(float)
+        queue_wait_ms = 0.0
+        active_requests = 0
+        maximum_concurrency = 0
+        semaphore = asyncio.Semaphore(self.concurrency)
+
+        async def request(operation: str, factory, *, queued: bool = False):
+            nonlocal queue_wait_ms, active_requests, maximum_concurrency
+            queued_at = time.perf_counter()
+            if queued:
+                await semaphore.acquire()
+                queue_wait_ms += (time.perf_counter() - queued_at) * 1000
+            started = time.perf_counter()
+            request_counts[operation] += 1
+            active_requests += 1
+            maximum_concurrency = max(maximum_concurrency, active_requests)
+            try:
+                return await asyncio.wait_for(factory(), self.timeout)
+            finally:
+                active_requests -= 1
+                request_time_ms[operation] += (time.perf_counter() - started) * 1000
+                if queued:
+                    semaphore.release()
 
         state_started = time.perf_counter()
         try:
-            states = await asyncio.wait_for(self.rest_client.request("GET", "/states"), self.timeout)
+            states = await request("states_inventory", lambda: self.rest_client.request("GET", "/states"))
             if not isinstance(states, list):
                 raise TypeError("state response is not a list")
             METRICS.record_provider_result(self.provider_id, "complete", dispatched=True)
@@ -96,8 +122,9 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         registry = []
         registry_warning = []
         try:
-            registry = await asyncio.wait_for(
-                self.websocket_client.command({"type": "config/entity_registry/list"}), self.timeout
+            registry = await request(
+                "entity_registry_inventory",
+                lambda: self.websocket_client.command({"type": "config/entity_registry/list"}),
             )
             if not isinstance(registry, list):
                 registry = []
@@ -144,19 +171,17 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             )
 
         automations = [state for state in states if str(state.get("entity_id", "")).startswith("automation.")]
-        semaphore = asyncio.Semaphore(self.concurrency)
-
         async def fetch_automation(state):
             attrs = state.get("attributes") if isinstance(state.get("attributes"), dict) else {}
             internal_id = attrs.get("id")
             if not internal_id:
                 return state, None, "Automation has no internal configuration ID."
             try:
-                async with semaphore:
-                    config = await asyncio.wait_for(
-                        self.rest_client.request("GET", f"/config/automation/config/{internal_id}"),
-                        self.timeout,
-                    )
+                config = await request(
+                    "automation_config",
+                    lambda: self.rest_client.request("GET", f"/config/automation/config/{internal_id}"),
+                    queued=True,
+                )
                 if not isinstance(config, dict):
                     return state, None, "Automation configuration response was invalid."
                 return state, config, None
@@ -167,6 +192,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         results = await asyncio.gather(*(fetch_automation(state) for state in automations))
         failed = 0
         blueprint_failures = 0
+        parse_started = time.perf_counter()
         for state, config, failure in results:
             attrs = state.get("attributes") if isinstance(state.get("attributes"), dict) else {}
             internal_id = str(attrs.get("id") or state.get("entity_id"))
@@ -228,7 +254,30 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 "transitional_direct exact administrative read",
             )
         )
-        return DependencyScanResult(findings, dynamic, metadata, coverage)
+        parsing_ms = (time.perf_counter() - parse_started) * 1000
+        return DependencyScanResult(
+            findings,
+            dynamic,
+            metadata,
+            coverage,
+            profile={
+                "request_count": sum(request_counts.values()),
+                "request_count_by_operation": dict(sorted(request_counts.items())),
+                "time_by_operation_ms": {
+                    key: round(value, 3) for key, value in sorted(request_time_ms.items())
+                },
+                "automation_count": len(automations),
+                "inventory_calls_duplicated": False,
+                "state_inventory_reused": True,
+                "entity_registry_snapshot_reused": True,
+                "configured_max_concurrency": self.concurrency,
+                "observed_max_concurrency": maximum_concurrency,
+                "queue_wait_ms": round(queue_wait_ms, 3),
+                "network_attempt_time_ms": round(sum(request_time_ms.values()), 3),
+                "parsing_indexing_time_ms": round(parsing_ms, 3),
+                "scan_wall_time_ms": round((time.perf_counter() - scan_started) * 1000, 3),
+            },
+        )
 
 
 def _read_blueprint(path: str | None) -> dict[str, Any] | None:

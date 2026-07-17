@@ -452,6 +452,27 @@ class IngressBoundaryTests(ExternalApprovalTestCase):
             headers={"X-Ingress-Path": "/api/hassio_ingress/testtoken123", "X-Remote-User-Id": "ha-user-1"},
         )
 
+    async def test_ingress_inventory_and_health_distinguish_unrequested_from_pending(self):
+        created = await self.create()
+        before = self.service.health_summary()
+        self.assertEqual(before["plans_requiring_approval"], 1)
+        self.assertEqual(before["plans_with_pending_external_challenge"], 0)
+        self.assertEqual(before["pending_challenge_count"], 0)
+        async with await self._client() as client:
+            inbox = await client.get("/")
+            self.assertEqual(inbox.status_code, 200)
+            self.assertNotIn(created["plan_id"], inbox.text)
+
+        pending = self.service.approve(created["plan_id"], created["plan_hash"])
+        after = self.service.health_summary()
+        self.assertEqual(pending["approval_lifecycle"], "approval_pending_external")
+        self.assertEqual(after["plans_requiring_approval"], 1)
+        self.assertEqual(after["plans_with_pending_external_challenge"], 1)
+        self.assertEqual(after["pending_challenge_count"], 1)
+        async with await self._client() as client:
+            inbox = await client.get("/")
+            self.assertIn(created["plan_id"], inbox.text)
+
     async def test_direct_peer_and_missing_ingress_header_cannot_view_or_mutate(self):
         created = await self.create()
         self.service.approve(created["plan_id"], created["plan_hash"])

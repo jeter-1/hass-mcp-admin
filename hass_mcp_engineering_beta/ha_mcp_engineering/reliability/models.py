@@ -142,6 +142,7 @@ class ReliabilityRootCauseGroup:
     affected_step: str | None
     affected_dependency: str | None
     evidence_references: tuple[str, ...]
+    affected_reference_count: int
 
     def public(self, *, include_evidence: bool = True) -> dict[str, Any]:
         value = asdict(self)

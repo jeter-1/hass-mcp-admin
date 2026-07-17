@@ -723,8 +723,12 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 end_request(token)
         metrics = METRICS.snapshot()["change_impact_analysis"]
-        self.assertEqual(metrics["failed_count"], len(invalid_values))
-        self.assertEqual(metrics["last_failure_category"], "request_validation")
+        self.assertEqual(metrics["failed_count"], 0)
+        self.assertIsNone(metrics["last_failure_category"])
+        self.assertEqual(
+            METRICS.snapshot()["validation_error_counts"]["request_validation"],
+            len(invalid_values),
+        )
 
     async def test_operation_specific_replacement_validation(self):
         invalid = (
@@ -748,9 +752,9 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         current, _ = service(EntityNotFoundError())
         with self.assertRaises(EntityNotFoundError):
             await current.analyze(entity_id=TARGET, operation="remove_entity")
-        self.assertEqual(
-            METRICS.snapshot()["change_impact_analysis"]["failed_count"], 1
-        )
+        snapshot = METRICS.snapshot()
+        self.assertEqual(snapshot["change_impact_analysis"]["failed_count"], 0)
+        self.assertEqual(snapshot["domain_outcome_counts"]["entity_not_found"], 1)
 
         class SlowProvider:
             async def fetch(self, request):
@@ -1117,10 +1121,14 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("operation", raised.exception.details)
                 self.assertEqual(provider.calls, [])
                 self.assertEqual(current.pagination_snapshots._values, {})
-                metrics = METRICS.snapshot()["change_impact_analysis"]
-                self.assertEqual(metrics["failed_count"], 1)
+                snapshot = METRICS.snapshot()
+                metrics = snapshot["change_impact_analysis"]
+                self.assertEqual(metrics["failed_count"], 0)
                 self.assertEqual(metrics["successful_count"], 0)
                 self.assertEqual(metrics["partial_count"], 0)
+                self.assertEqual(
+                    snapshot["validation_error_counts"]["request_validation"], 1
+                )
 
     async def test_cursor_rejects_first_page_only_refresh_with_validation_details(self):
         refs = {
