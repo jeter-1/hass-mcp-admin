@@ -1,9 +1,17 @@
 # HA MCP Engineering Server Architecture
 
+## RC2dev4 hardening boundary
+
+The current Engineering Beta source is `2.0.0-rc2-dev4`. It retains the RC3A
+dashboard boundary while making legacy writes unreachable, separating external
+approval lifecycle states, making dependency-index construction single-flight,
+classifying expected outcomes separately from provider failures, and hardening
+relayed-log sanitization. See
+[`docs/RC2DEV4_RELEASE_NOTES.md`](docs/RC2DEV4_RELEASE_NOTES.md).
+
 ## RC3A dashboard-provider boundary
 
-RC3A stages `2.0.0-rc2-dev2` while leaving Home Assistant metadata at
-published dev1 until automated promotion succeeds. The separate
+RC3A was introduced through the earlier dev2/dev3 promotion sequence. The separate
 `upstream_dashboard` provider does not make `standard_ha_mcp` available.
 
 For upstream `ha-mcp` 7.13.0, the provider uses the explicit

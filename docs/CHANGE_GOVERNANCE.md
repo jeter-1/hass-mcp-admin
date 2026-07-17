@@ -295,7 +295,7 @@ These examples use generic IDs and no credentials or private entity names.
 
 2. Review the diff, risk, warnings, validation, expiry, fingerprints, and hash.
 3. Call `approve_change_plan(plan_id, expected_plan_hash)` with the exact hash;
-   confirm it reports `approval_pending`, not approved.
+   confirm it reports `approval_pending_external`, not approved.
 4. A Home Assistant administrator reviews and approves the exact plan through
    the Ingress panel.
 5. Call `apply_change_plan(plan_id, expected_plan_hash)`.
@@ -319,3 +319,12 @@ remain readable. Automation behavioral normalization remains version 2.
 Successful governed apply and rollback now invalidate the process-local entity
 dependency index so the next analysis rebuilds configuration evidence. This adds no
 write and does not change the persisted governance-plan format.
+
+RC2dev4 adds an unambiguous public approval lifecycle without rewriting the
+stored RC2 plan status. A newly created valid plan is
+`approval_not_requested`; only `approve_change_plan` creates an
+`approval_pending_external` Ingress challenge. Chat authorization is not that
+external approval. Principal separation is `not_evaluated` until a distinct
+administrator exists. Approval is hash-bound and single-use; rollback requires
+its own plan-version/hash challenge. `list_change_plans` is a bounded summary;
+`get_change_plan` remains the authoritative full-detail retrieval path.

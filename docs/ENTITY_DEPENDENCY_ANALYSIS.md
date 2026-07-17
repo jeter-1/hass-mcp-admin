@@ -93,7 +93,20 @@ one entity. Runtime automation action-to-trigger causality is not inferred. Dash
 static YAML/package, script, scene, group, template-source, and custom-integration
 coverage remains unavailable.
 
-The server-side Beta 18 manifest contains 36 tools. Beta 18 changes no tool schema, so
+The historical Beta 18 manifest contained 36 tools. Beta 18 changed no tool schema, so
 connector recreation is not normally required. Refresh only the beta connector if it
 still presents an older manifest. Never place a real secret or private connector URL
 in source, logs, or screenshots.
+
+RC2dev4 makes construction single-flight: concurrent cold callers await one
+shared build. Each build reuses one state inventory and one entity-registry
+snapshot and reports request/timing breakdown, queue time, observed concurrency,
+and parsing time. Health names `unbuilt`, `building`, `valid`, `expired`,
+`invalidated`, and `failed` states with an explicit validity reason. A valid
+warm lookup and cursor continuation make zero Home Assistant requests.
+
+Automation configuration reads use a bounded concurrency of eight. The
+disabled-by-default `dependency_index_prewarm` option schedules one background
+build only after a safe `/config` connectivity probe succeeds. It never makes
+startup depend on index availability and never retries in a loop. Health exposes
+the bounded prewarm state and failure category.

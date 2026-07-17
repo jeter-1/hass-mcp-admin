@@ -598,3 +598,16 @@ result. Actual index errors increment `failures_by_provider.engineering`; timeou
 retain `provider_timeout`, and usable item-level failures retain
 `item_read_failure`. Cursor continuations preserve the frozen source semantics and
 do not repeat terminal, source-failure, hypothesis, or event aggregates.
+
+## RC2dev4 classified outcomes and freshness
+
+`provider_operational_failures`, `domain_outcome_counts`,
+`validation_error_counts`, `authorization_error_counts`, and
+`cursor_error_counts` prevent expected client/domain outcomes from degrading
+provider or analysis health. The dependency index reports a named build state,
+validity reason, TTL, expiry, timing, generation, fingerprint, progress, and a
+per-operation cold-build profile. Dashboard reachability is timestamped and
+ages to `unknown`; it is never inferred indefinitely from a prior success.
+Optional dependency prewarming is one-shot, disabled by default, and reported
+through `prewarm_state`, timestamps, and a bounded failure category after a safe
+Home Assistant connectivity probe.

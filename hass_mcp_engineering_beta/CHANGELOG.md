@@ -1,6 +1,22 @@
 # Changelog
 
-## Unreleased - staged 2.0.0-rc2-dev3
+## 2.0.0-rc2-dev4 - release hardening
+
+- Removed every reachable legacy direct-write implementation and made the
+  capability catalog report governed redirects, prohibitions, and unavailable
+  providers truthfully.
+- Distinguished plans that merely require approval from plans with a pending
+  external Ingress challenge; pre-approval principal separation is now
+  explicitly not evaluated.
+- Added single-flight dependency-index builds, cold-build profiling, explicit
+  build-state/expiry semantics, a bounded eight-read pool, optional one-shot
+  connectivity-gated prewarming, and expected-outcome metrics.
+- Hardened relayed System Log and structured-log redaction, dashboard not-found
+  handling, upstream health freshness, summary response size, and reliability
+  root-cause deduplication.
+- Added a fixture-only transport bake harness and an RC2dev4 acceptance guide.
+
+## 2.0.0-rc2-dev3
 
 - Reproduce the exact public `ha-mcp` 7.13.0 add-on runtime descriptor and
   record its immutable artifact and dependency evidence.

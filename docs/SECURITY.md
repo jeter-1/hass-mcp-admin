@@ -322,3 +322,20 @@ counts for source failures and coverage limitations, not full warnings. The same
 read-only policy, provider allowlist, redaction boundary, and prohibition on
 service, entity, registry, automation, governance, reload, restart, remediation,
 and background-monitoring actions remain in force.
+
+## RC2dev4 hardening boundary
+
+Compatibility schemas for legacy writes remain visible, but their handler
+bodies cannot reach Home Assistant. `upsert_automation` is a governed redirect;
+deletion is prohibited; service and reload operations require an unavailable
+Standard HA MCP provider; all have no fallback. External approval is separate
+from chat authorization and remains hash-bound, single-use, expiring, and tied
+to a distinct Ingress administrator. Pre-approval principal separation is
+reported as not evaluated, never as an enforcement failure.
+
+Relayed Home Assistant logs and structured application logs pass through the
+same recursive fail-closed sanitizer. Credential-bearing keys, authorization
+headers, setup payloads, authentication flows, webhook paths, signed URLs,
+query credentials, exception text, and multiline tracebacks are redacted before
+output or logging. Dashboard/log/YAML text is inert evidence and cannot authorize
+tool dispatch.
