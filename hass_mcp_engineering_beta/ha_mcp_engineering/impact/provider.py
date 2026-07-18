@@ -538,6 +538,11 @@ class DirectHaImpactProvider(EngineeringEvidenceProvider):
                 "current_index_build_duration_ms": round(
                     snapshot.build_duration_ms if rebuilt else 0.0, 3
                 ),
+                **(
+                    self.index.evidence_metadata(snapshot)
+                    if callable(getattr(self.index, "evidence_metadata", None))
+                    else {}
+                ),
             },
             evidence_collection_duration_ms=(time.perf_counter() - started) * 1000,
             confirmed_target_related_dynamic_count=confirmed_dynamic_count,

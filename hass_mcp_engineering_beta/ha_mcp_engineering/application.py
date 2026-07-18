@@ -62,6 +62,19 @@ def validate_settings(settings: Settings) -> None:
         errors.append("ha_timeout_seconds must be greater than 0 and at most 300")
     if not 1024 <= settings.response_size_limit <= 1_000_000:
         errors.append("response_size_limit must be between 1024 and 1000000")
+    if settings.prewarm_startup_delay_seconds < 0:
+        errors.append("prewarm_startup_delay_seconds must not be negative")
+    if settings.prewarm_retry_delay_seconds < 300:
+        errors.append("prewarm_retry_delay_seconds must be at least 300")
+    if settings.dependency_index_soft_ttl_seconds <= 0:
+        errors.append("dependency_index_soft_ttl_seconds must be positive")
+    if (
+        settings.dependency_index_hard_ttl_seconds
+        <= settings.dependency_index_soft_ttl_seconds
+    ):
+        errors.append(
+            "dependency_index_hard_ttl_seconds must be greater than dependency_index_soft_ttl_seconds"
+        )
     if not settings.redaction_enabled:
         errors.append("redaction_enabled must remain true")
     if not settings.governance_path.strip():
@@ -105,6 +118,8 @@ def create_application(settings: Settings | None = None):
         HomeAssistantWebSocketClient(settings),
         secret=settings.access_secret,
         timeout=settings.ha_timeout_seconds,
+        soft_ttl_seconds=settings.dependency_index_soft_ttl_seconds,
+        hard_ttl_seconds=settings.dependency_index_hard_ttl_seconds,
     )
     RELIABILITY_ANALYSIS.configure(
         HomeAssistantRestClient(settings),
@@ -199,8 +214,11 @@ async def _serve(settings: Settings) -> None:
     mcp_task = asyncio.create_task(mcp_server.serve())
     approval_task = asyncio.create_task(approval_server.serve())
     prewarm_task = (
-        DEPENDENCY_ANALYSIS.start_prewarm()
-        if settings.dependency_index_prewarm
+        DEPENDENCY_ANALYSIS.start_prewarm(
+            startup_delay_seconds=settings.prewarm_startup_delay_seconds,
+            retry_delay_seconds=settings.prewarm_retry_delay_seconds,
+        )
+        if settings.prewarm_enabled and DEPENDENCY_ANALYSIS.service is not None
         else None
     )
     try:
@@ -217,11 +235,8 @@ async def _serve(settings: Settings) -> None:
     finally:
         mcp_server.should_exit = True
         approval_server.should_exit = True
-        if prewarm_task is not None and not prewarm_task.done():
-            prewarm_task.cancel()
         await asyncio.gather(mcp_task, approval_task, return_exceptions=True)
-        if prewarm_task is not None:
-            await asyncio.gather(prewarm_task, return_exceptions=True)
+        await DEPENDENCY_ANALYSIS.shutdown()
 
 
 def main() -> None:
