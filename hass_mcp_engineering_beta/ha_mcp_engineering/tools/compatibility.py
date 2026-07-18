@@ -25,6 +25,11 @@ from typing import Any, Optional
 
 import uvicorn
 
+from ..audit import (
+    AUTH_FAILURE_EVENT,
+    AUTH_FAILURE_THROTTLED_EVENT,
+    RATE_LIMITED_EVENT,
+)
 from ..capabilities import build_capability_catalog, build_server_metadata
 from ..clients import HomeAssistantRestClient, HomeAssistantWebSocketClient
 from ..configuration import load_settings
@@ -935,17 +940,17 @@ class Gateway:
         if not path.startswith(self.prefix + "/") and path != self.prefix:
             fb = self._bucket(self.auth_fail, ip, per_minute=0.5, burst=5)
             if not fb.allow():
-                audit_write({"event": "auth_failure_throttled", "client_ip": ip,
+                audit_write({"event": AUTH_FAILURE_THROTTLED_EVENT, "client_ip": ip,
                              "path": self._redact_path(path)})
                 return await self._respond(send, 429, b"too many requests")
-            audit_write({"event": "auth_failure", "client_ip": ip,
+            audit_write({"event": AUTH_FAILURE_EVENT, "client_ip": ip,
                          "path": self._redact_path(path)})
             return await self._respond(send, 404, b"not found")
 
         # Rate limits (authenticated traffic)
         cb = self._bucket(self.clients, ip, RATE_PER_MINUTE, RATE_BURST)
         if not cb.allow() or not self.global_bucket.allow():
-            audit_write({"event": "rate_limited", "client_ip": ip})
+            audit_write({"event": RATE_LIMITED_EVENT, "client_ip": ip})
             return await self._respond(send, 429, b"rate limited")
 
         # Audit: buffer POST body, parse JSON-RPC, log tools/call

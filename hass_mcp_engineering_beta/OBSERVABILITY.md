@@ -104,6 +104,13 @@ authentication-failure store sizes, the 1,000-entry bound, forwarded-header
 trust state, and trusted-network count. It does not expose addresses. Store
 pressure performs atomic LRU eviction and never resets the whole store.
 
+RC2dev6 preserves those aggregate health fields and adds no public health-schema
+surface. Audit queries distinguish `auth_failure` for ordinary 404 rejection,
+`auth_failure_throttled` for authentication-bucket 429 rejection, and
+`rate_limited` for authenticated general limiting. The event classes remain
+exactly filterable and do not affect provider-operational, analysis, governance,
+or fallback counters.
+
 `get_audit_log` clamps reads to 1–500 lines. Refused legacy automation writes are
 audited as bounded write intent with no payload, HA endpoint, provider request,
 or provider failure.

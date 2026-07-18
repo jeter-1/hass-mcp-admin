@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.0-rc2-dev6 - throttled-authentication audit correction
+
+- Distinguish ordinary authentication rejection (`auth_failure`) from
+  authentication-failure limiter exhaustion (`auth_failure_throttled`) while
+  preserving the existing 404/429 responses, error codes, limiter behavior,
+  secret redaction, and pre-dispatch enforcement.
+- Keep authenticated general rate limiting separately audited as
+  `rate_limited`; no provider, governance, dependency-index, dashboard, or
+  stable-v1 behavior changes in this release.
+
 ## 2.0.0-rc2-dev5 - live-acceptance corrections
 
 - Replace the five-minute hard dependency-index expiry with configurable

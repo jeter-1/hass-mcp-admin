@@ -13,6 +13,9 @@ from .logging_config import get_logger, log_event, redact_data
 from .version import SERVER_VERSION
 
 AUDIT_MAX_BYTES = 5 * 1024 * 1024
+AUTH_FAILURE_EVENT = "auth_failure"
+AUTH_FAILURE_THROTTLED_EVENT = "auth_failure_throttled"
+RATE_LIMITED_EVENT = "rate_limited"
 
 
 @dataclass

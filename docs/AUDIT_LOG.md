@@ -26,6 +26,15 @@ endpoint categories are absent. Provider policy refusals, authentication/rate
 rejections, and cursor/validation failures are tool or gateway outcomes, not
 fabricated upstream provider failures.
 
+RC2dev6 makes the authentication audit contract exact and separately
+filterable. Ordinary pre-dispatch rejection records `auth_failure` with
+`authentication_failure`; rejection by the exhausted authentication-failure
+bucket records `auth_failure_throttled` with `rate_limit_exceeded`; authenticated
+general limiter rejection remains `rate_limited`. Each request produces one
+event class, and `get_audit_log` filters these names by exact value rather than
+prefix. These gateway outcomes do not change provider, analysis, or governance
+failure counters.
+
 Beta 25 adds bounded external-approval lifecycle events: requested, optionally
 viewed, granted, rejected, expired, invalidated and consumed. Records may include
 safe plan/challenge IDs, kind, channel, bounded principal, result and timestamps.

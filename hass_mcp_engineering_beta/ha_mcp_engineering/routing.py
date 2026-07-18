@@ -10,7 +10,13 @@ import logging
 import threading
 import time
 
-from .audit import AuditLogger, AuditRecord
+from .audit import (
+    AUTH_FAILURE_EVENT,
+    AUTH_FAILURE_THROTTLED_EVENT,
+    RATE_LIMITED_EVENT,
+    AuditLogger,
+    AuditRecord,
+)
 from .capabilities import capability_for_tool
 from .configuration import Settings
 from .errors import ErrorCode, error_definition
@@ -113,8 +119,11 @@ class AuthenticatedMcpGateway:
             return bucket
 
     def _audit_path(self, path: str) -> str:
-        secret = self.settings.access_secret
-        return (path.replace(secret, "<access_secret>") if secret else path)[:64]
+        # The invalid path itself is credential material: it can contain either
+        # the configured secret or an attacker-supplied candidate. Retain only a
+        # fixed diagnostic shape so neither value enters the audit record.
+        del path
+        return "/<access_secret>/mcp"
 
     def rate_limiter_state(self) -> dict:
         return {
@@ -154,7 +163,11 @@ class AuthenticatedMcpGateway:
                 )
                 METRICS.record_error(code.value)
                 self.audit.write({
-                    "event": "auth_failure",
+                    "event": (
+                        AUTH_FAILURE_EVENT
+                        if status == 404
+                        else AUTH_FAILURE_THROTTLED_EVENT
+                    ),
                     "request_id": request_id,
                     "authenticated": False,
                     "caller_id": caller_id,
@@ -185,7 +198,7 @@ class AuthenticatedMcpGateway:
                     request_id=request_id,
                 )
                 self.audit.write({
-                    "event": "rate_limited",
+                    "event": RATE_LIMITED_EVENT,
                     "request_id": request_id,
                     "authenticated": True,
                     "caller_id": caller_id,

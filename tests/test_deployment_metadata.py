@@ -81,6 +81,16 @@ class VersionComparisonTests(unittest.TestCase):
                 "2.0.0-rc.3", "2.0.0-rc2-dev5"
             )
         )
+        self.assertTrue(
+            VALIDATOR.is_newer_version(
+                "2.0.0-rc2-dev6", "2.0.0-rc2-dev5"
+            )
+        )
+        self.assertTrue(
+            VALIDATOR.is_newer_version(
+                "2.0.0-rc.3", "2.0.0-rc2-dev6"
+            )
+        )
 
     def test_version_comparison_uses_awesomeversion_25_8_0(self):
         requirements = (ROOT / "tests" / "requirements.txt").read_text(

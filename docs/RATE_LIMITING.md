@@ -41,8 +41,29 @@ The health response reports bounded store sizes, the maximum, whether forwarded
 trust is enabled, and the number of configured trusted networks. It never
 returns peer addresses or forwarded header values.
 
-RC2dev4 audits structured `rate_limited` events without request bodies, secret
-paths, credentials, or client addresses. Run the local fixture bake with
-`python scripts/rc2dev4_bake_harness.py --scenario auth` and
+RC2dev6 keeps three gateway outcomes distinct:
+
+| Outcome | HTTP | Error code | Audit event |
+|---|---:|---|---|
+| ordinary authentication rejection | 404 | `authentication_failure` | `auth_failure` |
+| authentication-failure limiter exhaustion | 429 | `rate_limit_exceeded` | `auth_failure_throttled` |
+| authenticated general rate limiting | 429 | `rate_limit_exceeded` | `rate_limited` |
+
+Each rejected request produces exactly one matching audit record. Authentication
+and rate-limit checks occur before MCP parsing, tool dispatch, provider routing,
+Home Assistant access, or fallback. Records exclude request bodies, secret paths,
+credentials, headers, query values, and raw client addresses. RC2dev6 does not
+add `Retry-After`; that remains a deferred transport enhancement.
+
+The authentication-failure bucket has a burst of five attempts and refills at
+0.5 attempts per minute (one token every 120 seconds). It is keyed by the same
+bounded client-identity rules above: the direct socket peer unless explicitly
+trusted forwarded-header handling is enabled and validated. Successful
+authentication does not bypass the bucket; normal recovery occurs through token
+refill. Tests use an injected monotonic clock, so they verify refill without
+sleeping or changing the deployed configuration.
+
+Run the local fixture bake with
+`python scripts/rc2dev6_bake_harness.py --scenario auth` and
 `--scenario rate-limit`. Network probes require an explicitly configured
 local/test endpoint and never perform a Home Assistant state change.
