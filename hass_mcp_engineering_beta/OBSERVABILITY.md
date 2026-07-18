@@ -111,6 +111,15 @@ surface. Audit queries distinguish `auth_failure` for ordinary 404 rejection,
 exactly filterable and do not affect provider-operational, analysis, governance,
 or fallback counters.
 
+RC2dev7 makes the read-side classification semantic. Each nonempty bounded
+JSONL line is parsed independently, and only
+`record.get("event") == requested_event` matches. The routed audit reader
+remains visible as `tool_call`; its nested filter argument, message text, or
+exception data cannot match another class. Malformed, non-object, blank, and
+oversized historical lines are skipped while later valid records remain
+readable. The public response remains bounded JSONL with no new envelope or
+health schema.
+
 `get_audit_log` clamps reads to 1–500 lines. Refused legacy automation writes are
 audited as bounded write intent with no payload, HA endpoint, provider request,
 or provider failure.

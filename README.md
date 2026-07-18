@@ -192,8 +192,10 @@ outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 ## Engineering beta/RC analytical milestones
 
 The parallel v2 add-on RC3A development stage is now hardened as
-`2.0.0-rc2-dev6`, based on the verified RC2dev5 release commit. It has 40 registered
-tools and 25 unchanged canonical tools.
+`2.0.0-rc2-dev7`, based on the verified RC2dev6 merge commit. It has 40 registered
+tools and 25 unchanged canonical tools. Audit filters parse each bounded JSONL
+record and compare only the exact top-level event, so the routed audit reader's
+own nested filter argument cannot create false security evidence.
 It adds only `list_dashboards` and `get_dashboard_config`, backed by an optional
 secret-configured `upstream_dashboard` MCP provider whose allowlist contains
 only `ha_config_get_dashboard`. For `ha-mcp` 7.13.0, identity, version,
@@ -212,6 +214,8 @@ plan/challenge expiry remain intact. No planned feature capability remains.
 Production v1.1.2, `hass_mcp_admin`, and port 8099 remain unchanged. See
 [`docs/RC3A_RELEASE_NOTES.md`](docs/RC3A_RELEASE_NOTES.md),
 [`docs/RC3A_ACCEPTANCE.md`](docs/RC3A_ACCEPTANCE.md),
+[`docs/RC2DEV7_RELEASE_NOTES.md`](docs/RC2DEV7_RELEASE_NOTES.md),
+[`docs/RC2DEV7_ACCEPTANCE.md`](docs/RC2DEV7_ACCEPTANCE.md),
 [`docs/RC2DEV4_RELEASE_NOTES.md`](docs/RC2DEV4_RELEASE_NOTES.md),
 [`docs/RC2DEV4_ACCEPTANCE.md`](docs/RC2DEV4_ACCEPTANCE.md),
 [`docs/RC2_RELEASE_NOTES.md`](docs/RC2_RELEASE_NOTES.md),
