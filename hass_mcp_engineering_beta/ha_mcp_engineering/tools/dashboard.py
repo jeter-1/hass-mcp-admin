@@ -97,17 +97,22 @@ def _failure_response(operation: str, exc: Exception, started: float) -> str:
         telemetry.completeness = "unavailable"
     dispatched = bool(details.get("upstream_dispatch_occurred"))
     failure_category = details.get("failure_category", "internal_error")
+    domain_not_found = code.value == "dashboard_not_found"
     metadata = {
         "provider": PROVIDER_ID,
         "routing": PROVIDER_ID,
         "classification": PROVIDER_ID,
-        "completeness": "unavailable",
+        "completeness": "not_found" if domain_not_found else "unavailable",
         "upstream_dispatch_occurred": dispatched,
         "source_coverage": [
             {
                 "provider": PROVIDER_ID,
-                "completeness": "unavailable",
-                "failure_category": failure_category,
+                "completeness": "not_found" if domain_not_found else "unavailable",
+                "failure_category": (
+                    "domain_outcome_dashboard_not_found"
+                    if domain_not_found
+                    else failure_category
+                ),
                 "upstream_attempted": dispatched,
                 "fallback_occurred": False,
             }

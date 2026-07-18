@@ -191,7 +191,9 @@ class ChangeImpactAnalysisService:
                 timeout=self.timeout_seconds,
             )
         except EntityNotFoundError:
-            METRICS.record_provider_result("engineering", "failed", dispatched=True)
+            # The provider completed the requested lookup and established an
+            # expected domain absence; this is not an infrastructure failure.
+            METRICS.record_provider_result("engineering", "complete", dispatched=True)
             METRICS.record_impact_analysis_failure("entity_not_found")
             raise
         except (asyncio.TimeoutError, TimeoutError) as exc:

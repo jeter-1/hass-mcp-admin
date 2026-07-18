@@ -531,7 +531,14 @@ class UpstreamDashboardProvider:
             exchange = await self._transport.execute_dashboard_read(
                 arguments, validate
             )
-            payload = self._decode_call_result(exchange.call_result)
+            payload = self._decode_call_result(
+                exchange.call_result,
+                expected_url_path=(
+                    str(arguments.get("url_path"))
+                    if isinstance(arguments.get("url_path"), str)
+                    else None
+                ),
+            )
             result = normalizer(payload, exchange)
             self._record_success(
                 tool_call_latency_ms=exchange.tool_call_latency_ms,
@@ -731,7 +738,12 @@ class UpstreamDashboardProvider:
             self._state.validation_reason = None
             self._state.capability_status = "available"
 
-    def _decode_call_result(self, result: dict[str, Any]) -> dict[str, Any]:
+    def _decode_call_result(
+        self,
+        result: dict[str, Any],
+        *,
+        expected_url_path: str | None = None,
+    ) -> dict[str, Any]:
         content = result.get("content")
         if not isinstance(content, list):
             self._raise("invalid_response", dispatched=True)
@@ -752,7 +764,13 @@ class UpstreamDashboardProvider:
         if not isinstance(payload, dict):
             self._raise("invalid_response", dispatched=True)
         if result.get("isError") or payload.get("success") is False:
-            if _upstream_error_code(payload) in {"RESOURCE_NOT_FOUND", "DASHBOARD_NOT_FOUND"}:
+            if _upstream_error_code(payload) in {
+                "RESOURCE_NOT_FOUND",
+                "DASHBOARD_NOT_FOUND",
+            } or _is_reviewed_dashboard_not_found(
+                payload,
+                expected_url_path=expected_url_path,
+            ):
                 self._raise("dashboard_not_found", dispatched=True)
             self._raise("upstream_error", dispatched=True)
         return payload
@@ -889,6 +907,7 @@ class UpstreamDashboardProvider:
     def _record_domain_outcome(self, category: str) -> None:
         """Record an upstream domain answer without degrading provider health."""
         with self._lock:
+            self._state.failure_counts[category] += 1
             self._state.reachable = True
             self._state.reachability_checked_at = _utc_now()
             self._state.reachability_source = "tool_call"
@@ -1402,6 +1421,30 @@ def _upstream_error_code(payload: dict[str, Any]) -> str | None:
         if isinstance(value, str):
             return value.strip().upper()[:64]
     return None
+
+
+def _is_reviewed_dashboard_not_found(
+    payload: dict[str, Any], *, expected_url_path: str | None
+) -> bool:
+    """Recognize only the reviewed ha-mcp 7.13 exact-dashboard miss envelope."""
+
+    if not expected_url_path or not CANONICAL_DASHBOARD_PATH.fullmatch(expected_url_path):
+        return False
+    if _upstream_error_code(payload) != "SERVICE_CALL_FAILED":
+        return False
+    if payload.get("action") != "get" or payload.get("url_path") != expected_url_path:
+        return False
+    error = payload.get("error")
+    if not isinstance(error, dict):
+        return False
+    message = error.get("message")
+    if not isinstance(message, str):
+        return False
+    accepted = {
+        f"Unknown config specified: {expected_url_path}",
+        f"Command failed: Unknown config specified: {expected_url_path}",
+    }
+    return message in accepted
 
 
 def _timestamp_age_seconds(value: str | None) -> float | None:

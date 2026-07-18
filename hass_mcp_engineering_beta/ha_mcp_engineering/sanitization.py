@@ -85,6 +85,9 @@ _URL_CREDENTIAL_PARAMETER = re.compile(
     r"(?i)([?&#;](?:access(?:%5[fF]|_)token|refresh(?:%5[fF]|_)token|token|api(?:%5[fF]|_)(?:key|secret)|client(?:%5[fF]|_)secret|password|credential|authorization(?:%5[fF]|_)code|signature|sig|x-amz-signature|x-goog-signature)(?:=|%3[dD]))([^&#;\s]+)"
 )
 _WEBHOOK_PATH = re.compile(r"(?i)(/api/webhook/)([^/?#\s'\"\]}]+)")
+_WEBHOOK_PROSE = re.compile(
+    r"(?i)(\b(?:local\s+)?webhook(?:\s+(?:id|identifier))?\s+)([A-Za-z0-9_-]{20,})"
+)
 _LOGIN_FLOW_PATH = re.compile(r"(?i)(/auth/login_flow/)([^/?#\s'\"\]}]+)")
 _MATTER_PAYLOAD = re.compile(r"(?i)\bMT:[A-Z0-9+./_=-]+")
 
@@ -100,7 +103,8 @@ _SERIALIZED_PATTERNS = (
     (_serialized_assignment_pattern(_MATTER_CODE_KEYS), "matter_setup_code"),
     (_serialized_assignment_pattern(_MATTER_PAYLOAD_KEYS), "matter_setup_payload"),
     (_serialized_assignment_pattern(_AUTH_FLOW_KEYS), "auth_flow"),
-    (_serialized_assignment_pattern(_WEBHOOK_KEYS), "webhook_secret"),
+    (_serialized_assignment_pattern(frozenset({"webhook_id"})), "webhook_identifier"),
+    (_serialized_assignment_pattern(frozenset({"webhook_secret", "webhook_token"})), "webhook_secret"),
     (_serialized_assignment_pattern(_TOKEN_KEYS), "token"),
     (_serialized_assignment_pattern(_PASSWORD_KEYS), "password"),
     (_serialized_assignment_pattern(_COOKIE_KEYS), "auth_cookie"),
@@ -156,6 +160,8 @@ class _Sanitizer:
             return "matter_setup_payload"
         if key in _AUTH_FLOW_KEYS:
             return "auth_flow"
+        if key == "webhook_id":
+            return "webhook_identifier"
         if key in _WEBHOOK_KEYS:
             return "webhook_secret"
         if key in _TOKEN_KEYS:
@@ -258,8 +264,15 @@ class _Sanitizer:
         safe = self._replace(
             safe,
             _WEBHOOK_PATH,
-            "webhook_secret",
-            lambda match: match.group(1) + self._marker("webhook_secret"),
+            "webhook_identifier",
+            lambda match: match.group(1) + self._marker("webhook_identifier"),
+            categories,
+        )
+        safe = self._replace(
+            safe,
+            _WEBHOOK_PROSE,
+            "webhook_identifier",
+            lambda match: match.group(1) + self._marker("webhook_identifier"),
             categories,
         )
         safe = self._replace(

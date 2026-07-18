@@ -345,7 +345,9 @@ class Beta10ValidationTaxonomyTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(payload["success"])
         self.assertEqual(payload["error_code"], "entity_not_found")
         coverage = payload["metadata"]["source_coverage"][0]
-        self.assertEqual(coverage["failure_category"], "provider_upstream_error")
+        self.assertEqual(
+            coverage["failure_category"], "domain_outcome_entity_not_found"
+        )
         self.assertTrue(coverage["upstream_attempted"])
 
 

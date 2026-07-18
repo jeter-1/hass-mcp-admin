@@ -150,7 +150,7 @@ class AutomationReliabilityAnalysisService:
                 timeout=self.timeout_seconds,
             )
         except AutomationNotFoundError:
-            METRICS.record_provider_result("engineering", "failed", dispatched=True)
+            METRICS.record_provider_result("engineering", "complete", dispatched=True)
             METRICS.record_reliability_analysis_failure("automation_not_found")
             raise
         except (asyncio.TimeoutError, TimeoutError) as exc:
@@ -210,6 +210,7 @@ class AutomationReliabilityAnalysisService:
 
         include_evidence = detail_level != DetailLevel.SUMMARY.value
         root_cause_groups = build_root_cause_groups(findings)
+        findings_by_id = {item.finding_id: item for item in findings}
         page_ids = {item.finding_id for item in page}
         page_groups = [group for group in root_cause_groups if page_ids.intersection(group.member_finding_ids)]
         evidence_ids = {reference for item in page for reference in item.evidence_references}
@@ -301,8 +302,22 @@ class AutomationReliabilityAnalysisService:
             "finding_counts_by_severity": {severity: severity_counts.get(severity, 0) for severity in ("info", "low", "medium", "high", "critical")},
             "unique_root_cause_count": len(root_cause_groups),
             "root_cause_counts_by_severity": {severity: root_cause_severity_counts.get(severity, 0) for severity in ("info", "low", "medium", "high", "critical")},
-            "root_cause_groups": [] if detail_level == DetailLevel.SUMMARY.value else [group.public(include_evidence=include_evidence) for group in page_groups[:100]],
-            "findings": [item.public(include_evidence=include_evidence) for item in page],
+            "root_cause_groups": (
+                [
+                    _summary_root_cause_group(group, findings_by_id)
+                    for group in root_cause_groups[:100]
+                ]
+                if detail_level == DetailLevel.SUMMARY.value
+                else [group.public(include_evidence=include_evidence) for group in page_groups[:100]]
+            ),
+            "findings": [
+                item.public(include_evidence=include_evidence)
+                for item in (
+                    [value for value in findings if value.status == "intentional"][:3]
+                    if detail_level == DetailLevel.SUMMARY.value
+                    else page
+                )
+            ],
             "evidence_references": evidence,
             "configuration_fingerprint": bundle.configuration_fingerprint,
             "evidence_fingerprint": fingerprint,
@@ -482,6 +497,41 @@ class AutomationReliabilityAnalysisService:
             metadata=copy.deepcopy(snapshot.metadata),
             partial=partial,
         )
+
+
+def _summary_root_cause_group(group, findings_by_id: dict) -> dict:
+    members = [
+        findings_by_id[finding_id]
+        for finding_id in group.member_finding_ids
+        if finding_id in findings_by_id
+    ]
+    primary = findings_by_id.get(group.primary_finding_id)
+    paths = list(dict.fromkeys(
+        item.configuration_path for item in members if item.configuration_path
+    ))[:3]
+    state_by_rule = {
+        "missing_referenced_entity": "missing",
+        "unavailable_referenced_entity": "unavailable",
+        "unknown_referenced_entity": "unknown",
+        "disabled_referenced_entity": "disabled",
+    }
+    return {
+        "root_cause_group_id": group.root_cause_group_id,
+        "title": primary.title if primary else "Reliability root cause",
+        "affected_dependency": group.affected_dependency,
+        "severity": group.highest_severity,
+        "confidence": primary.confidence if primary else "bounded",
+        "current_state": state_by_rule.get(primary.rule_id) if primary else None,
+        "reference_count": group.affected_reference_count,
+        "representative_configuration_paths": paths,
+        "finding_ids": list(group.member_finding_ids)[:10],
+        "evidence_references": list(group.evidence_references)[:5],
+        "intentional_trigger_context": False,
+        "recommended_investigation": (
+            primary.recommended_next_investigation if primary else "Inspect the bounded evidence references."
+        ),
+        "governed_change_required": bool(primary and primary.governed_change_required),
+    }
 
 
 def _timing_details(started: float) -> dict:

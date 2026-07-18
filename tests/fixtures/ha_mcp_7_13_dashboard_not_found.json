@@ -1,0 +1,15 @@
+{
+  "success": false,
+  "error": {
+    "code": "SERVICE_CALL_FAILED",
+    "message": "Unknown config specified: missing-dashboard",
+    "suggestion": "Use ha_config_get_dashboard(list_only=True) to see available dashboards",
+    "suggestions": [
+      "Use ha_config_get_dashboard(list_only=True) to see available dashboards",
+      "Check if you have permission to access this dashboard",
+      "Use url_path='default' for default dashboard"
+    ]
+  },
+  "action": "get",
+  "url_path": "missing-dashboard"
+}

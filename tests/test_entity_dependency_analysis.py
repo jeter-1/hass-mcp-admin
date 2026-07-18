@@ -246,7 +246,9 @@ class IndexAndAnalysisTests(unittest.IsolatedAsyncioTestCase):
         await service.analyze(entity_id=TARGET)
         await service.analyze(entity_id=TARGET, refresh_index=True)
         service.index.snapshot.built_at_monotonic -= 61
-        await service.analyze(entity_id=TARGET)
+        stale = await service.analyze(entity_id=TARGET)
+        self.assertTrue(stale.data["index"]["evidence_stale"])
+        await asyncio.shield(service.index._build_task)
         self.assertEqual(provider.scan_count, 4)
         metrics = METRICS.snapshot()["dependency_analysis"]
         self.assertGreaterEqual(metrics["index_cache_hits"], 1)

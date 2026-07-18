@@ -71,6 +71,9 @@ def evaluate_rules(bundle: ReliabilityEvidenceBundle) -> list[ReliabilityFinding
 def build_root_cause_groups(findings: list[ReliabilityFinding]) -> list[ReliabilityRootCauseGroup]:
     grouped: dict[str, list[ReliabilityFinding]] = defaultdict(list)
     for item in findings:
+        # Intentional unavailable-state triggers are contextual notes, not defects.
+        if item.status == "intentional":
+            continue
         grouped[item.root_cause_group_id or stable_id("root", item.finding_id)].append(item)
     values: list[ReliabilityRootCauseGroup] = []
     for group_id, members in grouped.items():

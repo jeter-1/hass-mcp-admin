@@ -17,6 +17,7 @@ from ..audit import AuditLogger
 from ..clients.rest import ExpectedHttpStatus, HomeAssistantRestClient
 from ..errors import ErrorCode, GovernanceError, HomeAssistantApiError
 from ..logging_config import get_logger, log_event
+from ..observability import METRICS
 from ..request_context import current_caller_id, current_request_id
 from ..sanitization import sanitize_untrusted_data
 from .models import (
@@ -147,6 +148,7 @@ class ChangeGovernanceService:
         except ChangePlanStorageError as exc:
             raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR) from exc
         if plan is None:
+            METRICS.record_classified_outcome("change_plan_not_found")
             raise GovernanceError(
                 ErrorCode.CHANGE_PLAN_NOT_FOUND, details={"resource_id": plan_id}
             )
@@ -302,6 +304,8 @@ class ChangeGovernanceService:
             }
         approval_lifecycle = self._approval_lifecycle(plan)
         value["approval_lifecycle"] = approval_lifecycle
+        value["status_is_legacy"] = True
+        value["authoritative_lifecycle_field"] = "approval_lifecycle"
         value["approval_challenge_created"] = bool(plan.approval.challenge_id)
         value["next_required_operation"] = (
             "approve_change_plan" if approval_lifecycle == "approval_not_requested" else None
@@ -346,6 +350,8 @@ class ChangeGovernanceService:
             "title": plan.title,
             "status": plan.status.value,
             "approval_lifecycle": self._approval_lifecycle(plan),
+            "status_is_legacy": True,
+            "authoritative_lifecycle_field": "approval_lifecycle",
             "approval_challenge_created": bool(plan.approval.challenge_id),
             "target": {"target_type": plan.target_type, "target_id": plan.target_id},
             "operation": plan.operation.value,
