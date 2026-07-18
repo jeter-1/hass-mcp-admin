@@ -115,6 +115,16 @@ follow the same rule. Audit retains only bounded intent/error data and never tur
 the selected route, untrusted evidence, logs, or errors into proof of dispatch or
 authorization.
 
+RC2dev6 distinguishes authentication-failure limiter exhaustion from ordinary
+authentication rejection in the audit trail without changing enforcement.
+Ordinary failures remain 404/`authentication_failure`/`auth_failure`; the first
+attempt beyond the authentication-failure burst remains
+429/`rate_limit_exceeded` but is recorded as `auth_failure_throttled`.
+Authenticated general limiting remains `rate_limited`. None of these rejected
+requests reaches MCP dispatch, provider selection, Home Assistant, the dashboard
+provider, or fallback, and no credential-bearing request material enters audit
+or structured logs.
+
 ## Beta 22 generated documentation
 
 `bounded_handoff_generation_read` permits only bounded internal evidence reads.

@@ -87,6 +87,13 @@ class TransportBakeHarnessTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(valid_status, 204)
             self.assertEqual(calls, 1)
             encoded = audit_path.read_text(encoding="utf-8")
+            records = [json.loads(line) for line in encoded.splitlines()]
+            self.assertEqual(
+                [record["event"] for record in records[:5]],
+                ["auth_failure"] * 5,
+            )
+            self.assertEqual(records[5]["event"], "auth_failure_throttled")
+            self.assertEqual(records[5]["error_code"], "rate_limit_exceeded")
             self.assertNotIn(SECRET, encoded)
             self.assertNotIn(SECRET.encode(), b"".join(item[1] for item in attempts))
             self.assertNotIn(SECRET.encode(), valid_body)
