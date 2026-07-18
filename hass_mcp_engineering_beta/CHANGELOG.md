@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.0.0-rc2-dev5 - live-acceptance corrections
+
+- Replace the five-minute hard dependency-index expiry with configurable
+  10-minute soft and 60-minute hard bounds, single-flight background refresh,
+  explicit stale-evidence metadata, and nonblocking delayed startup prewarm.
+- Normalize the reviewed ha-mcp 7.13 missing-dashboard envelope as the
+  non-retryable `dashboard_not_found` domain outcome without degrading provider
+  reachability or contract health.
+- Return deduplicated root-cause groups in reliability summary mode and keep
+  intentional unavailable-state triggers as informational notes.
+- Treat Home Assistant webhook IDs as sensitive identifiers in relayed logs.
+- Repair deterministic annotated-tag identity and partial-promotion reporting;
+  this change does not backfill the missing RC2dev4 tag.
+
 ## 2.0.0-rc2-dev4 - release hardening
 
 - Removed every reachable legacy direct-write implementation and made the

@@ -105,3 +105,17 @@ cursor errors, provider operational failures, and internal defects. Exact
 `change_plan_not_found` outcomes are non-retryable domain answers and do not
 degrade provider reachability. Connection, authentication, timeout, protocol,
 invalid-response, and upstream-internal failures remain operational failures.
+
+RC2dev5 also applies that distinction to `source_coverage`. Expected misses use
+`domain_outcome_entity_not_found`, `domain_outcome_automation_not_found`,
+`domain_outcome_dashboard_not_found`, or
+`domain_outcome_change_plan_not_found`; they are never labeled as upstream
+provider failures. Global recent error counts may retain the returned error code
+for operational visibility, while domain, validation, authorization, cursor,
+provider-operational, and terminal-analysis counters remain independent.
+
+An exact reviewed ha-mcp missing-dashboard envelope maps to
+`dashboard_not_found` and leaves reachability, contract status, and session state
+healthy. Similar free-text errors do not receive this classification. Real
+authentication, connection, timeout, protocol, invalid-response, and internal
+upstream errors continue to update provider health.

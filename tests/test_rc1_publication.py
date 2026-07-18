@@ -17,8 +17,8 @@ PUBLISH_PATH = ROOT / ".github" / "workflows" / "publish-rc-image.yml"
 TAG_GUARD_PATH = ROOT / "scripts" / "assert_registry_tags_absent.sh"
 PROMOTION_PATH = ROOT / "scripts" / "promote_next_release.py"
 IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
-ADVERTISED_VERSION = "2.0.0-rc2-dev3"
-NEXT_VERSION = "2.0.0-rc2-dev4"
+ADVERTISED_VERSION = "2.0.0-rc2-dev4"
+NEXT_VERSION = "2.0.0-rc2-dev5"
 PLATFORMS = ("linux/amd64", "linux/arm64", "linux/arm/v7")
 BUILD_ARGUMENTS = (
     "BUILD_VERSION",
@@ -111,7 +111,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn(f'SERVER_VERSION = "{expected_version}"', version_source)
 
-    def test_awesomeversion_orders_dev4_between_dev3_and_final_rc3(self):
+    def test_awesomeversion_orders_dev5_between_dev4_and_final_rc3(self):
         self.assertGreater(
             AwesomeVersion(NEXT_VERSION),
             AwesomeVersion(ADVERTISED_VERSION),
@@ -210,6 +210,8 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         self.assertEqual(len(builds), 1)
         values = builds[0]["with"]
         self.assertIs(values["push"], True)
+        self.assertEqual(values["provenance"], "mode=max")
+        self.assertIs(values["sbom"], True)
         self.assertEqual(
             tuple(item.strip() for item in values["platforms"].split(",")),
             PLATFORMS,
@@ -236,12 +238,12 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             ),
         )
 
-    def test_anonymous_verification_precedes_atomic_main_and_tag_push(self):
+    def test_anonymous_verification_precedes_release_finalization(self):
         names = [step.get("name", "") for step in self.steps]
         verify_index = names.index(
             "Verify immutable tags, architectures, and provenance anonymously"
         )
-        push_index = names.index("Atomically push release commit and annotated tag")
+        push_index = names.index("Finalize release commit and annotated tag")
         self.assertLess(verify_index, push_index)
         verify = str(self.steps[verify_index]["run"])
         for value in (
@@ -262,20 +264,48 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("git push --atomic origin", push)
         self.assertIn("refs/heads/main", push)
         self.assertIn("refs/tags/", push)
+        self.assertIn('git push origin "refs/tags/', push)
         self.assertNotIn("--force", push)
         self.assertIn('"$remote_main_sha" != "$SOURCE_MAIN_SHA"', push)
+        self.assertIn('git config user.name "github-actions[bot]"', push)
+        self.assertIn('git config user.email "41898282+github-actions[bot]@users.noreply.github.com"', push)
+        self.assertIn('git rev-parse "${RELEASE_TAG}^{commit}"', push)
+        for value in ("Version:", "Source SHA:", "Image digest:", "Build timestamp:"):
+            self.assertIn(value, push)
 
     def test_failures_produce_reconciliation_without_silent_reuse(self):
         failure = next(
             step
             for step in self.steps
-            if step.get("name") == "Write fail-closed reconciliation summary"
+            if step.get("name") == "Write promotion and reconciliation summary"
         )
-        self.assertEqual(failure["if"], "failure()")
+        self.assertEqual(failure["if"], "always()")
         script = str(failure["run"])
         self.assertIn("requires reconciliation", script)
-        self.assertIn("do not reuse it silently", script)
+        self.assertIn("Do not rebuild or overwrite", script)
         self.assertIn("did not force-push", script)
+        for field in (
+            "image_published", "image_verified", "manifest_digest",
+            "tag_created", "tag_verified", "release_complete",
+        ):
+            self.assertIn(field, script)
+
+    def test_promotion_exposes_truthful_phase_outputs(self):
+        outputs = self.promote["outputs"]
+        self.assertEqual(
+            set(outputs),
+            {
+                "version", "release_sha", "digest", "image_published",
+                "image_verified", "tag_created", "tag_verified", "release_complete",
+            },
+        )
+        verify = next(
+            step for step in self.steps
+            if step.get("name") == "Verify immutable tags, architectures, and provenance anonymously"
+        )
+        self.assertEqual(verify["id"], "verify")
+        self.assertIn("attestation-manifest", str(verify["run"]))
+        self.assertIn("sbom_status=present", str(verify["run"]))
 
     def test_declared_architectures_match_ci_and_publication(self):
         config = yaml.safe_load(

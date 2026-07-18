@@ -192,7 +192,7 @@ outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 ## Engineering beta/RC analytical milestones
 
 The parallel v2 add-on RC3A development stage is now hardened as
-`2.0.0-rc2-dev4`, based on deployed RC2dev3 behavior. It has 40 registered
+`2.0.0-rc2-dev5`, based on the verified RC2dev4 release commit. It has 40 registered
 tools and 25 unchanged canonical tools.
 It adds only `list_dashboards` and `get_dashboard_config`, backed by an optional
 secret-configured `upstream_dashboard` MCP provider whose allowlist contains

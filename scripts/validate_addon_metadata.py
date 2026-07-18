@@ -22,7 +22,7 @@ BETA_SLUG = "hass_mcp_engineering_beta"
 PRODUCTION_NAME = "HA MCP Engineering Server"
 BETA_NAME = "HA MCP Engineering Server Beta"
 PRODUCTION_VERSION = "1.1.2"
-BETA_VERSION = "2.0.0-rc2-dev4"
+BETA_VERSION = "2.0.0-rc2-dev5"
 BETA_IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 FINAL_RC3_VERSION = "2.0.0-rc.3"
 NEXT_VERSION_PATH = Path(".release/next-version")
@@ -35,6 +35,11 @@ EXPECTED_BETA_SCHEMA = {
     "access_secret": "str",
     "upstream_dashboard_mcp_url": "password",
     "dependency_index_prewarm": "bool",
+    "prewarm_enabled": "bool",
+    "prewarm_startup_delay_seconds": "float",
+    "prewarm_retry_delay_seconds": "float",
+    "dependency_index_soft_ttl_seconds": "float",
+    "dependency_index_hard_ttl_seconds": "float",
     "rate_limit_per_minute": "int",
     "rate_limit_burst": "int",
     "trust_cf_connecting_ip": "bool",
@@ -215,7 +220,17 @@ def validate_config_pair(production: dict, beta: dict, *, minimum_secret_length:
     if options["trusted_proxy_cidrs"] != []:
         raise MetadataValidationError("Trusted proxy CIDRs must default to an empty list")
     if options["dependency_index_prewarm"] is not False:
-        raise MetadataValidationError("Dependency index prewarm must default to disabled")
+        raise MetadataValidationError("Legacy dependency index prewarm alias must remain disabled")
+    if options["prewarm_enabled"] is not True:
+        raise MetadataValidationError("Dependency index prewarm must default to enabled")
+    if options["prewarm_startup_delay_seconds"] != 45:
+        raise MetadataValidationError("Dependency index prewarm startup delay changed")
+    if options["prewarm_retry_delay_seconds"] < 300:
+        raise MetadataValidationError("Dependency index prewarm retry delay is too short")
+    soft_ttl = options["dependency_index_soft_ttl_seconds"]
+    hard_ttl = options["dependency_index_hard_ttl_seconds"]
+    if soft_ttl != 600 or hard_ttl != 3600 or hard_ttl <= soft_ttl:
+        raise MetadataValidationError("Dependency index freshness defaults are invalid")
     for key in ("rate_limit_per_minute", "rate_limit_burst", "audit_max_payload_chars", "response_size_limit"):
         if not isinstance(options[key], int) or isinstance(options[key], bool) or options[key] <= 0:
             raise MetadataValidationError(f"Beta option {key} must be a positive integer")

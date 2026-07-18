@@ -71,9 +71,10 @@ never imply absolute safety when relevant sources were not inspected.
 ## Index, pagination, and invalidation
 
 The process-local index stores bounded normalized edges and safe metadata, not raw
-configurations. It has a five-minute TTL, bounded edge count, deterministic generation
-fingerprint, cache metrics, and opaque generation-bound cursors. Invalid cursors return
-`invalid_cursor`; old-generation cursors return `stale_cursor`.
+configurations. It has separate soft and hard TTLs, a bounded edge count,
+deterministic generation fingerprint, cache metrics, and opaque generation-bound
+cursors. Invalid cursors return `invalid_cursor`; old-generation cursors return
+`stale_cursor`. The RC2dev5 freshness and prewarm defaults are detailed below.
 
 `refresh_index=true` rebuilds read-only evidence. Successful governed apply/rollback,
 legacy automation upsert/delete, and relevant reloads invalidate the index. Restart
@@ -98,15 +99,23 @@ connector recreation is not normally required. Refresh only the beta connector i
 still presents an older manifest. Never place a real secret or private connector URL
 in source, logs, or screenshots.
 
-RC2dev4 makes construction single-flight: concurrent cold callers await one
+RC2dev5 keeps construction single-flight: concurrent cold callers await one
 shared build. Each build reuses one state inventory and one entity-registry
 snapshot and reports request/timing breakdown, queue time, observed concurrency,
-and parsing time. Health names `unbuilt`, `building`, `valid`, `expired`,
-`invalidated`, and `failed` states with an explicit validity reason. A valid
-warm lookup and cursor continuation make zero Home Assistant requests.
+and parsing time. `cumulative_queue_wait_ms` is accumulated per-request effort,
+not wall time; maximum, average, and build-wall-clock values are also reported.
+A valid warm lookup and cursor continuation make zero Home Assistant requests.
 
-Automation configuration reads use a bounded concurrency of eight. The
-disabled-by-default `dependency_index_prewarm` option schedules one background
-build only after a safe `/config` connectivity probe succeeds. It never makes
-startup depend on index availability and never retries in a loop. Health exposes
-the bounded prewarm state and failure category.
+Soft TTL defaults to 600 seconds and hard TTL to 3600 seconds. Between them,
+the old generation is returned immediately as explicitly stale evidence while
+one background refresh runs. A failed refresh preserves that generation only
+until hard expiry. Hard-expired or configuration-invalidated evidence is not
+returned as authoritative. The new generation is published atomically and
+makes generation-bound cursors stale.
+
+Automation configuration reads use bounded concurrency of eight. Beta/RC
+prewarming defaults on with a 45-second startup delay, first performs a safe
+`/config` connectivity probe, and uses the same single-flight build path. It
+does not block startup or non-index tools and retries failures no faster than
+every 300 seconds. Health exposes the prewarm attempt, timestamps, next retry,
+and bounded failure category.

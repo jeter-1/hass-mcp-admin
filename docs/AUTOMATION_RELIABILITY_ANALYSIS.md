@@ -126,8 +126,12 @@ but does not make independently supported trace/config findings fail or disappea
 Distinct rule findings remain available, but findings with the same automation,
 failure step, sanitized error signature, affected dependency, and overlapping runs
 share a stable `root_cause_group_id`. Standard/evidence responses include bounded
-`root_cause_groups`; summary responses include only `unique_root_cause_count` and
-separate finding/root-cause severity counts.
+`root_cause_groups`. RC2dev5 summary responses include the deduplicated group,
+bounded representative paths and evidence IDs, exact reference counts, and at
+most a few intentional-use informational notes rather than repeating every
+path-level finding. Standard and evidence modes retain linked path findings and
+stable pagination. Root-cause severity and counts are based on unique causes,
+not reference multiplicity.
 
 `home_assistant_ms` remains the shared cumulative duration of all HA attempts for
 compatibility. The unambiguous companion fields are

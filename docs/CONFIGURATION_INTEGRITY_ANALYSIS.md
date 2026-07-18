@@ -184,8 +184,11 @@ YAML and packages are not claimed as inspected without actual bounded support.
 
 ## Pagination lifecycle and provenance
 
-The first page is classified only after a refreshed index, when requested, has
-become the final active generation. The immutable sanitized snapshot binds the
+The first page is classified against the generation selected by the dependency
+freshness contract. A soft-expired generation may be used immediately only when
+the response labels its exact age and stale status while the shared background
+refresh runs. Hard-expired or explicitly invalidated evidence is not used. The
+immutable sanitized snapshot binds the
 active generation and full index fingerprint, query fingerprint, evidence
 fingerprint, original analysis timestamp, snapshot ID, and offset. Its fixed
 TTL is 300 seconds.

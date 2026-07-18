@@ -1,4 +1,4 @@
-"""Reproducible RC2dev4 transport bake harness.
+"""Reproducible RC2dev4/RC2dev5 transport bake harness.
 
 Fixture mode is the default and cannot contact Home Assistant. Network mode
 accepts only an explicitly configured local/test MCP URL and performs MCP
@@ -19,12 +19,12 @@ from urllib import error, parse, request
 ROOT = Path(__file__).resolve().parents[1]
 INITIALIZE = json.dumps({
     "jsonrpc": "2.0",
-    "id": "rc2dev4-bake",
+    "id": "rc2dev5-bake",
     "method": "initialize",
     "params": {
         "protocolVersion": "2025-03-26",
         "capabilities": {},
-        "clientInfo": {"name": "rc2dev4-bake-harness", "version": "1"},
+        "clientInfo": {"name": "rc2dev5-bake-harness", "version": "1"},
     },
 }).encode("utf-8")
 
@@ -37,9 +37,12 @@ FIXTURE_TESTS = {
     ),
     "dependency": (
         "tests.test_rc2dev4_release_hardening.DependencyBakeAcceptanceTests",
+        "tests.test_rc2dev5_live_acceptance.DependencyFreshnessTests",
+        "tests.test_rc2dev5_live_acceptance.PrewarmRuntimeTests",
     ),
     "upstream": (
         "tests.test_rc2dev4_release_hardening.DashboardOutcomeAndFreshnessTests",
+        "tests.test_rc2dev5_live_acceptance.DashboardDomainOutcomeTests",
     ),
     "cursor": (
         "tests.test_rc2dev4_release_hardening.DependencyBakeAcceptanceTests.test_cursor_continuation_is_under_100ms_and_never_rebuilds",
@@ -54,9 +57,11 @@ FIXTURE_TESTS = {
     ),
     "governance": (
         "tests.test_rc2dev4_release_hardening.GovernanceLifecycleAcceptanceTests",
+        "tests.test_rc2dev5_live_acceptance.GovernanceCompatibilityTests",
     ),
     "security": (
         "tests.test_rc2dev4_release_hardening.SanitizationAcceptanceTests",
+        "tests.test_rc2dev5_live_acceptance.WebhookSanitizationTests",
     ),
 }
 
@@ -67,7 +72,7 @@ def parse_args(argv=None):
     parser.add_argument("--network", action="store_true", help="Use an explicit local/test endpoint.")
     parser.add_argument(
         "--test-mcp-url",
-        default=os.environ.get("RC2DEV4_TEST_MCP_URL", ""),
+        default=os.environ.get("RC2DEV5_TEST_MCP_URL", os.environ.get("RC2DEV4_TEST_MCP_URL", "")),
         help="Secret-bearing test URL; never printed or persisted.",
     )
     parser.add_argument("--allow-nonlocal-test-target", action="store_true")
@@ -76,7 +81,7 @@ def parse_args(argv=None):
     parser.add_argument(
         "--allow-state-change",
         action="store_true",
-        help="Reserved safety acknowledgement; this RC2dev4 harness has no write scenario.",
+        help="Reserved safety acknowledgement; this harness has no write scenario.",
     )
     return parser.parse_args(argv)
 
@@ -105,7 +110,7 @@ def _post_status(url: str) -> int:
 
 def run_network(args) -> int:
     if not args.test_mcp_url:
-        raise SystemExit("Network mode requires RC2DEV4_TEST_MCP_URL or --test-mcp-url.")
+        raise SystemExit("Network mode requires RC2DEV5_TEST_MCP_URL or --test-mcp-url.")
     parsed = parse.urlsplit(args.test_mcp_url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise SystemExit("The test MCP URL is malformed.")
@@ -115,7 +120,7 @@ def run_network(args) -> int:
     origin = f"{parsed.scheme}://{parsed.netloc}"
     if args.scenario in {"all", "auth"}:
         missing = _post_status(origin + "/mcp")
-        invalid = [_post_status(origin + "/rc2dev4-invalid-path/mcp") for _ in range(6)]
+        invalid = [_post_status(origin + "/rc2dev5-invalid-path/mcp") for _ in range(6)]
         valid = _post_status(args.test_mcp_url)
         print(json.dumps({"scenario": "auth", "missing_status": missing, "invalid_statuses": invalid, "valid_status": valid}))
     if args.scenario in {"all", "rate-limit"}:
@@ -140,7 +145,7 @@ def run_fixtures(scenario: str) -> int:
 def main(argv=None) -> int:
     args = parse_args(argv)
     if args.allow_state_change:
-        print("State-change acknowledgement recorded; no RC2dev4 harness scenario performs writes.")
+        print("State-change acknowledgement recorded; no harness scenario performs writes.")
     return run_network(args) if args.network else run_fixtures(args.scenario)
 
 

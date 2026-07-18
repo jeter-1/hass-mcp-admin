@@ -2,7 +2,7 @@
 
 ## RC2dev4 hardening boundary
 
-The current Engineering Beta source is `2.0.0-rc2-dev4`. It retains the RC3A
+The current Engineering Beta source is `2.0.0-rc2-dev5`. It retains the RC3A
 dashboard boundary while making legacy writes unreachable, separating external
 approval lifecycle states, making dependency-index construction single-flight,
 classifying expected outcomes separately from provider failures, and hardening
