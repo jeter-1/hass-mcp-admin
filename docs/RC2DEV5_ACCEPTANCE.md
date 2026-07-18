@@ -149,4 +149,3 @@ an existing immutable version tag.
 After promotion, update only Engineering Beta. Roll back to
 `ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc2-dev4` if provider health,
 freshness, governance, sanitization, or existing tool behavior regresses.
-
