@@ -17,7 +17,16 @@ history, diffs, and unbounded analytical evidence.
 always clamped to 1 through 500: zero and negative values produce at most one
 line, the default remains 50, and values above 500 produce at most 500. Event
 filtering occurs without disabling the bound, and existing global response
-sanitization still applies.
+sanitization still applies. RC2dev7 parses each bounded JSONL object and
+compares only the exact, case-sensitive top-level `event` value. Nested tool
+arguments, messages, exceptions, and metadata cannot satisfy a filter. The
+reader returns the most recent matching records in their existing order.
+
+Blank, malformed, truncated, non-object, and records larger than 64 KiB are
+skipped without returning their raw content. Later valid records remain
+queryable. Valid historical objects without a string event remain available to
+unfiltered reads but cannot match a filtered read. The existing plain JSONL and
+`No audit log yet.` / `No matching entries.` response contract is preserved.
 
 A refused `upsert_automation` is recorded as write-capable intent rejected
 before provider dispatch. Only the bounded automation ID and
@@ -26,13 +35,14 @@ endpoint categories are absent. Provider policy refusals, authentication/rate
 rejections, and cursor/validation failures are tool or gateway outcomes, not
 fabricated upstream provider failures.
 
-RC2dev6 makes the authentication audit contract exact and separately
-filterable. Ordinary pre-dispatch rejection records `auth_failure` with
+RC2dev6 assigns the authentication audit classes, and RC2dev7 makes their
+retrieval semantically exact and separately filterable. Ordinary pre-dispatch
+rejection records `auth_failure` with
 `authentication_failure`; rejection by the exhausted authentication-failure
 bucket records `auth_failure_throttled` with `rate_limit_exceeded`; authenticated
 general limiter rejection remains `rate_limited`. Each request produces one
-event class, and `get_audit_log` filters these names by exact value rather than
-prefix. These gateway outcomes do not change provider, analysis, or governance
+event class. `get_audit_log` compares the parsed top-level field rather than
+serialized text. These gateway outcomes do not change provider, analysis, or governance
 failure counters.
 
 Beta 25 adds bounded external-approval lifecycle events: requested, optionally

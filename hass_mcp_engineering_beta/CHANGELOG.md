@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.0.0-rc2-dev7 - exact audit-event filtering
+
+- Parse bounded audit JSONL records and compare only the exact, case-sensitive
+  top-level `event` field instead of searching serialized lines.
+- Keep routed `get_audit_log` calls self-audited as `tool_call` without allowing
+  their nested filter argument to contaminate `auth_failure`,
+  `auth_failure_throttled`, or `rate_limited` evidence.
+- Skip malformed, non-object, blank, and oversized historical records while
+  preserving the existing bounded JSONL response, ordering, redaction, public
+  schemas, authentication controls, provider routing, governance storage, and
+  stable v1.1.2 behavior.
+
 ## 2.0.0-rc2-dev6 - throttled-authentication audit correction
 
 - Distinguish ordinary authentication rejection (`auth_failure`) from

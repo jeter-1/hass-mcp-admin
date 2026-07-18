@@ -1,4 +1,4 @@
-"""Reproducible RC2dev4-RC2dev6 transport bake harness.
+"""Reproducible RC2dev4-RC2dev7 transport bake harness.
 
 Fixture mode is the default and cannot contact Home Assistant. Network mode
 accepts only an explicitly configured local/test MCP URL and performs MCP
@@ -19,12 +19,12 @@ from urllib import error, parse, request
 ROOT = Path(__file__).resolve().parents[1]
 INITIALIZE = json.dumps({
     "jsonrpc": "2.0",
-    "id": "rc2dev6-bake",
+    "id": "rc2dev7-bake",
     "method": "initialize",
     "params": {
         "protocolVersion": "2025-03-26",
         "capabilities": {},
-        "clientInfo": {"name": "rc2dev6-bake-harness", "version": "1"},
+        "clientInfo": {"name": "rc2dev7-bake-harness", "version": "1"},
     },
 }).encode("utf-8")
 
@@ -33,6 +33,8 @@ FIXTURE_TESTS = {
         "tests.test_rc2dev6_auth_audit.AuthenticationAuditContractTests.test_ordinary_throttled_and_recovered_auth_are_distinct",
         "tests.test_rc2dev6_auth_audit.AuditFilteringAndSanitizationTests.test_event_filters_are_exact_and_separately_queryable",
         "tests.test_rc2dev6_auth_audit.CanonicalAuditEventNameTests",
+        "tests.test_rc2dev7_exact_audit_filtering.ExactTopLevelEventTests",
+        "tests.test_rc2dev7_exact_audit_filtering.RoutedAuditFilteringTests",
     ),
     "rate-limit": (
         "tests.test_rc2dev6_auth_audit.AuthenticationAuditContractTests.test_authenticated_rate_limit_remains_a_separate_event",
@@ -65,6 +67,8 @@ FIXTURE_TESTS = {
         "tests.test_rc2dev4_release_hardening.SanitizationAcceptanceTests",
         "tests.test_rc2dev5_live_acceptance.WebhookSanitizationTests",
         "tests.test_rc2dev6_auth_audit.AuditFilteringAndSanitizationTests.test_auth_audit_payloads_redact_nested_secrets_and_fail_closed",
+        "tests.test_rc2dev7_exact_audit_filtering.AuditRedactionInteractionTests",
+        "tests.test_rc2dev7_exact_audit_filtering.MalformedAuditRecordTests",
     ),
 }
 
@@ -76,9 +80,12 @@ def parse_args(argv=None):
     parser.add_argument(
         "--test-mcp-url",
         default=os.environ.get(
-            "RC2DEV6_TEST_MCP_URL",
+            "RC2DEV7_TEST_MCP_URL",
             os.environ.get(
-                "RC2DEV5_TEST_MCP_URL", os.environ.get("RC2DEV4_TEST_MCP_URL", "")
+                "RC2DEV6_TEST_MCP_URL",
+                os.environ.get(
+                    "RC2DEV5_TEST_MCP_URL", os.environ.get("RC2DEV4_TEST_MCP_URL", "")
+                ),
             ),
         ),
         help="Secret-bearing test URL; never printed or persisted.",
@@ -118,7 +125,7 @@ def _post_status(url: str) -> int:
 
 def run_network(args) -> int:
     if not args.test_mcp_url:
-        raise SystemExit("Network mode requires RC2DEV6_TEST_MCP_URL or --test-mcp-url.")
+        raise SystemExit("Network mode requires RC2DEV7_TEST_MCP_URL or --test-mcp-url.")
     parsed = parse.urlsplit(args.test_mcp_url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise SystemExit("The test MCP URL is malformed.")
@@ -128,7 +135,7 @@ def run_network(args) -> int:
     origin = f"{parsed.scheme}://{parsed.netloc}"
     if args.scenario in {"all", "auth"}:
         missing = _post_status(origin + "/mcp")
-        invalid = [_post_status(origin + "/rc2dev6-invalid-path/mcp") for _ in range(6)]
+        invalid = [_post_status(origin + "/rc2dev7-invalid-path/mcp") for _ in range(6)]
         valid = _post_status(args.test_mcp_url)
         print(json.dumps({"scenario": "auth", "missing_status": missing, "invalid_statuses": invalid, "valid_status": valid}))
     if args.scenario in {"all", "rate-limit"}:

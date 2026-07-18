@@ -17,6 +17,7 @@ import os
 import re
 import sys
 import time
+from collections.abc import Mapping
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 import ipaddress
@@ -66,6 +67,7 @@ WEBSOCKET_CLIENT = HomeAssistantWebSocketClient(SETTINGS)
 MAX_CHARS = 60_000
 MAX_ERROR_LOG_ENTRIES = 200
 MAX_ERROR_LOG_PAYLOAD_CHARS = 40_000
+MAX_AUDIT_RECORD_CHARS = 64 * 1024
 LOGGER = get_logger("compatibility")
 
 
@@ -800,6 +802,24 @@ async def list_services(domain: str = "") -> str:
 
 
 
+def audit_record_matches_event(
+    record: Mapping[str, Any], requested_event: str
+) -> bool:
+    """Match one parsed audit record by its exact top-level event only."""
+    return record.get("event") == requested_event
+
+
+def _parsed_audit_record(row: str) -> dict[str, Any] | None:
+    """Return one bounded JSON-object audit record or skip it safely."""
+    if not row.strip() or len(row) > MAX_AUDIT_RECORD_CHARS:
+        return None
+    try:
+        record = json.loads(row)
+    except (json.JSONDecodeError, RecursionError):
+        return None
+    return record if isinstance(record, dict) else None
+
+
 @mcp.tool()
 async def get_audit_log(lines: int = 50, event: str = "") -> str:
     """Tail this server's own audit log (tool calls, auth failures, rate
@@ -814,9 +834,10 @@ async def get_audit_log(lines: int = 50, event: str = "") -> str:
     rows = deque(maxlen=effective_lines)
     with open(path, encoding="utf-8") as f:
         for row in f:
-            if event and not (
-                f'"event": "{event}"' in row or f'"event":"{event}"' in row
-            ):
+            record = _parsed_audit_record(row)
+            if record is None:
+                continue
+            if event and not audit_record_matches_event(record, event):
                 continue
             rows.append(row)
     return "".join(rows) or "No matching entries."

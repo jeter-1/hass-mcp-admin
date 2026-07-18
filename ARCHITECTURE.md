@@ -1,13 +1,13 @@
 # HA MCP Engineering Server Architecture
 
-## RC2dev4 hardening boundary
+## RC2dev7 audit-integrity boundary
 
-The current Engineering Beta source is `2.0.0-rc2-dev6`. It retains the RC3A
-dashboard boundary while making legacy writes unreachable, separating external
-approval lifecycle states, making dependency-index construction single-flight,
-classifying expected outcomes separately from provider failures, and hardening
-relayed-log sanitization. See
-[`docs/RC2DEV4_RELEASE_NOTES.md`](docs/RC2DEV4_RELEASE_NOTES.md).
+The current Engineering Beta source is `2.0.0-rc2-dev7`. It retains the RC3A
+dashboard and RC2dev4 hardening boundaries while correcting audit-event reads.
+Audit JSONL records are parsed one at a time and a requested event matches only
+the exact, case-sensitive top-level `event` value. Nested tool arguments,
+messages, exceptions, and malformed records cannot satisfy the filter. See
+[`docs/RC2DEV7_RELEASE_NOTES.md`](docs/RC2DEV7_RELEASE_NOTES.md).
 
 ## RC3A dashboard-provider boundary
 

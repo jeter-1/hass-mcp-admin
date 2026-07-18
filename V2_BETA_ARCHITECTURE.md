@@ -1,11 +1,12 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
-## RC2dev4 release hardening
+## RC2dev7 audit-event integrity
 
-The current Engineering Beta source is `2.0.0-rc2-dev6`. It preserves the RC3A
-dashboard provider and 40/25/0 catalog while hardening governance lifecycle
-truth, legacy dispatch barriers, dependency-index construction and health,
-outcome classification, sanitization, and bounded responses.
+The current Engineering Beta source is `2.0.0-rc2-dev7`. It preserves the RC3A
+dashboard provider, RC2dev4 hardening, and 40/25/0 catalog while making audit
+filters semantic rather than textual. The routed `get_audit_log` call remains
+self-audited as `tool_call`, but its nested `event` argument cannot contaminate
+security-event results.
 
 ## RC3A reviewed argument-constrained dashboard provider
 
@@ -96,7 +97,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-rc2-dev6` authentication-audit correction candidate |
+| Version | `1.1.2` | `2.0.0-rc2-dev7` exact audit-event filtering candidate |
 | Port | `8099` | MCP `8100`; internal Ingress `8110` |
 | Options and secret | Production add-on data | Beta add-on data |
 

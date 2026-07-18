@@ -125,6 +125,14 @@ requests reaches MCP dispatch, provider selection, Home Assistant, the dashboard
 provider, or fallback, and no credential-bearing request material enters audit
 or structured logs.
 
+RC2dev7 protects the integrity of that evidence by parsing audit JSONL and
+matching only the exact top-level `event`. A self-audited `get_audit_log` call
+may record its requested filter inside bounded parameters, but that nested value
+cannot be returned as a security event. Malformed and oversized historical
+records are skipped without emitting raw content. Authentication enforcement,
+limiter policy, caller identity, response codes, and pre-dispatch barriers do
+not change.
+
 ## Beta 22 generated documentation
 
 `bounded_handoff_generation_read` permits only bounded internal evidence reads.
