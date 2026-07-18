@@ -72,6 +72,23 @@ async def run_structured(
         telemetry = current_telemetry()
         if telemetry:
             telemetry.error_code = code.value
+        failure_metadata = dict(metadata or {})
+        domain_category = {
+            "entity_not_found": "domain_outcome_entity_not_found",
+            "automation_not_found": "domain_outcome_automation_not_found",
+            "dashboard_not_found": "domain_outcome_dashboard_not_found",
+            "change_plan_not_found": "domain_outcome_change_plan_not_found",
+        }.get(code.value)
+        if domain_category:
+            failure_metadata.setdefault("classification", "domain_outcome")
+            failure_metadata.setdefault("completeness", "not_found")
+            failure_metadata.setdefault("source_coverage", [{
+                "provider": "engineering",
+                "completeness": "not_found",
+                "failure_category": domain_category,
+                "upstream_attempted": False,
+                "fallback_occurred": False,
+            }])
         return FailureResponse(
             operation=operation,
             error=type(exc).__name__,
@@ -80,7 +97,7 @@ async def run_structured(
             details=details,
             retryable=retryable,
             warnings=warnings or [],
-            metadata=metadata or {},
+            metadata=failure_metadata,
             timing=timing_since(started),
             request_id=current_request_id(),
         ).to_json(response_limit)

@@ -194,7 +194,10 @@ class ServiceAndMetricsContractTests(unittest.IsolatedAsyncioTestCase):
             evidence_bundle(traces=failure_traces())
         )).analyze(automation_id="beta13_fixture", detail_level="summary")
         self.assertEqual(output.data["unique_root_cause_count"], 1)
-        self.assertEqual(output.data["root_cause_groups"], [])
+        self.assertEqual(len(output.data["root_cause_groups"]), 1)
+        self.assertEqual(
+            output.data["root_cause_groups"][0]["reference_count"], 4
+        )
 
     async def test_pagination_does_not_double_count_finding_or_root_cause_metrics(self):
         traces = failure_traces() + failure_traces(step="action/1", error="different", dependency="switch.beta13")

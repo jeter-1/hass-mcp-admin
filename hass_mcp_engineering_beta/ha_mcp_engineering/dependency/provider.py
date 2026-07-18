@@ -86,17 +86,17 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         coverage: list[SourceCoverageItem] = []
         request_counts: Counter[str] = Counter()
         request_time_ms: dict[str, float] = defaultdict(float)
-        queue_wait_ms = 0.0
+        queue_wait_samples_ms: list[float] = []
         active_requests = 0
         maximum_concurrency = 0
         semaphore = asyncio.Semaphore(self.concurrency)
 
         async def request(operation: str, factory, *, queued: bool = False):
-            nonlocal queue_wait_ms, active_requests, maximum_concurrency
+            nonlocal active_requests, maximum_concurrency
             queued_at = time.perf_counter()
             if queued:
                 await semaphore.acquire()
-                queue_wait_ms += (time.perf_counter() - queued_at) * 1000
+                queue_wait_samples_ms.append((time.perf_counter() - queued_at) * 1000)
             started = time.perf_counter()
             request_counts[operation] += 1
             active_requests += 1
@@ -272,10 +272,21 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 "entity_registry_snapshot_reused": True,
                 "configured_max_concurrency": self.concurrency,
                 "observed_max_concurrency": maximum_concurrency,
-                "queue_wait_ms": round(queue_wait_ms, 3),
+                # Cumulative wait is per-request effort, not elapsed wall time.
+                "queue_wait_ms": round(sum(queue_wait_samples_ms), 3),
+                "cumulative_queue_wait_ms": round(sum(queue_wait_samples_ms), 3),
+                "maximum_single_request_queue_wait_ms": round(
+                    max(queue_wait_samples_ms, default=0.0), 3
+                ),
+                "average_request_queue_wait_ms": round(
+                    sum(queue_wait_samples_ms) / len(queue_wait_samples_ms)
+                    if queue_wait_samples_ms else 0.0,
+                    3,
+                ),
                 "network_attempt_time_ms": round(sum(request_time_ms.values()), 3),
                 "parsing_indexing_time_ms": round(parsing_ms, 3),
                 "scan_wall_time_ms": round((time.perf_counter() - scan_started) * 1000, 3),
+                "build_wall_clock_ms": round((time.perf_counter() - scan_started) * 1000, 3),
             },
         )
 

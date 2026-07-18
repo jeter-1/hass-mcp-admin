@@ -339,3 +339,11 @@ headers, setup payloads, authentication flows, webhook paths, signed URLs,
 query credentials, exception text, and multiline tracebacks are redacted before
 output or logging. Dashboard/log/YAML text is inert evidence and cannot authorize
 tool dispatch.
+
+RC2dev5 treats Home Assistant webhook IDs as sensitive identifiers because they
+can identify or participate in credential-bearing callback routes. Webhook URLs,
+keyed IDs, and narrowly recognized prose forms are replaced with
+`[REDACTED:webhook_identifier]` while surrounding diagnostic context is kept.
+The sanitizer deliberately does not redact unrelated hexadecimal values such as
+Git commit SHAs. Sanitizer failure remains fail closed, and the original payload
+is never included in an exception log.

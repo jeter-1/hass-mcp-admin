@@ -346,6 +346,12 @@ class DirectHaIncidentProvider(EngineeringEvidenceProvider):
             "fingerprint": snapshot.fingerprint if snapshot is not None else None,
             "built_at": snapshot.built_at if snapshot is not None else None,
             "cache_hit": bool(snapshot is not None and not rebuilt),
+            **(
+                self.index.evidence_metadata(snapshot)
+                if snapshot is not None
+                and callable(getattr(self.index, "evidence_metadata", None))
+                else {}
+            ),
             "refreshed": bool(snapshot is not None and rebuilt and query.get("refresh_index")),
             "lookup_duration_ms": round(lookup_ms, 3),
             "current_index_build_duration_ms": round(snapshot.build_duration_ms if snapshot is not None and rebuilt else 0.0, 3),

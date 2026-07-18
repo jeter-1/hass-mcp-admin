@@ -126,17 +126,28 @@ class CanonicalProviderDispatcher:
         except Exception as exc:
             code, message, retryable, details = map_exception(exc)
             if provider_result is None:
+                domain_category = {
+                    ErrorCode.ENTITY_NOT_FOUND: ProviderFailureCategory.ENTITY_NOT_FOUND,
+                    ErrorCode.AUTOMATION_NOT_FOUND: ProviderFailureCategory.AUTOMATION_NOT_FOUND,
+                    ErrorCode.DASHBOARD_NOT_FOUND: ProviderFailureCategory.DASHBOARD_NOT_FOUND,
+                    ErrorCode.CHANGE_PLAN_NOT_FOUND: ProviderFailureCategory.CHANGE_PLAN_NOT_FOUND,
+                }.get(code)
+                failure_category = domain_category
+                if failure_category is None:
+                    failure_category = (
+                        ProviderFailureCategory.PROHIBITED
+                        if code == ErrorCode.PROVIDER_PROHIBITED
+                        else ProviderFailureCategory.REQUEST_VALIDATION
+                        if code in {ErrorCode.INVALID_REQUEST, ErrorCode.VALIDATION_FAILURE}
+                        else ProviderFailureCategory.UPSTREAM_ERROR
+                    )
                 provider_result = ProviderResult(
                     provider_id=provider_id,
                     capability=decision.capability,
                     completeness=ProviderCompleteness.FAILED,
                     timing_ms=(time.perf_counter() - started) * 1000,
                     failure=_failure(
-                        ProviderFailureCategory.PROHIBITED
-                        if code == ErrorCode.PROVIDER_PROHIBITED
-                        else ProviderFailureCategory.REQUEST_VALIDATION
-                        if code in {ErrorCode.INVALID_REQUEST, ErrorCode.VALIDATION_FAILURE}
-                        else ProviderFailureCategory.UPSTREAM_ERROR,
+                        failure_category,
                         message,
                         retryable,
                     ),

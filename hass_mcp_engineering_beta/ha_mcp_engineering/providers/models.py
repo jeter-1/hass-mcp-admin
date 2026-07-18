@@ -62,6 +62,10 @@ class ProviderFailureCategory(str, Enum):
     INVALID_RESPONSE = "provider_invalid_response"
     UNSUPPORTED = "provider_unsupported"
     PROHIBITED = "provider_prohibited"
+    ENTITY_NOT_FOUND = "domain_outcome_entity_not_found"
+    AUTOMATION_NOT_FOUND = "domain_outcome_automation_not_found"
+    DASHBOARD_NOT_FOUND = "domain_outcome_dashboard_not_found"
+    CHANGE_PLAN_NOT_FOUND = "domain_outcome_change_plan_not_found"
 
 
 @dataclass(frozen=True)

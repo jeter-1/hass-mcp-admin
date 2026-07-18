@@ -44,7 +44,13 @@ class Settings:
     trusted_proxy_cidrs: tuple[str, ...] = ()
     ingress_port: int = 8110
     upstream_dashboard_mcp_url: str = field(default="", repr=False)
+    # ``dependency_index_prewarm`` is retained as an options compatibility alias.
     dependency_index_prewarm: bool = False
+    prewarm_enabled: bool = True
+    prewarm_startup_delay_seconds: float = 45.0
+    prewarm_retry_delay_seconds: float = 300.0
+    dependency_index_soft_ttl_seconds: float = 600.0
+    dependency_index_hard_ttl_seconds: float = 3600.0
 
     @property
     def api_url(self) -> str:
@@ -195,4 +201,21 @@ def load_settings() -> Settings:
             or ""
         ).strip(),
         dependency_index_prewarm=bool(options.get("dependency_index_prewarm", False)),
+        # RC2dev4 stored ``dependency_index_prewarm: false`` as its default.
+        # Treating that legacy default as authoritative would silently disable
+        # RC2dev5 prewarming on upgrades. The new key is the sole control; its
+        # absence selects the safe beta default.
+        prewarm_enabled=bool(options.get("prewarm_enabled", True)),
+        prewarm_startup_delay_seconds=float(
+            options.get("prewarm_startup_delay_seconds", 45)
+        ),
+        prewarm_retry_delay_seconds=float(
+            options.get("prewarm_retry_delay_seconds", 300)
+        ),
+        dependency_index_soft_ttl_seconds=float(
+            options.get("dependency_index_soft_ttl_seconds", 600)
+        ),
+        dependency_index_hard_ttl_seconds=float(
+            options.get("dependency_index_hard_ttl_seconds", 3600)
+        ),
     )

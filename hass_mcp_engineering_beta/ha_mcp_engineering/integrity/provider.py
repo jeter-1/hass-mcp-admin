@@ -239,6 +239,11 @@ class DirectHaIntegrityProvider(EngineeringEvidenceProvider):
                 "current_index_build_duration_ms": round(
                     snapshot.build_duration_ms if rebuilt else 0.0, 3
                 ),
+                **(
+                    self.index.evidence_metadata(snapshot)
+                    if callable(getattr(self.index, "evidence_metadata", None))
+                    else {}
+                ),
             },
             evidence_collection_duration_ms=(time.perf_counter() - started) * 1000,
             dynamic_outside_requested_scope_count=outside_dynamic_count,

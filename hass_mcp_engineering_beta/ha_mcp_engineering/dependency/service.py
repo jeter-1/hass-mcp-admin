@@ -175,6 +175,7 @@ class EntityDependencyAnalysisService:
                     (time.perf_counter() - request_started) * 1000,
                     3,
                 ),
+                **self.index.evidence_metadata(snapshot),
             },
         }
         METRICS.record_dependency_analysis_success()

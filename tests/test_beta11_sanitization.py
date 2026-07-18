@@ -79,7 +79,7 @@ class RecursiveSanitizerTests(unittest.TestCase):
     def test_webhook_path(self):
         result = self.sanitize(f"/api/webhook/{SYNTHETIC_WEBHOOK}")
         self.assert_removed(result, SYNTHETIC_WEBHOOK)
-        self.assertIn("[REDACTED:webhook_secret]", result.value)
+        self.assertIn("[REDACTED:webhook_identifier]", result.value)
 
     def test_full_webhook_url(self):
         result = self.sanitize(
@@ -200,7 +200,7 @@ class RecursiveSanitizerTests(unittest.TestCase):
         )
         self.assertEqual(
             set(result.redaction_categories),
-            {"token", "webhook_secret", "matter_setup_payload"},
+            {"token", "webhook_identifier", "matter_setup_payload"},
         )
         self.assertEqual(result.redacted_field_count, 1)
 

@@ -755,6 +755,10 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         snapshot = METRICS.snapshot()
         self.assertEqual(snapshot["change_impact_analysis"]["failed_count"], 0)
         self.assertEqual(snapshot["domain_outcome_counts"]["entity_not_found"], 1)
+        routing = snapshot["provider_routing"]
+        self.assertEqual(routing["requests_by_provider"]["engineering"], 1)
+        self.assertEqual(routing["successful_requests_by_provider"]["engineering"], 1)
+        self.assertEqual(routing["failures_by_provider"].get("engineering", 0), 0)
 
         class SlowProvider:
             async def fetch(self, request):

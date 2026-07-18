@@ -72,6 +72,14 @@ Persisted statuses are `draft`, `validation_failed`, `awaiting_approval`,
 `invalidated`. A newer plan for the same automation supersedes an older pending
 plan so two proposals cannot silently overwrite one another.
 
+RC2dev5 responses make `approval_lifecycle` the authoritative approval-state
+field. The older persisted `status` value remains available and is marked with
+`status_is_legacy: true` plus
+`authoritative_lifecycle_field: approval_lifecycle`. This preserves RC2dev3 and
+RC2dev4 records without a storage migration. Callers must not infer an external
+challenge from legacy `status: awaiting_approval`; only
+`approval_pending_external` means a challenge exists.
+
 ## Planning, normalization, and fingerprints
 
 `create_change_plan` accepts only `create_automation` and `update_automation`.

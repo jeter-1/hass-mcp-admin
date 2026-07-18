@@ -189,7 +189,9 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(output.data["detail_level"], detail)
             if detail == "summary":
                 self.assertEqual(output.data["evidence_references"], [])
-                self.assertNotIn("evidence_references", output.data["findings"][0])
+                self.assertEqual(output.data["findings"], [])
+                self.assertEqual(len(output.data["root_cause_groups"]), 1)
+                self.assertIn("evidence_references", output.data["root_cause_groups"][0])
             else:
                 self.assertTrue(output.data["evidence_references"])
 
