@@ -1,0 +1,166 @@
+name: RC2dev8 exact-image TTL failure bake
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc2dev8-exact-image-ttl-failure-bake
+  cancel-in-progress: false
+
+env:
+  ENGINEERING_TAG: ghcr.io/jeter-1/hass-mcp-engineering-beta:2.0.0-rc2-dev8
+  ENGINEERING_IMAGE: ghcr.io/jeter-1/hass-mcp-engineering-beta@sha256:e1c2edf06f03e12ca42e1c90f43aa5c9e5b226b17acb69d302c1f483ff789a4a
+  ENGINEERING_INDEX_DIGEST: sha256:e1c2edf06f03e12ca42e1c90f43aa5c9e5b226b17acb69d302c1f483ff789a4a
+  ENGINEERING_AMD64_DIGEST: sha256:34e2a4923fc51753ba47024536b7c36e474df14b4c0b9f975ea72598e706f0e3
+  ENGINEERING_ARM64_DIGEST: sha256:f50b589c460ae24e90f322297b00edc0ba12295cb08dce5243a774aea89bcb5f
+  ENGINEERING_ARMV7_DIGEST: sha256:e7d0f1c0d0433b9a6d4ee16cfdb648b38026399837ccdcfa20626f2e5946c775
+  HOME_ASSISTANT_IMAGE: ghcr.io/home-assistant/home-assistant:2026.7.2@sha256:1476924357b46e80735c13e94232ba5c853cac052e9df4bb28d50fa56348097b
+  RC2DEV8_DISPOSABLE_EXACT_IMAGE: "1"
+
+jobs:
+  exact-image-bake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: hass_mcp_engineering_beta/requirements.txt
+
+      - name: Install bounded client dependency
+        run: python -m pip install "aiohttp==3.9.5"
+
+      - name: Verify the public immutable image and selected platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          anonymous_config="$RUNNER_TEMP/anonymous-docker"
+          mkdir -p "$anonymous_config"
+          tag_inspect="$RUNNER_TEMP/dev8-tag-inspect.txt"
+          index_json="$RUNNER_TEMP/dev8-index.json"
+          platform_json="$RUNNER_TEMP/dev8-amd64.json"
+
+          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
+            "$ENGINEERING_TAG" > "$tag_inspect"
+          actual_index="$(awk '$1 == "Digest:" { print $2; exit }' "$tag_inspect")"
+          test "$actual_index" = "$ENGINEERING_INDEX_DIGEST"
+
+          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect --raw \
+            "$ENGINEERING_IMAGE" > "$index_json"
+          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect --raw \
+            "ghcr.io/jeter-1/hass-mcp-engineering-beta@$ENGINEERING_AMD64_DIGEST" \
+            > "$platform_json"
+
+          python - "$index_json" "$platform_json" "$GITHUB_ENV" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          index = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          platform_manifest = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
+          actual = {
+              (
+                  row.get("platform", {}).get("os"),
+                  row.get("platform", {}).get("architecture"),
+                  row.get("platform", {}).get("variant"),
+              ): row.get("digest")
+              for row in index.get("manifests", [])
+              if row.get("platform", {}).get("os") != "unknown"
+          }
+          expected = {
+              ("linux", "amd64", None): "sha256:34e2a4923fc51753ba47024536b7c36e474df14b4c0b9f975ea72598e706f0e3",
+              ("linux", "arm64", None): "sha256:f50b589c460ae24e90f322297b00edc0ba12295cb08dce5243a774aea89bcb5f",
+              ("linux", "arm", "v7"): "sha256:e7d0f1c0d0433b9a6d4ee16cfdb648b38026399837ccdcfa20626f2e5946c775",
+          }
+          if actual != expected:
+              raise SystemExit(f"RC2dev8 platform manifest mismatch: {actual!r}")
+          attestations = [
+              row for row in index.get("manifests", [])
+              if row.get("annotations", {}).get("vnd.docker.reference.type") == "attestation-manifest"
+          ]
+          if len(attestations) < len(expected):
+              raise SystemExit("RC2dev8 is missing a platform attestation manifest")
+          config_digest = platform_manifest.get("config", {}).get("digest")
+          if not isinstance(config_digest, str) or not config_digest.startswith("sha256:"):
+              raise SystemExit("The selected platform config digest is missing")
+          with pathlib.Path(sys.argv[3]).open("a", encoding="utf-8") as output:
+              output.write(f"RC2DEV8_PLATFORM_DIGEST={expected[('linux', 'amd64', None)]}\n")
+              output.write(f"RC2DEV8_PLATFORM_CONFIG_DIGEST={config_digest}\n")
+              output.write(f"RC2DEV8_ATTESTATION_COUNT={len(attestations)}\n")
+          PY
+
+      - name: Verify selected local image provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          anonymous_config="$RUNNER_TEMP/anonymous-docker"
+          DOCKER_CONFIG="$anonymous_config" docker pull --platform linux/amd64 "$ENGINEERING_IMAGE"
+          local_image_id="$(docker image inspect "$ENGINEERING_IMAGE" --format '{{.Id}}')"
+          test "$local_image_id" = "$RC2DEV8_PLATFORM_CONFIG_DIGEST"
+          test "$(docker image inspect "$ENGINEERING_IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "c146c4378a221a34d66ee465772ecac09aca4899"
+          test "$(docker image inspect "$ENGINEERING_IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = "2.0.0-rc2-dev8"
+          test "$(docker image inspect "$ENGINEERING_IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.created"}}')" = "2026-07-19T13:14:16Z"
+          test "$(docker image inspect "$ENGINEERING_IMAGE" --format '{{index .Config.Labels "io.hass-mcp.build.dirty"}}')" = "false"
+
+      - name: Pull disposable Home Assistant by immutable digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          anonymous_config="$RUNNER_TEMP/anonymous-docker"
+          DOCKER_CONFIG="$anonymous_config" docker pull "$HOME_ASSISTANT_IMAGE"
+
+      - name: Run isolated refresh-failure, hard-TTL, and recovery acceptance
+        env:
+          EVIDENCE_PATH: ${{ runner.temp }}/rc2dev8-exact-image-evidence.json
+        run: >-
+          python scripts/rc2dev8_exact_image_bake.py
+          --acknowledge-disposable-exact-image
+          --output "$EVIDENCE_PATH"
+
+      - name: Validate sanitized evidence
+        if: always()
+        shell: bash
+        env:
+          EVIDENCE_PATH: ${{ runner.temp }}/rc2dev8-exact-image-evidence.json
+        run: |
+          set -euo pipefail
+          test -f "$EVIDENCE_PATH"
+          python - "$EVIDENCE_PATH" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          evidence = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          if evidence.get("result") != "PASS":
+              raise SystemExit("The exact-image evidence did not pass")
+          rendered = json.dumps(evidence, sort_keys=True).lower()
+          forbidden = ("authorization", "access_token", "refresh_token", "password")
+          if any(value in rendered for value in forbidden):
+              raise SystemExit("The evidence artifact contains a credential field")
+          PY
+
+      - name: Upload sanitized exact-image evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rc2dev8-exact-image-bake-evidence
+          path: ${{ runner.temp }}/rc2dev8-exact-image-evidence.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Remove all disposable resources
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          docker ps -aq --filter label=io.hass-mcp.test=rc2dev8-exact-image | xargs -r docker rm -f >/dev/null 2>&1
+          docker network ls -q --filter label=io.hass-mcp.test=rc2dev8-exact-image | xargs -r docker network rm >/dev/null 2>&1
+          rm -rf "$RUNNER_TEMP/anonymous-docker" "$RUNNER_TEMP"/rc2dev8-exact-image-*
