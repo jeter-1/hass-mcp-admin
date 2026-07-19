@@ -101,6 +101,15 @@ refused before dispatch. `call_service`, `delete_automation`, and
 approval of an immutable plan, and evidence or recommendations never authorize a
 write.
 
+RC2dev8 enforces the four fixed legacy policy outcomes at the authenticated
+Streamable HTTP routing boundary, before FastMCP/Pydantic argument coercion.
+Only the exact names `call_service`, `reload_domain`, `upsert_automation`, and
+`delete_automation` are eligible. The caller's arguments are neither forwarded
+nor used to select the result; malformed arguments therefore cannot bypass or
+preempt policy. Normal tools retain full schema validation. Refusal responses
+contain no caller payload, and refusal audit records retain only bounded target
+identifiers or the fixed reason.
+
 Rate-limit bucket pressure evicts a single least-recently-used identity rather
 than clearing all throttling state. See [`RATE_LIMITING.md`](RATE_LIMITING.md).
 Audit reads and refusal records are bounded as documented in
@@ -132,6 +141,13 @@ cannot be returned as a security event. Malformed and oversized historical
 records are skipped without emitting raw content. Authentication enforcement,
 limiter policy, caller identity, response codes, and pre-dispatch barriers do
 not change.
+
+RC2dev8 additionally treats MCP application results as the source of audit
+truth. A JSON-RPC result with `isError=true`, a bounded validation failure, or a
+structured Engineering response with `success=false` is audited as failure
+with the stable error code even when HTTP transport returned 200. Validation
+audit retains bounded argument field names, never rejected values or raw
+Pydantic exception text.
 
 ## Beta 22 generated documentation
 

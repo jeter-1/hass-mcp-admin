@@ -1,8 +1,25 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## RC2dev8 pre-validation enforcement and audit truth
+
+The current Engineering Beta source is `2.0.0-rc2-dev8`. Four
+compatibility-visible operations have fixed fail-closed policy outcomes:
+`call_service`, `reload_domain`, `upsert_automation`, and
+`delete_automation`. The authenticated Streamable HTTP gateway recognizes only
+those exact names and renders their existing canonical routing result before
+FastMCP/Pydantic can coerce or validate caller arguments. No generic validation
+bypass exists, and all other tools continue through the registered FastMCP
+schemas unchanged.
+
+The same gateway observes a bounded copy of downstream MCP responses. A
+structured Engineering failure, MCP `isError=true` result, FastMCP validation
+failure, or JSON-RPC error sets truthful request telemetry before the final
+audit record is written. HTTP 200 is transport success, not evidence that the
+tool operation succeeded.
+
 ## RC2dev7 audit-event integrity
 
-The current Engineering Beta source is `2.0.0-rc2-dev7`. It preserves the RC3A
+RC2dev7 preserved the RC3A
 dashboard provider, RC2dev4 hardening, and 40/25/0 catalog while making audit
 filters semantic rather than textual. The routed `get_audit_log` call remains
 self-audited as `tool_call`, but its nested `event` argument cannot contaminate
@@ -97,7 +114,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-rc2-dev7` exact audit-event filtering candidate |
+| Version | `1.1.2` | `2.0.0-rc2-dev8` pre-validation enforcement and audit-truth candidate |
 | Port | `8099` | MCP `8100`; internal Ingress `8110` |
 | Options and secret | Production add-on data | Beta add-on data |
 

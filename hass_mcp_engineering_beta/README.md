@@ -45,7 +45,7 @@ https://BETA_TUNNEL/REDACTED_BETA_SECRET/mcp/
 
 Direct requests to `/mcp` and `/mcp/` must return `404`. After initialization,
 call `server_info(check_ha=false)` and verify version
-`2.0.0-rc2-dev7` after release approval, the expected complete release
+`2.0.0-rc2-dev8` after release approval, the expected complete release
 commit SHA, and its UTC build time,
 then call `list_capabilities` and verify the preserved 25-tool canonical catalog
 plus 15 beta-native tools; MCP `tools/list` should expose 40 callable tools.

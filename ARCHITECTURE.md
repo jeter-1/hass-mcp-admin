@@ -2,7 +2,7 @@
 
 ## RC2dev7 audit-integrity boundary
 
-The current Engineering Beta source is `2.0.0-rc2-dev7`. It retains the RC3A
+The current Engineering Beta source is `2.0.0-rc2-dev8`. It retains the RC3A
 dashboard and RC2dev4 hardening boundaries while correcting audit-event reads.
 Audit JSONL records are parsed one at a time and a requested event matches only
 the exact, case-sensitive top-level `event` value. Nested tool arguments,

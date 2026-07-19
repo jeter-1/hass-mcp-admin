@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.0.0-rc2-dev8 - pre-validation enforcement and audit truth
+
+- Intercept `call_service`, `reload_domain`, `upsert_automation`, and
+  `delete_automation` at the authenticated Streamable HTTP boundary before
+  FastMCP/Pydantic argument coercion so their fixed fail-closed policy result is
+  independent of caller argument shape.
+- Return the existing canonical `provider_unavailable` or
+  `provider_prohibited` Engineering envelope without provider, Home Assistant,
+  upstream, governance, or fallback dispatch.
+- Inspect bounded MCP responses for structured Engineering failures,
+  FastMCP validation failures, and JSON-RPC errors so HTTP 200 no longer causes
+  failed tool calls to be audited as successful.
+- Preserve all 40 public tool schemas, the 25 canonical classifications, zero
+  planned tools, RC2dev7 authentication/audit filtering, governance storage,
+  dependency-index behavior, and the pinned ha-mcp 7.13.0 dashboard profile.
+
 ## 2.0.0-rc2-dev7 - exact audit-event filtering
 
 - Parse bounded audit JSONL records and compare only the exact, case-sensitive

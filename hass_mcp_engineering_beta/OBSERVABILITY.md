@@ -511,6 +511,19 @@ and final audit record therefore share the same request ID and stable error
 code; HTTP 404 entity lookups map to `entity_not_found`, while other upstream
 rejections map to `home_assistant_api_error`.
 
+RC2dev8 closes the equivalent transport-layer gap. The authenticated gateway
+captures at most the configured bounded MCP response, parses JSON or SSE
+JSON-RPC, and reconciles the final audit outcome before writing it. Structured
+Engineering `success=false` results use their exact known `error_code`;
+FastMCP/Pydantic validation and unknown-tool results use `invalid_request`;
+unclassified MCP execution errors use `internal_server_error`. Raw response
+text, Pydantic trace detail, and caller values never enter the audit record.
+
+The four fixed fail-closed legacy operations are answered before FastMCP
+argument validation. Their audit records contain `result_status=failure`, the
+canonical `provider_unavailable` or `provider_prohibited` code, an empty HA
+endpoint category list, and no provider/fallback dispatch evidence.
+
 For each future migration:
 
 1. keep the public name and generated argument schema unchanged;
