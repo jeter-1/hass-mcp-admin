@@ -23,11 +23,86 @@ from .errors import ErrorCode, error_definition
 from .logging_config import get_logger, log_event
 from .models import FailureResponse, Timing
 from .observability import METRICS
+from .providers.dispatch import CANONICAL_DISPATCHER
+from .providers.routing import requires_prevalidation_enforcement
 from .request_context import begin_request, current_telemetry, end_request
 
 
 MAX_BUCKET_STORE_SIZE = 1000
+MAX_MCP_OUTCOME_CAPTURE_BYTES = 1_100_000
 UNKNOWN_CLIENT_IDENTITY = "unknown"
+
+
+def _jsonrpc_response_from_body(body: bytes) -> dict | None:
+    """Return one bounded JSON-RPC response from JSON or SSE output."""
+
+    try:
+        text = body.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    candidates = []
+    if "data:" in text:
+        candidates.extend(
+            line.removeprefix("data:").strip()
+            for line in text.replace("\r", "").splitlines()
+            if line.startswith("data:")
+        )
+    else:
+        candidates.append(text.strip())
+    for candidate in reversed(candidates):
+        if not candidate:
+            continue
+        try:
+            payload = json.loads(candidate)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(payload, dict) and payload.get("jsonrpc") == "2.0":
+            return payload
+    return None
+
+
+def _mcp_error_code(payload: dict) -> str | None:
+    """Classify an MCP/JSON-RPC failure without retaining raw error text."""
+
+    error = payload.get("error")
+    if isinstance(error, dict):
+        return (
+            ErrorCode.INVALID_REQUEST.value
+            if error.get("code") in {-32700, -32600, -32601, -32602}
+            else ErrorCode.INTERNAL_SERVER_ERROR.value
+        )
+    result = payload.get("result")
+    if not isinstance(result, dict) or result.get("isError") is not True:
+        return None
+    text = " ".join(
+        str(item.get("text", ""))
+        for item in result.get("content", [])
+        if isinstance(item, dict) and item.get("type") == "text"
+    ).lower()
+    if "validation error for" in text or "unknown tool" in text:
+        return ErrorCode.INVALID_REQUEST.value
+    return ErrorCode.INTERNAL_SERVER_ERROR.value
+
+
+def _structured_tool_failure_code(payload: dict) -> str | None:
+    """Extract a stable Engineering failure code from an MCP tool result."""
+
+    result = payload.get("result")
+    if not isinstance(result, dict) or result.get("isError") is True:
+        return None
+    for item in result.get("content", []):
+        if not isinstance(item, dict) or item.get("type") != "text":
+            continue
+        try:
+            rendered = json.loads(item.get("text", ""))
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(rendered, dict) or rendered.get("success") is not False:
+            continue
+        code = rendered.get("error_code")
+        if isinstance(code, str) and code in {value.value for value in ErrorCode}:
+            return code
+    return None
 
 
 class TokenBucket:
@@ -86,6 +161,52 @@ class AuthenticatedMcpGateway:
             ],
         })
         await send({"type": "http.response.body", "body": body})
+
+    @classmethod
+    async def _respond_mcp_tool_result(
+        cls,
+        send,
+        *,
+        rpc_id,
+        rendered: str,
+        request_id: str,
+    ) -> None:
+        payload = {
+            "jsonrpc": "2.0",
+            "id": rpc_id,
+            "result": {
+                "content": [{"type": "text", "text": rendered}],
+                "isError": False,
+            },
+        }
+        body = (
+            "event: message\r\n"
+            f"data: {json.dumps(payload, separators=(',', ':'))}\r\n\r\n"
+        ).encode("utf-8")
+        await cls._respond(
+            send,
+            200,
+            body,
+            request_id,
+            b"text/event-stream",
+        )
+
+    @staticmethod
+    def _apply_mcp_outcome(telemetry, body: bytes) -> None:
+        payload = _jsonrpc_response_from_body(body)
+        if payload is None:
+            return
+        structured_code = _structured_tool_failure_code(payload)
+        if structured_code:
+            telemetry.error_code = structured_code
+            telemetry.result_status = "failure"
+            telemetry.completeness = telemetry.completeness or "failed"
+            return
+        mcp_code = _mcp_error_code(payload)
+        if mcp_code:
+            telemetry.error_code = telemetry.error_code or mcp_code
+            telemetry.result_status = "failure"
+            telemetry.completeness = telemetry.completeness or "failed"
 
     def _client_ip(self, scope) -> str:
         return resolve_client_address(
@@ -146,9 +267,12 @@ class AuthenticatedMcpGateway:
         telemetry.caller_id = caller_id
         tool_name = None
         rpc_method = None
+        rpc = None
         operation_started = None
         parameters = {}
         capability = {}
+        response_capture = bytearray()
+        authenticated_request_accepted = False
         try:
             if path == "/health":
                 return await self._respond(send, 200, b"ok", request_id)
@@ -213,15 +337,18 @@ class AuthenticatedMcpGateway:
                     b"application/json",
                 )
 
+            authenticated_request_accepted = True
             new_receive = receive
             if scope.get("method") == "POST":
                 chunks, more, total = [], True, 0
+                request_oversized = False
                 while more:
                     message = await receive()
                     chunks.append(message)
                     total += len(message.get("body", b""))
                     more = message.get("more_body", False)
                     if total > 2_000_000:
+                        request_oversized = True
                         break
                 body = b"".join(message.get("body", b"") for message in chunks)
                 try:
@@ -231,13 +358,16 @@ class AuthenticatedMcpGateway:
                         operation_started = time.perf_counter()
                     if rpc_method == "tools/call":
                         params = rpc.get("params", {}) or {}
+                        if not isinstance(params, dict):
+                            raise TypeError("tools/call params must be an object")
                         tool_name = params.get("name")
-                        parameters = params.get("arguments", {}) or {}
+                        raw_parameters = params.get("arguments", {})
+                        parameters = raw_parameters if isinstance(raw_parameters, dict) else {}
                         capability = capability_for_tool(tool_name)
                         telemetry.tool_name = tool_name
                         telemetry.tool_started = time.perf_counter()
                         METRICS.record_tool_call()
-                except (json.JSONDecodeError, UnicodeDecodeError):
+                except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
                     telemetry.error_code = ErrorCode.INVALID_REQUEST.value
                 queue = list(chunks)
 
@@ -264,6 +394,10 @@ class AuthenticatedMcpGateway:
                     headers = list(message.get("headers", []))
                     headers.append((b"x-request-id", request_id.encode("ascii")))
                     message = {**message, "headers": headers}
+                elif message["type"] == "http.response.body":
+                    available = MAX_MCP_OUTCOME_CAPTURE_BYTES - len(response_capture)
+                    if available > 0:
+                        response_capture.extend(message.get("body", b"")[:available])
                 await send(message)
 
             log_event(
@@ -274,7 +408,51 @@ class AuthenticatedMcpGateway:
                 context={"tool": tool_name},
                 secret=self.settings.access_secret,
             )
+            if scope.get("method") == "POST" and request_oversized:
+                parameters = {}
+                telemetry.error_code = ErrorCode.INVALID_REQUEST.value
+                telemetry.result_status = "failure"
+                telemetry.completeness = "failed"
+                telemetry.response_status = 413
+                definition = error_definition(ErrorCode.INVALID_REQUEST)
+                failure = FailureResponse(
+                    operation=tool_name or "mcp_request",
+                    error="RequestTooLarge",
+                    error_code=telemetry.error_code,
+                    message=definition.message,
+                    retryable=definition.retryable,
+                    timing=Timing(total_ms=telemetry.total_duration_ms),
+                    request_id=request_id,
+                )
+                await self._respond(
+                    send,
+                    413,
+                    failure.to_json(self.settings.response_size_limit).encode(),
+                    request_id,
+                    b"application/json",
+                )
+                return
+            if (
+                rpc_method == "tools/call"
+                and isinstance(rpc, dict)
+                and not request_oversized
+                and requires_prevalidation_enforcement(tool_name)
+            ):
+                rendered = await CANONICAL_DISPATCHER.enforce_prevalidation(
+                    tool_name,
+                    response_limit=self.settings.response_size_limit,
+                )
+                telemetry.response_status = 200
+                await self._respond_mcp_tool_result(
+                    send,
+                    rpc_id=rpc.get("id"),
+                    rendered=rendered,
+                    request_id=request_id,
+                )
+                return
             await self.app(forwarded, new_receive, correlated_send)
+            if tool_name and response_capture:
+                self._apply_mcp_outcome(telemetry, bytes(response_capture))
         except Exception:
             telemetry.error_code = telemetry.error_code or ErrorCode.INTERNAL_SERVER_ERROR.value
             if not tool_name:
@@ -318,12 +496,42 @@ class AuthenticatedMcpGateway:
                     if key.endswith("_id") and isinstance(value, (str, int))
                 }
                 audit_parameters = parameters
-                if tool_name == "upsert_automation":
+                if telemetry.error_code in {
+                    ErrorCode.INVALID_REQUEST.value,
+                    ErrorCode.VALIDATION_FAILURE.value,
+                }:
+                    # Invalid caller values are untrusted.  Preserve only the
+                    # bounded field names needed to diagnose a schema failure.
+                    audit_parameters = {
+                        "validation": "rejected",
+                        "argument_fields": sorted(
+                            str(key)[:64] for key in parameters
+                        )[:32],
+                    }
+                    resource_ids = {}
+                elif tool_name == "upsert_automation":
                     # Preserve only the bounded target and fail-closed reason;
                     # the caller-supplied configuration is never audited.
                     audit_parameters = {
-                        "automation_id": str(parameters.get("automation_id", ""))[:128],
+                        "automation_id": (
+                            str(parameters.get("automation_id"))[:128]
+                            if isinstance(parameters.get("automation_id"), (str, int))
+                            else ""
+                        ),
                         "refusal_reason": "governance_required",
+                    }
+                elif tool_name == "delete_automation":
+                    audit_parameters = {
+                        "automation_id": (
+                            str(parameters.get("automation_id"))[:128]
+                            if isinstance(parameters.get("automation_id"), (str, int))
+                            else ""
+                        ),
+                        "refusal_reason": "operation_prohibited",
+                    }
+                elif tool_name in {"call_service", "reload_domain"}:
+                    audit_parameters = {
+                        "refusal_reason": "provider_unavailable",
                     }
                 elif capability.get("category") == "governance":
                     audit_parameters = {
@@ -458,6 +666,18 @@ class AuthenticatedMcpGateway:
                         else {}
                     ),
                 ))
+            elif authenticated_request_accepted and telemetry.error_code:
+                self.audit.write(
+                    {
+                        "event": "mcp_request",
+                        "request_id": request_id,
+                        "authenticated": True,
+                        "caller_id": caller_id,
+                        "mcp_method": rpc_method or "invalid",
+                        "result_status": "failure",
+                        "error_code": telemetry.error_code,
+                    }
+                )
             log_event(
                 self.logger,
                 logging.INFO,
