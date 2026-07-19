@@ -163,4 +163,8 @@ jobs:
           set +e
           docker ps -aq --filter label=io.hass-mcp.test=rc2dev8-exact-image | xargs -r docker rm -f >/dev/null 2>&1
           docker network ls -q --filter label=io.hass-mcp.test=rc2dev8-exact-image | xargs -r docker network rm >/dev/null 2>&1
-          rm -rf "$RUNNER_TEMP/anonymous-docker" "$RUNNER_TEMP"/rc2dev8-exact-image-*
+          rm -rf "$RUNNER_TEMP/anonymous-docker"
+          # The exact images run as root and can leave root-owned entries in
+          # their disposable bind mounts. Scope elevated deletion to the
+          # harness's generated runner-temp prefix only.
+          sudo rm -rf "$RUNNER_TEMP"/rc2dev8-exact-image-*
