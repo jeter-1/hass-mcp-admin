@@ -154,6 +154,25 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "get_dashboard_config": ProviderCapability.DASHBOARD_CONFIGURATION_EVIDENCE,
 }
 
+# These compatibility-visible operations have an argument-independent policy
+# outcome.  The authenticated Streamable HTTP boundary may enforce them by
+# name before FastMCP/Pydantic coerces caller arguments.  Keeping this allowlist
+# next to the canonical routing table prevents the transport from inventing a
+# second routing policy or exposing a generic validation bypass.
+PREVALIDATION_ENFORCEMENT_TOOLS = frozenset(
+    {
+        "call_service",
+        "delete_automation",
+        "reload_domain",
+        "upsert_automation",
+    }
+)
+
+
+def requires_prevalidation_enforcement(tool_name: object) -> bool:
+    return isinstance(tool_name, str) and tool_name in PREVALIDATION_ENFORCEMENT_TOOLS
+
+
 ANALYTICAL_PROVIDER_POLICIES = {
     "automation_reliability_analysis": {
         "policy_id": "single_automation_reliability_read",

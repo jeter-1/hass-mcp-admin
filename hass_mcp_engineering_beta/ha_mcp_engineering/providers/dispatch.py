@@ -25,6 +25,7 @@ from .routing import (
     RoutingPolicy,
     direct_ha_exception_for_tool,
     direct_ha_policy_for_tool,
+    requires_prevalidation_enforcement,
     routing_for_tool,
 )
 from .standard_mcp import StandardHaMcpGateway
@@ -47,6 +48,7 @@ class CanonicalProviderDispatcher:
         *,
         arguments: dict[str, Any],
         response_limit: int,
+        _provider_dispatch_allowed: bool = True,
     ) -> str:
         started = time.perf_counter()
         decision = routing_for_tool(tool_name, self.policy)
@@ -55,7 +57,11 @@ class CanonicalProviderDispatcher:
         provider_result: ProviderResult | None = None
         try:
             if decision.route == CapabilityRoute.STANDARD_MCP_PREFERRED:
-                provider_result = await self._standard(tool_name, decision.capability, arguments)
+                provider_result = (
+                    await self._standard(tool_name, decision.capability, arguments)
+                    if _provider_dispatch_allowed
+                    else self._unavailable_standard_result(decision.capability, started)
+                )
                 if not provider_result.succeeded:
                     raise _provider_error(provider_result)
                 data, inner_warnings, inner_metadata = _normalize_payload(provider_result.data)
@@ -172,22 +178,29 @@ class CanonicalProviderDispatcher:
                 request_id=current_request_id(),
             ).to_json(response_limit)
 
+    async def enforce_prevalidation(self, tool_name: str, *, response_limit: int) -> str:
+        """Render one canonical argument-independent enforcement result.
+
+        Only the four compatibility-visible fail-closed tools are accepted.
+        Caller arguments are deliberately unavailable at this boundary, and no
+        provider action is permitted while the existing routing policy renders
+        the same structured result used by the registered handler.
+        """
+
+        if not requires_prevalidation_enforcement(tool_name):
+            raise ValueError("Tool is not eligible for pre-validation enforcement.")
+        return await self.execute(
+            tool_name,
+            lambda: None,
+            arguments={},
+            response_limit=response_limit,
+            _provider_dispatch_allowed=False,
+        )
+
     async def _standard(self, tool_name, capability, arguments) -> ProviderResult:
         started = time.perf_counter()
         if not getattr(self.standard_provider, "available", True):
-            return ProviderResult(
-                provider_id="standard_ha_mcp",
-                capability=capability,
-                completeness=ProviderCompleteness.UNAVAILABLE,
-                timing_ms=(time.perf_counter() - started) * 1000,
-                warnings=["Standard Home Assistant MCP delegation transport is not configured."],
-                failure=_failure(
-                    ProviderFailureCategory.UNAVAILABLE,
-                    "The standard Home Assistant MCP provider is unavailable.",
-                    False,
-                ),
-                metadata={"implementation": "transitional_unavailable"},
-            )
+            return self._unavailable_standard_result(capability, started)
         try:
             result = await self.standard_provider.fetch(
                 EvidenceRequest(capability=capability, query={"operation": tool_name, "arguments": arguments})
@@ -211,6 +224,22 @@ class CanonicalProviderDispatcher:
             result.provider_id, result.completeness.value, dispatched=True
         )
         return result
+
+    @staticmethod
+    def _unavailable_standard_result(capability, started: float) -> ProviderResult:
+        return ProviderResult(
+            provider_id="standard_ha_mcp",
+            capability=capability,
+            completeness=ProviderCompleteness.UNAVAILABLE,
+            timing_ms=(time.perf_counter() - started) * 1000,
+            warnings=["Standard Home Assistant MCP delegation transport is not configured."],
+            failure=_failure(
+                ProviderFailureCategory.UNAVAILABLE,
+                "The standard Home Assistant MCP provider is unavailable.",
+                False,
+            ),
+            metadata={"implementation": "transitional_unavailable"},
+        )
 
     async def _direct(self, capability, action):
         started = time.perf_counter()
