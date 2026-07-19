@@ -766,7 +766,15 @@ async def async_main(args: argparse.Namespace) -> int:
     }
     failure = False
     try:
-        with tempfile.TemporaryDirectory(prefix="rc2dev8-exact-image-") as directory:
+        # Both exact images run as root and may create root-owned directories in
+        # their disposable bind mounts.  Scenario success must not be replaced
+        # by a host-side TemporaryDirectory ownership error after every
+        # acceptance assertion has passed.  The workflow's always-run cleanup
+        # removes this narrowly prefixed directory with runner sudo.
+        with tempfile.TemporaryDirectory(
+            prefix="rc2dev8-exact-image-",
+            ignore_cleanup_errors=True,
+        ) as directory:
             try:
                 evidence = await run_bake(Path(directory), names)
             except Exception:

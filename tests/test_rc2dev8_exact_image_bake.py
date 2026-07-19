@@ -61,6 +61,10 @@ class ExactImageWorkflowTests(unittest.TestCase):
         self.assertIn("retention-days: 7", self.source)
         self.assertIn("docker rm -f", self.source)
         self.assertIn("docker network rm", self.source)
+        self.assertIn(
+            'sudo rm -rf "$RUNNER_TEMP"/rc2dev8-exact-image-*',
+            self.source,
+        )
         self.assertIn("RC2DEV8_DISPOSABLE_EXACT_IMAGE", self.source)
         self.assertIn("RC2DEV8_ATTESTATION_COUNT", self.source)
 
@@ -90,6 +94,9 @@ class ExactImageHarnessTests(unittest.TestCase):
         self.assertIn("@sha256:", self.module.ENGINEERING_IMAGE)
         self.assertIn("2026.7.2@sha256:", self.module.HOME_ASSISTANT_IMAGE)
         self.assertIn("RC2DEV8_PLATFORM_CONFIG_DIGEST", self.source)
+
+    def test_container_owned_bind_mounts_cannot_override_pass_result(self):
+        self.assertIn("ignore_cleanup_errors=True", self.source)
 
     def test_sanitized_evidence_rejects_credential_fields_and_values(self):
         with self.assertRaises(self.module.BakeFailure):
