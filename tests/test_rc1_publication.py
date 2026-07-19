@@ -17,8 +17,8 @@ PUBLISH_PATH = ROOT / ".github" / "workflows" / "publish-rc-image.yml"
 TAG_GUARD_PATH = ROOT / "scripts" / "assert_registry_tags_absent.sh"
 PROMOTION_PATH = ROOT / "scripts" / "promote_next_release.py"
 IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
-ADVERTISED_VERSION = "2.0.0-rc2-dev6"
-NEXT_VERSION = "2.0.0-rc2-dev7"
+ADVERTISED_VERSION = "2.0.0-rc2-dev7"
+NEXT_VERSION = "2.0.0-rc2-dev8"
 PLATFORMS = ("linux/amd64", "linux/arm64", "linux/arm/v7")
 BUILD_ARGUMENTS = (
     "BUILD_VERSION",
@@ -111,7 +111,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn(f'SERVER_VERSION = "{expected_version}"', version_source)
 
-    def test_awesomeversion_orders_dev7_between_dev6_and_final_rc3(self):
+    def test_awesomeversion_orders_dev8_between_dev7_and_final_rc3(self):
         self.assertGreater(
             AwesomeVersion(NEXT_VERSION),
             AwesomeVersion(ADVERTISED_VERSION),
