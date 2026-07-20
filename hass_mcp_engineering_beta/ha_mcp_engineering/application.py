@@ -31,6 +31,7 @@ from .incident import INCIDENT_CORRELATION
 from .handoff import HANDOFF_GENERATION
 from .routing import AuthenticatedMcpGateway
 from .providers.upstream_dashboard import UPSTREAM_DASHBOARD
+from .providers.upstream_registry import RegistryValidationError, UpstreamTrustRegistry
 from .tools import get_registered_server
 
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
@@ -96,6 +97,16 @@ def validate_settings(settings: Settings) -> None:
         errors.append(
             "upstream_dashboard_mcp_url is malformed or lacks a secret-bearing credential"
         )
+    if settings.upstream_trust_registry_enabled:
+        try:
+            UpstreamTrustRegistry(
+                enabled=True,
+                public_key=settings.upstream_trust_registry_public_key,
+            )
+        except RegistryValidationError:
+            errors.append(
+                "upstream_trust_registry_public_key must be a base64 Ed25519 public key when the registry is enabled"
+            )
     if errors:
         raise ConfigurationError(
             "Beta configuration validation failed.", details={"issues": errors}
@@ -213,6 +224,11 @@ async def _serve(settings: Settings) -> None:
     approval_server.install_signal_handlers = lambda: None
     mcp_task = asyncio.create_task(mcp_server.serve())
     approval_task = asyncio.create_task(approval_server.serve())
+    registry_refresh_task = (
+        asyncio.create_task(UPSTREAM_DASHBOARD.refresh_registry_at_startup())
+        if settings.upstream_trust_registry_enabled
+        else None
+    )
     prewarm_task = (
         DEPENDENCY_ANALYSIS.start_prewarm(
             startup_delay_seconds=settings.prewarm_startup_delay_seconds,
@@ -236,6 +252,8 @@ async def _serve(settings: Settings) -> None:
         mcp_server.should_exit = True
         approval_server.should_exit = True
         await asyncio.gather(mcp_task, approval_task, return_exceptions=True)
+        if registry_refresh_task is not None:
+            await asyncio.gather(registry_refresh_task, return_exceptions=True)
         await DEPENDENCY_ANALYSIS.shutdown()
 
 
@@ -272,6 +290,7 @@ def main() -> None:
                         settings.upstream_dashboard_mcp_url
                     )
                 ),
+                "trust_registry_enabled": settings.upstream_trust_registry_enabled,
             },
         },
         secret=settings.access_secret,

@@ -27,12 +27,20 @@ from ..errors import DashboardProviderError, ErrorCode, GovernanceError
 from ..observability import METRICS
 from ..request_context import current_telemetry
 from ..sanitization import sanitize_untrusted_data
+from .upstream_contracts import (
+    COMPILED_CONTRACT_FAMILIES,
+    CONTRACT_FAMILY,
+    REQUIRED_SERVER_NAME,
+    AdmissionDecision,
+    decide_admission,
+)
+from .upstream_registry import UpstreamTrustRegistry
 
 
 PROVIDER_ID = "upstream_dashboard"
 TRUST_MODE_CONTRACT_READ_ONLY = "contract_read_only"
 TRUST_MODE_REVIEWED_ARGUMENT_CONSTRAINED = "reviewed_argument_constrained"
-REVIEWED_TRUST_PROFILE = "ha_mcp_7_13_dashboard_read_v1"
+REVIEWED_TRUST_PROFILE = CONTRACT_FAMILY
 REVIEWED_SERVER_NAME = "ha-mcp"
 REVIEWED_SERVER_VERSION = "7.13.0"
 REVIEWED_PROTOCOL_VERSION = "2025-03-26"
@@ -69,6 +77,10 @@ PROHIBITED_UPSTREAM_TOOLS = frozenset(
         "call_service",
         "reload_domain",
         "upsert_automation",
+        "ha_set_entity",
+        "ha_set_device",
+        "ha_call_service",
+        "ha_bulk_control",
     }
 )
 FAILURE_CATEGORIES = (
@@ -83,6 +95,19 @@ FAILURE_CATEGORIES = (
     "schema_incompatible",
     "server_identity_mismatch",
     "upstream_version_mismatch",
+    "upstream_attestation_missing",
+    "upstream_attestation_revoked",
+    "upstream_registry_unavailable",
+    "upstream_registry_invalid_signature",
+    "upstream_registry_expired",
+    "upstream_registry_rollback",
+    "upstream_registry_replay_conflict",
+    "upstream_contract_family_unknown",
+    "upstream_input_contract_mismatch",
+    "upstream_security_contract_mismatch",
+    "upstream_output_contract_mismatch",
+    "upstream_runtime_contract_mismatch",
+    "unsupported_protocol_version",
     "reviewed_contract_mismatch",
     "reviewed_annotation_mismatch",
     "input_schema_mismatch",
@@ -118,6 +143,19 @@ _ERROR_CODES = {
         ErrorCode.UPSTREAM_DASHBOARD_SERVER_IDENTITY_MISMATCH
     ),
     "upstream_version_mismatch": ErrorCode.UPSTREAM_DASHBOARD_VERSION_MISMATCH,
+    "upstream_attestation_missing": ErrorCode.UPSTREAM_DASHBOARD_VERSION_MISMATCH,
+    "upstream_attestation_revoked": ErrorCode.UPSTREAM_DASHBOARD_UNSUPPORTED_TRUST_PROFILE,
+    "upstream_registry_unavailable": ErrorCode.UPSTREAM_DASHBOARD_UNSUPPORTED_TRUST_PROFILE,
+    "upstream_registry_invalid_signature": ErrorCode.UPSTREAM_DASHBOARD_UNSUPPORTED_TRUST_PROFILE,
+    "upstream_registry_expired": ErrorCode.UPSTREAM_DASHBOARD_UNSUPPORTED_TRUST_PROFILE,
+    "upstream_registry_rollback": ErrorCode.UPSTREAM_DASHBOARD_UNSUPPORTED_TRUST_PROFILE,
+    "upstream_registry_replay_conflict": ErrorCode.UPSTREAM_DASHBOARD_UNSUPPORTED_TRUST_PROFILE,
+    "upstream_contract_family_unknown": ErrorCode.UPSTREAM_DASHBOARD_UNSUPPORTED_TRUST_PROFILE,
+    "upstream_input_contract_mismatch": ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_CONTRACT_MISMATCH,
+    "upstream_security_contract_mismatch": ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_ANNOTATION_MISMATCH,
+    "upstream_output_contract_mismatch": ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_CONTRACT_MISMATCH,
+    "upstream_runtime_contract_mismatch": ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_CONTRACT_MISMATCH,
+    "unsupported_protocol_version": ErrorCode.UPSTREAM_DASHBOARD_UNSUPPORTED_TRUST_PROFILE,
     "reviewed_contract_mismatch": (
         ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_CONTRACT_MISMATCH
     ),
@@ -215,6 +253,23 @@ class DashboardProviderState:
     reconnect_count: int = 0
     session_state: str = "unconfigured"
     connection_lost: bool = False
+    admission_status: str = "not_evaluated"
+    admission_source: str | None = None
+    contract_family: str | None = None
+    attestation_entry_id: str | None = None
+    attested_upstream_version: str | None = None
+    observed_upstream_version: str | None = None
+    attested_source_commit: str | None = None
+    attested_image_index_digest: str | None = None
+    input_contract_fingerprint: str | None = None
+    security_contract_fingerprint: str | None = None
+    output_contract_fingerprint: str | None = None
+    normalized_runtime_contract_fingerprint: str | None = None
+    input_contract_match: bool = False
+    security_contract_match: bool = False
+    output_contract_match: bool = False
+    normalized_runtime_contract_match: bool = False
+    revocation_status: str = "not_evaluated"
 
 
 def ensure_dashboard_tool_allowed(tool_name: str) -> None:
@@ -239,12 +294,14 @@ class UpstreamDashboardProvider:
         self._known_secrets: tuple[str, ...] = ()
         self._state = DashboardProviderState()
         self._lock = threading.Lock()
+        self._registry = UpstreamTrustRegistry(enabled=False, public_key="")
 
     def configure(
         self,
         settings: Settings,
         *,
         transport: McpDashboardTransport | Any | None = None,
+        registry: UpstreamTrustRegistry | None = None,
     ) -> None:
         endpoint = parse_upstream_dashboard_endpoint(
             settings.upstream_dashboard_mcp_url
@@ -271,6 +328,10 @@ class UpstreamDashboardProvider:
             if endpoint
             else None
         )
+        self._registry = registry or UpstreamTrustRegistry(
+            enabled=settings.upstream_trust_registry_enabled,
+            public_key=settings.upstream_trust_registry_public_key,
+        )
         self._state = DashboardProviderState(
             configured=bool(endpoint),
             credential_present=bool(endpoint and endpoint.credential_present),
@@ -282,6 +343,11 @@ class UpstreamDashboardProvider:
     def configured(self) -> bool:
         return self._state.configured
 
+    async def refresh_registry_at_startup(self) -> bool:
+        """Perform one nonblocking startup refresh when the operator enabled it."""
+
+        return await self._registry.refresh_if_due(force=True)
+
     async def refresh_capabilities(self) -> dict[str, Any]:
         """Perform a read-only initialize/tools-list probe."""
 
@@ -290,8 +356,23 @@ class UpstreamDashboardProvider:
             self._raise("not_configured", dispatched=False)
         started = self._begin_request()
         try:
+            registry_refresh_attempted = self._registry.refresh_due()
+            if registry_refresh_attempted:
+                await self._registry.refresh()
             handshake = await self._dispatch_discovery()
-            self._validate_handshake(handshake)
+            try:
+                self._validate_handshake(handshake)
+            except DashboardTransportError as exc:
+                if exc.category != "upstream_attestation_missing" or not self._registry.enabled:
+                    raise
+                if not registry_refresh_attempted and await self._registry.refresh_if_due(force=True):
+                    self._validate_handshake(handshake)
+                elif self._registry.last_failure_category:
+                    raise DashboardTransportError(
+                        self._record_registry_admission_rejection()
+                    ) from None
+                else:
+                    raise
             self._record_success(
                 tool_call_latency_ms=None,
                 dashboard_call=False,
@@ -525,12 +606,37 @@ class UpstreamDashboardProvider:
         started = self._begin_request()
         failure_recorded = False
         try:
+            registry_refresh_attempted = self._registry.refresh_due()
+            if registry_refresh_attempted:
+                await self._registry.refresh()
+
             def validate(handshake: McpDashboardHandshake) -> None:
                 self._validate_handshake(handshake)
 
-            exchange = await self._transport.execute_dashboard_read(
-                arguments, validate
-            )
+            try:
+                exchange = await self._transport.execute_dashboard_read(
+                    arguments, validate
+                )
+            except DashboardTransportError as exc:
+                if (
+                    exc.category == "upstream_attestation_missing"
+                    and self._registry.enabled
+                    and not registry_refresh_attempted
+                    and await self._registry.refresh_if_due(force=True)
+                ):
+                    exchange = await self._transport.execute_dashboard_read(
+                        arguments, validate
+                    )
+                elif (
+                    exc.category == "upstream_attestation_missing"
+                    and self._registry.enabled
+                    and self._registry.last_failure_category
+                ):
+                    raise DashboardTransportError(
+                        self._record_registry_admission_rejection()
+                    ) from None
+                else:
+                    raise
             payload = self._decode_call_result(
                 exchange.call_result,
                 expected_url_path=(
@@ -664,8 +770,24 @@ class UpstreamDashboardProvider:
             runtime_descriptor_match=runtime_descriptor_match,
             security_contract_match=security_contract_match,
         )
+        admission = decide_admission(
+            server_name=handshake.server_name,
+            server_version=handshake.server_version,
+            protocol_version=handshake.protocol_version,
+            tool=tool,
+            attestations=self._registry.effective_attestations(),
+        )
         try:
-            decision = _select_trust_profile(handshake, tool)
+            if not admission.accepted:
+                raise DashboardTransportError(
+                    admission.failure_category or "internal_error"
+                )
+            decision = DashboardTrustDecision(
+                mode=TRUST_MODE_REVIEWED_ARGUMENT_CONSTRAINED,
+                profile=admission.contract_family,
+                reviewed_contract_match=True,
+                force_reload_supported=True,
+            )
         except DashboardTransportError as exc:
             with self._lock:
                 self._state.required_schema_fingerprint = schema_fingerprint
@@ -691,6 +813,7 @@ class UpstreamDashboardProvider:
                 self._state.runtime_descriptor_drift = runtime_descriptor_drift
                 self._state.validation_reason = exc.category
                 self._state.capability_status = "unavailable"
+                self._apply_admission_state_locked(admission)
             raise
         with self._lock:
             self._state.required_schema_fingerprint = schema_fingerprint
@@ -737,6 +860,59 @@ class UpstreamDashboardProvider:
             )
             self._state.validation_reason = None
             self._state.capability_status = "available"
+            self._apply_admission_state_locked(admission)
+
+    def _apply_admission_state_locked(self, decision: AdmissionDecision) -> None:
+        """Copy bounded admission evidence while the provider lock is held."""
+
+        state = self._state
+        attestation = decision.attestation
+        contract = decision.contract
+        state.admission_status = decision.status
+        state.admission_source = decision.source
+        state.contract_family = decision.contract_family
+        state.attestation_entry_id = attestation.entry_id if attestation else None
+        state.attested_upstream_version = (
+            attestation.upstream_version if attestation else None
+        )
+        state.observed_upstream_version = state.upstream_server_version
+        state.attested_source_commit = (
+            attestation.source_commit if attestation else None
+        )
+        state.attested_image_index_digest = (
+            attestation.image_index_digest if attestation else None
+        )
+        state.input_contract_fingerprint = (
+            contract.input_fingerprint if contract else None
+        )
+        state.security_contract_fingerprint = (
+            contract.security_fingerprint if contract else None
+        )
+        state.output_contract_fingerprint = (
+            contract.output_fingerprint if contract else None
+        )
+        state.normalized_runtime_contract_fingerprint = (
+            contract.runtime_fingerprint if contract else None
+        )
+        state.input_contract_match = decision.input_match
+        state.security_contract_match = decision.security_match
+        state.output_contract_match = decision.output_match
+        state.normalized_runtime_contract_match = decision.runtime_match
+        state.revocation_status = (
+            "revoked"
+            if attestation and attestation.revoked
+            else "not_revoked"
+            if attestation
+            else "not_evaluated"
+        )
+
+    def _record_registry_admission_rejection(self) -> str:
+        status, category = self._registry.admission_rejection()
+        with self._lock:
+            self._state.admission_status = status
+            self._state.validation_reason = category
+            self._state.capability_status = "unavailable"
+        return category
 
     def _decode_call_result(
         self,
@@ -859,6 +1035,18 @@ class UpstreamDashboardProvider:
             "catalog_fingerprint": self._state.catalog_fingerprint,
             "trust_mode": self._state.trust_mode,
             "trust_profile": self._state.trust_profile,
+            "admission_status": self._state.admission_status,
+            "admission_source": self._state.admission_source,
+            "contract_family": self._state.contract_family,
+            "attestation_entry_id": self._state.attestation_entry_id,
+            "attested_upstream_version": self._state.attested_upstream_version,
+            "observed_upstream_version": self._state.observed_upstream_version,
+            "input_contract_fingerprint": self._state.input_contract_fingerprint,
+            "security_contract_fingerprint": self._state.security_contract_fingerprint,
+            "output_contract_fingerprint": self._state.output_contract_fingerprint,
+            "normalized_runtime_contract_fingerprint": (
+                self._state.normalized_runtime_contract_fingerprint
+            ),
             "argument_constraints_active": True,
             "screenshots_allowed": False,
             "preference_writes_allowed": False,
@@ -939,6 +1127,18 @@ class UpstreamDashboardProvider:
                 "schema_incompatible",
                 "server_identity_mismatch",
                 "upstream_version_mismatch",
+                "upstream_attestation_missing",
+                "upstream_attestation_revoked",
+                "upstream_registry_unavailable",
+                "upstream_registry_invalid_signature",
+                "upstream_registry_expired",
+                "upstream_registry_rollback",
+                "upstream_registry_replay_conflict",
+                "upstream_contract_family_unknown",
+                "upstream_input_contract_mismatch",
+                "upstream_security_contract_mismatch",
+                "upstream_output_contract_mismatch",
+                "upstream_runtime_contract_mismatch",
                 "reviewed_contract_mismatch",
                 "reviewed_annotation_mismatch",
                 "input_schema_mismatch",
@@ -1058,9 +1258,33 @@ class UpstreamDashboardProvider:
                 "catalog_fingerprint": state.catalog_fingerprint,
                 "trust_mode": state.trust_mode,
                 "trust_profile": state.trust_profile,
-                "pinned_server_name": REVIEWED_SERVER_NAME,
-                "pinned_server_version": REVIEWED_SERVER_VERSION,
+                "pinned_server_name": REQUIRED_SERVER_NAME,
+                "pinned_server_version": None,
                 "reviewed_contract_match": state.reviewed_contract_match,
+                "admission_status": state.admission_status,
+                "admission_source": state.admission_source,
+                "contract_family": state.contract_family,
+                "compiled_contract_family_count": len(COMPILED_CONTRACT_FAMILIES),
+                "enabled_upstream_capabilities": [
+                    "list_dashboards",
+                    "get_dashboard_config",
+                ],
+                "attestation_entry_id": state.attestation_entry_id,
+                "attested_upstream_version": state.attested_upstream_version,
+                "observed_upstream_version": state.observed_upstream_version,
+                "attested_source_commit": state.attested_source_commit,
+                "attested_image_index_digest": state.attested_image_index_digest,
+                "input_contract_fingerprint": state.input_contract_fingerprint,
+                "security_contract_fingerprint": state.security_contract_fingerprint,
+                "output_contract_fingerprint": state.output_contract_fingerprint,
+                "normalized_runtime_contract_fingerprint": (
+                    state.normalized_runtime_contract_fingerprint
+                ),
+                "input_contract_match": state.input_contract_match,
+                "security_contract_match": state.security_contract_match,
+                "output_contract_match": state.output_contract_match,
+                "runtime_contract_match": state.normalized_runtime_contract_match,
+                "revocation_status": state.revocation_status,
                 "validation_reason": state.validation_reason,
                 "argument_constraints_active": True,
                 "screenshots_allowed": False,
@@ -1089,6 +1313,7 @@ class UpstreamDashboardProvider:
                 "required_tool": REQUIRED_DASHBOARD_TOOL,
                 "allowlisted_tool_count": len(ALLOWED_UPSTREAM_TOOLS),
                 "writes_allowed": False,
+                **self._registry.snapshot(),
             }
 
 
