@@ -1,7 +1,7 @@
 # RC2dev9 release notes
 
-Version: `2.0.0-rc2-dev9`  
-Baseline: RC2dev8 source `4ae05328bf70d9b603554cb7333c3126aea10b4c`  
+Version: `2.0.0-rc2-dev9`
+Baseline: RC2dev8 source `4ae05328bf70d9b603554cb7333c3126aea10b4c`
 Release type: dashboard-provider compatibility and trust hardening
 
 ## Why this release exists
