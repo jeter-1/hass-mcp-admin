@@ -1,0 +1,82 @@
+{
+  "evidence_only": true,
+  "runtime_admission": false,
+  "upstream": {
+    "repository": "homeassistant-ai/ha-mcp",
+    "version": "7.14.1",
+    "source_tag": "v7.14.1",
+    "source_commit": "255acec1affa6528004a122eb83e30aee9c77713"
+  },
+  "tools": [
+    {
+      "name": "ha_set_entity",
+      "source": "src/ha_mcp/tools/tools_entities.py:1488-1660",
+      "annotations": {
+        "readOnlyHint": "absent",
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "schema_summary": {
+        "required": ["entity_id"],
+        "properties": {
+          "entity_id": "string or array of strings",
+          "area_id": "nullable string",
+          "name": "nullable string",
+          "icon": "nullable string",
+          "device_class": "nullable string",
+          "options": "nullable object",
+          "enabled": "nullable boolean",
+          "hidden": "nullable boolean",
+          "aliases": "nullable string or array of strings",
+          "categories": "nullable object",
+          "labels": "nullable string or array of strings",
+          "label_operation": "set, add, or remove",
+          "expose_to": "nullable object of boolean values",
+          "new_entity_id": "nullable string",
+          "new_device_name": "nullable string"
+        }
+      },
+      "mutation_surface": [
+        "entity registry metadata",
+        "entity identifier rename",
+        "associated device rename",
+        "voice-assistant exposure",
+        "registry enable or disable"
+      ]
+    },
+    {
+      "name": "ha_set_device",
+      "source": "src/ha_mcp/tools/tools_registry.py:978-1024",
+      "annotations": {
+        "readOnlyHint": "absent",
+        "destructiveHint": true,
+        "idempotentHint": "absent",
+        "openWorldHint": false
+      },
+      "schema_summary": {
+        "required": ["device_id"],
+        "properties": {
+          "device_id": "string",
+          "name": "nullable string",
+          "area_id": "nullable string",
+          "disabled_by": "nullable string",
+          "labels": "nullable string or array of strings"
+        }
+      },
+      "mutation_surface": [
+        "device registry name",
+        "area assignment",
+        "registry enable or disable",
+        "labels"
+      ]
+    }
+  ],
+  "decision": {
+    "milestone": "deferred_after_rc2dev9",
+    "reason": "These destructive registry operations require a separately reviewed governed plan, external approval, stale-state, apply, verification, and rollback design.",
+    "dev9_public_tools_added": 0,
+    "dev9_upstream_allowlist_changes": 0,
+    "dev9_governance_schema_changes": 0
+  }
+}

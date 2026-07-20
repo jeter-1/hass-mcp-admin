@@ -1,0 +1,100 @@
+{
+  "_meta": {
+    "fastmcp": {
+      "tags": [
+        "Dashboards"
+      ]
+    }
+  },
+  "annotations": {
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false,
+    "title": "Get Dashboard"
+  },
+  "description": "Sanitized reviewed descriptor for ha-mcp 7.14.0 and 7.14.1. Prose is intentionally not an admission field.",
+  "inputSchema": {
+    "additionalProperties": false,
+    "properties": {
+      "card_type": {
+        "anyOf": [
+          {"type": "string"},
+          {"type": "null"}
+        ],
+        "default": null,
+        "description": "Optional single-dashboard search input."
+      },
+      "entity_id": {
+        "anyOf": [
+          {"type": "string"},
+          {"type": "null"}
+        ],
+        "default": null,
+        "description": "Optional single-dashboard search input."
+      },
+      "force_reload": {
+        "default": false,
+        "description": "Force a fresh dashboard read.",
+        "type": "boolean"
+      },
+      "heading": {
+        "anyOf": [
+          {"type": "string"},
+          {"type": "null"}
+        ],
+        "default": null,
+        "description": "Optional single-dashboard search input."
+      },
+      "include_config": {
+        "default": false,
+        "description": "Optional search result expansion.",
+        "type": "boolean"
+      },
+      "include_screenshot": {
+        "default": false,
+        "description": "Mixed-operation screenshot selector; Engineering always sends false.",
+        "type": "boolean"
+      },
+      "list_only": {
+        "default": false,
+        "description": "Select dashboard inventory.",
+        "type": "boolean"
+      },
+      "mode": {
+        "anyOf": [
+          {"const": "search", "type": "string"},
+          {"type": "null"}
+        ],
+        "default": null,
+        "description": "Optional cross-dashboard search selector."
+      },
+      "query": {
+        "anyOf": [
+          {"type": "string"},
+          {"type": "null"}
+        ],
+        "default": null,
+        "description": "Optional cross-dashboard search query."
+      },
+      "url_path": {
+        "anyOf": [
+          {"type": "string"},
+          {"type": "null"}
+        ],
+        "default": null,
+        "description": "Exact dashboard URL path."
+      },
+      "view_path": {
+        "anyOf": [
+          {"type": "string"},
+          {"type": "null"}
+        ],
+        "default": null,
+        "description": "Screenshot-only view selector; Engineering never forwards it."
+      }
+    },
+    "type": "object"
+  },
+  "name": "ha_config_get_dashboard",
+  "title": "Get Dashboard"
+}

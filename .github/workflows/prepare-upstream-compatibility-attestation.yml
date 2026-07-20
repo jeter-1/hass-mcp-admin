@@ -1,0 +1,284 @@
+name: Prepare ha-mcp compatibility attestation
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_version:
+        description: Exact stable homeassistant-ai/ha-mcp version (for example 7.14.2)
+        required: true
+        type: string
+
+concurrency:
+  group: upstream-compatibility-attestation
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  attest:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: upstream-attestation-signing
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      VERSION: ${{ inputs.upstream_version }}
+      UPSTREAM_REPOSITORY: https://github.com/homeassistant-ai/ha-mcp.git
+      UPSTREAM_IMAGE_REPOSITORY: ghcr.io/homeassistant-ai/ha-mcp
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            hass_mcp_engineering_beta/requirements.txt
+            tests/requirements.txt
+
+      - name: Install fixed review dependencies
+        run: >-
+          python -m pip install
+          -r hass_mcp_engineering_beta/requirements.txt
+          -r tests/requirements.txt
+
+      - name: Validate exact stable version and fixed source locations
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          test "$UPSTREAM_REPOSITORY" = "https://github.com/homeassistant-ai/ha-mcp.git"
+          test "$UPSTREAM_IMAGE_REPOSITORY" = "ghcr.io/homeassistant-ai/ha-mcp"
+
+      - name: Resolve exact source tag and reviewed implementation
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --no-checkout "$UPSTREAM_REPOSITORY" "$RUNNER_TEMP/ha-mcp"
+          git -C "$RUNNER_TEMP/ha-mcp" fetch --force origin "refs/tags/v${VERSION}:refs/tags/v${VERSION}"
+          source_commit="$(git -C "$RUNNER_TEMP/ha-mcp" rev-list -n 1 "v${VERSION}")"
+          [[ "$source_commit" =~ ^[0-9a-f]{40}$ ]]
+          git -C "$RUNNER_TEMP/ha-mcp" checkout --detach "$source_commit"
+          grep -q 'name="ha_config_get_dashboard"' "$RUNNER_TEMP/ha-mcp/src/ha_mcp/tools/tools_config_dashboards.py"
+          grep -q 'include_screenshot is None or include_screenshot is False' "$RUNNER_TEMP/ha-mcp/src/ha_mcp/read_only.py"
+          grep -q 'json.dumps(config, sort_keys=True, separators=(",", ":"))' "$RUNNER_TEMP/ha-mcp/src/ha_mcp/utils/config_hash.py"
+          echo "source_commit=$source_commit" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Resolve immutable official image and provenance
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${UPSTREAM_IMAGE_REPOSITORY}:${VERSION}"
+          raw="$RUNNER_TEMP/upstream-index.json"
+          inspect="$RUNNER_TEMP/upstream-inspect.txt"
+          docker buildx imagetools inspect --raw "$image" > "$raw"
+          docker buildx imagetools inspect "$image" > "$inspect"
+          index_digest="$(awk '$1 == "Digest:" {print $2; exit}' "$inspect")"
+          python - "$raw" "$RUNNER_TEMP/platforms.json" "$RUNNER_TEMP/attestation-digests.txt" <<'PY'
+          import json, pathlib, sys
+          value = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          platforms = {}
+          attestations = []
+          for item in value.get("manifests", []):
+              platform = item.get("platform", {})
+              if item.get("annotations", {}).get("vnd.docker.reference.type") == "attestation-manifest":
+                  attestations.append(item["digest"])
+                  continue
+              os_name, arch, variant = platform.get("os"), platform.get("architecture"), platform.get("variant")
+              if os_name == "linux" and arch in {"amd64", "arm64", "arm"}:
+                  key = f"linux/{arch}" + (f"/{variant}" if variant else "")
+                  platforms[key] = item["digest"]
+          if not {"linux/amd64", "linux/arm64"}.issubset(platforms):
+              raise SystemExit("required upstream platforms are missing")
+          if len(attestations) < len(platforms):
+              raise SystemExit("SLSA provenance is missing for an upstream platform")
+          pathlib.Path(sys.argv[2]).write_text(json.dumps({"platform_digests": platforms, "attestation_count": len(attestations)}, sort_keys=True))
+          pathlib.Path(sys.argv[3]).write_text("\n".join(attestations) + "\n")
+          PY
+          mkdir -p "$RUNNER_TEMP/upstream-attestations"
+          number=0
+          while IFS= read -r digest; do
+            test -n "$digest"
+            docker buildx imagetools inspect --raw "${UPSTREAM_IMAGE_REPOSITORY}@${digest}" \
+              > "$RUNNER_TEMP/upstream-attestations/${number}.json"
+            number=$((number + 1))
+          done < "$RUNNER_TEMP/attestation-digests.txt"
+          python - "$RUNNER_TEMP/upstream-attestations" "$RUNNER_TEMP/platforms.json" <<'PY'
+          import json, pathlib, sys
+          directory = pathlib.Path(sys.argv[1])
+          provenance = 0
+          sbom = 0
+          for path in directory.glob("*.json"):
+              manifest = json.loads(path.read_text())
+              predicates = {
+                  layer.get("annotations", {}).get("in-toto.io/predicate-type", "")
+                  for layer in manifest.get("layers", [])
+              }
+              provenance += any("slsa" in item.lower() for item in predicates)
+              sbom += any("spdx" in item.lower() or "cyclonedx" in item.lower() for item in predicates)
+          platforms_path = pathlib.Path(sys.argv[2])
+          value = json.loads(platforms_path.read_text())
+          if provenance < len(value["platform_digests"]):
+              raise SystemExit("SLSA provenance is missing for an upstream platform")
+          value["slsa_provenance"] = "present_per_platform"
+          value["sbom"] = "present" if sbom >= len(value["platform_digests"]) else "absent"
+          platforms_path.write_text(json.dumps(value, sort_keys=True))
+          PY
+          docker pull --platform linux/amd64 "$image"
+          revision="$(docker image inspect "$image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+          image_version="$(docker image inspect "$image" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
+          created="$(docker image inspect "$image" --format '{{ index .Config.Labels "org.opencontainers.image.created" }}')"
+          source_label="$(docker image inspect "$image" --format '{{ index .Config.Labels "org.opencontainers.image.source" }}')"
+          dirty_label="$(docker image inspect "$image" --format '{{ index .Config.Labels "io.hass-mcp.build.dirty" }}')"
+          test "$image_version" = "$VERSION"
+          [[ "$revision" =~ ^[0-9a-f]{40}$ ]]
+          test "$source_label" = "https://github.com/homeassistant-ai/ha-mcp"
+          if [[ -n "$dirty_label" && "$dirty_label" != "false" ]]; then
+            echo "::error::The official upstream image reports a dirty build."
+            exit 1
+          fi
+          dirty_label="${dirty_label:-absent}"
+          git -C "$RUNNER_TEMP/ha-mcp" fetch origin "$revision"
+          git -C "$RUNNER_TEMP/ha-mcp" merge-base --is-ancestor "${{ steps.source.outputs.source_commit }}" "$revision"
+          unexpected="$(git -C "$RUNNER_TEMP/ha-mcp" diff --name-only "${{ steps.source.outputs.source_commit }}" "$revision" -- . ':!homeassistant-addon/CHANGELOG.md' ':!homeassistant-addon/config.yaml')"
+          test -z "$unexpected"
+          {
+            echo "index_digest=$index_digest"
+            echo "image_revision=$revision"
+            echo "created=$created"
+            echo "source_label=$source_label"
+            echo "dirty_label=$dirty_label"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Start disposable read-only Home Assistant fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/fake_ha_dashboard_contract_server.py --port 18123 > "$RUNNER_TEMP/fake-ha.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/fake-ha.pid"
+          for attempt in $(seq 1 30); do
+            curl --fail --silent http://127.0.0.1:18123/api/ >/dev/null && exit 0
+            sleep 1
+          done
+          exit 1
+
+      - name: Extract runtime contract from the exact published image
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${UPSTREAM_IMAGE_REPOSITORY}@${{ steps.image.outputs.index_digest }}"
+          docker run --detach --rm --network host --name upstream-compatibility-review \
+            --read-only --tmpfs /tmp --tmpfs /home/mcpuser/.ha-mcp \
+            -e HOMEASSISTANT_URL=http://127.0.0.1:18123 \
+            -e HOMEASSISTANT_TOKEN=synthetic-upstream-compatibility-token \
+            -e MCP_HOST=127.0.0.1 -e MCP_PORT=18086 -e MCP_SECRET_PATH=/mcp \
+            -e HA_MCP_DISABLE_SETTINGS_UI=true \
+            "$image" ha-mcp-web
+          for attempt in $(seq 1 60); do
+            curl --silent --output /dev/null http://127.0.0.1:18086/mcp && break
+            sleep 1
+          done
+          mkdir -p .compat
+          python scripts/inspect_upstream_dashboard_runtime.py \
+            --endpoint http://127.0.0.1:18086/mcp \
+            --version "$VERSION" \
+            --output .compat/runtime-evidence.json
+
+      - name: Generate bounded release evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - "$VERSION" "${{ steps.source.outputs.source_commit }}" "${{ steps.image.outputs.index_digest }}" "${{ steps.image.outputs.image_revision }}" "${{ steps.image.outputs.created }}" "${{ steps.image.outputs.source_label }}" "${{ steps.image.outputs.dirty_label }}" "$RUNNER_TEMP/platforms.json" <<'PY'
+          import json, pathlib, sys
+          version, source_commit, index_digest, revision, created, source_label, dirty_label, platforms_path = sys.argv[1:]
+          platforms = json.loads(pathlib.Path(platforms_path).read_text())
+          value = {
+              "version": version,
+              "source_tag": f"v{version}",
+              "source_commit": source_commit,
+              "image_index_digest": index_digest,
+              "image_revision": revision,
+              "image_created": created,
+              "image_source": source_label,
+              "dirty_label": dirty_label,
+              "platform_digests": platforms["platform_digests"],
+              "slsa_provenance": platforms["slsa_provenance"],
+              "sbom": platforms["sbom"],
+              "official_repository": "homeassistant-ai/ha-mcp",
+              "official_image": "ghcr.io/homeassistant-ai/ha-mcp",
+          }
+          pathlib.Path(".compat/release-evidence.json").write_text(json.dumps(value, sort_keys=True))
+          PY
+
+      - name: Sign and verify data-only registry update
+        env:
+          UPSTREAM_TRUST_REGISTRY_SIGNING_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_SIGNING_KEY }}
+          UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY }}
+          UPSTREAM_TRUST_REGISTRY_KEY_ID: ${{ secrets.UPSTREAM_TRUST_REGISTRY_KEY_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$UPSTREAM_TRUST_REGISTRY_SIGNING_KEY"
+          test -n "$UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY"
+          test -n "$UPSTREAM_TRUST_REGISTRY_KEY_ID"
+          python scripts/prepare_upstream_compatibility_attestation.py --version "$VERSION"
+
+      - name: Enforce data-only diff
+        id: branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="data/upstream-attestation-${VERSION}-${GITHUB_RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add -- \
+            upstream-trust/upstream-dashboard-registry.json \
+            upstream-trust/upstream-dashboard-registry.sig.json \
+            "docs/evidence/upstream-compatibility/ha-mcp-${VERSION}.json" \
+            docs/generated/UPSTREAM_TRUST_REGISTRY_INDEX.md
+          unexpected="$(git diff --cached --name-only | grep -Ev '^(upstream-trust/upstream-dashboard-registry(\.sig)?\.json|docs/evidence/upstream-compatibility/ha-mcp-[0-9]+\.[0-9]+\.[0-9]+\.json|docs/generated/UPSTREAM_TRUST_REGISTRY_INDEX\.md)$' || true)"
+          test -z "$unexpected"
+          git commit -m "Attest ha-mcp ${VERSION} dashboard read compatibility"
+          git push origin "HEAD:refs/heads/${branch}"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Open data-only draft pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh pr create --draft --base main --head "${{ steps.branch.outputs.branch }}" \
+            --title "Attest ha-mcp ${VERSION} dashboard read compatibility" \
+            --body "Data-only signed compatibility attestation for exact ha-mcp ${VERSION}. No Engineering code, image, tool allowlist, or argument builder is changed."
+
+      - name: Write bounded attestation summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### Upstream compatibility attestation"
+            echo "- Version: ${VERSION}"
+            echo "- Fixed source: homeassistant-ai/ha-mcp"
+            echo "- Fixed image: ghcr.io/homeassistant-ai/ha-mcp"
+            echo "- Contract family: ha_mcp_dashboard_read_v2"
+            echo "- Image push: false"
+            echo "- Engineering release: false"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean up disposable runtime
+        if: always()
+        shell: bash
+        run: |
+          docker rm -f upstream-compatibility-review >/dev/null 2>&1 || true
+          if [[ -f "$RUNNER_TEMP/fake-ha.pid" ]]; then kill "$(cat "$RUNNER_TEMP/fake-ha.pid")" >/dev/null 2>&1 || true; fi
+          rm -rf .compat

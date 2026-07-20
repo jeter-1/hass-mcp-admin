@@ -1,0 +1,96 @@
+# Upstream trust registry
+
+The RC2dev9 registry is a signed data channel for exact upstream release
+attestations. It is not a plugin system and cannot change executable policy.
+
+## Authority boundary
+
+The Engineering binary owns the contract-family table, provider implementation,
+tool allowlist, public tools, argument builders, output/hash validators, routes,
+and fallback policy. The shipped table contains one family:
+`ha_mcp_dashboard_read_v2`. Its only upstream tool is
+`ha_config_get_dashboard`; its only public operations are `list_dashboards` and
+`get_dashboard_config`.
+
+A registry entry may bind an exact `ha-mcp` release to that existing family. An
+unknown `contract_family` is rejected while parsing. Registry data cannot name
+an arbitrary endpoint, repository, image, tool, argument, operation, provider,
+or Engineering capability. Thus a correctly signed record still cannot activate
+`ha_set_entity`, `ha_set_device`, service/batch execution, dashboard writes, or
+any other uncompiled tool.
+
+## Format and signature
+
+The registry is strict UTF-8 JSON with schema version 1, monotonically increasing
+integer `sequence`, UTC `generated_at`/`expires_at`, bounded `key_id`, and at
+most 512 exact entries. Duplicate keys and unknown top-level fields are rejected.
+The detached signature document specifies Ed25519, the matching key ID, and one
+base64 signature over compact sorted-key UTF-8 JSON (`ensure_ascii=false`, no
+non-JSON values).
+
+Each entry includes exact identity/version, source tag/commit, official image
+index and platform digests, image revision, compiled family, normalized
+input/security/output/runtime fingerprints, optional catalog fingerprint,
+review-evidence digest/time, and revocation flag.
+
+Fixed fetch locations are repository-owned HTTPS URLs under
+`jeter-1/hass-mcp-admin/main`. Redirects are disabled. Operators cannot configure
+another URL or filesystem path.
+
+## Runtime behavior
+
+- Registry disabled: built-in entries only.
+- Registry enabled: validate the configured non-secret Ed25519 public key at
+  startup, load an atomic last-known-good cache, then refresh no more often than
+  every six hours.
+- Cache: `/data/upstream-dashboard-trust-registry-cache.json`; maximum accepted
+  age seven days and never exposed in an MCP response.
+- Fetch: five-second connection limit, 15-second total limit, 256 KiB registry
+  and 4 KiB signature bounds.
+- Failure: preserve the last valid cache; never replace it with invalid data.
+- Sequence: reject rollback and equal-sequence conflicting content.
+- Expiry/revocation: reject the affected remote attestation before dashboard
+  dispatch. A higher-sequence revocation overrides the same built-in release
+  while the signed registry remains valid.
+- Unknown release: make one bounded refresh/revalidation attempt before failing
+  closed. No `tools/call` occurs before admission.
+
+Health exposes only bounded status, sequence, timestamps/ages, signature state,
+cache state, refresh/failure category, admission source/status, attestation ID,
+version and fingerprints. It never exposes registry content, signature bytes,
+public-key value, endpoint path, URL, credentials, or raw exceptions.
+
+## Signing-key operations
+
+The private seed exists only as
+`UPSTREAM_TRUST_REGISTRY_SIGNING_KEY` in the protected GitHub environment
+`upstream-attestation-signing`. The environment also holds the expected public
+key and key ID. The workflow scopes the private key to the signing step; upstream
+source inspection and disposable runtime execution do not receive it.
+
+The runtime currently trusts one operator-configured public key. Rotation is a
+two-release operation:
+
+1. review a new public key and update the protected environment;
+2. release an Engineering build configured to trust the new public key while the
+   prior signed registry remains available through built-ins/LKG;
+3. sign a higher-sequence registry with the new key;
+4. confirm refresh, signature state and admissions;
+5. revoke/remove the old private key from the protected environment.
+
+Never place a private seed in add-on options, repository files, workflow output,
+PR text, artifacts, cache data, or logs. A compromised key requires an explicit
+Engineering/public-key rotation release; do not silently replace registry data.
+
+## Manual workflow
+
+`Prepare ha-mcp compatibility attestation` is `workflow_dispatch` on `main` and
+accepts only an exact stable version. It requires protected-environment approval,
+reviews fixed official source/image locations, uses the immutable image digest,
+tests against disposable Home Assistant, validates semantic contracts and
+hashes, signs a new higher-sequence entry, and opens a draft data-only PR.
+
+The workflow has no package permission and cannot publish an Engineering image,
+tag, release, or deployment. Normal review must verify the evidence/diff and run
+CI before the data PR is merged. Promotion remains owned by the existing
+Engineering release workflow.

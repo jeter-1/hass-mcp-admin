@@ -1,4 +1,5 @@
 import asyncio
+import copy
 from contextlib import asynccontextmanager, contextmanager
 import hashlib
 import http.server
@@ -70,6 +71,13 @@ SECRET_URL = (
 )
 ACCESS_SECRET = "synthetic-engineering-access-secret-value"
 HA_TOKEN = "synthetic-supervisor-token-value"
+REVIEWED_TOOL_FIXTURE = (
+    BETA
+    / "ha_mcp_engineering"
+    / "providers"
+    / "contracts"
+    / "ha_mcp_7_13_dashboard_read_v1.json"
+)
 
 
 def settings(
@@ -109,16 +117,18 @@ def dashboard_schema(**overrides):
 
 
 def dashboard_tool(schema=None, *, annotations=None):
+    reviewed = json.loads(REVIEWED_TOOL_FIXTURE.read_text(encoding="utf-8"))
+    if schema is None and annotations is None:
+        return copy.deepcopy(reviewed)
     return {
         "name": REQUIRED_DASHBOARD_TOOL,
         "description": "Read dashboard metadata or configuration.",
         "inputSchema": schema or dashboard_schema(),
-        "annotations": annotations
-        or {"readOnlyHint": True, "destructiveHint": False},
+        "annotations": annotations or copy.deepcopy(reviewed["annotations"]),
     }
 
 
-def handshake(tool=None, *, tools=None, name="Home Assistant MCP", version="7.12.3"):
+def handshake(tool=None, *, tools=None, name="ha-mcp", version="7.13.0"):
     catalog = list(tools) if tools is not None else [tool or dashboard_tool()]
     return McpDashboardHandshake(
         protocol_version="2025-03-26",
@@ -375,7 +385,7 @@ class McpTransportLifecycleTests(unittest.IsolatedAsyncioTestCase):
                     protocolVersion="2025-03-26",
                     capabilities=types.ServerCapabilities(),
                     serverInfo=types.Implementation(
-                        name="Synthetic Upstream", version="7.12.3"
+                        name="Synthetic Upstream", version="7.13.0"
                     ),
                 )
 
@@ -427,7 +437,7 @@ class McpTransportLifecycleTests(unittest.IsolatedAsyncioTestCase):
                     value.server_name, "Synthetic Upstream"
                 ),
             )
-        self.assertEqual(result.handshake.server_version, "7.12.3")
+        self.assertEqual(result.handshake.server_version, "7.13.0")
         self.assertIn(f"tools/call:{REQUIRED_DASHBOARD_TOOL}", events)
         self.assertLess(events.index("initialize"), events.index("tools/list"))
         self.assertLess(events.index("session_exit"), events.index("transport_exit"))
@@ -594,9 +604,9 @@ class CapabilityAndAllowlistTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(health["required_tool_present"])
         self.assertTrue(health["required_schema_compatible"])
         self.assertEqual(health["capability_status"], "available")
-        self.assertEqual(health["trust_mode"], "contract_read_only")
-        self.assertIsNone(health["trust_profile"])
-        self.assertEqual(health["upstream_server_version"], "7.12.3")
+        self.assertEqual(health["trust_mode"], "reviewed_argument_constrained")
+        self.assertEqual(health["trust_profile"], "ha_mcp_dashboard_read_v2")
+        self.assertEqual(health["upstream_server_version"], "7.13.0")
         self.assertRegex(health["required_schema_fingerprint"], r"^[0-9a-f]{64}$")
         self.assertRegex(health["catalog_fingerprint"], r"^[0-9a-f]{64}$")
         self.assertIsNotNone(health["last_successful_handshake_timestamp"])
@@ -604,7 +614,7 @@ class CapabilityAndAllowlistTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["allowlisted_tool_count"], 1)
         self.assertNotIn("url", json.dumps(health).lower())
 
-    async def test_differently_named_schema_compatible_endpoint_is_accepted(self):
+    async def test_differently_named_schema_compatible_endpoint_is_rejected(self):
         provider = UpstreamDashboardProvider()
         provider.configure(
             settings(),
@@ -615,9 +625,14 @@ class CapabilityAndAllowlistTests(unittest.IsolatedAsyncioTestCase):
                 )
             ),
         )
-        await provider.refresh_capabilities()
+        with self.assertRaises(Exception) as caught:
+            await provider.refresh_capabilities()
         health = provider.health_snapshot()
-        self.assertEqual(health["capability_status"], "available")
+        self.assertEqual(
+            caught.exception.code,
+            ErrorCode.UPSTREAM_DASHBOARD_SERVER_IDENTITY_MISMATCH,
+        )
+        self.assertEqual(health["capability_status"], "unavailable")
         self.assertEqual(
             health["upstream_server_name"],
             "Operator Selected Dashboard MCP",
@@ -657,7 +672,7 @@ class CapabilityAndAllowlistTests(unittest.IsolatedAsyncioTestCase):
                     )
                 self.assertEqual(
                     caught.exception.code,
-                    ErrorCode.UPSTREAM_DASHBOARD_SCHEMA_INCOMPATIBLE,
+                    ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_CONTRACT_MISMATCH,
                 )
                 self.assertEqual(transport.tool_dispatch_count, 0)
 
@@ -666,7 +681,15 @@ class CapabilityAndAllowlistTests(unittest.IsolatedAsyncioTestCase):
             properties={"future_optional": {"type": "string", "default": ""}}
         )
         self.assertEqual(
-            _compatible_dashboard_schema(dashboard_tool(schema)),
+            _compatible_dashboard_schema(
+                dashboard_tool(
+                    schema,
+                    annotations={
+                        "readOnlyHint": True,
+                        "destructiveHint": False,
+                    },
+                )
+            ),
             (True, True),
         )
 
@@ -700,7 +723,8 @@ class CapabilityAndAllowlistTests(unittest.IsolatedAsyncioTestCase):
                 )
             ),
         )
-        await second.refresh_capabilities()
+        with self.assertRaises(Exception):
+            await second.refresh_capabilities()
         two = second.health_snapshot()["required_schema_fingerprint"]
         self.assertRegex(one, r"^[0-9a-f]{64}$")
         self.assertNotEqual(one, two)
@@ -721,6 +745,10 @@ class CapabilityAndAllowlistTests(unittest.IsolatedAsyncioTestCase):
             "call_service",
             "reload_domain",
             "upsert_automation",
+            "ha_set_entity",
+            "ha_set_device",
+            "ha_call_service",
+            "ha_bulk_control",
             "arbitrary_tool",
         ):
             with self.subTest(name=name):
@@ -1002,7 +1030,7 @@ class PublicDashboardToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["success"])
         self.assertEqual(
             result["error_code"],
-            "upstream_dashboard_schema_incompatible",
+            "upstream_dashboard_reviewed_contract_mismatch",
         )
         self.assertEqual(transport.tool_dispatch_count, 0)
 

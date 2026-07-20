@@ -112,33 +112,20 @@ class FakeSession:
 class FakeDashboardMcpTransport:
     def __init__(self):
         self.calls = []
+        reviewed_tool = json.loads(
+            (
+                BETA_DIR
+                / "ha_mcp_engineering"
+                / "providers"
+                / "contracts"
+                / "ha_mcp_7_13_dashboard_read_v1.json"
+            ).read_text(encoding="utf-8")
+        )
         self.handshake = McpDashboardHandshake(
             protocol_version="2025-03-26",
-            server_name="Synthetic Home Assistant MCP",
-            server_version="7.12.3",
-            tools=(
-                {
-                    "name": REQUIRED_DASHBOARD_TOOL,
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {
-                            "url_path": {
-                                "anyOf": [
-                                    {"type": "string"},
-                                    {"type": "null"},
-                                ]
-                            },
-                            "list_only": {"type": "boolean"},
-                            "force_reload": {"type": "boolean"},
-                            "include_screenshot": {"type": "boolean"},
-                        },
-                    },
-                    "annotations": {
-                        "readOnlyHint": True,
-                        "destructiveHint": False,
-                    },
-                },
-            ),
+            server_name="ha-mcp",
+            server_version="7.13.0",
+            tools=(reviewed_tool,),
             connection_latency_ms=1.5,
         )
 
