@@ -184,8 +184,8 @@ class ReviewedIdentityAndVersionTests(unittest.IsolatedAsyncioTestCase):
                     health["validation_reason"], "server_identity_mismatch"
                 )
 
-    async def test_earlier_later_missing_and_malformed_versions_are_rejected(self):
-        for version in ("7.12.3", "7.13.1", "7.14.0", "", None, "release-latest"):
+    async def test_unattested_missing_and_malformed_versions_are_rejected(self):
+        for version in ("7.12.3", "7.13.1", "7.14.2", "", None, "release-latest"):
             with self.subTest(version=version):
                 exc, health = await self._failure(version=version)
                 self.assertEqual(
@@ -193,7 +193,7 @@ class ReviewedIdentityAndVersionTests(unittest.IsolatedAsyncioTestCase):
                     ErrorCode.UPSTREAM_DASHBOARD_VERSION_MISMATCH,
                 )
                 self.assertEqual(
-                    health["validation_reason"], "upstream_version_mismatch"
+                    health["validation_reason"], "upstream_attestation_missing"
                 )
 
     async def test_incompatible_protocol_is_rejected(self):
@@ -381,7 +381,7 @@ class ReviewedContractTests(unittest.IsolatedAsyncioTestCase):
         for label, tool in mutations.items():
             with self.subTest(label=label):
                 exc = await self._assert_contract_failure(
-                    tool, "input_schema_mismatch"
+                    tool, "upstream_input_contract_mismatch"
                 )
                 self.assertEqual(
                     exc.code,
@@ -406,7 +406,7 @@ class ReviewedContractTests(unittest.IsolatedAsyncioTestCase):
                     else:
                         tool["annotations"][key] = value
                 exc = await self._assert_contract_failure(
-                    tool, "annotation_mismatch"
+                    tool, "upstream_security_contract_mismatch"
                 )
                 self.assertEqual(
                     exc.code,
@@ -420,7 +420,7 @@ class ReviewedContractTests(unittest.IsolatedAsyncioTestCase):
             "properties": {"config_hash": {"type": "string"}},
         }
         exc = await self._assert_contract_failure(
-            output, "output_contract_mismatch"
+            output, "upstream_output_contract_mismatch"
         )
         self.assertEqual(
             exc.code,
@@ -430,7 +430,7 @@ class ReviewedContractTests(unittest.IsolatedAsyncioTestCase):
         metadata = published_runtime_tool()
         metadata["_meta"]["ha_mcp"]["future_operation_semantics"] = "changed"
         exc = await self._assert_contract_failure(
-            metadata, "security_contract_mismatch"
+            metadata, "upstream_runtime_contract_mismatch"
         )
         self.assertEqual(
             exc.code,
@@ -440,14 +440,14 @@ class ReviewedContractTests(unittest.IsolatedAsyncioTestCase):
         semantic = published_runtime_tool()
         semantic["operationSemantics"] = "changed"
         exc = await self._assert_contract_failure(
-            semantic, "security_contract_mismatch"
+            semantic, "upstream_runtime_contract_mismatch"
         )
         self.assertEqual(
             exc.code,
             ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_CONTRACT_MISMATCH,
         )
 
-    async def test_read_only_true_uses_strict_contract_mode_not_reviewed_profile(self):
+    async def test_read_only_true_is_contract_drift_and_fails_closed(self):
         tool = fixture_tool()
         tool["annotations"]["readOnlyHint"] = True
         provider = UpstreamDashboardProvider()
@@ -455,17 +455,21 @@ class ReviewedContractTests(unittest.IsolatedAsyncioTestCase):
             settings(),
             transport=ReviewedFakeTransport(
                 handshake=reviewed_handshake(
-                    name="operator-selected-mcp",
-                    version="future-pure-read",
+                    name=REVIEWED_SERVER_NAME,
+                    version=REVIEWED_SERVER_VERSION,
                     tool=tool,
                 )
             ),
         )
-        await provider.refresh_capabilities()
+        with self.assertRaises(Exception):
+            await provider.refresh_capabilities()
         health = provider.health_snapshot()
-        self.assertEqual(health["trust_mode"], TRUST_MODE_CONTRACT_READ_ONLY)
-        self.assertIsNone(health["trust_profile"])
+        self.assertIsNone(health["trust_mode"])
         self.assertFalse(health["reviewed_contract_match"])
+        self.assertEqual(
+            health["validation_reason"],
+            "upstream_security_contract_mismatch",
+        )
 
     async def test_renamed_tool_is_rejected(self):
         tool = fixture_tool()

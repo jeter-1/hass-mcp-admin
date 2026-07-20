@@ -17,8 +17,8 @@ PUBLISH_PATH = ROOT / ".github" / "workflows" / "publish-rc-image.yml"
 TAG_GUARD_PATH = ROOT / "scripts" / "assert_registry_tags_absent.sh"
 PROMOTION_PATH = ROOT / "scripts" / "promote_next_release.py"
 IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
-ADVERTISED_VERSION = "2.0.0-rc2-dev7"
-NEXT_VERSION = "2.0.0-rc2-dev8"
+ADVERTISED_VERSION = "2.0.0-rc2-dev8"
+NEXT_VERSION = "2.0.0-rc2-dev9"
 PLATFORMS = ("linux/amd64", "linux/arm64", "linux/arm/v7")
 BUILD_ARGUMENTS = (
     "BUILD_VERSION",
