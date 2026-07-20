@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.0.0-rc2-dev9 - signed upstream contract admission
+
+- Replace the one-version dashboard profile with the compiled
+  `ha_mcp_dashboard_read_v2` family and exact built-in attestations for
+  ha-mcp 7.13.0, 7.14.0, and 7.14.1.
+- Add an optional Ed25519-verified, fixed-location release-attestation registry
+  with atomic last-known-good caching, expiry, revocation, and sequence rollback
+  protection. Registry data cannot define tools, argument builders, or families.
+- Preserve the one-tool dashboard allowlist and exact non-screenshot inventory
+  and configuration call shapes; all upstream write and generic delegation
+  paths remain unavailable.
+
 ## 2.0.0-rc2-dev8 - pre-validation enforcement and audit truth
 
 - Intercept `call_service`, `reload_domain`, `upsert_automation`, and

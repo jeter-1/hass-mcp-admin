@@ -15,6 +15,12 @@ or container identity.
 5. For RC3A dashboard reads, place the complete secret-bearing upstream MCP URL
    only in the password-style `upstream_dashboard_mcp_url` option. Leave it
    empty to keep the optional provider unconfigured.
+   RC2dev9 admits exact built-in `ha-mcp` 7.13.0, 7.14.0, and 7.14.1 releases
+   through the compiled dashboard-read family. Future signed release data is
+   optional: leave `upstream_trust_registry_enabled=false` unless the protected
+   registry has been initialized; when enabled, configure only the non-secret
+   Ed25519 public key in `upstream_trust_registry_public_key`. Never place the
+   private signing seed in add-on options.
 6. Keep the RC2dev5 dependency-index defaults unless the installation needs a
    different freshness budget: `prewarm_enabled=true`, a 45-second nonblocking
    startup delay, a 600-second soft TTL, and a 3600-second hard TTL. The legacy
@@ -45,7 +51,7 @@ https://BETA_TUNNEL/REDACTED_BETA_SECRET/mcp/
 
 Direct requests to `/mcp` and `/mcp/` must return `404`. After initialization,
 call `server_info(check_ha=false)` and verify version
-`2.0.0-rc2-dev8` after release approval, the expected complete release
+`2.0.0-rc2-dev9` after release approval, the expected complete release
 commit SHA, and its UTC build time,
 then call `list_capabilities` and verify the preserved 25-tool canonical catalog
 plus 15 beta-native tools; MCP `tools/list` should expose 40 callable tools.
@@ -160,6 +166,12 @@ See [`../docs/RC3A_RELEASE_NOTES.md`](../docs/RC3A_RELEASE_NOTES.md) and
 [`../docs/RC3A_ACCEPTANCE.md`](../docs/RC3A_ACCEPTANCE.md) for the dashboard-only
 provider contract, secret handling, staged deployment, observation, and
 rollback procedure.
+
+See [`../docs/RC2DEV9_RELEASE_NOTES.md`](../docs/RC2DEV9_RELEASE_NOTES.md),
+[`../docs/RC2DEV9_ACCEPTANCE.md`](../docs/RC2DEV9_ACCEPTANCE.md), and
+[`../docs/UPSTREAM_TRUST_REGISTRY.md`](../docs/UPSTREAM_TRUST_REGISTRY.md) for
+contract-family admission, signed release data, registry/cache operation, future
+version review, and the explicit deferred registry-write boundary.
 
 See [`../docs/BETA_DEPLOYMENT.md`](../docs/BETA_DEPLOYMENT.md) for the validated
 Windows release workflow, Supervisor cache troubleshooting, and rollback steps.

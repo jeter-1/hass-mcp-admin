@@ -1,5 +1,24 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## RC2dev9 upstream admission health
+
+`get_server_health.upstream_dashboard` adds bounded contract-family admission
+evidence: `admission_status`, `admission_source`, `contract_family`, attestation
+ID, observed/attested versions, attested source/image identity, normalized input,
+security, output and runtime fingerprints/match flags, and revocation status.
+Registry fields report enabled state, sequence/generated/age, refresh status,
+last successful refresh, bounded failure category, signature state, cache
+state/age and fixed refresh/hard-age limits.
+
+Accepted statuses are `admitted_builtin_attestation` and
+`admitted_signed_registry_attestation`; rejections distinguish unknown release,
+contract mismatch, registry unavailable, signature failure, expired attestation
+and revoked attestation. The whole-catalog fingerprint remains diagnostic only.
+No field contains the endpoint, registry body, signature, public-key value,
+filesystem path, raw schema/description or raw exception. Enabled upstream
+capabilities remain only dashboard inventory and exact configuration evidence;
+writes, screenshots and preferences remain false.
+
 ## RC3A dashboard-provider observability
 
 `get_server_health.upstream_dashboard` reports configured/credential state,
@@ -10,7 +29,7 @@ last success timestamps, connection and tool-call latency, request/success/
 timeout/reconnect counts, categorized failures, session state, and
 `writes_allowed=false`.
 
-Trust reporting distinguishes `contract_read_only` from
+Historical RC3A trust reporting distinguished `contract_read_only` from
 `reviewed_argument_constrained`. The reviewed 7.13.0 profile reports its bounded
 profile ID, pinned name/version, contract-match state, active argument
 constraints, and explicit `screenshots_allowed=false`,

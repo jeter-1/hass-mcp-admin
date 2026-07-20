@@ -1,8 +1,25 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## RC2dev9 upstream contract-family admission
+
+The `upstream_dashboard` provider composes a generic binary-owned compiled-family
+table, exact built-in or verified signed release attestations, and the existing
+typed dashboard adapter. Only `ha_mcp_dashboard_read_v2` is compiled. It admits
+exact reviewed `ha-mcp` 7.13.0, 7.14.0 and 7.14.1 releases while ignoring only
+descriptive/presentation and unrelated-catalog drift. Input, safety, output/hash
+and runtime semantics remain fingerprinted and fail closed.
+
+The optional registry can add exact release data for this family but cannot
+define another family or enable a tool, route, fallback or argument. The
+executable allowlist remains exactly `ha_config_get_dashboard`; Engineering can
+construct only `list_dashboards` and `get_dashboard_config` non-screenshot reads.
+`ha_set_entity`, `ha_set_device`, service/batch tools and all other writes remain
+outside the provider and governance engine. See
+[`ADR-004`](docs/architecture/ADR-004-SIGNED-UPSTREAM-CONTRACT-ADMISSION.md).
+
 ## RC2dev8 pre-validation enforcement and audit truth
 
-The current Engineering Beta source is `2.0.0-rc2-dev8`. Four
+The preceding Engineering Beta source was `2.0.0-rc2-dev8`. Four
 compatibility-visible operations have fixed fail-closed policy outcomes:
 `call_service`, `reload_domain`, `upsert_automation`, and
 `delete_automation`. The authenticated Streamable HTTP gateway recognizes only

@@ -1,5 +1,25 @@
 # Beta provider security boundaries
 
+## RC2dev9 signed upstream admission
+
+RC2dev9 supersedes the single-version wording below with a signed exact-release
+contract-family gate. The optional compatibility registry is a signed data
+channel, not delegated authority. Ed25519 signatures authenticate release
+evidence; the Engineering binary still owns the sole compiled family, one-tool
+allowlist, fixed dashboard-read argument builders, response/hash validators and
+no-fallback policy. Even valid registry data cannot activate an unknown family,
+`ha_set_entity`, `ha_set_device`, service/batch execution, screenshots,
+preferences, or a dashboard-write path.
+
+The registry uses fixed repository-owned HTTPS locations, strict JSON and field
+bounds, signature/key-ID verification, sequence rollback/replay rejection,
+expiry/revocation, bounded refresh, and an atomic last-known-good cache. The
+public key is a non-secret operator option; the private seed exists only in a
+protected GitHub environment and is scoped to the signing step. Health, logs,
+audit, errors and MCP responses expose no endpoint, registry body, signature,
+public-key value, cache path or raw exception. See
+[`UPSTREAM_TRUST_REGISTRY.md`](UPSTREAM_TRUST_REGISTRY.md).
+
 ## RC3A upstream dashboard boundary
 
 `upstream_dashboard` is separate from the unavailable generic
@@ -7,7 +27,7 @@
 secret endpoint and exposes exactly one allowlisted upstream tool:
 `ha_config_get_dashboard`.
 
-The preferred `contract_read_only` mode still requires
+The historical RC3A `contract_read_only` mode required
 `readOnlyHint=true`. The explicit
 `reviewed_argument_constrained` exception applies only to
 `ha_mcp_7_13_dashboard_read_v1`. It pins server name `ha-mcp`, version
