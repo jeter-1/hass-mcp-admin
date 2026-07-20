@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.0.0-rc2-dev10 - selected-attestation observability truth
+
+- Derive retained raw-schema, reviewed-security, fixture-runtime, and
+  published-runtime expectations from the exact built-in or signed attestation
+  selected for the observed upstream release.
+- Keep those informational fingerprints distinct from the normalized
+  input/security/output/runtime fingerprints that remain the admission gate.
+- Report `ha_mcp_dashboard_read_v2` as the active dashboard trust profile and
+  describe exact-release attestation instead of a globally pinned version.
+- Preserve routing, the one-tool allowlist, exact non-screenshot arguments,
+  hashes, no-fallback enforcement, public schemas, and governance storage.
+
 ## 2.0.0-rc2-dev9 - signed upstream contract admission
 
 - Replace the one-version dashboard profile with the compiled

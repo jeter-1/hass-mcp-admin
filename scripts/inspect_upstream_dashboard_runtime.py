@@ -24,6 +24,7 @@ from ha_mcp_engineering.providers.upstream_contracts import (  # noqa: E402
     normalize_runtime_contract,
 )
 from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
+    _reviewed_security_contract_projection,
     ensure_dashboard_tool_allowed,
 )
 
@@ -46,6 +47,15 @@ async def inspect(endpoint: str, version: str) -> dict:
                 tool,
                 protocol_version=str(initialized.protocolVersion),
             )
+            raw_input_schema_fingerprint = hashlib.sha256(
+                canonical_json(tool.get("inputSchema"))
+            ).hexdigest()
+            reviewed_security_descriptor_fingerprint = hashlib.sha256(
+                canonical_json(_reviewed_security_contract_projection(tool))
+            ).hexdigest()
+            published_runtime_descriptor_fingerprint = hashlib.sha256(
+                canonical_json(tool)
+            ).hexdigest()
             list_arguments = {"list_only": True, "include_screenshot": False}
             get_arguments = {
                 "url_path": "compatibility-fixture",
@@ -106,6 +116,18 @@ async def inspect(endpoint: str, version: str) -> dict:
                     "security": contract.security_fingerprint,
                     "output": contract.output_fingerprint,
                     "runtime": contract.runtime_fingerprint,
+                },
+                "informational_fingerprints": {
+                    "raw_input_schema": raw_input_schema_fingerprint,
+                    "reviewed_security_descriptor": (
+                        reviewed_security_descriptor_fingerprint
+                    ),
+                    "fixture_runtime_descriptor": (
+                        published_runtime_descriptor_fingerprint
+                    ),
+                    "published_runtime_descriptor": (
+                        published_runtime_descriptor_fingerprint
+                    ),
                 },
                 "positive_tests": {
                     "list_dashboards": True,

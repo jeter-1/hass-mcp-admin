@@ -19,6 +19,10 @@
       "output_contract_fingerprint": "9db14b83579f9ec897cc6d97640a3ad67899055b57d18c815c4119192a04dbb7",
       "runtime_contract_fingerprint": "235e132ec9d7497f8c2ab35aa80b63a2b5705a010e083451bed40b580212a21b",
       "catalog_fingerprint": "7877b7199f5c15dea81bee684f2ca735cf27c10c746560a96086b0fdf570ef2c",
+      "raw_input_schema_fingerprint": "7f2b6a086faec129c182fe6f791722beda9fffc659a507f55a3b20d72e2155a6",
+      "reviewed_security_descriptor_fingerprint": "c4395cfa63e9de34a672cfdfe34f93541b407766c81b9dcbe82bf4f82c3e7b86",
+      "fixture_runtime_descriptor_fingerprint": "170c2aac1d6437d5c42b7f1d48f5322fef4736c414654c4cc4f7830138e959ca",
+      "published_runtime_descriptor_fingerprint": "dd12cba02e59bf98e5b251ddf516c5a7fbea5fbd5f37d053cd8a9cc549827157",
       "review_evidence_digest": "sha256:4ddabd412c5cc4dd4e90d193537f5c90628bd8903620257401ab5b59762dcd59",
       "reviewed_at": "2026-07-19T23:30:00Z",
       "revoked": false
@@ -41,6 +45,10 @@
       "output_contract_fingerprint": "9db14b83579f9ec897cc6d97640a3ad67899055b57d18c815c4119192a04dbb7",
       "runtime_contract_fingerprint": "019e43aba44efbc63604fe26f51a40540243d83ae056461923321f6205c982a4",
       "catalog_fingerprint": null,
+      "raw_input_schema_fingerprint": "e75e5454fc3039b3a67014dd3f9af7c2c946e0263e3b35e478d57ae72254846f",
+      "reviewed_security_descriptor_fingerprint": "0cc05e110458c3019a0156f074d863afd2d6e0ad3bc2b222fae2ddf2c6398327",
+      "fixture_runtime_descriptor_fingerprint": "a6b7b65a0bda740f107a8e88942d436b92dbbb453d827138b97daebdbd50fe33",
+      "published_runtime_descriptor_fingerprint": "a65eedbeb51f524bc19d3d32f8b2a455bd4157c83c68943d8569554365eec49a",
       "review_evidence_digest": "sha256:4ddabd412c5cc4dd4e90d193537f5c90628bd8903620257401ab5b59762dcd59",
       "reviewed_at": "2026-07-19T23:30:00Z",
       "revoked": false
@@ -63,6 +71,10 @@
       "output_contract_fingerprint": "9db14b83579f9ec897cc6d97640a3ad67899055b57d18c815c4119192a04dbb7",
       "runtime_contract_fingerprint": "019e43aba44efbc63604fe26f51a40540243d83ae056461923321f6205c982a4",
       "catalog_fingerprint": null,
+      "raw_input_schema_fingerprint": "e75e5454fc3039b3a67014dd3f9af7c2c946e0263e3b35e478d57ae72254846f",
+      "reviewed_security_descriptor_fingerprint": "0cc05e110458c3019a0156f074d863afd2d6e0ad3bc2b222fae2ddf2c6398327",
+      "fixture_runtime_descriptor_fingerprint": "a6b7b65a0bda740f107a8e88942d436b92dbbb453d827138b97daebdbd50fe33",
+      "published_runtime_descriptor_fingerprint": "a65eedbeb51f524bc19d3d32f8b2a455bd4157c83c68943d8569554365eec49a",
       "review_evidence_digest": "sha256:4ddabd412c5cc4dd4e90d193537f5c90628bd8903620257401ab5b59762dcd59",
       "reviewed_at": "2026-07-19T23:30:00Z",
       "revoked": false

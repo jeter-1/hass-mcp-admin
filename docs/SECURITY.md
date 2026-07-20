@@ -20,24 +20,27 @@ audit, errors and MCP responses expose no endpoint, registry body, signature,
 public-key value, cache path or raw exception. See
 [`UPSTREAM_TRUST_REGISTRY.md`](UPSTREAM_TRUST_REGISTRY.md).
 
-## RC3A upstream dashboard boundary
+## RC2dev10 upstream dashboard boundary
 
 `upstream_dashboard` is separate from the unavailable generic
 `standard_ha_mcp` gateway. It accepts one password-style, operator-configured
 secret endpoint and exposes exactly one allowlisted upstream tool:
 `ha_config_get_dashboard`.
 
-The historical RC3A `contract_read_only` mode required
-`readOnlyHint=true`. The explicit
-`reviewed_argument_constrained` exception applies only to
-`ha_mcp_7_13_dashboard_read_v1`. It pins server name `ha-mcp`, version
-`7.13.0`, protocol `2025-03-26`, exact tool name, exact reviewed annotations,
-the complete input schema, output-schema presence, and the reviewed
-security-contract projection generated from upstream commit
-`f4eb53621ccb814cb7123d2811e06eda3577129c`.
+The historical RC3A `contract_read_only` mode required `readOnlyHint=true`; its
+deprecated single-release profile ID was `ha_mcp_7_13_dashboard_read_v1`.
+RC2dev9 replaced that active profile with compiled family
+`ha_mcp_dashboard_read_v2`. RC2dev10 continues to require server name `ha-mcp`,
+protocol `2025-03-26`, exact tool name, exact reviewed annotations and one exact
+reviewed release attestation. Built-in entries cover 7.13.0, 7.14.0 and 7.14.1;
+a verified signed registry may supply another exact release for the already
+compiled family. No version range is admitted.
 
-The complete runtime descriptor is retained as observability evidence, not a
-dispatch gate. The published 7.13.0 runtime adds
+Raw schema and complete runtime descriptors are retained as observability
+evidence, not dispatch gates. Their expected values come from the selected
+release attestation. Normalized input/security/output/runtime fingerprints
+remain the admission gate and are never substituted into legacy fields. The
+published 7.13.0 runtime adds
 `_meta.ha_mcp.llm_api_exposed` and `_meta.ha_mcp.pinned`; those values only
 control upstream conversation-agent exposure and pinning. Along with display
 title/description, annotation display title, and FastMCP grouping tags, they

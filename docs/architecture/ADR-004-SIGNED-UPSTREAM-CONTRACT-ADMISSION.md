@@ -2,6 +2,13 @@
 
 Status: accepted for RC2dev9
 
+RC2dev10 clarification: the exact selected attestation also supplies optional
+raw-schema, reviewed-security-descriptor, fixture-runtime-descriptor, and
+published-runtime-descriptor fingerprints for retained health fields. These
+values are informational only and are not added to steps 3–5 of the admission
+decision. This removes stale single-release diagnostics without expanding the
+registry's authority.
+
 ## Decision
 
 Engineering admits an exact upstream release only when a binary-owned semantic
@@ -46,7 +53,8 @@ authority to alter executable capability policy.
 ## Consequences
 
 Health distinguishes admission status/source, observed and attested versions,
-family, four fingerprint results, revocation, registry signature/sequence/age,
+family, four normalized admission results, separate selected-release legacy
+fingerprints/results, revocation, registry signature/sequence/age,
 cache and refresh state. Endpoint and registry contents remain secret/bounded.
 
 The public catalog stays `40 / 25 / 0`; schema version 1 and every public input

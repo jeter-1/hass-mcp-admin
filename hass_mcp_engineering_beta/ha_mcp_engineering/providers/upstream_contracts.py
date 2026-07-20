@@ -180,6 +180,12 @@ class ReleaseAttestation:
     output_contract_fingerprint: str
     runtime_contract_fingerprint: str
     catalog_fingerprint: str | None
+    # Informational evidence for retained pre-RC2dev9 health fields. These
+    # fingerprints are deliberately excluded from admission decisions.
+    raw_input_schema_fingerprint: str | None
+    reviewed_security_descriptor_fingerprint: str | None
+    fixture_runtime_descriptor_fingerprint: str | None
+    published_runtime_descriptor_fingerprint: str | None
     review_evidence_digest: str
     reviewed_at: str
     revoked: bool = False
@@ -205,7 +211,13 @@ class ReleaseAttestation:
             "reviewed_at",
             "revoked",
         }
-        if set(value) != required:
+        optional = {
+            "raw_input_schema_fingerprint",
+            "reviewed_security_descriptor_fingerprint",
+            "fixture_runtime_descriptor_fingerprint",
+            "published_runtime_descriptor_fingerprint",
+        }
+        if not required.issubset(value) or set(value) - required - optional:
             raise ContractValidationError("attestation_fields_invalid")
         platform_digests = value["platform_digests"]
         if not isinstance(platform_digests, dict) or not platform_digests:
@@ -239,6 +251,18 @@ class ReleaseAttestation:
                 None
                 if value["catalog_fingerprint"] is None
                 else _bounded_string(value["catalog_fingerprint"], 64)
+            ),
+            raw_input_schema_fingerprint=_optional_fingerprint(
+                value.get("raw_input_schema_fingerprint")
+            ),
+            reviewed_security_descriptor_fingerprint=_optional_fingerprint(
+                value.get("reviewed_security_descriptor_fingerprint")
+            ),
+            fixture_runtime_descriptor_fingerprint=_optional_fingerprint(
+                value.get("fixture_runtime_descriptor_fingerprint")
+            ),
+            published_runtime_descriptor_fingerprint=_optional_fingerprint(
+                value.get("published_runtime_descriptor_fingerprint")
             ),
             review_evidence_digest=_bounded_string(
                 value["review_evidence_digest"], 71
@@ -284,6 +308,18 @@ class ReleaseAttestation:
             r"[0-9a-f]{64}", self.catalog_fingerprint
         ):
             raise ContractValidationError("attestation_catalog_fingerprint_invalid")
+        for fingerprint in (
+            self.raw_input_schema_fingerprint,
+            self.reviewed_security_descriptor_fingerprint,
+            self.fixture_runtime_descriptor_fingerprint,
+            self.published_runtime_descriptor_fingerprint,
+        ):
+            if fingerprint is not None and not re.fullmatch(
+                r"[0-9a-f]{64}", fingerprint
+            ):
+                raise ContractValidationError(
+                    "attestation_informational_fingerprint_invalid"
+                )
 
 
 @dataclass(frozen=True)
@@ -627,3 +663,9 @@ def _bounded_string(value: Any, maximum: int) -> str:
     if not isinstance(value, str) or not value or len(value) > maximum:
         raise ContractValidationError("attestation_value_invalid")
     return value
+
+
+def _optional_fingerprint(value: Any) -> str | None:
+    if value is None:
+        return None
+    return _bounded_string(value, 64)

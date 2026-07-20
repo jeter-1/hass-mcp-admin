@@ -1,5 +1,21 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## RC2dev10 selected-attestation observability
+
+RC2dev10 leaves the RC2dev9 admission and routing architecture unchanged. Once
+an exact built-in or verified signed attestation is selected, that same entry
+supplies the expected raw input-schema, reviewed-security descriptor, fixture
+runtime descriptor, and published runtime descriptor fingerprints used by
+retained health fields. The normalized input/security/output/runtime contracts
+remain the only admission gate; informational legacy evidence cannot enable a
+release, family, tool, argument, route, or fallback.
+
+The active dashboard trust profile is the compiled family
+`ha_mcp_dashboard_read_v2`. Exact versions are reviewed individually through
+attestations; no version range or globally pinned upstream implementation is
+trusted. The provider still constructs only the two non-screenshot dashboard
+read shapes and allowlists only `ha_config_get_dashboard`.
+
 ## RC2dev9 upstream contract-family admission
 
 The `upstream_dashboard` provider composes a generic binary-owned compiled-family
@@ -131,7 +147,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-rc2-dev8` pre-validation enforcement and audit-truth candidate |
+| Version | `1.1.2` | `2.0.0-rc2-dev10` selected-attestation observability correction |
 | Port | `8099` | MCP `8100`; internal Ingress `8110` |
 | Options and secret | Production add-on data | Beta add-on data |
 
