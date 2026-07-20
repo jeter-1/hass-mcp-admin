@@ -750,6 +750,17 @@ def cleanup(names: dict[str, str]) -> None:
         pass
 
 
+def best_effort_remove_workdir(work: Path) -> None:
+    """Remove disposable host files without overriding acceptance evidence."""
+
+    try:
+        shutil.rmtree(work, ignore_errors=True)
+    except OSError:
+        # Root-owned bind-mount entries can remain after container teardown.
+        # GitHub Actions performs a scoped sudo cleanup after evidence upload.
+        pass
+
+
 async def async_main(args: argparse.Namespace) -> int:
     if not args.acknowledge_disposable_exact_image:
         raise SystemExit("Refusing to create Docker resources without the disposable-test acknowledgement.")
@@ -764,37 +775,42 @@ async def async_main(args: argparse.Namespace) -> int:
         "ha": f"rc2dev8-bake-ha-{suffix}",
         "engineering": f"rc2dev8-bake-engineering-{suffix}",
     }
+    runner_temp = Path(os.environ.get("RUNNER_TEMP") or tempfile.gettempdir())
+    runner_temp.mkdir(parents=True, exist_ok=True)
+    work = Path(
+        tempfile.mkdtemp(
+            prefix="rc2dev8-exact-image-",
+            dir=runner_temp,
+        )
+    )
     failure = False
     try:
         # Both exact images run as root and may create root-owned directories in
         # their disposable bind mounts.  Scenario success must not be replaced
-        # by a host-side TemporaryDirectory ownership error after every
-        # acceptance assertion has passed.  The workflow's always-run cleanup
-        # removes this narrowly prefixed directory with runner sudo.
-        with tempfile.TemporaryDirectory(
-            prefix="rc2dev8-exact-image-",
-            ignore_cleanup_errors=True,
-        ) as directory:
-            try:
-                evidence = await run_bake(Path(directory), names)
-            except Exception:
-                failure = True
-                evidence = {
-                    "schema_version": 1,
-                    "scenario": "rc2dev8_exact_image_dependency_refresh_failure",
-                    "completed_at": utc_now(),
-                    "result": "FAIL",
-                    "failure_category": "bounded_acceptance_failure",
-                    "credentials": "synthetic_not_persisted",
-                }
-            assert_sanitized(evidence, ())
-            args.output.parent.mkdir(parents=True, exist_ok=True)
-            args.output.write_text(
-                json.dumps(evidence, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
+        # by a host-side cleanup error after every acceptance assertion has
+        # passed. The workdir is deliberately created under RUNNER_TEMP so the
+        # workflow's always-run, narrowly scoped sudo cleanup owns the same path.
+        try:
+            evidence = await run_bake(work, names)
+        except Exception:
+            failure = True
+            evidence = {
+                "schema_version": 1,
+                "scenario": "rc2dev8_exact_image_dependency_refresh_failure",
+                "completed_at": utc_now(),
+                "result": "FAIL",
+                "failure_category": "bounded_acceptance_failure",
+                "credentials": "synthetic_not_persisted",
+            }
+        assert_sanitized(evidence, ())
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(
+            json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     finally:
         cleanup(names)
+        best_effort_remove_workdir(work)
     if failure:
         raise SystemExit("RC2dev8 disposable exact-image bake failed; sanitized evidence was preserved.")
     print("RC2dev8 disposable exact-image bake: PASS")

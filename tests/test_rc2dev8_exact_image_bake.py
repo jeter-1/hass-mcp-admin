@@ -1,7 +1,10 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import AsyncMock, patch
 
 import yaml
 
@@ -95,8 +98,82 @@ class ExactImageHarnessTests(unittest.TestCase):
         self.assertIn("2026.7.2@sha256:", self.module.HOME_ASSISTANT_IMAGE)
         self.assertIn("RC2DEV8_PLATFORM_CONFIG_DIGEST", self.source)
 
+    def test_harness_uses_runner_temp_without_automatic_cleanup(self):
+        self.assertNotIn("TemporaryDirectory(", self.source)
+        self.assertIn('os.environ.get("RUNNER_TEMP")', self.source)
+        self.assertIn("tempfile.mkdtemp(", self.source)
+        self.assertIn("dir=runner_temp", self.source)
+
     def test_container_owned_bind_mounts_cannot_override_pass_result(self):
-        self.assertIn("ignore_cleanup_errors=True", self.source)
+        with patch.object(
+            self.module.shutil,
+            "rmtree",
+            side_effect=PermissionError("synthetic root-owned entry"),
+        ):
+            self.module.best_effort_remove_workdir(Path("synthetic-workdir"))
+
+    def test_cleanup_permission_failure_does_not_override_pass_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "evidence.json"
+            args = self.module.argparse.Namespace(
+                acknowledge_disposable_exact_image=True,
+                output=output,
+            )
+            evidence = {
+                "schema_version": 1,
+                "scenario": "rc2dev8_exact_image_dependency_refresh_failure",
+                "result": "PASS",
+                "credentials": "synthetic_not_persisted",
+            }
+            with (
+                patch.dict(
+                    os.environ,
+                    {
+                        "RC2DEV8_DISPOSABLE_EXACT_IMAGE": "1",
+                        "RUNNER_TEMP": str(root),
+                    },
+                ),
+                patch.object(self.module.shutil, "which", return_value="docker"),
+                patch.object(self.module, "run_bake", AsyncMock(return_value=evidence)),
+                patch.object(self.module, "cleanup"),
+                patch.object(
+                    self.module.shutil,
+                    "rmtree",
+                    side_effect=PermissionError("synthetic root-owned entry"),
+                ),
+            ):
+                result = self.module.asyncio.run(self.module.async_main(args))
+            self.assertEqual(result, 0)
+            self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["result"], "PASS")
+
+    def test_acceptance_failure_still_fails_after_evidence_is_written(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "evidence.json"
+            args = self.module.argparse.Namespace(
+                acknowledge_disposable_exact_image=True,
+                output=output,
+            )
+            with (
+                patch.dict(
+                    os.environ,
+                    {
+                        "RC2DEV8_DISPOSABLE_EXACT_IMAGE": "1",
+                        "RUNNER_TEMP": str(root),
+                    },
+                ),
+                patch.object(self.module.shutil, "which", return_value="docker"),
+                patch.object(
+                    self.module,
+                    "run_bake",
+                    AsyncMock(side_effect=self.module.BakeFailure("synthetic failure")),
+                ),
+                patch.object(self.module, "cleanup"),
+            ):
+                with self.assertRaisesRegex(SystemExit, "disposable exact-image bake failed"):
+                    self.module.asyncio.run(self.module.async_main(args))
+            self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["result"], "FAIL")
 
     def test_sanitized_evidence_rejects_credential_fields_and_values(self):
         with self.assertRaises(self.module.BakeFailure):
@@ -109,8 +186,6 @@ class ExactImageHarnessTests(unittest.TestCase):
         )
 
     def test_fixture_options_are_secret_free_and_disable_prewarm(self):
-        import tempfile
-
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
             self.module.write_engineering_options(path)
@@ -121,8 +196,6 @@ class ExactImageHarnessTests(unittest.TestCase):
         self.assertEqual(options["dependency_index_hard_ttl_seconds"], 30.0)
 
     def test_home_assistant_fixture_is_synthetic_and_bounded(self):
-        import tempfile
-
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
             self.module.write_fixture_configuration(path)
