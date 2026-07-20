@@ -162,7 +162,7 @@ class ReviewedIdentityAndVersionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(health["published_runtime_descriptor_match"])
         self.assertEqual(
             health["runtime_descriptor_drift"],
-            "descriptive_metadata_only",
+            "none",
         )
         self.assertTrue(health["required_schema_compatible"])
 

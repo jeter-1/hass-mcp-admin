@@ -7,12 +7,6 @@ from typing import Any
 
 from .observability import METRICS
 from .capabilities import BETA_NATIVE_CAPABILITIES, CAPABILITIES
-from .providers.upstream_dashboard import (
-    REVIEWED_FIXTURE_RUNTIME_DESCRIPTOR_FINGERPRINT,
-    REVIEWED_PUBLISHED_RUNTIME_DESCRIPTOR_FINGERPRINT,
-    REVIEWED_SCHEMA_FINGERPRINT,
-    REVIEWED_SECURITY_CONTRACT_FINGERPRINT,
-)
 from .version import SERVER_ID, SERVER_NAME, SERVER_VERSION
 
 
@@ -108,22 +102,14 @@ class HealthRegistry:
                     "trust_mode": None,
                     "trust_profile": None,
                     "reviewed_contract_match": False,
-                    "expected_input_schema_fingerprint": (
-                        REVIEWED_SCHEMA_FINGERPRINT
-                    ),
+                    "expected_input_schema_fingerprint": None,
                     "observed_input_schema_fingerprint": None,
                     "input_schema_match": False,
-                    "expected_reviewed_security_contract_fingerprint": (
-                        REVIEWED_SECURITY_CONTRACT_FINGERPRINT
-                    ),
+                    "expected_reviewed_security_contract_fingerprint": None,
                     "observed_reviewed_security_contract_fingerprint": None,
                     "reviewed_security_contract_match": False,
-                    "expected_fixture_runtime_descriptor_fingerprint": (
-                        REVIEWED_FIXTURE_RUNTIME_DESCRIPTOR_FINGERPRINT
-                    ),
-                    "expected_published_runtime_descriptor_fingerprint": (
-                        REVIEWED_PUBLISHED_RUNTIME_DESCRIPTOR_FINGERPRINT
-                    ),
+                    "expected_fixture_runtime_descriptor_fingerprint": None,
+                    "expected_published_runtime_descriptor_fingerprint": None,
                     "observed_runtime_descriptor_fingerprint": None,
                     "runtime_descriptor_match": False,
                     "published_runtime_descriptor_match": False,

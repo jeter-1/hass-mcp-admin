@@ -33,6 +33,14 @@ index and platform digests, image revision, compiled family, normalized
 input/security/output/runtime fingerprints, optional catalog fingerprint,
 review-evidence digest/time, and revocation flag.
 
+RC2dev10 also permits four bounded informational fingerprints: raw input
+schema, reviewed-security descriptor, reviewed fixture runtime descriptor, and
+published runtime descriptor. They keep retained observability fields truthful
+for the exact selected release. They are not consulted by `decide_admission`
+and cannot activate a contract family or capability. Entries produced before
+RC2dev10 remain readable; absent informational evidence is reported as unknown
+rather than being replaced with another release's values.
+
 Fixed fetch locations are repository-owned HTTPS URLs under
 `jeter-1/hass-mcp-admin/main`. Redirects are disabled. Operators cannot configure
 another URL or filesystem path.
@@ -59,6 +67,13 @@ Health exposes only bounded status, sequence, timestamps/ages, signature state,
 cache state, refresh/failure category, admission source/status, attestation ID,
 version and fingerprints. It never exposes registry content, signature bytes,
 public-key value, endpoint path, URL, credentials, or raw exceptions.
+
+Normalized and informational fingerprints have separate meanings. Normalized
+input/security/output/runtime fingerprints deliberately ignore approved
+descriptive presentation differences and are authoritative for admission. Raw
+and descriptor fingerprints identify the reviewed published representation and
+support drift diagnostics only. A catalog fingerprint remains unrelated-tool
+observability and is never a required-tool compatibility gate.
 
 ## Signing-key operations
 

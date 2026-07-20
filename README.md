@@ -192,7 +192,7 @@ outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 ## Engineering beta/RC analytical milestones
 
 The parallel v2 add-on RC3A development stage is now hardened as
-`2.0.0-rc2-dev9`, based on the verified RC2dev8 source. It has 40 registered
+`2.0.0-rc2-dev10`, based on the deployed RC2dev9 source. It has 40 registered
 tools and 25 unchanged canonical tools. Audit filters parse each bounded JSONL
 record and compare only the exact top-level event, so the routed audit reader's
 own nested filter argument cannot create false security evidence.
@@ -200,8 +200,10 @@ It adds only `list_dashboards` and `get_dashboard_config`, backed by an optional
 secret-configured `upstream_dashboard` MCP provider whose allowlist contains
 only `ha_config_get_dashboard`. Exact reviewed attestations for `ha-mcp`
 7.13.0, 7.14.0, and 7.14.1 bind release provenance to a compiled semantic
-dashboard-read family; unrelated catalog and prose drift remain observability
-evidence rather than an admission gate.
+dashboard-read family. RC2dev10 derives retained raw-schema, reviewed-security,
+and runtime-descriptor expectations from the exact selected attestation, while
+keeping those diagnostics distinct from the normalized admission gate;
+unrelated catalog and prose drift remain observability evidence.
 Engineering constructs only exact non-screenshot read forms. The mixed upstream
 tool is not described as globally read-only. The generic
 `StandardHaMcpGateway` remains unavailable. No dashboard write, service,
@@ -213,6 +215,8 @@ evidence hash calculated before sanitization.
 RC2 governance, external approval, direct-HA policies, and idempotent
 plan/challenge expiry remain intact. No planned feature capability remains.
 Production v1.1.2, `hass_mcp_admin`, and port 8099 remain unchanged. See
+[`docs/RC2DEV10_RELEASE_NOTES.md`](docs/RC2DEV10_RELEASE_NOTES.md),
+[`docs/RC2DEV10_ACCEPTANCE.md`](docs/RC2DEV10_ACCEPTANCE.md),
 [`docs/RC2DEV9_RELEASE_NOTES.md`](docs/RC2DEV9_RELEASE_NOTES.md),
 [`docs/RC2DEV9_ACCEPTANCE.md`](docs/RC2DEV9_ACCEPTANCE.md),
 [`docs/UPSTREAM_TRUST_REGISTRY.md`](docs/UPSTREAM_TRUST_REGISTRY.md),

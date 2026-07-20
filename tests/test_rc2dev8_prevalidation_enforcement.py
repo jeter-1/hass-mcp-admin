@@ -472,7 +472,7 @@ class Rc2dev8RawPrevalidationTests(unittest.TestCase):
 
 class McpOutcomeClassificationTests(unittest.TestCase):
     def test_release_version_catalog_schemas_and_documents_are_consistent(self):
-        self.assertEqual(SERVER_VERSION, "2.0.0-rc2-dev9")
+        self.assertEqual(SERVER_VERSION, "2.0.0-rc2-dev10")
         tools = {
             tool.name: tool
             for tool in get_registered_server()._tool_manager.list_tools()

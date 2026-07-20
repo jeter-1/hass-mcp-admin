@@ -109,6 +109,15 @@ def main() -> None:
     }
     if expected != actual:
         raise SystemExit("runtime contract evidence changed after collection")
+    informational = runtime.get("informational_fingerprints")
+    informational_keys = {
+        "raw_input_schema",
+        "reviewed_security_descriptor",
+        "fixture_runtime_descriptor",
+        "published_runtime_descriptor",
+    }
+    if not isinstance(informational, dict) or set(informational) != informational_keys:
+        raise SystemExit("runtime informational fingerprint evidence is incomplete")
     if runtime.get("write_dispatches") != 0:
         raise SystemExit("runtime review observed an upstream write dispatch")
     negative = runtime.get("negative_reachability")
@@ -155,6 +164,16 @@ def main() -> None:
         "output_contract_fingerprint": contract.output_fingerprint,
         "runtime_contract_fingerprint": contract.runtime_fingerprint,
         "catalog_fingerprint": runtime.get("catalog_fingerprint"),
+        "raw_input_schema_fingerprint": informational["raw_input_schema"],
+        "reviewed_security_descriptor_fingerprint": informational[
+            "reviewed_security_descriptor"
+        ],
+        "fixture_runtime_descriptor_fingerprint": informational[
+            "fixture_runtime_descriptor"
+        ],
+        "published_runtime_descriptor_fingerprint": informational[
+            "published_runtime_descriptor"
+        ],
         "review_evidence_digest": evidence_digest,
         "reviewed_at": evidence["reviewed_at"],
         "revoked": False,

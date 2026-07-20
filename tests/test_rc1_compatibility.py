@@ -222,7 +222,7 @@ class RC1PublicContractTests(unittest.TestCase):
                 "policy": "dashboard_inventory_read",
                 "fallback": "none",
                 "trust_mode": "reviewed_argument_constrained",
-                "trust_profile": "ha_mcp_7_13_dashboard_read_v1",
+                "trust_profile": "ha_mcp_dashboard_read_v2",
             },
         )
         self.assertEqual(
@@ -238,7 +238,7 @@ class RC1PublicContractTests(unittest.TestCase):
                 "policy": "exact_dashboard_configuration_read",
                 "fallback": "none",
                 "trust_mode": "reviewed_argument_constrained",
-                "trust_profile": "ha_mcp_7_13_dashboard_read_v1",
+                "trust_profile": "ha_mcp_dashboard_read_v2",
             },
         )
         for tool_name, capability in (

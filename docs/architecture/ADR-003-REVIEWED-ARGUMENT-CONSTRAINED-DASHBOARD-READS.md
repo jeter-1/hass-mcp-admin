@@ -58,7 +58,8 @@ destructive behavior.
 This exception is limited to profile:
 
 ```text
-ha_mcp_7_13_dashboard_read_v1
+ha_mcp_7_13_dashboard_read_v1 (historical, deprecated as the active runtime
+profile by `ha_mcp_dashboard_read_v2` exact-release attestations)
 ```
 
 It requires exact agreement on:

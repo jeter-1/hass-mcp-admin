@@ -32,6 +32,7 @@ from .upstream_contracts import (
     CONTRACT_FAMILY,
     REQUIRED_SERVER_NAME,
     AdmissionDecision,
+    ReleaseAttestation,
     decide_admission,
 )
 from .upstream_registry import UpstreamTrustRegistry
@@ -41,6 +42,9 @@ PROVIDER_ID = "upstream_dashboard"
 TRUST_MODE_CONTRACT_READ_ONLY = "contract_read_only"
 TRUST_MODE_REVIEWED_ARGUMENT_CONSTRAINED = "reviewed_argument_constrained"
 REVIEWED_TRUST_PROFILE = CONTRACT_FAMILY
+# Retained for the deprecated, non-routed RC3A profile helper and its public
+# compatibility tests. Active RC2dev10 admission and health use exact selected
+# ReleaseAttestation data instead of these 7.13.0 constants.
 REVIEWED_SERVER_NAME = "ha-mcp"
 REVIEWED_SERVER_VERSION = "7.13.0"
 REVIEWED_PROTOCOL_VERSION = "2025-03-26"
@@ -223,6 +227,10 @@ class DashboardProviderState:
     required_contract_fingerprint: str | None = None
     reviewed_security_contract_fingerprint: str | None = None
     runtime_descriptor_fingerprint: str | None = None
+    expected_input_schema_fingerprint: str | None = None
+    expected_reviewed_security_contract_fingerprint: str | None = None
+    expected_fixture_runtime_descriptor_fingerprint: str | None = None
+    expected_published_runtime_descriptor_fingerprint: str | None = None
     catalog_fingerprint: str | None = None
     trust_mode: str | None = None
     trust_profile: str | None = None
@@ -751,31 +759,68 @@ class UpstreamDashboardProvider:
                 self._state.capability_status = "unavailable"
                 self._state.validation_reason = "reviewed_contract_mismatch"
             raise DashboardTransportError("reviewed_contract_mismatch") from None
-        input_schema_match = (
-            schema_fingerprint == REVIEWED_SCHEMA_FINGERPRINT
+        attestations = self._registry.effective_attestations()
+        informational_attestation = _matching_release_attestation(
+            attestations,
+            server_name=handshake.server_name,
+            server_version=handshake.server_version,
+        )
+        expected_input_schema_fingerprint = (
+            informational_attestation.raw_input_schema_fingerprint
+            if informational_attestation
+            else None
+        )
+        expected_security_fingerprint = (
+            informational_attestation.reviewed_security_descriptor_fingerprint
+            if informational_attestation
+            else None
+        )
+        expected_fixture_runtime_fingerprint = (
+            informational_attestation.fixture_runtime_descriptor_fingerprint
+            if informational_attestation
+            else None
+        )
+        expected_published_runtime_fingerprint = (
+            informational_attestation.published_runtime_descriptor_fingerprint
+            if informational_attestation
+            else None
+        )
+        input_schema_match = bool(
+            expected_input_schema_fingerprint
+            and schema_fingerprint == expected_input_schema_fingerprint
         )
         security_contract_match = (
-            security_contract_fingerprint
-            == REVIEWED_SECURITY_CONTRACT_FINGERPRINT
+            bool(expected_security_fingerprint)
+            and security_contract_fingerprint == expected_security_fingerprint
         )
         runtime_descriptor_match = (
-            runtime_descriptor_fingerprint
-            == REVIEWED_FIXTURE_RUNTIME_DESCRIPTOR_FINGERPRINT
+            bool(expected_fixture_runtime_fingerprint)
+            and runtime_descriptor_fingerprint == expected_fixture_runtime_fingerprint
         )
         published_runtime_descriptor_match = (
-            runtime_descriptor_fingerprint
-            == REVIEWED_PUBLISHED_RUNTIME_DESCRIPTOR_FINGERPRINT
-        )
-        runtime_descriptor_drift = _runtime_descriptor_drift(
-            runtime_descriptor_match=runtime_descriptor_match,
-            security_contract_match=security_contract_match,
+            bool(expected_published_runtime_fingerprint)
+            and runtime_descriptor_fingerprint == expected_published_runtime_fingerprint
         )
         admission = decide_admission(
             server_name=handshake.server_name,
             server_version=handshake.server_version,
             protocol_version=handshake.protocol_version,
             tool=tool,
-            attestations=self._registry.effective_attestations(),
+            attestations=attestations,
+        )
+        runtime_descriptor_drift = _runtime_descriptor_drift(
+            runtime_descriptor_match=runtime_descriptor_match,
+            published_runtime_descriptor_match=(
+                published_runtime_descriptor_match
+            ),
+            semantic_contract_match=all(
+                (
+                    admission.input_match,
+                    admission.security_match,
+                    admission.output_match,
+                    admission.runtime_match,
+                )
+            ),
         )
         try:
             if not admission.accepted:
@@ -799,6 +844,12 @@ class UpstreamDashboardProvider:
                 )
                 self._state.runtime_descriptor_fingerprint = (
                     runtime_descriptor_fingerprint
+                )
+                self._set_expected_legacy_fingerprints_locked(
+                    expected_input_schema_fingerprint,
+                    expected_security_fingerprint,
+                    expected_fixture_runtime_fingerprint,
+                    expected_published_runtime_fingerprint,
                 )
                 self._state.required_schema_compatible = False
                 self._state.reviewed_contract_match = False
@@ -825,6 +876,12 @@ class UpstreamDashboardProvider:
             )
             self._state.runtime_descriptor_fingerprint = (
                 runtime_descriptor_fingerprint
+            )
+            self._set_expected_legacy_fingerprints_locked(
+                expected_input_schema_fingerprint,
+                expected_security_fingerprint,
+                expected_fixture_runtime_fingerprint,
+                expected_published_runtime_fingerprint,
             )
             self._state.required_schema_compatible = True
             self._state.force_reload_supported = decision.force_reload_supported
@@ -861,6 +918,26 @@ class UpstreamDashboardProvider:
             self._state.validation_reason = None
             self._state.capability_status = "available"
             self._apply_admission_state_locked(admission)
+
+    def _set_expected_legacy_fingerprints_locked(
+        self,
+        input_schema: str | None,
+        reviewed_security: str | None,
+        fixture_runtime: str | None,
+        published_runtime: str | None,
+    ) -> None:
+        """Store diagnostic evidence selected by exact release attestation."""
+
+        self._state.expected_input_schema_fingerprint = input_schema
+        self._state.expected_reviewed_security_contract_fingerprint = (
+            reviewed_security
+        )
+        self._state.expected_fixture_runtime_descriptor_fingerprint = (
+            fixture_runtime
+        )
+        self._state.expected_published_runtime_descriptor_fingerprint = (
+            published_runtime
+        )
 
     def _apply_admission_state_locked(self, decision: AdmissionDecision) -> None:
         """Copy bounded admission evidence while the provider lock is held."""
@@ -1226,14 +1303,14 @@ class UpstreamDashboardProvider:
                     state.required_contract_fingerprint
                 ),
                 "expected_input_schema_fingerprint": (
-                    REVIEWED_SCHEMA_FINGERPRINT
+                    state.expected_input_schema_fingerprint
                 ),
                 "observed_input_schema_fingerprint": (
                     state.required_schema_fingerprint
                 ),
                 "input_schema_match": state.input_schema_match,
                 "expected_reviewed_security_contract_fingerprint": (
-                    REVIEWED_SECURITY_CONTRACT_FINGERPRINT
+                    state.expected_reviewed_security_contract_fingerprint
                 ),
                 "observed_reviewed_security_contract_fingerprint": (
                     state.reviewed_security_contract_fingerprint
@@ -1242,10 +1319,10 @@ class UpstreamDashboardProvider:
                     state.reviewed_security_contract_match
                 ),
                 "expected_fixture_runtime_descriptor_fingerprint": (
-                    REVIEWED_FIXTURE_RUNTIME_DESCRIPTOR_FINGERPRINT
+                    state.expected_fixture_runtime_descriptor_fingerprint
                 ),
                 "expected_published_runtime_descriptor_fingerprint": (
-                    REVIEWED_PUBLISHED_RUNTIME_DESCRIPTOR_FINGERPRINT
+                    state.expected_published_runtime_descriptor_fingerprint
                 ),
                 "observed_runtime_descriptor_fingerprint": (
                     state.runtime_descriptor_fingerprint
@@ -1603,13 +1680,34 @@ def _reviewed_security_contract_projection(
 def _runtime_descriptor_drift(
     *,
     runtime_descriptor_match: bool,
-    security_contract_match: bool,
+    published_runtime_descriptor_match: bool,
+    semantic_contract_match: bool,
 ) -> str:
-    if runtime_descriptor_match:
+    if runtime_descriptor_match or published_runtime_descriptor_match:
         return "none"
-    if security_contract_match:
+    if semantic_contract_match:
         return "descriptive_metadata_only"
     return "runtime_descriptor_semantic_drift"
+
+
+def _matching_release_attestation(
+    attestations: tuple[tuple[ReleaseAttestation, str], ...],
+    *,
+    server_name: str,
+    server_version: str,
+) -> ReleaseAttestation | None:
+    """Select informational evidence without participating in admission."""
+
+    return next(
+        (
+            entry
+            for entry, _source in attestations
+            if entry.server_name == server_name
+            and entry.upstream_version == server_version
+            and entry.contract_family == CONTRACT_FAMILY
+        ),
+        None,
+    )
 
 
 def _latency_summary(values: deque[float]) -> dict[str, float | int | None]:

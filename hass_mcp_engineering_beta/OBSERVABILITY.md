@@ -1,5 +1,27 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## RC2dev10 selected-attestation legacy fields
+
+RC2dev9 correctly admitted live ha-mcp 7.14.1 through built-in entry
+`ha-mcp-v7.14.1-68f386d9`, but four retained diagnostic comparisons still used
+static 7.13.0 expectations. That produced false raw-schema,
+reviewed-security, and published-runtime mismatches despite all authoritative
+normalized matches being true. RC2dev10 takes each version-specific expected
+legacy fingerprint from the exact selected attestation.
+
+The legacy mapping is: `input_schema_match` compares the exact observed raw
+`inputSchema`; `reviewed_security_contract_match` compares the retained
+security descriptor projection; `runtime_descriptor_match` compares the
+reviewed fixture descriptor; and `published_runtime_descriptor_match` compares
+the exact published descriptor. The authoritative admission mapping remains
+`input_contract_match`, `security_contract_match`, `output_contract_match`, and
+`runtime_contract_match`, computed from normalized semantic contracts. These
+families are intentionally not interchangeable.
+
+The active profile is `ha_mcp_dashboard_read_v2`. Exact releases are selected
+through reviewed attestations. No generic version range, new tool, new route,
+write, screenshot, preference operation, or fallback is introduced.
+
 ## RC2dev9 upstream admission health
 
 `get_server_health.upstream_dashboard` adds bounded contract-family admission
@@ -30,8 +52,10 @@ timeout/reconnect counts, categorized failures, session state, and
 `writes_allowed=false`.
 
 Historical RC3A trust reporting distinguished `contract_read_only` from
-`reviewed_argument_constrained`. The reviewed 7.13.0 profile reports its bounded
-profile ID, pinned name/version, contract-match state, active argument
+`reviewed_argument_constrained`. Its deprecated single-release profile ID was
+`ha_mcp_7_13_dashboard_read_v1`; RC2dev9 superseded it with active family
+`ha_mcp_dashboard_read_v2` and exact-release attestations. The retained RC3A
+section describes the original 7.13.0 name/version checks, contract-match state, active argument
 constraints, and explicit `screenshots_allowed=false`,
 `preference_writes_allowed=false`, and `writes_allowed=false`. It never claims
 that the mixed upstream tool is globally read-only.
@@ -49,11 +73,11 @@ direct Home Assistant timing semantics. Audit records contain only the list
 limit or exact canonical dashboard path, force-reload flag, and provider; they
 exclude endpoint and dashboard content.
 
-The normal contract-level mode requires `readOnlyHint=true`. The reviewed
-argument-constrained mode requires exact `ha-mcp` identity, exact 7.13.0
-version/protocol, the committed complete input-schema and security-contract
-fingerprints, exact reviewed safety annotations, and exact non-screenshot
-invocation shapes. Full runtime-descriptor drift is separately reported.
+The normal contract-level mode requires `readOnlyHint=true`. The current
+argument-constrained mode requires exact `ha-mcp` identity, an exact reviewed
+release attestation, the compiled family protocol and normalized contracts,
+exact reviewed safety annotations, and exact non-screenshot invocation shapes.
+Full runtime-descriptor drift is separately reported.
 `descriptive_metadata_only` drift is non-blocking only while the security
 projection remains exact; semantic drift makes the capability unavailable.
 Health does not return the fixture, full schema, raw descriptor, or raw
