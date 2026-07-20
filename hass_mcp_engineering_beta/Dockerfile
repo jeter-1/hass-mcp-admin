@@ -3,7 +3,7 @@ FROM python:3.12-slim AS dependency-builder
 WORKDIR /build
 COPY requirements.txt .
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y build-essential \
+    && apt-get install --no-install-recommends -y build-essential libffi-dev \
     && pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt \
     && rm -rf /var/lib/apt/lists/*
 
