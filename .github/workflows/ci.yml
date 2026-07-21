@@ -26,6 +26,7 @@ jobs:
             hass_mcp_admin/requirements-dev.txt
             hass_mcp_engineering_beta/requirements.txt
             tests/requirements.txt
+            scripts/requirements-upstream-registry-signing.lock
       - name: Install dependencies
         run: python -m pip install -r hass_mcp_admin/requirements-dev.txt -r hass_mcp_engineering_beta/requirements.txt -r tests/requirements.txt
       - name: Compile Python
@@ -35,6 +36,23 @@ jobs:
       - name: Validate PowerShell deployment script syntax
         shell: pwsh
         run: '[scriptblock]::Create((Get-Content -Raw "scripts/deploy-beta.ps1")) | Out-Null'
+      - name: Run protected signer in a clean lock-only environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          wheelhouse="$RUNNER_TEMP/registry-signing-wheelhouse"
+          mkdir -p "$wheelhouse"
+          python -m pip download \
+            --disable-pip-version-check \
+            --require-hashes \
+            --only-binary=:all: \
+            --dest "$wheelhouse" \
+            -r scripts/requirements-upstream-registry-signing.lock
+          python scripts/verify_upstream_registry_signing_wheels.py \
+            "$wheelhouse" scripts/requirements-upstream-registry-signing.lock
+          PYTHONNOUSERSITE=1 python scripts/run_upstream_registry_signing_clean_environment.py \
+            --wheelhouse "$wheelhouse" \
+            --lock scripts/requirements-upstream-registry-signing.lock
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
       - name: Validate add-on YAML

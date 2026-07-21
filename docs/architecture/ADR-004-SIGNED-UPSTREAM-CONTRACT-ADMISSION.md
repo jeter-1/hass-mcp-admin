@@ -9,6 +9,23 @@ values are informational only and are not added to steps 3–5 of the admission
 decision. This removes stale single-release diagnostics without expanding the
 registry's authority.
 
+RC2dev11 operational clarification: registry lifecycle changes are prepared by
+a fixed-path repository CLI and a serialized three-job workflow. Inspection has
+no seed or write authority and emits separate raw-evidence and wheelhouse
+artifacts. Signing is protected, read-only, imports only the standard library and
+`cryptography`, reconstructs the requested mutation from trusted dispatch inputs,
+the verified current registry, and raw evidence before seed exposure, and installs
+only a hash-locked offline dependency closure. The seed-bearing phase signs only
+prevalidated canonical bytes. Publication is the only repository/PR
+writer and receives no seed. Lifecycle evidence is individually signed and
+forms a contiguous digest chain. The captured `main` SHA and expected sequence
+are checked before signing and again before publication. Direct CLI mutation
+uses complete-set staging and verification, per-file atomic replacement, and
+automatic byte-for-byte restoration on failure; it does not claim filesystem
+transactionality. Workflow publication uses one coherent verified Git commit.
+These operator mechanics do not participate in runtime admission and do not
+expand the signed data authority described below.
+
 ## Decision
 
 Engineering admits an exact upstream release only when a binary-owned semantic
@@ -65,3 +82,11 @@ Dashboard writes, screenshots, preference persistence, service/batch execution,
 Future registry administration is not an extension of this family. It requires a
 new separately reviewed governed plan/apply/rollback design and a new compiled
 family or native provider decision.
+
+The monotonic runtime anchor is the verified cache in persistent `/data`. A
+lower sequence and equal-sequence conflicting replay fail closed. Recovery from
+revocation, bad data or expiry uses a separately reviewed higher sequence; a Git
+revert is not a registry rollback procedure. Erasing `/data` removes the local
+rollback anchor and therefore belongs to a separately governed backup/recovery
+policy. Production registry URLs remain fixed, and failure-injection stays in
+the disposable acceptance harness.

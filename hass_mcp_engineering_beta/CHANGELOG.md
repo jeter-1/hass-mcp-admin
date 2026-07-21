@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.0.0-rc2-dev11 - signed-registry production operations
+
+- Add fixed-path, sequence-safe bootstrap/add/revoke/restore/renew/verify
+  lifecycle administration with dry-run, canonical signing, atomic writes and
+  public-key-only verification.
+- Expand the main-only protected workflow to prepare four-file data-only draft
+  PRs without package, image, tag, release or deployment authority.
+- Require explicit UTC ISO-8601 `reviewed_at` values and add a disposable
+  verifier/cache/admission/health failure-injection harness.
+- Preserve the 40/25/0 catalog, dashboard-only upstream boundary, public schemas,
+  governance storage and stable v1.1.2.
+
 ## 2.0.0-rc2-dev10 - selected-attestation observability truth
 
 - Derive retained raw-schema, reviewed-security, fixture-runtime, and

@@ -20,6 +20,49 @@ audit, errors and MCP responses expose no endpoint, registry body, signature,
 public-key value, cache path or raw exception. See
 [`UPSTREAM_TRUST_REGISTRY.md`](UPSTREAM_TRUST_REGISTRY.md).
 
+## RC2dev11 registry operator boundary
+
+The production lifecycle utility is repository-side only. Its CLI has fixed
+data paths, accepts no registry URL or output override, derives every next
+sequence, requires stale-state protection, verifies the proposed Ed25519
+document before complete-set replacement, and emits only bounded non-secret
+summary data. Direct writes use per-file atomic replacement rather than claiming
+multi-file transactionality; replacement or post-write failure restores the
+original bytes and modes, removes newly created outputs, and verifies the
+restored set. A restoration failure is critical. The raw 32-byte private seed
+and corresponding raw public key must match. Public-key-only verification cannot
+mutate files.
+
+The lifecycle workflow is manual, main-only, serialized, and split across online
+read-only inspection, protected read-only signing, and publication. Only the
+signing job references `UPSTREAM_TRUST_REGISTRY_SIGNING_KEY`; it installs the
+complete signing closure offline from exact hash-locked wheels and has no
+repository/PR write authority. Only publication has repository/PR write
+authority; it has no private-key reference and publicly re-verifies the complete
+artifact set. It can open only a four-file data-only draft PR and contains no
+package, tag, release, deployment or image-push command. `origin/main` SHA and
+sequence are rechecked before signing and before publication.
+
+Inspection uploads raw immutable evidence and the verified wheelhouse as separate
+artifacts with deterministic download roots; it does not choose the signed
+registry mutation. The protected signer imports only the standard library and
+`cryptography`. A seed-free phase validates the exact artifacts and trusted
+dispatch inputs and reconstructs the transition from the verified current
+registry plus raw evidence. The seed-bearing step signs only the prevalidated
+canonical bytes, with no network, Git, installation, or reconstruction. A public-
+key-only phase verifies and packages the signed data for publication. Clean CI
+executes all three phases in a fresh environment containing only the hash-locked
+cryptographic dependency closure.
+
+Each lifecycle evidence payload is canonically signed and binds operation,
+identity, revocation transition, reason, timestamps, exact workflow base,
+registry digests, prior evidence digest, inspection digests, and the four paths.
+Verification traverses the entire contiguous history, not only the current
+record. A signed entry still cannot add executable policy. Revocation,
+restoration and bad-document correction require monotonically higher sequences;
+deleting `/data` is not a security recovery because it removes the local rollback
+anchor.
+
 ## RC2dev10 upstream dashboard boundary
 
 `upstream_dashboard` is separate from the unavailable generic

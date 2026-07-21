@@ -9,6 +9,7 @@ annotation remains covered.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -267,7 +268,7 @@ class ReleaseAttestation:
             review_evidence_digest=_bounded_string(
                 value["review_evidence_digest"], 71
             ),
-            reviewed_at=_bounded_string(value["reviewed_at"], 32),
+            reviewed_at=_reviewed_at_utc(value["reviewed_at"]),
             revoked=value["revoked"],
         )
         result.validate()
@@ -663,6 +664,25 @@ def _bounded_string(value: Any, maximum: int) -> str:
     if not isinstance(value, str) or not value or len(value) > maximum:
         raise ContractValidationError("attestation_value_invalid")
     return value
+
+
+def _reviewed_at_utc(value: Any) -> str:
+    """Validate an explicit UTC review timestamp and return canonical ``Z`` form."""
+
+    text = _bounded_string(value, 32)
+    if text.endswith("Z"):
+        candidate = f"{text[:-1]}+00:00"
+    elif text.endswith("+00:00"):
+        candidate = text
+    else:
+        raise ContractValidationError("attestation_reviewed_at_invalid")
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except ValueError:
+        raise ContractValidationError("attestation_reviewed_at_invalid") from None
+    if parsed.tzinfo is None or parsed.utcoffset() != timezone.utc.utcoffset(parsed):
+        raise ContractValidationError("attestation_reviewed_at_invalid")
+    return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _optional_fingerprint(value: Any) -> str | None:
