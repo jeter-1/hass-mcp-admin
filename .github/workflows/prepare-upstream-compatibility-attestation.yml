@@ -20,7 +20,7 @@ on:
         default: ""
         type: string
       expected_current_sequence:
-        description: Required current sequence for every mutating operation (0 for bootstrap)
+        description: Required current sequence for every mutation (0 for bootstrap)
         required: false
         default: ""
         type: string
@@ -39,29 +39,35 @@ concurrency:
   group: upstream-compatibility-attestation
   cancel-in-progress: false
 
-permissions:
-  contents: read
+# Every job declares its own minimum permission boundary.
+permissions: {}
+
+env:
+  OPERATION: ${{ inputs.operation }}
+  VERSION: ${{ inputs.upstream_version }}
+  EXPECTED_CURRENT_SEQUENCE: ${{ inputs.expected_current_sequence }}
+  EXPIRY_DAYS: ${{ inputs.expiry_days }}
+  OPERATOR_REASON: ${{ inputs.operator_reason }}
+  WORKFLOW_BASE_SHA: ${{ github.sha }}
+  DISPATCH_SHA: ${{ github.sha }}
+  UPSTREAM_REPOSITORY: https://github.com/homeassistant-ai/ha-mcp.git
+  UPSTREAM_IMAGE_REPOSITORY: ghcr.io/homeassistant-ai/ha-mcp
+  SIGNING_LOCK: scripts/requirements-upstream-registry-signing.lock
 
 jobs:
-  attest:
+  inspection:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: upstream-attestation-signing
     permissions:
-      contents: write
-      pull-requests: write
-    env:
-      OPERATION: ${{ inputs.operation }}
-      VERSION: ${{ inputs.upstream_version }}
-      EXPECTED_CURRENT_SEQUENCE: ${{ inputs.expected_current_sequence }}
-      EXPIRY_DAYS: ${{ inputs.expiry_days }}
-      OPERATOR_REASON: ${{ inputs.operator_reason }}
-      UPSTREAM_REPOSITORY: https://github.com/homeassistant-ai/ha-mcp.git
-      UPSTREAM_IMAGE_REPOSITORY: ghcr.io/homeassistant-ai/ha-mcp
+      contents: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Check out the dispatch base without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
       - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
         with:
@@ -70,17 +76,33 @@ jobs:
           cache-dependency-path: |
             hass_mcp_engineering_beta/requirements.txt
             tests/requirements.txt
+            scripts/requirements-upstream-registry-signing.lock
 
-      - name: Install fixed review dependencies
+      - name: Install online inspection dependencies without signing authority
         run: >-
           python -m pip install
           -r hass_mcp_engineering_beta/requirements.txt
           -r tests/requirements.txt
 
-      - name: Validate operation, stable version, sequence, and fixed locations
+      - name: Download the exact hash-locked signing wheel set
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/signing-wheelhouse"
+          python -m pip download \
+            --require-hashes \
+            --only-binary=:all: \
+            --dest "$RUNNER_TEMP/signing-wheelhouse" \
+            -r "$SIGNING_LOCK"
+          python scripts/verify_upstream_registry_signing_wheels.py \
+            "$RUNNER_TEMP/signing-wheelhouse" "$SIGNING_LOCK"
+
+      - name: Validate bounded dispatch inputs and fixed locations
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$WORKFLOW_BASE_SHA" = "$GITHUB_SHA"
           case "$OPERATION" in
             bootstrap|add|revoke|restore)
               [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
@@ -94,11 +116,6 @@ jobs:
             test -z "$EXPECTED_CURRENT_SEQUENCE"
           else
             [[ "$EXPECTED_CURRENT_SEQUENCE" =~ ^(0|[1-9][0-9]*)$ ]]
-            if [[ "$OPERATION" == "bootstrap" ]]; then
-              test "$EXPECTED_CURRENT_SEQUENCE" = "0"
-            else
-              test "$EXPECTED_CURRENT_SEQUENCE" -ge 1
-            fi
           fi
           test "$EXPIRY_DAYS" -ge 1
           test "$EXPIRY_DAYS" -le 365
@@ -127,7 +144,7 @@ jobs:
           grep -q 'json.dumps(config, sort_keys=True, separators=(",", ":"))' "$RUNNER_TEMP/ha-mcp/src/ha_mcp/utils/config_hash.py"
           echo "source_commit=$source_commit" >> "$GITHUB_OUTPUT"
 
-      - name: Set up Docker Buildx
+      - name: Set up Docker Buildx for inspection only
         if: inputs.operation == 'bootstrap' || inputs.operation == 'add'
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
@@ -138,16 +155,13 @@ jobs:
         run: |
           set -euo pipefail
           image="${UPSTREAM_IMAGE_REPOSITORY}:${VERSION}"
-          raw="$RUNNER_TEMP/upstream-index.json"
-          inspect="$RUNNER_TEMP/upstream-inspect.txt"
-          docker buildx imagetools inspect --raw "$image" > "$raw"
-          docker buildx imagetools inspect "$image" > "$inspect"
-          index_digest="$(awk '$1 == "Digest:" {print $2; exit}' "$inspect")"
-          python - "$raw" "$RUNNER_TEMP/platforms.json" "$RUNNER_TEMP/attestation-digests.txt" <<'PY'
+          docker buildx imagetools inspect --raw "$image" > "$RUNNER_TEMP/upstream-index.json"
+          docker buildx imagetools inspect "$image" > "$RUNNER_TEMP/upstream-inspect.txt"
+          index_digest="$(awk '$1 == "Digest:" {print $2; exit}' "$RUNNER_TEMP/upstream-inspect.txt")"
+          python - "$RUNNER_TEMP/upstream-index.json" "$RUNNER_TEMP/platforms.json" "$RUNNER_TEMP/attestation-digests.txt" <<'PY'
           import json, pathlib, sys
           value = json.loads(pathlib.Path(sys.argv[1]).read_text())
-          platforms = {}
-          attestations = []
+          platforms, attestations = {}, []
           for item in value.get("manifests", []):
               platform = item.get("platform", {})
               if item.get("annotations", {}).get("vnd.docker.reference.type") == "attestation-manifest":
@@ -168,21 +182,16 @@ jobs:
           number=0
           while IFS= read -r digest; do
             test -n "$digest"
-            docker buildx imagetools inspect --raw "${UPSTREAM_IMAGE_REPOSITORY}@${digest}" \
-              > "$RUNNER_TEMP/upstream-attestations/${number}.json"
+            docker buildx imagetools inspect --raw "${UPSTREAM_IMAGE_REPOSITORY}@${digest}" > "$RUNNER_TEMP/upstream-attestations/${number}.json"
             number=$((number + 1))
           done < "$RUNNER_TEMP/attestation-digests.txt"
           python - "$RUNNER_TEMP/upstream-attestations" "$RUNNER_TEMP/platforms.json" <<'PY'
           import json, pathlib, sys
           directory = pathlib.Path(sys.argv[1])
-          provenance = 0
-          sbom = 0
+          provenance = sbom = 0
           for path in directory.glob("*.json"):
               manifest = json.loads(path.read_text())
-              predicates = {
-                  layer.get("annotations", {}).get("in-toto.io/predicate-type", "")
-                  for layer in manifest.get("layers", [])
-              }
+              predicates = {layer.get("annotations", {}).get("in-toto.io/predicate-type", "") for layer in manifest.get("layers", [])}
               provenance += any("slsa" in item.lower() for item in predicates)
               sbom += any("spdx" in item.lower() or "cyclonedx" in item.lower() for item in predicates)
           platforms_path = pathlib.Path(sys.argv[2])
@@ -202,10 +211,7 @@ jobs:
           test "$image_version" = "$VERSION"
           [[ "$revision" =~ ^[0-9a-f]{40}$ ]]
           test "$source_label" = "https://github.com/homeassistant-ai/ha-mcp"
-          if [[ -n "$dirty_label" && "$dirty_label" != "false" ]]; then
-            echo "::error::The official upstream image reports a dirty build."
-            exit 1
-          fi
+          if [[ -n "$dirty_label" && "$dirty_label" != "false" ]]; then exit 1; fi
           dirty_label="${dirty_label:-absent}"
           git -C "$RUNNER_TEMP/ha-mcp" fetch origin "$revision"
           git -C "$RUNNER_TEMP/ha-mcp" merge-base --is-ancestor "${{ steps.source.outputs.source_commit }}" "$revision"
@@ -232,7 +238,7 @@ jobs:
           done
           exit 1
 
-      - name: Extract runtime contract from the exact published image
+      - name: Extract runtime contract from exact published image
         if: inputs.operation == 'bootstrap' || inputs.operation == 'add'
         shell: bash
         run: |
@@ -264,26 +270,115 @@ jobs:
           import json, pathlib, sys
           version, source_commit, index_digest, revision, created, source_label, dirty_label, platforms_path = sys.argv[1:]
           platforms = json.loads(pathlib.Path(platforms_path).read_text())
-          value = {
-              "version": version,
-              "source_tag": f"v{version}",
-              "source_commit": source_commit,
-              "image_index_digest": index_digest,
-              "image_revision": revision,
-              "image_created": created,
-              "image_source": source_label,
-              "dirty_label": dirty_label,
-              "platform_digests": platforms["platform_digests"],
-              "slsa_provenance": platforms["slsa_provenance"],
-              "sbom": platforms["sbom"],
-              "official_repository": "homeassistant-ai/ha-mcp",
-              "official_image": "ghcr.io/homeassistant-ai/ha-mcp",
-          }
+          value = {"version": version, "source_tag": f"v{version}", "source_commit": source_commit, "image_index_digest": index_digest, "image_revision": revision, "image_created": created, "image_source": source_label, "dirty_label": dirty_label, "platform_digests": platforms["platform_digests"], "slsa_provenance": platforms["slsa_provenance"], "sbom": platforms["sbom"], "official_repository": "homeassistant-ai/ha-mcp", "official_image": "ghcr.io/homeassistant-ai/ha-mcp"}
           pathlib.Path(".compat/release-evidence.json").write_text(json.dumps(value, sort_keys=True))
           PY
 
-      - name: Sign and verify data-only registry mutation
+      - name: Verify the current committed registry without mutation
+        if: inputs.operation == 'verify'
+        env:
+          UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/manage_upstream_trust_registry.py --operation verify > "$RUNNER_TEMP/verification-summary.json"
+          git diff --exit-code
+
+      - name: Construct unsigned candidate and inspection manifest
         if: inputs.operation != 'verify'
+        env:
+          UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY }}
+          UPSTREAM_TRUST_REGISTRY_KEY_ID: ${{ secrets.UPSTREAM_TRUST_REGISTRY_KEY_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/registry-inspection/unsigned"
+          args=(--operation "$OPERATION" --phase prepare --expected-current-sequence "$EXPECTED_CURRENT_SEQUENCE" --expiry-days "$EXPIRY_DAYS" --operator-reason "$OPERATOR_REASON" --workflow-base-sha "$WORKFLOW_BASE_SHA" --dispatch-sha "$DISPATCH_SHA" --artifact-directory "$RUNNER_TEMP/registry-inspection/unsigned")
+          if [[ -n "$VERSION" ]]; then args+=(--upstream-version "$VERSION"); fi
+          python scripts/manage_upstream_trust_registry.py "${args[@]}" > "$RUNNER_TEMP/registry-inspection/inspection-summary.json"
+
+      - name: Upload unsigned candidate and reviewed offline wheel set
+        if: inputs.operation != 'verify'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: upstream-registry-inspection-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/registry-inspection
+            ${{ runner.temp }}/signing-wheelhouse
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Write bounded inspection summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### Registry inspection boundary"
+            echo "- Operation: ${OPERATION}"
+            echo "- Dispatch/base SHA: ${WORKFLOW_BASE_SHA}"
+            echo "- Private signing seed available: false"
+            echo "- Repository write authority: false"
+            echo "- Pull-request write authority: false"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean up disposable inspection runtime
+        if: always()
+        shell: bash
+        run: |
+          docker rm -f upstream-compatibility-review >/dev/null 2>&1 || true
+          if [[ -f "$RUNNER_TEMP/fake-ha.pid" ]]; then kill "$(cat "$RUNNER_TEMP/fake-ha.pid")" >/dev/null 2>&1 || true; fi
+          rm -rf .compat
+
+  signing:
+    if: github.ref == 'refs/heads/main' && inputs.operation != 'verify'
+    needs: inspection
+    runs-on: ubuntu-latest
+    environment: upstream-attestation-signing
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the captured base without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Download unsigned inspection artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: upstream-registry-inspection-${{ github.run_id }}
+          path: ${{ runner.temp }}/registry-artifacts
+
+      - name: Verify and install the reviewed signing closure offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/verify_upstream_registry_signing_wheels.py "$RUNNER_TEMP/registry-artifacts/signing-wheelhouse" "$SIGNING_LOCK"
+          python -m pip install \
+            --disable-pip-version-check \
+            --no-index \
+            --find-links "$RUNNER_TEMP/registry-artifacts/signing-wheelhouse" \
+            --require-hashes \
+            -r "$SIGNING_LOCK"
+
+      - name: Require current main and sequence immediately before signing
+        env:
+          UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/check_upstream_registry_main_freshness.py \
+            --repository . \
+            --workflow-base-sha "$WORKFLOW_BASE_SHA" \
+            --expected-current-sequence "$EXPECTED_CURRENT_SEQUENCE" \
+            --phase signing
+
+      - name: Sign candidate and lifecycle evidence with minimum secret scope
         env:
           UPSTREAM_TRUST_REGISTRY_SIGNING_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_SIGNING_KEY }}
           UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY }}
@@ -291,126 +386,169 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$UPSTREAM_TRUST_REGISTRY_SIGNING_KEY"
-          test -n "$UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY"
-          test -n "$UPSTREAM_TRUST_REGISTRY_KEY_ID"
-          args=(
-            --operation "$OPERATION"
-            --expected-current-sequence "$EXPECTED_CURRENT_SEQUENCE"
-            --expiry-days "$EXPIRY_DAYS"
-            --operator-reason "$OPERATOR_REASON"
-          )
-          if [[ -n "$VERSION" ]]; then
-            args+=(--upstream-version "$VERSION")
-          fi
-          python scripts/manage_upstream_trust_registry.py "${args[@]}" \
-            > "$RUNNER_TEMP/registry-operation-summary.json"
+          mkdir -p "$RUNNER_TEMP/registry-artifacts/signed"
+          python scripts/manage_upstream_trust_registry.py \
+            --operation "$OPERATION" \
+            --phase sign \
+            --artifact-directory "$RUNNER_TEMP/registry-artifacts"
 
-      - name: Verify committed registry with public key only
-        if: inputs.operation == 'verify'
+      - name: Reverify signed set with the public key only
         env:
           UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY }}
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY"
-          python scripts/manage_upstream_trust_registry.py --operation verify \
-            > "$RUNNER_TEMP/registry-operation-summary.json"
-          git diff --exit-code
+          python scripts/manage_upstream_trust_registry.py \
+            --operation "$OPERATION" \
+            --phase verify-artifacts \
+            --artifact-directory "$RUNNER_TEMP/registry-artifacts/signed"
 
-      - name: Enforce data-only diff
-        if: inputs.operation != 'verify'
-        id: branch
+      - name: Upload publicly verifiable signed data set
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: upstream-registry-signed-${{ github.run_id }}
+          path: ${{ runner.temp }}/registry-artifacts/signed
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Write bounded signing summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### Protected signing boundary"
+            echo "- Repository write authority: false"
+            echo "- Pull-request write authority: false"
+            echo "- Online dependency resolution with seed present: false"
+            echo "- Hash-locked offline wheel installation: true"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publication:
+    if: github.ref == 'refs/heads/main' && inputs.operation != 'verify'
+    needs: [inspection, signing]
+    runs-on: ubuntu-latest
+    environment: upstream-attestation-signing
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Check out main without credentials from another boundary
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Download signed data set
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: upstream-registry-signed-${{ github.run_id }}
+          path: ${{ runner.temp }}/signed-registry
+
+      - name: Download reviewed offline verification wheels
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: upstream-registry-inspection-${{ github.run_id }}
+          path: ${{ runner.temp }}/inspection-artifacts
+
+      - name: Install the public verifier from the reviewed offline wheel set
         shell: bash
         run: |
           set -euo pipefail
-          evidence_path="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["evidence_path"])' "$RUNNER_TEMP/registry-operation-summary.json")"
-          case "$evidence_path" in
-            docs/evidence/upstream-compatibility/ha-mcp-*.json|docs/evidence/upstream-compatibility/registry-sequence-*.json) ;;
-            *) echo "::error::Unexpected evidence path"; exit 1 ;;
-          esac
+          python scripts/verify_upstream_registry_signing_wheels.py "$RUNNER_TEMP/inspection-artifacts/signing-wheelhouse" "$SIGNING_LOCK"
+          python -m pip install --disable-pip-version-check --no-index --find-links "$RUNNER_TEMP/inspection-artifacts/signing-wheelhouse" --require-hashes -r "$SIGNING_LOCK"
+
+      - name: Require current main before constructing publication
+        env:
+          UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          signed_base="$(python -c 'import json; print(json.load(open("${{ runner.temp }}/signed-registry/publication-manifest.json"))["workflow_base_sha"])')"
+          python scripts/check_upstream_registry_main_freshness.py --repository . --workflow-base-sha "$WORKFLOW_BASE_SHA" --expected-current-sequence "$EXPECTED_CURRENT_SEQUENCE" --phase publication --signed-base-sha "$signed_base"
+
+      - name: Reverify signed set and construct one coherent commit
+        id: commit
+        env:
+          UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/manage_upstream_trust_registry.py --operation "$OPERATION" --phase verify-artifacts --artifact-directory "$RUNNER_TEMP/signed-registry"
           branch="data/upstream-registry-${OPERATION}-${GITHUB_RUN_ID}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -c "$branch"
-          git add -- \
-            upstream-trust/upstream-dashboard-registry.json \
-            upstream-trust/upstream-dashboard-registry.sig.json \
-            "$evidence_path" \
-            docs/generated/UPSTREAM_TRUST_REGISTRY_INDEX.md
-          unexpected="$(git diff --cached --name-only | grep -Ev '^(upstream-trust/upstream-dashboard-registry(\.sig)?\.json|docs/evidence/upstream-compatibility/(ha-mcp-[0-9]+\.[0-9]+\.[0-9]+|registry-sequence-[0-9]{6})\.json|docs/generated/UPSTREAM_TRUST_REGISTRY_INDEX\.md)$' || true)"
-          test -z "$unexpected"
-          test "$(git diff --cached --name-only | wc -l)" -eq 4
-          git commit -m "Operate upstream trust registry: ${OPERATION}"
-          git push origin "HEAD:refs/heads/${branch}"
+          python scripts/prepare_upstream_registry_publication.py --repository . --signed-artifacts "$RUNNER_TEMP/signed-registry" --worktree "$RUNNER_TEMP/registry-publication-worktree" --branch "$branch" --summary "$RUNNER_TEMP/publication-commit.json"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
 
-      - name: Open data-only draft pull request
-        if: inputs.operation != 'verify'
+      - name: Recheck main and push only the verified data commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          signed_base="$(python -c 'import json; print(json.load(open("${{ runner.temp }}/signed-registry/publication-manifest.json"))["workflow_base_sha"])')"
+          python scripts/check_upstream_registry_main_freshness.py --repository . --workflow-base-sha "$WORKFLOW_BASE_SHA" --expected-current-sequence "$EXPECTED_CURRENT_SEQUENCE" --phase publication --signed-base-sha "$signed_base"
+          gh auth setup-git
+          git -C "$RUNNER_TEMP/registry-publication-worktree" push origin "HEAD:refs/heads/${{ steps.commit.outputs.branch }}"
+
+      - name: Open only a draft data-only pull request
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          python - "$RUNNER_TEMP/registry-operation-summary.json" "$RUNNER_TEMP/pr-body.md" <<'PY'
+          python - "$RUNNER_TEMP/signed-registry/operation-summary.json" "$RUNNER_TEMP/signed-registry/publication-manifest.json" "$RUNNER_TEMP/pr-body.md" <<'PY'
           import json, pathlib, sys
-          value = json.loads(pathlib.Path(sys.argv[1]).read_text())
-          affected = value["affected_entry_id"] or "none (registry-wide renewal)"
+          summary = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          manifest = json.loads(pathlib.Path(sys.argv[2]).read_text())
+          affected = summary["affected_entry_id"] or "none (registry-wide renewal)"
           body = f"""## Data-only upstream registry operation
 
-          - Operation: `{value['operation']}`
-          - Old sequence: `{value['old_sequence']}`
-          - New sequence: `{value['new_sequence']}`
+          - Operation: `{summary['operation']}`
+          - Workflow base SHA: `{summary['workflow_base_sha']}`
+          - Dispatch SHA: `{summary['dispatch_sha']}`
+          - Old sequence: `{summary['old_sequence']}`
+          - New sequence: `{summary['new_sequence']}`
           - Affected entry: `{affected}`
-          - Server/version: `{value['server_name'] or 'n/a'}` / `{value['upstream_version'] or 'n/a'}`
-          - Revoked: `{value['old_revoked']}` -> `{value['new_revoked']}`
-          - Generated: `{value['generated_at']}`
-          - Expires: `{value['expires_at']}`
-          - Key ID: `{value['key_id']}`
-          - Contract family: `{value['contract_family']}`
-          - Source commit: `{value['source_commit'] or 'n/a'}`
-          - Image digest: `{value['image_index_digest'] or 'n/a'}`
-          - Evidence digest: `{value['evidence_digest']}`
+          - Server/version: `{summary['server_name'] or 'n/a'}` / `{summary['upstream_version'] or 'n/a'}`
+          - Revoked: `{summary['old_revoked']}` -> `{summary['new_revoked']}`
+          - Generated: `{summary['generated_at']}`
+          - Expires: `{summary['expires_at']}`
+          - Key ID: `{summary['key_id']}`
+          - Contract family: `{summary['contract_family']}`
+          - Source commit: `{summary['source_commit'] or 'n/a'}`
+          - Image digest: `{summary['image_index_digest'] or 'n/a'}`
+          - Registry digest: `{summary['registry_digest']}`
+          - Lifecycle evidence digest: `{summary['evidence_digest']}`
+          - Prior lifecycle evidence digest: `{summary['prior_lifecycle_evidence_digest']}`
+          - Complete-set verified: `{manifest['verified']}`
 
-          This pull request is data-only. It does not change Engineering code, runtime
-          capabilities, argument construction, routing, or an Engineering image. No
-          Engineering image change is required.
+          This pull request is data-only and contains one complete verified registry
+          transition. It does not change Engineering code, runtime capabilities,
+          routing, or an Engineering image. No Engineering image change is required.
           """
-          pathlib.Path(sys.argv[2]).write_text(body)
+          pathlib.Path(sys.argv[3]).write_text(body)
           PY
-          gh pr create --draft --base main --head "${{ steps.branch.outputs.branch }}" \
-            --title "Operate upstream trust registry: ${OPERATION}" \
-            --body-file "$RUNNER_TEMP/pr-body.md"
+          gh pr create --draft --base main --head "${{ steps.commit.outputs.branch }}" --title "Operate upstream trust registry: ${OPERATION}" --body-file "$RUNNER_TEMP/pr-body.md"
 
-      - name: Write bounded attestation summary
+      - name: Write bounded publication summary
         if: always()
         shell: bash
         run: |
           {
-            echo "### Upstream compatibility registry lifecycle"
-            echo "- Operation: ${OPERATION}"
-            echo "- Version selector: ${VERSION:-not applicable}"
-            echo "- Fixed source: homeassistant-ai/ha-mcp"
-            echo "- Fixed image: ghcr.io/homeassistant-ai/ha-mcp"
-            echo "- Contract family: ha_mcp_dashboard_read_v2"
-            if [[ -f "$RUNNER_TEMP/registry-operation-summary.json" ]]; then
-              python - "$RUNNER_TEMP/registry-operation-summary.json" <<'PY'
-          import json, pathlib, sys
-          value = json.loads(pathlib.Path(sys.argv[1]).read_text())
-          print(f"- Old sequence: {value.get('old_sequence', 'n/a')}")
-          print(f"- New sequence: {value.get('new_sequence', value.get('sequence', 'n/a'))}")
-          print(f"- Registry digest: {value.get('registry_digest', 'n/a')}")
-          print(f"- Data only: {str(value.get('data_only', True)).lower()}")
-          PY
-            fi
-            echo "- Image push: false"
-            echo "- Engineering release: false"
+            echo "### Data-only publication boundary"
+            echo "- Repository/PR write authority: true"
+            echo "- Private signing seed available: false"
+            echo "- Complete set published through one Git commit: true"
+            echo "- Tag, release, image, package, or deployment command: false"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Clean up disposable runtime
+      - name: Remove disposable publication worktree
         if: always()
         shell: bash
         run: |
-          docker rm -f upstream-compatibility-review >/dev/null 2>&1 || true
-          if [[ -f "$RUNNER_TEMP/fake-ha.pid" ]]; then kill "$(cat "$RUNNER_TEMP/fake-ha.pid")" >/dev/null 2>&1 || true; fi
-          rm -rf .compat
+          git worktree remove --force "$RUNNER_TEMP/registry-publication-worktree" >/dev/null 2>&1 || true

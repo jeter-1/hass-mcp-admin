@@ -197,7 +197,7 @@ class RegistryLifecycleCliTests(unittest.TestCase):
                 {
                     fixture.paths.registry,
                     fixture.paths.signature,
-                    fixture.paths.evidence_directory / "ha-mcp-7.14.2.json",
+                    fixture.paths.evidence_directory / "registry-sequence-000001.json",
                     fixture.paths.index,
                 },
                 {

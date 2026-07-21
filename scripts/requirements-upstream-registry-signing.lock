@@ -1,0 +1,8 @@
+# Complete CPython 3.12 Linux x86_64 signing dependency closure.
+# The protected signing job installs only the reviewed wheels listed here.
+cryptography==45.0.7 \
+    --hash=sha256:577470e39e60a6cd7780793202e63536026d9b8641de011ed9d8174da9ca5339
+cffi==2.1.0 \
+    --hash=sha256:1e9f50d192a3e525b15a75ab5114e442d83d657b7ec29182a991bc9a88fd3a66
+pycparser==3.0 \
+    --hash=sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992
