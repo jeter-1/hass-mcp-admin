@@ -1,3 +1,4 @@
+import importlib.util
 import json
 from pathlib import Path
 import sys
@@ -36,6 +37,14 @@ from ha_mcp_engineering.routing import (  # noqa: E402
 from ha_mcp_engineering.tools.registry import get_registered_server  # noqa: E402
 from ha_mcp_engineering.tools import compatibility  # noqa: E402
 from ha_mcp_engineering.version import SERVER_VERSION  # noqa: E402
+
+PROMOTION_SPEC = importlib.util.spec_from_file_location(
+    "rc2dev12_promote_next_release",
+    ROOT / "scripts" / "promote_next_release.py",
+)
+PROMOTION_MODULE = importlib.util.module_from_spec(PROMOTION_SPEC)
+assert PROMOTION_SPEC.loader is not None
+PROMOTION_SPEC.loader.exec_module(PROMOTION_MODULE)
 
 
 SECRET = "synthetic-rc2dev8-gateway-secret"
@@ -472,7 +481,11 @@ class Rc2dev8RawPrevalidationTests(unittest.TestCase):
 
 class McpOutcomeClassificationTests(unittest.TestCase):
     def test_release_version_catalog_schemas_and_documents_are_consistent(self):
-        self.assertEqual(SERVER_VERSION, "2.0.0-rc2-dev10")
+        authoritative_versions = PROMOTION_MODULE.authoritative_versions(ROOT)
+        self.assertEqual(
+            set(authoritative_versions.values()),
+            {SERVER_VERSION},
+        )
         tools = {
             tool.name: tool
             for tool in get_registered_server()._tool_manager.list_tools()

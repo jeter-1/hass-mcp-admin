@@ -17,11 +17,11 @@ PUBLISH_PATH = ROOT / ".github" / "workflows" / "publish-rc-image.yml"
 TAG_GUARD_PATH = ROOT / "scripts" / "assert_registry_tags_absent.sh"
 PROMOTION_PATH = ROOT / "scripts" / "promote_next_release.py"
 IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
-ADVERTISED_VERSION = "2.0.0-rc2-dev10"
 # RC2dev11 remains reserved by the frozen, unrelated PR #49. The read-only
 # gateway feature uses the repository's staged-release mechanism without
 # changing the advertised RC2dev10 runtime metadata in this PR.
 NEXT_VERSION = "2.0.0-rc2-dev12"
+PROMOTION_FIXTURE_CURRENT_VERSION = "2.0.0-rc2-dev9"
 PLATFORMS = ("linux/amd64", "linux/arm64", "linux/arm/v7")
 BUILD_ARGUMENTS = (
     "BUILD_VERSION",
@@ -29,6 +29,14 @@ BUILD_ARGUMENTS = (
     "HAMCP_BUILD_TIME",
     "HAMCP_BUILD_DIRTY",
 )
+
+PROMOTION_SPEC = importlib.util.spec_from_file_location(
+    "promote_next_release",
+    PROMOTION_PATH,
+)
+PROMOTION_MODULE = importlib.util.module_from_spec(PROMOTION_SPEC)
+assert PROMOTION_SPEC.loader is not None
+PROMOTION_SPEC.loader.exec_module(PROMOTION_MODULE)
 
 
 def load_workflow(path):
@@ -91,34 +99,32 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         )
 
     def test_feature_pr_or_promoted_source_is_version_consistent(self):
-        config = yaml.safe_load(
-            (ROOT / "hass_mcp_engineering_beta" / "config.yaml").read_text(
-                encoding="utf-8"
-            )
-        )
+        versions = PROMOTION_MODULE.authoritative_versions(ROOT)
+        self.assertEqual(len(set(versions.values())), 1)
+        configured_version = next(iter(versions.values()))
         declaration = ROOT / ".release" / "next-version"
-        expected_version = (
-            ADVERTISED_VERSION if declaration.exists() else NEXT_VERSION
-        )
-        self.assertEqual(config["version"], expected_version)
         if declaration.exists():
+            current, candidate = PROMOTION_MODULE.validate_candidate(ROOT)
+            self.assertEqual(current, configured_version)
+            self.assertEqual(candidate, NEXT_VERSION)
             self.assertEqual(
                 declaration.read_text(encoding="utf-8").strip(),
                 NEXT_VERSION,
             )
-        version_source = (
-            ROOT
-            / "hass_mcp_engineering_beta"
-            / "ha_mcp_engineering"
-            / "version.py"
-        ).read_text(encoding="utf-8")
-        self.assertIn(f'SERVER_VERSION = "{expected_version}"', version_source)
+        else:
+            self.assertEqual(configured_version, NEXT_VERSION)
 
-    def test_awesomeversion_orders_dev12_between_dev10_and_final_rc3(self):
-        self.assertGreater(
-            AwesomeVersion(NEXT_VERSION),
-            AwesomeVersion(ADVERTISED_VERSION),
-        )
+    def test_staged_or_promoted_dev12_orders_before_final_rc3(self):
+        versions = PROMOTION_MODULE.authoritative_versions(ROOT)
+        configured_version = next(iter(versions.values()))
+        declaration = ROOT / ".release" / "next-version"
+        if declaration.exists():
+            self.assertGreater(
+                AwesomeVersion(NEXT_VERSION),
+                AwesomeVersion(configured_version),
+            )
+        else:
+            self.assertEqual(configured_version, NEXT_VERSION)
         self.assertLess(
             AwesomeVersion(NEXT_VERSION),
             AwesomeVersion("2.0.0-rc.3"),
@@ -340,15 +346,14 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
 class PromotionScriptTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        spec = importlib.util.spec_from_file_location(
-            "promote_next_release",
-            PROMOTION_PATH,
-        )
-        cls.module = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-        spec.loader.exec_module(cls.module)
+        cls.module = PROMOTION_MODULE
 
-    def make_repo(self, root, current=ADVERTISED_VERSION, candidate=NEXT_VERSION):
+    def make_repo(
+        self,
+        root,
+        current=PROMOTION_FIXTURE_CURRENT_VERSION,
+        candidate=NEXT_VERSION,
+    ):
         files = {
             ".release/next-version": candidate + "\n",
             "hass_mcp_engineering_beta/config.yaml": f'version: "{current}"\n',
@@ -366,7 +371,10 @@ class PromotionScriptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             self.make_repo(directory)
             current, candidate = self.module.apply_candidate(Path(directory))
-            self.assertEqual((current, candidate), (ADVERTISED_VERSION, NEXT_VERSION))
+            self.assertEqual(
+                (current, candidate),
+                (PROMOTION_FIXTURE_CURRENT_VERSION, NEXT_VERSION),
+            )
             self.assertFalse((Path(directory) / ".release/next-version").exists())
             self.assertEqual(
                 set(self.module.authoritative_versions(Path(directory)).values()),
@@ -374,7 +382,11 @@ class PromotionScriptTests(unittest.TestCase):
             )
 
     def test_candidate_must_be_newer_and_below_final_rc3(self):
-        for candidate in (ADVERTISED_VERSION, "2.0.0-rc.3", "not-a-version"):
+        for candidate in (
+            PROMOTION_FIXTURE_CURRENT_VERSION,
+            "2.0.0-rc.3",
+            "not-a-version",
+        ):
             with self.subTest(candidate=candidate), tempfile.TemporaryDirectory() as directory:
                 self.make_repo(directory, candidate=candidate)
                 with self.assertRaises(self.module.PromotionError):
