@@ -9,6 +9,14 @@ values are informational only and are not added to steps 3–5 of the admission
 decision. This removes stale single-release diagnostics without expanding the
 registry's authority.
 
+RC2dev11 operational clarification: registry lifecycle changes are prepared by
+a fixed-path repository CLI and a serialized, protected-environment workflow.
+Bootstrap/add/revoke/restore/renew always derive the next sequence, require the
+operator's expected current sequence, verify before atomic replacement and
+produce a four-file data-only draft PR. Verify is public-key-only and read-only.
+These operator mechanics do not participate in runtime admission and do not
+expand the signed data authority described below.
+
 ## Decision
 
 Engineering admits an exact upstream release only when a binary-owned semantic
@@ -65,3 +73,11 @@ Dashboard writes, screenshots, preference persistence, service/batch execution,
 Future registry administration is not an extension of this family. It requires a
 new separately reviewed governed plan/apply/rollback design and a new compiled
 family or native provider decision.
+
+The monotonic runtime anchor is the verified cache in persistent `/data`. A
+lower sequence and equal-sequence conflicting replay fail closed. Recovery from
+revocation, bad data or expiry uses a separately reviewed higher sequence; a Git
+revert is not a registry rollback procedure. Erasing `/data` removes the local
+rollback anchor and therefore belongs to a separately governed backup/recovery
+policy. Production registry URLs remain fixed, and failure-injection stays in
+the disposable acceptance harness.

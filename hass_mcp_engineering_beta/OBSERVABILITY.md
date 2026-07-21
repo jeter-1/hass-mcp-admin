@@ -1,5 +1,27 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## RC2dev11 signed-registry operations
+
+The lifecycle operator changes no runtime field names. Registry health continues
+to expose bounded `registry_sequence`, generated/refresh/cache ages and status,
+signature state, last successful refresh and precise failure category. A fresh
+verified fetch is `remote_fresh`; a still-usable LKG after restart or remote
+failure is `remote_cached`. Just over the 604800-second hard-cache limit, or
+after independent registry expiry, a registry-only release is unavailable.
+
+Higher-sequence revocation is visible as `rejected_revoked_attestation` and
+blocks dashboard tool dispatch. A separately reviewed higher-sequence restore
+may admit the same exact release again. Rollback and equal-sequence conflicting
+replay remain distinct health failure categories. Registry bodies, signatures,
+keys, evidence content, fixed URLs and cache paths are never serialized through
+health.
+
+The disposable RC2dev11 harness injects time and fetch results into the exact
+production verifier/cache/admission/health code. It covers fresh and cached
+admission, remote unavailability, invalid signatures, the cache hard-age
+boundary, rollback/replay, revocation/restoration, renewal and restart
+reconstruction without adding a runtime URL or outage control.
+
 ## RC2dev10 selected-attestation legacy fields
 
 RC2dev9 correctly admitted live ha-mcp 7.14.1 through built-in entry

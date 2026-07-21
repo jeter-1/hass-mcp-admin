@@ -20,6 +20,23 @@ audit, errors and MCP responses expose no endpoint, registry body, signature,
 public-key value, cache path or raw exception. See
 [`UPSTREAM_TRUST_REGISTRY.md`](UPSTREAM_TRUST_REGISTRY.md).
 
+## RC2dev11 registry operator boundary
+
+The production lifecycle utility is repository-side only. Its CLI has fixed
+data paths, accepts no registry URL or output override, derives every next
+sequence, requires stale-state protection, verifies the proposed Ed25519
+document before atomic replacement, and emits only bounded non-secret summary
+data. The raw 32-byte private seed and corresponding raw public key must match;
+the private seed is available only to the protected workflow signing step.
+Public-key-only verification cannot mutate files.
+
+The lifecycle workflow is manual, main-only, serialized and protected by
+`upstream-attestation-signing`. It can open only a four-file data-only draft PR
+and has no package, tag, release, deployment or image-push path. A signed entry
+still cannot add executable policy. Revocation, restoration and bad-document
+correction require monotonically higher sequences; deleting `/data` is not a
+security recovery because it removes the local rollback anchor.
+
 ## RC2dev10 upstream dashboard boundary
 
 `upstream_dashboard` is separate from the unavailable generic

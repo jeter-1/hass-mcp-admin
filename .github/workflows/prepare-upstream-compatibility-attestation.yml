@@ -3,9 +3,36 @@ name: Prepare ha-mcp compatibility attestation
 on:
   workflow_dispatch:
     inputs:
-      upstream_version:
-        description: Exact stable homeassistant-ai/ha-mcp version (for example 7.14.2)
+      operation:
+        description: Data-only registry lifecycle operation
         required: true
+        type: choice
+        options:
+          - bootstrap
+          - add
+          - revoke
+          - restore
+          - renew
+          - verify
+      upstream_version:
+        description: Exact stable ha-mcp version (required for bootstrap/add/revoke/restore)
+        required: false
+        default: ""
+        type: string
+      expected_current_sequence:
+        description: Required current sequence for every mutating operation (0 for bootstrap)
+        required: false
+        default: ""
+        type: string
+      expiry_days:
+        description: Registry validity in days for a mutation
+        required: true
+        default: 90
+        type: number
+      operator_reason:
+        description: Optional bounded non-secret review reference or reason
+        required: false
+        default: ""
         type: string
 
 concurrency:
@@ -24,7 +51,11 @@ jobs:
       contents: write
       pull-requests: write
     env:
+      OPERATION: ${{ inputs.operation }}
       VERSION: ${{ inputs.upstream_version }}
+      EXPECTED_CURRENT_SEQUENCE: ${{ inputs.expected_current_sequence }}
+      EXPIRY_DAYS: ${{ inputs.expiry_days }}
+      OPERATOR_REASON: ${{ inputs.operator_reason }}
       UPSTREAM_REPOSITORY: https://github.com/homeassistant-ai/ha-mcp.git
       UPSTREAM_IMAGE_REPOSITORY: ghcr.io/homeassistant-ai/ha-mcp
     steps:
@@ -46,15 +77,42 @@ jobs:
           -r hass_mcp_engineering_beta/requirements.txt
           -r tests/requirements.txt
 
-      - name: Validate exact stable version and fixed source locations
+      - name: Validate operation, stable version, sequence, and fixed locations
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          case "$OPERATION" in
+            bootstrap|add|revoke|restore)
+              [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+              ;;
+            renew|verify)
+              test -z "$VERSION"
+              ;;
+            *) exit 1 ;;
+          esac
+          if [[ "$OPERATION" == "verify" ]]; then
+            test -z "$EXPECTED_CURRENT_SEQUENCE"
+          else
+            [[ "$EXPECTED_CURRENT_SEQUENCE" =~ ^(0|[1-9][0-9]*)$ ]]
+            if [[ "$OPERATION" == "bootstrap" ]]; then
+              test "$EXPECTED_CURRENT_SEQUENCE" = "0"
+            else
+              test "$EXPECTED_CURRENT_SEQUENCE" -ge 1
+            fi
+          fi
+          test "$EXPIRY_DAYS" -ge 1
+          test "$EXPIRY_DAYS" -le 365
+          python - "$OPERATOR_REASON" <<'PY'
+          import sys
+          reason = sys.argv[1]
+          if len(reason) > 256 or any(ord(char) < 32 for char in reason):
+              raise SystemExit("operator reason is invalid")
+          PY
           test "$UPSTREAM_REPOSITORY" = "https://github.com/homeassistant-ai/ha-mcp.git"
           test "$UPSTREAM_IMAGE_REPOSITORY" = "ghcr.io/homeassistant-ai/ha-mcp"
 
       - name: Resolve exact source tag and reviewed implementation
+        if: inputs.operation == 'bootstrap' || inputs.operation == 'add'
         id: source
         shell: bash
         run: |
@@ -70,9 +128,11 @@ jobs:
           echo "source_commit=$source_commit" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
+        if: inputs.operation == 'bootstrap' || inputs.operation == 'add'
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Resolve immutable official image and provenance
+        if: inputs.operation == 'bootstrap' || inputs.operation == 'add'
         id: image
         shell: bash
         run: |
@@ -160,6 +220,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Start disposable read-only Home Assistant fixture
+        if: inputs.operation == 'bootstrap' || inputs.operation == 'add'
         shell: bash
         run: |
           set -euo pipefail
@@ -172,6 +233,7 @@ jobs:
           exit 1
 
       - name: Extract runtime contract from the exact published image
+        if: inputs.operation == 'bootstrap' || inputs.operation == 'add'
         shell: bash
         run: |
           set -euo pipefail
@@ -194,6 +256,7 @@ jobs:
             --output .compat/runtime-evidence.json
 
       - name: Generate bounded release evidence
+        if: inputs.operation == 'bootstrap' || inputs.operation == 'add'
         shell: bash
         run: |
           set -euo pipefail
@@ -219,7 +282,8 @@ jobs:
           pathlib.Path(".compat/release-evidence.json").write_text(json.dumps(value, sort_keys=True))
           PY
 
-      - name: Sign and verify data-only registry update
+      - name: Sign and verify data-only registry mutation
+        if: inputs.operation != 'verify'
         env:
           UPSTREAM_TRUST_REGISTRY_SIGNING_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_SIGNING_KEY }}
           UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY }}
@@ -230,47 +294,115 @@ jobs:
           test -n "$UPSTREAM_TRUST_REGISTRY_SIGNING_KEY"
           test -n "$UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY"
           test -n "$UPSTREAM_TRUST_REGISTRY_KEY_ID"
-          python scripts/prepare_upstream_compatibility_attestation.py --version "$VERSION"
+          args=(
+            --operation "$OPERATION"
+            --expected-current-sequence "$EXPECTED_CURRENT_SEQUENCE"
+            --expiry-days "$EXPIRY_DAYS"
+            --operator-reason "$OPERATOR_REASON"
+          )
+          if [[ -n "$VERSION" ]]; then
+            args+=(--upstream-version "$VERSION")
+          fi
+          python scripts/manage_upstream_trust_registry.py "${args[@]}" \
+            > "$RUNNER_TEMP/registry-operation-summary.json"
+
+      - name: Verify committed registry with public key only
+        if: inputs.operation == 'verify'
+        env:
+          UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY"
+          python scripts/manage_upstream_trust_registry.py --operation verify \
+            > "$RUNNER_TEMP/registry-operation-summary.json"
+          git diff --exit-code
 
       - name: Enforce data-only diff
+        if: inputs.operation != 'verify'
         id: branch
         shell: bash
         run: |
           set -euo pipefail
-          branch="data/upstream-attestation-${VERSION}-${GITHUB_RUN_ID}"
+          evidence_path="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["evidence_path"])' "$RUNNER_TEMP/registry-operation-summary.json")"
+          case "$evidence_path" in
+            docs/evidence/upstream-compatibility/ha-mcp-*.json|docs/evidence/upstream-compatibility/registry-sequence-*.json) ;;
+            *) echo "::error::Unexpected evidence path"; exit 1 ;;
+          esac
+          branch="data/upstream-registry-${OPERATION}-${GITHUB_RUN_ID}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$branch"
           git add -- \
             upstream-trust/upstream-dashboard-registry.json \
             upstream-trust/upstream-dashboard-registry.sig.json \
-            "docs/evidence/upstream-compatibility/ha-mcp-${VERSION}.json" \
+            "$evidence_path" \
             docs/generated/UPSTREAM_TRUST_REGISTRY_INDEX.md
-          unexpected="$(git diff --cached --name-only | grep -Ev '^(upstream-trust/upstream-dashboard-registry(\.sig)?\.json|docs/evidence/upstream-compatibility/ha-mcp-[0-9]+\.[0-9]+\.[0-9]+\.json|docs/generated/UPSTREAM_TRUST_REGISTRY_INDEX\.md)$' || true)"
+          unexpected="$(git diff --cached --name-only | grep -Ev '^(upstream-trust/upstream-dashboard-registry(\.sig)?\.json|docs/evidence/upstream-compatibility/(ha-mcp-[0-9]+\.[0-9]+\.[0-9]+|registry-sequence-[0-9]{6})\.json|docs/generated/UPSTREAM_TRUST_REGISTRY_INDEX\.md)$' || true)"
           test -z "$unexpected"
-          git commit -m "Attest ha-mcp ${VERSION} dashboard read compatibility"
+          test "$(git diff --cached --name-only | wc -l)" -eq 4
+          git commit -m "Operate upstream trust registry: ${OPERATION}"
           git push origin "HEAD:refs/heads/${branch}"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
 
       - name: Open data-only draft pull request
+        if: inputs.operation != 'verify'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
+          set -euo pipefail
+          python - "$RUNNER_TEMP/registry-operation-summary.json" "$RUNNER_TEMP/pr-body.md" <<'PY'
+          import json, pathlib, sys
+          value = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          affected = value["affected_entry_id"] or "none (registry-wide renewal)"
+          body = f"""## Data-only upstream registry operation
+
+          - Operation: `{value['operation']}`
+          - Old sequence: `{value['old_sequence']}`
+          - New sequence: `{value['new_sequence']}`
+          - Affected entry: `{affected}`
+          - Server/version: `{value['server_name'] or 'n/a'}` / `{value['upstream_version'] or 'n/a'}`
+          - Revoked: `{value['old_revoked']}` -> `{value['new_revoked']}`
+          - Generated: `{value['generated_at']}`
+          - Expires: `{value['expires_at']}`
+          - Key ID: `{value['key_id']}`
+          - Contract family: `{value['contract_family']}`
+          - Source commit: `{value['source_commit'] or 'n/a'}`
+          - Image digest: `{value['image_index_digest'] or 'n/a'}`
+          - Evidence digest: `{value['evidence_digest']}`
+
+          This pull request is data-only. It does not change Engineering code, runtime
+          capabilities, argument construction, routing, or an Engineering image. No
+          Engineering image change is required.
+          """
+          pathlib.Path(sys.argv[2]).write_text(body)
+          PY
           gh pr create --draft --base main --head "${{ steps.branch.outputs.branch }}" \
-            --title "Attest ha-mcp ${VERSION} dashboard read compatibility" \
-            --body "Data-only signed compatibility attestation for exact ha-mcp ${VERSION}. No Engineering code, image, tool allowlist, or argument builder is changed."
+            --title "Operate upstream trust registry: ${OPERATION}" \
+            --body-file "$RUNNER_TEMP/pr-body.md"
 
       - name: Write bounded attestation summary
         if: always()
         shell: bash
         run: |
           {
-            echo "### Upstream compatibility attestation"
-            echo "- Version: ${VERSION}"
+            echo "### Upstream compatibility registry lifecycle"
+            echo "- Operation: ${OPERATION}"
+            echo "- Version selector: ${VERSION:-not applicable}"
             echo "- Fixed source: homeassistant-ai/ha-mcp"
             echo "- Fixed image: ghcr.io/homeassistant-ai/ha-mcp"
             echo "- Contract family: ha_mcp_dashboard_read_v2"
+            if [[ -f "$RUNNER_TEMP/registry-operation-summary.json" ]]; then
+              python - "$RUNNER_TEMP/registry-operation-summary.json" <<'PY'
+          import json, pathlib, sys
+          value = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          print(f"- Old sequence: {value.get('old_sequence', 'n/a')}")
+          print(f"- New sequence: {value.get('new_sequence', value.get('sequence', 'n/a'))}")
+          print(f"- Registry digest: {value.get('registry_digest', 'n/a')}")
+          print(f"- Data only: {str(value.get('data_only', True)).lower()}")
+          PY
+            fi
             echo "- Image push: false"
             echo "- Engineering release: false"
           } >> "$GITHUB_STEP_SUMMARY"

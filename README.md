@@ -192,7 +192,7 @@ outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 ## Engineering beta/RC analytical milestones
 
 The parallel v2 add-on RC3A development stage is now hardened as
-`2.0.0-rc2-dev10`, based on the deployed RC2dev9 source. It has 40 registered
+`2.0.0-rc2-dev11`, based on the accepted RC2dev10 source. It has 40 registered
 tools and 25 unchanged canonical tools. Audit filters parse each bounded JSONL
 record and compare only the exact top-level event, so the routed audit reader's
 own nested filter argument cannot create false security evidence.
@@ -204,6 +204,10 @@ dashboard-read family. RC2dev10 derives retained raw-schema, reviewed-security,
 and runtime-descriptor expectations from the exact selected attestation, while
 keeping those diagnostics distinct from the normalized admission gate;
 unrelated catalog and prose drift remain observability evidence.
+RC2dev11 adds the fixed-path, sequence-safe registry bootstrap/add/revoke/
+restore/renew/verify operator and protected data-only draft-PR workflow. It
+hardens `reviewed_at` as explicit UTC and adds disposable LKG failure testing;
+runtime admission, routing, capabilities and public schemas do not change.
 Engineering constructs only exact non-screenshot read forms. The mixed upstream
 tool is not described as globally read-only. The generic
 `StandardHaMcpGateway` remains unavailable. No dashboard write, service,
@@ -215,6 +219,8 @@ evidence hash calculated before sanitization.
 RC2 governance, external approval, direct-HA policies, and idempotent
 plan/challenge expiry remain intact. No planned feature capability remains.
 Production v1.1.2, `hass_mcp_admin`, and port 8099 remain unchanged. See
+[`docs/RC2DEV11_RELEASE_NOTES.md`](docs/RC2DEV11_RELEASE_NOTES.md),
+[`docs/RC2DEV11_ACCEPTANCE.md`](docs/RC2DEV11_ACCEPTANCE.md),
 [`docs/RC2DEV10_RELEASE_NOTES.md`](docs/RC2DEV10_RELEASE_NOTES.md),
 [`docs/RC2DEV10_ACCEPTANCE.md`](docs/RC2DEV10_ACCEPTANCE.md),
 [`docs/RC2DEV9_RELEASE_NOTES.md`](docs/RC2DEV9_RELEASE_NOTES.md),

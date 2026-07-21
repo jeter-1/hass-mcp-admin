@@ -75,7 +75,7 @@ and descriptor fingerprints identify the reviewed published representation and
 support drift diagnostics only. A catalog fingerprint remains unrelated-tool
 observability and is never a required-tool compatibility gate.
 
-## Signing-key operations
+## Signing-key and sequence operations
 
 The private seed exists only as
 `UPSTREAM_TRUST_REGISTRY_SIGNING_KEY` in the protected GitHub environment
@@ -97,15 +97,70 @@ Never place a private seed in add-on options, repository files, workflow output,
 PR text, artifacts, cache data, or logs. A compromised key requires an explicit
 Engineering/public-key rotation release; do not silently replace registry data.
 
+`scripts/manage_upstream_trust_registry.py` is the fixed-path, repository-side
+operator. It is not imported by the add-on and is not an MCP tool. It supports:
+
+- `bootstrap`: create sequence 1 only when neither committed registry file
+  exists and add exactly one fully reviewed release;
+- `add`: append one previously unknown exact server/version/family identity;
+- `revoke` and `restore`: change only the selected entry's boolean revocation
+  state;
+- `renew`: keep the entries byte-for-byte semantically equal while updating the
+  validity window; and
+- `verify`: check canonical files, schema, public-key signature, key ID,
+  sequence, every entry/evidence digest and the generated index without a
+  private key or a write.
+
+Every mutation derives `next_sequence = current_sequence + 1`, requires the
+operator's expected current sequence, signs compact sorted-key UTF-8 JSON, and
+verifies the proposal before atomically replacing each fixed output. `--dry-run`
+performs the same construction and verification without creating files. There
+is no sequence override, registry URL, output-path, capability, tool, family or
+runtime argument. The repository newline is stored for review but is not part
+of the Ed25519 signed bytes.
+
+The data outputs are limited to the registry JSON, detached signature JSON, one
+bounded review-evidence document and the generated index. Machine-readable
+stdout contains bounded identities, sequence/timestamps and digests, never key
+material.
+
 ## Manual workflow
 
 `Prepare ha-mcp compatibility attestation` is `workflow_dispatch` on `main` and
-accepts only an exact stable version. It requires protected-environment approval,
-reviews fixed official source/image locations, uses the immutable image digest,
-tests against disposable Home Assistant, validates semantic contracts and
-hashes, signs a new higher-sequence entry, and opens a draft data-only PR.
+offers `bootstrap`, `add`, `revoke`, `restore`, `renew`, and `verify`. Every
+mutation requires an expected current sequence; add/bootstrap also require an
+exact stable version and execute the existing fixed official source, image and
+disposable-runtime inspection. Revoke/restore/renew preserve unrelated entries
+and produce an exact bounded semantic diff. Verify receives only the public key
+and creates no branch or PR.
+
+Mutations require approval in `upstream-attestation-signing`. Only the signing
+step receives the private seed. A repository-wide concurrency group prevents two
+operations racing. The generated branch is checked against a four-file data-only
+allowlist and the workflow opens a draft PR whose body records old/new sequence,
+affected identity/revocation state, validity window, key/family, relevant source
+and image evidence, and evidence digest.
 
 The workflow has no package permission and cannot publish an Engineering image,
 tag, release, or deployment. Normal review must verify the evidence/diff and run
 CI before the data PR is merged. Promotion remains owned by the existing
 Engineering release workflow.
+
+`reviewed_at` is part of signed release evidence. The runtime accepts only a
+valid ISO-8601 timestamp with explicit UTC (`Z` or `+00:00`), canonicalizes it to
+`Z`, and rejects naive values, non-UTC offsets and invalid calendar dates before
+admission. This validation does not change normalized contract semantics.
+
+## Accepted operating limitations
+
+- Production registry and signature URLs remain fixed; redirects are disabled.
+- There is no live outage-injection control. Bad signatures, unavailable remote
+  data and the seven-day hard-cache boundary are exercised only in the disposable
+  test harness.
+- The monotonic rollback anchor is the LKG cache under persistent `/data`.
+  Erasing `/data` removes that local anchor, so backup and restore of `/data`
+  requires a separately governed operational policy.
+- A lower sequence is never a recovery. Correct bad data, revocation or expiry
+  with a separately reviewed higher sequence.
+- Production use must not begin before the protected GitHub environment,
+  required reviewers, key custody and offline recovery copy exist.
