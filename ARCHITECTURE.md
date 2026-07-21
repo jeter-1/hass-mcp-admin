@@ -1,5 +1,20 @@
 # HA MCP Engineering Server Architecture
 
+## Phase 1 single-server read gateway
+
+The current architecture pivot supersedes the sidecar assumption for pure
+reads. Because the client can expose only one MCP server, Engineering is the
+front door for its preserved 40 registered tools plus dynamically discovered,
+exact-schema-matched reads from the reviewed `ha-mcp` 7.14.1 catalog.
+
+One generic provider handles the policy-approved read set. The committed
+78-tool inventory classifies 27 as universally read-only and blocks every mixed,
+write, action, prohibited, or unsupported tool. Unlisted tools, schema drift,
+and versions without existing built-in admission fail closed. No delegated call
+has a direct-HA fallback. The mixed dashboard operation remains reachable only
+through its existing non-screenshot wrappers. See
+[`ADR-005`](docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md).
+
 ## RC2dev7 audit-integrity boundary
 
 The current Engineering Beta source is `2.0.0-rc2-dev8`. It retains the RC3A

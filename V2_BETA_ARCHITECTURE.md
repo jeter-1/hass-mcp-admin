@@ -1,5 +1,21 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## Phase 1 reviewed pure-read gateway
+
+Engineering is now the single client-visible gateway for the existing 40-tool
+Engineering catalog and exact reviewed pure reads from `ha-mcp` 7.14.1. Startup
+catalog discovery registers only the 27 `automatic_read` entries whose complete
+input-schema fingerprints match the committed 78-tool policy. All 51 mixed,
+write, physical/high-risk, prohibited, or unsupported entries remain generic-
+route unavailable. There is no direct-HA fallback.
+
+The generic provider does not weaken the existing dashboard boundary:
+`ha_config_get_dashboard` stays excluded as mixed, while `list_dashboards` and
+`get_dashboard_config` keep their compiled, non-screenshot argument builders.
+The read gateway uses built-in reviewed 7.14.1 admission and does not depend on
+the signed-registry production ceremony. See
+[`ADR-005`](docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md).
+
 ## RC2dev10 selected-attestation observability
 
 RC2dev10 leaves the RC2dev9 admission and routing architecture unchanged. Once
@@ -79,8 +95,10 @@ rejects all rendering fields before network dispatch.
 
 The public additions are `list_dashboards` and `get_dashboard_config`. Both are
 beta-native read tools routed directly to `upstream_dashboard`, with no
-fallback. The generic Standard HA MCP gateway remains unavailable. The catalog
-is 40 registered/25 canonical/zero planned. No dashboard mutation or arbitrary
+fallback. At the RC3A milestone the generic Standard HA MCP gateway remained
+unavailable; Phase 1 later superseded that limitation only for exact reviewed
+`automatic_read` entries. The Engineering catalog at that milestone was 40
+registered/25 canonical/zero planned. No dashboard mutation or arbitrary
 upstream dispatch exists.
 
 ## RC2 release freeze and provenance

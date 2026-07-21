@@ -294,9 +294,38 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
     },
 )
 
+# Process-local entries are populated only after the exact upstream 7.14.1
+# catalog has matched the committed read policy.  The existing Engineering
+# catalog remains immutable and available when upstream discovery is absent.
+_DYNAMIC_UPSTREAM_CAPABILITIES: tuple[dict[str, Any], ...] = ()
+_UPSTREAM_READ_GATEWAY_SUMMARY: dict[str, Any] = {
+    "configured": False,
+    "initialized": False,
+    "generic_delegation_available": False,
+    "dynamically_exposed_count": 0,
+}
+
+
+def replace_dynamic_upstream_capabilities(
+    values: tuple[dict[str, Any], ...], gateway_summary: dict[str, Any]
+) -> None:
+    """Publish one validated startup snapshot for metadata and audit lookups."""
+
+    global _DYNAMIC_UPSTREAM_CAPABILITIES, _UPSTREAM_READ_GATEWAY_SUMMARY
+    _DYNAMIC_UPSTREAM_CAPABILITIES = tuple(dict(item) for item in values)
+    _UPSTREAM_READ_GATEWAY_SUMMARY = dict(gateway_summary)
+
+
+def dynamic_upstream_capabilities() -> tuple[dict[str, Any], ...]:
+    return tuple(dict(item) for item in _DYNAMIC_UPSTREAM_CAPABILITIES)
+
 
 def capability_for_tool(tool_name: str | None) -> dict[str, Any]:
-    for item in (*CAPABILITIES, *BETA_NATIVE_CAPABILITIES):
+    for item in (
+        *CAPABILITIES,
+        *BETA_NATIVE_CAPABILITIES,
+        *_DYNAMIC_UPSTREAM_CAPABILITIES,
+    ):
         if item["tool"] == tool_name:
             value = dict(item)
             value.setdefault("operation_class", "read" if item.get("risk") == "read" else "prohibited")
@@ -321,8 +350,17 @@ def build_server_metadata(*, ha_url: str, runtime_mode: str, ha_connection: dict
             "home_assistant_url": ha_url,
             "home_assistant_connection": ha_connection,
         },
-        "tool_count": len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES),
+        "tool_count": (
+            len(CAPABILITIES)
+            + len(BETA_NATIVE_CAPABILITIES)
+            + len(_DYNAMIC_UPSTREAM_CAPABILITIES)
+        ),
         "canonical_tool_count": len(CAPABILITIES),
+        "engineering_registered_tool_count": (
+            len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES)
+        ),
+        "dynamic_upstream_tool_count": len(_DYNAMIC_UPSTREAM_CAPABILITIES),
+        "upstream_read_gateway": dict(_UPSTREAM_READ_GATEWAY_SUMMARY),
     }
 
 
@@ -333,6 +371,12 @@ def build_capability_catalog(*, status: str = "", category: str = "") -> dict[st
     tools = [
         {**dict(item), "operation_class": item.get("operation_class", "read" if item.get("risk") == "read" else "prohibited")}
         for item in CAPABILITIES
+        if (not normalized_status or item["status"] == normalized_status)
+        and (not normalized_category or item["category"] == normalized_category)
+    ]
+    dynamic_tools = [
+        dict(item)
+        for item in _DYNAMIC_UPSTREAM_CAPABILITIES
         if (not normalized_status or item["status"] == normalized_status)
         and (not normalized_category or item["category"] == normalized_category)
     ]
@@ -348,7 +392,17 @@ def build_capability_catalog(*, status: str = "", category: str = "") -> dict[st
             {**dict(item), "operation_class": item.get("operation_class", "read" if item.get("risk") == "read" else "prohibited")}
             for item in BETA_NATIVE_CAPABILITIES
         ],
+        "dynamic_upstream": dynamic_tools,
+        "upstream_read_gateway": dict(_UPSTREAM_READ_GATEWAY_SUMMARY),
         "provider_matrix": [dict(item) for item in CAPABILITY_PROVIDER_MATRIX],
-        "registered_count": len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES),
+        "registered_count": (
+            len(CAPABILITIES)
+            + len(BETA_NATIVE_CAPABILITIES)
+            + len(_DYNAMIC_UPSTREAM_CAPABILITIES)
+        ),
+        "engineering_registered_count": (
+            len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES)
+        ),
+        "dynamic_upstream_count": len(_DYNAMIC_UPSTREAM_CAPABILITIES),
         "status_values": ["native", "transitional", "delegated", "deprecated", "beta_native", "planned", "unavailable"],
     }

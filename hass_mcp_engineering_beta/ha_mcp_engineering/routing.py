@@ -634,6 +634,17 @@ class AuthenticatedMcpGateway:
                         "force_reload": bool(parameters.get("force_reload", True)),
                         "provider": "upstream_dashboard",
                     }
+                elif capability.get("category") == "upstream_read_gateway":
+                    # Generic reads may carry search text, templates, or other
+                    # untrusted content.  Audit only the reviewed route,
+                    # bounded field names, and already-bounded *_id resources.
+                    audit_parameters = {
+                        "provider": "upstream_read_gateway",
+                        "classification": "automatic_read",
+                        "argument_fields": sorted(
+                            str(key)[:64] for key in parameters
+                        )[:64],
+                    }
                 self.audit.write(AuditRecord(
                     request_id=request_id,
                     tool_name=tool_name,

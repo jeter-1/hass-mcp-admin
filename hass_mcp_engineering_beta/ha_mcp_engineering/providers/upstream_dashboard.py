@@ -695,6 +695,24 @@ class UpstreamDashboardProvider:
             self._raise("not_configured", dispatched=False)
         return await self._transport.discover()
 
+    def validate_read_gateway_catalog(self, catalog: Any) -> None:
+        """Apply the existing built-in release admission to a full read catalog.
+
+        The generic gateway owns policy matching for every pure-read tool.  This
+        adapter deliberately reuses the already accepted release identity,
+        protocol, and dashboard contract admission without changing it.
+        """
+
+        self._validate_handshake(
+            McpDashboardHandshake(
+                protocol_version=str(catalog.protocol_version),
+                server_name=str(catalog.server_name),
+                server_version=str(catalog.server_version),
+                tools=tuple(catalog.tools),
+                connection_latency_ms=float(catalog.connection_latency_ms),
+            )
+        )
+
     def _validate_handshake(self, handshake: McpDashboardHandshake) -> None:
         tools = list(handshake.tools)
         tool = next(

@@ -229,6 +229,7 @@ class RuntimeMetrics:
             "standard_ha_mcp",
             "direct_ha_api",
             "upstream_dashboard",
+            "upstream_read_gateway",
             "policy",
             "none",
         } else "other"

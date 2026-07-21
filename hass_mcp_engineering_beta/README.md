@@ -4,6 +4,16 @@ This directory is the isolated v2 beta/RC add-on. It can run beside the stable
 `hass_mcp_admin` add-on without sharing its port, options, secret, audit file,
 or container identity.
 
+## Phase 1 reviewed upstream reads
+
+After configuring the existing secret-bearing upstream MCP URL, startup
+discovers the exact `ha-mcp` 7.14.1 catalog and adds 27 policy-approved pure-read
+tools to MCP `tools/list`. The existing 40 Engineering tools remain unchanged.
+Unlisted, schema-changed, mixed, write, action, prohibited, and unsupported
+tools are not registered; delegated reads never fall back to direct Home
+Assistant access. The complete 78-tool classification and collision contract
+are in [`ADR-005`](../docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md).
+
 ## Install the beta add-on
 
 1. Keep the stable add-on installed and running on port `8099`.
@@ -54,7 +64,9 @@ call `server_info(check_ha=false)` and verify version
 `2.0.0-rc2-dev10` after release approval, the expected complete release
 commit SHA, and its UTC build time,
 then call `list_capabilities` and verify the preserved 25-tool canonical catalog
-plus 15 beta-native tools; MCP `tools/list` should expose 40 callable tools.
+plus 15 beta-native tools. Without an admitted upstream, MCP `tools/list` exposes
+those 40 tools. With exact reviewed `ha-mcp` 7.14.1 configured, it also exposes
+the policy-matched dynamic read count reported by `upstream_read_gateway`.
 Beta 17 added the read-only
 `configuration_integrity_analysis` capability; Beta 18 hardens its shared entity
 reference classifier without changing the tool catalog or schemas. Its contract,
@@ -79,9 +91,9 @@ exact configuration evidence through an exact-release-attested,
 `reviewed_argument_constrained` upstream profile in compiled family
 `ha_mcp_dashboard_read_v2`. The mixed upstream tool is
 not described as globally read-only; Engineering constructs only exact
-non-screenshot read forms. The generic Standard HA MCP gateway remains
-unavailable and no screenshot, preference write, dashboard write, or arbitrary
-forwarding path exists. RC3A
+non-screenshot read forms. That RC3A-era generic-gateway limitation is
+superseded only for the exact Phase 1 `automatic_read` policy set; screenshots,
+preference writes, dashboard writes, and arbitrary forwarding remain absent. RC3A
 changes the public catalog, so reconnect the Engineering connector after the
 add-on update. The raw server-side MCP `tools/list` returns all 40 tools even
 when the dashboard provider is unavailable. If a refreshed ChatGPT connector

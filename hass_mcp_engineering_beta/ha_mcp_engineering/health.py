@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from .observability import METRICS
-from .capabilities import BETA_NATIVE_CAPABILITIES, CAPABILITIES
+from .capabilities import (
+    BETA_NATIVE_CAPABILITIES,
+    CAPABILITIES,
+    dynamic_upstream_capabilities,
+)
 from .version import SERVER_ID, SERVER_NAME, SERVER_VERSION
 
 
@@ -24,6 +28,7 @@ class HealthRegistry:
     incident: Any = None
     handoff: Any = None
     upstream_dashboard: Any = None
+    upstream_read_gateway: Any = None
 
     def configure(
         self,
@@ -38,6 +43,7 @@ class HealthRegistry:
         incident=None,
         handoff=None,
         upstream_dashboard=None,
+        upstream_read_gateway=None,
     ) -> None:
         self.settings = settings
         self.audit = audit
@@ -51,6 +57,7 @@ class HealthRegistry:
         self.incident = incident
         self.handoff = handoff
         self.upstream_dashboard = upstream_dashboard
+        self.upstream_read_gateway = upstream_read_gateway
 
     def snapshot(self, ha_connection: dict[str, Any]) -> dict[str, Any]:
         metrics = METRICS.snapshot()
@@ -70,7 +77,15 @@ class HealthRegistry:
             },
             "mcp_operation_count": metrics["mcp_operation_count"],
             "mcp_operation_methods": metrics["mcp_operation_methods"],
-            "registered_tool_count": len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES),
+            "registered_tool_count": (
+                len(CAPABILITIES)
+                + len(BETA_NATIVE_CAPABILITIES)
+                + len(dynamic_upstream_capabilities())
+            ),
+            "engineering_registered_tool_count": (
+                len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES)
+            ),
+            "dynamic_upstream_tool_count": len(dynamic_upstream_capabilities()),
             "audit": self.audit.state() if self.audit else {"enabled": False, "configured": False},
             "logging": {
                 "structured": True,
@@ -118,6 +133,18 @@ class HealthRegistry:
                     "screenshots_allowed": False,
                     "preference_writes_allowed": False,
                     "writes_allowed": False,
+                }
+            ),
+            "upstream_read_gateway": (
+                self.upstream_read_gateway.health_snapshot()
+                if self.upstream_read_gateway
+                else {
+                    "configured": False,
+                    "initialized": False,
+                    "generic_delegation_available": False,
+                    "dynamically_exposed_count": 0,
+                    "writes_allowed": False,
+                    "direct_ha_fallback_allowed": False,
                 }
             ),
             "dependency_analysis": {

@@ -1,0 +1,1337 @@
+{
+  "schema_version": 1,
+  "upstream_server": "ha-mcp",
+  "reviewed_upstream_version": "7.14.1",
+  "reviewed_source_tag": "v7.14.1",
+  "reviewed_source_commit": "255acec1affa6528004a122eb83e30aee9c77713",
+  "tools": [
+    {
+      "upstream_name": "ha_bulk_control",
+      "exposed_name": "ha_bulk_control",
+      "description": "Control multiple devices with bulk operation support and WebSocket tracking.",
+      "classification": "physical_or_high_risk_action",
+      "input_schema_fingerprint": "7d9add88c2cdd6696b1ad1903290fb5796be9b3c49866beff5b3cac285e4363c",
+      "reason": "The reviewed implementation can cause a physical effect, event-bus action, reload, or restart.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_service.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_call_event",
+      "exposed_name": "ha_call_event",
+      "description": "Execute a custom event on the Home Assistant event bus.",
+      "classification": "physical_or_high_risk_action",
+      "input_schema_fingerprint": "3778d67d7cbf1dbefa41bc7266f1d0140fb5bd1997da23506a9513b3b8f7d7d2",
+      "reason": "The reviewed implementation can cause a physical effect, event-bus action, reload, or restart.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_service.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_call_service",
+      "exposed_name": "ha_call_service",
+      "description": "Execute Home Assistant services to control entities and trigger automations.",
+      "classification": "mixed_or_requires_wrapper",
+      "input_schema_fingerprint": "2c4c7dbd4a4403144ad390c0f37428bc423776ce2c496353ae445497f8b1eef9",
+      "reason": "The schema accepts service execution and arbitrary WebSocket commands; safe read subsets require an explicit constrained wrapper.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_service.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_delete_dashboard",
+      "exposed_name": "ha_config_delete_dashboard",
+      "description": "Delete a storage-mode dashboard completely.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "62a0eb257fca5094d1b564ec1dff92c8ce658fb95fd1659276360754332aafae",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_dashboards.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_delete_dashboard_resource",
+      "exposed_name": "ha_config_delete_dashboard_resource",
+      "description": "Delete a dashboard resource.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "932f5595c4321fd4e83ff3b4ecc83c4684f56d3a642a2b8bd4ade9ac589cabc3",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_resources.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_get_automation",
+      "exposed_name": "ha_config_get_automation",
+      "description": "Retrieve Home Assistant automation configuration.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "bae748eb90c04a6f51aaa606d7b2b20afa76ede3bc0b40d4d8e0da847a581200",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_automations.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_get_calendar_events",
+      "exposed_name": "ha_config_get_calendar_events",
+      "description": "Retrieve calendar events from a calendar entity.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "7e118a769adceb342ce0c3c8acfe69a4bc9d014a80bee7a06c5cc1bf44f57ab6",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_calendar.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_get_category",
+      "exposed_name": "ha_config_get_category",
+      "description": "Get category info - list all categories for a scope or get a specific one by ID.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "7803bf3a347eb6d1247bc8b80a0953f6a56aef53371ded58f101dfbd41049b1e",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_categories.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_get_dashboard",
+      "exposed_name": "ha_config_get_dashboard",
+      "description": "Get dashboard info - list all dashboards, get config, or search for cards.",
+      "classification": "mixed_or_requires_wrapper",
+      "input_schema_fingerprint": "e75e5454fc3039b3a67014dd3f9af7c2c946e0263e3b35e478d57ae72254846f",
+      "reason": "The mixed dashboard tool includes screenshot and preference-affecting shapes; existing constrained list/get wrappers remain the only route.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [
+        "Generic delegation unavailable; use list_dashboards or get_dashboard_config."
+      ],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_dashboards.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_get_label",
+      "exposed_name": "ha_config_get_label",
+      "description": "Get label info - list all labels or get a specific one by ID.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "b1403f60dffbdbe90576b3a177e9f785f90cb07e5fb645078bc08e5441caf31b",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_labels.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_get_scene",
+      "exposed_name": "ha_config_get_scene",
+      "description": "Retrieve Home Assistant scene configuration.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "ed1f21b6e0a872f3b889d9eb508158ebc7d9d01f9e17f8d63a465dd6e5cb6cbd",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_scenes.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_get_script",
+      "exposed_name": "ha_config_get_script",
+      "description": "Retrieve Home Assistant script configuration.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "941d56128c6a1cfc9352c9f6f69db4248431149bb2458b6fd5d9c960886d6dc2",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_scripts.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_list_dashboard_resources",
+      "exposed_name": "ha_config_list_dashboard_resources",
+      "description": "List Lovelace dashboard resources (custom cards, themes, CSS/JS).",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "da3a8d837239803e621603df0d747dd57c2316f382249ac38aeb61d93a9531fa",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_resources.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_list_groups",
+      "exposed_name": "ha_config_list_groups",
+      "description": "List Home Assistant entity groups with their member entities.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "1d8a91c44ab8a1f0020a2e543379c5f3e684af8e964f6c83d401a4545ec0198e",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_groups.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_list_helpers",
+      "exposed_name": "ha_config_list_helpers",
+      "description": "List Home Assistant helpers of a specific type with their configurations.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "8a743a0fcc4bd2021e81aeecc8d3fc6d3f0176eb949910040b83757fe0401d7b",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_helpers.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_remove_automation",
+      "exposed_name": "ha_config_remove_automation",
+      "description": "Delete a Home Assistant automation.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "239a10c59c69242458e3f8ef41adead2b58cb5d59e65d9ffc1e6efe9097ce4ed",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_automations.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_remove_calendar_event",
+      "exposed_name": "ha_config_remove_calendar_event",
+      "description": "Delete an event from a calendar.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "3ac9ac0888b3fa6a819eed2e1ca68dc73686d7933bc80c7cb66a0f5bcb7980b3",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_calendar.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_remove_category",
+      "exposed_name": "ha_config_remove_category",
+      "description": "Delete a Home Assistant category.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "bb9602b9c00fafd95cecc1af4fd11d42a906b7b6b4d0d7e1d5c4a23dbb1f9dec",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_categories.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_remove_group",
+      "exposed_name": "ha_config_remove_group",
+      "description": "Remove a service-based Home Assistant entity group via the group.remove service.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "6664fee48c1facd868d1c5f004aac6ae9c346a21bf2bf51e064bf2d815d3b198",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_groups.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_remove_label",
+      "exposed_name": "ha_config_remove_label",
+      "description": "Delete a Home Assistant label.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "39c761e40ef28146e3ad61ddddee9e9662e80016425bc2c2d2402229d54f14ef",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_labels.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_remove_scene",
+      "exposed_name": "ha_config_remove_scene",
+      "description": "Delete a Home Assistant scene.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "bdd3699fbb0b74cbe75261b37dfb4204ebecd97b6702b2b12b16094c935b7670",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_scenes.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_remove_script",
+      "exposed_name": "ha_config_remove_script",
+      "description": "Delete a Home Assistant script.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "177b6308f905a3c4bc84643f060ecfcd3b5a83299dcd1f42851813e5faa8841b",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_scripts.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_set_automation",
+      "exposed_name": "ha_config_set_automation",
+      "description": "Create or update a Home Assistant automation.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "269653db1d134f5d6a1010f0f702037803e55e2ad23a37c5f093e21f72b2c2b3",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_automations.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_set_calendar_event",
+      "exposed_name": "ha_config_set_calendar_event",
+      "description": "Create a new event in a calendar.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "c5e057b6e004e62036ee777e60fbe6d04305911630506c397268e3a4ff40877a",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_calendar.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_set_category",
+      "exposed_name": "ha_config_set_category",
+      "description": "Create or update a Home Assistant category.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "80036ac5e792a727c42562201e116bb493fbc7a731f981445516043c7b43f690",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_categories.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_set_dashboard",
+      "exposed_name": "ha_config_set_dashboard",
+      "description": "Create or update a Home Assistant dashboard.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "a7d11d72710f1c39937bfc864291f6d0936b2d4feb68dc4ff049eda3b91a3ac1",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_dashboards.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_set_dashboard_resource",
+      "exposed_name": "ha_config_set_dashboard_resource",
+      "description": "Create or update a dashboard resource (inline code or external URL).",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "cb04dd984e9c6551a9ac4d813b5550b1930e736a984dfe3a3a26ebd9a9bd850c",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_resources.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_set_group",
+      "exposed_name": "ha_config_set_group",
+      "description": "Create or update a service-based Home Assistant entity group via the group.set service.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "aa0028931b78a03c36b57962a48ddd24613ea01ee6d8a0943e102c593f03136b",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_groups.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_set_helper",
+      "exposed_name": "ha_config_set_helper",
+      "description": "Create or update Home Assistant helper entities and config subentries",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "f3681cc34acbe32b1362822d61e26d96dbd1a011b8a55788c47896459c586578",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_helpers.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_set_label",
+      "exposed_name": "ha_config_set_label",
+      "description": "Create or update a Home Assistant label.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "14b97258f77732f083554d906eb73742ffa1921ee90dd65ae8120fedab657ab0",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_labels.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_set_scene",
+      "exposed_name": "ha_config_set_scene",
+      "description": "Create or update a Home Assistant scene.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "2e521451cb9fbcc863e2cd9708dadc56d297f6c5243107d1485b4513fc0e8222",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_scenes.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_config_set_script",
+      "exposed_name": "ha_config_set_script",
+      "description": "Create or update a Home Assistant script.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "ae85fdd8910f7084061a442da5740c8a5bfe13bc6f62b7e5ab2c12e0c96beb29",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_scripts.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_eval_template",
+      "exposed_name": "ha_eval_template",
+      "description": "Evaluate Jinja2 templates using Home Assistant's template engine.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "5f3dce93b84642975b75803d96fa6084ef31a2fc7c4ffa4a4f54a5717693219c",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_utility.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_get_addon",
+      "exposed_name": "ha_get_addon",
+      "description": "Get Home Assistant add-ons - list installed, available, or get details for one.",
+      "classification": "mixed_or_requires_wrapper",
+      "input_schema_fingerprint": "ae1610cc6a56208f74fff319acd178c01177e07ebd939f0422b67171e5a8012c",
+      "reason": "Single-add-on details may include secret-bearing option data; a future wrapper must project a reviewed safe response.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_addons.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_get_automation_traces",
+      "exposed_name": "ha_get_automation_traces",
+      "description": "Retrieve execution traces for automations and scripts to debug issues.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "41114fdc007101f5670f729bab062ab7627b737e13eea3d28da0fdfa8c000d06",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_traces.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_get_blueprint",
+      "exposed_name": "ha_get_blueprint",
+      "description": "Get blueprint information - list all blueprints or get details for a specific one.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "af9a39875e65d230b2c710548bd8d7ce3f8212f830eb1bc3a7c0fe8ddf7ff743",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_blueprints.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_get_camera_image",
+      "exposed_name": "ha_get_camera_image",
+      "description": "Retrieve a snapshot image from a Home Assistant camera entity.",
+      "classification": "unsupported",
+      "input_schema_fingerprint": "e0242fb224885fb74395e61c21a7dcb764342225c44079a7b76d899a9092ede2",
+      "reason": "Binary ImageContent preservation and media-specific response bounds are not implemented by the first generic gateway milestone.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 1000000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_camera.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_get_device",
+      "exposed_name": "ha_get_device",
+      "description": "Get device information with pagination, including Zigbee (ZHA/Z2M) and Z-Wave JS devices.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "0cec4531a1543b2a1ff7ff4e65a3bbd076675f95be077f02567eb86fe6cf7dc7",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_registry.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_get_entity",
+      "exposed_name": "ha_get_entity",
+      "description": "Get entity registry information for one or more entities.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "3c7fae1584e239667a76e91a51dd37f0dd505e6f2f46235db2e033e81aae19de",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_entities.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_get_entity_exposure",
+      "exposed_name": "ha_get_entity_exposure",
+      "description": "Get entity exposure settings - list all or get settings for a specific entity.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "1d3e5f96c24a0703fc75279504aa13b023b947c77cb0a824fd6d0dd4cc848e37",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_voice_assistant.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_get_hacs_info",
+      "exposed_name": "ha_get_hacs_info",
+      "description": "Get HACS (Home Assistant Community Store) data — search the store or fetch repository details.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "e5273ed6ac6ef9e1f6942c28d56b762074e9c4787b58f11fe35e88a57557776b",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_hacs.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_get_history",
+      "exposed_name": "ha_get_history",
+      "description": "Retrieve historical data from Home Assistant's recorder.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "bb8276887ba10132e7d59fd99b41f564c18ead1f42fd9bb466c1b56c22416d36",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_history.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_get_integration",
+      "exposed_name": "ha_get_integration",
+      "description": "Get integration (config entry) information with pagination.",
+      "classification": "mixed_or_requires_wrapper",
+      "input_schema_fingerprint": "5dd76ac034af33a238434633859a7f717eaf5b9d55c557d6b284881ec0804686",
+      "reason": "Diagnostics and project-data options can expose administrative or secret-bearing material; safe subsets require a wrapper.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_integrations.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_get_logs",
+      "exposed_name": "ha_get_logs",
+      "description": "Get Home Assistant logs from various sources.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "4dd1131c4288794772b3d0e59beedb0b35411268ba4c7e929c2c4270d209b65c",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_utility.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_get_operation_status",
+      "exposed_name": "ha_get_operation_status",
+      "description": "Check status of one or more device operations with real-time WebSocket verification.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "0bece76ea9d76d887ec4b0caff6368cc52f749c42cd1e23706a3d475dee2a64a",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_service.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_get_overview",
+      "exposed_name": "ha_get_overview",
+      "description": "Get AI-friendly system overview with intelligent categorization.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "875f88d4a4689a9bdac5232879a2ced715346ba012651099dec0af92b5394835",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_search.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_get_skill_guide",
+      "exposed_name": "ha_get_skill_guide",
+      "description": "Get bundled Home Assistant best-practice skill guides. No skill bundles are currently available on this server — the skills directory is missing, empty, or all SKILL.md files failed to parse. Calls return an empty listing; ask the operator to verify the skills-vendor submodule is initialized.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "23273e157468cbcf4f9fadcffb25498bb5238f8fff63f8ea2c6b49f964b3fded",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/server.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_get_state",
+      "exposed_name": "ha_get_state",
+      "description": "Get current status, state, and attributes of one or more entities (lights, switches, sensors, climate, covers, locks, fans, etc.).",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "bd1f2d5a94013f975b8aa5f0328cdcbe076dde11d99837876c03594580c5b78e",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_search.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_get_system_health",
+      "exposed_name": "ha_get_system_health",
+      "description": "Get Home Assistant system health, including Zigbee (ZHA), Z-Wave JS, and per-integration diagnostics dumps.",
+      "classification": "mixed_or_requires_wrapper",
+      "input_schema_fingerprint": "0c51da5b9c5251dd16d134658f38a65feadb18801791865c736cea1ffc0cd623",
+      "reason": "Per-integration diagnostics can expose administrative or secret-bearing material; safe subsets require a wrapper.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_system.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_get_todo",
+      "exposed_name": "ha_get_todo",
+      "description": "Get todo lists or items - list all todo lists or get items from a specific list.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "d5b701116d891710025c6d6674e494012663b31012745a1280e84a8a1289f43f",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_todo.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_get_zone",
+      "exposed_name": "ha_get_zone",
+      "description": "Get zone information - list all zones or get details for a specific one.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "e201e1de2eac658f5a20b9369650f70e8f5e8c175f62f14fef4b4715a69425d1",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_zones.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_import_blueprint",
+      "exposed_name": "ha_import_blueprint",
+      "description": "Import a blueprint from a URL.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "ae31268fd43af810a9f6db638b7353af97a8f6dde3c3dd7ae523cd9c852eb5bd",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_blueprints.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_list_floors_areas",
+      "exposed_name": "ha_list_floors_areas",
+      "description": "List floors sorted by level ascending, each with their assigned areas nested, plus areas without a floor.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "f8125c2a6b41b698bc110dc5ee2953b320ed914c66d2bffbe2a9ebec52a4c90f",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_areas.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_list_services",
+      "exposed_name": "ha_list_services",
+      "description": "List available Home Assistant services with optional pagination and detail control.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "95f2155e569c1fd77f1bd1fbd77413b151deb4d8acd300ad743be4a90e9dfdcc",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_services.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_manage_addon",
+      "exposed_name": "ha_manage_addon",
+      "description": "Manage a Home Assistant add-on — update its configuration or call its internal API.",
+      "classification": "mixed_or_requires_wrapper",
+      "input_schema_fingerprint": "7d225f22a1bb7f38a4b248b059c16079d64ff054bcda328c122fa3f960e15628",
+      "reason": "The complete accepted surface is not uniformly safe for generic automatic-read delegation and requires an explicit constrained wrapper.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_addons.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_manage_backup",
+      "exposed_name": "ha_manage_backup",
+      "description": "Manage Home Assistant backups — both full HA snapshots AND per-edit auto-backups.",
+      "classification": "mixed_or_requires_wrapper",
+      "input_schema_fingerprint": "7a2b78cbb85a04d421ab7652ad7ed5bb4af0049639973d4c4575708f0ea18701",
+      "reason": "The complete accepted surface is not uniformly safe for generic automatic-read delegation and requires an explicit constrained wrapper.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/backup.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_manage_energy_prefs",
+      "exposed_name": "ha_manage_energy_prefs",
+      "description": "Manage the Home Assistant Energy Dashboard preferences.",
+      "classification": "mixed_or_requires_wrapper",
+      "input_schema_fingerprint": "5d64919e502ccc3f49ca2d756da8e145de14a9e73e43860ad179674cd56d3429",
+      "reason": "The complete accepted surface is not uniformly safe for generic automatic-read delegation and requires an explicit constrained wrapper.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_energy.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_manage_hacs",
+      "exposed_name": "ha_manage_hacs",
+      "description": "Manage HACS (Home Assistant Community Store) — install/update or add custom repositories.",
+      "classification": "mixed_or_requires_wrapper",
+      "input_schema_fingerprint": "0f90beb27c269c103c5d09e133c7afaf7e8065f647f8abac3380eced856ee8fd",
+      "reason": "The complete accepted surface is not uniformly safe for generic automatic-read delegation and requires an explicit constrained wrapper.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_hacs.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_manage_pipeline",
+      "exposed_name": "ha_manage_pipeline",
+      "description": "Manage Home Assistant Assist pipelines.",
+      "classification": "mixed_or_requires_wrapper",
+      "input_schema_fingerprint": "4927ca7bd1a400e35b8e320599769295b03ef43102d230757a42a0c1038b88d2",
+      "reason": "The complete accepted surface is not uniformly safe for generic automatic-read delegation and requires an explicit constrained wrapper.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_voice_assistant.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_manage_radio",
+      "exposed_name": "ha_manage_radio",
+      "description": "Manage Home Assistant radios — Z-Wave, Zigbee, Matter, and Thread.",
+      "classification": "mixed_or_requires_wrapper",
+      "input_schema_fingerprint": "e2c0d70bcafe313f34387dacadd335947f1e665e8c5ada2ecfabb2ab19e6c1bb",
+      "reason": "The complete accepted surface is not uniformly safe for generic automatic-read delegation and requires an explicit constrained wrapper.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_radio.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_manage_theme",
+      "exposed_name": "ha_manage_theme",
+      "description": "Manage Home Assistant frontend themes.",
+      "classification": "mixed_or_requires_wrapper",
+      "input_schema_fingerprint": "5c0de607797a333b152c3ca119487944718eae4fc9f2d70bb7f2bffb49c6b9fa",
+      "reason": "The complete accepted surface is not uniformly safe for generic automatic-read delegation and requires an explicit constrained wrapper.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_themes.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_manage_updates",
+      "exposed_name": "ha_manage_updates",
+      "description": "Manage Home Assistant updates -- list, read details, batch install, skip, or un-skip.",
+      "classification": "mixed_or_requires_wrapper",
+      "input_schema_fingerprint": "ec325fb6beaae838848e85be6adc4a10a186fdd9d976da0e02471b7a50850ead",
+      "reason": "The complete accepted surface is not uniformly safe for generic automatic-read delegation and requires an explicit constrained wrapper.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_updates.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_reload_core",
+      "exposed_name": "ha_reload_core",
+      "description": "Reload Home Assistant configuration without full restart.",
+      "classification": "physical_or_high_risk_action",
+      "input_schema_fingerprint": "da77efa29e753982cfaaa2689dd9a91b3abe88652c628384ae4f11c55a5fad8a",
+      "reason": "The reviewed implementation can cause a physical effect, event-bus action, reload, or restart.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_system.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_remove_area_or_floor",
+      "exposed_name": "ha_remove_area_or_floor",
+      "description": "Remove a Home Assistant area or floor.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "66761990cdc8eaa13cb15728962983132357920cae2d9837d60688f384d60dcf",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_areas.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_remove_device",
+      "exposed_name": "ha_remove_device",
+      "description": "Remove an orphaned device from the Home Assistant device registry.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "08e36d4bc5071d719b72e57f83fa27bd8b212eea24b1671cab85953e52fe8a1a",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_registry.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_remove_entity",
+      "exposed_name": "ha_remove_entity",
+      "description": "Remove one or more entities from the Home Assistant entity registry.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "4ba157e6a41148aff53c8eb251ba41517490c0014c24d73157a7a0b2940b7395",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_entities.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_remove_helpers_integrations",
+      "exposed_name": "ha_remove_helpers_integrations",
+      "description": "Remove a Home Assistant helper or integration config entry.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "c7d1dce93d9fc48456e02caa8cd6d2ebcc61e71a26ed4d3d1132dc920e06b9b0",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_integrations.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_remove_todo_item",
+      "exposed_name": "ha_remove_todo_item",
+      "description": "Remove an item from a Home Assistant todo list.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "2317a1345355528079a413cf19cfb254b33598b9f7fd91a631a08acb4101c01f",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_todo.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_remove_zone",
+      "exposed_name": "ha_remove_zone",
+      "description": "Remove a Home Assistant zone.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "c4e571564a0ab430d10edce723c21b4bbe12e74106cbb3e80b3f42bf4a48b8d4",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_zones.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_report_issue",
+      "exposed_name": "ha_report_issue",
+      "description": "Collect diagnostic information for filing issue reports or feedback.",
+      "classification": "prohibited",
+      "input_schema_fingerprint": "b6a360520d9b47a9c2860388d09a330572306724d679d81230a757aa5dc8db99",
+      "reason": "The diagnostic export aggregates logs, runtime settings, and operational context and is not appropriate for automatic generic exposure.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_bug_report.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_restart",
+      "exposed_name": "ha_restart",
+      "description": "Restart Home Assistant.",
+      "classification": "physical_or_high_risk_action",
+      "input_schema_fingerprint": "d926b42fa673c32978d3d0de151dc2c945daf165c4328d14cad20ed10d992eaf",
+      "reason": "The reviewed implementation can cause a physical effect, event-bus action, reload, or restart.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_system.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_search",
+      "exposed_name": "ha_search",
+      "description": "Search for entities (lights, sensors, switches, climate, etc.) by name, domain, or area — AND inside automation/script/scene/helper/dashboard configurations — in one call.",
+      "classification": "automatic_read",
+      "input_schema_fingerprint": "060cee19536f17dd436bd34bf82aba2d9699b9dcd716e9216e2b2c5b64157ec2",
+      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_search.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_set_area_or_floor",
+      "exposed_name": "ha_set_area_or_floor",
+      "description": "Create or update a Home Assistant area or floor.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "f9348b7ca169dc6d237177c70343b8db7918fa4216922262f02f614504440601",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_areas.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_set_device",
+      "exposed_name": "ha_set_device",
+      "description": "Update device properties such as name, area, disabled state, or labels.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "8ed2e7db59647cf965e2c6e5687b8f7964218ee1f0f9630809ad6d18a7a61421",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_registry.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_set_entity",
+      "exposed_name": "ha_set_entity",
+      "description": "Update entity properties in the entity registry.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "5ad85c5f851aa3d4014761b69779fd2930f6b1f79e863af840942e6f76b9dca9",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_entities.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_set_integration",
+      "exposed_name": "ha_set_integration",
+      "description": "Manage an integration (config entry): enable/disable, add, or update options.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "173747d701954dc2672b45191284ce719418a725fd13ee043972d44dd94475f0",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_integrations.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_set_todo_item",
+      "exposed_name": "ha_set_todo_item",
+      "description": "Create or update a todo item in Home Assistant.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "2353aa48077095d8e0965f9ea839dcddb291f65c3d19ab61cdf9bd963ead226d",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_todo.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    },
+    {
+      "upstream_name": "ha_set_zone",
+      "exposed_name": "ha_set_zone",
+      "description": "Create or update a Home Assistant zone.",
+      "classification": "persistent_write",
+      "input_schema_fingerprint": "1e362d990c9813075cef3001435b74b9ddbcf266f26c1537fc3f9127ee33a22f",
+      "reason": "The reviewed implementation can create, update, or delete persistent Home Assistant configuration or registry state.",
+      "collision_status": "none",
+      "collision_policy": "alias_upstream_on_collision",
+      "argument_restrictions": [],
+      "response_limit_bytes": 60000,
+      "timeout_seconds": 60,
+      "source_evidence": [
+        "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_zones.py",
+        "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
+      ]
+    }
+  ]
+}
