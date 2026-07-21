@@ -12,8 +12,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from scripts.manage_upstream_trust_registry import (  # noqa: E402
-    RegistryOperationError,
+from scripts.upstream_registry_signing_core import (  # noqa: E402
+    SigningCoreError,
     check_origin_main_freshness,
 )
 
@@ -35,7 +35,7 @@ def main() -> int:
             signed_base_sha=args.signed_base_sha,
             environment=os.environ,
         )
-    except (OSError, ValueError) as exc:
+    except (OSError, SigningCoreError, ValueError) as exc:
         print(getattr(exc, "category", "workflow_freshness_failed"), file=sys.stderr)
         return 2
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))

@@ -43,6 +43,17 @@ artifact set. It can open only a four-file data-only draft PR and contains no
 package, tag, release, deployment or image-push command. `origin/main` SHA and
 sequence are rechecked before signing and before publication.
 
+Inspection uploads raw immutable evidence and the verified wheelhouse as separate
+artifacts with deterministic download roots; it does not choose the signed
+registry mutation. The protected signer imports only the standard library and
+`cryptography`. A seed-free phase validates the exact artifacts and trusted
+dispatch inputs and reconstructs the transition from the verified current
+registry plus raw evidence. The seed-bearing step signs only the prevalidated
+canonical bytes, with no network, Git, installation, or reconstruction. A public-
+key-only phase verifies and packages the signed data for publication. Clean CI
+executes all three phases in a fresh environment containing only the hash-locked
+cryptographic dependency closure.
+
 Each lifecycle evidence payload is canonically signed and binds operation,
 identity, revocation transition, reason, timestamps, exact workflow base,
 registry digests, prior evidence digest, inspection digests, and the four paths.

@@ -6,6 +6,7 @@ import argparse
 import hashlib
 from pathlib import Path
 import re
+import stat
 
 
 EXPECTED_WHEELS = {
@@ -24,7 +25,19 @@ class WheelhouseVerificationError(ValueError):
 
 
 def verify_wheelhouse(directory: Path, lock_path: Path) -> dict[str, object]:
-    files = {path.name: path for path in directory.glob("*.whl") if path.is_file()}
+    if not directory.is_dir() or directory.is_symlink():
+        raise WheelhouseVerificationError("signing_wheelhouse_invalid")
+    files: dict[str, Path] = {}
+    for path in directory.iterdir():
+        try:
+            mode = path.lstat().st_mode
+        except OSError:
+            raise WheelhouseVerificationError("signing_wheelhouse_invalid") from None
+        if stat.S_ISLNK(mode):
+            raise WheelhouseVerificationError("signing_wheelhouse_symlink_rejected")
+        if not stat.S_ISREG(mode) or path.suffix != ".whl" or path.name in files:
+            raise WheelhouseVerificationError("signing_wheel_set_mismatch")
+        files[path.name] = path
     if set(files) != set(EXPECTED_WHEELS):
         raise WheelhouseVerificationError("signing_wheel_set_mismatch")
     lock = lock_path.read_text(encoding="utf-8")

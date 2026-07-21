@@ -69,7 +69,10 @@ def public_environment(fixture: RegistryFixture) -> dict[str, str]:
     return {
         "UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY": fixture.environment[
             "UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY"
-        ]
+        ],
+        "UPSTREAM_TRUST_REGISTRY_KEY_ID": fixture.environment[
+            "UPSTREAM_TRUST_REGISTRY_KEY_ID"
+        ],
     }
 
 
@@ -134,7 +137,7 @@ class WorkflowSecurityBoundaryTests(unittest.TestCase):
         self.assertEqual(writers, ["publication"])
         publication = json.dumps(self.jobs["publication"])
         self.assertNotIn("UPSTREAM_TRUST_REGISTRY_SIGNING_KEY", publication)
-        self.assertIn("--phase verify-artifacts", publication)
+        self.assertIn("prepare_upstream_registry_publication.py", publication)
         self.assertIn("prepare_upstream_registry_publication.py", publication)
         self.assertIn("gh pr create --draft", publication)
         for forbidden in ("gh release", "git tag", "docker push", "build-push-action"):
@@ -180,15 +183,21 @@ class WheelhouseIntegrityTests(unittest.TestCase):
     def test_missing_or_altered_wheel_fails_before_installation(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            expected, lock = self._fixture(root)
+            wheelhouse = root / "wheelhouse"
+            wheelhouse.mkdir()
+            expected, generated_lock = self._fixture(wheelhouse)
+            lock = root / "lock.txt"
+            generated_lock.replace(lock)
             with patch.dict(EXPECTED_WHEELS, expected, clear=True):
-                self.assertTrue(verify_wheelhouse(root, lock)["all_hashes_verified"])
-                (root / "a.whl").unlink()
+                self.assertTrue(
+                    verify_wheelhouse(wheelhouse, lock)["all_hashes_verified"]
+                )
+                (wheelhouse / "a.whl").unlink()
                 with self.assertRaises(WheelhouseVerificationError):
-                    verify_wheelhouse(root, lock)
-                (root / "a.whl").write_bytes(b"changed")
+                    verify_wheelhouse(wheelhouse, lock)
+                (wheelhouse / "a.whl").write_bytes(b"changed")
                 with self.assertRaises(WheelhouseVerificationError):
-                    verify_wheelhouse(root, lock)
+                    verify_wheelhouse(wheelhouse, lock)
 
 
 class LifecycleEvidenceChainTests(unittest.TestCase):
@@ -733,7 +742,7 @@ class PublicationWorktreeTests(unittest.TestCase):
                         summary = json.loads(summary_path.read_text())
                         summary["workflow_base_sha"] = "f" * 40
                         summary_path.write_bytes(_canonical_file(summary))
-                    with self.assertRaises(RegistryOperationError):
+                    with self.assertRaises(ValueError):
                         construct_verified_publication_commit(
                             repository=repository,
                             signed_artifacts=signed,

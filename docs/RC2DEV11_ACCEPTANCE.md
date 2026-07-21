@@ -43,10 +43,14 @@ production key or changing GitHub/Home Assistant.
 - Manual `workflow_dispatch` on `main` only.
 - One concurrency group and three distinct jobs:
   - inspection has network access and read-only repository permission, but no
-    signing-seed or repository/PR write reference;
+    signing-seed or repository/PR write reference; it uploads raw immutable
+    evidence as `registry-inspection-evidence` and the verified locked wheels as
+    the separate `registry-signing-wheelhouse` artifact;
   - signing uses protected environment `upstream-attestation-signing`, has
     read-only repository permission, and receives the private seed only in the
-    minimum signing step; and
+    minimum signing step; downloads those artifacts to
+    `$RUNNER_TEMP/registry-inspection` and `$RUNNER_TEMP/signing-wheelhouse`;
+    and
   - publication is the only job with repository and pull-request write
     permission, and has no private-seed reference.
 - Every checkout uses `persist-credentials: false`.
@@ -56,6 +60,18 @@ production key or changing GitHub/Home Assistant.
   Inspection obtains that reviewed wheel set; signing verifies it, then installs
   with `--no-index --require-hashes` and performs no online resolution while the
   seed is present.
+- The protected entrypoint imports only Python's standard library and
+  `cryptography`. Before seed exposure it validates exact artifact contents and
+  trusted dispatch inputs, reads the verified current registry from the accepted
+  `origin/main`, and reconstructs the mutation from raw evidence. A network-made
+  unsigned preview is never authoritative.
+- The seed-bearing step signs only prevalidated canonical bytes whose digests
+  match the prepared-signing manifest. A subsequent public-key-only phase
+  verifies and packages the separate `registry-signed-data` artifact.
+- CI reproduces the exact downloaded artifact roots in a fresh virtual
+  environment, installs only the offline hash-locked closure, runs the real
+  prepare/sign/verify subprocesses, and proves application, MCP, Home Assistant,
+  network, and test packages are absent.
 - Before signing and immediately before publication, `origin/main` must still
   equal the exact captured workflow base SHA and the committed sequence must
   still equal the operator's expected sequence. A stale run aborts without

@@ -76,7 +76,7 @@ class AttestationWorkflowTests(unittest.TestCase):
             step
             for step in steps
             if step.get("name")
-            == "Sign candidate and lifecycle evidence with minimum secret scope"
+            == "Sign only prevalidated canonical bytes with minimum secret scope"
         )
         self.assertEqual(
             set(signing["env"]),
@@ -92,7 +92,8 @@ class AttestationWorkflowTests(unittest.TestCase):
             if step.get("name") == "Reverify signed set with the public key only"
         )
         self.assertEqual(
-            set(public_verify["env"]), {"UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY"}
+            set(public_verify["env"]),
+            {"UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY", "UPSTREAM_TRUST_REGISTRY_KEY_ID"},
         )
         for step in steps:
             if step is signing:

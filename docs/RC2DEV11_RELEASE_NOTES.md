@@ -19,12 +19,25 @@ This is not a transactionally atomic multi-file filesystem operation. It never a
 output path, family, tool or capability override.
 
 The protected workflow now has three authority boundaries. Online inspection is
-repository-read-only and has no private seed. Protected signing is
-repository-read-only, installs a complete reviewed hash-locked wheel closure
+repository-read-only, has no private seed, and emits raw immutable inspection
+evidence and the verified signing wheelhouse as two separately rooted artifacts.
+It does not choose the registry mutation that receives the signature. Protected
+signing is repository-read-only, installs a complete reviewed hash-locked wheel closure
 offline with `--no-index --require-hashes`, and exposes the seed only to the
 minimum signing step. Publication is the only repository/PR writer and never
 receives or references the seed. It re-verifies with the public key and publishes
 the complete four-class set through one coherent Git commit and a draft PR.
+
+The protected signer has a deliberately minimal import graph: standard library
+plus `cryptography`, with no Engineering application, MCP, Home Assistant,
+dashboard, transport, or test dependency. Its no-seed phase verifies the exact
+artifact layouts and trusted workflow inputs, fetches the accepted current
+registry, reconstructs the requested transition from that registry and raw
+evidence, and emits canonical prepared bytes and their digests. The seed-bearing
+step only signs those already validated bytes and performs no network, Git,
+installation, or reconstruction work. Public-key-only verification produces the
+separate signed-data artifact. CI exercises these exact phases as subprocesses in
+a fresh lock-only virtual environment.
 
 Every lifecycle record is independently signed over canonical JSON and chains
 the previous registry digest and previous complete signed-evidence digest.

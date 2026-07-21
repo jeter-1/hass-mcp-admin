@@ -83,9 +83,13 @@ The private seed exists only as
 key and key ID. The workflow is split into three authority boundaries:
 
 1. online inspection has read-only repository permission and no signing-seed or
-   repository/PR write reference;
+   repository/PR write reference. It emits raw immutable evidence in
+   `registry-inspection-evidence` and the reviewed locked wheels in the separate
+   `registry-signing-wheelhouse` artifact;
 2. protected signing has read-only repository permission, exposes the seed only
-   to the minimum signing step, and performs no online dependency resolution;
+   to the minimum signing step, and performs no online dependency resolution.
+   The artifacts are downloaded to the deterministic roots
+   `$RUNNER_TEMP/registry-inspection` and `$RUNNER_TEMP/signing-wheelhouse`;
 3. publication alone has repository/PR write permission and contains no private
    seed reference or private artifact.
 
@@ -93,6 +97,23 @@ Every checkout disables persisted credentials. The signing dependency closure
 is committed with exact versions and SHA-256 hashes. Inspection downloads only
 that closure, and signing independently verifies it before installing with
 `--no-index --require-hashes`.
+
+The protected signing entrypoint imports only standard-library modules and
+`cryptography`; it does not import Engineering application, MCP, Home Assistant,
+dashboard, transport, or test modules. Before the private seed is materialized,
+it verifies the exact artifact roots and files, validates the trusted dispatch
+operation/version/sequence/expiry/reason/base/family/path/key inputs, reads the
+verified current registry from the accepted `origin/main`, and reconstructs the
+transition from that registry and raw evidence. Any inspection preview is ignored
+except that, when present, it must match the reconstruction byte for byte. The
+seed-bearing step signs only the prepared canonical bytes and has no network,
+Git, install, or reconstruction action. Public-key-only verification then creates
+the distinct `registry-signed-data` artifact for publication.
+
+CI builds the exact artifact layout and invokes prepare, sign, and verify as real
+subprocesses in a fresh virtual environment with no inherited site packages. It
+installs only the complete cryptographic closure from the verified offline
+wheelhouse and proves application/runtime/test imports are unnecessary.
 
 The runtime currently trusts one operator-configured public key. Rotation is a
 two-release operation:

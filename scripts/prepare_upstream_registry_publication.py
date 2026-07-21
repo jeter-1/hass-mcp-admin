@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -17,14 +17,13 @@ from typing import Any, Mapping
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from scripts.manage_upstream_trust_registry import (  # noqa: E402
-    RegistryOperationError,
-    _canonical_file,
-    _strict_json_loads,
+from scripts.upstream_registry_signing_core import (  # noqa: E402
+    SigningCoreError as RegistryOperationError,
     allowed_output_paths,
-    paths_for_root,
-    verify_committed_registry,
+    canonical_file as _canonical_file,
+    strict_json_bytes,
     verify_signed_artifact_directory,
+    verify_tree,
 )
 
 
@@ -49,7 +48,7 @@ def _run_git(repository: Path, *arguments: str) -> str:
 
 def _load_manifest(directory: Path) -> dict[str, Any]:
     raw = (directory / "publication-manifest.json").read_bytes()
-    value = _strict_json_loads(raw)
+    value = strict_json_bytes(raw)
     if not isinstance(value, dict) or raw != _canonical_file(value):
         raise RegistryOperationError(
             "publication_manifest_invalid", category="publication_manifest_invalid"
@@ -73,7 +72,6 @@ def construct_verified_publication_commit(
     artifact_verification = verify_signed_artifact_directory(
         signed_artifacts,
         environment=environment,
-        now=now or datetime.now(timezone.utc),
     )
     manifest = _load_manifest(signed_artifacts)
     if manifest.get("verified") is not True or manifest.get("data_only") is not True:
@@ -84,7 +82,7 @@ def construct_verified_publication_commit(
     if artifact_verification["sequence"] != sequence:
         raise RegistryOperationError("publication_manifest_binding_mismatch")
     changed_paths = manifest.get("changed_paths")
-    expected = allowed_output_paths(paths_for_root(repository), sequence)
+    expected = allowed_output_paths(sequence)
     if changed_paths != expected or len(changed_paths) != 4:
         raise RegistryOperationError("publication_path_allowlist_invalid")
     source_tree = signed_artifacts / "tree"
@@ -114,10 +112,15 @@ def construct_verified_publication_commit(
         )
         if actual != sorted(changed_paths):
             raise RegistryOperationError("publication_unrelated_change")
-        verify_committed_registry(
-            paths=paths_for_root(worktree),
+        summary = strict_json_bytes(
+            (signed_artifacts / "operation-summary.json").read_bytes()
+        )
+        if not isinstance(summary, dict) or not isinstance(summary.get("key_id"), str):
+            raise RegistryOperationError("operation_summary_invalid")
+        verify_tree(
+            worktree,
             environment=environment,
-            now=now or datetime.now(timezone.utc),
+            expected_key_id=summary["key_id"],
         )
         _run_git(worktree, "switch", "-c", branch)
         _run_git(worktree, "config", "user.name", "github-actions[bot]")
@@ -142,10 +145,10 @@ def construct_verified_publication_commit(
             f"Operate upstream trust registry: {manifest['operation']}",
         )
         committed = True
-        verify_committed_registry(
-            paths=paths_for_root(worktree),
+        verify_tree(
+            worktree,
             environment=environment,
-            now=now or datetime.now(timezone.utc),
+            expected_key_id=summary["key_id"],
         )
         committed_paths = sorted(
             item

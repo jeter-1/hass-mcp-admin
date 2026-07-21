@@ -11,8 +11,12 @@ registry's authority.
 
 RC2dev11 operational clarification: registry lifecycle changes are prepared by
 a fixed-path repository CLI and a serialized three-job workflow. Inspection has
-no seed or write authority; signing is protected, read-only, and installs only a
-hash-locked offline dependency closure; publication is the only repository/PR
+no seed or write authority and emits separate raw-evidence and wheelhouse
+artifacts. Signing is protected, read-only, imports only the standard library and
+`cryptography`, reconstructs the requested mutation from trusted dispatch inputs,
+the verified current registry, and raw evidence before seed exposure, and installs
+only a hash-locked offline dependency closure. The seed-bearing phase signs only
+prevalidated canonical bytes. Publication is the only repository/PR
 writer and receives no seed. Lifecycle evidence is individually signed and
 forms a contiguous digest chain. The captured `main` SHA and expected sequence
 are checked before signing and again before publication. Direct CLI mutation

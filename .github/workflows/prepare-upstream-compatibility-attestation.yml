@@ -53,6 +53,10 @@ env:
   UPSTREAM_REPOSITORY: https://github.com/homeassistant-ai/ha-mcp.git
   UPSTREAM_IMAGE_REPOSITORY: ghcr.io/homeassistant-ai/ha-mcp
   SIGNING_LOCK: scripts/requirements-upstream-registry-signing.lock
+  CONTRACT_FAMILY: ha_mcp_dashboard_read_v2
+  INSPECTION_ARTIFACT: registry-inspection-evidence
+  WHEELHOUSE_ARTIFACT: registry-signing-wheelhouse
+  SIGNED_ARTIFACT: registry-signed-data
 
 jobs:
   inspection:
@@ -271,7 +275,15 @@ jobs:
           version, source_commit, index_digest, revision, created, source_label, dirty_label, platforms_path = sys.argv[1:]
           platforms = json.loads(pathlib.Path(platforms_path).read_text())
           value = {"version": version, "source_tag": f"v{version}", "source_commit": source_commit, "image_index_digest": index_digest, "image_revision": revision, "image_created": created, "image_source": source_label, "dirty_label": dirty_label, "platform_digests": platforms["platform_digests"], "slsa_provenance": platforms["slsa_provenance"], "sbom": platforms["sbom"], "official_repository": "homeassistant-ai/ha-mcp", "official_image": "ghcr.io/homeassistant-ai/ha-mcp"}
-          pathlib.Path(".compat/release-evidence.json").write_text(json.dumps(value, sort_keys=True))
+          pathlib.Path(".compat/release-evidence.json").write_text(
+              json.dumps(
+                  value,
+                  sort_keys=True,
+                  separators=(",", ":"),
+                  ensure_ascii=False,
+                  allow_nan=False,
+              ) + "\n"
+          )
           PY
 
       - name: Verify the current committed registry without mutation
@@ -284,27 +296,60 @@ jobs:
           python scripts/manage_upstream_trust_registry.py --operation verify > "$RUNNER_TEMP/verification-summary.json"
           git diff --exit-code
 
-      - name: Construct unsigned candidate and inspection manifest
+      - name: Package raw immutable inspection evidence
         if: inputs.operation != 'verify'
-        env:
-          UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY }}
-          UPSTREAM_TRUST_REGISTRY_KEY_ID: ${{ secrets.UPSTREAM_TRUST_REGISTRY_KEY_ID }}
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/registry-inspection/unsigned"
-          args=(--operation "$OPERATION" --phase prepare --expected-current-sequence "$EXPECTED_CURRENT_SEQUENCE" --expiry-days "$EXPIRY_DAYS" --operator-reason "$OPERATOR_REASON" --workflow-base-sha "$WORKFLOW_BASE_SHA" --dispatch-sha "$DISPATCH_SHA" --artifact-directory "$RUNNER_TEMP/registry-inspection/unsigned")
-          if [[ -n "$VERSION" ]]; then args+=(--upstream-version "$VERSION"); fi
-          python scripts/manage_upstream_trust_registry.py "${args[@]}" > "$RUNNER_TEMP/registry-inspection/inspection-summary.json"
+          args=(
+            --output-directory "$RUNNER_TEMP/registry-inspection"
+            --operation "$OPERATION"
+            --upstream-version "$VERSION"
+            --expected-current-sequence "$EXPECTED_CURRENT_SEQUENCE"
+            --expiry-days "$EXPIRY_DAYS"
+            --operator-reason "$OPERATOR_REASON"
+            --workflow-base-sha "$WORKFLOW_BASE_SHA"
+            --dispatch-sha "$DISPATCH_SHA"
+            --contract-family "$CONTRACT_FAMILY"
+          )
+          if [[ "$OPERATION" == "bootstrap" || "$OPERATION" == "add" ]]; then
+            args+=(
+              --runtime-evidence .compat/runtime-evidence.json
+              --release-evidence .compat/release-evidence.json
+            )
+          else
+            args+=(
+              --registry upstream-trust/upstream-dashboard-registry.json
+              --registry-signature upstream-trust/upstream-dashboard-registry.sig.json
+            )
+          fi
+          python scripts/prepare_upstream_registry_inspection.py "${args[@]}" \
+            > "$RUNNER_TEMP/inspection-summary.json"
 
-      - name: Upload unsigned candidate and reviewed offline wheel set
+      - name: Exercise the real protected signer in a clean lock-only environment
+        if: inputs.operation != 'verify'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONNOUSERSITE=1 python scripts/run_upstream_registry_signing_clean_environment.py \
+            --wheelhouse "$RUNNER_TEMP/signing-wheelhouse" \
+            --lock "$SIGNING_LOCK"
+
+      - name: Upload exact raw inspection evidence root
         if: inputs.operation != 'verify'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: upstream-registry-inspection-${{ github.run_id }}
-          path: |
-            ${{ runner.temp }}/registry-inspection
-            ${{ runner.temp }}/signing-wheelhouse
+          name: registry-inspection-evidence
+          path: ${{ runner.temp }}/registry-inspection/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload exact verified signing wheelhouse root
+        if: inputs.operation != 'verify'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: registry-signing-wheelhouse
+          path: ${{ runner.temp }}/signing-wheelhouse/
           if-no-files-found: error
           retention-days: 7
 
@@ -348,27 +393,34 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Download unsigned inspection artifacts
+      - name: Download exact raw inspection evidence root
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: upstream-registry-inspection-${{ github.run_id }}
-          path: ${{ runner.temp }}/registry-artifacts
+          name: registry-inspection-evidence
+          path: ${{ runner.temp }}/registry-inspection
+
+      - name: Download exact reviewed signing wheelhouse root
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: registry-signing-wheelhouse
+          path: ${{ runner.temp }}/signing-wheelhouse
 
       - name: Verify and install the reviewed signing closure offline
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/verify_upstream_registry_signing_wheels.py "$RUNNER_TEMP/registry-artifacts/signing-wheelhouse" "$SIGNING_LOCK"
+          python scripts/verify_upstream_registry_signing_wheels.py "$RUNNER_TEMP/signing-wheelhouse" "$SIGNING_LOCK"
           python -m pip install \
             --disable-pip-version-check \
             --no-index \
-            --find-links "$RUNNER_TEMP/registry-artifacts/signing-wheelhouse" \
+            --find-links "$RUNNER_TEMP/signing-wheelhouse" \
             --require-hashes \
             -r "$SIGNING_LOCK"
 
       - name: Require current main and sequence immediately before signing
         env:
           UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY }}
+          UPSTREAM_TRUST_REGISTRY_KEY_ID: ${{ secrets.UPSTREAM_TRUST_REGISTRY_KEY_ID }}
         shell: bash
         run: |
           set -euo pipefail
@@ -378,7 +430,35 @@ jobs:
             --expected-current-sequence "$EXPECTED_CURRENT_SEQUENCE" \
             --phase signing
 
-      - name: Sign candidate and lifecycle evidence with minimum secret scope
+      - name: Reconstruct and prevalidate from trusted inputs without the seed
+        env:
+          UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY }}
+          UPSTREAM_TRUST_REGISTRY_KEY_ID: ${{ secrets.UPSTREAM_TRUST_REGISTRY_KEY_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          next_sequence=$((EXPECTED_CURRENT_SEQUENCE + 1))
+          evidence_path="$(printf 'docs/evidence/upstream-compatibility/registry-sequence-%06d.json' "$next_sequence")"
+          python scripts/protected_sign_upstream_registry.py \
+            --phase prepare-signing \
+            --inspection-directory "$RUNNER_TEMP/registry-inspection" \
+            --prepared-directory "$RUNNER_TEMP/prepared-signing" \
+            --repository . \
+            --expected-operation "$OPERATION" \
+            --expected-upstream-version "$VERSION" \
+            --expected-current-sequence "$EXPECTED_CURRENT_SEQUENCE" \
+            --expected-expiry-days "$EXPIRY_DAYS" \
+            --expected-operator-reason "$OPERATOR_REASON" \
+            --expected-workflow-base-sha "$WORKFLOW_BASE_SHA" \
+            --expected-dispatch-sha "$DISPATCH_SHA" \
+            --expected-contract-family "$CONTRACT_FAMILY" \
+            --expected-output-path upstream-trust/upstream-dashboard-registry.json \
+            --expected-output-path upstream-trust/upstream-dashboard-registry.sig.json \
+            --expected-output-path "$evidence_path" \
+            --expected-output-path docs/generated/UPSTREAM_TRUST_REGISTRY_INDEX.md \
+            --expected-key-id "$UPSTREAM_TRUST_REGISTRY_KEY_ID"
+
+      - name: Sign only prevalidated canonical bytes with minimum secret scope
         env:
           UPSTREAM_TRUST_REGISTRY_SIGNING_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_SIGNING_KEY }}
           UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY }}
@@ -386,28 +466,60 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/registry-artifacts/signed"
-          python scripts/manage_upstream_trust_registry.py \
-            --operation "$OPERATION" \
+          next_sequence=$((EXPECTED_CURRENT_SEQUENCE + 1))
+          evidence_path="$(printf 'docs/evidence/upstream-compatibility/registry-sequence-%06d.json' "$next_sequence")"
+          python scripts/protected_sign_upstream_registry.py \
             --phase sign \
-            --artifact-directory "$RUNNER_TEMP/registry-artifacts"
+            --prepared-directory "$RUNNER_TEMP/prepared-signing" \
+            --signature-directory "$RUNNER_TEMP/signature-fragments" \
+            --expected-operation "$OPERATION" \
+            --expected-upstream-version "$VERSION" \
+            --expected-current-sequence "$EXPECTED_CURRENT_SEQUENCE" \
+            --expected-expiry-days "$EXPIRY_DAYS" \
+            --expected-operator-reason "$OPERATOR_REASON" \
+            --expected-workflow-base-sha "$WORKFLOW_BASE_SHA" \
+            --expected-dispatch-sha "$DISPATCH_SHA" \
+            --expected-contract-family "$CONTRACT_FAMILY" \
+            --expected-output-path upstream-trust/upstream-dashboard-registry.json \
+            --expected-output-path upstream-trust/upstream-dashboard-registry.sig.json \
+            --expected-output-path "$evidence_path" \
+            --expected-output-path docs/generated/UPSTREAM_TRUST_REGISTRY_INDEX.md \
+            --expected-key-id "$UPSTREAM_TRUST_REGISTRY_KEY_ID"
 
       - name: Reverify signed set with the public key only
         env:
           UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY }}
+          UPSTREAM_TRUST_REGISTRY_KEY_ID: ${{ secrets.UPSTREAM_TRUST_REGISTRY_KEY_ID }}
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/manage_upstream_trust_registry.py \
-            --operation "$OPERATION" \
+          next_sequence=$((EXPECTED_CURRENT_SEQUENCE + 1))
+          evidence_path="$(printf 'docs/evidence/upstream-compatibility/registry-sequence-%06d.json' "$next_sequence")"
+          python scripts/protected_sign_upstream_registry.py \
             --phase verify-artifacts \
-            --artifact-directory "$RUNNER_TEMP/registry-artifacts/signed"
+            --prepared-directory "$RUNNER_TEMP/prepared-signing" \
+            --signature-directory "$RUNNER_TEMP/signature-fragments" \
+            --output-directory "$RUNNER_TEMP/signed-registry" \
+            --repository . \
+            --expected-operation "$OPERATION" \
+            --expected-upstream-version "$VERSION" \
+            --expected-current-sequence "$EXPECTED_CURRENT_SEQUENCE" \
+            --expected-expiry-days "$EXPIRY_DAYS" \
+            --expected-operator-reason "$OPERATOR_REASON" \
+            --expected-workflow-base-sha "$WORKFLOW_BASE_SHA" \
+            --expected-dispatch-sha "$DISPATCH_SHA" \
+            --expected-contract-family "$CONTRACT_FAMILY" \
+            --expected-output-path upstream-trust/upstream-dashboard-registry.json \
+            --expected-output-path upstream-trust/upstream-dashboard-registry.sig.json \
+            --expected-output-path "$evidence_path" \
+            --expected-output-path docs/generated/UPSTREAM_TRUST_REGISTRY_INDEX.md \
+            --expected-key-id "$UPSTREAM_TRUST_REGISTRY_KEY_ID"
 
       - name: Upload publicly verifiable signed data set
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: upstream-registry-signed-${{ github.run_id }}
-          path: ${{ runner.temp }}/registry-artifacts/signed
+          name: registry-signed-data
+          path: ${{ runner.temp }}/signed-registry/
           if-no-files-found: error
           retention-days: 7
 
@@ -443,28 +555,19 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install public verification dependency without signing authority
+        run: python -m pip install cryptography==45.0.7
+
       - name: Download signed data set
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: upstream-registry-signed-${{ github.run_id }}
+          name: registry-signed-data
           path: ${{ runner.temp }}/signed-registry
-
-      - name: Download reviewed offline verification wheels
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: upstream-registry-inspection-${{ github.run_id }}
-          path: ${{ runner.temp }}/inspection-artifacts
-
-      - name: Install the public verifier from the reviewed offline wheel set
-        shell: bash
-        run: |
-          set -euo pipefail
-          python scripts/verify_upstream_registry_signing_wheels.py "$RUNNER_TEMP/inspection-artifacts/signing-wheelhouse" "$SIGNING_LOCK"
-          python -m pip install --disable-pip-version-check --no-index --find-links "$RUNNER_TEMP/inspection-artifacts/signing-wheelhouse" --require-hashes -r "$SIGNING_LOCK"
 
       - name: Require current main before constructing publication
         env:
           UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY }}
+          UPSTREAM_TRUST_REGISTRY_KEY_ID: ${{ secrets.UPSTREAM_TRUST_REGISTRY_KEY_ID }}
         shell: bash
         run: |
           set -euo pipefail
@@ -475,10 +578,10 @@ jobs:
         id: commit
         env:
           UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY }}
+          UPSTREAM_TRUST_REGISTRY_KEY_ID: ${{ secrets.UPSTREAM_TRUST_REGISTRY_KEY_ID }}
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/manage_upstream_trust_registry.py --operation "$OPERATION" --phase verify-artifacts --artifact-directory "$RUNNER_TEMP/signed-registry"
           branch="data/upstream-registry-${OPERATION}-${GITHUB_RUN_ID}"
           python scripts/prepare_upstream_registry_publication.py --repository . --signed-artifacts "$RUNNER_TEMP/signed-registry" --worktree "$RUNNER_TEMP/registry-publication-worktree" --branch "$branch" --summary "$RUNNER_TEMP/publication-commit.json"
           echo "branch=$branch" >> "$GITHUB_OUTPUT"
@@ -487,6 +590,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY: ${{ secrets.UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY }}
+          UPSTREAM_TRUST_REGISTRY_KEY_ID: ${{ secrets.UPSTREAM_TRUST_REGISTRY_KEY_ID }}
         shell: bash
         run: |
           set -euo pipefail

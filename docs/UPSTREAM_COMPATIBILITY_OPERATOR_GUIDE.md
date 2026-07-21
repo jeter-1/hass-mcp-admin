@@ -73,13 +73,18 @@ One concurrency group serializes all operations. The workflow has three jobs:
 
 1. Inspection may use the network, but has read-only repository permission, no
    private-seed reference, no persisted checkout credential, and no push/PR
-   authority. It produces an unsigned candidate and bounded inspection manifest.
+   authority. It uploads raw immutable evidence plus its bounded manifest as
+   `registry-inspection-evidence`, and uploads the independently verified locked
+   wheels as the separate `registry-signing-wheelhouse` artifact. Any unsigned
+   preview is non-authoritative.
 2. Protected signing uses `upstream-attestation-signing`, has read-only
    repository permission, and exposes the private seed only in the minimum
    signing step. The exact cryptographic dependency closure is downloaded by
    inspection from the committed hash lock, verified, and installed by signing
    with `--no-index --require-hashes`; no public-index resolution occurs while
-   the seed is present.
+   the seed is present. The two artifacts are downloaded to the deterministic
+   roots `$RUNNER_TEMP/registry-inspection` and
+   `$RUNNER_TEMP/signing-wheelhouse`.
 3. Publication is the only job with repository and PR write permission. It has
    no seed reference, re-verifies with the public key, constructs the complete
    set in a disposable clean worktree, creates one coherent commit, re-verifies
@@ -89,6 +94,16 @@ The signing job has no repository-write, tag, release, package, image, or
 deployment authority. The publication job does have repository/PR write
 authority, but contains no tag, release, image, package, or deployment command.
 Normal PR CI cannot access the protected signing secrets.
+
+The protected signing implementation imports only the standard library and
+`cryptography`. Its first, seed-free phase validates exact artifact contents and
+trusted workflow inputs, reads the accepted current registry, and independently
+reconstructs the operation from that registry and raw inspection evidence. Its
+second phase exposes the seed only long enough to sign the prevalidated canonical
+bytes after their prepared digests are rechecked; it performs no network, Git,
+installation, or reconstruction work. Its third, public-key-only phase verifies
+the result and uploads only `registry-signed-data`. CI runs those exact entrypoint
+phases as subprocesses in a clean lock-only virtual environment.
 
 Immediately before signing and again immediately before publication, the
 workflow fetches `origin/main`. Its SHA must still equal the captured dispatch
