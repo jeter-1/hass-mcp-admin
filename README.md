@@ -31,16 +31,19 @@
 > and deployed acceptance procedures are in
 > [`docs/RC2_RELEASE_NOTES.md`](docs/RC2_RELEASE_NOTES.md) and
 > [`docs/RC2_ACCEPTANCE.md`](docs/RC2_ACCEPTANCE.md).
+> The Phase 1 single-server architecture pivot and its complete reviewed
+> `ha-mcp` 7.14.1 policy inventory are documented in
+> [`ADR-005`](docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md).
 
 A focused Model Context Protocol server for Home Assistant engineering, diagnostics,
 and controlled administration, packaged as a Home Assistant OS add-on. It works with
 ChatGPT, Claude, and other MCP-capable clients.
 
-The current release exposes a compact set of direct Home Assistant inspection and
-administration tools. The project is evolving toward an engineering, analysis,
-governance, verification, and handoff layer that complements the broader `ha-mcp`
-server instead of duplicating it. See [ARCHITECTURE.md](ARCHITECTURE.md) for the current
-boundaries and roadmap.
+The v2 pivot makes Engineering the one client-visible front door: it preserves
+its engineering, analysis, governance, verification, and handoff tools while
+dynamically adding only exact reviewed pure-read operations from `ha-mcp` 7.14.1.
+Writes and mixed-operation upstream tools remain unavailable through the generic
+gateway. See [ARCHITECTURE.md](ARCHITECTURE.md) for the current boundaries.
 
 Current tools:
 
@@ -57,7 +60,8 @@ Current tools:
 | Operations | `get_audit_log` |
 | Beta analysis | `entity_dependency_analysis`, `automation_reliability_analysis`, `change_impact_analysis`, `configuration_integrity_analysis`, `incident_correlation`, `handoff_generation` |
 | Governance | `create_change_plan`, `get_change_plan`, `list_change_plans`, `approve_change_plan`, `apply_change_plan`, `rollback_change` |
-| General execution | `call_service` is compatibility-visible but fails closed in v2; use the standard HA MCP integration where supported |
+| General execution | `call_service` is compatibility-visible but fails closed in v2; Phase 1 does not delegate service execution or any upstream write |
+| Reviewed upstream reads | Up to 26 exact-schema-matching `ha-mcp` 7.14.1 reads are added from the reviewed subset present at startup; see [ADR-005](docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md) for the stock inventory and blocked classifications |
 
 It runs against the Supervisor's internal HA proxy, so **no long-lived access token is
 needed** — auth to HA is handled by the injected `SUPERVISOR_TOKEN`.

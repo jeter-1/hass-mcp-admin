@@ -122,3 +122,113 @@ jobs:
         run: |
           docker rm -f beta25-real-ha >/dev/null 2>&1 || true
           sudo rm -rf "$RUNNER_TEMP/beta25-real-ha"
+
+  exact-image-read-gateway:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      UPSTREAM_IMAGE: ghcr.io/homeassistant-ai/ha-mcp@sha256:68f386d9becfcc58476f1881a0025f4c6a3ae5874c15cdd61097b14156886292
+      UPSTREAM_VERSION: "7.14.1"
+      ENGINEERING_ACCESS_SECRET: synthetic-engineering-access-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: hass_mcp_engineering_beta/requirements.txt
+      - name: Install transport acceptance dependencies
+        run: python -m pip install -r hass_mcp_engineering_beta/requirements.txt
+      - name: Start synthetic read-only Home Assistant fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/fake_ha_read_gateway_contract_server.py --port 18123 \
+            > "$RUNNER_TEMP/read-gateway-ha.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/read-gateway-ha.pid"
+          for attempt in $(seq 1 30); do
+            curl --fail --silent http://127.0.0.1:18123/api/ >/dev/null && exit 0
+            sleep 1
+          done
+          exit 1
+      - name: Start exact reviewed ha-mcp image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull "$UPSTREAM_IMAGE"
+          test "$(docker image inspect "$UPSTREAM_IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = "$UPSTREAM_VERSION"
+          docker run --detach --rm --network host --name exact-read-gateway-upstream \
+            --read-only --tmpfs /tmp --tmpfs /home/mcpuser/.ha-mcp \
+            -e HOMEASSISTANT_URL=http://127.0.0.1:18123 \
+            -e HOMEASSISTANT_TOKEN=synthetic-read-gateway-token \
+            -e MCP_HOST=127.0.0.1 -e MCP_PORT=18086 \
+            -e MCP_SECRET_PATH=/synthetic-upstream-secret/mcp \
+            -e HA_MCP_DISABLE_SETTINGS_UI=true \
+            "$UPSTREAM_IMAGE" ha-mcp-web
+          for attempt in $(seq 1 60); do
+            status="$(curl --max-time 1 --silent --output /dev/null --write-out '%{http_code}' \
+              http://127.0.0.1:18086/synthetic-upstream-secret/mcp || true)"
+            test "$status" != "000" && exit 0
+            sleep 1
+          done
+          exit 1
+      - name: Build and start Engineering through its production discovery path
+        shell: bash
+        run: |
+          set -euo pipefail
+          beta_version="$(sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' hass_mcp_engineering_beta/config.yaml)"
+          build_sha="$(git rev-parse HEAD)"
+          build_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          docker build \
+            --build-arg "BUILD_VERSION=$beta_version" \
+            --build-arg "HAMCP_BUILD_SHA=$build_sha" \
+            --build-arg "HAMCP_BUILD_TIME=$build_time" \
+            --build-arg "HAMCP_BUILD_DIRTY=false" \
+            -t engineering-read-gateway-acceptance:test \
+            ./hass_mcp_engineering_beta
+          mkdir -p "$RUNNER_TEMP/read-gateway-data"
+          printf '%s\n' \
+            '{' \
+            '  "access_secret": "synthetic-engineering-access-secret",' \
+            '  "audit_enabled": true,' \
+            '  "prewarm_enabled": false,' \
+            '  "upstream_trust_registry_enabled": false' \
+            '}' > "$RUNNER_TEMP/read-gateway-data/options.json"
+          docker run --detach --rm --network host --name engineering-read-gateway-acceptance \
+            -v "$RUNNER_TEMP/read-gateway-data:/data" \
+            -e HA_URL=http://127.0.0.1:18123 \
+            -e HA_TOKEN=synthetic-read-gateway-token \
+            -e MCP_PORT=18100 -e APPROVAL_INGRESS_PORT=18110 \
+            -e UPSTREAM_DASHBOARD_MCP_URL=http://127.0.0.1:18086/synthetic-upstream-secret/mcp \
+            engineering-read-gateway-acceptance:test
+          for attempt in $(seq 1 90); do
+            status="$(curl --max-time 1 --silent --output /dev/null --write-out '%{http_code}' \
+              "http://127.0.0.1:18100/${ENGINEERING_ACCESS_SECRET}/mcp" || true)"
+            test "$status" != "000" && exit 0
+            sleep 1
+          done
+          exit 1
+      - name: Run exact-image authenticated gateway acceptance
+        shell: bash
+        run: |
+          python scripts/exact_image_read_gateway_acceptance.py \
+            --upstream-endpoint http://127.0.0.1:18086/synthetic-upstream-secret/mcp \
+            --engineering-endpoint "http://127.0.0.1:18100/${ENGINEERING_ACCESS_SECRET}/mcp" \
+            --fixture-stats-url http://127.0.0.1:18123/__fixture__/stats \
+            --output "$RUNNER_TEMP/exact-image-read-gateway-result.json"
+      - name: Upload bounded exact-image result
+        uses: actions/upload-artifact@v4
+        with:
+          name: exact-image-read-gateway-result
+          path: ${{ runner.temp }}/exact-image-read-gateway-result.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove disposable exact-image environment
+        if: always()
+        shell: bash
+        run: |
+          docker rm -f engineering-read-gateway-acceptance exact-read-gateway-upstream >/dev/null 2>&1 || true
+          if test -f "$RUNNER_TEMP/read-gateway-ha.pid"; then
+            kill "$(cat "$RUNNER_TEMP/read-gateway-ha.pid")" >/dev/null 2>&1 || true
+          fi
+          sudo rm -rf "$RUNNER_TEMP/read-gateway-data"

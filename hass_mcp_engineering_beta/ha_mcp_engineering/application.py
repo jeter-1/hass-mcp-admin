@@ -31,6 +31,7 @@ from .incident import INCIDENT_CORRELATION
 from .handoff import HANDOFF_GENERATION
 from .routing import AuthenticatedMcpGateway
 from .providers.upstream_dashboard import UPSTREAM_DASHBOARD
+from .providers.upstream_read_gateway import UPSTREAM_READ_GATEWAY
 from .providers.upstream_registry import RegistryValidationError, UpstreamTrustRegistry
 from .tools import get_registered_server
 
@@ -175,6 +176,10 @@ def create_application(settings: Settings | None = None):
         timeout=settings.ha_timeout_seconds,
     )
     UPSTREAM_DASHBOARD.configure(settings)
+    UPSTREAM_READ_GATEWAY.configure(
+        settings,
+        admission_validator=UPSTREAM_DASHBOARD.validate_read_gateway_catalog,
+    )
     HEALTH.configure(
         settings,
         audit,
@@ -187,6 +192,7 @@ def create_application(settings: Settings | None = None):
         INCIDENT_CORRELATION,
         HANDOFF_GENERATION,
         UPSTREAM_DASHBOARD,
+        UPSTREAM_READ_GATEWAY,
     )
     return gateway
 
@@ -200,9 +206,14 @@ def create_approval_application():
 async def _serve(settings: Settings) -> None:
     """Run distinct MCP and Ingress listeners in one supervised process."""
 
+    gateway = create_application(settings)
+    # Catalog discovery is bounded and fail-closed.  Failure only withholds the
+    # dynamic upstream reads; the 40 existing Engineering tools still start.
+    await UPSTREAM_READ_GATEWAY.initialize(get_registered_server())
+
     mcp_server = uvicorn.Server(
         uvicorn.Config(
-            create_application(settings),
+            gateway,
             host="0.0.0.0",
             port=settings.port,
             log_level=settings.log_level.lower(),
