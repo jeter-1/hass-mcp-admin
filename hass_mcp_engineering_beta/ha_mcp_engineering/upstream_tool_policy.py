@@ -53,6 +53,34 @@ def catalog_fingerprint(tools: list[dict[str, Any]]) -> str:
 
 
 @dataclass(frozen=True)
+class ReviewedToolAnnotations:
+    """Binary-owned MCP annotations reviewed with an exact upstream schema."""
+
+    read_only: bool
+    destructive: bool
+    idempotent: bool
+    open_world: bool
+
+    @classmethod
+    def from_mapping(cls, value: Any) -> "ReviewedToolAnnotations":
+        if not isinstance(value, dict) or set(value) != {
+            "readOnlyHint",
+            "destructiveHint",
+            "idempotentHint",
+            "openWorldHint",
+        }:
+            raise UpstreamToolPolicyError("policy_annotations_fields_invalid")
+        if any(not isinstance(item, bool) for item in value.values()):
+            raise UpstreamToolPolicyError("policy_annotations_value_invalid")
+        return cls(
+            read_only=value["readOnlyHint"],
+            destructive=value["destructiveHint"],
+            idempotent=value["idempotentHint"],
+            open_world=value["openWorldHint"],
+        )
+
+
+@dataclass(frozen=True)
 class UpstreamToolPolicyEntry:
     upstream_name: str
     exposed_name: str
@@ -66,6 +94,7 @@ class UpstreamToolPolicyEntry:
     response_limit_bytes: int
     timeout_seconds: float
     source_evidence: tuple[str, ...]
+    reviewed_annotations: ReviewedToolAnnotations
 
     @classmethod
     def from_mapping(cls, value: Any) -> "UpstreamToolPolicyEntry":
@@ -84,6 +113,7 @@ class UpstreamToolPolicyEntry:
             "response_limit_bytes",
             "timeout_seconds",
             "source_evidence",
+            "reviewed_annotations",
         }
         if set(value) != expected:
             raise UpstreamToolPolicyError("policy_entry_fields_invalid")
@@ -129,6 +159,14 @@ class UpstreamToolPolicyEntry:
             raise UpstreamToolPolicyError("policy_timeout_invalid")
         if not 1 <= float(timeout) <= 300:
             raise UpstreamToolPolicyError("policy_timeout_invalid")
+        reviewed_annotations = ReviewedToolAnnotations.from_mapping(
+            value["reviewed_annotations"]
+        )
+        if classification == "automatic_read" and (
+            not reviewed_annotations.read_only
+            or reviewed_annotations.destructive
+        ):
+            raise UpstreamToolPolicyError("policy_automatic_read_annotations_invalid")
         return cls(
             upstream_name=upstream_name,
             exposed_name=exposed_name,
@@ -142,6 +180,7 @@ class UpstreamToolPolicyEntry:
             response_limit_bytes=response_limit,
             timeout_seconds=float(timeout),
             source_evidence=tuple(evidence),
+            reviewed_annotations=reviewed_annotations,
         )
 
 
@@ -152,6 +191,8 @@ class UpstreamToolPolicy:
     reviewed_upstream_version: str
     reviewed_source_tag: str
     reviewed_source_commit: str
+    reviewed_stock_catalog_tool_count: int
+    reviewed_stock_catalog_fingerprint: str
     tools: tuple[UpstreamToolPolicyEntry, ...]
 
     @property
@@ -176,6 +217,8 @@ def load_upstream_tool_policy(path: Path = POLICY_PATH) -> UpstreamToolPolicy:
         "reviewed_upstream_version",
         "reviewed_source_tag",
         "reviewed_source_commit",
+        "reviewed_stock_catalog_tool_count",
+        "reviewed_stock_catalog_fingerprint",
         "tools",
     }:
         raise UpstreamToolPolicyError("policy_document_fields_invalid")
@@ -189,9 +232,22 @@ def load_upstream_tool_policy(path: Path = POLICY_PATH) -> UpstreamToolPolicy:
         raise UpstreamToolPolicyError("policy_source_tag_invalid")
     if value["reviewed_source_commit"] != "255acec1affa6528004a122eb83e30aee9c77713":
         raise UpstreamToolPolicyError("policy_source_commit_invalid")
+    stock_tool_count = value["reviewed_stock_catalog_tool_count"]
+    if (
+        isinstance(stock_tool_count, bool)
+        or not isinstance(stock_tool_count, int)
+        or not 1 <= stock_tool_count <= 512
+    ):
+        raise UpstreamToolPolicyError("policy_stock_catalog_count_invalid")
+    if not isinstance(value["reviewed_stock_catalog_fingerprint"], str) or not _HEX_64.fullmatch(
+        value["reviewed_stock_catalog_fingerprint"]
+    ):
+        raise UpstreamToolPolicyError("policy_stock_catalog_fingerprint_invalid")
     if not isinstance(value["tools"], list) or not value["tools"]:
         raise UpstreamToolPolicyError("policy_tools_invalid")
     entries = tuple(UpstreamToolPolicyEntry.from_mapping(item) for item in value["tools"])
+    if len(entries) != stock_tool_count:
+        raise UpstreamToolPolicyError("policy_stock_catalog_count_invalid")
     names = [entry.upstream_name for entry in entries]
     if names != sorted(names) or len(names) != len(set(names)):
         raise UpstreamToolPolicyError("policy_tool_order_or_uniqueness_invalid")
@@ -204,5 +260,9 @@ def load_upstream_tool_policy(path: Path = POLICY_PATH) -> UpstreamToolPolicy:
         reviewed_upstream_version=value["reviewed_upstream_version"],
         reviewed_source_tag=value["reviewed_source_tag"],
         reviewed_source_commit=value["reviewed_source_commit"],
+        reviewed_stock_catalog_tool_count=stock_tool_count,
+        reviewed_stock_catalog_fingerprint=value[
+            "reviewed_stock_catalog_fingerprint"
+        ],
         tools=entries,
     )

@@ -85,10 +85,10 @@ class ReviewedUpstreamReadTool(Tool):
         # content advertised by the remote peer cannot weaken the read boundary.
         annotations = ToolAnnotations(
             title=entry.upstream_name,
-            readOnlyHint=True,
-            destructiveHint=False,
-            idempotentHint=True,
-            openWorldHint=False,
+            readOnlyHint=entry.reviewed_annotations.read_only,
+            destructiveHint=entry.reviewed_annotations.destructive,
+            idempotentHint=entry.reviewed_annotations.idempotent,
+            openWorldHint=entry.reviewed_annotations.open_world,
         )
         base = Tool.from_function(
             delegated_read,
@@ -152,9 +152,13 @@ class UpstreamReadGateway:
             "upstream_server_version": None,
             "protocol_version": None,
             "catalog_fingerprint": None,
+            "observed_catalog_fingerprint": None,
             "upstream_advertised_tool_count": 0,
+            "observed_advertised_tool_count": 0,
             "reviewed_policy_entry_count": 0,
             "automatic_read_count": 0,
+            "reviewed_automatic_read_count": 0,
+            "exact_matched_automatic_read_count": 0,
             "dynamically_exposed_count": 0,
             "collision_count": 0,
             "blocked_mixed_tool_count": 0,
@@ -163,8 +167,21 @@ class UpstreamReadGateway:
             "prohibited_count": 0,
             "unsupported_count": 0,
             "schema_mismatch_count": 0,
+            "schema_mismatched_automatic_read_count": 0,
             "missing_reviewed_read_count": 0,
+            "missing_automatic_read_count": 0,
             "unreviewed_tool_count": 0,
+            "unreviewed_observed_tool_count": 0,
+            "blocked_classification_counts": {
+                "mixed_or_requires_wrapper": 0,
+                "persistent_write": 0,
+                "physical_or_high_risk_action": 0,
+                "prohibited": 0,
+                "unsupported": 0,
+            },
+            "reviewed_stock_catalog_tool_count": 0,
+            "reviewed_stock_catalog_fingerprint": None,
+            "observed_catalog_matches_reviewed_stock_fixture": False,
             "prohibited_delegation_attempts": 0,
             "fallback_count": 0,
             "last_failure_category": None,
@@ -218,6 +235,7 @@ class UpstreamReadGateway:
                 "configured": bool(endpoint),
                 "reviewed_policy_entry_count": len(self._policy.tools),
                 "automatic_read_count": counts["automatic_read"],
+                "reviewed_automatic_read_count": counts["automatic_read"],
                 "blocked_mixed_tool_count": counts["mixed_or_requires_wrapper"],
                 "blocked_write_count": counts["persistent_write"],
                 "blocked_physical_high_risk_count": counts[
@@ -225,6 +243,22 @@ class UpstreamReadGateway:
                 ],
                 "prohibited_count": counts["prohibited"],
                 "unsupported_count": counts["unsupported"],
+                "blocked_classification_counts": {
+                    name: counts[name]
+                    for name in (
+                        "mixed_or_requires_wrapper",
+                        "persistent_write",
+                        "physical_or_high_risk_action",
+                        "prohibited",
+                        "unsupported",
+                    )
+                },
+                "reviewed_stock_catalog_tool_count": (
+                    self._policy.reviewed_stock_catalog_tool_count
+                ),
+                "reviewed_stock_catalog_fingerprint": (
+                    self._policy.reviewed_stock_catalog_fingerprint
+                ),
             }
         )
 
@@ -243,6 +277,7 @@ class UpstreamReadGateway:
             if self._admission_validator is not None:
                 self._admission_validator(catalog)
             observed = self._validate_catalog(catalog)
+            observed_fingerprint = catalog_fingerprint(list(catalog.tools))
             base_names = {
                 tool.name for tool in server._tool_manager.list_tools()
             }
@@ -293,14 +328,23 @@ class UpstreamReadGateway:
                         "upstream_server_name": catalog.server_name[:128],
                         "upstream_server_version": catalog.server_version[:128],
                         "protocol_version": catalog.protocol_version[:64],
-                        "catalog_fingerprint": catalog_fingerprint(list(catalog.tools)),
+                        "catalog_fingerprint": observed_fingerprint,
+                        "observed_catalog_fingerprint": observed_fingerprint,
                         "upstream_advertised_tool_count": len(catalog.tools),
+                        "observed_advertised_tool_count": len(catalog.tools),
+                        "exact_matched_automatic_read_count": len(observed),
                         "dynamically_exposed_count": len(exposed),
                         "collision_count": len(collisions),
                         "last_failure_category": None,
                         "last_catalog_refresh_at": _utc_now(),
                         "exposed_tools": sorted(exposed),
                         "collision_mappings": collisions,
+                        "observed_catalog_matches_reviewed_stock_fixture": (
+                            len(catalog.tools)
+                            == self._policy.reviewed_stock_catalog_tool_count
+                            and observed_fingerprint
+                            == self._policy.reviewed_stock_catalog_fingerprint
+                        ),
                     }
                 )
             replace_dynamic_upstream_capabilities(
@@ -340,6 +384,7 @@ class UpstreamReadGateway:
         if duplicate_names:
             raise DashboardTransportError("invalid_response")
         schema_mismatches: list[str] = []
+        automatic_read_schema_mismatches: list[str] = []
         missing_reviewed_reads: list[str] = []
         matched: list[tuple[UpstreamToolPolicyEntry, dict[str, Any]]] = []
         blocked: list[dict[str, str]] = []
@@ -357,6 +402,8 @@ class UpstreamReadGateway:
                 matches = False
             if not matches:
                 schema_mismatches.append(entry.upstream_name)
+                if entry.classification == "automatic_read":
+                    automatic_read_schema_mismatches.append(entry.upstream_name)
                 continue
             if entry.classification == "automatic_read":
                 matched.append((entry, tool))
@@ -370,10 +417,17 @@ class UpstreamReadGateway:
         unreviewed = sorted(set(observed_by_name) - set(policy))
         with self._lock:
             self._state["schema_mismatch_count"] = len(schema_mismatches)
+            self._state["schema_mismatched_automatic_read_count"] = len(
+                automatic_read_schema_mismatches
+            )
             self._state["missing_reviewed_read_count"] = len(
                 missing_reviewed_reads
             )
+            self._state["missing_automatic_read_count"] = len(
+                missing_reviewed_reads
+            )
             self._state["unreviewed_tool_count"] = len(unreviewed)
+            self._state["unreviewed_observed_tool_count"] = len(unreviewed)
             self._state["blocked_tools"] = blocked
         return matched
 
@@ -545,6 +599,8 @@ class UpstreamReadGateway:
             )
             value["advertised_is_callable"] = False
             value["callable_requires_exact_policy_and_schema_match"] = True
+            value["catalog_admission_mode"] = "reviewed_exact_schema_subset"
+            value["stock_catalog_match_is_informational"] = True
             value["writes_allowed"] = False
             value["direct_ha_fallback_allowed"] = False
             return value

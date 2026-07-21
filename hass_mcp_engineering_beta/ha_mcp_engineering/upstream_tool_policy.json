@@ -20,7 +20,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_service.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_call_event",
@@ -37,7 +43,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_service.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_call_service",
@@ -54,7 +66,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_service.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_delete_dashboard",
@@ -71,7 +89,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_dashboards.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_delete_dashboard_resource",
@@ -88,7 +112,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_resources.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_get_automation",
@@ -105,7 +135,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_automations.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_get_calendar_events",
@@ -122,7 +158,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_calendar.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_get_category",
@@ -139,7 +181,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_categories.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_get_dashboard",
@@ -158,7 +206,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_dashboards.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_get_label",
@@ -175,7 +229,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_labels.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_get_scene",
@@ -192,7 +252,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_scenes.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_get_script",
@@ -209,7 +275,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_scripts.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_list_dashboard_resources",
@@ -226,7 +298,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_resources.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
     },
     {
       "upstream_name": "ha_config_list_groups",
@@ -243,7 +321,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_groups.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_list_helpers",
@@ -260,7 +344,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_helpers.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_remove_automation",
@@ -277,7 +367,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_automations.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_remove_calendar_event",
@@ -294,7 +390,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_calendar.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_remove_category",
@@ -311,7 +413,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_categories.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_remove_group",
@@ -328,7 +436,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_groups.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_remove_label",
@@ -345,7 +459,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_labels.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_remove_scene",
@@ -362,7 +482,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_scenes.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_remove_script",
@@ -379,7 +505,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_scripts.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_set_automation",
@@ -396,7 +528,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_automations.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_set_calendar_event",
@@ -413,7 +551,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_calendar.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_set_category",
@@ -430,7 +574,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_categories.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_set_dashboard",
@@ -447,7 +597,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_dashboards.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_set_dashboard_resource",
@@ -464,7 +620,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_resources.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_set_group",
@@ -481,7 +643,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_groups.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_set_helper",
@@ -498,7 +666,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_helpers.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_set_label",
@@ -515,7 +689,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_labels.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_set_scene",
@@ -532,7 +712,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_scenes.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_config_set_script",
@@ -549,7 +735,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_config_scripts.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_eval_template",
@@ -566,7 +758,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_utility.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_get_addon",
@@ -583,7 +781,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_addons.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
     },
     {
       "upstream_name": "ha_get_automation_traces",
@@ -600,7 +804,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_traces.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_get_blueprint",
@@ -617,7 +827,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_blueprints.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
     },
     {
       "upstream_name": "ha_get_camera_image",
@@ -634,7 +850,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_camera.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_get_device",
@@ -651,7 +873,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_registry.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_get_entity",
@@ -668,7 +896,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_entities.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_get_entity_exposure",
@@ -685,7 +919,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_voice_assistant.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_get_hacs_info",
@@ -702,7 +942,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_hacs.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
     },
     {
       "upstream_name": "ha_get_history",
@@ -719,7 +965,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_history.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_get_integration",
@@ -736,15 +988,21 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_integrations.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_get_logs",
       "exposed_name": "ha_get_logs",
       "description": "Get Home Assistant logs from various sources.",
-      "classification": "automatic_read",
+      "classification": "mixed_or_requires_wrapper",
       "input_schema_fingerprint": "4dd1131c4288794772b3d0e59beedb0b35411268ba4c7e929c2c4270d209b65c",
-      "reason": "Every accepted argument shape is read-only in the reviewed 7.14.1 implementation; dispatch is still schema-bound, bounded, redacted, audited, and has no fallback.",
+      "reason": "Raw Home Assistant, Supervisor, host, and add-on logs cross an unresolved confidentiality boundary; generic recursive redaction cannot prove this output safe.",
       "collision_status": "none",
       "collision_policy": "alias_upstream_on_collision",
       "argument_restrictions": [],
@@ -753,7 +1011,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_utility.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_get_operation_status",
@@ -770,7 +1034,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_service.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_get_overview",
@@ -787,7 +1057,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_search.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
     },
     {
       "upstream_name": "ha_get_skill_guide",
@@ -804,7 +1080,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/server.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_get_state",
@@ -821,7 +1103,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_search.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_get_system_health",
@@ -838,7 +1126,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_system.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
     },
     {
       "upstream_name": "ha_get_todo",
@@ -855,7 +1149,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_todo.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_get_zone",
@@ -872,7 +1172,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_zones.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_import_blueprint",
@@ -889,7 +1195,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_blueprints.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
     },
     {
       "upstream_name": "ha_list_floors_areas",
@@ -906,7 +1218,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_areas.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_list_services",
@@ -923,7 +1241,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_services.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_manage_addon",
@@ -940,7 +1264,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_addons.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
     },
     {
       "upstream_name": "ha_manage_backup",
@@ -957,7 +1287,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/backup.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_manage_energy_prefs",
@@ -974,7 +1310,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_energy.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_manage_hacs",
@@ -991,7 +1333,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_hacs.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
     },
     {
       "upstream_name": "ha_manage_pipeline",
@@ -1008,7 +1356,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_voice_assistant.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_manage_radio",
@@ -1025,7 +1379,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_radio.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_manage_theme",
@@ -1042,7 +1402,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_themes.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_manage_updates",
@@ -1059,7 +1425,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_updates.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
     },
     {
       "upstream_name": "ha_reload_core",
@@ -1076,7 +1448,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_system.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_remove_area_or_floor",
@@ -1093,7 +1471,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_areas.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_remove_device",
@@ -1110,7 +1494,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_registry.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_remove_entity",
@@ -1127,7 +1517,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_entities.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_remove_helpers_integrations",
@@ -1144,7 +1540,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_integrations.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_remove_todo_item",
@@ -1161,7 +1563,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_todo.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_remove_zone",
@@ -1178,7 +1586,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_zones.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_report_issue",
@@ -1195,7 +1609,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_bug_report.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_restart",
@@ -1212,7 +1632,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_system.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_search",
@@ -1229,7 +1655,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_search.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_set_area_or_floor",
@@ -1246,7 +1678,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_areas.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_set_device",
@@ -1263,7 +1701,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_registry.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_set_entity",
@@ -1280,7 +1724,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_entities.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_set_integration",
@@ -1297,7 +1747,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_integrations.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_set_todo_item",
@@ -1314,7 +1770,13 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_todo.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     },
     {
       "upstream_name": "ha_set_zone",
@@ -1331,7 +1793,15 @@
       "source_evidence": [
         "homeassistant-ai/ha-mcp@255acec1affa6528004a122eb83e30aee9c77713:src/ha_mcp/tools/tools_zones.py",
         "Runtime FastMCP tools/list from reviewed v7.14.1 source commit 255acec1affa6528004a122eb83e30aee9c77713"
-      ]
+      ],
+      "reviewed_annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
     }
-  ]
+  ],
+  "reviewed_stock_catalog_tool_count": 78,
+  "reviewed_stock_catalog_fingerprint": "c6bd074d9ee1e832bd90318398c00efd9a9ffd983d5444817bc830208cbfc47c"
 }

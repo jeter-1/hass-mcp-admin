@@ -28,6 +28,7 @@ from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
 )
 from ha_mcp_engineering.tools import get_registered_server  # noqa: E402
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
+    ReviewedToolAnnotations,
     UpstreamToolPolicy,
     UpstreamToolPolicyEntry,
     load_upstream_tool_policy,
@@ -71,6 +72,7 @@ def policy_entry(
     reviewed_schema=None,
     exposed_name=None,
     response_limit=60_000,
+    open_world=False,
 ):
     reviewed_schema = reviewed_schema or schema()
     return UpstreamToolPolicyEntry(
@@ -86,6 +88,12 @@ def policy_entry(
         response_limit_bytes=response_limit,
         timeout_seconds=5.0,
         source_evidence=("synthetic-reviewed-source",),
+        reviewed_annotations=ReviewedToolAnnotations(
+            read_only=classification == "automatic_read",
+            destructive=classification != "automatic_read",
+            idempotent=classification == "automatic_read",
+            open_world=open_world,
+        ),
     )
 
 
@@ -96,6 +104,8 @@ def policy(*entries):
         reviewed_upstream_version="7.14.1",
         reviewed_source_tag="v7.14.1",
         reviewed_source_commit="255acec1affa6528004a122eb83e30aee9c77713",
+        reviewed_stock_catalog_tool_count=78,
+        reviewed_stock_catalog_fingerprint="0" * 64,
         tools=tuple(sorted(entries, key=lambda item: item.upstream_name)),
     )
 
@@ -170,14 +180,14 @@ async def initialize(entries, tools, *, server=None, transport=None, version="7.
 
 
 class PolicyInventoryTests(unittest.TestCase):
-    def test_reviewed_7141_inventory_is_complete_and_fail_closed(self):
+    def test_reviewed_7141_stock_inventory_is_classified_and_fail_closed(self):
         value = load_upstream_tool_policy()
         self.assertEqual(len(value.tools), 78)
         self.assertEqual(
             value.classification_counts,
             {
-                "automatic_read": 27,
-                "mixed_or_requires_wrapper": 13,
+                "automatic_read": 26,
+                "mixed_or_requires_wrapper": 14,
                 "persistent_write": 32,
                 "physical_or_high_risk_action": 4,
                 "prohibited": 1,
@@ -192,13 +202,59 @@ class PolicyInventoryTests(unittest.TestCase):
         self.assertIn("ha_search", automatic)
         self.assertIn("ha_get_state", automatic)
         self.assertIn("ha_get_history", automatic)
-        self.assertIn("ha_get_logs", automatic)
+        self.assertNotIn("ha_get_logs", automatic)
         self.assertIn("ha_get_device", automatic)
         self.assertNotIn("ha_call_service", automatic)
         self.assertNotIn("ha_config_get_dashboard", automatic)
+        logs = value.by_name["ha_get_logs"]
+        self.assertEqual(logs.classification, "mixed_or_requires_wrapper")
+        self.assertIn("confidentiality boundary", logs.reason)
+
+    def test_reviewed_annotations_are_per_tool_and_security_owned(self):
+        value = load_upstream_tool_policy()
+        self.assertTrue(value.by_name["ha_get_hacs_info"].reviewed_annotations.open_world)
+        self.assertTrue(value.by_name["ha_get_hacs_info"].reviewed_annotations.read_only)
+        self.assertFalse(value.by_name["ha_get_state"].reviewed_annotations.open_world)
+        self.assertFalse(value.by_name["ha_get_entity"].reviewed_annotations.open_world)
+        automatic_annotations = {
+            entry.upstream_name: entry.reviewed_annotations
+            for entry in value.tools
+            if entry.classification == "automatic_read"
+        }
+        self.assertEqual(len(automatic_annotations), 26)
+        self.assertTrue(all(item.read_only for item in automatic_annotations.values()))
+        self.assertTrue(all(not item.destructive for item in automatic_annotations.values()))
 
     def test_existing_engineering_catalog_remains_40_without_discovery(self):
         self.assertEqual(len(get_registered_server()._tool_manager.list_tools()), 40)
+
+    def test_exact_image_acceptance_is_committed_to_ci(self):
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        acceptance = (
+            ROOT / "scripts" / "exact_image_read_gateway_acceptance.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("exact-image-read-gateway:", workflow)
+        self.assertIn(
+            "ghcr.io/homeassistant-ai/ha-mcp@sha256:68f386d9becfcc58476f1881a0025f4c6a3ae5874c15cdd61097b14156886292",
+            workflow,
+        )
+        self.assertIn("fake_ha_read_gateway_contract_server.py", workflow)
+        self.assertIn("exact_image_read_gateway_acceptance.py", workflow)
+        self.assertIn("--engineering-endpoint", workflow)
+        for tool_name in (
+            "ha_search",
+            "ha_get_state",
+            "ha_get_entity",
+            "ha_get_history",
+            "ha_config_get_automation",
+            "ha_get_device",
+            "ha_list_services",
+        ):
+            self.assertIn(f'"{tool_name}"', acceptance)
+        self.assertIn('"ha_get_logs" not in names', acceptance)
+        self.assertIn('"ha_call_service" not in names', acceptance)
 
 
 class RegistrationTests(unittest.IsolatedAsyncioTestCase):
@@ -227,7 +283,24 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tool.description, entry.description)
         self.assertTrue(tool.annotations.readOnlyHint)
         self.assertFalse(tool.annotations.destructiveHint)
+        self.assertFalse(tool.annotations.openWorldHint)
         self.assertTrue(gateway.health_snapshot()["generic_delegation_available"])
+
+    async def test_policy_open_world_annotation_is_used_not_hostile_remote_value(self):
+        entry = policy_entry("ha_get_hacs_info", open_world=True)
+        advertised = catalog_tool(entry.upstream_name)
+        advertised["annotations"] = {
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": False,
+            "openWorldHint": False,
+        }
+        _gateway, server, _ = await initialize([entry], [advertised])
+        annotations = server._tool_manager.get_tool("ha_get_hacs_info").annotations
+        self.assertTrue(annotations.readOnlyHint)
+        self.assertFalse(annotations.destructiveHint)
+        self.assertTrue(annotations.idempotentHint)
+        self.assertTrue(annotations.openWorldHint)
 
     async def test_multiple_reads_share_one_generic_provider(self):
         entries = [policy_entry("ha_get_state"), policy_entry("ha_get_history")]
@@ -256,6 +329,10 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNone(server._tool_manager.get_tool("ha_get_state"))
         self.assertEqual(gateway.health_snapshot()["schema_mismatch_count"], 1)
+        self.assertEqual(
+            gateway.health_snapshot()["schema_mismatched_automatic_read_count"],
+            1,
+        )
 
     async def test_missing_reviewed_read_is_not_reported_as_schema_drift(self):
         entry = policy_entry("ha_get_state")
@@ -263,7 +340,34 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(server._tool_manager.get_tool("ha_get_state"))
         health = gateway.health_snapshot()
         self.assertEqual(health["missing_reviewed_read_count"], 1)
+        self.assertEqual(health["missing_automatic_read_count"], 1)
         self.assertEqual(health["schema_mismatch_count"], 0)
+
+    async def test_reviewed_subset_remains_available_with_catalog_variation(self):
+        matched = policy_entry("ha_get_state")
+        missing = policy_entry("ha_get_history")
+        changed = policy_entry("ha_get_entity")
+        gateway, server, _ = await initialize(
+            [matched, missing, changed],
+            [
+                catalog_tool("ha_get_state"),
+                catalog_tool("ha_get_entity", schema("changed")),
+                catalog_tool("ha_unreviewed_read"),
+            ],
+        )
+        self.assertIsNotNone(server._tool_manager.get_tool("ha_get_state"))
+        self.assertIsNone(server._tool_manager.get_tool("ha_get_history"))
+        self.assertIsNone(server._tool_manager.get_tool("ha_get_entity"))
+        health = gateway.health_snapshot()
+        self.assertTrue(health["generic_delegation_available"])
+        self.assertEqual(health["reviewed_automatic_read_count"], 3)
+        self.assertEqual(health["observed_advertised_tool_count"], 3)
+        self.assertEqual(health["exact_matched_automatic_read_count"], 1)
+        self.assertEqual(health["dynamically_exposed_count"], 1)
+        self.assertEqual(health["missing_automatic_read_count"], 1)
+        self.assertEqual(health["schema_mismatched_automatic_read_count"], 1)
+        self.assertEqual(health["unreviewed_observed_tool_count"], 1)
+        self.assertFalse(health["observed_catalog_matches_reviewed_stock_fixture"])
 
     async def test_every_nonautomatic_classification_is_blocked(self):
         classifications = (
@@ -313,9 +417,23 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         )
         health = gateway.health_snapshot()
         self.assertEqual(health["upstream_advertised_tool_count"], 5)
+        self.assertEqual(health["observed_advertised_tool_count"], 5)
         self.assertEqual(health["reviewed_policy_entry_count"], 4)
+        self.assertEqual(health["reviewed_automatic_read_count"], 1)
+        self.assertEqual(health["exact_matched_automatic_read_count"], 1)
         self.assertEqual(health["dynamically_exposed_count"], 1)
         self.assertEqual(health["unreviewed_tool_count"], 1)
+        self.assertEqual(health["unreviewed_observed_tool_count"], 1)
+        self.assertEqual(
+            health["blocked_classification_counts"],
+            {
+                "mixed_or_requires_wrapper": 1,
+                "persistent_write": 1,
+                "physical_or_high_risk_action": 1,
+                "prohibited": 0,
+                "unsupported": 0,
+            },
+        )
         catalog = build_capability_catalog()
         self.assertEqual(catalog["dynamic_upstream_count"], 1)
         self.assertEqual(catalog["engineering_registered_count"], 40)

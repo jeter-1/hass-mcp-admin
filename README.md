@@ -61,7 +61,7 @@ Current tools:
 | Beta analysis | `entity_dependency_analysis`, `automation_reliability_analysis`, `change_impact_analysis`, `configuration_integrity_analysis`, `incident_correlation`, `handoff_generation` |
 | Governance | `create_change_plan`, `get_change_plan`, `list_change_plans`, `approve_change_plan`, `apply_change_plan`, `rollback_change` |
 | General execution | `call_service` is compatibility-visible but fails closed in v2; Phase 1 does not delegate service execution or any upstream write |
-| Reviewed upstream reads | 27 exact `ha-mcp` 7.14.1 reads are added after startup catalog/schema verification; see [ADR-005](docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md) for the complete inventory and blocked classifications |
+| Reviewed upstream reads | Up to 26 exact-schema-matching `ha-mcp` 7.14.1 reads are added from the reviewed subset present at startup; see [ADR-005](docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md) for the stock inventory and blocked classifications |
 
 It runs against the Supervisor's internal HA proxy, so **no long-lived access token is
 needed** — auth to HA is handled by the injected `SUPERVISOR_TOKEN`.

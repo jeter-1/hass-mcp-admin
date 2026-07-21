@@ -7,12 +7,16 @@ or container identity.
 ## Phase 1 reviewed upstream reads
 
 After configuring the existing secret-bearing upstream MCP URL, startup
-discovers the exact `ha-mcp` 7.14.1 catalog and adds 27 policy-approved pure-read
-tools to MCP `tools/list`. The existing 40 Engineering tools remain unchanged.
+discovers an exact `ha-mcp` 7.14.1 catalog and adds the exact-schema-matching
+subset of up to 26 policy-approved pure-read tools to MCP `tools/list`. The
+existing 40 Engineering tools remain unchanged.
 Unlisted, schema-changed, mixed, write, action, prohibited, and unsupported
 tools are not registered; delegated reads never fall back to direct Home
-Assistant access. The complete 78-tool classification and collision contract
-are in [`ADR-005`](../docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md).
+Assistant access. The stock reviewed 78-tool classification and collision
+contract are in
+[`ADR-005`](../docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md). Missing
+reviewed reads, changed schemas, and additional unreviewed tools are withheld
+individually; they do not disable other exact matches.
 
 ## Install the beta add-on
 

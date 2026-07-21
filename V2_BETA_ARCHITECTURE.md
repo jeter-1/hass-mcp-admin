@@ -4,10 +4,13 @@
 
 Engineering is now the single client-visible gateway for the existing 40-tool
 Engineering catalog and exact reviewed pure reads from `ha-mcp` 7.14.1. Startup
-catalog discovery registers only the 27 `automatic_read` entries whose complete
-input-schema fingerprints match the committed 78-tool policy. All 51 mixed,
-write, physical/high-risk, prohibited, or unsupported entries remain generic-
-route unavailable. There is no direct-HA fallback.
+catalog discovery registers only the observed subset of the 26
+`automatic_read` entries whose complete input-schema fingerprints match the
+committed stock 78-tool policy. All 52 mixed, write, physical/high-risk,
+prohibited, or unsupported entries remain generic-route unavailable. Missing,
+schema-changed, or unreviewed tools are withheld individually. Stock catalog
+count/fingerprint equality is informational, not a global runtime gate. There
+is no direct-HA fallback.
 
 The generic provider does not weaken the existing dashboard boundary:
 `ha_config_get_dashboard` stays excluded as mixed, while `list_dashboards` and
