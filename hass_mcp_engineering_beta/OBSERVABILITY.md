@@ -22,6 +22,17 @@ admission, remote unavailability, invalid signatures, the cache hard-age
 boundary, rollback/replay, revocation/restoration, renewal and restart
 reconstruction without adding a runtime URL or outage control.
 
+Repository lifecycle observability is separate from runtime health. Its bounded
+operation summary records the exact workflow base SHA, dispatch SHA, old/new
+sequence, affected identity, registry digest, lifecycle-evidence digest, prior
+evidence digest, and the four output paths. Every evidence record is signed and
+the full contiguous history is verified. Errors use bounded categories including
+`workflow_base_moved`, `workflow_sequence_stale`, `signed_base_mismatch`,
+`publication_base_moved`, `staging_failed`, `replacement_failed`,
+`post_write_verification_failed`, `rollback_failed`, and
+`restored_state_verification_failed`; raw registry data, key material, and
+unrestricted exceptions are not emitted.
+
 ## RC2dev10 selected-attestation legacy fields
 
 RC2dev9 correctly admitted live ha-mcp 7.14.1 through built-in entry

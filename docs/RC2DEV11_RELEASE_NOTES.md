@@ -13,14 +13,26 @@ catalog remains 40 registered / 25 canonical / zero planned.
 Every mutation supports `--dry-run`, requires an expected current sequence,
 derives exactly the next sequence, creates deterministic canonical JSON, checks
 private/public Ed25519 correspondence, verifies before replacement and writes
-the four allowed data classes atomically. It never accepts a registry URL,
+the four allowed data classes with per-file atomic replacement plus complete-set
+preverification, post-write verification, and automatic restoration on failure.
+This is not a transactionally atomic multi-file filesystem operation. It never accepts a registry URL,
 output path, family, tool or capability override.
 
-The existing protected workflow now dispatches the full lifecycle. It remains
-main-only, uses `upstream-attestation-signing`, serializes operations, gives the
-private seed only to the signing step, and creates only a data-only draft PR.
-It cannot build/publish Engineering images, packages, tags, releases or
-deployments.
+The protected workflow now has three authority boundaries. Online inspection is
+repository-read-only and has no private seed. Protected signing is
+repository-read-only, installs a complete reviewed hash-locked wheel closure
+offline with `--no-index --require-hashes`, and exposes the seed only to the
+minimum signing step. Publication is the only repository/PR writer and never
+receives or references the seed. It re-verifies with the public key and publishes
+the complete four-class set through one coherent Git commit and a draft PR.
+
+Every lifecycle record is independently signed over canonical JSON and chains
+the previous registry digest and previous complete signed-evidence digest.
+Verification traverses the complete contiguous history from sequence 1. Editing,
+removing, replacing, reordering, duplicating, or adding a historical record fails.
+The exact captured `main` SHA and expected sequence are checked immediately before
+signing and again immediately before publication; stale runs abort and require a
+new dispatch.
 
 ## Runtime correction and acceptance
 
@@ -52,7 +64,8 @@ Failure/expiry tests run only in the disposable harness. The rollback anchor is
 the persistent `/data` LKG; erasing `/data` removes that anchor, so backup and
 restore require separate governance. Production use must wait for creation of
 the protected environment, reviewer policy, three environment secrets, key
-custody and an offline recovery copy. This release does not create any of them.
+custody, an offline recovery copy, and independent rereview of these controls.
+This release does not create any of them.
 
 Rollback target: `2.0.0-rc2-dev10`. A rollback does not justify lowering a
 registry sequence or deleting the LKG cache.

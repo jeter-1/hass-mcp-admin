@@ -80,8 +80,19 @@ observability and is never a required-tool compatibility gate.
 The private seed exists only as
 `UPSTREAM_TRUST_REGISTRY_SIGNING_KEY` in the protected GitHub environment
 `upstream-attestation-signing`. The environment also holds the expected public
-key and key ID. The workflow scopes the private key to the signing step; upstream
-source inspection and disposable runtime execution do not receive it.
+key and key ID. The workflow is split into three authority boundaries:
+
+1. online inspection has read-only repository permission and no signing-seed or
+   repository/PR write reference;
+2. protected signing has read-only repository permission, exposes the seed only
+   to the minimum signing step, and performs no online dependency resolution;
+3. publication alone has repository/PR write permission and contains no private
+   seed reference or private artifact.
+
+Every checkout disables persisted credentials. The signing dependency closure
+is committed with exact versions and SHA-256 hashes. Inspection downloads only
+that closure, and signing independently verifies it before installing with
+`--no-index --require-hashes`.
 
 The runtime currently trusts one operator-configured public key. Rotation is a
 two-release operation:
@@ -108,16 +119,35 @@ operator. It is not imported by the add-on and is not an MCP tool. It supports:
 - `renew`: keep the entries byte-for-byte semantically equal while updating the
   validity window; and
 - `verify`: check canonical files, schema, public-key signature, key ID,
-  sequence, every entry/evidence digest and the generated index without a
-  private key or a write.
+  sequence, every entry, the full lifecycle-evidence chain and the generated
+  index without a private key or a write.
 
 Every mutation derives `next_sequence = current_sequence + 1`, requires the
 operator's expected current sequence, signs compact sorted-key UTF-8 JSON, and
-verifies the proposal before atomically replacing each fixed output. `--dry-run`
-performs the same construction and verification without creating files. There
-is no sequence override, registry URL, output-path, capability, tool, family or
-runtime argument. The repository newline is stored for review but is not part
-of the Ed25519 signed bytes.
+verifies the proposal before replacement. `--dry-run` performs the same
+construction and verification without creating files. There is no sequence
+override, registry URL, output-path, capability, tool, family or runtime
+argument. The repository newline is stored for review but is not part of the
+Ed25519 signed bytes.
+
+Each `registry-sequence-NNNNNN.json` lifecycle document contains a canonical
+unsigned payload and an embedded Ed25519 signature over that payload. It binds
+operation, exact identity and revocation transition, bounded reason, validity,
+key ID, workflow base and dispatch SHA, prior/current registry digest, prior
+complete signed-evidence digest, inspection/release evidence digests,
+`data_only`, and the exact four output paths. Sequence 1 uses explicit genesis
+nulls. Every later record chains the previous registry and previous complete
+evidence document. Verification requires every contiguous record from 1 through
+the current registry; missing, replaced, reordered, duplicate, skipped, or
+future evidence fails.
+
+For direct local use, all four outputs are staged on the same filesystem where
+practical and the complete set is verified first. Targets then use per-file
+atomic `os.replace`; this is not a transactionally atomic multi-file operation.
+Post-write verification is mandatory. On replacement or verification failure,
+the CLI restores original bytes and modes, removes outputs that were originally
+absent, and verifies the restored state where possible. Rollback or restoration
+verification failure is a distinct critical result.
 
 The data outputs are limited to the registry JSON, detached signature JSON, one
 bounded review-evidence document and the generated index. Machine-readable
@@ -134,17 +164,27 @@ disposable-runtime inspection. Revoke/restore/renew preserve unrelated entries
 and produce an exact bounded semantic diff. Verify receives only the public key
 and creates no branch or PR.
 
-Mutations require approval in `upstream-attestation-signing`. Only the signing
-step receives the private seed. A repository-wide concurrency group prevents two
-operations racing. The generated branch is checked against a four-file data-only
-allowlist and the workflow opens a draft PR whose body records old/new sequence,
-affected identity/revocation state, validity window, key/family, relevant source
-and image evidence, and evidence digest.
+Mutations require approval in `upstream-attestation-signing` for the protected
+signing job. A repository-wide concurrency group prevents two operations racing.
+Immediately before signing, read-only code fetches `origin/main`, requires its
+SHA to equal the dispatch base, verifies the registry from that exact commit,
+and requires the operator's expected sequence. Publication repeats the SHA and
+sequence check immediately before the verified branch push. Stale runs abort;
+they are never rebased or regenerated.
 
-The workflow has no package permission and cannot publish an Engineering image,
-tag, release, or deployment. Normal review must verify the evidence/diff and run
-CI before the data PR is merged. Promotion remains owned by the existing
-Engineering release workflow.
+Publication publicly verifies the signed artifact set, constructs it in a clean
+disposable worktree, checks the four-file allowlist, creates one coherent Git
+commit, and re-verifies the committed tree before pushing only the data branch
+and opening a draft PR. The PR body records the signed base SHA and bounded
+lifecycle details.
+
+The signing job has no repository-write, tag, release, package, image, or
+deployment authority. The publication job technically has repository and PR
+write authority, but receives no private key and contains no tag, release,
+image, package, or deployment command. Workflow contract tests and the data-only
+allowlist prohibit those outputs. Normal review must verify the evidence/diff
+and run CI before the data PR is merged. Passing CI alone is insufficient: the
+production key ceremony remains blocked until independent rereview passes.
 
 `reviewed_at` is part of signed release evidence. The runtime accepts only a
 valid ISO-8601 timestamp with explicit UTC (`Z` or `+00:00`), canonicalizes it to

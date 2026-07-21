@@ -41,13 +41,46 @@ production key or changing GitHub/Home Assistant.
 ## Workflow contract
 
 - Manual `workflow_dispatch` on `main` only.
-- Protected environment `upstream-attestation-signing` and one concurrency group.
+- One concurrency group and three distinct jobs:
+  - inspection has network access and read-only repository permission, but no
+    signing-seed or repository/PR write reference;
+  - signing uses protected environment `upstream-attestation-signing`, has
+    read-only repository permission, and receives the private seed only in the
+    minimum signing step; and
+  - publication is the only job with repository and pull-request write
+    permission, and has no private-seed reference.
+- Every checkout uses `persist-credentials: false`.
 - Inputs: operation, exact version selector, expected sequence, 1-365 day expiry,
   and bounded non-secret reason.
-- Private seed exists only in the mutation signing step; verify has public key
-  only; normal PR CI has neither environment nor package permissions.
-- Mutation PR is draft and exactly four allowlisted data files.
-- No image/package/tag/release/deployment command is present.
+- The signing dependency closure is committed with exact versions and hashes.
+  Inspection obtains that reviewed wheel set; signing verifies it, then installs
+  with `--no-index --require-hashes` and performs no online resolution while the
+  seed is present.
+- Before signing and immediately before publication, `origin/main` must still
+  equal the exact captured workflow base SHA and the committed sequence must
+  still equal the operator's expected sequence. A stale run aborts without
+  rebase or regeneration.
+- Every lifecycle record has an Ed25519 signature over its canonical payload and
+  chains the prior registry and prior complete-evidence digests. Verification
+  traverses every contiguous sequence from genesis through the current registry.
+- Publication constructs and verifies the four data classes in a disposable
+  worktree and publishes them through one coherent Git commit. The draft PR is
+  data-only.
+- The signing job has no tag, release, package, image, deployment, branch-push,
+  or PR authority. The publication job has GitHub write authority, but contains
+  no tag, release, image, package, or deployment command.
+
+## Local output-set failure acceptance
+
+- Direct CLI mutation stages and verifies the complete output set first.
+- Each fixed target is replaced atomically per file. This is not a
+  transactionally atomic multi-file filesystem operation.
+- Post-write verification is mandatory. A replacement or verification failure
+  restores every original byte and mode, removes originally absent outputs, and
+  verifies the restored set where possible.
+- Tests inject failure after each of the four replacements and distinguish
+  `staging_failed`, `replacement_failed`, `post_write_verification_failed`,
+  `rollback_failed`, and `restored_state_verification_failed`.
 
 ## Later production ceremony (not part of this PR)
 
@@ -73,3 +106,6 @@ production key or changing GitHub/Home Assistant.
 Stop on any secret disclosure, non-data diff, sequence skip, signature/key-ID
 mismatch, LKG replacement by invalid data, write reachability, fallback, public
 schema change, governance migration or stable-v1 diff.
+
+The production key ceremony remains blocked until this remediation receives an
+independent rereview; passing CI alone does not authorize production use.

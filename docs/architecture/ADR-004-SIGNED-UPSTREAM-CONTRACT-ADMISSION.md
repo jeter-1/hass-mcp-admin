@@ -10,10 +10,15 @@ decision. This removes stale single-release diagnostics without expanding the
 registry's authority.
 
 RC2dev11 operational clarification: registry lifecycle changes are prepared by
-a fixed-path repository CLI and a serialized, protected-environment workflow.
-Bootstrap/add/revoke/restore/renew always derive the next sequence, require the
-operator's expected current sequence, verify before atomic replacement and
-produce a four-file data-only draft PR. Verify is public-key-only and read-only.
+a fixed-path repository CLI and a serialized three-job workflow. Inspection has
+no seed or write authority; signing is protected, read-only, and installs only a
+hash-locked offline dependency closure; publication is the only repository/PR
+writer and receives no seed. Lifecycle evidence is individually signed and
+forms a contiguous digest chain. The captured `main` SHA and expected sequence
+are checked before signing and again before publication. Direct CLI mutation
+uses complete-set staging and verification, per-file atomic replacement, and
+automatic byte-for-byte restoration on failure; it does not claim filesystem
+transactionality. Workflow publication uses one coherent verified Git commit.
 These operator mechanics do not participate in runtime admission and do not
 expand the signed data authority described below.
 

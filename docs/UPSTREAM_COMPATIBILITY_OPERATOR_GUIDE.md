@@ -9,12 +9,15 @@ cannot add a family, route, tool, argument or fallback.
 
 Do not begin the ceremony until all of the following exist:
 
-1. Create the GitHub environment `upstream-attestation-signing` manually.
-2. Restrict deployment branches to `main` and configure required reviewers who
+1. Obtain an independent rereview of the RC2dev11 three-job workflow,
+   lifecycle-evidence chain, freshness gates, and restoration behavior. Passing
+   CI does not by itself authorize a production key ceremony.
+2. Create the GitHub environment `upstream-attestation-signing` manually.
+3. Restrict deployment branches to `main` and configure required reviewers who
    are independent of the workflow initiator where repository policy permits.
-3. Assign a primary and recovery custodian. Record where the offline encrypted
+4. Assign a primary and recovery custodian. Record where the offline encrypted
    recovery copy is held, who may retrieve it, and how access is audited.
-4. On a trusted, fully patched Windows administration workstation, outside a
+5. On a trusted, fully patched Windows administration workstation, outside a
    repository directory, create a new empty directory on encrypted removable or
    otherwise offline protected storage. Run this command from a PowerShell
    session whose transcript/history capture is disabled. It writes the seed and
@@ -39,12 +42,12 @@ Do not begin the ceremony until all of the following exist:
    material. Verify the files exist without displaying their contents, make the
    separately controlled encrypted offline recovery copy, and remove any
    unencrypted working copy after secret entry and recovery-copy verification.
-5. Add exactly these environment secrets through the GitHub UI without pasting
+6. Add exactly these environment secrets through the GitHub UI without pasting
    them into a shell command, issue or log:
    `UPSTREAM_TRUST_REGISTRY_SIGNING_KEY` (base64 raw 32-byte seed),
    `UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY` (base64 raw 32-byte public key), and
    `UPSTREAM_TRUST_REGISTRY_KEY_ID` (a bounded operational identifier).
-6. Only after a bootstrap data PR is reviewed and merged, configure Engineering
+7. Only after a bootstrap data PR is reviewed and merged, configure Engineering
    Beta with `upstream_trust_registry_public_key` and enable
    `upstream_trust_registry_enabled` in a separately approved deployment window.
    The private seed is never an add-on option.
@@ -66,10 +69,32 @@ Inputs are:
 - `operator_reason`: optional, non-secret, no control characters, at most 256
   characters.
 
-The protected environment gates execution and one concurrency group serializes
-all operations. Mutations receive all three secrets only in the signing step;
-verify receives the public key only. The workflow has no package permission,
-image push, tag, release or deployment step. It may create only a draft data PR.
+One concurrency group serializes all operations. The workflow has three jobs:
+
+1. Inspection may use the network, but has read-only repository permission, no
+   private-seed reference, no persisted checkout credential, and no push/PR
+   authority. It produces an unsigned candidate and bounded inspection manifest.
+2. Protected signing uses `upstream-attestation-signing`, has read-only
+   repository permission, and exposes the private seed only in the minimum
+   signing step. The exact cryptographic dependency closure is downloaded by
+   inspection from the committed hash lock, verified, and installed by signing
+   with `--no-index --require-hashes`; no public-index resolution occurs while
+   the seed is present.
+3. Publication is the only job with repository and PR write permission. It has
+   no seed reference, re-verifies with the public key, constructs the complete
+   set in a disposable clean worktree, creates one coherent commit, re-verifies
+   it, pushes only that branch, and opens only a draft PR.
+
+The signing job has no repository-write, tag, release, package, image, or
+deployment authority. The publication job does have repository/PR write
+authority, but contains no tag, release, image, package, or deployment command.
+Normal PR CI cannot access the protected signing secrets.
+
+Immediately before signing and again immediately before publication, the
+workflow fetches `origin/main`. Its SHA must still equal the captured dispatch
+base, and the verified committed registry sequence must equal
+`expected_current_sequence`. The signed evidence and publication manifest bind
+the exact base SHA. Any stale run aborts; do not rebase or regenerate it.
 
 Review every PR for exactly four data paths: registry, detached signature, one
 review-evidence document and the generated index. Confirm old/new sequence,
@@ -77,6 +102,13 @@ affected exact identity, revocation transition, validity window, key ID, family,
 evidence digest and applicable source/image evidence. Reject application,
 workflow, test, add-on, version, container, release or unrelated documentation
 changes.
+
+Review the complete lifecycle chain, not only the new record. Every sequence
+record has an embedded Ed25519 signature over its canonical payload, binds the
+prior registry and prior complete-evidence digest, and includes the old/current
+registry snapshots needed to prove the exact transition. Sequence numbers must
+be contiguous from genesis; missing, altered, reordered, duplicated, skipped,
+or unrelated future evidence invalidates verification.
 
 ## Initial bootstrap
 
