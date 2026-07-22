@@ -14,6 +14,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 CONTEXT_SCRIPT = ROOT / "scripts" / "codex-context.py"
 EVIDENCE_SCRIPT = ROOT / "scripts" / "pr-evidence.py"
+CHECK_SCRIPT = ROOT / "scripts" / "check.ps1"
+REPOSITORY_CODE_SENTINEL = "FIXTURE_REPOSITORY_CODE_EXECUTED"
 
 
 def run(
@@ -142,6 +144,121 @@ jobs:
             "fixture baseline",
         )
         git(self.root, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+
+class CheckScriptRepositoryFixture:
+    def __init__(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory(prefix="codex-check-test-")
+        self.root = Path(self.temporary.name)
+        self._populate()
+
+    def close(self) -> None:
+        self.temporary.cleanup()
+
+    def write(self, relative: str, text: str) -> None:
+        path = self.root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8", newline="\n")
+
+    def _populate(self) -> None:
+        self.write("scripts/check.ps1", CHECK_SCRIPT.read_text(encoding="utf-8"))
+        self.write("scripts/codex-context.py", "# Fixture context tool.\n")
+        self.write("scripts/pr-evidence.py", "# Fixture evidence tool.\n")
+        self.write(
+            "scripts/validate_addon_metadata.py",
+            f"""from pathlib import Path
+
+print({REPOSITORY_CODE_SENTINEL!r})
+if Path('.fixture-native-failure').exists():
+    raise SystemExit(19)
+print('fixture metadata validation passed')
+""",
+        )
+        self.write("hass_mcp_admin/__init__.py", "")
+        self.write("hass_mcp_admin/example.py", "VALUE = 1\n")
+        self.write("hass_mcp_admin/config.yaml", 'version: "1.1.2"\n')
+        self.write("hass_mcp_engineering_beta/__init__.py", "")
+        self.write("hass_mcp_engineering_beta/config.yaml", 'version: "2.0.0-test"\n')
+        self.write("tests/__init__.py", "")
+        self.write(
+            "tests/test_smoke.py",
+            f"""import unittest
+
+print({REPOSITORY_CODE_SENTINEL!r})
+
+
+class SmokeTests(unittest.TestCase):
+    def test_fixture(self):
+        self.assertTrue(True)
+""",
+        )
+        self.write("tests/test_codex_workflow.py", "# Fixture workflow test module.\n")
+        self.write(
+            ".github/workflows/ci.yml",
+            """name: Fixture CI
+on: [push]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+""",
+        )
+        self.write("repository.yaml", "name: Fixture repository\n")
+        self.write(
+            ".gitignore",
+            """.artifacts/
+__pycache__/
+*.pyc
+""",
+        )
+        git(self.root, "init", "-b", "main")
+        git(self.root, "config", "core.autocrlf", "false")
+        git(self.root, "add", ".")
+        git(
+            self.root,
+            "-c",
+            "user.email=fixture@example.invalid",
+            "-c",
+            "user.name=Fixture",
+            "commit",
+            "-m",
+            "fixture baseline",
+        )
+        git(self.root, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+    @staticmethod
+    def powershell_literal(value: str) -> str:
+        return "'" + value.replace("'", "''") + "'"
+
+    def run_check(
+        self,
+        executable: str,
+        tier: str,
+        *,
+        base_ref: str = "origin/main",
+        authorized_paths: tuple[str, ...] = (),
+    ) -> subprocess.CompletedProcess[str]:
+        arguments = [executable, "-NoProfile", "-NonInteractive"]
+        if os.name == "nt":
+            arguments.extend(("-ExecutionPolicy", "Bypass"))
+        invocation = [
+            "&",
+            self.powershell_literal(str(self.root / "scripts" / "check.ps1")),
+            "-Tier",
+            self.powershell_literal(tier),
+            "-PythonExecutable",
+            self.powershell_literal(sys.executable),
+            "-BaseRef",
+            self.powershell_literal(base_ref),
+        ]
+        if tier == "Fast":
+            invocation.extend(("-TestTarget", "'tests.test_smoke'"))
+        if authorized_paths:
+            path_array = ", ".join(
+                self.powershell_literal(path) for path in authorized_paths
+            )
+            invocation.extend(("-AuthorizedProtectedPath", f"@({path_array})"))
+        arguments.extend(("-Command", " ".join(invocation)))
+        return run(arguments, cwd=self.root, check=False)
 
 
 class ContextToolTests(unittest.TestCase):
@@ -343,6 +460,225 @@ class PowerShellValidationTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, f"{path}: {result.stderr}")
 
+    def test_fast_validation_routes_to_syntax_and_execution_tests(self):
+        text = CHECK_SCRIPT.read_text(encoding="utf-8")
+        for target in (
+            "tests.test_codex_workflow.PowerShellValidationTests",
+            "tests.test_codex_workflow.CheckScriptExecutionTests",
+        ):
+            self.assertGreaterEqual(text.count(target), 2, target)
+
+
+class CheckScriptExecutionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.powershell = shutil.which("pwsh") or shutil.which("powershell")
+
+    def setUp(self) -> None:
+        if not self.powershell:
+            self.skipTest("PowerShell is unavailable")
+        self.fixture = CheckScriptRepositoryFixture()
+
+    def tearDown(self) -> None:
+        if hasattr(self, "fixture"):
+            self.fixture.close()
+
+    @staticmethod
+    def output(result: subprocess.CompletedProcess[str]) -> str:
+        return result.stdout + result.stderr
+
+    def test_fast_executes_the_tiny_fixture_suite(self):
+        result = self.fixture.run_check(self.powershell, "Fast")
+        output = self.output(result)
+        self.assertEqual(result.returncode, 0, output)
+        self.assertIn(REPOSITORY_CODE_SENTINEL, output)
+        self.assertIn("Fast validation passed", output)
+
+    def test_protected_path_is_rejected_before_repository_code_on_every_tier(self):
+        for tier in ("Fast", "Full", "Evidence"):
+            with self.subTest(tier=tier):
+                fixture = CheckScriptRepositoryFixture()
+                try:
+                    fixture.write("hass_mcp_admin/example.py", "VALUE = 2\n")
+                    result = fixture.run_check(self.powershell, tier)
+                    output = self.output(result)
+                    self.assertNotEqual(result.returncode, 0, output)
+                    self.assertIn("hass_mcp_admin/example.py", output)
+                    self.assertIn("AuthorizedProtectedPath", output)
+                    self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
+                    if tier == "Evidence":
+                        payload = json.loads(
+                            (fixture.root / ".artifacts" / "validation.json").read_text(
+                                encoding="utf-8"
+                            )
+                        )
+                        self.assertEqual(payload["overall_status"], "failed")
+                        self.assertEqual(payload["authorized_protected_paths"], [])
+                        self.assertTrue(
+                            any(
+                                step["name"] == "Verify protected-path scope"
+                                and step["status"] == "failed"
+                                for step in payload["steps"]
+                            ),
+                            payload,
+                        )
+                finally:
+                    fixture.close()
+
+    def test_full_accepts_an_authorized_protected_directory_scope(self):
+        self.fixture.write("hass_mcp_admin/nested/example.py", "VALUE = 2\n")
+        result = self.fixture.run_check(
+            self.powershell,
+            "Full",
+            authorized_paths=("hass_mcp_admin/",),
+        )
+        output = self.output(result)
+        self.assertEqual(result.returncode, 0, output)
+        self.assertIn(REPOSITORY_CODE_SENTINEL, output)
+        self.assertIn("Full validation passed", output)
+
+    def test_evidence_accepts_and_records_an_exact_authorized_protected_path(self):
+        protected_path = "hass_mcp_admin/example.py"
+        self.fixture.write(protected_path, "VALUE = 2\n")
+        result = self.fixture.run_check(
+            self.powershell,
+            "Evidence",
+            authorized_paths=(protected_path,),
+        )
+        output = self.output(result)
+        self.assertEqual(result.returncode, 0, output)
+        payload = json.loads(
+            (self.fixture.root / ".artifacts" / "validation.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(payload["overall_status"], "passed")
+        self.assertEqual(payload["authorized_protected_paths"], [protected_path])
+
+    def test_evidence_accepts_and_records_multiple_authorized_paths(self):
+        protected_paths = (
+            "hass_mcp_admin/example.py",
+            ".github/workflows/ci.yml",
+        )
+        self.fixture.write(protected_paths[0], "VALUE = 2\n")
+        self.fixture.write(
+            protected_paths[1],
+            """name: Updated fixture CI
+on: [push]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+""",
+        )
+        result = self.fixture.run_check(
+            self.powershell,
+            "Evidence",
+            authorized_paths=protected_paths,
+        )
+        output = self.output(result)
+        self.assertEqual(result.returncode, 0, output)
+        payload = json.loads(
+            (self.fixture.root / ".artifacts" / "validation.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(payload["overall_status"], "passed")
+        self.assertEqual(
+            payload["authorized_protected_paths"],
+            list(protected_paths),
+        )
+
+    def test_nonmatching_authorization_is_rejected_as_unused(self):
+        changed_path = "hass_mcp_admin/example.py"
+        unused_path = "hass_mcp_admin/other.py"
+        self.fixture.write(changed_path, "VALUE = 2\n")
+        result = self.fixture.run_check(
+            self.powershell,
+            "Full",
+            authorized_paths=(unused_path,),
+        )
+        output = self.output(result)
+        self.assertNotEqual(result.returncode, 0, output)
+        self.assertIn(changed_path, output)
+        self.assertIn(unused_path, output)
+        self.assertIn("unused", output.lower())
+        self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
+
+    def test_invalid_authorization_syntax_is_rejected_before_repository_code(self):
+        for invalid_path in (
+            "../hass_mcp_admin/example.py",
+            "C:/hass_mcp_admin/example.py",
+            "hass_mcp_admin/*.py",
+        ):
+            with self.subTest(invalid_path=invalid_path):
+                fixture = CheckScriptRepositoryFixture()
+                try:
+                    fixture.write("hass_mcp_admin/example.py", "VALUE = 2\n")
+                    result = fixture.run_check(
+                        self.powershell,
+                        "Fast",
+                        authorized_paths=(invalid_path,),
+                    )
+                    output = self.output(result)
+                    self.assertNotEqual(result.returncode, 0, output)
+                    self.assertIn("Authorized protected paths", output)
+                    self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
+                finally:
+                    fixture.close()
+
+    def test_native_failure_exits_nonzero_and_overwrites_passing_evidence(self):
+        self.fixture.write(".fixture-native-failure", "synthetic failure\n")
+        evidence = self.fixture.root / ".artifacts" / "validation.json"
+        evidence.parent.mkdir(parents=True, exist_ok=True)
+        evidence.write_text(
+            json.dumps({"overall_status": "passed"}),
+            encoding="utf-8",
+            newline="\n",
+        )
+        result = self.fixture.run_check(self.powershell, "Evidence")
+        output = self.output(result)
+        self.assertNotEqual(result.returncode, 0, output)
+        self.assertIn(REPOSITORY_CODE_SENTINEL, output)
+        payload = json.loads(evidence.read_text(encoding="utf-8"))
+        self.assertEqual(payload["overall_status"], "failed")
+        steps = {step["name"]: step for step in payload["steps"]}
+        self.assertEqual(
+            steps["Validate add-on metadata"]["exit_code"],
+            19,
+        )
+        self.assertEqual(steps["Validate add-on metadata"]["status"], "failed")
+        self.assertEqual(steps["Parse repository YAML"]["status"], "passed")
+        self.assertNotIn("Evidence validation passed", output)
+
+    def test_invalid_base_fails_safely_on_every_tier(self):
+        missing_base = "refs/remotes/origin/does-not-exist"
+        for tier in ("Fast", "Full", "Evidence"):
+            with self.subTest(tier=tier):
+                fixture = CheckScriptRepositoryFixture()
+                try:
+                    evidence = fixture.root / ".artifacts" / "validation.json"
+                    if tier == "Evidence":
+                        evidence.parent.mkdir(parents=True, exist_ok=True)
+                        evidence.write_text(
+                            json.dumps({"overall_status": "passed"}),
+                            encoding="utf-8",
+                            newline="\n",
+                        )
+                    result = fixture.run_check(
+                        self.powershell,
+                        tier,
+                        base_ref=missing_base,
+                    )
+                    output = self.output(result)
+                    self.assertNotEqual(result.returncode, 0, output)
+                    self.assertIn(missing_base, output)
+                    self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
+                    if tier == "Evidence":
+                        payload = json.loads(evidence.read_text(encoding="utf-8"))
+                        self.assertEqual(payload["overall_status"], "failed")
+                finally:
+                    fixture.close()
+
 
 class InstructionFileTests(unittest.TestCase):
     def test_instruction_files_exist_with_required_safety_boundaries(self):
@@ -366,6 +702,11 @@ class InstructionFileTests(unittest.TestCase):
             "## Completion Contract",
         ):
             self.assertIn(phrase, root)
+        normalized_root = " ".join(root.lower().split())
+        self.assertIn(
+            "if guidance conflicts, the closer file takes precedence",
+            normalized_root,
+        )
         runtime = paths[1].read_text(encoding="utf-8")
         self.assertIn("Keep routing fail-closed", runtime)
         self.assertIn("negative tests", runtime)
@@ -374,6 +715,9 @@ class InstructionFileTests(unittest.TestCase):
         workflows = paths[3].read_text(encoding="utf-8")
         self.assertIn("minimum GitHub permissions", workflows)
         self.assertIn("must not publish", workflows)
+        for path in paths[1:]:
+            nested = " ".join(path.read_text(encoding="utf-8").lower().split())
+            self.assertIn("this file takes precedence if guidance conflicts", nested)
 
     def test_workflow_document_and_readme_link_exist(self):
         workflow = ROOT / "docs" / "CODEX_WORKFLOW.md"
@@ -390,6 +734,13 @@ class InstructionFileTests(unittest.TestCase):
             "### Release Preparation",
         ):
             self.assertIn(phrase, text)
+        lowered = text.lower()
+        self.assertIn("local environments", lowered)
+        self.assertIn("actions", lowered)
+        self.assertIn(".codex/", text)
+        self.assertIn("-AuthorizedProtectedPath", text)
+        self.assertNotIn("does not define a supported project action schema", lowered)
+        self.assertNotIn("did not establish a supported project action schema", lowered)
         self.assertIn("docs/CODEX_WORKFLOW.md", (ROOT / "README.md").read_text(encoding="utf-8"))
 
 
@@ -403,29 +754,6 @@ class DeploymentChecklistTests(unittest.TestCase):
 
 
 class ScopeBoundaryTests(unittest.TestCase):
-    @staticmethod
-    def changed_paths() -> set[str]:
-        commands = (
-            ("diff", "--name-only", "origin/main...HEAD"),
-            ("diff", "--name-only"),
-            ("diff", "--cached", "--name-only"),
-            ("ls-files", "--others", "--exclude-standard"),
-        )
-        paths: set[str] = set()
-        for arguments in commands:
-            paths.update(
-                line.strip().replace("\\", "/")
-                for line in git(ROOT, *arguments).splitlines()
-                if line.strip()
-            )
-        return paths
-
-    def test_stable_v1_files_are_unchanged(self):
-        stable = sorted(
-            path for path in self.changed_paths() if path.startswith("hass_mcp_admin/")
-        )
-        self.assertEqual(stable, [])
-
     def test_engineering_agents_file_is_not_a_release_version_change(self):
         path = ROOT / "scripts" / "validate_addon_metadata.py"
         spec = importlib.util.spec_from_file_location("codex_metadata_validator", path)
@@ -443,35 +771,6 @@ class ScopeBoundaryTests(unittest.TestCase):
             sys.modules.pop(spec.name, None)
         self.assertFalse(report.beta_changed)
         self.assertEqual(report.beta_version, report.compared_version)
-
-    def test_runtime_schema_registration_and_provider_routes_are_unchanged(self):
-        runtime_prefix = "hass_mcp_engineering_beta/ha_mcp_engineering/"
-        runtime = sorted(
-            path for path in self.changed_paths() if path.startswith(runtime_prefix)
-        )
-        self.assertEqual(runtime, [])
-
-    def test_workflow_permissions_and_release_metadata_are_unchanged(self):
-        paths = self.changed_paths()
-        workflow_yaml = sorted(
-            path
-            for path in paths
-            if path.startswith(".github/workflows/")
-            and path.lower().endswith((".yml", ".yaml"))
-        )
-        release = sorted(
-            path
-            for path in paths
-            if path.startswith(".release/")
-            or path
-            in {
-                "repository.yaml",
-                "hass_mcp_engineering_beta/config.yaml",
-                "hass_mcp_engineering_beta/Dockerfile",
-            }
-        )
-        self.assertEqual(workflow_yaml, [])
-        self.assertEqual(release, [])
 
 
 if __name__ == "__main__":

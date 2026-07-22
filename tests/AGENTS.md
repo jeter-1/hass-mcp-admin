@@ -1,6 +1,7 @@
 # Test Instructions
 
-The repository-root instructions also apply here.
+These are more-specific instructions for `tests/`. Nonconflicting repository-root
+instructions still apply; this file takes precedence if guidance conflicts.
 
 - Run focused regression tests during implementation and the complete unittest
   suite before draft-PR completion.

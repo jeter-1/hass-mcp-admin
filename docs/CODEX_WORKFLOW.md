@@ -3,10 +3,13 @@
 Repository policy lives in [`../AGENTS.md`](../AGENTS.md). This guide is the
 operator playbook for applying that policy locally or remotely.
 
-No checked-in `.codex` project actions are supplied. The current official Codex
-documentation inspected for this workflow did not establish a supported project
-action schema, so the repository uses the explicit, testable commands below
-instead of an undocumented format.
+Codex in the ChatGPT desktop app supports
+[local environments](https://learn.chatgpt.com/docs/environments/local-environment)
+with worktree setup scripts and reusable actions. Configure them in the app;
+Codex stores the generated configuration in the repository-root `.codex/`
+folder, where it can be checked in and shared. This repository does not
+currently supply that configuration, so use the explicit, testable commands
+below.
 
 ## Keyboard Workflow
 
@@ -42,6 +45,28 @@ instead of an undocumented format.
    .\scripts\check.ps1 -Tier Full
    .\scripts\check.ps1 -Tier Evidence
    ```
+
+   If the external task explicitly names a protected file or subtree, declare
+   that exact repository-relative scope on any tier, for example:
+
+   ```powershell
+   .\scripts\check.ps1 -Tier Full -AuthorizedProtectedPath 'hass_mcp_engineering_beta/ha_mcp_engineering/provider.py'
+   ```
+
+   Directory declarations must end in `/`. Pass a PowerShell array for multiple
+   paths:
+
+   ```powershell
+   .\scripts\check.ps1 -Tier Full -AuthorizedProtectedPath @(
+       'hass_mcp_admin/example.py',
+       '.github/workflows/ci.yml'
+   )
+   ```
+
+   The wrapper rejects unmatched, unused, absolute, parent-relative, and wildcard
+   declarations. This parameter records bounded task scope for human review; it
+   does not grant authorization or waive tests, review, release, or deployment
+   restrictions.
 
 7. Generate or refresh the bounded draft body if needed:
 

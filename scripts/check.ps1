@@ -6,7 +6,8 @@ param(
     [string]$Area,
     [string[]]$TestTarget,
     [string]$PythonExecutable,
-    [string]$BaseRef = "origin/main"
+    [string]$BaseRef = "origin/main",
+    [string[]]$AuthorizedProtectedPath = @()
 )
 
 Set-StrictMode -Version Latest
@@ -16,6 +17,7 @@ $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $ArtifactsPath = Join-Path $RepoRoot ".artifacts"
 $script:Results = New-Object System.Collections.Generic.List[object]
 $script:HadFailure = $false
+$script:NormalizedAuthorizedProtectedPaths = @()
 
 if (($Area -or $TestTarget) -and $Tier -ne "Fast") {
     throw "-Area and -TestTarget are supported only with -Tier Fast."
@@ -178,8 +180,93 @@ function Get-ChangedPaths {
     return @($values)
 }
 
+function Test-BaseReference {
+    Invoke-GitRead -Arguments @("rev-parse", "--verify", "$BaseRef^{commit}") | Out-Null
+    Write-Host "Verified base commit $BaseRef."
+}
+
+function Get-ProtectedPathLabel {
+    param([string]$Path)
+    if ($Path.StartsWith("hass_mcp_admin/", [StringComparison]::Ordinal)) {
+        return "stable v1.1.2"
+    }
+    if ($Path.StartsWith("hass_mcp_engineering_beta/ha_mcp_engineering/", [StringComparison]::Ordinal)) {
+        return "Engineering runtime"
+    }
+    if ($Path -match '^\.github/workflows/.+\.ya?ml$') {
+        return "workflow authority"
+    }
+    if ($Path.StartsWith(".release/", [StringComparison]::Ordinal)) {
+        return "release declaration"
+    }
+    if ($Path -in @(
+        "repository.yaml",
+        "hass_mcp_engineering_beta/config.yaml",
+        "hass_mcp_engineering_beta/Dockerfile"
+    )) {
+        return "release/deployment metadata"
+    }
+    return $null
+}
+
+function Test-DirectoryAuthorizationIsProtected {
+    param([string]$Path)
+    return (
+        $Path.StartsWith("hass_mcp_admin/", [StringComparison]::Ordinal) -or
+        $Path.StartsWith("hass_mcp_engineering_beta/ha_mcp_engineering/", [StringComparison]::Ordinal) -or
+        $Path.StartsWith(".github/workflows/", [StringComparison]::Ordinal) -or
+        $Path.StartsWith(".release/", [StringComparison]::Ordinal)
+    )
+}
+
+function ConvertTo-AuthorizedProtectedPath {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        throw "-AuthorizedProtectedPath entries cannot be empty."
+    }
+    $normalized = $Path.Trim().Replace("\", "/")
+    if (
+        $normalized.StartsWith("/", [StringComparison]::Ordinal) -or
+        [IO.Path]::IsPathRooted($normalized) -or
+        $normalized -match '^[A-Za-z]:'
+    ) {
+        throw "Authorized protected paths must be repository-relative: $Path"
+    }
+    if ($normalized -match '[*?\[]') {
+        throw "Authorized protected paths cannot contain wildcards: $Path"
+    }
+    $isDirectory = $normalized.EndsWith("/", [StringComparison]::Ordinal)
+    $body = if ($isDirectory) { $normalized.Substring(0, $normalized.Length - 1) } else { $normalized }
+    if (-not $body -or $body.Contains("//")) {
+        throw "Authorized protected paths must use normalized repository-relative syntax: $Path"
+    }
+    foreach ($segment in $body.Split('/')) {
+        if (-not $segment -or $segment -in @(".", "..")) {
+            throw "Authorized protected paths cannot contain empty, '.' or '..' segments: $Path"
+        }
+    }
+    if ($isDirectory) {
+        $normalized = "$body/"
+        if (-not (Test-DirectoryAuthorizationIsProtected -Path $normalized)) {
+            throw "Directory authorization is not contained in a protected surface: $normalized"
+        }
+    }
+    elseif (-not (Get-ProtectedPathLabel -Path $normalized)) {
+        throw "File authorization does not name a protected path: $normalized"
+    }
+    return $normalized
+}
+
+function Test-AuthorizationMatchesPath {
+    param([string]$Authorization, [string]$Path)
+    if ($Authorization.EndsWith("/", [StringComparison]::Ordinal)) {
+        return $Path.StartsWith($Authorization, [StringComparison]::Ordinal)
+    }
+    return [string]::Equals($Authorization, $Path, [StringComparison]::Ordinal)
+}
+
 function Test-PowerShellSyntax {
-    $paths = Get-ChildItem -LiteralPath (Join-Path $RepoRoot "scripts") -Filter "*.ps1" -File
+    $paths = @(Get-ChildItem -LiteralPath (Join-Path $RepoRoot "scripts") -Filter "*.ps1" -File)
     foreach ($path in $paths) {
         [scriptblock]::Create([IO.File]::ReadAllText($path.FullName)) | Out-Null
     }
@@ -187,32 +274,59 @@ function Test-PowerShellSyntax {
 }
 
 function Test-ScopeBoundaries {
-    $violations = New-Object System.Collections.Generic.List[string]
+    $normalizedAuthorizations = New-Object System.Collections.Generic.List[string]
+    foreach ($candidate in @($AuthorizedProtectedPath)) {
+        $normalized = ConvertTo-AuthorizedProtectedPath -Path $candidate
+        if ($normalizedAuthorizations.Contains($normalized)) {
+            throw "Duplicate authorized protected path: $normalized"
+        }
+        $normalizedAuthorizations.Add($normalized)
+    }
+    $script:NormalizedAuthorizedProtectedPaths = @($normalizedAuthorizations.ToArray())
+
+    $protectedChanges = New-Object System.Collections.Generic.List[object]
     foreach ($path in (Get-ChangedPaths)) {
-        if ($path.StartsWith("hass_mcp_admin/")) {
-            $violations.Add("stable v1.1.2: $path")
-        }
-        if ($path.StartsWith("hass_mcp_engineering_beta/ha_mcp_engineering/")) {
-            $violations.Add("Engineering runtime: $path")
-        }
-        if ($path -match '^\.github/workflows/.+\.ya?ml$') {
-            $violations.Add("workflow authority: $path")
-        }
-        if ($path.StartsWith(".release/")) {
-            $violations.Add("release declaration: $path")
-        }
-        if ($path -in @(
-            "repository.yaml",
-            "hass_mcp_engineering_beta/config.yaml",
-            "hass_mcp_engineering_beta/Dockerfile"
-        )) {
-            $violations.Add("release/deployment metadata: $path")
+        $label = Get-ProtectedPathLabel -Path $path
+        if ($label) {
+            $protectedChanges.Add([pscustomobject]@{ path = $path; label = $label })
         }
     }
-    if ($violations.Count -gt 0) {
-        throw "Protected changes are outside this development-pipeline task: $($violations -join '; ')"
+
+    $unauthorized = New-Object System.Collections.Generic.List[string]
+    foreach ($change in $protectedChanges) {
+        $matched = @($script:NormalizedAuthorizedProtectedPaths | Where-Object {
+            Test-AuthorizationMatchesPath -Authorization $_ -Path $change.path
+        }).Count -gt 0
+        if (-not $matched) {
+            $unauthorized.Add("[$($change.label)] $($change.path)")
+        }
     }
-    Write-Host "No stable, runtime, workflow-YAML, release, or deployment-metadata path changed."
+    $unused = New-Object System.Collections.Generic.List[string]
+    foreach ($authorization in $script:NormalizedAuthorizedProtectedPaths) {
+        $matched = @($protectedChanges | Where-Object {
+            Test-AuthorizationMatchesPath -Authorization $authorization -Path $_.path
+        }).Count -gt 0
+        if (-not $matched) {
+            $unused.Add($authorization)
+        }
+    }
+    $problems = New-Object System.Collections.Generic.List[string]
+    if ($unauthorized.Count -gt 0) {
+        $problems.Add("protected changes not declared by -AuthorizedProtectedPath: $($unauthorized -join '; ')")
+    }
+    if ($unused.Count -gt 0) {
+        $problems.Add("unused or over-broad declarations: $($unused -join ', ')")
+    }
+    if ($problems.Count -gt 0) {
+        throw "Protected-path scope check failed: $($problems -join '. '). The parameter records explicit task scope; it does not grant authorization."
+    }
+    if ($protectedChanges.Count -eq 0) {
+        Write-Host "No stable, runtime, workflow-YAML, release, or deployment-metadata path changed."
+        return
+    }
+    foreach ($change in $protectedChanges) {
+        Write-Host "Authorized protected path [$($change.label)]: $($change.path)"
+    }
 }
 
 function Test-ChangedTextWhitespace {
@@ -285,7 +399,12 @@ function Get-FastTargets {
         switch ($Area) {
             "Context" { return @("tests.test_codex_workflow.ContextToolTests") }
             "Evidence" { return @("tests.test_codex_workflow.PrEvidenceTests") }
-            "Validation" { return @("tests.test_codex_workflow.PowerShellValidationTests") }
+            "Validation" {
+                return @(
+                    "tests.test_codex_workflow.PowerShellValidationTests",
+                    "tests.test_codex_workflow.CheckScriptExecutionTests"
+                )
+            }
             "Instructions" { return @("tests.test_codex_workflow.InstructionFileTests") }
             "Deployment" { return @("tests.test_codex_workflow.DeploymentChecklistTests") }
             "Metadata" { return @("tests.test_codex_workflow.ScopeBoundaryTests") }
@@ -299,7 +418,11 @@ function Get-FastTargets {
         switch -Regex ($path) {
             '^scripts/codex-context\.py$' { $targets.Add("tests.test_codex_workflow.ContextToolTests"); continue }
             '^scripts/pr-evidence\.py$' { $targets.Add("tests.test_codex_workflow.PrEvidenceTests"); continue }
-            '^scripts/check\.ps1$' { $targets.Add("tests.test_codex_workflow.PowerShellValidationTests"); continue }
+            '^scripts/check\.ps1$' {
+                $targets.Add("tests.test_codex_workflow.PowerShellValidationTests")
+                $targets.Add("tests.test_codex_workflow.CheckScriptExecutionTests")
+                continue
+            }
             '(^|/)AGENTS\.md$|^docs/CODEX_WORKFLOW\.md$|^README\.md$|^\.gitignore$' { $targets.Add("tests.test_codex_workflow.InstructionFileTests"); continue }
             '^scripts/deploy-beta\.ps1$' { $targets.Add("tests.test_codex_workflow.DeploymentChecklistTests"); continue }
             '^tests/test_codex_workflow\.py$' { $fallback = $true; continue }
@@ -318,8 +441,9 @@ function Get-FastTargets {
 function Write-Evidence {
     New-Item -ItemType Directory -Path $ArtifactsPath -Force | Out-Null
     $headSha = [string]((Invoke-GitRead -Arguments @("rev-parse", "HEAD")) | Select-Object -First 1)
+    $localGateStatus = if ($script:HadFailure) { "failed_locally" } else { "executed_locally" }
     $coverage = @(
-        [ordered]@{ check = "full_local_gate"; status = "executed_locally"; evidence = "See recorded steps and overall_status." },
+        [ordered]@{ check = "full_local_gate"; status = $localGateStatus; evidence = "See recorded steps and overall_status." },
         [ordered]@{ check = "docker_image_build"; status = "delegated_to_ci"; evidence = ".github/workflows/ci.yml validate job" },
         [ordered]@{ check = "multiarchitecture_build"; status = "delegated_to_ci"; evidence = ".github/workflows/ci.yml validate job" },
         [ordered]@{ check = "disposable_home_assistant"; status = "delegated_to_ci"; evidence = ".github/workflows/ci.yml real-ha-contract-tests job" },
@@ -335,6 +459,7 @@ function Write-Evidence {
         repository_root = $RepoRoot
         base_ref = $BaseRef
         head_sha = $headSha
+        authorized_protected_paths = @($script:NormalizedAuthorizedProtectedPaths)
         overall_status = $(if ($script:HadFailure) { "failed" } else { "passed" })
         steps = $script:Results.ToArray()
         coverage = $coverage
@@ -349,6 +474,13 @@ function Write-Evidence {
     $summary.Add("- Overall status: **$($payload.overall_status)**")
     $summary.Add("- Base: ``$BaseRef``")
     $summary.Add("- Head: ``$headSha``")
+    $authorizedPathText = if ($script:NormalizedAuthorizedProtectedPaths.Count -gt 0) {
+        $script:NormalizedAuthorizedProtectedPaths -join ", "
+    }
+    else {
+        "none"
+    }
+    $summary.Add("- Authorized protected paths: $authorizedPathText")
     $summary.Add("")
     $summary.Add("| Step | Status | Exit | Tests | Duration (s) | Note |")
     $summary.Add("|---|---:|---:|---:|---:|---|")
@@ -367,6 +499,18 @@ function Write-Evidence {
 
 Push-Location $RepoRoot
 try {
+    Invoke-LocalStep -Label "Verify base reference" -CommandText "git rev-parse --verify $BaseRef^{commit}" -Action { Test-BaseReference }
+    if (-not $script:HadFailure) {
+        Invoke-LocalStep -Label "Verify protected-path scope" -CommandText "compare protected paths and explicit declarations against $BaseRef" -Action { Test-ScopeBoundaries }
+    }
+    if ($script:HadFailure) {
+        if ($Tier -eq "Evidence") {
+            Write-Evidence
+        }
+        Write-Host "`nValidation stopped during safe preflight. No repository code was executed." -ForegroundColor Red
+        exit 1
+    }
+
     if ($Tier -eq "Fast") {
         $fastChangedPaths = @(Get-ChangedPaths)
         $compileTargets = New-Object System.Collections.Generic.List[string]
@@ -414,7 +558,6 @@ try {
         Invoke-NativeStep -Label "Parse repository YAML" -Executable $PythonExecutable -Arguments @("-c", $yamlProgram)
         Invoke-NativeStep -Label "Check installed dependency consistency" -Executable $PythonExecutable -Arguments @("-m", "pip", "check")
         Invoke-LocalStep -Label "Scan for high-confidence secret patterns" -CommandText "bounded offline credential-pattern scan" -Action { Test-SecretPatterns }
-        Invoke-LocalStep -Label "Verify protected-path scope" -CommandText "compare protected paths against $BaseRef, index, and working tree" -Action { Test-ScopeBoundaries }
     }
 
     Invoke-LocalStep -Label "Parse PowerShell syntax" -CommandText "[scriptblock]::Create for scripts/*.ps1" -Action { Test-PowerShellSyntax }

@@ -1,7 +1,8 @@
 # Workflow Instructions
 
-The repository-root instructions also apply here. Workflow changes alter
-repository authority and require explicit scope.
+These are more-specific instructions for `.github/workflows/`. Nonconflicting
+repository-root instructions still apply; this file takes precedence if guidance
+conflicts. Workflow changes alter repository authority and require explicit scope.
 
 - Grant minimum GitHub permissions and pin security-sensitive actions or images
   immutably where supported.

@@ -1,7 +1,8 @@
 # Repository Instructions for Codex
 
-These instructions apply to the whole repository. A closer `AGENTS.md` adds
-requirements for its subtree without weakening this file.
+These instructions apply repository-wide. Codex combines them with any closer
+`AGENTS.md` that applies to a subtree; if guidance conflicts, the closer file
+takes precedence.
 
 ## Repository Authority
 
@@ -70,6 +71,8 @@ requirements for its subtree without weakening this file.
 - Fast workflow check: `.\scripts\check.ps1 -Tier Fast -Area Workflow`
 - Full local gate: `.\scripts\check.ps1 -Tier Full`
 - Full gate with PR evidence: `.\scripts\check.ps1 -Tier Evidence`
+- Protected-path gate for an explicitly scoped file:
+  `.\scripts\check.ps1 -Tier Full -AuthorizedProtectedPath 'hass_mcp_admin/example.py'`
 - Generate a PR draft: `python scripts/pr-evidence.py --base origin/main --head HEAD --output .artifacts/pr-evidence.md`
 - Open the active acceptance document: run the context command and open the first
   path under `Active release and acceptance documents`; never guess from history.
@@ -79,18 +82,26 @@ Fast-check areas are `Workflow`, `Context`, `Evidence`, `Validation`,
 changed-file inference; it stops and requires `-Area` or an explicit
 `-TestTarget` when a changed path has no safe focused mapping.
 
+When the external task explicitly includes a protected path, pass each exact
+repository-relative file or a directory ending in `/` through
+`-AuthorizedProtectedPath`. The declaration is checked on every tier, must match
+every protected change, cannot be unused, and is recorded in Evidence output. It
+documents task scope for review; it does not grant permission or waive any other
+gate.
+
 ## Frozen or Protected Paths
 
 - `hass_mcp_admin/` - stable v1.1.2 source and packaging
 - `hass_mcp_engineering_beta/ha_mcp_engineering/` - Engineering runtime, schemas, registration, routing, providers, and policy
-- `.github/workflows/*.yml` - CI, publication, signing, and deployment authority
+- `.github/workflows/*.yml` and `*.yaml` - CI, publication, signing, and deployment authority
 - `.release/` - release declarations
 - `repository.yaml` - add-on repository metadata
 - `hass_mcp_engineering_beta/config.yaml` - Engineering version and deployment metadata
+- `hass_mcp_engineering_beta/Dockerfile` - Engineering build and deployment metadata
 
-Changes to a protected path require the task to name that surface explicitly.
-Nested instruction files and other non-runtime documentation do not change the
-runtime merely because they live below a protected directory.
+Changes to a protected path require the external task to name and authorize that
+surface explicitly. Nested instruction files and other non-runtime documentation
+do not change the runtime merely because they live below a protected directory.
 
 ## Prohibited Actions
 
@@ -104,18 +115,22 @@ runtime merely because they live below a protected directory.
 
 ## Completion Contract
 
-Every Codex completion report must include:
+Every Codex completion report must address each applicable item below. If an item
+was not created, not run, pending, unavailable, or outside the task's scope,
+state that status explicitly rather than inventing a value:
 
-- exact base and head SHAs;
-- branch and draft pull-request number/URL;
-- changed files grouped by purpose;
-- exact tests, commands, counts, and results;
-- CI results or clearly pending checks;
+- exact base and head SHAs, when a Git base and head exist;
+- branch and draft pull-request number/URL, when one exists;
+- changed files grouped by purpose, or an explicit statement that no files
+  changed;
+- exact tests and commands run, with counts and results, plus checks not run or
+  not applicable;
+- CI results, or an explicit `pending`, `unavailable`, or `not applicable` status;
 - runtime, security, and compatibility impact;
 - stable-v1 comparison;
-- known limitations and rollback;
+- known limitations and rollback when a change was made;
 - explicit non-actions; and
-- the next human decision.
+- the next human decision, when one is required.
 
 ## Code Review Rules
 
@@ -135,6 +150,7 @@ Reviewers must flag each of the following, with file-and-line evidence:
   preservation, or negative reachability.
 
 Classify findings as Critical, High, Medium, or Low. Include evidence, impact,
-cause, correction, and the test that proves the correction. Resolve all Critical
-and High findings attributable to the change before opening or updating a draft
-pull request.
+cause, correction, and the test that proves the correction. Unresolved findings
+do not prevent opening or updating a draft pull request when they are clearly
+disclosed. Resolve all Critical and High findings attributable to the change
+before marking the pull request ready for review, approving it, or merging it.

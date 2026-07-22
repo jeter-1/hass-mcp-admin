@@ -1,7 +1,9 @@
 # Engineering Runtime Instructions
 
-The repository-root instructions also apply here. This subtree contains the v2
-Engineering runtime and is security-sensitive.
+These are more-specific instructions for `hass_mcp_engineering_beta/`.
+Nonconflicting repository-root instructions still apply; this file takes
+precedence if guidance conflicts. This subtree contains the v2 Engineering
+runtime and is security-sensitive.
 
 - Preserve every public schema unless the task explicitly authorizes a compatible
   schema change and its migration review.
