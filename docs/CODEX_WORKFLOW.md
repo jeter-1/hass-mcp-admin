@@ -22,9 +22,13 @@ below.
    ```
 
 3. Confirm the exact `origin/main` base, HEAD, branch, worktree state, stable and
-   Engineering versions, derived tool-count expectations, and active acceptance
-   document. Stop if the base moved unexpectedly or the context reports an
-   unexplained inconsistency.
+   Engineering versions, and derived tool-count expectations. For release or
+   deployment work, continue only when document `resolution_status` is `exact`
+   and `active_acceptance_document` is known. A `missing`, `partial`,
+   `unsupported`, or unknown result is a stop condition. Historical references
+   cannot authorize current acceptance, and release notes are not acceptance
+   instructions. Also stop if the base moved unexpectedly or the context reports
+   an unexplained inconsistency.
 4. Inspect before editing. During implementation run a supported focused area,
    for example:
 
@@ -45,6 +49,10 @@ below.
    .\scripts\check.ps1 -Tier Full
    .\scripts\check.ps1 -Tier Evidence
    ```
+
+   `-Tier Evidence` runs the full local gate and writes schema-v2 validation
+   evidence. It does not generate a PR draft; `scripts/pr-evidence.py` is the
+   separate bounded PR-draft generator.
 
    If the external task explicitly names a protected file or subtree, declare
    that exact repository-relative scope on any tier, for example:
@@ -92,11 +100,52 @@ process-scoped invocation such as `powershell.exe -NoProfile -ExecutionPolicy
 Bypass -File .\scripts\check.ps1 -Tier Fast`; do not weaken the machine-wide
 policy.
 
+## GitHub Authentication Readiness
+
+### Local Windows and connected-host Remote
+
+Local Windows work and connected-host Remote work use the trusted host's GitHub
+CLI and Git credentials. On that Windows host, run only these bounded readiness
+checks:
+
+```powershell
+gh auth status
+git fetch --prune origin
+gh repo view jeter-1/hass-mcp-admin
+```
+
+Run them before leaving the keyboard for remote work, before authorizing a remote
+branch push or draft-PR creation, and whenever authentication may have expired.
+Missing or expired authentication is an environment-readiness failure: stop and
+authenticate interactively on the trusted Windows host, for example with
+`gh auth login`. Do not work around the failure by putting a token in a prompt or
+script.
+
+Authentication checks may report status and account identity, but not secret
+values. Never print or export GitHub tokens; read or dump Git credential-store
+contents; read or copy SSH private keys; commit credentials; put tokens in
+`AGENTS.md`, prompts, setup scripts, repository files, or checked-in environment
+files; or ask Codex to expose credential material. This repository must not add
+credential automation or a `.codex` configuration merely for authentication.
+
+### Codex cloud
+
+Codex cloud uses its separately authorized GitHub connection. It does not inherit
+the Windows host's GitHub CLI login, so connected-host readiness and Codex-cloud
+authorization are distinct checks. Configure cloud repository access through the
+Codex GitHub connection; do not add credentials or authentication automation to
+this repository.
+
 ## Remote and Mobile Workflow
 
 - For connected-host work, leave the trusted Windows host online, at a clean
   named worktree, with dependencies already available. Prefer repository-contained
   cloud work when local Windows state is unnecessary.
+- Before release or deployment preparation, run `codex-context.py` and continue
+  only when document resolution is `exact` and `active_acceptance_document` is
+  known. Missing exact acceptance authority is a stop condition. Historical
+  references cannot authorize current acceptance, and release notes are not
+  acceptance instructions.
 - Preauthorize only the named branch push and draft-PR creation. Do not
   preauthorize merge, release, image publication, deployment, secret changes, or
   live-Home-Assistant access.
@@ -152,6 +201,9 @@ These are distinct profiles; “Codex access” is not one universal permission.
 ### Release Preparation
 
 > Prepare release evidence for `<version>` without publishing. Verify authoritative
-> version declarations, active acceptance guidance, image/tag/provenance
-> preconditions, and rollback. Report CI-only checks accurately and stop for a
-> separate human publication/deployment decision.
+> version declarations, require document resolution to be `exact`, and read only
+> the known `active_acceptance_document` as acceptance authority. Missing exact
+> acceptance is a stop condition; historical references cannot authorize current
+> acceptance, and release notes are not acceptance instructions. Verify
+> image/tag/provenance preconditions and rollback, report CI-only checks
+> accurately, and stop for a separate human publication/deployment decision.

@@ -60,6 +60,21 @@ class RepositoryFixture:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8", newline="\n")
 
+    def set_engineering_version(self, version: str) -> None:
+        self.write("hass_mcp_engineering_beta/config.yaml", f'version: "{version}"\n')
+        self.write(
+            "hass_mcp_engineering_beta/ha_mcp_engineering/version.py",
+            f'SERVER_VERSION = "{version}"\n',
+        )
+        self.write(
+            "scripts/validate_addon_metadata.py",
+            f'BETA_VERSION = "{version}"\n',
+        )
+        self.write(
+            "README.md",
+            f"The development stage is now hardened as `{version}`.\n",
+        )
+
     def _populate(self) -> None:
         self.write(
             "AGENTS.md",
@@ -108,10 +123,6 @@ PLANNED_CAPABILITIES = ()
             "scripts/validate_addon_metadata.py",
             'BETA_VERSION = "2.0.0-rc2-dev1"\n',
         )
-        self.write("docs/RC2DEV1_RELEASE_NOTES.md", "# Release\n")
-        self.write("docs/RC2DEV1_ACCEPTANCE.md", "# Acceptance\n")
-        self.write("docs/RC2_RELEASE_NOTES.md", "# RC2 Release\n")
-        self.write("docs/RC2_ACCEPTANCE.md", "# RC2 Acceptance\n")
         self.write(
             ".github/workflows/ci.yml",
             """name: CI
@@ -138,6 +149,22 @@ __pycache__/
             "add",
             "origin",
             "https://fixture-remote-secret@example.invalid/example/context-fixture.git",
+        )
+        self.write(
+            "docs/RC2DEV1_RELEASE_NOTES.md",
+            "# 2.0.0-rc2-dev1 release\n\nVersion: `2.0.0-rc2-dev1`\n",
+        )
+        self.write(
+            "docs/RC2DEV1_ACCEPTANCE.md",
+            "# 2.0.0-rc2-dev1 acceptance\n\nVersion: `2.0.0-rc2-dev1`\n",
+        )
+        self.write(
+            "docs/RC2_RELEASE_NOTES.md",
+            "# 2.0.0-rc.2 release\n\nVersion: `2.0.0-rc.2`\n",
+        )
+        self.write(
+            "docs/RC2_ACCEPTANCE.md",
+            "# 2.0.0-rc.2 acceptance\n\nVersion: `2.0.0-rc.2`\n",
         )
         git(self.root, "add", ".")
         git(
@@ -317,14 +344,46 @@ class ContextToolTests(unittest.TestCase):
             env=env,
         )
 
+    def isolated_context(
+        self,
+        version: str,
+        documents: dict[str, str] | None = None,
+        *,
+        output_format: str = "json",
+    ) -> str:
+        fixture = RepositoryFixture()
+        try:
+            fixture.set_engineering_version(version)
+            for relative, text in (documents or {}).items():
+                fixture.write(relative, text)
+            return run(
+                [
+                    sys.executable,
+                    str(CONTEXT_SCRIPT),
+                    "--repo-root",
+                    str(fixture.root),
+                    "--format",
+                    output_format,
+                ],
+                cwd=fixture.root,
+            ).stdout
+        finally:
+            fixture.close()
+
+    @staticmethod
+    def version_document(title: str, version: str) -> str:
+        return f"# {version} {title}\n\nVersion: `{version}`\n"
+
     def test_json_is_valid_derives_counts_and_excludes_controlled_secrets(self):
         env = dict(os.environ)
         env["SUPERVISOR_TOKEN"] = "synthetic-context-secret-value"
         env["GITHUB_TOKEN"] = "synthetic-github-secret-value"
         output = self.context(env=env).stdout
         payload = json.loads(output)
+        self.assertEqual(payload["schema_version"], 2)
         self.assertEqual(payload["repository"]["identity"], "example/context-fixture")
         self.assertEqual(payload["versions"]["engineering"], "2.0.0-rc2-dev1")
+        self.assertEqual(payload["documents"]["resolution_status"], "exact")
         counts = payload["tool_counts"]
         self.assertEqual(
             counts["static_registered"],
@@ -353,6 +412,259 @@ class ContextToolTests(unittest.TestCase):
             "## Inconsistencies and Unknowns",
         ):
             self.assertIn(heading, output)
+        for label in (
+            "Resolution status",
+            "Active release notes",
+            "Active acceptance document",
+            "Historical references (informational only)",
+            "Limitations",
+        ):
+            self.assertIn(label, output)
+        self.assertNotIn("Active release and acceptance documents", output)
+
+    def test_exact_development_rc_pair_is_active(self):
+        version = "2.0.0-rc2-dev12"
+        payload = json.loads(
+            self.isolated_context(
+                version,
+                {
+                    "docs/RC2DEV12_RELEASE_NOTES.md": self.version_document(
+                        "Release", version
+                    ),
+                    "docs/RC2DEV12_ACCEPTANCE.md": self.version_document(
+                        "Acceptance", version
+                    ),
+                },
+            )
+        )
+        documents = payload["documents"]
+        self.assertEqual(documents["resolution_status"], "exact")
+        self.assertEqual(
+            documents["active_release_notes"],
+            "docs/RC2DEV12_RELEASE_NOTES.md",
+        )
+        self.assertEqual(
+            documents["active_acceptance_document"],
+            "docs/RC2DEV12_ACCEPTANCE.md",
+        )
+
+    def test_missing_development_rc_pair_fails_closed(self):
+        documents = json.loads(self.isolated_context("2.0.0-rc2-dev12"))[
+            "documents"
+        ]
+        self.assertEqual(documents["resolution_status"], "missing")
+        self.assertEqual(documents["active_release_notes"], "unknown")
+        self.assertEqual(documents["active_acceptance_document"], "unknown")
+
+    def test_partial_development_rc_pair_does_not_fill_from_history(self):
+        version = "2.0.0-rc2-dev12"
+        documents = json.loads(
+            self.isolated_context(
+                version,
+                {
+                    "docs/RC2DEV12_RELEASE_NOTES.md": self.version_document(
+                        "Release", version
+                    )
+                },
+            )
+        )["documents"]
+        self.assertEqual(documents["resolution_status"], "partial")
+        self.assertEqual(
+            documents["active_release_notes"],
+            "docs/RC2DEV12_RELEASE_NOTES.md",
+        )
+        self.assertEqual(documents["active_acceptance_document"], "unknown")
+
+    def test_exact_final_rc_pair_uses_established_convention(self):
+        documents = json.loads(self.isolated_context("2.0.0-rc.2"))["documents"]
+        self.assertEqual(documents["resolution_status"], "exact")
+        self.assertEqual(documents["active_release_notes"], "docs/RC2_RELEASE_NOTES.md")
+        self.assertEqual(
+            documents["active_acceptance_document"],
+            "docs/RC2_ACCEPTANCE.md",
+        )
+
+    def test_missing_final_rc_pair_does_not_promote_rc3a_documents(self):
+        documents = json.loads(
+            self.isolated_context(
+                "2.0.0-rc.3",
+                {
+                    "docs/RC3A_RELEASE_NOTES.md": self.version_document(
+                        "RC3A release", "2.0.0-rc2-dev3"
+                    ),
+                    "docs/RC3A_ACCEPTANCE.md": self.version_document(
+                        "RC3A acceptance", "2.0.0-rc2-dev3"
+                    ),
+                },
+            )
+        )["documents"]
+        self.assertEqual(documents["resolution_status"], "missing")
+        self.assertEqual(documents["active_release_notes"], "unknown")
+        self.assertEqual(documents["active_acceptance_document"], "unknown")
+        self.assertFalse(
+            any("RC3A" in path for path in documents["historical_references"])
+        )
+
+    def test_stable_version_form_is_recognized_without_inventing_authority(self):
+        payload = json.loads(self.isolated_context("2.0.0"))
+        self.assertEqual(payload["versions"]["release_stage"], "stable")
+        self.assertEqual(payload["documents"]["resolution_status"], "unsupported")
+        self.assertEqual(payload["documents"]["active_release_notes"], "unknown")
+        self.assertEqual(
+            payload["documents"]["active_acceptance_document"],
+            "unknown",
+        )
+
+    def test_stable_version_without_established_convention_fails_closed(self):
+        documents = json.loads(
+            self.isolated_context(
+                "1.1.2",
+                {
+                    "docs/STABLE_RELEASE_NOTES.md": self.version_document(
+                        "Stable release", "1.1.2"
+                    ),
+                    "docs/STABLE_ACCEPTANCE.md": self.version_document(
+                        "Stable acceptance", "1.1.2"
+                    ),
+                },
+            )
+        )["documents"]
+        self.assertEqual(documents["resolution_status"], "unsupported")
+        self.assertEqual(documents["active_release_notes"], "unknown")
+        self.assertEqual(documents["active_acceptance_document"], "unknown")
+        self.assertEqual(documents["historical_references"], [])
+
+    def test_unsupported_version_format_fails_closed(self):
+        payload = json.loads(self.isolated_context("2.0.0-preview1"))
+        self.assertEqual(payload["versions"]["release_stage"], "unknown")
+        self.assertEqual(payload["documents"]["resolution_status"], "unsupported")
+        self.assertEqual(payload["documents"]["active_release_notes"], "unknown")
+        self.assertEqual(
+            payload["documents"]["active_acceptance_document"],
+            "unknown",
+        )
+
+    def test_release_notes_and_acceptance_remain_separate_fields(self):
+        documents = json.loads(self.context().stdout)["documents"]
+        self.assertIsInstance(documents, dict)
+        self.assertNotEqual(
+            documents["active_release_notes"],
+            documents["active_acceptance_document"],
+        )
+        self.assertNotIn("active_documents", documents)
+
+    def test_older_documents_are_historical_only(self):
+        version = "2.0.0-rc2-dev12"
+        documents = json.loads(
+            self.isolated_context(
+                version,
+                {
+                    "docs/RC2DEV12_RELEASE_NOTES.md": self.version_document(
+                        "Release", version
+                    ),
+                    "docs/RC2DEV12_ACCEPTANCE.md": self.version_document(
+                        "Acceptance", version
+                    ),
+                },
+            )
+        )["documents"]
+        self.assertIn(
+            "docs/RC2DEV1_ACCEPTANCE.md",
+            documents["historical_references"],
+        )
+        self.assertNotIn(
+            documents["active_acceptance_document"],
+            documents["historical_references"],
+        )
+        self.assertTrue(
+            any(
+                "informational only" in limitation
+                and "cannot authorize" in limitation
+                for limitation in documents["limitations"]
+            )
+        )
+
+    def test_missing_exact_acceptance_is_unknown_with_stop_limitation(self):
+        version = "2.0.0-rc2-dev12"
+        documents = json.loads(
+            self.isolated_context(
+                version,
+                {
+                    "docs/RC2DEV12_RELEASE_NOTES.md": self.version_document(
+                        "Release", version
+                    )
+                },
+            )
+        )["documents"]
+        self.assertEqual(documents["active_acceptance_document"], "unknown")
+        joined = " ".join(documents["limitations"])
+        self.assertIn("stop release or deployment work", joined)
+        self.assertIn("Never substitute release notes or a historical reference", joined)
+
+    def test_document_core_mismatch_never_becomes_active(self):
+        documents = json.loads(self.isolated_context("3.0.0-rc2-dev1"))[
+            "documents"
+        ]
+        self.assertEqual(documents["resolution_status"], "missing")
+        self.assertEqual(documents["active_release_notes"], "unknown")
+        self.assertEqual(documents["active_acceptance_document"], "unknown")
+
+    def test_bounded_negative_mentions_do_not_establish_authority(self):
+        version = "2.0.0-rc2-dev12"
+        negative = (
+            "# RC2dev12 document\n\n"
+            f"This document is not authority for `{version}`.\n"
+        )
+        documents = json.loads(
+            self.isolated_context(
+                version,
+                {
+                    "docs/RC2DEV12_RELEASE_NOTES.md": negative,
+                    "docs/RC2DEV12_ACCEPTANCE.md": negative,
+                },
+            )
+        )["documents"]
+        self.assertEqual(documents["resolution_status"], "missing")
+        self.assertEqual(documents["active_release_notes"], "unknown")
+        self.assertEqual(documents["active_acceptance_document"], "unknown")
+
+    def test_development_heading_prefix_collision_is_not_exact(self):
+        version = "2.0.0-rc2-dev1"
+        wrong_heading = (
+            "# RC2dev10 document\n\n"
+            f"This historical comparison mentions `{version}`.\n"
+        )
+        documents = json.loads(
+            self.isolated_context(
+                version,
+                {
+                    "docs/RC2DEV1_RELEASE_NOTES.md": wrong_heading,
+                    "docs/RC2DEV1_ACCEPTANCE.md": wrong_heading,
+                },
+            )
+        )["documents"]
+        self.assertEqual(documents["resolution_status"], "missing")
+        self.assertEqual(documents["active_release_notes"], "unknown")
+        self.assertEqual(documents["active_acceptance_document"], "unknown")
+
+    def test_development_heading_suffix_is_not_exact(self):
+        version = "2.0.0-rc2-dev1"
+        extended_heading = (
+            "# RC2dev1-draft document\n\n"
+            f"This historical comparison mentions `{version}`.\n"
+        )
+        documents = json.loads(
+            self.isolated_context(
+                version,
+                {
+                    "docs/RC2DEV1_RELEASE_NOTES.md": extended_heading,
+                    "docs/RC2DEV1_ACCEPTANCE.md": extended_heading,
+                },
+            )
+        )["documents"]
+        self.assertEqual(documents["resolution_status"], "missing")
+        self.assertEqual(documents["active_release_notes"], "unknown")
+        self.assertEqual(documents["active_acceptance_document"], "unknown")
 
     def test_unknown_values_and_dirty_git_state_are_reported_honestly(self):
         self.policy_path.unlink()
@@ -1033,6 +1345,12 @@ class InstructionFileTests(unittest.TestCase):
             "if guidance conflicts, the closer file takes precedence",
             normalized_root,
         )
+        self.assertIn("Full gate with validation evidence", root)
+        self.assertNotIn("Full gate with PR evidence", root)
+        self.assertNotIn("open the first path", root.lower())
+        self.assertIn("active_acceptance_document", root)
+        self.assertIn("resolution_status", root)
+        self.assertIn("never substitute a historical reference", normalized_root)
         runtime = paths[1].read_text(encoding="utf-8")
         self.assertIn("Keep routing fail-closed", runtime)
         self.assertIn("negative tests", runtime)
@@ -1067,9 +1385,42 @@ class InstructionFileTests(unittest.TestCase):
         self.assertIn("-AuthorizedProtectedPath", text)
         self.assertIn("schema-v2 Evidence", text)
         self.assertIn("exact clean repository", text)
+        self.assertIn("separate bounded PR-draft generator", text)
+        self.assertNotIn("Full gate with PR evidence", text)
         self.assertNotIn("does not define a supported project action schema", lowered)
         self.assertNotIn("did not establish a supported project action schema", lowered)
         self.assertIn("docs/CODEX_WORKFLOW.md", (ROOT / "README.md").read_text(encoding="utf-8"))
+
+    def test_workflow_documents_github_authentication_readiness(self):
+        text = (ROOT / "docs" / "CODEX_WORKFLOW.md").read_text(encoding="utf-8")
+        normalized = " ".join(text.split())
+        for phrase in (
+            "## GitHub Authentication Readiness",
+            "gh auth status",
+            "git fetch --prune origin",
+            "gh repo view jeter-1/hass-mcp-admin",
+            "authenticate interactively on the trusted Windows host",
+            "Never print or export GitHub tokens",
+            "read or dump Git credential-store contents",
+            "read or copy SSH private keys",
+            "does not inherit the Windows host's GitHub CLI login",
+            "connected-host readiness and Codex-cloud authorization are distinct checks",
+        ):
+            self.assertIn(phrase, normalized)
+        self.assertIn(
+            "Missing or expired authentication is an environment-readiness failure",
+            normalized,
+        )
+        self.assertIn("token in a prompt or script", normalized)
+        self.assertIn("not add credentials or authentication automation", normalized)
+
+    def test_release_guidance_requires_exact_acceptance_authority(self):
+        text = (ROOT / "docs" / "CODEX_WORKFLOW.md").read_text(encoding="utf-8")
+        normalized = " ".join(text.split())
+        self.assertGreaterEqual(text.count("active_acceptance_document"), 3)
+        self.assertIn("Missing exact acceptance authority is a stop condition", normalized)
+        self.assertIn("Historical references cannot authorize current acceptance", normalized)
+        self.assertIn("release notes are not acceptance instructions", normalized)
 
 
 class DeploymentChecklistTests(unittest.TestCase):
@@ -1078,7 +1429,11 @@ class DeploymentChecklistTests(unittest.TestCase):
         self.assertNotIn("exactly 38", text)
         self.assertNotIn("Beta 25 handoff", text)
         self.assertIn("codex-context.py --format markdown", text)
-        self.assertIn("active release and acceptance documents", text)
+        self.assertIn("document resolution status is exact", text)
+        self.assertIn("active_acceptance_document is known", text)
+        self.assertIn("Stop when exact acceptance authority is missing", text)
+        self.assertIn("Never substitute a historical reference", text)
+        self.assertNotIn("active release and acceptance documents", text)
 
 
 class ScopeBoundaryTests(unittest.TestCase):

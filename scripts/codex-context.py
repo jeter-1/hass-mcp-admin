@@ -15,6 +15,13 @@ from urllib.parse import urlsplit, urlunsplit
 
 MAX_CHANGED_PATHS = 200
 UNKNOWN = "unknown"
+DEV_RC_VERSION_RE = re.compile(
+    r"^(?P<core>\d+\.\d+\.\d+)-rc(?P<rc>[1-9]\d*)-dev(?P<dev>[1-9]\d*)$"
+)
+FINAL_RC_VERSION_RE = re.compile(
+    r"^(?P<core>\d+\.\d+\.\d+)-rc\.(?P<rc>[1-9]\d*)$"
+)
+STABLE_VERSION_RE = re.compile(r"^(?P<core>\d+\.\d+\.\d+)$")
 
 
 class ContextError(RuntimeError):
@@ -162,60 +169,212 @@ def workflow_jobs(path: Path) -> list[str]:
     return re.findall(r"(?m)^  ([A-Za-z0-9_-]+):\s*$", jobs_text)
 
 
-def release_stage(version: str) -> tuple[str, int | None, int | None]:
-    match = re.fullmatch(r"\d+\.\d+\.\d+-rc(\d+)-dev(\d+)", version)
+def parse_release_version(version: str) -> dict[str, Any] | None:
+    match = DEV_RC_VERSION_RE.fullmatch(version)
     if match:
-        rc, dev = (int(value) for value in match.groups())
-        return f"RC{rc} development {dev}", rc, dev
-    if re.fullmatch(r"\d+\.\d+\.\d+", version):
-        return "stable", None, None
-    if "-" in version:
-        return version.split("-", 1)[1], None, None
-    return UNKNOWN, None, None
+        return {
+            "kind": "development_rc",
+            "core": match.group("core"),
+            "rc": int(match.group("rc")),
+            "dev": int(match.group("dev")),
+        }
+    match = FINAL_RC_VERSION_RE.fullmatch(version)
+    if match:
+        return {
+            "kind": "final_rc",
+            "core": match.group("core"),
+            "rc": int(match.group("rc")),
+            "dev": None,
+        }
+    match = STABLE_VERSION_RE.fullmatch(version)
+    if match:
+        return {
+            "kind": "stable",
+            "core": match.group("core"),
+            "rc": None,
+            "dev": None,
+        }
+    return None
 
 
-def active_documents(
+def release_stage(version: str) -> str:
+    identity = parse_release_version(version)
+    if identity is None:
+        return UNKNOWN
+    if identity["kind"] == "development_rc":
+        return f"RC{identity['rc']} development {identity['dev']}"
+    if identity["kind"] == "final_rc":
+        return f"RC{identity['rc']} final"
+    return "stable"
+
+
+def document_declares_version(path: Path, version: str) -> bool:
+    text = read_text(path)
+    if text is None:
+        return False
+    bounded_version = rf"(?<![A-Za-z0-9.+-]){re.escape(version)}(?![A-Za-z0-9.+-])"
+    return re.search(bounded_version, text) is not None
+
+
+def document_matches_version(
+    path: Path,
+    version: str,
+    identity: dict[str, Any],
+) -> bool:
+    text = read_text(path)
+    if text is None or not document_declares_version(path, version):
+        return False
+    heading_match = re.search(r"(?m)^#\s+(.+?)\s*$", text)
+    if heading_match is None:
+        return False
+    heading = heading_match.group(1).lower()
+    identity_markers = [version.lower()]
+    if identity["kind"] == "development_rc":
+        identity_markers.append(f"rc{identity['rc']}dev{identity['dev']}")
+    if not any(
+        re.search(
+            rf"(?<![A-Za-z0-9.+-]){re.escape(marker)}(?![A-Za-z0-9.+-])",
+            heading,
+        )
+        for marker in identity_markers
+    ):
+        return False
+    identity_region = "\n".join(text.splitlines()[:12])
+    if re.search(
+        r"(?i)\b(?:historical only|immutable historical release|"
+        r"not (?:active )?authority|cannot authorize|does not authorize)\b",
+        identity_region,
+    ):
+        return False
+    return True
+
+
+def historical_documents(
     repo_root: Path,
-    rc_number: int | None,
-    dev_number: int | None,
-    inconsistencies: list[str],
+    identity: dict[str, Any] | None,
 ) -> list[str]:
-    if rc_number is None:
+    if identity is None:
         return []
+
     docs_root = repo_root / "docs"
-    selected: list[str] = []
-    if dev_number is not None:
-        exact = [
-            docs_root / f"RC{rc_number}DEV{dev_number}_RELEASE_NOTES.md",
-            docs_root / f"RC{rc_number}DEV{dev_number}_ACCEPTANCE.md",
-        ]
-        if all(path.is_file() for path in exact):
-            selected.extend(path.relative_to(repo_root).as_posix() for path in exact)
-        else:
-            candidates: list[tuple[int, Path]] = []
-            pattern = re.compile(
-                rf"RC{rc_number}DEV(\d+)_(?:RELEASE_NOTES|ACCEPTANCE)\.md"
+    development_pattern = re.compile(
+        r"RC(?P<rc>[1-9]\d*)DEV(?P<dev>[1-9]\d*)_"
+        r"(?:RELEASE_NOTES|ACCEPTANCE)\.md"
+    )
+    final_pattern = re.compile(
+        r"RC(?P<rc>[1-9]\d*)_(?:RELEASE_NOTES|ACCEPTANCE)\.md"
+    )
+    selected: list[Path] = []
+    for path in docs_root.glob("RC*_*.md"):
+        development = development_pattern.fullmatch(path.name)
+        final = final_pattern.fullmatch(path.name)
+        is_historical = False
+        candidate_version: str | None = None
+        if development:
+            candidate_version = (
+                f"{identity['core']}-rc{development.group('rc')}-"
+                f"dev{development.group('dev')}"
             )
-            for path in docs_root.glob(f"RC{rc_number}DEV*_*.md"):
-                match = pattern.fullmatch(path.name)
-                if match and int(match.group(1)) <= dev_number:
-                    candidates.append((int(match.group(1)), path))
-            if candidates:
-                latest = max(number for number, _path in candidates)
-                selected.extend(
-                    path.relative_to(repo_root).as_posix()
-                    for number, path in sorted(candidates, key=lambda item: item[1].name)
-                    if number == latest
+        elif final:
+            candidate_version = f"{identity['core']}-rc.{final.group('rc')}"
+        if identity["kind"] == "stable":
+            is_historical = development is not None or final is not None
+        elif identity["kind"] == "development_rc":
+            current_rc = identity["rc"]
+            current_dev = identity["dev"]
+            if development:
+                candidate_rc = int(development.group("rc"))
+                candidate_dev = int(development.group("dev"))
+                is_historical = candidate_rc < current_rc or (
+                    candidate_rc == current_rc and candidate_dev < current_dev
                 )
-            inconsistencies.append(
-                f"No exact RC{rc_number}dev{dev_number} release/acceptance document pair; "
-                "the newest earlier matching pair is reported when available."
-            )
-    for suffix in ("RELEASE_NOTES", "ACCEPTANCE"):
-        base = docs_root / f"RC{rc_number}_{suffix}.md"
-        if base.is_file():
-            selected.append(base.relative_to(repo_root).as_posix())
-    return list(dict.fromkeys(selected))
+            elif final:
+                is_historical = int(final.group("rc")) <= current_rc
+        elif identity["kind"] == "final_rc":
+            current_rc = identity["rc"]
+            if development:
+                is_historical = int(development.group("rc")) < current_rc
+            elif final:
+                is_historical = int(final.group("rc")) < current_rc
+        if (
+            is_historical
+            and candidate_version is not None
+            and document_declares_version(path, candidate_version)
+        ):
+            selected.append(path)
+
+    return [
+        path.relative_to(repo_root).as_posix()
+        for path in sorted(selected, key=lambda candidate: candidate.name)
+    ]
+
+
+def resolve_documents(repo_root: Path, version: str) -> dict[str, Any]:
+    identity = parse_release_version(version)
+    historical = historical_documents(repo_root, identity)
+    result: dict[str, Any] = {
+        "resolution_status": "unsupported",
+        "active_release_notes": UNKNOWN,
+        "active_acceptance_document": UNKNOWN,
+        "historical_references": historical,
+        "limitations": [],
+    }
+
+    if identity is None:
+        result["limitations"].append(
+            f"Unsupported Engineering version format {version!r}; stop release or "
+            "deployment work until an exact repository convention is defined."
+        )
+    elif identity["kind"] == "stable":
+        result["limitations"].append(
+            f"The repository defines no exact stable release-notes and acceptance-document "
+            f"convention for {version}; stop release or deployment work until one is "
+            "established."
+        )
+    else:
+        rc_number = identity["rc"]
+        if identity["kind"] == "development_rc":
+            stem = f"RC{rc_number}DEV{identity['dev']}"
+        else:
+            stem = f"RC{rc_number}"
+        docs_root = repo_root / "docs"
+        candidates = {
+            "active_release_notes": docs_root / f"{stem}_RELEASE_NOTES.md",
+            "active_acceptance_document": docs_root / f"{stem}_ACCEPTANCE.md",
+        }
+        for field, path in candidates.items():
+            if document_matches_version(path, version, identity):
+                result[field] = path.relative_to(repo_root).as_posix()
+            elif path.is_file():
+                result["limitations"].append(
+                    f"{path.relative_to(repo_root).as_posix()} does not identify the exact "
+                    f"Engineering version {version} and is not active authority."
+                )
+
+        known_count = sum(
+            result[field] != UNKNOWN
+            for field in ("active_release_notes", "active_acceptance_document")
+        )
+        result["resolution_status"] = (
+            "exact" if known_count == 2 else "partial" if known_count == 1 else "missing"
+        )
+
+    if result["active_acceptance_document"] == UNKNOWN:
+        result["limitations"].append(
+            f"Exact acceptance authority for {version} is missing; stop release or "
+            "deployment work. Never substitute release notes or a historical reference."
+        )
+    elif result["resolution_status"] != "exact":
+        result["limitations"].append(
+            f"Document resolution for {version} is {result['resolution_status']}; stop "
+            "release or deployment work until both exact documents are known."
+        )
+    if historical:
+        result["limitations"].append(
+            "Historical references are informational only and cannot authorize current "
+            "acceptance, release, or deployment work."
+        )
+    return result
 
 
 def build_context(repo_root_hint: Path) -> dict[str, Any]:
@@ -259,11 +418,7 @@ def build_context(repo_root_hint: Path) -> dict[str, Any]:
         "engineering_version",
         engineering_config.as_posix(),
     )
-    stage, rc_number, dev_number = (
-        release_stage(engineering_version)
-        if engineering_version != UNKNOWN
-        else (UNKNOWN, None, None)
-    )
+    stage = release_stage(engineering_version)
 
     canonical = python_literal(repo_root / capabilities_path, "CAPABILITIES")
     native = python_literal(repo_root / capabilities_path, "BETA_NATIVE_CAPABILITIES")
@@ -341,16 +496,15 @@ def build_context(repo_root_hint: Path) -> dict[str, Any]:
             "README Engineering milestone text does not match authoritative version metadata."
         )
 
-    active_docs = active_documents(
-        repo_root, rc_number, dev_number, inconsistencies
-    )
-    if not active_docs:
-        unknowns.append(
-            {
-                "field": "active_release_and_acceptance_documents",
-                "source_required": "version-matched files under docs/",
-            }
-        )
+    documents = resolve_documents(repo_root, engineering_version)
+    for field in ("active_release_notes", "active_acceptance_document"):
+        if documents[field] == UNKNOWN:
+            unknowns.append(
+                {
+                    "field": field,
+                    "source_required": "an exact version-matched file under docs/",
+                }
+            )
 
     instruction_path = repo_root / "AGENTS.md"
     local_commands = section_bullets(instruction_path, "Local Commands")
@@ -374,7 +528,7 @@ def build_context(repo_root_hint: Path) -> dict[str, Any]:
         )
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "repository": {
             "identity": repository_identity(remote, repo_root),
             "root": str(repo_root),
@@ -438,7 +592,7 @@ def build_context(repo_root_hint: Path) -> dict[str, Any]:
                 "and exact-matching at startup; runtime admission remains fail-closed and may be lower."
             ),
         },
-        "documents": active_docs,
+        "documents": documents,
         "validation": {
             "local_commands": local_commands,
             "ci_only_jobs": ci_jobs,
@@ -471,6 +625,7 @@ def render_markdown(context: dict[str, Any]) -> str:
     counts = context["tool_counts"]
     validation = context["validation"]
     boundaries = context["boundaries"]
+    documents = context["documents"]
     lines = [
         "# Codex Repository Context",
         "",
@@ -497,12 +652,19 @@ def render_markdown(context: dict[str, Any]) -> str:
             f"- Stable add-on: `{versions['stable']}`",
             f"- Engineering add-on: `{versions['engineering']}`",
             f"- Release stage: `{versions['release_stage']}`",
-            "- Active release and acceptance documents:",
+            f"- Resolution status: `{documents['resolution_status']}`",
+            f"- Active release notes: `{documents['active_release_notes']}`",
+            f"- Active acceptance document: `{documents['active_acceptance_document']}`",
+            "- Historical references (informational only):",
         ]
     )
-    lines.extend(f"  - `{path}`" for path in context["documents"])
-    if not context["documents"]:
-        lines.append("  - unknown")
+    lines.extend(f"  - `{path}`" for path in documents["historical_references"])
+    if not documents["historical_references"]:
+        lines.append("  - None")
+    lines.append("- Limitations:")
+    lines.extend(f"  - {value}" for value in documents["limitations"])
+    if not documents["limitations"]:
+        lines.append("  - None")
     lines.extend(
         [
             "",

@@ -229,6 +229,10 @@ try {
         "[ ] Update HA MCP Engineering Server Beta only.",
         "[ ] Confirm /health on port 8100.",
         "[ ] Run scripts/codex-context.py --format markdown with the validated Python environment and record its derived static, delegated-read, and connector tool-count expectations.",
+        "[ ] Confirm the context document resolution status is exact.",
+        "[ ] Confirm active_acceptance_document is known before release or deployment work.",
+        "[ ] Stop when exact acceptance authority is missing, partial, unsupported, or unknown.",
+        "[ ] Never substitute a historical reference or release notes for the active acceptance document.",
         "[ ] Use MCP Inspector tools/list and compare the callable catalog with the context report (reconnect only if the connector cache is stale; fail-closed runtime admission may lower the delegated-read count).",
         "[ ] Call server_info and verify version $betaVersion.",
         "[ ] Call list_capabilities.",
@@ -237,7 +241,6 @@ try {
         "[ ] Verify forwarded-header trust is disabled unless trusted proxy CIDRs were intentionally configured.",
         "[ ] Open the admin-only Home Assistant Ingress approval panel; confirm internal port 8110 is not host mapped.",
         "[ ] Confirm approve_change_plan returns approval_pending and MCP-only apply fails external_approval_required.",
-        "[ ] Follow the active release and acceptance documents reported by codex-context.py; do not substitute a historical Beta checklist.",
         "[ ] Execute any governed description-only apply and rollback only after separate human Ingress approvals."
     ) | ForEach-Object { Write-Host $_ }
 
