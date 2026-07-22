@@ -26,6 +26,7 @@ BETA_VERSION = "2.0.0-rc2-dev12"
 BETA_IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 FINAL_RC3_VERSION = "2.0.0-rc.3"
 NEXT_VERSION_PATH = Path(".release/next-version")
+NON_RELEASE_BETA_PATHS = frozenset({"hass_mcp_engineering_beta/AGENTS.md"})
 PRODUCTION_PORT = 8099
 BETA_PORT = 8100
 BETA_INGRESS_PORT = 8110
@@ -426,7 +427,11 @@ def validate_repository(
 
     path_set = set(paths) if paths is not None else changed_paths(repo_root, base_ref)
     production_changed = any(path.startswith("hass_mcp_admin/") for path in path_set)
-    beta_changed = any(path.startswith("hass_mcp_engineering_beta/") for path in path_set)
+    beta_changed = any(
+        path.startswith("hass_mcp_engineering_beta/")
+        and path not in NON_RELEASE_BETA_PATHS
+        for path in path_set
+    )
     if production_changed:
         raise MetadataValidationError("Production add-on files were modified")
 
