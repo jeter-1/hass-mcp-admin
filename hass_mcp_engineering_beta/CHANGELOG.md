@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.0.0-rc2-dev13 - reboot reconciliation and completeness truth
+
+- Start the native Engineering listeners without blocking on ha-mcp readiness,
+  then supervise exact fail-closed read-gateway admission with capped retry
+  delays until the reviewed catalog becomes available.
+- Preserve all 40 statically registered tools (25 canonical plus 15
+  Engineering-native) during retry and automatically make all 26 exact delegated
+  reads available to subsequent `tools/list` calls without a manual Engineering
+  restart.
+- Preserve `ha_search`'s reviewed top-level `partial` signal in Engineering
+  response metadata, provider metrics, and request telemetry;
+  missing or malformed completeness fails closed as partial.
+- Preserve all public schemas, provider policy/trust data, no-fallback and
+  no-write boundaries, stable v1.1.2, governance, and deployment behavior.
+
 ## 2.0.0-rc2-dev10 - selected-attestation observability truth
 
 - Derive retained raw-schema, reviewed-security, fixture-runtime, and

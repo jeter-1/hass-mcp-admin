@@ -143,6 +143,16 @@ class VersionComparisonTests(unittest.TestCase):
         )
         self.assertTrue(
             VALIDATOR.is_newer_version(
+                "2.0.0-rc2-dev13", "2.0.0-rc2-dev12"
+            )
+        )
+        self.assertTrue(
+            VALIDATOR.is_newer_version(
+                "2.0.0-rc.3", "2.0.0-rc2-dev13"
+            )
+        )
+        self.assertTrue(
+            VALIDATOR.is_newer_version(
                 "2.0.0", "2.0.0-rc.3"
             )
         )
@@ -299,6 +309,8 @@ class AddonMetadataValidationTests(unittest.TestCase):
             report.staged_release_version,
             declaration.read_text(encoding="utf-8").strip(),
         )
+        self.assertEqual(current, "2.0.0-rc2-dev12")
+        self.assertEqual(report.staged_release_version, "2.0.0-rc2-dev13")
 
     @patch.object(VALIDATOR, "staged_release_version", return_value=None)
     def test_unreleased_same_version_requires_explicit_integrity_check(self, _staged):

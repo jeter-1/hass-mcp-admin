@@ -1,5 +1,21 @@
 # Beta provider security boundaries
 
+## RC2dev13 reviewed read-gateway recovery
+
+The generic `upstream_read_gateway` is separate from the unavailable legacy
+`standard_ha_mcp` route. One supervised, single-flight reconciliation loop
+retries only the configured fixed upstream endpoint. Every attempt revalidates
+exact server identity, version, protocol, reviewed policy, and input schemas;
+no failed or partial attempt can activate an unreviewed tool, write, arbitrary
+forward, or direct-HA fallback. The 40 statically registered Engineering tools
+remain available while exact 26-read admission is incomplete.
+
+`ha_search` completeness is taken only from its sanitized top-level exact
+boolean. Missing or malformed completeness fails closed as partial. Upstream
+diagnostic prose never becomes Engineering-authored guidance. The retry state
+is bounded and secret-free. Stateless clients must re-list or reconnect after
+recovery; no tool-list change notification is claimed.
+
 ## RC2dev9 signed upstream admission
 
 RC2dev9 supersedes the single-version wording below with a signed exact-release

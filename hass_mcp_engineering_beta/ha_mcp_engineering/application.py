@@ -207,9 +207,6 @@ async def _serve(settings: Settings) -> None:
     """Run distinct MCP and Ingress listeners in one supervised process."""
 
     gateway = create_application(settings)
-    # Catalog discovery is bounded and fail-closed.  Failure only withholds the
-    # dynamic upstream reads; the 40 existing Engineering tools still start.
-    await UPSTREAM_READ_GATEWAY.initialize(get_registered_server())
 
     mcp_server = uvicorn.Server(
         uvicorn.Config(
@@ -235,6 +232,20 @@ async def _serve(settings: Settings) -> None:
     approval_server.install_signal_handlers = lambda: None
     mcp_task = asyncio.create_task(mcp_server.serve())
     approval_task = asyncio.create_task(approval_server.serve())
+    # Start with the 40 native tools, then keep exact, fail-closed upstream
+    # admission under supervision until ha-mcp becomes ready after host boot.
+    async def supervise_upstream_reconciliation() -> None:
+        await UPSTREAM_READ_GATEWAY.reconcile_until_initialized(
+            get_registered_server()
+        )
+        # Normal admission completes the reconciliation loop. Keep its
+        # supervisor pending so only an unexpected exception stops the process.
+        await asyncio.Future()
+
+    upstream_reconciliation_task = asyncio.create_task(
+        supervise_upstream_reconciliation(),
+        name="upstream-read-gateway-reconciliation",
+    )
     registry_refresh_task = (
         asyncio.create_task(UPSTREAM_DASHBOARD.refresh_registry_at_startup())
         if settings.upstream_trust_registry_enabled
@@ -250,7 +261,8 @@ async def _serve(settings: Settings) -> None:
     )
     try:
         done, _ = await asyncio.wait(
-            {mcp_task, approval_task}, return_when=asyncio.FIRST_COMPLETED
+            {mcp_task, approval_task, upstream_reconciliation_task},
+            return_when=asyncio.FIRST_COMPLETED,
         )
         # Either listener ending is a process-level event. A failed private
         # authority listener must never leave a seemingly healthy MCP listener
@@ -262,7 +274,9 @@ async def _serve(settings: Settings) -> None:
     finally:
         mcp_server.should_exit = True
         approval_server.should_exit = True
+        upstream_reconciliation_task.cancel()
         await asyncio.gather(mcp_task, approval_task, return_exceptions=True)
+        await asyncio.gather(upstream_reconciliation_task, return_exceptions=True)
         if registry_refresh_task is not None:
             await asyncio.gather(registry_refresh_task, return_exceptions=True)
         await DEPENDENCY_ANALYSIS.shutdown()

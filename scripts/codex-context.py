@@ -407,6 +407,7 @@ def build_context(repo_root_hint: Path) -> dict[str, Any]:
     )
     version_path = Path("hass_mcp_engineering_beta/ha_mcp_engineering/version.py")
     validator_path = Path("scripts/validate_addon_metadata.py")
+    staged_version_path = Path(".release/next-version")
 
     stable_version = known(
         simple_yaml_scalar(repo_root / stable_config, "version"),
@@ -506,6 +507,34 @@ def build_context(repo_root_hint: Path) -> dict[str, Any]:
                 }
             )
 
+    staged_text = read_text(repo_root / staged_version_path)
+    staged_version = UNKNOWN
+    if staged_text is not None:
+        staged_lines = staged_text.splitlines()
+        if (
+            len(staged_lines) == 1
+            and staged_lines[0]
+            and staged_lines[0] == staged_lines[0].strip()
+        ):
+            staged_version = staged_lines[0]
+        else:
+            inconsistencies.append(
+                "The staged release declaration must contain exactly one version."
+            )
+    if staged_version == UNKNOWN:
+        staged_documents = {
+            "resolution_status": "missing",
+            "active_release_notes": UNKNOWN,
+            "active_acceptance_document": UNKNOWN,
+            "historical_references": [],
+            "limitations": [
+                "No valid staged release declaration is present; no staged promotion "
+                "authority is active."
+            ],
+        }
+    else:
+        staged_documents = resolve_documents(repo_root, staged_version)
+
     instruction_path = repo_root / "AGENTS.md"
     local_commands = section_bullets(instruction_path, "Local Commands")
     protected_paths = section_bullets(instruction_path, "Frozen or Protected Paths")
@@ -544,6 +573,7 @@ def build_context(repo_root_hint: Path) -> dict[str, Any]:
             "stable": stable_version,
             "engineering": engineering_version,
             "release_stage": stage,
+            "staged": staged_version,
             "authoritative_declarations": declared_versions,
         },
         "tool_counts": {
@@ -593,6 +623,15 @@ def build_context(repo_root_hint: Path) -> dict[str, Any]:
             ),
         },
         "documents": documents,
+        "staged_release": {
+            "version": staged_version,
+            "declaration": (
+                staged_version_path.as_posix()
+                if staged_version != UNKNOWN
+                else UNKNOWN
+            ),
+            "documents": staged_documents,
+        },
         "validation": {
             "local_commands": local_commands,
             "ci_only_jobs": ci_jobs,
@@ -626,6 +665,8 @@ def render_markdown(context: dict[str, Any]) -> str:
     validation = context["validation"]
     boundaries = context["boundaries"]
     documents = context["documents"]
+    staged_release = context["staged_release"]
+    staged_documents = staged_release["documents"]
     lines = [
         "# Codex Repository Context",
         "",
@@ -652,6 +693,8 @@ def render_markdown(context: dict[str, Any]) -> str:
             f"- Stable add-on: `{versions['stable']}`",
             f"- Engineering add-on: `{versions['engineering']}`",
             f"- Release stage: `{versions['release_stage']}`",
+            f"- Staged Engineering release: `{staged_release['version']}`",
+            f"- Staged declaration: `{staged_release['declaration']}`",
             f"- Resolution status: `{documents['resolution_status']}`",
             f"- Active release notes: `{documents['active_release_notes']}`",
             f"- Active acceptance document: `{documents['active_acceptance_document']}`",
@@ -664,6 +707,26 @@ def render_markdown(context: dict[str, Any]) -> str:
     lines.append("- Limitations:")
     lines.extend(f"  - {value}" for value in documents["limitations"])
     if not documents["limitations"]:
+        lines.append("  - None")
+    lines.extend(
+        [
+            "",
+            "### Staged Promotion Authority",
+            "",
+            f"- Resolution status: `{staged_documents['resolution_status']}`",
+            f"- Active release notes: `{staged_documents['active_release_notes']}`",
+            f"- Active acceptance document: `{staged_documents['active_acceptance_document']}`",
+            "- Historical references (informational only):",
+        ]
+    )
+    lines.extend(
+        f"  - `{path}`" for path in staged_documents["historical_references"]
+    )
+    if not staged_documents["historical_references"]:
+        lines.append("  - None")
+    lines.append("- Limitations:")
+    lines.extend(f"  - {value}" for value in staged_documents["limitations"])
+    if not staged_documents["limitations"]:
         lines.append("  - None")
     lines.extend(
         [

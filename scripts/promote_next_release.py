@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 from pathlib import Path
 import re
 
@@ -85,7 +86,43 @@ def validate_candidate(repo_root: Path) -> tuple[str, str]:
         raise
     except Exception as exc:
         raise PromotionError("A release version is not AwesomeVersion-compatible") from exc
+    validate_document_authority(repo_root, candidate)
     return current, candidate
+
+
+def validate_document_authority(
+    repo_root: Path, version: str
+) -> dict[str, object]:
+    resolution = staged_document_resolution(repo_root, version)
+    if (
+        resolution.get("resolution_status") != "exact"
+        or resolution.get("active_release_notes") == "unknown"
+        or resolution.get("active_acceptance_document") == "unknown"
+    ):
+        raise PromotionError(
+            "The staged release requires exact version-matched release notes and "
+            "acceptance authority"
+        )
+    return resolution
+
+
+def staged_document_resolution(repo_root: Path, version: str) -> dict[str, object]:
+    """Use the context resolver as the single release-document authority."""
+
+    context_path = Path(__file__).with_name("codex-context.py")
+    spec = importlib.util.spec_from_file_location(
+        "_codex_context_release_authority", context_path
+    )
+    if spec is None or spec.loader is None:
+        raise PromotionError("Unable to load the release-document authority resolver")
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+        return module.resolve_documents(repo_root, version)
+    except PromotionError:
+        raise
+    except Exception as exc:
+        raise PromotionError("Unable to resolve staged release authority") from exc
 
 
 def apply_candidate(repo_root: Path) -> tuple[str, str]:
@@ -116,13 +153,22 @@ def parse_args(argv: list[str] | None = None):
         type=Path,
         default=Path(__file__).resolve().parents[1],
     )
-    parser.add_argument("--apply", action="store_true")
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--apply", action="store_true")
+    action.add_argument("--validate-authority", metavar="VERSION")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     repo_root = args.repo_root.resolve()
+    if args.validate_authority:
+        validate_document_authority(repo_root, args.validate_authority)
+        print(
+            "Validated exact release-document authority for "
+            f"{args.validate_authority}."
+        )
+        return 0
     current, candidate = (
         apply_candidate(repo_root)
         if args.apply

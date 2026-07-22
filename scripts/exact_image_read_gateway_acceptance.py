@@ -124,6 +124,18 @@ def find_values(value: Any, key: str) -> list[Any]:
     return found
 
 
+def find_dicts(value: Any) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        found.append(value)
+        for item in value.values():
+            found.extend(find_dicts(item))
+    elif isinstance(value, list):
+        for item in value:
+            found.extend(find_dicts(item))
+    return found
+
+
 def fixture_stats(url: str) -> dict[str, Any]:
     with urlopen(url, timeout=5) as response:  # noqa: S310 - fixed CI fixture URL
         return json.load(response)
@@ -192,6 +204,15 @@ async def inspect_engineering(
             health_before = decode_tool_result(health_before_result)
             direct_before = find_values(health_before, "requests_by_provider")
             fallback_before = find_values(health_before, "fallback_count")
+            routing_before = next(
+                (
+                    item
+                    for item in find_values(health_before, "provider_routing")
+                    if isinstance(item, dict)
+                ),
+                {},
+            )
+            require(bool(routing_before), "provider-routing metrics missing before calls")
 
             calls: dict[str, dict[str, Any]] = {}
             for name, arguments in REPRESENTATIVE_CALLS.items():
@@ -202,10 +223,73 @@ async def inspect_engineering(
                 require(metadata.get("provider") == "upstream_read_gateway", f"{name} provider mismatch")
                 require(metadata.get("fallback") == "none", f"{name} fallback mismatch")
                 require(metadata.get("upstream_version") == EXPECTED_UPSTREAM_VERSION, f"{name} version mismatch")
+                if name == "ha_search":
+                    data = value.get("data") or {}
+                    upstream_partial = data.get("partial")
+                    require(
+                        isinstance(upstream_partial, bool),
+                        "ha_search did not return an exact partial boolean",
+                    )
+                    locally_bounded = (
+                        "The untrusted upstream response was safely bounded."
+                        in (value.get("warnings") or [])
+                    )
+                    expected = (
+                        "partial" if upstream_partial or locally_bounded else "complete"
+                    )
+                    require(
+                        metadata.get("completeness") == expected,
+                        "ha_search completeness did not preserve upstream semantics",
+                    )
                 calls[name] = {
+                    "tool": name,
                     "request_id": value.get("request_id"),
                     "provider": metadata.get("provider"),
+                    "completeness": metadata.get("completeness"),
                 }
+
+            partial_search = decode_tool_result(
+                await session.call_tool(
+                    "ha_search",
+                    {
+                        "query": "gateway_fixture",
+                        "search_types": ["automation"],
+                        "limit": 5,
+                    },
+                )
+            )
+            partial_metadata = partial_search.get("metadata") or {}
+            partial_data = partial_search.get("data") or {}
+            require(partial_search.get("success") is True, "partial ha_search failed")
+            require(partial_data.get("partial") is True, "fixture did not induce partial ha_search")
+            partial_automations = partial_data.get("automations")
+            require(
+                isinstance(partial_automations, list)
+                and any(
+                    isinstance(item, dict)
+                    and item.get("entity_id") == "automation.gateway_fixture"
+                    for item in partial_automations
+                ),
+                "partial ha_search did not retain the known usable automation evidence",
+            )
+            require(
+                partial_metadata.get("completeness") == "partial",
+                "Engineering reported partial ha_search as complete",
+            )
+            require(
+                partial_metadata.get("provider") == "upstream_read_gateway",
+                "partial ha_search provider mismatch",
+            )
+            require(
+                partial_metadata.get("fallback") == "none",
+                "partial ha_search fallback mismatch",
+            )
+            calls["ha_search_partial"] = {
+                "tool": "ha_search",
+                "request_id": partial_search.get("request_id"),
+                "provider": partial_metadata.get("provider"),
+                "completeness": partial_metadata.get("completeness"),
+            }
 
             stats_before_invalid = fixture_stats(fixture_stats_url)
             invalid = decode_tool_result(
@@ -230,13 +314,32 @@ async def inspect_engineering(
             for name, evidence in calls.items():
                 request_id = evidence["request_id"]
                 require(request_id and request_id in audit_text, f"audit missing {name} request")
-                require(name in audit_text, f"audit missing {name} tool name")
+                require(evidence["tool"] in audit_text, f"audit missing {name} tool name")
+            partial_request_id = calls["ha_search_partial"]["request_id"]
+            require(
+                any(
+                    record.get("request_id") == partial_request_id
+                    and record.get("tool_name") == "ha_search"
+                    and record.get("result_status") == "partial"
+                    for record in find_dicts(audit)
+                ),
+                "audit did not preserve partial ha_search status",
+            )
 
             health_after = decode_tool_result(
                 await session.call_tool("get_server_health", {})
             )
             direct_after = find_values(health_after, "requests_by_provider")
             fallback_after = find_values(health_after, "fallback_count")
+            routing_after = next(
+                (
+                    item
+                    for item in find_values(health_after, "provider_routing")
+                    if isinstance(item, dict)
+                ),
+                {},
+            )
+            require(bool(routing_after), "provider-routing metrics missing after calls")
             gateway_states = find_values(health_after, "upstream_read_gateway")
             gateway_state = next((item for item in gateway_states if isinstance(item, dict)), {})
             before_provider_counts = next(
@@ -250,6 +353,62 @@ async def inspect_engineering(
                 == after_provider_counts.get("direct_ha_api", 0),
                 "a delegated read used the direct Home Assistant provider",
             )
+            expected_delegated_calls = len(REPRESENTATIVE_CALLS) + 1
+            for metric_name in (
+                "requests_by_provider",
+                "successful_requests_by_provider",
+                "failures_by_provider",
+            ):
+                require(
+                    isinstance(routing_before.get(metric_name), dict)
+                    and isinstance(routing_after.get(metric_name), dict),
+                    f"provider-routing metric missing: {metric_name}",
+                )
+            before_requests = routing_before["requests_by_provider"].get(
+                "upstream_read_gateway", 0
+            )
+            after_requests = routing_after["requests_by_provider"].get(
+                "upstream_read_gateway", 0
+            )
+            before_successes = routing_before["successful_requests_by_provider"].get(
+                "upstream_read_gateway", 0
+            )
+            after_successes = routing_after["successful_requests_by_provider"].get(
+                "upstream_read_gateway", 0
+            )
+            before_failures = routing_before["failures_by_provider"].get(
+                "upstream_read_gateway", 0
+            )
+            after_failures = routing_after["failures_by_provider"].get(
+                "upstream_read_gateway", 0
+            )
+            require(
+                after_requests - before_requests == expected_delegated_calls,
+                "upstream read-gateway request accounting mismatch",
+            )
+            require(
+                after_successes - before_successes == expected_delegated_calls,
+                "successful upstream read-gateway accounting mismatch",
+            )
+            require(
+                after_failures == before_failures,
+                "successful delegated reads changed provider failure accounting",
+            )
+            require(
+                routing_after.get("partial_results", 0)
+                - routing_before.get("partial_results", 0)
+                == 1,
+                "partial delegated-read accounting mismatch",
+            )
+            for metric_name in (
+                "fallback_attempts",
+                "fallback_successes",
+                "prohibited_fallback_attempts",
+            ):
+                require(
+                    routing_after.get(metric_name) == routing_before.get(metric_name),
+                    f"provider-routing fallback metric changed: {metric_name}",
+                )
             require(fallback_before == fallback_after, "fallback counters changed")
             require(gateway_state.get("fallback_count") == 0, "gateway fallback occurred")
             require(

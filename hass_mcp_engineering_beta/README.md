@@ -6,10 +6,13 @@ or container identity.
 
 ## Phase 1 reviewed upstream reads
 
-After configuring the existing secret-bearing upstream MCP URL, startup
-discovers an exact `ha-mcp` 7.14.1 catalog and adds the exact-schema-matching
-subset of up to 26 policy-approved pure-read tools to MCP `tools/list`. The
-existing 40 Engineering tools remain unchanged.
+After configuring the existing secret-bearing upstream MCP URL, Engineering
+starts with 40 statically registered tools (25 canonical plus 15
+Engineering-native) and supervises exact `ha-mcp` 7.14.1 catalog admission.
+Failed startup probes retry with capped delays; a complete reviewed catalog adds
+26 policy-approved pure reads to subsequent MCP `tools/list` calls without an
+Engineering restart. A client that cached 40 tools must re-list or reconnect;
+the stateless transport does not broadcast `tools/list_changed`.
 Unlisted, schema-changed, mixed, write, action, prohibited, and unsupported
 tools are not registered; delegated reads never fall back to direct Home
 Assistant access. The stock reviewed 78-tool classification and collision
@@ -63,10 +66,13 @@ https://BETA_TUNNEL/REDACTED_BETA_SECRET/mcp
 https://BETA_TUNNEL/REDACTED_BETA_SECRET/mcp/
 ```
 
-Direct requests to `/mcp` and `/mcp/` must return `404`. After initialization,
-call `server_info(check_ha=false)` and verify version
-`2.0.0-rc2-dev10` after release approval, the expected complete release
-commit SHA, and its UTC build time,
+Direct requests to `/mcp` and `/mcp/` must return `404`. RC2dev12 is immutable
+failed history and must not be treated as accepted. RC2dev13 is its corrective
+release target; determine whether it is staged or advertised from authoritative
+version metadata and `scripts/codex-context.py`, not from this operator guide.
+For any separately authorized RC2dev13 deployment, call
+`server_info(check_ha=false)` and verify version `2.0.0-rc2-dev13`, the expected
+complete release commit SHA, and its UTC build time,
 then call `list_capabilities` and verify the preserved 25-tool canonical catalog
 plus 15 beta-native tools. Without an admitted upstream, MCP `tools/list` exposes
 those 40 tools. With exact reviewed `ha-mcp` 7.14.1 configured, it also exposes

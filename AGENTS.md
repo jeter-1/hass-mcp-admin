@@ -98,11 +98,14 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
 - Protected-path gate for an explicitly scoped file:
   `.\scripts\check.ps1 -Tier Full -AuthorizedProtectedPath 'hass_mcp_admin/example.py'`
 - Generate a PR draft: `python scripts/pr-evidence.py --base origin/main --head HEAD --output .artifacts/pr-evidence.md`
-- Open the active acceptance document: run the context command and read the
-  explicit `active_acceptance_document` field. Continue only when
-  `resolution_status` is `exact` and the acceptance document is known. Stop when
-  resolution is `missing`, `partial`, `unsupported`, or unknown; never substitute
-  a historical reference.
+- For deployment of the currently advertised version, run the context command
+  and read `documents.active_acceptance_document`. Continue only when its
+  `resolution_status` is `exact` and that field is known.
+- For promotion of a declared next version, read
+  `staged_release.documents.active_acceptance_document`. Continue only when the
+  staged version and declaration are known and staged document resolution is
+  `exact`. Stop on `missing`, `partial`, `unsupported`, or unknown authority;
+  never substitute a historical reference or release notes.
 
 Fast-check areas are `Workflow`, `Context`, `Evidence`, `Validation`,
 `Instructions`, `Deployment`, and `Metadata`. Omitting `-Area` uses bounded
