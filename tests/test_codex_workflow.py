@@ -755,6 +755,41 @@ class CheckScriptExecutionTests(unittest.TestCase):
         self.assertIn(REPOSITORY_CODE_SENTINEL, output)
         self.assertIn("Full validation passed", output)
 
+    def test_full_secret_scan_reads_a_safe_tracked_dotfile(self):
+        hidden_path = ".safe-dotfile"
+        self.fixture.write(hidden_path, "safe fixture content\n")
+        self.fixture.commit("fixture safe dotfile")
+        self.assertEqual(
+            git(self.fixture.root, "ls-files", "--", hidden_path),
+            hidden_path,
+        )
+        result = self.fixture.run_check(self.powershell, "Full")
+        output = self.output(result)
+        self.assertEqual(result.returncode, 0, output)
+        self.assertIn(
+            "No bounded high-confidence credential pattern was found.",
+            output,
+        )
+
+    def test_full_secret_scan_rejects_a_tracked_dotfile_with_a_secret(self):
+        hidden_path = ".credential-fixture"
+        synthetic_token = "github_" + "pat_" + "A" * 24
+        self.fixture.write(hidden_path, synthetic_token + "\n")
+        self.fixture.commit("fixture credential dotfile")
+        self.assertEqual(
+            git(self.fixture.root, "ls-files", "--", hidden_path),
+            hidden_path,
+        )
+        result = self.fixture.run_check(self.powershell, "Full")
+        output = self.output(result)
+        self.assertEqual(result.returncode, 1, output)
+        self.assertIn(
+            f"Potential credential pattern found in: {hidden_path}",
+            output,
+        )
+        self.assertNotIn(synthetic_token, output)
+        self.assertNotIn("Full validation passed", output)
+
     def test_evidence_rejects_a_dirty_worktree_before_repository_code(self):
         self.fixture.write("docs/change.md", "uncommitted change\n")
         result = self.fixture.run_check(self.powershell, "Evidence")

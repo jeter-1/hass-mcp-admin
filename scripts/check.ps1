@@ -405,14 +405,14 @@ function Test-SecretPatterns {
         'sk-[A-Za-z0-9_-]{20,}',
         ('-----BEGIN ' + '(?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----')
     )
-    $matches = New-Object System.Collections.Generic.List[string]
+    $matchedFiles = New-Object System.Collections.Generic.List[string]
     $files = @((Invoke-GitRead -Arguments @("ls-files"))) + @(Invoke-GitRead -Arguments @("ls-files", "--others", "--exclude-standard"))
     foreach ($relative in ($files | Select-Object -Unique)) {
         $path = Join-Path $RepoRoot $relative
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
             continue
         }
-        $item = Get-Item -LiteralPath $path
+        $item = Get-Item -LiteralPath $path -Force
         if ($item.Length -gt 2MB) {
             continue
         }
@@ -424,13 +424,13 @@ function Test-SecretPatterns {
         }
         foreach ($pattern in $patterns) {
             if ($text -match $pattern) {
-                $matches.Add($relative)
+                $matchedFiles.Add($relative)
                 break
             }
         }
     }
-    if ($matches.Count -gt 0) {
-        throw "Potential credential pattern found in: $($matches -join ', ')"
+    if ($matchedFiles.Count -gt 0) {
+        throw "Potential credential pattern found in: $($matchedFiles -join ', ')"
     }
     Write-Host "No bounded high-confidence credential pattern was found."
 }
