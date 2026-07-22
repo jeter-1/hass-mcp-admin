@@ -1,8 +1,29 @@
 # Repository Instructions for Codex
 
-These instructions apply repository-wide. Codex combines them with any closer
-`AGENTS.md` that applies to a subtree; if guidance conflicts, the closer file
-takes precedence.
+These instructions apply repository-wide. More-specific nested `AGENTS.md`
+files add requirements for their subtrees and take precedence on conflicts when
+they are in the task context. See **Subtree Instructions** for discovery
+requirements.
+
+## Subtree Instructions
+
+Codex discovers `AGENTS.md` instructions from the project root through the
+session's current working directory. A session opened at the repository root
+must not assume that nested instruction files were loaded merely because it
+later reads or edits files in those subtrees.
+
+Before inspecting, editing, reviewing, or testing files under these paths,
+explicitly read and follow the corresponding instruction file:
+
+- `hass_mcp_engineering_beta/**`:
+  `hass_mcp_engineering_beta/AGENTS.md`
+- `tests/**`:
+  `tests/AGENTS.md`
+- `.github/workflows/**`:
+  `.github/workflows/AGENTS.md`
+
+The nested file adds requirements for its subtree and takes precedence when
+guidance conflicts. Nonconflicting root instructions continue to apply.
 
 ## Repository Authority
 

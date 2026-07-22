@@ -11,10 +11,29 @@ folder, where it can be checked in and shared. This repository does not
 currently supply that configuration, so use the explicit, testable commands
 below.
 
+## Instruction Discovery
+
+Codex builds its instruction chain from the project root through the session's
+current working directory. Opening a session at the repository root reliably
+loads the root `AGENTS.md`, but a root session does not automatically load a
+nested instruction file merely because it later reads or edits a file in that
+subtree. Before specialized work from a root session, explicitly read the
+applicable nested file mapped in the root **Subtree Instructions** section into
+the task context and follow it.
+
+Starting a session with its current working directory inside a subtree can
+include the applicable nested instructions in the normal discovery chain from
+the project root to that current directory. Do not rely on file-edit location
+alone to activate nested guidance. This rule applies equally to Desktop keyboard
+work, CLI or IDE work, connected-host Remote or mobile work, and Codex cloud work
+when the environment starts at the repository root.
+
 ## Keyboard Workflow
 
 1. Open the repository or a clean Codex-managed worktree. Use one worktree and
-   one chat per logical pull request.
+   one chat per logical pull request. Before working in Engineering runtime,
+   tests, or workflow files, read the corresponding nested `AGENTS.md` listed in
+   the root **Subtree Instructions** section.
 2. Fetch `origin` when authorized, then run:
 
    ```powershell
@@ -141,6 +160,8 @@ this repository.
 - For connected-host work, leave the trusted Windows host online, at a clean
   named worktree, with dependencies already available. Prefer repository-contained
   cloud work when local Windows state is unnecessary.
+- Do not authorize remote work in a specialized subtree until the applicable
+  nested instruction file has been read into the task context.
 - Before release or deployment preparation, run `codex-context.py` and continue
   only when document resolution is `exact` and `active_acceptance_document` is
   known. Missing exact acceptance authority is a stop condition. Historical

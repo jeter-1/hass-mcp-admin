@@ -1342,7 +1342,7 @@ class InstructionFileTests(unittest.TestCase):
             self.assertIn(phrase, root)
         normalized_root = " ".join(root.lower().split())
         self.assertIn(
-            "if guidance conflicts, the closer file takes precedence",
+            "take precedence on conflicts when they are in the task context",
             normalized_root,
         )
         self.assertIn("Full gate with validation evidence", root)
@@ -1352,16 +1352,54 @@ class InstructionFileTests(unittest.TestCase):
         self.assertIn("resolution_status", root)
         self.assertIn("never substitute a historical reference", normalized_root)
         runtime = paths[1].read_text(encoding="utf-8")
+        self.assertIn("security-sensitive", runtime)
         self.assertIn("Keep routing fail-closed", runtime)
         self.assertIn("negative tests", runtime)
         tests = paths[2].read_text(encoding="utf-8")
         self.assertIn("deterministic, offline fixtures", tests)
+        self.assertIn("success and failure paths", tests)
+        self.assertIn("negative reachability", tests)
         workflows = paths[3].read_text(encoding="utf-8")
         self.assertIn("minimum GitHub permissions", workflows)
+        self.assertIn("secret boundaries explicit", workflows)
+        self.assertIn("pin security-sensitive actions or images", workflows)
+        self.assertIn("immutably where supported", workflows)
         self.assertIn("must not publish", workflows)
+        self.assertIn(
+            "hidden merge, tag, package, release, or deployment side effects",
+            workflows,
+        )
         for path in paths[1:]:
             nested = " ".join(path.read_text(encoding="utf-8").lower().split())
             self.assertIn("this file takes precedence if guidance conflicts", nested)
+
+    def test_root_maps_subtree_instruction_discovery(self):
+        text = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        normalized = " ".join(text.split())
+        lowered = normalized.lower()
+        self.assertIn("## Subtree Instructions", text)
+        self.assertIn(
+            "from the project root through the session's current working directory",
+            normalized,
+        )
+        self.assertIn(
+            "must not assume that nested instruction files were loaded merely because it "
+            "later reads or edits files in those subtrees",
+            normalized,
+        )
+        for subtree, instruction_file in (
+            ("hass_mcp_engineering_beta/**", "hass_mcp_engineering_beta/AGENTS.md"),
+            ("tests/**", "tests/AGENTS.md"),
+            (".github/workflows/**", ".github/workflows/AGENTS.md"),
+        ):
+            self.assertIn(f"`{subtree}`: `{instruction_file}`", normalized)
+        self.assertIn(
+            "Before inspecting, editing, reviewing, or testing files under these paths",
+            normalized,
+        )
+        self.assertIn("explicitly read and follow", lowered)
+        self.assertIn("takes precedence when guidance conflicts", lowered)
+        self.assertIn("nonconflicting root instructions continue to apply", lowered)
 
     def test_workflow_document_and_readme_link_exist(self):
         workflow = ROOT / "docs" / "CODEX_WORKFLOW.md"
@@ -1390,6 +1428,59 @@ class InstructionFileTests(unittest.TestCase):
         self.assertNotIn("does not define a supported project action schema", lowered)
         self.assertNotIn("did not establish a supported project action schema", lowered)
         self.assertIn("docs/CODEX_WORKFLOW.md", (ROOT / "README.md").read_text(encoding="utf-8"))
+
+    def test_workflow_documents_nested_instruction_discovery(self):
+        text = (ROOT / "docs" / "CODEX_WORKFLOW.md").read_text(encoding="utf-8")
+        normalized = " ".join(text.split())
+        lowered = normalized.lower()
+        keyboard = text.split("## Keyboard Workflow", 1)[1].split(
+            "## GitHub Authentication Readiness", 1
+        )[0]
+        normalized_keyboard = " ".join(keyboard.split())
+        remote = text.split("## Remote and Mobile Workflow", 1)[1].split(
+            "## Authorization Profiles", 1
+        )[0]
+        normalized_remote = " ".join(remote.split())
+        self.assertIn("## Instruction Discovery", text)
+        self.assertIn(
+            "from the project root through the session's current working directory",
+            normalized,
+        )
+        self.assertIn("Opening a session at the repository root reliably loads", normalized)
+        self.assertIn(
+            "does not automatically load a nested instruction file merely because it "
+            "later reads or edits a file in that subtree",
+            normalized,
+        )
+        self.assertIn("current working directory inside a subtree", normalized)
+        self.assertIn(
+            "normal discovery chain from the project root to that current directory",
+            normalized,
+        )
+        self.assertIn("Do not rely on file-edit location alone", normalized)
+        for surface in (
+            "Desktop keyboard work",
+            "CLI or IDE work",
+            "connected-host Remote or mobile work",
+            "Codex cloud work",
+        ):
+            self.assertIn(surface, normalized)
+        self.assertIn(
+            "Before working in Engineering runtime, tests, or workflow files, read the "
+            "corresponding nested `AGENTS.md`",
+            normalized_keyboard,
+        )
+        self.assertIn(
+            "Do not authorize remote work in a specialized subtree until the applicable "
+            "nested instruction file has been read into the task context",
+            normalized_remote,
+        )
+        for unsupported_claim in (
+            "automatically loads every nested `agents.md`",
+            "automatically loads all nested `agents.md`",
+            "loads nested instructions when it edits a file",
+        ):
+            self.assertNotIn(unsupported_claim, lowered)
 
     def test_workflow_documents_github_authentication_readiness(self):
         text = (ROOT / "docs" / "CODEX_WORKFLOW.md").read_text(encoding="utf-8")
