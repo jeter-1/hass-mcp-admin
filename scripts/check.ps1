@@ -317,7 +317,7 @@ function Get-FastTargets {
 
 function Write-Evidence {
     New-Item -ItemType Directory -Path $ArtifactsPath -Force | Out-Null
-    $headSha = (Invoke-GitRead -Arguments @("rev-parse", "HEAD"))[0]
+    $headSha = [string]((Invoke-GitRead -Arguments @("rev-parse", "HEAD")) | Select-Object -First 1)
     $coverage = @(
         [ordered]@{ check = "full_local_gate"; status = "executed_locally"; evidence = "See recorded steps and overall_status." },
         [ordered]@{ check = "docker_image_build"; status = "delegated_to_ci"; evidence = ".github/workflows/ci.yml validate job" },
