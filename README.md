@@ -34,6 +34,8 @@
 > The Phase 1 single-server architecture pivot and its complete reviewed
 > `ha-mcp` 7.14.1 policy inventory are documented in
 > [`ADR-005`](docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md).
+> Repository-specific local and remote Codex development procedures are in
+> [`docs/CODEX_WORKFLOW.md`](docs/CODEX_WORKFLOW.md).
 
 A focused Model Context Protocol server for Home Assistant engineering, diagnostics,
 and controlled administration, packaged as a Home Assistant OS add-on. It works with
