@@ -74,6 +74,14 @@ below.
    python scripts/pr-evidence.py --base origin/main --head HEAD --output .artifacts/pr-evidence.md
    ```
 
+   The generator trusts only schema-v2 Evidence from this exact clean repository
+   root, base reference and commit, and head commit. If the artifact is stale,
+   foreign, malformed, from another tier, or the working tree is dirty, the draft
+   reports local validation as unavailable. Rerun the Evidence tier after the
+   final commit before generating the draft body. These checks prevent accidental
+   stale or foreign reuse; the local JSON is not cryptographically signed and can
+   still be forged by someone who can edit it.
+
 8. Push only the named task branch and open a draft pull request. Stop before
    merge, release, publication, promotion, or deployment.
 

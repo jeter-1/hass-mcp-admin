@@ -18,6 +18,8 @@ $ArtifactsPath = Join-Path $RepoRoot ".artifacts"
 $script:Results = New-Object System.Collections.Generic.List[object]
 $script:HadFailure = $false
 $script:NormalizedAuthorizedProtectedPaths = @()
+$script:ResolvedBaseSha = $null
+$script:ResolvedHeadSha = $null
 
 if (($Area -or $TestTarget) -and $Tier -ne "Fast") {
     throw "-Area and -TestTarget are supported only with -Tier Fast."
@@ -163,8 +165,10 @@ function Invoke-GitRead {
 
 function Get-ChangedPaths {
     $values = New-Object System.Collections.Generic.List[string]
+    $comparisonBase = if ($script:ResolvedBaseSha) { $script:ResolvedBaseSha } else { $BaseRef }
+    $comparisonHead = if ($script:ResolvedHeadSha) { $script:ResolvedHeadSha } else { "HEAD" }
     $commands = @(
-        @("diff", "--name-only", "$BaseRef...HEAD"),
+        @("diff", "--name-only", "$comparisonBase...$comparisonHead"),
         @("diff", "--name-only"),
         @("diff", "--cached", "--name-only"),
         @("ls-files", "--others", "--exclude-standard")
@@ -181,8 +185,48 @@ function Get-ChangedPaths {
 }
 
 function Test-BaseReference {
-    Invoke-GitRead -Arguments @("rev-parse", "--verify", "$BaseRef^{commit}") | Out-Null
-    Write-Host "Verified base commit $BaseRef."
+    $resolved = @(Invoke-GitRead -Arguments @("rev-parse", "--verify", "$BaseRef^{commit}"))
+    $script:ResolvedBaseSha = [string]($resolved | Select-Object -First 1)
+    if (-not $script:ResolvedBaseSha) {
+        throw "Git returned no commit for base reference $BaseRef."
+    }
+    Write-Host "Verified base commit $BaseRef at $($script:ResolvedBaseSha)."
+}
+
+function Get-WorkingTreeState {
+    $changes = @(Invoke-GitRead -Arguments @("status", "--porcelain"))
+    if ($changes.Count -eq 0) {
+        return "clean"
+    }
+    return "dirty"
+}
+
+function Test-EvidenceSnapshot {
+    $resolved = @(Invoke-GitRead -Arguments @("rev-parse", "--verify", "HEAD^{commit}"))
+    $script:ResolvedHeadSha = [string]($resolved | Select-Object -First 1)
+    if (-not $script:ResolvedHeadSha) {
+        throw "Git returned no commit for HEAD."
+    }
+    $workingTree = Get-WorkingTreeState
+    if ($workingTree -ne "clean") {
+        throw "Evidence requires a clean working tree so the recorded HEAD identifies the tested files."
+    }
+    Write-Host "Evidence snapshot is clean at $($script:ResolvedHeadSha)."
+}
+
+function Test-EvidenceSnapshotConsistency {
+    $currentBase = [string]((Invoke-GitRead -Arguments @("rev-parse", "--verify", "$BaseRef^{commit}")) | Select-Object -First 1)
+    $currentHead = [string]((Invoke-GitRead -Arguments @("rev-parse", "--verify", "HEAD^{commit}")) | Select-Object -First 1)
+    if ($currentBase -ne $script:ResolvedBaseSha) {
+        throw "The Evidence base moved during validation."
+    }
+    if ($currentHead -ne $script:ResolvedHeadSha) {
+        throw "HEAD moved during Evidence validation."
+    }
+    if ((Get-WorkingTreeState) -ne "clean") {
+        throw "The working tree changed during Evidence validation."
+    }
+    Write-Host "Evidence snapshot identity remained stable and clean."
 }
 
 function Get-ProtectedPathLabel {
@@ -440,7 +484,23 @@ function Get-FastTargets {
 
 function Write-Evidence {
     New-Item -ItemType Directory -Path $ArtifactsPath -Force | Out-Null
-    $headSha = [string]((Invoke-GitRead -Arguments @("rev-parse", "HEAD")) | Select-Object -First 1)
+    $headSha = $script:ResolvedHeadSha
+    if (-not $headSha) {
+        try {
+            $headSha = [string]((Invoke-GitRead -Arguments @("rev-parse", "HEAD")) | Select-Object -First 1)
+        }
+        catch {
+            $headSha = $null
+        }
+    }
+    $baseSha = $script:ResolvedBaseSha
+    $workingTree = "unknown"
+    try {
+        $workingTree = Get-WorkingTreeState
+    }
+    catch {
+        $workingTree = "unknown"
+    }
     $localGateStatus = if ($script:HadFailure) { "failed_locally" } else { "executed_locally" }
     $coverage = @(
         [ordered]@{ check = "full_local_gate"; status = $localGateStatus; evidence = "See recorded steps and overall_status." },
@@ -453,12 +513,14 @@ function Write-Evidence {
         [ordered]@{ check = "deployment"; status = "not_applicable"; evidence = "This validation tier performs no deployment." }
     )
     $payload = [ordered]@{
-        schema_version = 1
+        schema_version = 2
         generated_at_utc = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", [Globalization.CultureInfo]::InvariantCulture)
         tier = "Evidence"
         repository_root = $RepoRoot
         base_ref = $BaseRef
+        base_sha = $baseSha
         head_sha = $headSha
+        working_tree = $workingTree
         authorized_protected_paths = @($script:NormalizedAuthorizedProtectedPaths)
         overall_status = $(if ($script:HadFailure) { "failed" } else { "passed" })
         steps = $script:Results.ToArray()
@@ -472,8 +534,11 @@ function Write-Evidence {
     $summary.Add("# Local Validation Evidence")
     $summary.Add("")
     $summary.Add("- Overall status: **$($payload.overall_status)**")
-    $summary.Add("- Base: ``$BaseRef``")
-    $summary.Add("- Head: ``$headSha``")
+    $baseShaText = if ($baseSha) { $baseSha } else { "unresolved" }
+    $headShaText = if ($headSha) { $headSha } else { "unresolved" }
+    $summary.Add("- Base: ``$BaseRef`` at ``$baseShaText``")
+    $summary.Add("- Head: ``$headShaText``")
+    $summary.Add("- Working tree: **$workingTree**")
     $authorizedPathText = if ($script:NormalizedAuthorizedProtectedPaths.Count -gt 0) {
         $script:NormalizedAuthorizedProtectedPaths -join ", "
     }
@@ -500,6 +565,9 @@ function Write-Evidence {
 Push-Location $RepoRoot
 try {
     Invoke-LocalStep -Label "Verify base reference" -CommandText "git rev-parse --verify $BaseRef^{commit}" -Action { Test-BaseReference }
+    if (-not $script:HadFailure -and $Tier -eq "Evidence") {
+        Invoke-LocalStep -Label "Bind clean Evidence snapshot" -CommandText "resolve HEAD and require a clean working tree" -Action { Test-EvidenceSnapshot }
+    }
     if (-not $script:HadFailure) {
         Invoke-LocalStep -Label "Verify protected-path scope" -CommandText "compare protected paths and explicit declarations against $BaseRef" -Action { Test-ScopeBoundaries }
     }
@@ -536,7 +604,7 @@ try {
         )
         if ($Area -eq "Metadata" -or @($fastChangedPaths | Where-Object { $_ -in $metadataPaths }).Count -gt 0) {
             Invoke-NativeStep -Label "Validate add-on metadata" -Executable $PythonExecutable -Arguments @(
-                "scripts/validate_addon_metadata.py", "--repo-root", ".", "--base-ref", $BaseRef
+                "scripts/validate_addon_metadata.py", "--repo-root", ".", "--base-ref", $script:ResolvedBaseSha
             )
         }
         if (@($fastChangedPaths | Where-Object { $_ -match '\.ya?ml$' }).Count -gt 0) {
@@ -552,7 +620,7 @@ try {
             "-m", "unittest", "discover", "-s", "tests", "-v"
         )
         Invoke-NativeStep -Label "Validate add-on metadata" -Executable $PythonExecutable -Arguments @(
-            "scripts/validate_addon_metadata.py", "--repo-root", ".", "--base-ref", $BaseRef
+            "scripts/validate_addon_metadata.py", "--repo-root", ".", "--base-ref", $script:ResolvedBaseSha
         )
         $yamlProgram = "import pathlib,yaml; paths=sorted([*pathlib.Path('.').rglob('*.yml'),*pathlib.Path('.').rglob('*.yaml')]); [yaml.safe_load(p.read_text(encoding='utf-8')) for p in paths]; print(f'Parsed {len(paths)} YAML file(s).')"
         Invoke-NativeStep -Label "Parse repository YAML" -Executable $PythonExecutable -Arguments @("-c", $yamlProgram)
@@ -563,10 +631,12 @@ try {
     Invoke-LocalStep -Label "Parse PowerShell syntax" -CommandText "[scriptblock]::Create for scripts/*.ps1" -Action { Test-PowerShellSyntax }
     Invoke-NativeStep -Label "Check Git whitespace" -Executable "git" -Arguments @("diff", "--check")
     Invoke-NativeStep -Label "Check staged Git whitespace" -Executable "git" -Arguments @("diff", "--cached", "--check")
-    Invoke-NativeStep -Label "Check committed Git whitespace" -Executable "git" -Arguments @("diff", "--check", "$BaseRef...HEAD")
+    $whitespaceHead = if ($script:ResolvedHeadSha) { $script:ResolvedHeadSha } else { "HEAD" }
+    Invoke-NativeStep -Label "Check committed Git whitespace" -Executable "git" -Arguments @("diff", "--check", "$($script:ResolvedBaseSha)...$whitespaceHead")
     Invoke-LocalStep -Label "Check changed text whitespace" -CommandText "scan changed text files for trailing whitespace" -Action { Test-ChangedTextWhitespace }
 
     if ($Tier -eq "Evidence") {
+        Invoke-LocalStep -Label "Recheck Evidence snapshot" -CommandText "verify base, HEAD, and working-tree identity" -Action { Test-EvidenceSnapshotConsistency }
         Write-Evidence
     }
 }

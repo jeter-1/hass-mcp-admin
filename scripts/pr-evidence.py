@@ -15,6 +15,39 @@ MAX_CHANGED_FILES = 200
 MAX_VALIDATION_STEPS = 100
 MAX_FIELD_CHARS = 500
 MAX_DOCUMENT_CHARS = 60_000
+VALIDATION_SCHEMA_VERSION = 2
+VALIDATION_TIER = "Evidence"
+PASSED_EVIDENCE_STEPS = (
+    "Verify base reference",
+    "Bind clean Evidence snapshot",
+    "Verify protected-path scope",
+    "Compile repository Python",
+    "Run complete unittest suite",
+    "Validate add-on metadata",
+    "Parse repository YAML",
+    "Check installed dependency consistency",
+    "Scan for high-confidence secret patterns",
+    "Parse PowerShell syntax",
+    "Check Git whitespace",
+    "Check staged Git whitespace",
+    "Check committed Git whitespace",
+    "Check changed text whitespace",
+    "Recheck Evidence snapshot",
+)
+PASSED_EVIDENCE_COVERAGE = (
+    ("full_local_gate", "executed_locally"),
+    ("docker_image_build", "delegated_to_ci"),
+    ("multiarchitecture_build", "delegated_to_ci"),
+    ("disposable_home_assistant", "delegated_to_ci"),
+    ("exact_image", "delegated_to_ci"),
+    ("publication", "not_applicable"),
+    ("provenance", "delegated_to_ci"),
+    ("deployment", "not_applicable"),
+)
+FAILED_EVIDENCE_COVERAGE = (
+    ("full_local_gate", "failed_locally"),
+    *PASSED_EVIDENCE_COVERAGE[1:],
+)
 
 
 class EvidenceError(RuntimeError):
@@ -74,7 +107,54 @@ def changed_files(repo_root: Path, base: str, head: str) -> tuple[list[str], boo
     return unique[:MAX_CHANGED_FILES], len(unique) > MAX_CHANGED_FILES
 
 
-def read_validation(path: Path) -> tuple[dict[str, Any] | None, str | None]:
+def output_path_is_safe(repo_root: Path, output_path: Path) -> bool:
+    try:
+        relative = output_path.relative_to(repo_root).as_posix()
+    except ValueError:
+        return True
+    return bool(
+        run_git(
+            repo_root,
+            "check-ignore",
+            "--",
+            relative,
+            required=False,
+        )
+    )
+
+
+def same_repository_root(recorded_root: Any, actual_root: Path) -> bool:
+    if not isinstance(recorded_root, str):
+        return False
+    candidate = Path(recorded_root)
+    if not candidate.is_absolute():
+        return False
+    try:
+        return candidate.resolve(strict=True).samefile(
+            actual_root.resolve(strict=True)
+        )
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
+def untrusted_validation(reasons: list[str]) -> tuple[None, str]:
+    detail = "; ".join(reasons)
+    return None, (
+        f"Validation evidence was not accepted ({detail}); no local test result "
+        "is claimed. Rerun the Evidence tier for this exact clean repository, "
+        "base, and head."
+    )
+
+
+def read_validation(
+    path: Path,
+    *,
+    repo_root: Path,
+    base_ref: str,
+    base_sha: str,
+    head_sha: str,
+    working_tree_dirty: bool,
+) -> tuple[dict[str, Any] | None, str | None]:
     if not path.is_file():
         return None, "Validation evidence is missing; no local test result is claimed."
     try:
@@ -83,6 +163,95 @@ def read_validation(path: Path) -> tuple[dict[str, Any] | None, str | None]:
         return None, "Validation evidence is unreadable; no local test result is claimed."
     if not isinstance(data, dict) or not isinstance(data.get("steps"), list):
         return None, "Validation evidence has an unsupported shape; no local test result is claimed."
+    reasons: list[str] = []
+    if (
+        type(data.get("schema_version")) is not int
+        or data.get("schema_version") != VALIDATION_SCHEMA_VERSION
+    ):
+        reasons.append("unsupported schema version")
+    if data.get("tier") != VALIDATION_TIER:
+        reasons.append("wrong validation tier")
+    if not same_repository_root(data.get("repository_root"), repo_root):
+        reasons.append("different repository worktree")
+    if data.get("base_ref") != base_ref:
+        reasons.append("different base reference")
+    if data.get("base_sha") != base_sha:
+        reasons.append("different base commit")
+    if data.get("head_sha") != head_sha:
+        reasons.append("different head commit")
+    if data.get("working_tree") != "clean" or working_tree_dirty:
+        reasons.append("working tree is not a bound clean snapshot")
+    if data.get("overall_status") not in {"passed", "failed"}:
+        reasons.append("unsupported overall status")
+    coverage = data.get("coverage")
+    if not isinstance(coverage, list):
+        reasons.append("unsupported coverage shape")
+    protected_paths = data.get("authorized_protected_paths")
+    if not isinstance(protected_paths, list) or not all(
+        isinstance(item, str) for item in protected_paths
+    ):
+        reasons.append("unsupported protected-path declaration shape")
+
+    steps = data["steps"]
+    step_shape_valid = bool(steps)
+    derived_failure = False
+    for step in steps:
+        if not isinstance(step, dict):
+            step_shape_valid = False
+            continue
+        status = step.get("status")
+        exit_code = step.get("exit_code")
+        if (
+            not isinstance(step.get("name"), str)
+            or not isinstance(step.get("command"), str)
+            or status not in {"passed", "failed"}
+            or not isinstance(exit_code, int)
+            or isinstance(exit_code, bool)
+        ):
+            step_shape_valid = False
+            continue
+        if (status == "passed" and exit_code != 0) or (
+            status == "failed" and exit_code == 0
+        ):
+            step_shape_valid = False
+        derived_failure = derived_failure or status == "failed"
+    expected_overall = "failed" if derived_failure else "passed"
+    if not step_shape_valid or data.get("overall_status") != expected_overall:
+        reasons.append("internally inconsistent step results")
+    if data.get("overall_status") == "passed":
+        step_names = tuple(
+            step.get("name") for step in steps if isinstance(step, dict)
+        )
+        if step_names != PASSED_EVIDENCE_STEPS:
+            reasons.append("incomplete passed Evidence step contract")
+        if isinstance(coverage, list):
+            coverage_pairs = tuple(
+                (item.get("check"), item.get("status"))
+                for item in coverage
+                if isinstance(item, dict)
+            )
+            coverage_shape_valid = len(coverage_pairs) == len(coverage) and all(
+                isinstance(item.get("evidence"), str)
+                for item in coverage
+                if isinstance(item, dict)
+            )
+            if not coverage_shape_valid or coverage_pairs != PASSED_EVIDENCE_COVERAGE:
+                reasons.append("incomplete passed Evidence coverage contract")
+    elif isinstance(coverage, list):
+        coverage_pairs = tuple(
+            (item.get("check"), item.get("status"))
+            for item in coverage
+            if isinstance(item, dict)
+        )
+        coverage_shape_valid = len(coverage_pairs) == len(coverage) and all(
+            isinstance(item.get("evidence"), str)
+            for item in coverage
+            if isinstance(item, dict)
+        )
+        if not coverage_shape_valid or coverage_pairs != FAILED_EVIDENCE_COVERAGE:
+            reasons.append("inconsistent failed Evidence coverage contract")
+    if reasons:
+        return untrusted_validation(reasons)
     return data, None
 
 
@@ -142,7 +311,7 @@ def validation_markdown(data: dict[str, Any] | None, missing: str | None) -> lis
 
 def coverage_markdown(data: dict[str, Any] | None) -> list[str]:
     if data is None or not isinstance(data.get("coverage"), list):
-        return ["- Missing validation evidence; CI-only status is unknown."]
+        return ["- No matching validation evidence was accepted; CI-only status is unknown."]
     lines: list[str] = []
     for item in data["coverage"][:50]:
         if not isinstance(item, dict):
@@ -307,14 +476,36 @@ def main(argv: list[str] | None = None) -> int:
         actual_root = Path(
             run_git(repo_root, "rev-parse", "--show-toplevel")
         ).resolve()
+        output_path = args.output
+        if not output_path.is_absolute():
+            output_path = actual_root / output_path
+        output_path = output_path.resolve()
+        if not output_path_is_safe(actual_root, output_path):
+            raise EvidenceError(
+                "In-repository PR evidence output must be ignored by Git"
+            )
         base_sha = run_git(actual_root, "rev-parse", f"{args.base}^{{commit}}")
         head_sha = run_git(actual_root, "rev-parse", f"{args.head}^{{commit}}")
-        paths, paths_truncated = changed_files(actual_root, args.base, args.head)
+        paths, paths_truncated = changed_files(actual_root, base_sha, head_sha)
         working_tree_dirty = bool(run_git(actual_root, "status", "--porcelain", required=True))
         validation_path = args.validation
         if not validation_path.is_absolute():
             validation_path = actual_root / validation_path
-        validation, missing_validation = read_validation(validation_path)
+        validation, missing_validation = read_validation(
+            validation_path,
+            repo_root=actual_root,
+            base_ref=args.base,
+            base_sha=base_sha,
+            head_sha=head_sha,
+            working_tree_dirty=working_tree_dirty,
+        )
+        if (
+            run_git(actual_root, "rev-parse", f"{args.base}^{{commit}}") != base_sha
+            or run_git(actual_root, "rev-parse", f"{args.head}^{{commit}}") != head_sha
+            or bool(run_git(actual_root, "status", "--porcelain", required=True))
+            != working_tree_dirty
+        ):
+            raise EvidenceError("Git context changed while generating PR evidence; rerun")
         document = render_document(
             base_ref=args.base,
             base_sha=base_sha,
@@ -326,9 +517,6 @@ def main(argv: list[str] | None = None) -> int:
             validation=validation,
             missing_validation=missing_validation,
         )
-        output_path = args.output
-        if not output_path.is_absolute():
-            output_path = actual_root / output_path
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(document, encoding="utf-8", newline="\n")
     except (EvidenceError, OSError) as exc:

@@ -124,6 +124,13 @@ jobs:
             "README.md",
             "The development stage is now hardened as `2.0.0-rc2-dev1`.\n",
         )
+        self.write(
+            ".gitignore",
+            """.artifacts/
+__pycache__/
+*.pyc
+""",
+        )
         git(self.root, "init", "-b", "main")
         git(
             self.root,
@@ -160,10 +167,23 @@ class CheckScriptRepositoryFixture:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8", newline="\n")
 
+    def commit(self, message: str) -> None:
+        git(self.root, "add", ".")
+        git(
+            self.root,
+            "-c",
+            "user.email=fixture@example.invalid",
+            "-c",
+            "user.name=Fixture",
+            "commit",
+            "-m",
+            message,
+        )
+
     def _populate(self) -> None:
         self.write("scripts/check.ps1", CHECK_SCRIPT.read_text(encoding="utf-8"))
         self.write("scripts/codex-context.py", "# Fixture context tool.\n")
-        self.write("scripts/pr-evidence.py", "# Fixture evidence tool.\n")
+        self.write("scripts/pr-evidence.py", EVIDENCE_SCRIPT.read_text(encoding="utf-8"))
         self.write(
             "scripts/validate_addon_metadata.py",
             f"""from pathlib import Path
@@ -171,6 +191,8 @@ class CheckScriptRepositoryFixture:
 print({REPOSITORY_CODE_SENTINEL!r})
 if Path('.fixture-native-failure').exists():
     raise SystemExit(19)
+if Path('.fixture-mutate-worktree').exists():
+    Path('post-validation-change.txt').write_text('changed during validation\\n')
 print('fixture metadata validation passed')
 """,
         )
@@ -374,6 +396,82 @@ class PrEvidenceTests(unittest.TestCase):
             path = self.fixture.root / relative
             if path.exists():
                 shutil.rmtree(path)
+        (self.fixture.root / "notes.txt").unlink(missing_ok=True)
+        (self.fixture.root / "docs" / "pr.md").unlink(missing_ok=True)
+
+    def validation_payload(self) -> dict[str, object]:
+        step_names = (
+            "Verify base reference",
+            "Bind clean Evidence snapshot",
+            "Verify protected-path scope",
+            "Compile repository Python",
+            "Run complete unittest suite",
+            "Validate add-on metadata",
+            "Parse repository YAML",
+            "Check installed dependency consistency",
+            "Scan for high-confidence secret patterns",
+            "Parse PowerShell syntax",
+            "Check Git whitespace",
+            "Check staged Git whitespace",
+            "Check committed Git whitespace",
+            "Check changed text whitespace",
+            "Recheck Evidence snapshot",
+        )
+        coverage = (
+            ("full_local_gate", "executed_locally"),
+            ("docker_image_build", "delegated_to_ci"),
+            ("multiarchitecture_build", "delegated_to_ci"),
+            ("disposable_home_assistant", "delegated_to_ci"),
+            ("exact_image", "delegated_to_ci"),
+            ("publication", "not_applicable"),
+            ("provenance", "delegated_to_ci"),
+            ("deployment", "not_applicable"),
+        )
+        return {
+            "schema_version": 2,
+            "tier": "Evidence",
+            "repository_root": str(self.fixture.root.resolve()),
+            "base_ref": "origin/main",
+            "base_sha": git(
+                self.fixture.root,
+                "rev-parse",
+                "origin/main^{commit}",
+            ),
+            "head_sha": git(self.fixture.root, "rev-parse", "HEAD^{commit}"),
+            "working_tree": "clean",
+            "overall_status": "passed",
+            "authorized_protected_paths": [],
+            "steps": [
+                {
+                    "name": name,
+                    "command": f"fixture: {name}",
+                    "status": "passed",
+                    "exit_code": 0,
+                    "test_count": 3 if name == "Run complete unittest suite" else "unknown",
+                    "duration_seconds": 1.25,
+                    "note": "skipped_tests=1" if name == "Run complete unittest suite" else "",
+                }
+                for name in step_names
+            ],
+            "coverage": [
+                {
+                    "check": check,
+                    "status": status,
+                    "evidence": "fixture coverage",
+                }
+                for check, status in coverage
+            ],
+        }
+
+    def write_validation(self, payload: object) -> Path:
+        evidence = self.fixture.root / ".artifacts" / "validation.json"
+        evidence.parent.mkdir(parents=True, exist_ok=True)
+        evidence.write_text(
+            json.dumps(payload),
+            encoding="utf-8",
+            newline="\n",
+        )
+        return evidence
 
     def generate(self, output: str = ".artifacts/pr.md") -> Path:
         run(
@@ -405,39 +503,157 @@ class PrEvidenceTests(unittest.TestCase):
         self.assertIn("File list truncated after 200 paths", text)
 
     def test_validation_evidence_is_consumed_without_losing_skips(self):
-        evidence = self.fixture.root / ".artifacts" / "validation.json"
-        evidence.parent.mkdir(parents=True, exist_ok=True)
-        evidence.write_text(
-            json.dumps(
-                {
-                    "schema_version": 1,
-                    "overall_status": "passed",
-                    "steps": [
-                        {
-                            "name": "unit tests",
-                            "command": "python -m unittest",
-                            "status": "passed",
-                            "exit_code": 0,
-                            "test_count": 3,
-                            "duration_seconds": 1.25,
-                            "note": "skipped_tests=1",
-                        }
-                    ],
-                    "coverage": [
-                        {
-                            "check": "exact_image",
-                            "status": "delegated_to_ci",
-                            "evidence": "workflow job",
-                        }
-                    ],
-                }
-            ),
-            encoding="utf-8",
-        )
+        self.write_validation(self.validation_payload())
         text = self.generate().read_text(encoding="utf-8")
         self.assertIn("Overall local status: **passed**", text)
         self.assertIn("skipped_tests=1", text)
         self.assertIn("exact_image: **delegated_to_ci**", text)
+
+    def test_matching_failed_validation_remains_visibly_failed(self):
+        payload = self.validation_payload()
+        payload["overall_status"] = "failed"
+        payload["steps"] = [
+            {
+                "name": "unit tests",
+                "command": "python -m unittest",
+                "status": "failed",
+                "exit_code": 1,
+                "test_count": 1,
+                "duration_seconds": 0.5,
+                "note": "fixture failure",
+            }
+        ]
+        assert isinstance(payload["coverage"], list)
+        payload["coverage"][0]["status"] = "failed_locally"
+        self.write_validation(payload)
+        text = self.generate().read_text(encoding="utf-8")
+        self.assertIn("Overall local status: **failed**", text)
+        self.assertIn("fixture failure", text)
+        self.assertNotIn("no local test result is claimed", text)
+
+    def test_failed_validation_cannot_add_external_success_claims(self):
+        payload = self.validation_payload()
+        payload["overall_status"] = "failed"
+        payload["steps"] = [
+            {
+                "name": "unit tests",
+                "command": "python -m unittest",
+                "status": "failed",
+                "exit_code": 1,
+            }
+        ]
+        assert isinstance(payload["coverage"], list)
+        payload["coverage"][0]["status"] = "failed_locally"
+        payload["coverage"][-1]["status"] = "passed"
+        self.write_validation(payload)
+        text = self.generate().read_text(encoding="utf-8")
+        self.assertIn("inconsistent failed Evidence coverage contract", text)
+        self.assertIn("no local test result is claimed", text)
+        self.assertNotIn("deployment: **passed**", text)
+
+    def test_stale_or_foreign_validation_context_is_not_claimed(self):
+        base_sha = git(self.fixture.root, "rev-parse", "origin/main^{commit}")
+        cases = (
+            ("unsupported schema version", {"schema_version": 1}),
+            ("wrong validation tier", {"tier": "Full"}),
+            (
+                "different repository worktree",
+                {"repository_root": str((self.fixture.root / "foreign").resolve())},
+            ),
+            ("different base reference", {"base_ref": "main"}),
+            ("different base commit", {"base_sha": "0" * 40}),
+            ("different head commit", {"head_sha": base_sha}),
+            (
+                "working tree is not a bound clean snapshot",
+                {"working_tree": "dirty"},
+            ),
+        )
+        for reason, changes in cases:
+            with self.subTest(reason=reason):
+                payload = self.validation_payload()
+                payload.update(changes)
+                self.write_validation(payload)
+                text = self.generate().read_text(encoding="utf-8")
+                self.assertIn(reason, text)
+                self.assertIn("no local test result is claimed", text)
+                self.assertNotIn("Overall local status: **passed**", text)
+                self.assertIn("CI-only status is unknown", text)
+
+    def test_windows_path_case_for_same_repository_is_accepted(self):
+        if os.name != "nt":
+            self.skipTest("Windows path-casing behavior")
+        payload = self.validation_payload()
+        root = str(self.fixture.root.resolve())
+        payload["repository_root"] = root[0].swapcase() + root[1:]
+        self.write_validation(payload)
+        text = self.generate().read_text(encoding="utf-8")
+        self.assertIn("Overall local status: **passed**", text)
+
+    def test_dirty_worktree_rejects_otherwise_matching_validation(self):
+        self.write_validation(self.validation_payload())
+        self.fixture.write("notes.txt", "changed after validation\n")
+        text = self.generate().read_text(encoding="utf-8")
+        self.assertIn("working tree is not a bound clean snapshot", text)
+        self.assertNotIn("Overall local status: **passed**", text)
+
+    def test_malformed_or_inconsistent_validation_is_not_claimed(self):
+        evidence = self.fixture.root / ".artifacts" / "validation.json"
+        evidence.parent.mkdir(parents=True, exist_ok=True)
+        evidence.write_text("not json\n", encoding="utf-8")
+        text = self.generate().read_text(encoding="utf-8")
+        self.assertIn("Validation evidence is unreadable", text)
+        self.assertNotIn("Overall local status: **passed**", text)
+
+        self.write_validation([])
+        text = self.generate().read_text(encoding="utf-8")
+        self.assertIn("unsupported shape", text)
+        self.assertNotIn("Overall local status: **passed**", text)
+
+        payload = self.validation_payload()
+        assert isinstance(payload["steps"], list)
+        payload["steps"] = payload["steps"][:1]
+        self.write_validation(payload)
+        text = self.generate().read_text(encoding="utf-8")
+        self.assertIn("incomplete passed Evidence step contract", text)
+        self.assertNotIn("Overall local status: **passed**", text)
+
+        payload = self.validation_payload()
+        payload["steps"] = [
+            {
+                "name": "failed step",
+                "command": "fixture",
+                "status": "failed",
+                "exit_code": 1,
+            }
+        ]
+        self.write_validation(payload)
+        text = self.generate().read_text(encoding="utf-8")
+        self.assertIn("internally inconsistent step results", text)
+        self.assertNotIn("Overall local status: **passed**", text)
+
+    def test_unignored_in_repository_output_is_rejected_without_writing(self):
+        self.write_validation(self.validation_payload())
+        output = self.fixture.root / "docs" / "pr.md"
+        result = run(
+            [
+                sys.executable,
+                str(EVIDENCE_SCRIPT),
+                "--repo-root",
+                str(self.fixture.root),
+                "--base",
+                "origin/main",
+                "--head",
+                "HEAD",
+                "--output",
+                "docs/pr.md",
+            ],
+            cwd=self.fixture.root,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("must be ignored by Git", result.stderr)
+        self.assertFalse(output.exists())
+        self.assertEqual(git(self.fixture.root, "status", "--porcelain"), "")
 
 
 class PowerShellValidationTests(unittest.TestCase):
@@ -500,6 +716,8 @@ class CheckScriptExecutionTests(unittest.TestCase):
                 fixture = CheckScriptRepositoryFixture()
                 try:
                     fixture.write("hass_mcp_admin/example.py", "VALUE = 2\n")
+                    if tier == "Evidence":
+                        fixture.commit("fixture unauthorized protected change")
                     result = fixture.run_check(self.powershell, tier)
                     output = self.output(result)
                     self.assertNotEqual(result.returncode, 0, output)
@@ -537,9 +755,26 @@ class CheckScriptExecutionTests(unittest.TestCase):
         self.assertIn(REPOSITORY_CODE_SENTINEL, output)
         self.assertIn("Full validation passed", output)
 
+    def test_evidence_rejects_a_dirty_worktree_before_repository_code(self):
+        self.fixture.write("docs/change.md", "uncommitted change\n")
+        result = self.fixture.run_check(self.powershell, "Evidence")
+        output = self.output(result)
+        self.assertNotEqual(result.returncode, 0, output)
+        self.assertIn("Evidence requires a clean working tree", output)
+        self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
+        payload = json.loads(
+            (self.fixture.root / ".artifacts" / "validation.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(payload["schema_version"], 2)
+        self.assertEqual(payload["working_tree"], "dirty")
+        self.assertEqual(payload["overall_status"], "failed")
+
     def test_evidence_accepts_and_records_an_exact_authorized_protected_path(self):
         protected_path = "hass_mcp_admin/example.py"
         self.fixture.write(protected_path, "VALUE = 2\n")
+        self.fixture.commit("fixture protected change")
         result = self.fixture.run_check(
             self.powershell,
             "Evidence",
@@ -552,8 +787,39 @@ class CheckScriptExecutionTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
+        base_sha = git(self.fixture.root, "rev-parse", "origin/main^{commit}")
+        head_sha = git(self.fixture.root, "rev-parse", "HEAD^{commit}")
+        self.assertNotEqual(base_sha, head_sha)
+        self.assertEqual(payload["schema_version"], 2)
+        self.assertEqual(payload["tier"], "Evidence")
+        self.assertEqual(payload["repository_root"], str(self.fixture.root.resolve()))
+        self.assertEqual(payload["base_ref"], "origin/main")
+        self.assertEqual(payload["base_sha"], base_sha)
+        self.assertEqual(payload["head_sha"], head_sha)
+        self.assertEqual(payload["working_tree"], "clean")
         self.assertEqual(payload["overall_status"], "passed")
         self.assertEqual(payload["authorized_protected_paths"], [protected_path])
+        consumer = run(
+            [
+                sys.executable,
+                str(self.fixture.root / "scripts" / "pr-evidence.py"),
+                "--repo-root",
+                str(self.fixture.root),
+                "--base",
+                "origin/main",
+                "--head",
+                "HEAD",
+                "--output",
+                ".artifacts/pr.md",
+            ],
+            cwd=self.fixture.root,
+            check=False,
+        )
+        self.assertEqual(consumer.returncode, 0, consumer.stdout + consumer.stderr)
+        draft = (self.fixture.root / ".artifacts" / "pr.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Overall local status: **passed**", draft)
 
     def test_evidence_accepts_and_records_multiple_authorized_paths(self):
         protected_paths = (
@@ -570,6 +836,7 @@ jobs:
     runs-on: ubuntu-latest
 """,
         )
+        self.fixture.commit("fixture multiple protected changes")
         result = self.fixture.run_check(
             self.powershell,
             "Evidence",
@@ -628,6 +895,7 @@ jobs:
 
     def test_native_failure_exits_nonzero_and_overwrites_passing_evidence(self):
         self.fixture.write(".fixture-native-failure", "synthetic failure\n")
+        self.fixture.commit("fixture native failure")
         evidence = self.fixture.root / ".artifacts" / "validation.json"
         evidence.parent.mkdir(parents=True, exist_ok=True)
         evidence.write_text(
@@ -640,6 +908,8 @@ jobs:
         self.assertNotEqual(result.returncode, 0, output)
         self.assertIn(REPOSITORY_CODE_SENTINEL, output)
         payload = json.loads(evidence.read_text(encoding="utf-8"))
+        self.assertEqual(payload["schema_version"], 2)
+        self.assertEqual(payload["working_tree"], "clean")
         self.assertEqual(payload["overall_status"], "failed")
         steps = {step["name"]: step for step in payload["steps"]}
         self.assertEqual(
@@ -648,6 +918,25 @@ jobs:
         )
         self.assertEqual(steps["Validate add-on metadata"]["status"], "failed")
         self.assertEqual(steps["Parse repository YAML"]["status"], "passed")
+        self.assertNotIn("Evidence validation passed", output)
+
+    def test_evidence_fails_if_the_worktree_changes_during_validation(self):
+        self.fixture.write(".fixture-mutate-worktree", "mutate during validation\n")
+        self.fixture.commit("fixture worktree mutation")
+        result = self.fixture.run_check(self.powershell, "Evidence")
+        output = self.output(result)
+        self.assertNotEqual(result.returncode, 0, output)
+        self.assertIn(REPOSITORY_CODE_SENTINEL, output)
+        self.assertIn("working tree changed during Evidence validation", output)
+        payload = json.loads(
+            (self.fixture.root / ".artifacts" / "validation.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(payload["overall_status"], "failed")
+        self.assertEqual(payload["working_tree"], "dirty")
+        steps = {step["name"]: step for step in payload["steps"]}
+        self.assertEqual(steps["Recheck Evidence snapshot"]["status"], "failed")
         self.assertNotIn("Evidence validation passed", output)
 
     def test_invalid_base_fails_safely_on_every_tier(self):
@@ -675,6 +964,8 @@ jobs:
                     self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
                     if tier == "Evidence":
                         payload = json.loads(evidence.read_text(encoding="utf-8"))
+                        self.assertEqual(payload["schema_version"], 2)
+                        self.assertIsNone(payload["base_sha"])
                         self.assertEqual(payload["overall_status"], "failed")
                 finally:
                     fixture.close()
@@ -739,6 +1030,8 @@ class InstructionFileTests(unittest.TestCase):
         self.assertIn("actions", lowered)
         self.assertIn(".codex/", text)
         self.assertIn("-AuthorizedProtectedPath", text)
+        self.assertIn("schema-v2 Evidence", text)
+        self.assertIn("exact clean repository", text)
         self.assertNotIn("does not define a supported project action schema", lowered)
         self.assertNotIn("did not establish a supported project action schema", lowered)
         self.assertIn("docs/CODEX_WORKFLOW.md", (ROOT / "README.md").read_text(encoding="utf-8"))
