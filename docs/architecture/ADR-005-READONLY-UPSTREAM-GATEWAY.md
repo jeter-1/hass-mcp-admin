@@ -1,6 +1,6 @@
 # ADR-005: Reviewed read-only upstream gateway
 
-Status: proposed by the Phase 1 architecture pivot
+Status: accepted and implemented by the Phase 1 architecture pivot
 
 ## Context
 
@@ -18,7 +18,8 @@ physical actions.
 ## Decision
 
 Engineering retains all 40 existing registered tools and adds one generic
-`upstream_read_gateway` provider. On startup the provider:
+`upstream_read_gateway` provider. A supervised single-flight startup
+reconciliation loop:
 
 1. initializes the configured `ha-mcp` Streamable HTTP endpoint;
 2. verifies server identity, exact built-in reviewed version, MCP protocol, and
@@ -27,7 +28,23 @@ Engineering retains all 40 existing registered tools and adds one generic
 4. canonicalizes and SHA-256 fingerprints every input schema;
 5. compares it with the committed policy manifest; and
 6. registers only entries classified `automatic_read` whose exact schema still
-   matches.
+   matches; and
+7. keeps every safely admitted partial subset exposed while retrying with
+   capped delays until all 26 reviewed automatic reads are available, while
+   leaving the 40 statically registered tools online.
+
+A valid exact-schema subset is safely callable and missing reviewed reads are
+withheld individually; partial admission does not disable exact matches that
+are present. Reconciliation nevertheless remains incomplete and continues
+until all 26 reviewed reads are present because RC2dev13 full-host reboot
+acceptance requires automatic restoration of the exact 66-tool catalog. This
+completion rule is separate from stock-fixture equality: the complete 78-tool
+catalog count and fingerprint remain informational rather than an admission
+gate.
+
+The MCP transport is stateless. A fresh `tools/list` observes recovered dynamic
+tools, but clients caching an earlier list must re-list or reconnect. This
+decision does not claim `tools/list_changed` notification delivery.
 
 The committed machine-readable inventory is
 [`upstream_tool_policy.json`](../../hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.json).
@@ -35,10 +52,11 @@ It is the complete classification table for the 78-tool stock fixture reviewed
 from `ha-mcp` 7.14.1 source tag `v7.14.1`, commit
 `255acec1affa6528004a122eb83e30aee9c77713`. The loader requires all entries to
 be sorted, unique, bounded, and from that exact source revision. Production
-catalog visibility may be a subset or superset of that stock fixture. An
-advertised tool is not callable merely because it exists upstream, and exact
-stock-catalog equality is informational rather than the gateway admission
-boundary.
+catalog visibility may be a subset or superset of that stock fixture. Exact
+matching reviewed reads in a partial catalog remain safely exposed while
+reconciliation continues toward the 26-read recovery target. An advertised
+tool is not callable merely because it exists upstream, and exact stock-catalog
+equality is informational rather than the gateway admission boundary.
 
 ### Policy schema
 
@@ -77,8 +95,11 @@ disabled.
 | `unsupported` | 1 | Unavailable. |
 | **Total** | **78** | |
 
-The maximum reviewed generic-read set contains 26 tools. A deployment exposes
-only the exact-schema-matching subset that it actually advertises:
+The maximum reviewed generic-read set contains 26 tools. At any instant a
+deployment exposes only the exact-schema-matching subset that it actually
+advertises. That subset remains usable while health reports incomplete
+reconciliation; RC2dev13 reboot recovery acceptance separately requires the
+deployment to restore all 26:
 
 - `ha_config_get_automation`, `ha_config_get_calendar_events`,
   `ha_config_get_category`, `ha_config_get_label`, `ha_config_get_scene`, and
@@ -199,5 +220,7 @@ CI also starts the immutable reviewed 7.14.1 image, retrieves its complete
 paginated catalog over real MCP transport, proves the stock count/fingerprint
 and policy schemas, starts Engineering through its real discovery path, and
 exercises representative delegated reads over authenticated `tools/list` and
-`tools/call`. Production remains subset-based even though that exact-stock
-fixture test is intentionally exact.
+`tools/call`. Registration remains subset-based even though that exact-stock
+fixture test is intentionally exact. For the reviewed 7.14.1 deployment,
+reconciliation and RC2dev13 reboot acceptance additionally require eventual
+restoration of all 26 automatic reads without a manual Engineering restart.

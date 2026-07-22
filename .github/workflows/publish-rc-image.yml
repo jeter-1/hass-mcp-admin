@@ -135,6 +135,7 @@ jobs:
             echo "::error::The release detector returned an unsupported mode."
             exit 1
           fi
+          python scripts/promote_next_release.py --validate-authority "$version"
           release_tag="v${version}"
 
           if git ls-remote --exit-code --tags origin "refs/tags/${release_tag}" >/dev/null 2>&1; then

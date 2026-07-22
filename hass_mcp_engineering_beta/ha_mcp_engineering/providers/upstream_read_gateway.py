@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections import Counter
 from copy import deepcopy
 import json
 import threading
 import time
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 from jsonschema import Draft202012Validator, SchemaError
 from mcp.server.fastmcp.tools.base import Tool
@@ -36,6 +37,7 @@ from ..upstream_tool_policy import (
 PROVIDER_ID = "upstream_read_gateway"
 ALIAS_PREFIX = "ha_mcp__"
 SUPPORTED_PROTOCOLS = frozenset({"2025-03-26"})
+RECONCILIATION_RETRY_DELAYS_SECONDS = (1.0, 2.0, 4.0, 8.0, 16.0, 30.0)
 _FAILURE_CATEGORIES = frozenset(
     {
         "not_configured",
@@ -139,6 +141,9 @@ class UpstreamReadGateway:
         self._registered_server: Any = None
         self._registered_names: set[str] = set()
         self._exposed: dict[str, tuple[UpstreamToolPolicyEntry, dict[str, Any]]] = {}
+        self._dynamic_capabilities: tuple[dict[str, Any], ...] = ()
+        self._initialize_lock = asyncio.Lock()
+        self._reconciliation_lock = asyncio.Lock()
         self._lock = threading.RLock()
         self._state = self._empty_state()
 
@@ -148,6 +153,7 @@ class UpstreamReadGateway:
             "configured": False,
             "initialized": False,
             "generic_delegation_available": False,
+            "admission_complete": False,
             "upstream_server_name": None,
             "upstream_server_version": None,
             "protocol_version": None,
@@ -187,6 +193,12 @@ class UpstreamReadGateway:
             "last_failure_category": None,
             "failure_counts": Counter(),
             "last_catalog_refresh_at": None,
+            "reconciliation_active": False,
+            "reconciliation_status": "idle",
+            "discovery_attempt_count": 0,
+            "retry_count": 0,
+            "next_retry_delay_seconds": None,
+            "last_discovery_attempt_at": None,
             "exposed_tools": [],
             "collision_mappings": [],
             "blocked_tools": [],
@@ -261,12 +273,54 @@ class UpstreamReadGateway:
                 ),
             }
         )
+        replace_dynamic_upstream_capabilities((), self.health_snapshot())
 
     async def initialize(self, server: Any) -> dict[str, Any]:
+        """Run one admission attempt without overlapping registry mutation."""
+
+        async with self._initialize_lock:
+            return await self._initialize_once(server)
+
+    async def _initialize_once(self, server: Any) -> dict[str, Any]:
         """Discover once and atomically replace only this provider's dynamic tools."""
 
         self._remove_registered_tools()
         self._registered_server = server
+        with self._lock:
+            self._state.update(
+                {
+                    "initialized": False,
+                    "generic_delegation_available": False,
+                    "admission_complete": False,
+                    "upstream_server_name": None,
+                    "upstream_server_version": None,
+                    "protocol_version": None,
+                    "catalog_fingerprint": None,
+                    "observed_catalog_fingerprint": None,
+                    "upstream_advertised_tool_count": 0,
+                    "observed_advertised_tool_count": 0,
+                    "exact_matched_automatic_read_count": 0,
+                    "dynamically_exposed_count": 0,
+                    "collision_count": 0,
+                    "schema_mismatch_count": 0,
+                    "schema_mismatched_automatic_read_count": 0,
+                    "missing_reviewed_read_count": 0,
+                    "missing_automatic_read_count": 0,
+                    "unreviewed_tool_count": 0,
+                    "unreviewed_observed_tool_count": 0,
+                    "observed_catalog_matches_reviewed_stock_fixture": False,
+                    "reconciliation_status": (
+                        "probing" if self._state["reconciliation_active"] else "idle"
+                    ),
+                    "next_retry_delay_seconds": None,
+                    "last_discovery_attempt_at": _utc_now(),
+                    "exposed_tools": [],
+                    "collision_mappings": [],
+                    "blocked_tools": [],
+                }
+            )
+            self._state["discovery_attempt_count"] += 1
+        replace_dynamic_upstream_capabilities((), self.health_snapshot())
         if not self._transport or not self._policy:
             self._record_failure("not_configured", disable_delegation=True)
             replace_dynamic_upstream_capabilities((), self.health_snapshot())
@@ -319,12 +373,17 @@ class UpstreamReadGateway:
                         "collision": exposed_name != entry.upstream_name,
                     }
                 )
+            full_admission = len(exposed) == self._policy.classification_counts[
+                "automatic_read"
+            ]
+            self._dynamic_capabilities = tuple(capabilities)
             with self._lock:
                 self._exposed = exposed
                 self._state.update(
                     {
                         "initialized": True,
                         "generic_delegation_available": bool(exposed),
+                        "admission_complete": full_admission,
                         "upstream_server_name": catalog.server_name[:128],
                         "upstream_server_version": catalog.server_version[:128],
                         "protocol_version": catalog.protocol_version[:64],
@@ -337,6 +396,15 @@ class UpstreamReadGateway:
                         "collision_count": len(collisions),
                         "last_failure_category": None,
                         "last_catalog_refresh_at": _utc_now(),
+                        "reconciliation_active": (
+                            False
+                            if full_admission
+                            else self._state["reconciliation_active"]
+                        ),
+                        "reconciliation_status": (
+                            "admitted" if full_admission else "partial"
+                        ),
+                        "next_retry_delay_seconds": None,
                         "exposed_tools": sorted(exposed),
                         "collision_mappings": collisions,
                         "observed_catalog_matches_reviewed_stock_fixture": (
@@ -348,7 +416,7 @@ class UpstreamReadGateway:
                     }
                 )
             replace_dynamic_upstream_capabilities(
-                tuple(capabilities), self.health_snapshot()
+                self._dynamic_capabilities, self.health_snapshot()
             )
             return self.health_snapshot()
         except DashboardTransportError as exc:
@@ -358,6 +426,71 @@ class UpstreamReadGateway:
         self._remove_registered_tools()
         replace_dynamic_upstream_capabilities((), self.health_snapshot())
         return self.health_snapshot()
+
+    async def reconcile_until_initialized(
+        self,
+        server: Any,
+        *,
+        retry_delays: tuple[float, ...] = RECONCILIATION_RETRY_DELAYS_SECONDS,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ) -> dict[str, Any]:
+        """Retry exact fail-closed admission until configured discovery succeeds."""
+
+        if not retry_delays or any(delay <= 0 for delay in retry_delays):
+            raise ValueError("retry_delays must contain positive values")
+        async with self._reconciliation_lock:
+            snapshot = self.health_snapshot()
+            if _full_admission(snapshot):
+                return snapshot
+            return await self._reconcile_until_full_admission(
+                server, retry_delays=retry_delays, sleep=sleep
+            )
+
+    async def _reconcile_until_full_admission(
+        self,
+        server: Any,
+        *,
+        retry_delays: tuple[float, ...],
+        sleep: Callable[[float], Awaitable[None]],
+    ) -> dict[str, Any]:
+        with self._lock:
+            self._state["reconciliation_active"] = True
+            self._state["reconciliation_status"] = "probing"
+        retry_index = 0
+        try:
+            while True:
+                snapshot = await self.initialize(server)
+                if not snapshot["configured"]:
+                    with self._lock:
+                        self._state["reconciliation_active"] = False
+                        self._state["reconciliation_status"] = "idle"
+                    replace_dynamic_upstream_capabilities((), self.health_snapshot())
+                    return self.health_snapshot()
+                if _full_admission(snapshot):
+                    return snapshot
+
+                delay = retry_delays[min(retry_index, len(retry_delays) - 1)]
+                retry_index += 1
+                with self._lock:
+                    self._state["reconciliation_status"] = "waiting"
+                    self._state["next_retry_delay_seconds"] = delay
+                    self._state["retry_count"] += 1
+                replace_dynamic_upstream_capabilities(
+                    self._dynamic_capabilities, self.health_snapshot()
+                )
+                await sleep(delay)
+                with self._lock:
+                    self._state["reconciliation_status"] = "probing"
+                    self._state["next_retry_delay_seconds"] = None
+        finally:
+            with self._lock:
+                if self._state["reconciliation_active"]:
+                    self._state["reconciliation_active"] = False
+                    self._state["reconciliation_status"] = "stopped"
+                    self._state["next_retry_delay_seconds"] = None
+            replace_dynamic_upstream_capabilities(
+                self._dynamic_capabilities, self.health_snapshot()
+            )
 
     def _validate_identity(self, server_name: str, server_version: str, protocol: str) -> None:
         if server_name != REVIEWED_UPSTREAM_SERVER:
@@ -446,7 +579,8 @@ class UpstreamReadGateway:
         )
         telemetry = current_telemetry()
         try:
-            mapping = self._exposed.get(exposed_name)
+            with self._lock:
+                mapping = self._exposed.get(exposed_name)
             if (
                 not mapping
                 or mapping[0].classification != "automatic_read"
@@ -506,22 +640,36 @@ class UpstreamReadGateway:
             )
             if encoded_size + 8_000 > response_limit:
                 raise _GatewayFailure("response_too_large", dispatched=True)
+            upstream_partial, completeness_warnings = _upstream_completeness(
+                policy_entry, sanitation.value
+            )
             completeness = (
-                "partial" if sanitation.truncated_field_count else "complete"
+                "partial"
+                if sanitation.truncated_field_count or upstream_partial
+                else "complete"
             )
             METRICS.record_provider_result(PROVIDER_ID, completeness, dispatched=True)
+            publish_current_route = False
             with self._lock:
                 # A completed call proves the discovered route remains usable. Historical
-                # failure counts stay available, but a prior transient failure must not
-                # leave an initialized gateway reported as unavailable forever.
-                self._state["generic_delegation_available"] = bool(self._exposed)
-                self._state["last_failure_category"] = None
+                # failure counts stay available, but only the currently admitted route
+                # may clear its own transient failure. A call from a removed generation
+                # must not erase a newer discovery failure.
+                if self._exposed.get(exposed_name) is mapping:
+                    self._state["generic_delegation_available"] = bool(self._exposed)
+                    self._state["last_failure_category"] = None
+                    publish_current_route = True
+            if publish_current_route:
+                replace_dynamic_upstream_capabilities(
+                    self._dynamic_capabilities, self.health_snapshot()
+                )
             if telemetry:
                 telemetry.result_status = "partial" if completeness == "partial" else "success"
                 telemetry.completeness = completeness
             warnings = []
             if sanitation.truncated_field_count:
                 warnings.append("The untrusted upstream response was safely bounded.")
+            warnings.extend(completeness_warnings)
             return SuccessResponse(
                 operation=exposed_name,
                 summary="Completed a reviewed pure-read operation through the upstream gateway.",
@@ -579,6 +727,7 @@ class UpstreamReadGateway:
                 self._registered_server._tool_manager._tools.pop(name, None)
         self._registered_names.clear()
         self._exposed.clear()
+        self._dynamic_capabilities = ()
 
     def _record_failure(
         self, category: str, *, disable_delegation: bool = False
@@ -588,7 +737,16 @@ class UpstreamReadGateway:
             self._state["last_failure_category"] = category
             self._state["failure_counts"][category] += 1
             if disable_delegation:
+                self._state["initialized"] = False
                 self._state["generic_delegation_available"] = False
+                self._state["admission_complete"] = False
+                self._state["exact_matched_automatic_read_count"] = 0
+                self._state["dynamically_exposed_count"] = 0
+                self._state["collision_count"] = 0
+                self._state["exposed_tools"] = []
+                self._state["collision_mappings"] = []
+                if not self._state["reconciliation_active"]:
+                    self._state["reconciliation_status"] = "idle"
 
     def health_snapshot(self) -> dict[str, Any]:
         with self._lock:
@@ -616,6 +774,15 @@ class _GatewayFailure(RuntimeError):
 def _normalize_category(category: str) -> str:
     value = str(category)
     return value if value in _FAILURE_CATEGORIES else "internal_error"
+
+
+def _full_admission(snapshot: dict[str, Any]) -> bool:
+    return bool(
+        snapshot.get("initialized")
+        and snapshot.get("admission_complete")
+        and snapshot.get("dynamically_exposed_count")
+        == snapshot.get("reviewed_automatic_read_count")
+    )
 
 
 def _public_failure(category: str) -> tuple[str, bool]:
@@ -667,6 +834,20 @@ def _normalize_upstream_payload(call_result: dict[str, Any]) -> Any:
             except json.JSONDecodeError:
                 return item["text"]
     return content
+
+
+def _upstream_completeness(
+    policy_entry: UpstreamToolPolicyEntry, payload: Any
+) -> tuple[bool, list[str]]:
+    """Preserve ha_search's reviewed top-level semantic completeness signal."""
+
+    if policy_entry.upstream_name != "ha_search":
+        return False, []
+    if not isinstance(payload, dict) or not isinstance(payload.get("partial"), bool):
+        return True, ["The upstream search completeness could not be verified."]
+    if payload["partial"]:
+        return True, ["The upstream search reported partial coverage."]
+    return False, []
 
 
 def _server_version() -> str:

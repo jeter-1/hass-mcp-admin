@@ -7,6 +7,12 @@ reads. Because the client can expose only one MCP server, Engineering is the
 front door for its preserved 40 registered tools plus dynamically discovered,
 exact-schema-matched reads from the reviewed `ha-mcp` 7.14.1 catalog.
 
+The native listeners do not block on upstream boot order. One supervised
+single-flight reconciliation loop retries exact admission with capped delays
+until all 26 reviewed reads are present. The 40 statically registered tools
+remain available while it waits. Subsequent `tools/list` calls see recovered
+tools; stateless clients that cache the initial list must re-list or reconnect.
+
 One generic provider handles the policy-approved read set. The committed stock
 78-tool inventory classifies 26 as automatic reads and blocks every mixed,
 write, action, prohibited, or unsupported tool. A deployment exposes only the
@@ -169,11 +175,13 @@ The engineering server may retain direct Home Assistant read access where it mat
 
 ## Current Implementation
 
-The v2 beta currently exposes 36 tools and implements governance, verification,
-rollback, persistence, audit, and request correlation. It has direct REST/WebSocket
-clients but no configured nested standard-MCP client. Delegation labels describe the
-target provider; current compatibility reads remain direct and transitional. The
-standard-MCP gateway reports unavailable rather than simulating success.
+The v2 beta has 40 statically registered tools and implements governance,
+verification, rollback, persistence, audit, and request correlation. It has
+direct REST/WebSocket clients, a separate argument-constrained dashboard
+provider, and the reviewed generic pure-read gateway. The legacy
+`standard_ha_mcp` gateway remains unavailable rather than simulating success;
+the reviewed gateway adds only exact policy-approved reads and has no direct-HA
+fallback.
 
 Beta 12 adds the first single-target reliability analyzer. Its MCP handler depends on
 an engineering facilitator service rather than transport clients. The service composes

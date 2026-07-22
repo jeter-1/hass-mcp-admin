@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 from mcp.server.fastmcp import FastMCP
 
@@ -14,18 +15,22 @@ sys.path.insert(0, str(BETA))
 
 from ha_mcp_engineering.capabilities import (  # noqa: E402
     build_capability_catalog,
+    build_server_metadata,
     capability_for_tool,
     replace_dynamic_upstream_capabilities,
 )
+from ha_mcp_engineering.application import _serve  # noqa: E402
 from ha_mcp_engineering.clients.mcp import DashboardTransportError  # noqa: E402
 from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
     McpReadCatalog,
     McpReadResult,
 )
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
+from ha_mcp_engineering.observability import METRICS  # noqa: E402
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     UpstreamReadGateway,
 )
+from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
 from ha_mcp_engineering.tools import get_registered_server  # noqa: E402
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     ReviewedToolAnnotations,
@@ -125,6 +130,16 @@ def catalog_tool(name, reviewed_schema=None, description=None):
     }
 
 
+def server_with_native_tools(count=40):
+    server = FastMCP("gateway-inventory-test")
+    for index in range(count):
+        async def native_read():
+            return "native-ok"
+
+        server.tool(name=f"native_read_{index}")(native_read)
+    return server
+
+
 class FakeTransport:
     def __init__(self, tools, *, version="7.14.1", result=None, error=None):
         self.catalog = McpReadCatalog(
@@ -163,6 +178,20 @@ class FakeTransport:
             connection_latency_ms=1.0,
             tool_call_latency_ms=2.0,
         )
+
+
+class SequencedDiscoveryTransport(FakeTransport):
+    def __init__(self, tools, outcomes):
+        super().__init__(tools)
+        self.outcomes = list(outcomes)
+        self.discovery_calls = 0
+
+    async def discover(self):
+        self.discovery_calls += 1
+        outcome = self.outcomes.pop(0) if self.outcomes else self.catalog
+        if isinstance(outcome, str):
+            raise DashboardTransportError(outcome)
+        return outcome
 
 
 async def initialize(entries, tools, *, server=None, transport=None, version="7.14.1"):
@@ -255,6 +284,26 @@ class PolicyInventoryTests(unittest.TestCase):
             self.assertIn(f'"{tool_name}"', acceptance)
         self.assertIn('"ha_get_logs" not in names', acceptance)
         self.assertIn('"ha_call_service" not in names', acceptance)
+        self.assertIn('"ha_search_partial"', acceptance)
+        self.assertIn('partial_data.get("partial") is True', acceptance)
+        self.assertIn('item.get("entity_id") == "automation.gateway_fixture"', acceptance)
+        self.assertIn("expected_delegated_calls = len(REPRESENTATIVE_CALLS) + 1", acceptance)
+        self.assertIn('routing_after.get("partial_results", 0)', acceptance)
+        for metric_name in (
+            "requests_by_provider",
+            "successful_requests_by_provider",
+            "failures_by_provider",
+            "fallback_attempts",
+            "fallback_successes",
+            "prohibited_fallback_attempts",
+        ):
+            self.assertIn(f'"{metric_name}"', acceptance)
+        self.assertIn('record.get("tool_name") == "ha_search"', acceptance)
+        self.assertIn('record.get("result_status") == "partial"', acceptance)
+        fixture = (
+            ROOT / "scripts" / "fake_ha_read_gateway_contract_server.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("automation.gateway_fixture_unreadable", fixture)
 
 
 class RegistrationTests(unittest.IsolatedAsyncioTestCase):
@@ -468,6 +517,18 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         )
         return gateway, server._tool_manager.get_tool("ha_get_state"), transport, entry
 
+    async def _search_case(self, payload):
+        entry = policy_entry("ha_search")
+        result = {"structuredContent": payload, "isError": False}
+        transport = FakeTransport([catalog_tool("ha_search")], result=result)
+        gateway, server, _ = await initialize(
+            [entry], [catalog_tool("ha_search")], transport=transport
+        )
+        encoded = await server._tool_manager.get_tool("ha_search").run(
+            {"entity_id": "sun.sun"}
+        )
+        return json.loads(encoded), gateway
+
     async def test_arguments_are_validated_before_dispatch(self):
         _gateway, tool, transport, _entry = await self._case()
         value = json.loads(await tool.run({"unknown": "value"}))
@@ -490,6 +551,79 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(value["metadata"]["provider"], "upstream_read_gateway")
         self.assertEqual(value["metadata"]["fallback"], "none")
         self.assertEqual(len(transport.calls), 1)
+
+    async def test_search_preserves_upstream_partial_semantics(self):
+        value, _gateway = await self._search_case(
+            {"results": [{"entity_id": "sun.sun"}], "partial": True}
+        )
+        self.assertTrue(value["success"])
+        self.assertTrue(value["data"]["partial"])
+        self.assertEqual(value["metadata"]["completeness"], "partial")
+        self.assertIn(
+            "The upstream search reported partial coverage.", value["warnings"]
+        )
+
+    async def test_search_complete_false_remains_complete(self):
+        value, _gateway = await self._search_case(
+            {"results": [{"entity_id": "sun.sun"}], "partial": False}
+        )
+        self.assertEqual(value["metadata"]["completeness"], "complete")
+        self.assertNotIn("unverified", " ".join(value["warnings"]).lower())
+
+    async def test_search_missing_or_malformed_partial_fails_closed_as_partial(self):
+        missing = object()
+        for marker in (missing, None, "false", 0, 1, [], {}):
+            with self.subTest(marker=marker):
+                payload = {"results": []}
+                if marker is not missing:
+                    payload["partial"] = marker
+                value, _gateway = await self._search_case(payload)
+                self.assertEqual(value["metadata"]["completeness"], "partial")
+                self.assertIn(
+                    "The upstream search completeness could not be verified.",
+                    value["warnings"],
+                )
+
+    async def test_search_partial_remains_truthful_after_secret_redaction(self):
+        value, _gateway = await self._search_case(
+            {
+                "results": [{"entity_id": "sun.sun", "access_token": SECRET}],
+                "partial": True,
+            }
+        )
+        encoded = json.dumps(value, sort_keys=True)
+        self.assertNotIn(SECRET, encoded)
+        self.assertEqual(value["metadata"]["completeness"], "partial")
+        self.assertTrue(value["data"]["partial"])
+        self.assertEqual(
+            value["warnings"], ["The upstream search reported partial coverage."]
+        )
+
+    async def test_search_local_bounding_remains_partial(self):
+        value, _gateway = await self._search_case(
+            {"results": [{"description": "x" * 25_000}], "partial": False}
+        )
+        self.assertEqual(value["metadata"]["completeness"], "partial")
+        self.assertIn(
+            "The untrusted upstream response was safely bounded.", value["warnings"]
+        )
+
+    async def test_search_partial_updates_request_and_provider_telemetry(self):
+        METRICS.reset()
+        telemetry, token = begin_request("search-partial-test")
+        try:
+            value, _gateway = await self._search_case(
+                {"results": [], "partial": True}
+            )
+        finally:
+            end_request(token)
+        self.assertEqual(value["metadata"]["completeness"], "partial")
+        self.assertEqual(telemetry.result_status, "partial")
+        self.assertEqual(telemetry.completeness, "partial")
+        self.assertEqual(telemetry.provider_partial_count, 1)
+        self.assertEqual(
+            METRICS.snapshot()["provider_routing"]["partial_results"], 1
+        )
 
     async def test_timeout_is_normalized(self):
         _gateway, tool, _transport, _entry = await self._case(error="timeout")
@@ -590,6 +724,465 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
             gateway.health_snapshot()["prohibited_delegation_attempts"], 1
         )
         self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
+
+
+class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
+    def tearDown(self):
+        replace_dynamic_upstream_capabilities((), {})
+
+    async def test_transient_startup_failure_recovers_without_restart(self):
+        entry = policy_entry("ha_get_state")
+        transport = SequencedDiscoveryTransport(
+            [catalog_tool("ha_get_state")],
+            ["connection_failed"],
+        )
+        server = FastMCP("gateway-reconciliation-test")
+
+        @server.tool(name="native_read")
+        async def native_read():
+            return "native-ok"
+
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            settings(),
+            transport=transport,
+            policy=policy(entry),
+            admission_validator=lambda _catalog: None,
+        )
+        sleep_started = asyncio.Event()
+        release_retry = asyncio.Event()
+        delays = []
+
+        async def controlled_sleep(delay):
+            delays.append(delay)
+            sleep_started.set()
+            await release_retry.wait()
+
+        task = asyncio.create_task(
+            gateway.reconcile_until_initialized(
+                server, retry_delays=(1.0, 2.0), sleep=controlled_sleep
+            )
+        )
+        await asyncio.wait_for(sleep_started.wait(), timeout=1)
+        self.assertIsNotNone(server._tool_manager.get_tool("native_read"))
+        self.assertIsNone(server._tool_manager.get_tool("ha_get_state"))
+        waiting = gateway.health_snapshot()
+        self.assertEqual(waiting["reconciliation_status"], "waiting")
+        self.assertEqual(waiting["last_failure_category"], "connection_failed")
+        self.assertEqual(waiting["failure_counts"]["connection_failed"], 1)
+        self.assertEqual(waiting["next_retry_delay_seconds"], 1.0)
+
+        release_retry.set()
+        recovered = await asyncio.wait_for(task, timeout=1)
+        self.assertTrue(recovered["initialized"])
+        self.assertEqual(recovered["reconciliation_status"], "admitted")
+        self.assertEqual(recovered["discovery_attempt_count"], 2)
+        self.assertEqual(recovered["retry_count"], 1)
+        self.assertEqual(delays, [1.0])
+        self.assertIsNotNone(server._tool_manager.get_tool("ha_get_state"))
+        self.assertEqual(
+            [tool.name for tool in server._tool_manager.list_tools()].count(
+                "ha_get_state"
+            ),
+            1,
+        )
+        self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
+
+    async def test_partial_catalog_keeps_retrying_until_exact_40_to_66(self):
+        entries = [policy_entry(f"ha_read_{index}") for index in range(26)]
+        tools = [catalog_tool(entry.upstream_name) for entry in entries]
+        transport = SequencedDiscoveryTransport(tools, [])
+        partial_catalog = replace(transport.catalog, tools=tuple(tools[:10]))
+        transport.outcomes = [partial_catalog]
+        server = server_with_native_tools()
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            settings(),
+            transport=transport,
+            policy=policy(*entries),
+            admission_validator=lambda _catalog: None,
+        )
+        sleep_started = asyncio.Event()
+        release_retry = asyncio.Event()
+
+        async def controlled_sleep(_delay):
+            sleep_started.set()
+            await release_retry.wait()
+
+        task = asyncio.create_task(
+            gateway.reconcile_until_initialized(server, sleep=controlled_sleep)
+        )
+        await asyncio.wait_for(sleep_started.wait(), timeout=1)
+        waiting_names = {tool.name for tool in server._tool_manager.list_tools()}
+        self.assertEqual(len(waiting_names), 50)
+        waiting = gateway.health_snapshot()
+        self.assertTrue(waiting["initialized"])
+        self.assertFalse(waiting["admission_complete"])
+        self.assertEqual(waiting["dynamically_exposed_count"], 10)
+        self.assertEqual(waiting["reconciliation_status"], "waiting")
+
+        release_retry.set()
+        recovered = await asyncio.wait_for(task, timeout=1)
+        recovered_names = {tool.name for tool in server._tool_manager.list_tools()}
+        self.assertEqual(len(recovered_names), 66)
+        self.assertTrue(recovered["admission_complete"])
+        self.assertEqual(recovered["dynamically_exposed_count"], 26)
+        self.assertEqual(recovered["reconciliation_status"], "admitted")
+        self.assertEqual(transport.discovery_calls, 2)
+        self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
+
+    async def test_retry_probe_publishes_one_coherent_empty_dynamic_state(self):
+        entries = [policy_entry(f"ha_read_{index}") for index in range(26)]
+        tools = [catalog_tool(entry.upstream_name) for entry in entries]
+        partial_catalog = McpReadCatalog(
+            protocol_version="2025-03-26",
+            server_name="ha-mcp",
+            server_version="7.14.1",
+            tools=tuple(tools[:10]),
+            connection_latency_ms=1.0,
+        )
+        second_discovery_started = asyncio.Event()
+
+        class BlockingSecondDiscoveryTransport(FakeTransport):
+            def __init__(self):
+                super().__init__(tools)
+                self.discovery_calls = 0
+
+            async def discover(self):
+                self.discovery_calls += 1
+                if self.discovery_calls == 1:
+                    return partial_catalog
+                second_discovery_started.set()
+                await asyncio.Event().wait()
+
+        transport = BlockingSecondDiscoveryTransport()
+        server = server_with_native_tools()
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            settings(),
+            transport=transport,
+            policy=policy(*entries),
+            admission_validator=lambda _catalog: None,
+        )
+        sleep_started = asyncio.Event()
+        release_retry = asyncio.Event()
+
+        async def controlled_sleep(_delay):
+            sleep_started.set()
+            await release_retry.wait()
+
+        task = asyncio.create_task(
+            gateway.reconcile_until_initialized(server, sleep=controlled_sleep)
+        )
+        await asyncio.wait_for(sleep_started.wait(), timeout=1)
+        self.assertEqual(len(server._tool_manager.list_tools()), 50)
+        release_retry.set()
+        await asyncio.wait_for(second_discovery_started.wait(), timeout=1)
+
+        tool_names = {tool.name for tool in server._tool_manager.list_tools()}
+        health = gateway.health_snapshot()
+        catalog = build_capability_catalog()
+        metadata = build_server_metadata(
+            ha_url="http://supervisor/core",
+            runtime_mode="home_assistant_addon",
+            ha_connection={"checked": False, "status": "not_checked"},
+        )
+        self.assertEqual(len(tool_names), 40)
+        self.assertFalse(health["initialized"])
+        self.assertFalse(health["generic_delegation_available"])
+        self.assertEqual(health["reconciliation_status"], "probing")
+        self.assertEqual(health["dynamically_exposed_count"], 0)
+        self.assertEqual(health["exposed_tools"], [])
+        self.assertEqual(catalog["dynamic_upstream"], [])
+        self.assertEqual(catalog["dynamic_upstream_count"], 0)
+        self.assertEqual(catalog["registered_count"], 40)
+        self.assertEqual(
+            catalog["upstream_read_gateway"]["dynamically_exposed_count"], 0
+        )
+        self.assertEqual(metadata["dynamic_upstream_tool_count"], 0)
+        self.assertEqual(metadata["tool_count"], 40)
+        self.assertEqual(
+            metadata["upstream_read_gateway"]["reconciliation_status"],
+            "probing",
+        )
+        self.assertEqual(capability_for_tool("ha_read_0"), {})
+
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        stopped = gateway.health_snapshot()
+        self.assertEqual(stopped["reconciliation_status"], "stopped")
+        self.assertEqual(stopped["dynamically_exposed_count"], 0)
+        self.assertEqual(build_capability_catalog()["dynamic_upstream_count"], 0)
+        self.assertEqual(capability_for_tool("ha_read_0"), {})
+
+    async def test_configure_publishes_final_gateway_readiness_state(self):
+        entry = policy_entry("ha_get_state")
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            settings(),
+            transport=FakeTransport([catalog_tool("ha_get_state")]),
+            policy=policy(entry),
+            admission_validator=lambda _catalog: None,
+        )
+
+        health = gateway.health_snapshot()
+        catalog = build_capability_catalog()
+        published = catalog["upstream_read_gateway"]
+        self.assertTrue(health["configured"])
+        self.assertTrue(published["configured"])
+        self.assertEqual(published["reviewed_policy_entry_count"], 1)
+        self.assertEqual(published["reviewed_automatic_read_count"], 1)
+        self.assertEqual(published["dynamically_exposed_count"], 0)
+        self.assertEqual(catalog["dynamic_upstream_count"], 0)
+
+    async def test_retired_inflight_call_cannot_clear_new_discovery_failure(self):
+        entry = policy_entry("ha_get_state")
+        call_started = asyncio.Event()
+        release_call = asyncio.Event()
+
+        class OverlapTransport(SequencedDiscoveryTransport):
+            async def execute_read(
+                self, tool_name, arguments, *, timeout_seconds, identity_validator
+            ):
+                call_started.set()
+                await release_call.wait()
+                return await super().execute_read(
+                    tool_name,
+                    arguments,
+                    timeout_seconds=timeout_seconds,
+                    identity_validator=identity_validator,
+                )
+
+        tool = catalog_tool("ha_get_state")
+        transport = OverlapTransport([tool], [])
+        transport.outcomes = [transport.catalog, "connection_failed"]
+        gateway, server, _ = await initialize(
+            [entry], [tool], transport=transport
+        )
+        admitted_tool = server._tool_manager.get_tool("ha_get_state")
+        call_task = asyncio.create_task(
+            admitted_tool.run({"entity_id": "sun.sun"})
+        )
+        await asyncio.wait_for(call_started.wait(), timeout=1)
+
+        failed = await gateway.initialize(server)
+        self.assertEqual(failed["last_failure_category"], "connection_failed")
+        self.assertFalse(failed["generic_delegation_available"])
+        self.assertEqual(build_capability_catalog()["dynamic_upstream_count"], 0)
+
+        release_call.set()
+        result = json.loads(await asyncio.wait_for(call_task, timeout=1))
+        self.assertTrue(result["success"])
+        health = gateway.health_snapshot()
+        published = build_capability_catalog()["upstream_read_gateway"]
+        self.assertEqual(health["last_failure_category"], "connection_failed")
+        self.assertFalse(health["generic_delegation_available"])
+        self.assertEqual(published["last_failure_category"], "connection_failed")
+        self.assertFalse(published["generic_delegation_available"])
+        self.assertEqual(capability_for_tool("ha_get_state"), {})
+
+    async def test_listeners_start_before_delayed_upstream_recovers_40_to_66(self):
+        entries = [policy_entry(f"ha_read_{index}") for index in range(26)]
+        tools = [catalog_tool(entry.upstream_name) for entry in entries]
+        listeners_started = asyncio.Event()
+        failure_observed = asyncio.Event()
+        started_ports = set()
+
+        class DelayedReadyTransport(SequencedDiscoveryTransport):
+            async def discover(self):
+                if not listeners_started.is_set():
+                    raise AssertionError(
+                        "upstream discovery ran before both listeners started"
+                    )
+                return await super().discover()
+
+        class FastRetryGateway(UpstreamReadGateway):
+            async def reconcile_until_initialized(self, server):
+                async def observe_failure(_delay):
+                    health = self.health_snapshot()
+                    if health["last_failure_category"] == "connection_failed":
+                        self.assert_retry_state(server, health)
+                        failure_observed.set()
+                    await asyncio.sleep(0)
+
+                return await super().reconcile_until_initialized(
+                    server, retry_delays=(0.001,), sleep=observe_failure
+                )
+
+            @staticmethod
+            def assert_retry_state(server, health):
+                if len(server._tool_manager.list_tools()) != 40:
+                    raise AssertionError("native catalog changed during startup retry")
+                if health["dynamically_exposed_count"] != 0:
+                    raise AssertionError("delegated tool appeared before admission")
+
+        gateway = FastRetryGateway()
+        transport = DelayedReadyTransport(tools, ["connection_failed"])
+        server = server_with_native_tools()
+        gateway.configure(
+            settings(),
+            transport=transport,
+            policy=policy(*entries),
+            admission_validator=lambda _catalog: None,
+        )
+
+        class FakeConfig:
+            def __init__(self, app, **kwargs):
+                self.app = app
+                self.port = kwargs["port"]
+
+        class FakeServer:
+            def __init__(self, config):
+                self.config = config
+                self.should_exit = False
+                self.install_signal_handlers = lambda: None
+
+            async def serve(self):
+                started_ports.add(self.config.port)
+                if len(started_ports) == 2:
+                    listeners_started.set()
+                while not gateway.health_snapshot()["admission_complete"]:
+                    await asyncio.sleep(0)
+
+        configured = settings()
+        with patch(
+            "ha_mcp_engineering.application.uvicorn.Config", FakeConfig
+        ), patch(
+            "ha_mcp_engineering.application.uvicorn.Server", FakeServer
+        ), patch(
+            "ha_mcp_engineering.application.create_application",
+            return_value=object(),
+        ), patch(
+            "ha_mcp_engineering.application.create_approval_application",
+            return_value=object(),
+        ), patch(
+            "ha_mcp_engineering.application.UPSTREAM_READ_GATEWAY", gateway
+        ), patch(
+            "ha_mcp_engineering.application.get_registered_server",
+            return_value=server,
+        ):
+            await asyncio.wait_for(_serve(configured), timeout=1)
+
+        self.assertEqual(started_ports, {configured.port, configured.ingress_port})
+        self.assertTrue(failure_observed.is_set())
+        self.assertEqual(transport.discovery_calls, 2)
+        self.assertEqual(len(server._tool_manager.list_tools()), 66)
+        self.assertTrue(gateway.health_snapshot()["admission_complete"])
+
+    async def test_concurrent_reconciliation_is_single_flight(self):
+        entry = policy_entry("ha_get_state")
+        transport = SequencedDiscoveryTransport(
+            [catalog_tool("ha_get_state")], ["connection_failed"]
+        )
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            settings(),
+            transport=transport,
+            policy=policy(entry),
+            admission_validator=lambda _catalog: None,
+        )
+        sleeping = asyncio.Event()
+        release = asyncio.Event()
+
+        async def controlled_sleep(_delay):
+            sleeping.set()
+            await release.wait()
+
+        server = server_with_native_tools()
+        first = asyncio.create_task(
+            gateway.reconcile_until_initialized(server, sleep=controlled_sleep)
+        )
+        await asyncio.wait_for(sleeping.wait(), timeout=1)
+        second = asyncio.create_task(
+            gateway.reconcile_until_initialized(server, sleep=controlled_sleep)
+        )
+        await asyncio.sleep(0)
+        self.assertFalse(second.done())
+        release.set()
+        first_state, second_state = await asyncio.gather(first, second)
+        self.assertTrue(first_state["admission_complete"])
+        self.assertTrue(second_state["admission_complete"])
+        self.assertEqual(transport.discovery_calls, 2)
+        names = [tool.name for tool in server._tool_manager.list_tools()]
+        self.assertEqual(names.count("ha_get_state"), 1)
+        self.assertNotIn("ha_mcp__ha_get_state", names)
+
+    async def test_retry_backoff_is_capped_and_eventually_recovers(self):
+        entry = policy_entry("ha_get_state")
+        transport = SequencedDiscoveryTransport(
+            [catalog_tool("ha_get_state")], ["connection_failed"] * 7
+        )
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            settings(),
+            transport=transport,
+            policy=policy(entry),
+            admission_validator=lambda _catalog: None,
+        )
+        delays = []
+
+        async def immediate_sleep(delay):
+            delays.append(delay)
+
+        state = await gateway.reconcile_until_initialized(
+            FastMCP("gateway-backoff-test"), sleep=immediate_sleep
+        )
+        self.assertTrue(state["admission_complete"])
+        self.assertEqual(delays, [1.0, 2.0, 4.0, 8.0, 16.0, 30.0, 30.0])
+        self.assertEqual(state["retry_count"], 7)
+        self.assertEqual(transport.discovery_calls, 8)
+
+    async def test_reconciliation_cancellation_does_not_invent_failure(self):
+        entry = policy_entry("ha_get_state")
+        transport = SequencedDiscoveryTransport(
+            [catalog_tool("ha_get_state")], ["timeout"]
+        )
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            settings(),
+            transport=transport,
+            policy=policy(entry),
+            admission_validator=lambda _catalog: None,
+        )
+        sleeping = asyncio.Event()
+
+        async def blocked_sleep(_delay):
+            sleeping.set()
+            await asyncio.Event().wait()
+
+        task = asyncio.create_task(
+            gateway.reconcile_until_initialized(
+                FastMCP("gateway-cancellation-test"), sleep=blocked_sleep
+            )
+        )
+        await asyncio.wait_for(sleeping.wait(), timeout=1)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        health = gateway.health_snapshot()
+        self.assertFalse(health["reconciliation_active"])
+        self.assertEqual(health["reconciliation_status"], "stopped")
+        self.assertEqual(health["failure_counts"]["timeout"], 1)
+        self.assertEqual(health["failure_counts"].get("internal_error", 0), 0)
+        self.assertEqual(health["fallback_count"], 0)
+
+    async def test_unconfigured_reconciliation_returns_without_retry_loop(self):
+        gateway = UpstreamReadGateway()
+        gateway.configure(replace(settings(), upstream_dashboard_mcp_url=""))
+        sleeps = []
+
+        async def unexpected_sleep(delay):
+            sleeps.append(delay)
+
+        state = await gateway.reconcile_until_initialized(
+            FastMCP("gateway-unconfigured-test"), sleep=unexpected_sleep
+        )
+        self.assertFalse(state["configured"])
+        self.assertFalse(state["reconciliation_active"])
+        self.assertEqual(state["reconciliation_status"], "idle")
+        self.assertEqual(state["discovery_attempt_count"], 1)
+        self.assertEqual(sleeps, [])
 
 
 if __name__ == "__main__":

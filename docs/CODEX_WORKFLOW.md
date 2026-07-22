@@ -41,13 +41,15 @@ when the environment starts at the repository root.
    ```
 
 3. Confirm the exact `origin/main` base, HEAD, branch, worktree state, stable and
-   Engineering versions, and derived tool-count expectations. For release or
-   deployment work, continue only when document `resolution_status` is `exact`
-   and `active_acceptance_document` is known. A `missing`, `partial`,
-   `unsupported`, or unknown result is a stop condition. Historical references
-   cannot authorize current acceptance, and release notes are not acceptance
-   instructions. Also stop if the base moved unexpectedly or the context reports
-   an unexplained inconsistency.
+   Engineering versions, staged version, and derived tool-count expectations.
+   For deployment of the advertised version, require `documents` resolution to
+   be `exact` and `documents.active_acceptance_document` to be known. For
+   promotion of a declared next version, require `staged_release.documents`
+   resolution to be `exact` and its `active_acceptance_document` to be known.
+   A `missing`, `partial`, `unsupported`, or unknown result is a stop condition.
+   Historical references cannot authorize current acceptance, and release notes
+   are not acceptance instructions. Also stop if the base moved unexpectedly or
+   the context reports an unexplained inconsistency.
 4. Inspect before editing. During implementation run a supported focused area,
    for example:
 
@@ -162,8 +164,10 @@ this repository.
   cloud work when local Windows state is unnecessary.
 - Do not authorize remote work in a specialized subtree until the applicable
   nested instruction file has been read into the task context.
-- Before release or deployment preparation, run `codex-context.py` and continue
-  only when document resolution is `exact` and `active_acceptance_document` is
+- Before deployment preparation, run `codex-context.py` and require exact current
+  document resolution with `documents.active_acceptance_document` known. Before
+  promotion preparation, require the declared staged version and exact
+  `staged_release.documents` resolution with its `active_acceptance_document`
   known. Missing exact acceptance authority is a stop condition. Historical
   references cannot authorize current acceptance, and release notes are not
   acceptance instructions.
@@ -222,9 +226,11 @@ These are distinct profiles; “Codex access” is not one universal permission.
 ### Release Preparation
 
 > Prepare release evidence for `<version>` without publishing. Verify authoritative
-> version declarations, require document resolution to be `exact`, and read only
-> the known `active_acceptance_document` as acceptance authority. Missing exact
-> acceptance is a stop condition; historical references cannot authorize current
-> acceptance, and release notes are not acceptance instructions. Verify
-> image/tag/provenance preconditions and rollback, report CI-only checks
-> accurately, and stop for a separate human publication/deployment decision.
+> current and staged version declarations, require
+> `staged_release.documents.resolution_status` to be `exact`, and read only the
+> known `staged_release.documents.active_acceptance_document` as promotion
+> acceptance authority. Missing exact staged acceptance is a stop condition;
+> historical references cannot authorize current acceptance, and release notes
+> are not acceptance instructions. Verify image/tag/provenance preconditions and
+> rollback, report CI-only checks accurately, and stop for a separate human
+> publication/deployment decision.

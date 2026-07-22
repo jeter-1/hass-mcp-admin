@@ -2,15 +2,33 @@
 
 ## Phase 1 reviewed pure-read gateway
 
-Engineering is now the single client-visible gateway for the existing 40-tool
-Engineering catalog and exact reviewed pure reads from `ha-mcp` 7.14.1. Startup
-catalog discovery registers only the observed subset of the 26
+Engineering is now the single client-visible gateway for the 40 statically
+registered Engineering tools and exact reviewed pure reads from `ha-mcp`
+7.14.1. A supervised single-flight startup reconciliation loop retries exact
+catalog admission with capped delays until all 26 reviewed reads are available.
+Each attempt registers only the observed subset of the 26
 `automatic_read` entries whose complete input-schema fingerprints match the
 committed stock 78-tool policy. All 52 mixed, write, physical/high-risk,
 prohibited, or unsupported entries remain generic-route unavailable. Missing,
 schema-changed, or unreviewed tools are withheld individually. Stock catalog
 count/fingerprint equality is informational, not a global runtime gate. There
 is no direct-HA fallback.
+
+The transport is stateless. Fresh `tools/list` calls see recovered tools, but a
+client that cached the initial catalog must re-list or reconnect; Engineering
+does not advertise or broadcast a tool-list change notification.
+
+## RC2dev13 reboot and semantic-completeness correction
+
+RC2dev12 is immutable failed history after failing full-host reboot acceptance.
+RC2dev13 is its corrective release target. It keeps the 40 statically
+registered tools available when Engineering starts before ha-mcp, retries exact
+admission until the complete 66-tool catalog is observable, and preserves
+upstream `ha_search partial` truth in response metadata and provider/request
+accounting. Read whether RC2dev13 is staged or advertised from authoritative
+version metadata and `scripts/codex-context.py`; this architecture narrative
+does not declare release state. No public schema, provider policy, write
+boundary, fallback, or stable-v1 surface changes.
 
 The generic provider does not weaken the existing dashboard boundary:
 `ha_config_get_dashboard` stays excluded as mixed, while `list_dashboards` and
@@ -168,7 +186,7 @@ The repository contains two independently installable Home Assistant add-ons.
 | Directory | `hass_mcp_admin/` | `hass_mcp_engineering_beta/` |
 | Name | HA MCP Engineering Server | HA MCP Engineering Server Beta |
 | Slug | `hass_mcp_admin` | `hass_mcp_engineering_beta` |
-| Version | `1.1.2` | `2.0.0-rc2-dev10` selected-attestation observability correction |
+| Version | `1.1.2` | Read authoritative metadata; RC2dev12 is failed history and RC2dev13 is its corrective target |
 | Port | `8099` | MCP `8100`; internal Ingress `8110` |
 | Options and secret | Production add-on data | Beta add-on data |
 

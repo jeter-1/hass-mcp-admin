@@ -36,6 +36,22 @@ STATES = [
         "last_updated": NOW,
         "context": {"id": "fixture-automation-context", "parent_id": None, "user_id": None},
     },
+    {
+        "entity_id": "automation.gateway_fixture_unreadable",
+        "state": "on",
+        "attributes": {
+            "friendly_name": "Gateway Fixture Unreadable",
+            "id": "gateway_fixture_unreadable",
+        },
+        "last_changed": NOW,
+        "last_reported": NOW,
+        "last_updated": NOW,
+        "context": {
+            "id": "fixture-unreadable-context",
+            "parent_id": None,
+            "user_id": None,
+        },
+    },
 ]
 ENTITY_REGISTRY = [
     {
@@ -57,6 +73,19 @@ ENTITY_REGISTRY = [
         "platform": "automation",
         "name": None,
         "original_name": "Gateway Fixture",
+        "device_id": None,
+        "area_id": None,
+        "disabled_by": None,
+        "hidden_by": None,
+        "labels": [],
+        "aliases": [],
+    },
+    {
+        "entity_id": "automation.gateway_fixture_unreadable",
+        "unique_id": "gateway_fixture_unreadable",
+        "platform": "automation",
+        "name": None,
+        "original_name": "Gateway Fixture Unreadable",
         "device_id": None,
         "area_id": None,
         "disabled_by": None,

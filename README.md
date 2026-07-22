@@ -63,7 +63,7 @@ Current tools:
 | Beta analysis | `entity_dependency_analysis`, `automation_reliability_analysis`, `change_impact_analysis`, `configuration_integrity_analysis`, `incident_correlation`, `handoff_generation` |
 | Governance | `create_change_plan`, `get_change_plan`, `list_change_plans`, `approve_change_plan`, `apply_change_plan`, `rollback_change` |
 | General execution | `call_service` is compatibility-visible but fails closed in v2; Phase 1 does not delegate service execution or any upstream write |
-| Reviewed upstream reads | Up to 26 exact-schema-matching `ha-mcp` 7.14.1 reads are added from the reviewed subset present at startup; see [ADR-005](docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md) for the stock inventory and blocked classifications |
+| Reviewed upstream reads | Up to 26 exact-schema-matching `ha-mcp` 7.14.1 reads are added by supervised startup reconciliation; see [ADR-005](docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md) for the stock inventory and blocked classifications |
 
 It runs against the Supervisor's internal HA proxy, so **no long-lived access token is
 needed** — auth to HA is handled by the injected `SUPERVISOR_TOKEN`.
@@ -197,16 +197,20 @@ outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 
 ## Engineering beta/RC analytical milestones
 
-The parallel v2 add-on RC3A development stage is now hardened as
-`2.0.0-rc2-dev10`, based on the deployed RC2dev9 source. It has 40 registered
-tools and 25 unchanged canonical tools. Audit filters parse each bounded JSONL
+The published `2.0.0-rc2-dev12` candidate remains immutable failed history and
+is not accepted. RC2dev13 is its corrective release target for automatic
+read-gateway reconciliation and `ha_search` completeness. Determine whether
+that target is staged or advertised from authoritative version metadata and
+`scripts/codex-context.py`, not from this milestone narrative. Engineering has
+40 statically registered tools: 25 canonical plus 15 Engineering-native. Audit
+filters parse each bounded JSONL
 record and compare only the exact top-level event, so the routed audit reader's
 own nested filter argument cannot create false security evidence.
 It adds only `list_dashboards` and `get_dashboard_config`, backed by an optional
 secret-configured `upstream_dashboard` MCP provider whose allowlist contains
 only `ha_config_get_dashboard`. Exact reviewed attestations for `ha-mcp`
 7.13.0, 7.14.0, and 7.14.1 bind release provenance to a compiled semantic
-dashboard-read family. RC2dev10 derives retained raw-schema, reviewed-security,
+dashboard-read family. The selected attestation derives retained raw-schema, reviewed-security,
 and runtime-descriptor expectations from the exact selected attestation, while
 keeping those diagnostics distinct from the normalized admission gate;
 unrelated catalog and prose drift remain observability evidence.

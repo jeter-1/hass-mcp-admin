@@ -13,6 +13,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTEXT_SCRIPT = ROOT / "scripts" / "codex-context.py"
+PROMOTION_SCRIPT = ROOT / "scripts" / "promote_next_release.py"
 EVIDENCE_SCRIPT = ROOT / "scripts" / "pr-evidence.py"
 CHECK_SCRIPT = ROOT / "scripts" / "check.ps1"
 REPOSITORY_CODE_SENTINEL = "FIXTURE_REPOSITORY_CODE_EXECUTED"
@@ -447,6 +448,117 @@ class ContextToolTests(unittest.TestCase):
             documents["active_acceptance_document"],
             "docs/RC2DEV12_ACCEPTANCE.md",
         )
+
+    def test_staged_release_has_separate_exact_promotion_authority(self):
+        current = "2.0.0-rc2-dev12"
+        staged = "2.0.0-rc2-dev13"
+        payload = json.loads(
+            self.isolated_context(
+                current,
+                {
+                    ".release/next-version": staged + "\n",
+                    "docs/RC2DEV12_RELEASE_NOTES.md": (
+                        f"# {current} immutable historical release\n\n"
+                        f"Version: `{current}`\nHistorical only; cannot authorize.\n"
+                    ),
+                    "docs/RC2DEV12_ACCEPTANCE.md": (
+                        f"# {current} rejected acceptance\n\n"
+                        f"Version: `{current}`\nHistorical only; cannot authorize.\n"
+                    ),
+                    "docs/RC2DEV13_RELEASE_NOTES.md": self.version_document(
+                        "release notes", staged
+                    ),
+                    "docs/RC2DEV13_ACCEPTANCE.md": self.version_document(
+                        "acceptance", staged
+                    ),
+                },
+            )
+        )
+        self.assertEqual(payload["versions"]["engineering"], current)
+        self.assertEqual(payload["versions"]["staged"], staged)
+        self.assertEqual(payload["documents"]["resolution_status"], "missing")
+        self.assertEqual(
+            payload["documents"]["active_acceptance_document"], "unknown"
+        )
+        staged_release = payload["staged_release"]
+        self.assertEqual(staged_release["version"], staged)
+        self.assertEqual(staged_release["declaration"], ".release/next-version")
+        self.assertEqual(staged_release["documents"]["resolution_status"], "exact")
+        self.assertEqual(
+            staged_release["documents"]["active_acceptance_document"],
+            "docs/RC2DEV13_ACCEPTANCE.md",
+        )
+        self.assertIn(
+            "docs/RC2DEV12_ACCEPTANCE.md",
+            staged_release["documents"]["historical_references"],
+        )
+        self.assertIn(
+            "docs/RC2DEV12_RELEASE_NOTES.md",
+            staged_release["documents"]["historical_references"],
+        )
+
+    def test_context_remains_consistent_after_candidate_is_applied(self):
+        current = "2.0.0-rc2-dev12"
+        candidate = "2.0.0-rc2-dev13"
+        fixture = RepositoryFixture()
+        try:
+            fixture.set_engineering_version(current)
+            fixture.write(".release/next-version", candidate + "\n")
+            fixture.write(
+                "docs/RC2DEV13_RELEASE_NOTES.md",
+                self.version_document("release notes", candidate),
+            )
+            fixture.write(
+                "docs/RC2DEV13_ACCEPTANCE.md",
+                self.version_document("acceptance", candidate),
+            )
+            fixture.write(
+                "README.md",
+                "RC2dev12 is immutable failed history. "
+                "RC2dev13 is its corrective release target.\n",
+            )
+
+            spec = importlib.util.spec_from_file_location(
+                "_promotion_context_regression", PROMOTION_SCRIPT
+            )
+            self.assertIsNotNone(spec)
+            self.assertIsNotNone(spec.loader)
+            promotion = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(promotion)
+            self.assertEqual(
+                promotion.apply_candidate(fixture.root),
+                (current, candidate),
+            )
+
+            payload = json.loads(
+                run(
+                    [
+                        sys.executable,
+                        str(CONTEXT_SCRIPT),
+                        "--repo-root",
+                        str(fixture.root),
+                        "--format",
+                        "json",
+                    ],
+                    cwd=fixture.root,
+                ).stdout
+            )
+            self.assertEqual(payload["versions"]["engineering"], candidate)
+            self.assertEqual(payload["versions"]["staged"], "unknown")
+            self.assertEqual(payload["documents"]["resolution_status"], "exact")
+            self.assertEqual(
+                payload["documents"]["active_release_notes"],
+                "docs/RC2DEV13_RELEASE_NOTES.md",
+            )
+            self.assertEqual(
+                payload["documents"]["active_acceptance_document"],
+                "docs/RC2DEV13_ACCEPTANCE.md",
+            )
+            self.assertEqual(payload["staged_release"]["version"], "unknown")
+            self.assertEqual(payload["staged_release"]["declaration"], "unknown")
+            self.assertEqual(payload["inconsistencies"], [])
+        finally:
+            fixture.close()
 
     def test_missing_development_rc_pair_fails_closed(self):
         documents = json.loads(self.isolated_context("2.0.0-rc2-dev12"))[
@@ -1512,6 +1624,58 @@ class InstructionFileTests(unittest.TestCase):
         self.assertIn("Missing exact acceptance authority is a stop condition", normalized)
         self.assertIn("Historical references cannot authorize current acceptance", normalized)
         self.assertIn("release notes are not acceptance instructions", normalized)
+        self.assertIn("staged_release.documents", text)
+        self.assertIn(
+            "staged_release.documents.active_acceptance_document", text
+        )
+
+    def test_rc2dev13_authority_and_failed_dev12_history_are_explicit(self):
+        release = (ROOT / "docs" / "RC2DEV13_RELEASE_NOTES.md").read_text(
+            encoding="utf-8"
+        )
+        acceptance = (ROOT / "docs" / "RC2DEV13_ACCEPTANCE.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("2.0.0-rc2-dev13", release)
+        self.assertIn("2.0.0-rc2-dev13", acceptance)
+        self.assertIn("RC2dev12 is immutable failed history", release)
+        self.assertIn("Do not retag", release)
+        self.assertIn("full Home Assistant host reboot", acceptance)
+        self.assertIn("without an Engineering restart", acceptance)
+        self.assertIn("`metadata.completeness: partial`", acceptance)
+        self.assertIn("Never retag", acceptance)
+        self.assertIn("acceptance has not yet passed", acceptance)
+        historical_release = (
+            ROOT / "docs" / "RC2DEV12_RELEASE_NOTES.md"
+        ).read_text(encoding="utf-8")
+        historical_acceptance = (
+            ROOT / "docs" / "RC2DEV12_ACCEPTANCE.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Historical only; cannot authorize", historical_release)
+        self.assertIn("RC2dev12 was not accepted", historical_acceptance)
+
+        context = json.loads(
+            run(
+                [
+                    sys.executable,
+                    str(CONTEXT_SCRIPT),
+                    "--repo-root",
+                    str(ROOT),
+                    "--format",
+                    "json",
+                ],
+                cwd=ROOT,
+            ).stdout
+        )
+        self.assertEqual(context["documents"]["resolution_status"], "missing")
+        self.assertEqual(
+            context["documents"]["active_acceptance_document"], "unknown"
+        )
+        historical = context["staged_release"]["documents"][
+            "historical_references"
+        ]
+        self.assertIn("docs/RC2DEV12_ACCEPTANCE.md", historical)
+        self.assertIn("docs/RC2DEV12_RELEASE_NOTES.md", historical)
 
 
 class DeploymentChecklistTests(unittest.TestCase):

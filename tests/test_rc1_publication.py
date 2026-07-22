@@ -17,11 +17,11 @@ PUBLISH_PATH = ROOT / ".github" / "workflows" / "publish-rc-image.yml"
 TAG_GUARD_PATH = ROOT / "scripts" / "assert_registry_tags_absent.sh"
 PROMOTION_PATH = ROOT / "scripts" / "promote_next_release.py"
 IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
-# RC2dev11 remains reserved by the frozen, unrelated PR #49. The read-only
-# gateway feature uses the repository's staged-release mechanism without
-# changing the advertised RC2dev10 runtime metadata in this PR.
-NEXT_VERSION = "2.0.0-rc2-dev12"
-PROMOTION_FIXTURE_CURRENT_VERSION = "2.0.0-rc2-dev9"
+# RC2dev12 remains the immutable failed full-host-reboot candidate. The
+# correction uses the staged-release mechanism without changing advertised
+# RC2dev12 runtime metadata in this feature pull request.
+NEXT_VERSION = "2.0.0-rc2-dev13"
+PROMOTION_FIXTURE_CURRENT_VERSION = "2.0.0-rc2-dev12"
 PLATFORMS = ("linux/amd64", "linux/arm64", "linux/arm/v7")
 BUILD_ARGUMENTS = (
     "BUILD_VERSION",
@@ -114,7 +114,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         else:
             self.assertEqual(configured_version, NEXT_VERSION)
 
-    def test_staged_or_promoted_dev12_orders_before_final_rc3(self):
+    def test_staged_or_promoted_dev13_orders_before_final_rc3(self):
         versions = PROMOTION_MODULE.authoritative_versions(ROOT)
         configured_version = next(iter(versions.values()))
         declaration = ROOT / ".release" / "next-version"
@@ -153,6 +153,10 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("release_mode=preversioned", detect)
         self.assertIn('RELEASE_MODE" == "preversioned', prepare)
         self.assertIn('version="$current_version"', prepare)
+        self.assertIn(
+            'python scripts/promote_next_release.py --validate-authority "$version"',
+            prepare,
+        )
         self.assertIn('--deployed-version "$deployed_version"', prepare)
         self.assertIn('--base-ref "$validation_base"', prepare)
         self.assertIn('git status --porcelain', prepare)
@@ -361,6 +365,12 @@ class PromotionScriptTests(unittest.TestCase):
                 f'SERVER_VERSION = "{current}"\n'
             ),
             "scripts/validate_addon_metadata.py": f'BETA_VERSION = "{current}"\n',
+            "docs/RC2DEV13_RELEASE_NOTES.md": (
+                f"# {candidate} release notes\n\nVersion: `{candidate}`\n"
+            ),
+            "docs/RC2DEV13_ACCEPTANCE.md": (
+                f"# {candidate} acceptance\n\nVersion: `{candidate}`\n"
+            ),
         }
         for relative, content in files.items():
             path = Path(root) / relative
@@ -399,6 +409,39 @@ class PromotionScriptTests(unittest.TestCase):
             path.write_text('version: "2.0.0-rc.2"\n', encoding="utf-8")
             with self.assertRaises(self.module.PromotionError):
                 self.module.validate_candidate(Path(directory))
+
+    def test_missing_or_non_authoritative_staged_documents_fail_closed(self):
+        for relative, replacement in (
+            ("docs/RC2DEV13_ACCEPTANCE.md", None),
+            (
+                "docs/RC2DEV13_ACCEPTANCE.md",
+                "# 2.0.0-rc2-dev13 acceptance\n\nHistorical only; cannot authorize.\n",
+            ),
+            ("docs/RC2DEV13_RELEASE_NOTES.md", None),
+        ):
+            with self.subTest(relative=relative, replacement=replacement), tempfile.TemporaryDirectory() as directory:
+                self.make_repo(directory)
+                path = Path(directory) / relative
+                if replacement is None:
+                    path.unlink()
+                else:
+                    path.write_text(replacement, encoding="utf-8")
+                with self.assertRaises(self.module.PromotionError):
+                    self.module.validate_candidate(Path(directory))
+
+    def test_preversioned_document_authority_is_validated_without_declaration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.make_repo(directory)
+            (Path(directory) / ".release" / "next-version").unlink()
+            resolution = self.module.validate_document_authority(
+                Path(directory), NEXT_VERSION
+            )
+            self.assertEqual(resolution["resolution_status"], "exact")
+            (Path(directory) / "docs" / "RC2DEV13_ACCEPTANCE.md").unlink()
+            with self.assertRaises(self.module.PromotionError):
+                self.module.validate_document_authority(
+                    Path(directory), NEXT_VERSION
+                )
 
 
 class RegistryTagGuardTests(unittest.TestCase):

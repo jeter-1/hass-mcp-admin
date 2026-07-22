@@ -657,6 +657,45 @@ class ListenerStartTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(item.started for item in instances))
         self.assertEqual({item.config.app for item in instances}, {mcp_app, approval_app})
 
+    async def test_upstream_reconciliation_is_cancelled_with_listener_shutdown(self):
+        class FakeConfig:
+            def __init__(self, app, **kwargs):
+                self.port = kwargs["port"]
+
+        class FakeServer:
+            def __init__(self, config):
+                self.config = config
+                self.should_exit = False
+                self.install_signal_handlers = lambda: None
+
+            async def serve(self):
+                await reconciliation_started.wait()
+
+        reconciliation_started = asyncio.Event()
+        reconciliation_cancelled = asyncio.Event()
+
+        async def reconcile(_server):
+            reconciliation_started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                reconciliation_cancelled.set()
+
+        with patch("ha_mcp_engineering.application.uvicorn.Config", FakeConfig), patch(
+            "ha_mcp_engineering.application.uvicorn.Server", FakeServer
+        ), patch(
+            "ha_mcp_engineering.application.create_application", return_value=object()
+        ), patch(
+            "ha_mcp_engineering.application.create_approval_application",
+            return_value=object(),
+        ), patch(
+            "ha_mcp_engineering.application.UPSTREAM_READ_GATEWAY.reconcile_until_initialized",
+            side_effect=reconcile,
+        ):
+            await asyncio.wait_for(_serve(self.configured()), timeout=1)
+        self.assertTrue(reconciliation_started.is_set())
+        self.assertTrue(reconciliation_cancelled.is_set())
+
     async def test_private_listener_failure_stops_the_process(self):
         class FakeConfig:
             def __init__(self, app, **kwargs):
@@ -681,6 +720,46 @@ class ListenerStartTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.assertRaisesRegex(OSError, "approval listener unavailable"):
                 await _serve(self.configured())
+
+    async def test_reconciliation_failure_stops_both_listeners(self):
+        instances = []
+
+        class FakeConfig:
+            def __init__(self, app, **kwargs):
+                self.port = kwargs["port"]
+
+        class FakeServer:
+            def __init__(self, config):
+                self.config = config
+                self.should_exit = False
+                self.install_signal_handlers = lambda: None
+                instances.append(self)
+
+            async def serve(self):
+                while not self.should_exit:
+                    await asyncio.sleep(0)
+
+        async def fail_reconciliation(_server):
+            await asyncio.sleep(0)
+            raise RuntimeError("reconciliation supervisor failure")
+
+        with patch("ha_mcp_engineering.application.uvicorn.Config", FakeConfig), patch(
+            "ha_mcp_engineering.application.uvicorn.Server", FakeServer
+        ), patch(
+            "ha_mcp_engineering.application.create_application", return_value=object()
+        ), patch(
+            "ha_mcp_engineering.application.create_approval_application",
+            return_value=object(),
+        ), patch(
+            "ha_mcp_engineering.application.UPSTREAM_READ_GATEWAY.reconcile_until_initialized",
+            side_effect=fail_reconciliation,
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError, "reconciliation supervisor failure"
+            ):
+                await asyncio.wait_for(_serve(self.configured()), timeout=1)
+        self.assertEqual(len(instances), 2)
+        self.assertTrue(all(server.should_exit for server in instances))
 
     def test_listener_ports_cannot_collide(self):
         with self.assertRaises(Exception):
