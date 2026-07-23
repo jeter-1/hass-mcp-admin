@@ -7,6 +7,7 @@ import hashlib
 import ipaddress
 import json
 import logging
+import re
 import threading
 import time
 
@@ -31,6 +32,11 @@ from .request_context import begin_request, current_telemetry, end_request
 MAX_BUCKET_STORE_SIZE = 1000
 MAX_MCP_OUTCOME_CAPTURE_BYTES = 1_100_000
 UNKNOWN_CLIENT_IDENTITY = "unknown"
+UPSTREAM_VERSION_AUDIT_PATTERN = re.compile(
+    r"^(?:0|[1-9][0-9]{0,3})\.(?:0|[1-9][0-9]{0,3})\."
+    r"(?:0|[1-9][0-9]{0,3})(?:-[0-9A-Za-z.-]{1,64})?"
+    r"(?:\+[0-9A-Za-z.-]{1,64})?$"
+)
 
 
 def _jsonrpc_response_from_body(body: bytes) -> dict | None:
@@ -644,6 +650,33 @@ class AuthenticatedMcpGateway:
                         "argument_fields": sorted(
                             str(key)[:64] for key in parameters
                         )[:64],
+                        "upstream_version_evidence": (
+                            telemetry.audit_context.get(
+                                "upstream_version_evidence"
+                            )
+                            if isinstance(
+                                telemetry.audit_context.get(
+                                    "upstream_version_evidence"
+                                ),
+                                str,
+                            )
+                            and UPSTREAM_VERSION_AUDIT_PATTERN.fullmatch(
+                                telemetry.audit_context[
+                                    "upstream_version_evidence"
+                                ]
+                            )
+                            else "unknown"
+                        ),
+                        "upstream_identity_status": (
+                            telemetry.audit_context.get(
+                                "upstream_identity_status"
+                            )
+                            if telemetry.audit_context.get(
+                                "upstream_identity_status"
+                            )
+                            in {"accepted", "rejected"}
+                            else "unknown"
+                        ),
                     }
                 self.audit.write(AuditRecord(
                     request_id=request_id,

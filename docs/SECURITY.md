@@ -1,8 +1,67 @@
 # Beta provider security boundaries
 
+## Dev15 contract-level upstream compatibility
+
+[ADR-006](architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md)
+supersedes the exact-version and shared all-or-nothing admission portions of
+the historical RC3A, RC2dev9, and RC2dev13 designs below. Their fixed identity,
+protocol, tool-name, argument, response, no-write, and no-fallback boundaries
+remain applicable.
+
+The generic `upstream_read_gateway` evaluates each reviewed
+`automatic_read` contract independently. The exact input-schema fingerprint,
+normalized description semantics, reviewed safety annotations, output-schema
+presence/fingerprint, and other dispatch-relevant projections are required.
+Remote descriptions remain untrusted and are never published as instructions;
+a word-level semantic change quarantines the tool. A changed contract is
+quarantined and a missing contract is removed; neither condition disables
+other exact matches. New tools and every reviewed mixed, write, action,
+prohibited, or unsupported entry remain unavailable.
+
+The observed `ha-mcp` version is evidence, not executable authority. A patch,
+minor, or major version change can retain the reviewed reads when server
+identity, MCP protocol, tool names, and exact semantic contracts still match.
+Health reports `version_status` as `reviewed_exact`,
+`observed_contract_only`, or `not_observed`. It reports
+`compatibility_status` separately as `exact`, `compatible`, `partial`,
+`incompatible`, or `unavailable`. `compatible` is a complete contract match on
+a non-reviewed observed version. Unreviewed additions do not become callable
+and do not reduce exact matches.
+
+Immediately before `tools/call`, Engineering re-lists the catalog in the same
+MCP session and revalidates the selected target against the current-generation
+contract. Missing, duplicate, or changed selected-target evidence stops before
+dispatch and retires only that route. A valid bounded version-only movement
+retains routes and permits an exact target call while triggering compatibility
+reprobe; a different server, malformed version, or unsupported protocol remains
+global fail-closed. Unrelated malformed or duplicate unreviewed descriptors
+remain unavailable and are bounded anomalies rather than authority for, or a
+block on, that exact target call.
+
+Dashboard admission is independent from generic-read admission.
+`ha_config_get_dashboard` remains mixed and cannot enter the generic route.
+The dashboard provider still permits only its two fixed non-screenshot shapes
+and exact response/hash contract. If an exact-version attestation exists, it is
+authoritative: mismatch or revocation blocks that release with no older-release
+or unattested fallback. If no exact-version entry exists, only an exact
+compiled contract-family match may report
+`admitted_compatible_contract`, without claiming release attestation or
+provenance. When the optional signed registry is enabled, compatible-family
+admission also requires a currently usable registry; expired exact entries
+remain deny-only and registry unavailability cannot revive older evidence.
+
+Fast bounded startup recovery is reserved for transport readiness. A stable
+missing or quarantined contract uses a separately reported slow compatibility
+reprobe cadence while the safely admitted subset remains available. Neither
+lane retries a delegated operation semantically. Bounded health may report tool
+names and stable incompatibility reasons, but never raw schemas, remote prose,
+registry material, endpoint data, credentials, or exceptions.
+
 ## RC2dev13 reviewed read-gateway recovery
 
-The generic `upstream_read_gateway` is separate from the unavailable legacy
+This section records the RC2dev13 recovery design; ADR-006 supersedes its exact
+version and single-cadence rules. The generic `upstream_read_gateway` is
+separate from the unavailable legacy
 `standard_ha_mcp` route. One supervised, single-flight reconciliation loop
 retries only the configured fixed upstream endpoint. Every attempt revalidates
 exact server identity, version, protocol, reviewed policy, and input schemas;

@@ -195,7 +195,7 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "selected_provider": "upstream_dashboard",
         "completeness": "complete_or_explicitly_truncated",
         "fallback_policy": "none",
-        "security_justification": "An exact reviewed release attestation selects the compiled argument-constrained dashboard-read contract family; Engineering can construct only list_only=true with include_screenshot=false, and the mixed upstream tool is not treated as globally read-only.",
+        "security_justification": "The exact compiled dashboard-read contract family, with any exact release attestation authoritative when present, permits Engineering to construct only list_only=true with include_screenshot=false; the mixed upstream tool is not treated as globally read-only.",
         "trust_mode": "reviewed_argument_constrained",
         "trust_profile": "ha_mcp_dashboard_read_v2",
     },
@@ -208,7 +208,7 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "selected_provider": "upstream_dashboard",
         "completeness": "complete_or_explicitly_unavailable",
         "fallback_policy": "none",
-        "security_justification": "An exact reviewed release attestation selects the compiled argument-constrained dashboard-read contract family; Engineering can construct only an exact URL-path read with include_screenshot=false, while rendering, preferences, mutation, and service calls remain unreachable.",
+        "security_justification": "The exact compiled dashboard-read contract family, with any exact release attestation authoritative when present, permits Engineering to construct only an exact URL-path read with include_screenshot=false; rendering, preferences, mutation, and service calls remain unreachable.",
         "trust_mode": "reviewed_argument_constrained",
         "trust_profile": "ha_mcp_dashboard_read_v2",
     },
@@ -313,9 +313,10 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
     },
 )
 
-# Process-local entries are populated only after the exact upstream 7.14.1
-# catalog has matched the committed read policy.  The existing Engineering
-# catalog remains immutable and available when upstream discovery is absent.
+# Process-local entries contain the independently matched subset from the
+# latest successful upstream catalog evaluation. The observed version is
+# evidence rather than a global admission gate. The static Engineering catalog
+# remains available when discovery is absent or individual reads quarantine.
 _DYNAMIC_UPSTREAM_CAPABILITIES: tuple[dict[str, Any], ...] = ()
 _UPSTREAM_READ_GATEWAY_SUMMARY: dict[str, Any] = {
     "configured": False,
@@ -328,7 +329,7 @@ _UPSTREAM_READ_GATEWAY_SUMMARY: dict[str, Any] = {
 def replace_dynamic_upstream_capabilities(
     values: tuple[dict[str, Any], ...], gateway_summary: dict[str, Any]
 ) -> None:
-    """Publish one validated startup snapshot for metadata and audit lookups."""
+    """Publish one validated dynamic snapshot for metadata and audit lookups."""
 
     global _DYNAMIC_UPSTREAM_CAPABILITIES, _UPSTREAM_READ_GATEWAY_SUMMARY
     _DYNAMIC_UPSTREAM_CAPABILITIES = tuple(dict(item) for item in values)

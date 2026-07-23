@@ -4,22 +4,32 @@ This directory is the isolated v2 beta/RC add-on. It can run beside the stable
 `hass_mcp_admin` add-on without sharing its port, options, secret, audit file,
 or container identity.
 
-## Phase 1 reviewed upstream reads
+## Contract-level reviewed upstream reads
 
 After configuring the existing secret-bearing upstream MCP URL, Engineering
 starts with 41 statically registered tools (25 canonical plus 16
-Engineering-native) and supervises exact `ha-mcp` 7.14.1 catalog admission.
-Failed startup probes retry with capped delays; a complete reviewed catalog adds
-26 policy-approved pure reads to subsequent MCP `tools/list` calls without an
-Engineering restart. A client that cached 41 tools must re-list or reconnect;
-the stateless transport does not broadcast `tools/list_changed`.
-Unlisted, schema-changed, mixed, write, action, prohibited, and unsupported
-tools are not registered; delegated reads never fall back to direct Home
-Assistant access. The stock reviewed 78-tool classification and collision
-contract are in
-[`ADR-005`](../docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md). Missing
-reviewed reads, changed schemas, and additional unreviewed tools are withheld
-individually; they do not disable other exact matches.
+Engineering-native). Fast bounded retries recover when `ha-mcp` is not yet
+reachable after host boot. Once discovery succeeds, each of the 26 reviewed
+pure reads is admitted independently by its exact input-schema fingerprint,
+normalized description semantics, reviewed safety annotations, output-schema
+presence/fingerprint, and fixed semantic contract rather than by version
+equality. A stable missing or incompatible contract uses a slower reprobe
+cadence.
+
+A complete reviewed set adds 26 delegated reads for 67 registered tools. One
+missing or quarantined read leaves the other 25 available for 66 registered
+tools. A client that cached an earlier list must re-list or reconnect; the
+stateless transport does not broadcast `tools/list_changed`.
+
+Unlisted, mixed, write, action, prohibited, and unsupported tools are never
+registered. A changed reviewed contract is quarantined individually, and
+delegated reads never fall back to direct Home Assistant access. The reviewed
+7.14.1 version, 78-tool stock inventory, and classification remain evidence;
+compatible patch, minor, or major versions can retain exact contracts.
+[`ADR-006`](../docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md)
+defines the active boundary, while
+[`ADR-005`](../docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md) retains
+the original Phase 1 decision history.
 
 ## Install the beta add-on
 
@@ -32,12 +42,19 @@ individually; they do not disable other exact matches.
 5. For RC3A dashboard reads, place the complete secret-bearing upstream MCP URL
    only in the password-style `upstream_dashboard_mcp_url` option. Leave it
    empty to keep the optional provider unconfigured.
-   RC2dev9 admits exact built-in `ha-mcp` 7.13.0, 7.14.0, and 7.14.1 releases
-   through the compiled dashboard-read family. Future signed release data is
-   optional: leave `upstream_trust_registry_enabled=false` unless the protected
-   registry has been initialized; when enabled, configure only the non-secret
-   Ed25519 public key in `upstream_trust_registry_public_key`. Never place the
-   private signing seed in add-on options.
+   Built-in records retain reviewed evidence for `ha-mcp` 7.13.0, 7.14.0, and
+   7.14.1. An exact-version record, when present, is authoritative; mismatch or
+   revocation blocks without fallback. When no exact-version record exists, an
+   exact compiled dashboard contract can report
+   `admitted_compatible_contract` without claiming attestation or release
+   provenance. When the optional signed registry is enabled, that path requires
+   a currently usable registry; expired exact evidence remains deny-only and
+   registry unavailability cannot revive older evidence. Signed release data remains
+   optional and dashboard-specific: leave
+   `upstream_trust_registry_enabled=false` unless the protected registry has
+   been initialized; when enabled, configure only the non-secret Ed25519 public
+   key in `upstream_trust_registry_public_key`. Never place the private signing
+   seed in add-on options.
 6. Keep the RC2dev5 dependency-index defaults unless the installation needs a
    different freshness budget: `prewarm_enabled=true`, a 45-second nonblocking
    startup delay, a 600-second soft TTL, and a 3600-second hard TTL. The legacy
@@ -68,16 +85,24 @@ https://BETA_TUNNEL/REDACTED_BETA_SECRET/mcp/
 
 Direct requests to `/mcp` and `/mcp/` must return `404`. RC2dev12 is immutable
 failed history and must not be treated as accepted. RC2dev13 corrected its
-reboot and completeness defects. RC2dev14 is the current practical
-configuration-plan development candidate; determine exact document authority
-from version metadata and `scripts/codex-context.py`, not from this operator
-guide. For any separately authorized RC2dev14 deployment, call
-`server_info(check_ha=false)` and verify version `2.0.0-rc2-dev14`, the expected
-complete release commit SHA, and its UTC build time,
-then call `list_capabilities` and verify the preserved 25-tool canonical catalog
-plus 16 beta-native tools. Without an admitted upstream, MCP `tools/list` exposes
-those 41 tools. With exact reviewed `ha-mcp` 7.14.1 configured, it also exposes
-the policy-matched dynamic read count reported by `upstream_read_gateway`.
+reboot and completeness defects, and RC2dev14 established practical
+configuration plans. The current local candidate is RC2dev15
+(`2.0.0-rc2-dev15`), which changes upstream compatibility admission. Its
+development scope and pre-deployment gates are recorded in
+[`../docs/RC2DEV15_RELEASE_NOTES.md`](../docs/RC2DEV15_RELEASE_NOTES.md) and
+[`../docs/RC2DEV15_ACCEPTANCE.md`](../docs/RC2DEV15_ACCEPTANCE.md). This
+milestone narrative is not release authority. Determine exact staged or
+advertised state from version metadata and `scripts/codex-context.py`.
+
+For any separately authorized deployment, call `server_info(check_ha=false)`
+and verify the expected version, complete release commit SHA, and UTC build
+time. Then call `list_capabilities` and verify the preserved 25-tool canonical
+catalog plus 16 beta-native tools. Without an admitted upstream, MCP
+`tools/list` exposes those 41 tools. With compatible reviewed contracts, it
+also exposes the exact dynamic count reported by `upstream_read_gateway`.
+Require `version_status`, `compatibility_status`, missing/quarantine counts,
+and the separate dashboard provider state to agree with the observed catalog;
+do not infer compatibility from the upstream version alone.
 Beta 17 added the read-only
 `configuration_integrity_analysis` capability; Beta 18 hardens its shared entity
 reference classifier without changing the tool catalog or schemas. Its contract,
@@ -97,20 +122,21 @@ admin-only Ingress panel. Beta 26 makes plan and challenge expiry idempotent and
 immediately effective on reads without changing the catalog or schemas. RC2
 freezes those contracts, gives the reviewed direct-read `search_entities`
 correction a distinct installable version, and preserves deterministic build
-provenance and release compatibility tests. RC3A adds dashboard inventory and
-exact configuration evidence through an exact-release-attested,
-`reviewed_argument_constrained` upstream profile in compiled family
-`ha_mcp_dashboard_read_v2`. The mixed upstream tool is
-not described as globally read-only; Engineering constructs only exact
-non-screenshot read forms. That RC3A-era generic-gateway limitation is
-superseded only for the exact Phase 1 `automatic_read` policy set; screenshots,
-preference writes, dashboard writes, and arbitrary forwarding remain absent. RC3A
-changes the public catalog, so reconnect the Engineering connector after the
-add-on update. The raw server-side MCP `tools/list` returns all 41 tools even
-when the dashboard provider is unavailable. If a refreshed ChatGPT connector
-still exposes only 38, treat it as connector schema caching and reconnect or
-recreate that connector; the server does not dynamically remove the dashboard
-tools.
+provenance and release compatibility tests. RC3A added dashboard inventory and
+exact configuration evidence through the `reviewed_argument_constrained`
+compiled family `ha_mcp_dashboard_read_v2`. Dev15 now evaluates that family
+independently from the generic read set. An existing exact-version attestation
+remains authoritative; only its absence permits exact
+`admitted_compatible_contract` admission without a provenance claim. With the
+optional signed registry enabled, this also requires currently usable signed
+evidence; expired exact entries remain deny-only. The mixed
+upstream tool is not described as globally read-only, and Engineering
+constructs only exact non-screenshot read forms. Screenshots, preference
+writes, dashboard writes, and arbitrary forwarding remain absent. The raw
+server-side MCP `tools/list` returns all 41 static tools even when the dashboard
+provider is unavailable. If a client shows an older list after a dynamic subset
+changes, re-list or reconnect; the server does not claim dynamic tool-list
+notifications.
 
 Use a separate tunnel ingress or hostname for beta. Route it to port `8100`;
 leave the production ingress on `8099`.

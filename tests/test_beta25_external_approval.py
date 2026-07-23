@@ -689,7 +689,7 @@ class ListenerStartTests(unittest.IsolatedAsyncioTestCase):
             "ha_mcp_engineering.application.create_approval_application",
             return_value=object(),
         ), patch(
-            "ha_mcp_engineering.application.UPSTREAM_READ_GATEWAY.reconcile_until_initialized",
+            "ha_mcp_engineering.application.UPSTREAM_READ_GATEWAY.supervise_reconciliation",
             side_effect=reconcile,
         ):
             await asyncio.wait_for(_serve(self.configured()), timeout=1)
@@ -751,7 +751,7 @@ class ListenerStartTests(unittest.IsolatedAsyncioTestCase):
             "ha_mcp_engineering.application.create_approval_application",
             return_value=object(),
         ), patch(
-            "ha_mcp_engineering.application.UPSTREAM_READ_GATEWAY.reconcile_until_initialized",
+            "ha_mcp_engineering.application.UPSTREAM_READ_GATEWAY.supervise_reconciliation",
             side_effect=fail_reconciliation,
         ):
             with self.assertRaisesRegex(

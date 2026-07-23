@@ -1,33 +1,43 @@
 # HA MCP Engineering Server Architecture
 
-## Phase 1 single-server read gateway
+## Dev15 contract-level single-server read gateway
 
 The current architecture pivot supersedes the sidecar assumption for pure
 reads. Because the client can expose only one MCP server, Engineering is the
-front door for its preserved 40 registered tools plus dynamically discovered,
-exact-schema-matched reads from the reviewed `ha-mcp` 7.14.1 catalog.
+front door for its 41 static tools plus dynamically discovered,
+exact-contract-matched reads from the reviewed `ha-mcp` policy.
 
 The native listeners do not block on upstream boot order. One supervised
-single-flight reconciliation loop retries exact admission with capped delays
-until all 26 reviewed reads are present. The 40 statically registered tools
-remain available while it waits. Subsequent `tools/list` calls see recovered
-tools; stateless clients that cache the initial list must re-list or reconnect.
+single-flight recovery lane uses bounded fast delays while the fixed upstream
+endpoint is not ready. Stable missing or incompatible contracts use a separate
+slow reprobe cadence. The 41 static tools and every safely admitted generic
+subset remain available while compatibility is incomplete. Subsequent
+`tools/list` calls see the current subset; stateless clients that cache an
+earlier list must re-list or reconnect.
 
 One generic provider handles the policy-approved read set. The committed stock
 78-tool inventory classifies 26 as automatic reads and blocks every mixed,
 write, action, prohibited, or unsupported tool. A deployment exposes only the
-exact-schema-matching reviewed subset it advertises; missing reads, schema
-drift, and unreviewed additions fail closed per tool. Versions without existing
-built-in admission fail closed globally. No delegated call has a direct-HA
-fallback. Raw log access is mixed pending an explicit confidentiality wrapper,
-and the mixed dashboard operation remains reachable only through its existing
-non-screenshot wrappers. See
-[`ADR-005`](docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md).
+reviewed subset whose exact input-schema fingerprint, normalized description
+semantics, reviewed safety annotations, output-schema presence/fingerprint,
+and other semantic contracts match. Missing reads and contract drift fail
+closed per tool;
+unreviewed additions stay unavailable without harming matches. The reviewed
+7.14.1 version is evidence and a changed version is not a global failure when
+the contracts remain exact.
+
+Dashboard admission is independent. The mixed dashboard operation remains
+reachable only through its existing fixed non-screenshot wrappers; its
+incompatibility cannot remove generic reads, and a generic quarantine cannot
+remove dashboard capability. No delegated call has a direct-HA fallback. See
+[`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md);
+[`ADR-005`](docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md) retains the
+original Phase 1 history.
 
 ## RC2dev7 audit-integrity boundary
 
-The current Engineering Beta source is `2.0.0-rc2-dev8`. It retains the RC3A
-dashboard and RC2dev4 hardening boundaries while correcting audit-event reads.
+This historical RC2dev7/RC2dev8 boundary retained the RC3A dashboard and
+RC2dev4 hardening boundaries while correcting audit-event reads.
 Audit JSONL records are parsed one at a time and a requested event matches only
 the exact, case-sensitive top-level `event` value. Nested tool arguments,
 messages, exceptions, and malformed records cannot satisfy the filter. See

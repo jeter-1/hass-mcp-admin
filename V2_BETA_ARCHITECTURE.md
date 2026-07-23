@@ -1,18 +1,27 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
-## Phase 1 reviewed pure-read gateway
+## Dev15 contract-level reviewed pure-read gateway
 
-Engineering is now the single client-visible gateway for the 40 statically
-registered Engineering tools and exact reviewed pure reads from `ha-mcp`
-7.14.1. A supervised single-flight startup reconciliation loop retries exact
-catalog admission with capped delays until all 26 reviewed reads are available.
-Each attempt registers only the observed subset of the 26
-`automatic_read` entries whose complete input-schema fingerprints match the
-committed stock 78-tool policy. All 52 mixed, write, physical/high-risk,
-prohibited, or unsupported entries remain generic-route unavailable. Missing,
-schema-changed, or unreviewed tools are withheld individually. Stock catalog
-count/fingerprint equality is informational, not a global runtime gate. There
-is no direct-HA fallback.
+Engineering is the single client-visible gateway for 41 static Engineering
+tools and up to 26 reviewed pure reads from `ha-mcp`. Each
+`automatic_read` entry is admitted independently only when its exact
+input-schema fingerprint, normalized description semantics, reviewed safety
+annotations, output-schema presence/fingerprint, and other dispatch-relevant
+contracts match the committed policy. All mixed, write, physical/high-risk,
+prohibited, or unsupported entries remain generic-route unavailable.
+
+The reviewed 7.14.1 version, source, and 78-tool catalog are evidence. A version
+change alone does not disable exact contracts, including an otherwise exact
+unknown major. Missing or incompatible reads are removed or quarantined
+individually, and new tools remain unavailable without harming matches. Stock
+catalog count/fingerprint equality stays informational. There is no direct-HA
+fallback.
+
+Fast bounded reconciliation recovers from upstream boot order. A separate slow
+reprobe cadence handles successfully observed stable incompatibility while
+retaining the exact matched subset. Dashboard compiled-contract admission is
+independent from generic reads. See
+[`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md).
 
 The transport is stateless. Fresh `tools/list` calls see recovered tools, but a
 client that cached the initial catalog must re-list or reconnect; Engineering
@@ -20,7 +29,9 @@ does not advertise or broadcast a tool-list change notification.
 
 ## RC2dev13 reboot and semantic-completeness correction
 
-RC2dev12 is immutable failed history after failing full-host reboot acceptance.
+This section records the earlier exact-version recovery design; ADR-006
+supersedes its global version and single-cadence admission rules. RC2dev12 is
+immutable failed history after failing full-host reboot acceptance.
 RC2dev13 is its corrective release target. It keeps the 40 statically
 registered tools available when Engineering starts before ha-mcp, retries exact
 admission until the complete 66-tool catalog is observable, and preserves

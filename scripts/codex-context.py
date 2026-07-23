@@ -618,8 +618,9 @@ def build_context(repo_root_hint: Path) -> dict[str, Any]:
                 f"{capabilities_path.as_posix()} plus {policy_path.as_posix()}",
             ),
             "expectation_note": (
-                "The connector total assumes every reviewed automatic-read schema is present "
-                "and exact-matching at startup; runtime admission remains fail-closed and may be lower."
+                "The connector total assumes every reviewed automatic-read contract matched "
+                "during the latest successful catalog evaluation; runtime admission is per-tool, "
+                "fail-closed, and may expose a smaller compatible subset."
             ),
         },
         "documents": documents,

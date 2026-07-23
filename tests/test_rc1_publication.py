@@ -22,7 +22,7 @@ IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 # RC2dev12 runtime metadata in this feature pull request.
 NEXT_VERSION = "2.0.0-rc2-dev13"
 PROMOTION_FIXTURE_CURRENT_VERSION = "2.0.0-rc2-dev12"
-CURRENT_REPOSITORY_VERSION = "2.0.0-rc2-dev14"
+CURRENT_REPOSITORY_VERSION = "2.0.0-rc2-dev15"
 PLATFORMS = ("linux/amd64", "linux/arm64", "linux/arm/v7")
 BUILD_ARGUMENTS = (
     "BUILD_VERSION",

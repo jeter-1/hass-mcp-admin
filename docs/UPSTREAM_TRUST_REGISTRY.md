@@ -2,6 +2,10 @@
 
 The RC2dev9 registry is a signed data channel for exact upstream release
 attestations. It is not a plugin system and cannot change executable policy.
+Under
+[`ADR-006`](architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md),
+the current registry remains dashboard-specific. It is not a signed registry
+for the 26 generic reads.
 
 ## Authority boundary
 
@@ -13,11 +17,19 @@ and fallback policy. The shipped table contains one family:
 `get_dashboard_config`.
 
 A registry entry may bind an exact `ha-mcp` release to that existing family. An
-unknown `contract_family` is rejected while parsing. Registry data cannot name
-an arbitrary endpoint, repository, image, tool, argument, operation, provider,
-or Engineering capability. Thus a correctly signed record still cannot activate
-`ha_set_entity`, `ha_set_device`, service/batch execution, dashboard writes, or
-any other uncompiled tool.
+exact-version entry, when present, is authoritative for that release. A
+mismatch or revocation blocks it without falling back to an older release entry
+or to unattested compatibility. When no exact-version entry exists, the
+dashboard provider may independently admit an exact compiled family as
+`admitted_compatible_contract`; that status makes no registry, provenance,
+source, or image claim. If the optional registry is enabled, that absence must
+be established from a currently usable signed registry.
+
+An unknown `contract_family` is rejected while parsing. Registry data cannot
+name an arbitrary endpoint, repository, image, tool, argument, operation,
+provider, or Engineering capability. Thus a correctly signed record still
+cannot activate `ha_set_entity`, `ha_set_device`, service/batch execution,
+dashboard writes, a generic read, or any other uncompiled tool.
 
 ## Format and signature
 
@@ -36,10 +48,10 @@ review-evidence digest/time, and revocation flag.
 RC2dev10 also permits four bounded informational fingerprints: raw input
 schema, reviewed-security descriptor, reviewed fixture runtime descriptor, and
 published runtime descriptor. They keep retained observability fields truthful
-for the exact selected release. They are not consulted by `decide_admission`
-and cannot activate a contract family or capability. Entries produced before
-RC2dev10 remain readable; absent informational evidence is reported as unknown
-rather than being replaced with another release's values.
+for the exact selected release. They cannot activate a contract family or
+capability. Entries produced before RC2dev10 remain readable; absent
+informational evidence is reported as unknown rather than being replaced with
+another release's values.
 
 Fixed fetch locations are repository-owned HTTPS URLs under
 `jeter-1/hass-mcp-admin/main`. Redirects are disabled. Operators cannot configure
@@ -47,7 +59,9 @@ another URL or filesystem path.
 
 ## Runtime behavior
 
-- Registry disabled: built-in entries only.
+- Registry disabled: built-in exact-version entries remain authoritative when
+  present; otherwise only exact compiled-family compatibility can be admitted,
+  without an attestation claim.
 - Registry enabled: validate the configured non-secret Ed25519 public key at
   startup, load an atomic last-known-good cache, then refresh no more often than
   every six hours.
@@ -59,20 +73,28 @@ another URL or filesystem path.
 - Sequence: reject rollback and equal-sequence conflicting content.
 - Expiry/revocation: reject the affected remote attestation before dashboard
   dispatch. A higher-sequence revocation overrides the same built-in release
-  while the signed registry remains valid.
-- Unknown release: make one bounded refresh/revalidation attempt before failing
-  closed. No `tools/call` occurs before admission.
+  and remains deny-only after cache expiry until valid higher-sequence data
+  supersedes it. Expired evidence cannot authorize a contract. Do not
+  substitute an older attestation or the unattested path.
+- No exact-version entry: a bounded refresh may first seek exact evidence; if
+  none exists, evaluate only the binary-owned compiled family. When the
+  registry is enabled this requires a currently usable signed registry; after
+  hard expiry or registry unavailability, compatible-family admission is
+  blocked. Exact semantic compatibility may otherwise report
+  `admitted_compatible_contract`; incompatibility fails before `tools/call`.
 
 Health exposes only bounded status, sequence, timestamps/ages, signature state,
 cache state, refresh/failure category, admission source/status, attestation ID,
 version and fingerprints. It never exposes registry content, signature bytes,
 public-key value, endpoint path, URL, credentials, or raw exceptions.
 
-Normalized and informational fingerprints have separate meanings. Normalized
-input/security/output/runtime fingerprints deliberately ignore approved
-descriptive presentation differences and are authoritative for admission. Raw
-and descriptor fingerprints identify the reviewed published representation and
-support drift diagnostics only. A catalog fingerprint remains unrelated-tool
+Normalized and informational fingerprints have separate meanings. For an
+exact-version entry, normalized input/security/output/runtime fingerprints are
+authoritative and deliberately ignore only approved descriptive presentation
+differences. Raw and descriptor fingerprints identify the reviewed published
+representation and support drift diagnostics only. Without an exact entry, the
+same binary-owned compiled semantics are evaluated directly and no release
+evidence is inferred. A catalog fingerprint remains unrelated-tool
 observability and is never a required-tool compatibility gate.
 
 ## Signing-key operations
@@ -109,3 +131,18 @@ The workflow has no package permission and cannot publish an Engineering image,
 tag, release, or deployment. Normal review must verify the evidence/diff and run
 CI before the data PR is merged. Promotion remains owned by the existing
 Engineering release workflow.
+
+## Deferred generic registry and automation
+
+Dev15 does not reuse this dashboard registry as generic-read authority. Dev16
+may define a separately reviewed signed evidence and revocation format for
+binary-owned generic contract families, including monotonic sequence, cache and
+expiry behavior, rollback/replay protection, revocation, and runtime refresh.
+Dev17 may automate immutable source/image inspection, disposable runtime
+extraction, catalog and annotation diffing, semantic fixtures, dashboard
+contract checks, zero-write verification, compatibility reports, and draft
+evidence updates. Neither generic registry authority nor that automation is
+implemented by Dev15.
+
+Signed data must remain unable to add a tool, change a classification, permit a
+write or action, expand arguments, select a provider, or enable fallback.

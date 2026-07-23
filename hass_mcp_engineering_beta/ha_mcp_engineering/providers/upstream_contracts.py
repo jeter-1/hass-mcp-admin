@@ -22,6 +22,11 @@ CONTRACT_FAMILY = "ha_mcp_dashboard_read_v2"
 TRUST_MODE = "reviewed_argument_constrained"
 REQUIRED_PROTOCOL_VERSION = "2025-03-26"
 REQUIRED_SERVER_NAME = "ha-mcp"
+UPSTREAM_VERSION_EVIDENCE = re.compile(
+    r"^(?:0|[1-9][0-9]{0,3})\.(?:0|[1-9][0-9]{0,3})\."
+    r"(?:0|[1-9][0-9]{0,3})(?:-[0-9A-Za-z.-]{1,64})?"
+    r"(?:\+[0-9A-Za-z.-]{1,64})?$"
+)
 BUILTIN_ATTESTATIONS_PATH = (
     Path(__file__).with_name("contracts") / "upstream_dashboard_builtin_attestations.json"
 )
@@ -556,6 +561,7 @@ def decide_admission(
     protocol_version: str,
     tool: Mapping[str, Any] | None,
     attestations: Iterable[tuple[ReleaseAttestation, str]],
+    compatible_fallback_rejection: tuple[str, str] | None = None,
 ) -> AdmissionDecision:
     if server_name != REQUIRED_SERVER_NAME:
         return AdmissionDecision(
@@ -589,73 +595,170 @@ def decide_admission(
             None,
             None,
         )
+    if (
+        not isinstance(server_version, str)
+        or not UPSTREAM_VERSION_EVIDENCE.fullmatch(server_version)
+    ):
+        return AdmissionDecision(
+            False,
+            "rejected_contract_mismatch",
+            "upstream_version_mismatch",
+            None,
+            CONTRACT_FAMILY,
+            None,
+            None,
+        )
 
-    matching = [
+    available_attestations = tuple(attestations)
+    exact_release = [
         (entry, source)
-        for entry, source in attestations
+        for entry, source in available_attestations
         if entry.server_name == server_name
         and entry.upstream_version == server_version
         and entry.contract_family == CONTRACT_FAMILY
     ]
-    if not matching:
-        return AdmissionDecision(
-            False,
-            "rejected_unknown_release",
-            "upstream_attestation_missing",
-            None,
-            CONTRACT_FAMILY,
-            None,
-            contract,
-        )
-    entry, source = matching[0]
-    if entry.revoked:
-        return AdmissionDecision(
-            False,
-            "rejected_revoked_attestation",
-            "upstream_attestation_revoked",
-            source,
-            CONTRACT_FAMILY,
-            entry,
-            contract,
-        )
-    matches = {
-        "input": contract.input_fingerprint == entry.input_contract_fingerprint,
-        "security": contract.security_fingerprint
-        == entry.security_contract_fingerprint,
-        "output": contract.output_fingerprint == entry.output_contract_fingerprint,
-        "runtime": contract.runtime_fingerprint == entry.runtime_contract_fingerprint,
-    }
-    for key in ("input", "security", "output", "runtime"):
-        if not matches[key]:
+    if exact_release:
+        # An exact observed-release attestation is authoritative. In
+        # particular, a revoked or mismatched exact entry must not fall back to
+        # an older release that happened to advertise the same normalized
+        # contract.
+        entry, source = exact_release[0]
+        if source == "remote_expired":
             return AdmissionDecision(
                 False,
-                "rejected_contract_mismatch",
-                f"upstream_{key}_contract_mismatch",
+                "rejected_expired_attestation",
+                "upstream_registry_expired",
                 source,
                 CONTRACT_FAMILY,
                 entry,
                 contract,
-                input_match=matches["input"],
-                security_match=matches["security"],
-                output_match=matches["output"],
-                runtime_match=matches["runtime"],
             )
+        if entry.revoked:
+            return AdmissionDecision(
+                False,
+                "rejected_revoked_attestation",
+                "upstream_attestation_revoked",
+                source,
+                CONTRACT_FAMILY,
+                entry,
+                contract,
+            )
+        matches = _attestation_matches(contract, entry)
+        for key in ("input", "security", "output", "runtime"):
+            if not matches[key]:
+                return AdmissionDecision(
+                    False,
+                    "rejected_contract_mismatch",
+                    f"upstream_{key}_contract_mismatch",
+                    source,
+                    CONTRACT_FAMILY,
+                    entry,
+                    contract,
+                    input_match=matches["input"],
+                    security_match=matches["security"],
+                    output_match=matches["output"],
+                    runtime_match=matches["runtime"],
+                )
+        return AdmissionDecision(
+            True,
+            (
+                "admitted_builtin_attestation"
+                if source == "builtin"
+                else "admitted_signed_registry_attestation"
+            ),
+            None,
+            source,
+            CONTRACT_FAMILY,
+            entry,
+            contract,
+            input_match=True,
+            security_match=True,
+            output_match=True,
+            runtime_match=True,
+        )
+
+    if compatible_fallback_rejection is not None:
+        status, failure_category = compatible_fallback_rejection
+        return AdmissionDecision(
+            False,
+            status,
+            failure_category,
+            None,
+            CONTRACT_FAMILY,
+            None,
+            contract,
+        )
+
+    observed_variant = _contract_variant_key(contract)
+    compatible_variants = {
+        _attestation_variant_key(entry)
+        for entry, source in available_attestations
+        if entry.server_name == server_name
+        and entry.contract_family == CONTRACT_FAMILY
+        and not entry.revoked
+        and source != "remote_expired"
+    }
+    if observed_variant in compatible_variants:
+        # Compatibility is semantic-contract evidence only. It must not be
+        # represented as release, source, image, or attestation provenance for
+        # the independently observed server version.
+        return AdmissionDecision(
+            True,
+            "admitted_compatible_contract",
+            None,
+            None,
+            CONTRACT_FAMILY,
+            None,
+            contract,
+            input_match=True,
+            security_match=True,
+            output_match=True,
+            runtime_match=True,
+        )
+
     return AdmissionDecision(
-        True,
-        (
-            "admitted_builtin_attestation"
-            if source == "builtin"
-            else "admitted_signed_registry_attestation"
-        ),
+        False,
+        "rejected_unknown_release",
+        "upstream_attestation_missing",
         None,
-        source,
         CONTRACT_FAMILY,
-        entry,
+        None,
         contract,
-        input_match=True,
-        security_match=True,
-        output_match=True,
-        runtime_match=True,
+    )
+
+
+def _attestation_matches(
+    contract: NormalizedRuntimeContract, entry: ReleaseAttestation
+) -> dict[str, bool]:
+    return {
+        "input": contract.input_fingerprint == entry.input_contract_fingerprint,
+        "security": (
+            contract.security_fingerprint == entry.security_contract_fingerprint
+        ),
+        "output": contract.output_fingerprint == entry.output_contract_fingerprint,
+        "runtime": contract.runtime_fingerprint == entry.runtime_contract_fingerprint,
+    }
+
+
+def _contract_variant_key(
+    contract: NormalizedRuntimeContract,
+) -> tuple[str, str, str, str]:
+    return (
+        contract.input_fingerprint,
+        contract.security_fingerprint,
+        contract.output_fingerprint,
+        contract.runtime_fingerprint,
+    )
+
+
+def _attestation_variant_key(
+    entry: ReleaseAttestation,
+) -> tuple[str, str, str, str]:
+    return (
+        entry.input_contract_fingerprint,
+        entry.security_contract_fingerprint,
+        entry.output_contract_fingerprint,
+        entry.runtime_contract_fingerprint,
     )
 
 
