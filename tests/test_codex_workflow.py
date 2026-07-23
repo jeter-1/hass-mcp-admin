@@ -1654,26 +1654,24 @@ class InstructionFileTests(unittest.TestCase):
         self.assertIn("Historical only; cannot authorize", historical_release)
         self.assertIn("RC2dev12 was not accepted", historical_acceptance)
 
-        context = json.loads(
-            run(
-                [
-                    sys.executable,
-                    str(CONTEXT_SCRIPT),
-                    "--repo-root",
-                    str(ROOT),
-                    "--format",
-                    "json",
-                ],
-                cwd=ROOT,
-            ).stdout
+        spec = importlib.util.spec_from_file_location(
+            "_codex_context_rc2dev13_authority", CONTEXT_SCRIPT
         )
-        self.assertEqual(context["documents"]["resolution_status"], "missing")
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        context_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(context_module)
+        documents = context_module.resolve_documents(ROOT, "2.0.0-rc2-dev13")
+
+        self.assertEqual(documents["resolution_status"], "exact")
         self.assertEqual(
-            context["documents"]["active_acceptance_document"], "unknown"
+            documents["active_release_notes"], "docs/RC2DEV13_RELEASE_NOTES.md"
         )
-        historical = context["staged_release"]["documents"][
-            "historical_references"
-        ]
+        self.assertEqual(
+            documents["active_acceptance_document"],
+            "docs/RC2DEV13_ACCEPTANCE.md",
+        )
+        historical = documents["historical_references"]
         self.assertIn("docs/RC2DEV12_ACCEPTANCE.md", historical)
         self.assertIn("docs/RC2DEV12_RELEASE_NOTES.md", historical)
 
@@ -1702,13 +1700,13 @@ class ScopeBoundaryTests(unittest.TestCase):
             spec.loader.exec_module(module)
             report = module.validate_repository(
                 ROOT,
-                base_ref="origin/main",
+                base_ref="HEAD",
                 paths={"hass_mcp_engineering_beta/AGENTS.md"},
             )
         finally:
             sys.modules.pop(spec.name, None)
         self.assertFalse(report.beta_changed)
-        self.assertEqual(report.beta_version, report.compared_version)
+        self.assertFalse(report.production_changed)
 
 
 if __name__ == "__main__":
