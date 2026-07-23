@@ -232,7 +232,7 @@ async def _serve(settings: Settings) -> None:
     approval_server.install_signal_handlers = lambda: None
     mcp_task = asyncio.create_task(mcp_server.serve())
     approval_task = asyncio.create_task(approval_server.serve())
-    # Start with the 40 native tools, then keep exact, fail-closed upstream
+    # Start with the 41 native tools, then keep exact, fail-closed upstream
     # admission under supervision until ha-mcp becomes ready after host boot.
     async def supervise_upstream_reconciliation() -> None:
         await UPSTREAM_READ_GATEWAY.reconcile_until_initialized(

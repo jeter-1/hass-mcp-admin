@@ -543,7 +543,7 @@ class CapabilityAndSchemaTests(unittest.TestCase):
 
     def test_real_tools_list_contains_40_and_public_schema_is_bounded(self):
         tools = get_registered_server()._tool_manager.list_tools()
-        self.assertEqual(len(tools), 40)
+        self.assertEqual(len(tools), 41)
         tool = next(item for item in tools if item.name == "incident_correlation")
         schema = tool.parameters
         self.assertEqual(schema["properties"]["lookback_hours"]["maximum"], 168)

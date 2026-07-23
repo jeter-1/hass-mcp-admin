@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import re
 import threading
-from .models import ChangePlan, PlanStatus
+from .models import ChangePlan, PlanStatus, StepExecutionStatus
 
 
 PLAN_ID = re.compile(r"^[a-f0-9]{32}$")
@@ -22,6 +22,15 @@ TERMINAL_STATUSES = {
     PlanStatus.SUPERSEDED,
     PlanStatus.REJECTED,
 }
+
+
+def is_terminal_plan(plan: ChangePlan) -> bool:
+    """Return lifecycle finality without changing contract-v1 semantics."""
+
+    return plan.status in TERMINAL_STATUSES or (
+        plan.contract_version >= 2
+        and plan.status == PlanStatus.VERIFICATION_FAILED
+    )
 
 
 class ChangePlanStorageError(RuntimeError):
@@ -123,7 +132,7 @@ class ChangePlanRepository:
         cutoff = now - timedelta(days=self.retention_days)
         removed = 0
         for plan in self.list():
-            if plan.status not in TERMINAL_STATUSES:
+            if not is_terminal_plan(plan):
                 continue
             try:
                 updated = datetime.fromisoformat(plan.updated_at)
@@ -142,6 +151,208 @@ class ChangePlanRepository:
         for plan in self.list():
             if plan.status not in {PlanStatus.APPLYING}:
                 continue
+            if plan.contract_version >= 2:
+                attempted_write_count = 0
+                successful_write_count = 0
+                verified_write_count = 0
+                ambiguous_write_count = 0
+                interrupted_write_count = 0
+                completed_operation_count = 0
+                interrupted_operation_id: str | None = None
+                blocking_operation_id: str | None = None
+                no_mutation_error_code: str | None = None
+                no_mutation_failure_reason: str | None = None
+                for operation in sorted(
+                    plan.operations, key=lambda item: item.order
+                ):
+                    receipt = dict(operation.execution_receipt or {})
+                    original_status = operation.execution_status
+                    write_attempted = (
+                        receipt.get("write_attempted") is True
+                        or original_status == StepExecutionStatus.APPLYING
+                    )
+                    write_completed = (
+                        receipt.get("write_completed") is True
+                    )
+                    outcome = receipt.get("outcome")
+                    ambiguous = outcome in {
+                        "state_proven_desired_after_ambiguous_write",
+                        "write_and_resulting_state_unconfirmed",
+                        "interrupted_before_exact_verification",
+                    } or (
+                        write_attempted
+                        and not write_completed
+                        and original_status
+                        in {
+                            StepExecutionStatus.APPLYING,
+                            StepExecutionStatus.FAILED,
+                        }
+                    )
+                    mutation_completed = bool(
+                        write_completed
+                        or outcome
+                        == "state_proven_desired_after_ambiguous_write"
+                    )
+
+                    if write_attempted:
+                        attempted_write_count += 1
+                    if write_completed:
+                        successful_write_count += 1
+                    if ambiguous:
+                        ambiguous_write_count += 1
+                    if (
+                        original_status
+                        == StepExecutionStatus.APPLIED_VERIFIED
+                    ):
+                        if mutation_completed:
+                            verified_write_count += 1
+                            completed_operation_count += 1
+                        continue
+                    if (
+                        original_status
+                        == StepExecutionStatus.APPLYING
+                    ):
+                        interrupted_operation_id = (
+                            interrupted_operation_id
+                            or operation.operation_id
+                        )
+                        blocking_operation_id = (
+                            blocking_operation_id
+                            or operation.operation_id
+                        )
+                        interrupted_write_count += 1
+                        operation.execution_status = (
+                            StepExecutionStatus.FAILED
+                        )
+                        receipt.setdefault("write_attempted", True)
+                        receipt.setdefault("write_completed", False)
+                        receipt.setdefault("readback_completed", False)
+                        receipt["outcome"] = (
+                            "interrupted_before_exact_verification"
+                        )
+                        receipt["recovery_detected_at"] = timestamp
+                        operation.execution_receipt = receipt
+                        operation.failure_information = {
+                            **(operation.failure_information or {}),
+                            "error_code": "configuration_apply_failed",
+                            "reason": "server_restart_during_apply",
+                        }
+                        continue
+                    if (
+                        original_status
+                        in {
+                            StepExecutionStatus.FAILED,
+                            StepExecutionStatus.VERIFICATION_FAILED,
+                        }
+                    ):
+                        blocking_operation_id = (
+                            blocking_operation_id
+                            or operation.operation_id
+                        )
+                        if mutation_completed:
+                            completed_operation_count += 1
+                        elif not write_attempted and not ambiguous:
+                            candidate_code = (
+                                operation.failure_information or {}
+                            ).get("error_code")
+                            if candidate_code in {
+                                "configuration_apply_failed",
+                                "configuration_conflict",
+                                "configuration_verification_failed",
+                                "stale_target_state",
+                            }:
+                                no_mutation_error_code = (
+                                    no_mutation_error_code
+                                    or candidate_code
+                                )
+                            candidate_reason = (
+                                operation.failure_information or {}
+                            ).get("reason")
+                            if isinstance(candidate_reason, str):
+                                no_mutation_failure_reason = (
+                                    no_mutation_failure_reason
+                                    or candidate_reason[:160]
+                                )
+                        if ambiguous:
+                            receipt.setdefault(
+                                "recovery_detected_at", timestamp
+                            )
+                            operation.execution_receipt = receipt
+
+                for operation in sorted(
+                    plan.operations, key=lambda item: item.order
+                ):
+                    if (
+                        operation.execution_status
+                        != StepExecutionStatus.PENDING
+                    ):
+                        continue
+                    receipt = dict(operation.execution_receipt or {})
+                    operation.execution_status = (
+                        StepExecutionStatus.NOT_ATTEMPTED_DEPENDENCY_FAILURE
+                    )
+                    receipt.setdefault("write_attempted", False)
+                    receipt["reason"] = (
+                        "server_restart_after_incomplete_apply"
+                    )
+                    if blocking_operation_id:
+                        receipt["blocked_by_operation_id"] = (
+                            blocking_operation_id
+                        )
+                    operation.execution_receipt = receipt
+
+                partial_or_uncertain = bool(
+                    attempted_write_count
+                    or successful_write_count
+                    or ambiguous_write_count
+                )
+                plan.status = PlanStatus.FAILED
+                plan.execution_outcome = (
+                    "partial_failure"
+                    if partial_or_uncertain
+                    else "not_applied"
+                )
+                if plan.configuration_check_status in {None, "not_run"}:
+                    plan.configuration_check_status = (
+                        "not_run_after_restart"
+                    )
+                failure_code = (
+                    "configuration_partial_failure"
+                    if partial_or_uncertain
+                    else (
+                        no_mutation_error_code
+                        or "configuration_apply_failed"
+                    )
+                )
+                plan.failure_information = {
+                    "error_code": failure_code,
+                    "reason": (
+                        "An incomplete ordered apply was detected after "
+                        "server restart; execution was not resumed."
+                        if partial_or_uncertain
+                        else (
+                            no_mutation_failure_reason
+                            or (
+                                "A non-mutating operation failure was "
+                                "recovered after server restart; execution "
+                                "was not resumed."
+                            )
+                        )
+                    ),
+                    "interrupted_operation_id": interrupted_operation_id,
+                    "attempted_write_count": attempted_write_count,
+                    "successful_write_count": successful_write_count,
+                    "verified_write_count": verified_write_count,
+                    "ambiguous_write_count": ambiguous_write_count,
+                    "interrupted_write_count": interrupted_write_count,
+                    "completed_operation_count": completed_operation_count,
+                }
+                plan.updated_at = timestamp
+                self.save(plan)
+                recovered += 1
+                continue
+
+            # Contract-v1 restart recovery is intentionally unchanged.
             plan.status = PlanStatus.FAILED
             plan.updated_at = timestamp
             plan.failure_information = {

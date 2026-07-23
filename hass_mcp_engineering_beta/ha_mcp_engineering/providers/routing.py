@@ -139,6 +139,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "reload_domain": ProviderCapability.ORDINARY_SERVICE_EXECUTION,
     "get_server_health": ProviderCapability.AUDIT,
     "create_change_plan": ProviderCapability.RISK_ASSESSMENT,
+    "create_configuration_plan": ProviderCapability.RISK_ASSESSMENT,
     "get_change_plan": ProviderCapability.GOVERNANCE_PERSISTENCE,
     "list_change_plans": ProviderCapability.GOVERNANCE_PERSISTENCE,
     "approve_change_plan": ProviderCapability.GOVERNANCE_PERSISTENCE,

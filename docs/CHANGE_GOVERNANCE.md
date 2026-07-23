@@ -9,6 +9,91 @@ expired challenges are not actionable, and repeated reads remain idempotent.
 Clean initialization creates no plans, challenges, or audit event. Authority
 version 2 external approval remains the only executable trust path.
 
+## Dev14 pre-deployment configuration-plan contract
+
+Dev14 is a development scope, not a release declaration, deployment record, or
+acceptance result. Repository release metadata remains authoritative. The
+additive `create_configuration_plan` tool extends the existing external-approval
+lifecycle to a deliberately narrow set of practical configuration operations:
+
+- create or update an automation;
+- create or update a script;
+- create or update an `input_boolean` helper; and
+- create or update an `input_number` helper.
+
+It accepts one to eight ordered operation objects. Each object requires
+`operation_id`, `resource_type`, `action`, `target_id`, and `proposed_config`.
+`resource_type` is exactly `automation`, `script`, or `helper`; `action` is
+exactly `create` or `update`. Helper operations additionally identify
+`helper_type` as `input_boolean` or `input_number`. Optional `depends_on`
+identifiers may reference only unique earlier operations. Unknown operation
+fields, duplicate targets, forward dependencies, unsupported resource types,
+and unsupported actions fail before an approvable plan is created.
+
+Home Assistant helper-create commands generate an object ID from `name`; they
+do not accept the desired ID. A helper create therefore requires a conservative
+ASCII name whose deterministic slug exactly matches the approved full entity
+ID. Apply checks both the storage collection and the entity-state namespace
+immediately before creation. A known collision stops without a create call.
+If Home Assistant nevertheless returns a suffixed ID because of a narrow
+external race, apply stops, reports that exact unexpected ID and `orphan_risk`
+in the partial receipt, and never attempts automatic deletion.
+
+The older six governance tools retain their existing public schemas. Historical
+single-automation records retain their original plan/hash contract and are not
+silently migrated. A new ordered plan uses contract version 2 and binds the
+complete ordered operation list, dependencies, typed targets, current-state
+fingerprints, proposed hashes, normalization versions, risk, expiry, and
+approval authority into one immutable plan hash.
+
+Planning performs reads, validation, normalization, diffs, and risk assessment
+only. `approve_change_plan` still requests one exact-hash external review and
+never grants authority through MCP. The Home Assistant administrator sees the
+complete bounded, configuration-free operation projection in the Approval tab.
+For scripts and automations, that projection includes ordered trigger,
+condition, service/action, explicit target, and key primitive-data semantics.
+An incomplete or over-bound semantic projection cannot be approved.
+The review explicitly states that execution is non-atomic, stops on the first
+failure, and has no automatic or batch rollback.
+
+Before the first write, apply locks and re-reads every typed target. Any stale
+target or unavailable resource provider stops before approval consumption and
+with zero writes. After those checks, the single approval is consumed once and
+operations execute in order. Because Home Assistant and its UI do not share the
+Engineering process locks, each target is re-read again immediately before its
+own operation; a later stale target stops without overwriting it and preserves
+truthful receipts for earlier changes. Home Assistant does not provide a
+compare-and-swap configuration write, so a narrow read-to-write race remains
+and is reported as an ambiguous partial result rather than hidden. Every
+attempted change receives exact identity and normalized readback verification.
+A final Home Assistant configuration check is required and succeeds only on
+the explicit response `{"result": "valid", "errors": null}`; missing or
+malformed evidence fails closed. Successful writes invalidate the dependency
+index so a subsequent `configuration_integrity_analysis` rebuilds current
+evidence.
+
+An ambiguous write response never permits the next operation to run. One
+bounded readback records whether the desired state is proven. The overall
+result remains `partial_failure`, later operations are `not_attempted`, and the
+approval cannot be reused. Ordinary write or verification failure follows the
+same stop-on-first-failure rule. Per-operation receipts distinguish attempted,
+verified, failed, and not-attempted work without returning full configurations.
+Remediation requires fresh inspection plus a new exact plan and external
+approval.
+
+The runtime uses a fixed internal `ConfigurationResourceGateway` with exact
+automation, script, and helper methods. It does not register
+`ha_config_set_automation`, `ha_config_set_script`, `ha_config_set_helper`, a raw
+Home Assistant writer, arbitrary upstream tool names or arguments, or a direct
+fallback. The generic upstream gateway remains read-only.
+
+Dev14 does not add deletion, rename, enable/disable, backup, reload, restart,
+add-on administration, dashboard mutation, registry mutation, integration
+administration, or physical-action testing. Those remain unsupported rather
+than becoming manual or ungoverned follow-up work. Batch rollback is
+unavailable. A partial result must be inspected and remediated through a new
+approved plan.
+
 ## Beta 22 handoff lifecycle interpretation
 
 Change handoffs read persisted plan state without changing it. Proposed,

@@ -7,11 +7,11 @@ or container identity.
 ## Phase 1 reviewed upstream reads
 
 After configuring the existing secret-bearing upstream MCP URL, Engineering
-starts with 40 statically registered tools (25 canonical plus 15
+starts with 41 statically registered tools (25 canonical plus 16
 Engineering-native) and supervises exact `ha-mcp` 7.14.1 catalog admission.
 Failed startup probes retry with capped delays; a complete reviewed catalog adds
 26 policy-approved pure reads to subsequent MCP `tools/list` calls without an
-Engineering restart. A client that cached 40 tools must re-list or reconnect;
+Engineering restart. A client that cached 41 tools must re-list or reconnect;
 the stateless transport does not broadcast `tools/list_changed`.
 Unlisted, schema-changed, mixed, write, action, prohibited, and unsupported
 tools are not registered; delegated reads never fall back to direct Home
@@ -67,15 +67,16 @@ https://BETA_TUNNEL/REDACTED_BETA_SECRET/mcp/
 ```
 
 Direct requests to `/mcp` and `/mcp/` must return `404`. RC2dev12 is immutable
-failed history and must not be treated as accepted. RC2dev13 is its corrective
-release target; determine whether it is staged or advertised from authoritative
-version metadata and `scripts/codex-context.py`, not from this operator guide.
-For any separately authorized RC2dev13 deployment, call
-`server_info(check_ha=false)` and verify version `2.0.0-rc2-dev13`, the expected
+failed history and must not be treated as accepted. RC2dev13 corrected its
+reboot and completeness defects. RC2dev14 is the current practical
+configuration-plan development candidate; determine exact document authority
+from version metadata and `scripts/codex-context.py`, not from this operator
+guide. For any separately authorized RC2dev14 deployment, call
+`server_info(check_ha=false)` and verify version `2.0.0-rc2-dev14`, the expected
 complete release commit SHA, and its UTC build time,
 then call `list_capabilities` and verify the preserved 25-tool canonical catalog
-plus 15 beta-native tools. Without an admitted upstream, MCP `tools/list` exposes
-those 40 tools. With exact reviewed `ha-mcp` 7.14.1 configured, it also exposes
+plus 16 beta-native tools. Without an admitted upstream, MCP `tools/list` exposes
+those 41 tools. With exact reviewed `ha-mcp` 7.14.1 configured, it also exposes
 the policy-matched dynamic read count reported by `upstream_read_gateway`.
 Beta 17 added the read-only
 `configuration_integrity_analysis` capability; Beta 18 hardens its shared entity
@@ -105,7 +106,7 @@ non-screenshot read forms. That RC3A-era generic-gateway limitation is
 superseded only for the exact Phase 1 `automatic_read` policy set; screenshots,
 preference writes, dashboard writes, and arbitrary forwarding remain absent. RC3A
 changes the public catalog, so reconnect the Engineering connector after the
-add-on update. The raw server-side MCP `tools/list` returns all 40 tools even
+add-on update. The raw server-side MCP `tools/list` returns all 41 tools even
 when the dashboard provider is unavailable. If a refreshed ChatGPT connector
 still exposes only 38, treat it as connector schema caching and reconnect or
 recreate that connector; the server does not dynamically remove the dashboard

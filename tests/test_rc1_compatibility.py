@@ -108,6 +108,9 @@ RC3A_ADDITIVE_TOOL_NAMES = (
     "get_dashboard_config",
     "list_dashboards",
 )
+DEV14_ADDITIVE_TOOL_NAMES = (
+    "create_configuration_plan",
+)
 
 NOW = datetime(2026, 7, 14, 12, 0, tzinfo=timezone.utc)
 FUTURE = (NOW + timedelta(hours=4)).isoformat()
@@ -154,7 +157,15 @@ class RC1PublicContractTests(unittest.TestCase):
             enums.extend(enum_rows(schema, name))
         self.assertEqual(
             names,
-            tuple(sorted((*BETA26_TOOL_NAMES, *RC3A_ADDITIVE_TOOL_NAMES))),
+            tuple(
+                sorted(
+                    (
+                        *BETA26_TOOL_NAMES,
+                        *RC3A_ADDITIVE_TOOL_NAMES,
+                        *DEV14_ADDITIVE_TOOL_NAMES,
+                    )
+                )
+            ),
         )
         self.assertEqual(canonical_sha256(beta26_schemas), BETA26_SCHEMA_SHA256)
         self.assertEqual(
@@ -164,7 +175,7 @@ class RC1PublicContractTests(unittest.TestCase):
         self.assertEqual(canonical_sha256(enums), BETA26_ENUM_SHA256)
         self.assertEqual(len(enums), 13)
 
-    def test_rc2_routing_is_frozen_and_rc3a_adds_only_dashboard_routes(self):
+    def test_rc2_routing_is_frozen_and_later_tools_are_additive(self):
         classifications = {
             item["tool"]: dict(item) for item in (*CAPABILITIES, *BETA_NATIVE_CAPABILITIES)
         }
@@ -255,6 +266,38 @@ class RC1PublicContractTests(unittest.TestCase):
                     "explicit_direct_fallback_allowed": False,
                 },
             )
+        self.assertEqual(
+            classifications["create_configuration_plan"],
+            {
+                "tool": "create_configuration_plan",
+                "category": "governance",
+                "status": "beta_native",
+                "risk": "behavioral_write",
+                "additive": True,
+                "operation_class": "proposal",
+                "routing": "engineering_native",
+                "provider": "engineering",
+                "policy": "bounded_ordered_configuration_plan_proposal",
+                "fallback": "none",
+                "supported_resources": [
+                    "automation",
+                    "script",
+                    "input_boolean",
+                    "input_number",
+                ],
+                "direct_write_allowed": False,
+            },
+        )
+        self.assertEqual(
+            routing["create_configuration_plan"],
+            {
+                "capability": "risk_assessment",
+                "route": "engineering_native",
+                "preferred_provider": "engineering",
+                "fallback_providers": [],
+                "explicit_direct_fallback_allowed": False,
+            },
+        )
 
         baseline_classifications = {
             name: dict(classifications[name]) for name in BETA26_TOOL_NAMES
@@ -330,7 +373,7 @@ class RC1PublicContractTests(unittest.TestCase):
             BETA26_DIRECT_POLICY_SHA256,
         )
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(classifications), 40)
+        self.assertEqual(len(classifications), 41)
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

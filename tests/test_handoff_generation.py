@@ -499,7 +499,7 @@ class PublicContractTests(unittest.TestCase):
 
     def test_tools_list_has_40_and_schema_is_bounded(self):
         tools = get_registered_server()._tool_manager.list_tools()
-        self.assertEqual(len(tools), 40)
+        self.assertEqual(len(tools), 41)
         tool = next(item for item in tools if item.name == "handoff_generation")
         props = tool.parameters["properties"]
         self.assertEqual(props["handoff_type"]["default"], "system_status")

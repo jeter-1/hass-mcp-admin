@@ -1,4 +1,5 @@
 import asyncio
+import ast
 from dataclasses import replace
 import json
 from pathlib import Path
@@ -130,7 +131,7 @@ def catalog_tool(name, reviewed_schema=None, description=None):
     }
 
 
-def server_with_native_tools(count=40):
+def server_with_native_tools(count=41):
     server = FastMCP("gateway-inventory-test")
     for index in range(count):
         async def native_read():
@@ -254,8 +255,8 @@ class PolicyInventoryTests(unittest.TestCase):
         self.assertTrue(all(item.read_only for item in automatic_annotations.values()))
         self.assertTrue(all(not item.destructive for item in automatic_annotations.values()))
 
-    def test_existing_engineering_catalog_remains_40_without_discovery(self):
-        self.assertEqual(len(get_registered_server()._tool_manager.list_tools()), 40)
+    def test_engineering_catalog_is_41_without_upstream_discovery(self):
+        self.assertEqual(len(get_registered_server()._tool_manager.list_tools()), 41)
 
     def test_exact_image_acceptance_is_committed_to_ci(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
@@ -264,6 +265,25 @@ class PolicyInventoryTests(unittest.TestCase):
         acceptance = (
             ROOT / "scripts" / "exact_image_read_gateway_acceptance.py"
         ).read_text(encoding="utf-8")
+        acceptance_tree = ast.parse(acceptance)
+        baseline_assignment = next(
+            node
+            for node in acceptance_tree.body
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name)
+                and target.id == "EXPECTED_ENGINEERING_BASELINE_COUNT"
+                for target in node.targets
+            )
+        )
+        self.assertEqual(
+            ast.literal_eval(baseline_assignment.value),
+            len(get_registered_server()._tool_manager.list_tools()),
+        )
+        self.assertIn(
+            "len(base_names) == EXPECTED_ENGINEERING_BASELINE_COUNT",
+            acceptance,
+        )
         self.assertIn("exact-image-read-gateway:", workflow)
         self.assertIn(
             "ghcr.io/homeassistant-ai/ha-mcp@sha256:68f386d9becfcc58476f1881a0025f4c6a3ae5874c15cdd61097b14156886292",
@@ -485,7 +505,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         )
         catalog = build_capability_catalog()
         self.assertEqual(catalog["dynamic_upstream_count"], 1)
-        self.assertEqual(catalog["engineering_registered_count"], 40)
+        self.assertEqual(catalog["engineering_registered_count"], 41)
         route = capability_for_tool("ha_get_state")
         self.assertEqual(route["provider"], "upstream_read_gateway")
         self.assertEqual(route["operation_class"], "automatic_read")
@@ -788,7 +808,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
 
-    async def test_partial_catalog_keeps_retrying_until_exact_40_to_66(self):
+    async def test_partial_catalog_keeps_retrying_until_exact_41_to_67(self):
         entries = [policy_entry(f"ha_read_{index}") for index in range(26)]
         tools = [catalog_tool(entry.upstream_name) for entry in entries]
         transport = SequencedDiscoveryTransport(tools, [])
@@ -814,7 +834,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         )
         await asyncio.wait_for(sleep_started.wait(), timeout=1)
         waiting_names = {tool.name for tool in server._tool_manager.list_tools()}
-        self.assertEqual(len(waiting_names), 50)
+        self.assertEqual(len(waiting_names), 51)
         waiting = gateway.health_snapshot()
         self.assertTrue(waiting["initialized"])
         self.assertFalse(waiting["admission_complete"])
@@ -824,7 +844,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         release_retry.set()
         recovered = await asyncio.wait_for(task, timeout=1)
         recovered_names = {tool.name for tool in server._tool_manager.list_tools()}
-        self.assertEqual(len(recovered_names), 66)
+        self.assertEqual(len(recovered_names), 67)
         self.assertTrue(recovered["admission_complete"])
         self.assertEqual(recovered["dynamically_exposed_count"], 26)
         self.assertEqual(recovered["reconciliation_status"], "admitted")
@@ -875,7 +895,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
             gateway.reconcile_until_initialized(server, sleep=controlled_sleep)
         )
         await asyncio.wait_for(sleep_started.wait(), timeout=1)
-        self.assertEqual(len(server._tool_manager.list_tools()), 50)
+        self.assertEqual(len(server._tool_manager.list_tools()), 51)
         release_retry.set()
         await asyncio.wait_for(second_discovery_started.wait(), timeout=1)
 
@@ -887,7 +907,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
             runtime_mode="home_assistant_addon",
             ha_connection={"checked": False, "status": "not_checked"},
         )
-        self.assertEqual(len(tool_names), 40)
+        self.assertEqual(len(tool_names), 41)
         self.assertFalse(health["initialized"])
         self.assertFalse(health["generic_delegation_available"])
         self.assertEqual(health["reconciliation_status"], "probing")
@@ -895,12 +915,12 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["exposed_tools"], [])
         self.assertEqual(catalog["dynamic_upstream"], [])
         self.assertEqual(catalog["dynamic_upstream_count"], 0)
-        self.assertEqual(catalog["registered_count"], 40)
+        self.assertEqual(catalog["registered_count"], 41)
         self.assertEqual(
             catalog["upstream_read_gateway"]["dynamically_exposed_count"], 0
         )
         self.assertEqual(metadata["dynamic_upstream_tool_count"], 0)
-        self.assertEqual(metadata["tool_count"], 40)
+        self.assertEqual(metadata["tool_count"], 41)
         self.assertEqual(
             metadata["upstream_read_gateway"]["reconciliation_status"],
             "probing",
@@ -982,7 +1002,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(published["generic_delegation_available"])
         self.assertEqual(capability_for_tool("ha_get_state"), {})
 
-    async def test_listeners_start_before_delayed_upstream_recovers_40_to_66(self):
+    async def test_listeners_start_before_delayed_upstream_recovers_41_to_67(self):
         entries = [policy_entry(f"ha_read_{index}") for index in range(26)]
         tools = [catalog_tool(entry.upstream_name) for entry in entries]
         listeners_started = asyncio.Event()
@@ -1012,7 +1032,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
 
             @staticmethod
             def assert_retry_state(server, health):
-                if len(server._tool_manager.list_tools()) != 40:
+                if len(server._tool_manager.list_tools()) != 41:
                     raise AssertionError("native catalog changed during startup retry")
                 if health["dynamically_exposed_count"] != 0:
                     raise AssertionError("delegated tool appeared before admission")
@@ -1067,7 +1087,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(started_ports, {configured.port, configured.ingress_port})
         self.assertTrue(failure_observed.is_set())
         self.assertEqual(transport.discovery_calls, 2)
-        self.assertEqual(len(server._tool_manager.list_tools()), 66)
+        self.assertEqual(len(server._tool_manager.list_tools()), 67)
         self.assertTrue(gateway.health_snapshot()["admission_complete"])
 
     async def test_concurrent_reconciliation_is_single_flight(self):

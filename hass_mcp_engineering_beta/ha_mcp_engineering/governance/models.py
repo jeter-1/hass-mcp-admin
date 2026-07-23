@@ -28,6 +28,7 @@ class PlanStatus(str, Enum):
 class ChangeOperation(str, Enum):
     CREATE_AUTOMATION = "create_automation"
     UPDATE_AUTOMATION = "update_automation"
+    CONFIGURATION_PLAN = "configuration_plan"
 
 
 class RiskLevel(str, Enum):
@@ -44,6 +45,15 @@ class ApprovalState(str, Enum):
     CONSUMED = "consumed"
     EXPIRED = "expired"
     INVALIDATED = "invalidated"
+
+
+class StepExecutionStatus(str, Enum):
+    PENDING = "pending"
+    APPLYING = "applying"
+    APPLIED_VERIFIED = "applied_verified"
+    FAILED = "failed"
+    VERIFICATION_FAILED = "verification_failed"
+    NOT_ATTEMPTED_DEPENDENCY_FAILURE = "not_attempted_dependency_failure"
 
 
 @dataclass
@@ -129,6 +139,60 @@ class ChangeEvent:
     result_status: str
     error_code: str | None = None
     duration_ms: float | None = None
+    operation_id: str | None = None
+    operation_order: int | None = None
+    resource_type: str | None = None
+    resource_id: str | None = None
+
+
+@dataclass
+class ConfigurationOperation:
+    operation_id: str
+    order: int
+    depends_on: list[str]
+    resource_type: str
+    action: str
+    target_id: str
+    helper_type: str | None
+    proposed_config: dict[str, Any]
+    current_config: dict[str, Any] | None
+    normalized_proposed_config: dict[str, Any]
+    normalized_current_config: dict[str, Any] | None
+    current_state_fingerprint: str
+    proposed_config_hash: str
+    normalization_version: int
+    risk: ChangeRiskAssessment
+    warnings: list[str] = field(default_factory=list)
+    validation_results: dict[str, Any] = field(default_factory=dict)
+    dry_run_results: dict[str, Any] = field(default_factory=dict)
+    execution_status: StepExecutionStatus = StepExecutionStatus.PENDING
+    execution_receipt: dict[str, Any] | None = None
+    snapshot: ChangeSnapshot | None = None
+    verification: ChangeVerification = field(default_factory=ChangeVerification)
+    post_apply_fingerprint: str | None = None
+    failure_information: dict[str, Any] | None = None
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "ConfigurationOperation":
+        data = dict(value)
+        risk = data["risk"]
+        data["risk"] = ChangeRiskAssessment(
+            level=RiskLevel(risk["level"]),
+            reasons=list(risk.get("reasons", [])),
+            apply_allowed=bool(risk.get("apply_allowed", True)),
+            evidence=list(risk.get("evidence", [])),
+            warnings=list(risk.get("warnings", [])),
+        )
+        data["execution_status"] = StepExecutionStatus(
+            data.get("execution_status", StepExecutionStatus.PENDING.value)
+        )
+        if data.get("snapshot"):
+            data["snapshot"] = ChangeSnapshot(**data["snapshot"])
+        data["verification"] = ChangeVerification(**data.get("verification", {}))
+        data.setdefault("execution_receipt", None)
+        data.setdefault("post_apply_fingerprint", None)
+        data.setdefault("failure_information", None)
+        return cls(**data)
 
 
 @dataclass
@@ -165,6 +229,10 @@ class ChangePlan:
     failure_information: dict[str, Any] | None = None
     caller_context: dict[str, Any] = field(default_factory=dict)
     events: list[ChangeEvent] = field(default_factory=list)
+    contract_version: int = 1
+    operations: list[ConfigurationOperation] = field(default_factory=list)
+    execution_outcome: str | None = None
+    configuration_check_status: str | None = None
 
     @property
     def target_type(self) -> str:
@@ -175,16 +243,43 @@ class ChangePlan:
         return self.target.target_id
 
     def to_dict(self) -> dict[str, Any]:
-        return json.loads(
+        value = json.loads(
             json.dumps(
                 asdict(self),
                 default=lambda value: value.value if isinstance(value, Enum) else str(value),
             )
         )
+        for event in value.get("events", []):
+            if not isinstance(event, dict):
+                continue
+            for key in (
+                "operation_id",
+                "operation_order",
+                "resource_type",
+                "resource_id",
+            ):
+                if event.get(key) is None:
+                    event.pop(key, None)
+        # Contract-v1 records predate ordered configuration operations. Keep
+        # their persisted and public representation byte-for-byte compatible:
+        # the additive fields exist only on contract-v2 records.
+        if self.contract_version < 2:
+            value.pop("contract_version", None)
+            value.pop("operations", None)
+            value.pop("execution_outcome", None)
+            value.pop("configuration_check_status", None)
+        return value
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "ChangePlan":
         data = dict(value)
+        data["contract_version"] = int(data.get("contract_version", 1))
+        data["operations"] = [
+            ConfigurationOperation.from_dict(item)
+            for item in data.get("operations", [])
+        ]
+        data.setdefault("execution_outcome", None)
+        data.setdefault("configuration_check_status", None)
         # Records written before Beta 24 did not declare their normalization
         # contract. Keep them readable as v1 records, but governance refuses
         # to approve or apply them under the new hash semantics.

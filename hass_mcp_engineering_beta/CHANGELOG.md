@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.0.0-rc2-dev14 - practical governed configuration plans
+
+- Add one bounded `create_configuration_plan` entry point for ordered
+  automation, script, `input_boolean`, and `input_number` create/update
+  operations under one exact Home Assistant administrator approval.
+- Apply approved operations in dependency order with all-target and immediate
+  per-operation stale checks, typed write adapters, exact readback, one final
+  configuration check, and truthful partial or uncertain outcomes.
+- Keep raw writers, deletion, reload, restart, deployment, fallback, automatic
+  rollback, and every unsupported resource or action unreachable.
+- Preserve the existing six governance tool schemas, all 25 canonical
+  capabilities, the 26 exact reviewed delegated reads, and stable v1.1.2.
+
 ## 2.0.0-rc2-dev13 - reboot reconciliation and completeness truth
 
 - Start the native Engineering listeners without blocking on ha-mcp readiness,

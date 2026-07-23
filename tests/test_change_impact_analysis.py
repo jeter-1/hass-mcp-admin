@@ -1773,9 +1773,9 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ToolCompatibilityTests(unittest.TestCase):
-    def test_exactly_40_tools_and_all_prior_schemas_unchanged(self):
+    def test_additive_dev14_tool_and_all_prior_schemas_unchanged(self):
         tools = get_registered_server()._tool_manager.list_tools()
-        self.assertEqual(len(tools), 40)
+        self.assertEqual(len(tools), 41)
         current = {item.name: item for item in tools}
         self.assertEqual(
             set(current) - set(BETA14_SCHEMA_HASHES),
@@ -1786,6 +1786,7 @@ class ToolCompatibilityTests(unittest.TestCase):
                 "handoff_generation",
                 "list_dashboards",
                 "get_dashboard_config",
+                "create_configuration_plan",
             },
         )
         for name, expected in BETA14_SCHEMA_HASHES.items():

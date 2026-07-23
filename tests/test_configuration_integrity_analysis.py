@@ -686,7 +686,7 @@ class ProviderAndPublicContractTests(unittest.IsolatedAsyncioTestCase):
             set(),
         )
         tools = get_registered_server()._tool_manager._tools
-        self.assertEqual(len(tools), 40)
+        self.assertEqual(len(tools), 41)
         self.assertIn("configuration_integrity_analysis", tools)
         schema = tools["configuration_integrity_analysis"].parameters
         json.dumps(schema)

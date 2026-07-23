@@ -1675,6 +1675,40 @@ class InstructionFileTests(unittest.TestCase):
         self.assertIn("docs/RC2DEV12_ACCEPTANCE.md", historical)
         self.assertIn("docs/RC2DEV12_RELEASE_NOTES.md", historical)
 
+    def test_rc2dev14_has_an_exact_active_document_pair(self):
+        release = (ROOT / "docs" / "RC2DEV14_RELEASE_NOTES.md").read_text(
+            encoding="utf-8"
+        )
+        acceptance = (ROOT / "docs" / "RC2DEV14_ACCEPTANCE.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Version: `2.0.0-rc2-dev14`", release)
+        self.assertIn("Version: `2.0.0-rc2-dev14`", acceptance)
+        self.assertIn("not published, deployed, or accepted", release)
+        self.assertIn("not published", acceptance)
+
+        spec = importlib.util.spec_from_file_location(
+            "_codex_context_rc2dev14_authority", CONTEXT_SCRIPT
+        )
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        context_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(context_module)
+        documents = context_module.resolve_documents(ROOT, "2.0.0-rc2-dev14")
+
+        self.assertEqual(documents["resolution_status"], "exact")
+        self.assertEqual(
+            documents["active_release_notes"], "docs/RC2DEV14_RELEASE_NOTES.md"
+        )
+        self.assertEqual(
+            documents["active_acceptance_document"],
+            "docs/RC2DEV14_ACCEPTANCE.md",
+        )
+        self.assertIn(
+            "docs/RC2DEV13_ACCEPTANCE.md",
+            documents["historical_references"],
+        )
+
 
 class DeploymentChecklistTests(unittest.TestCase):
     def test_stale_fixed_count_and_beta_checklist_are_replaced_by_context(self):

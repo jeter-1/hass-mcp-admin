@@ -102,9 +102,9 @@ class RoutingPolicyTests(unittest.TestCase):
             with self.subTest(capability=capability):
                 self.assertEqual(self.policy.resolve(capability).route, route)
 
-    def test_all_40_tools_have_a_deterministic_routing_policy(self):
+    def test_all_41_tools_have_a_deterministic_routing_policy(self):
         names = {item["tool"] for item in (*CAPABILITIES, *BETA_NATIVE_CAPABILITIES)}
-        self.assertEqual(len(names), 40)
+        self.assertEqual(len(names), 41)
         self.assertEqual(set(TOOL_CAPABILITY_POLICY), names)
         self.assertNotIn(
             CapabilityRoute.UNSUPPORTED,
