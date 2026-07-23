@@ -4,9 +4,44 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..clients.websocket import HomeAssistantWebSocketClient
 from ..errors import ErrorCode, GovernanceError
+from .resources import ConfigurationResourceGateway
 from .service import AutomationGateway, ChangeGovernanceService
 from .storage import ChangePlanRepository, ChangePlanStorageError
+
+
+class _RuntimeGovernanceGateway:
+    """Expose both immutable v1 and bounded v2 governance contracts."""
+
+    def __init__(self, rest_client, websocket_client):
+        self._legacy = AutomationGateway(rest_client)
+        self._resources = ConfigurationResourceGateway(
+            rest_client, websocket_client
+        )
+
+    async def get(self, automation_id: str):
+        return await self._legacy.get(automation_id)
+
+    async def write(self, *args):
+        if len(args) == 2:
+            automation_id, config = args
+            return await self._legacy.write(automation_id, config)
+        if len(args) == 4:
+            action, resource_type, resource_id, config = args
+            return await self._resources.write(
+                action, resource_type, resource_id, config
+            )
+        raise TypeError("unsupported governance write signature")
+
+    async def validate(self):
+        return await self._legacy.validate()
+
+    async def read(self, resource_type: str, resource_id: str):
+        return await self._resources.read(resource_type, resource_id)
+
+    async def validate_all(self):
+        return await self._resources.validate_all()
 
 
 class GovernanceRuntime:
@@ -14,15 +49,26 @@ class GovernanceRuntime:
         self.service: ChangeGovernanceService | None = None
         self.storage_error: str | None = None
 
-    def configure(self, settings, audit, rest_client) -> None:
+    def configure(
+        self,
+        settings,
+        audit,
+        rest_client,
+        websocket_client=None,
+    ) -> None:
         try:
             repository = ChangePlanRepository(
                 settings.governance_path,
                 retention_days=settings.governance_retention_days,
             )
+            websocket_client = (
+                websocket_client
+                if websocket_client is not None
+                else HomeAssistantWebSocketClient(settings)
+            )
             self.service = ChangeGovernanceService(
                 repository,
-                AutomationGateway(rest_client),
+                _RuntimeGovernanceGateway(rest_client, websocket_client),
                 audit,
                 sensitive_values=(settings.access_secret, settings.ha_token),
             )

@@ -611,6 +611,20 @@ class ApprovalAndApplyTests(GovernanceTestCase):
         self.assertEqual(raised.exception.code, ErrorCode.CHANGE_IN_PROGRESS)
         self.assertEqual(self.gateway.write_calls, 0)
 
+    async def test_typed_v2_target_lock_blocks_legacy_automation_apply(self):
+        created, _ = await self.approved_plan()
+        lock = self.service._target_locks.setdefault(
+            ("automation", "porch"), asyncio.Lock()
+        )
+        await lock.acquire()
+        try:
+            with self.assertRaises(GovernanceError) as raised:
+                await self.service.apply(created["plan_id"])
+        finally:
+            lock.release()
+        self.assertEqual(raised.exception.code, ErrorCode.CHANGE_IN_PROGRESS)
+        self.assertEqual(self.gateway.write_calls, 0)
+
     async def test_home_assistant_write_failure_consumes_approval(self):
         created, _ = await self.approved_plan()
         self.gateway.fail_write = True
@@ -657,6 +671,32 @@ class ApprovalAndApplyTests(GovernanceTestCase):
         with self.assertRaises(GovernanceError) as raised:
             await self.service.apply(created["plan_id"])
         self.assertEqual(raised.exception.code, ErrorCode.AUTOMATION_VERIFICATION_FAILED)
+
+    async def test_contract_v1_configuration_check_variants_remain_frozen(self):
+        for result in (
+            {},
+            {"result": "valid"},
+            {"result": "valid", "errors": None},
+            "valid",
+            "ok",
+            "none",
+            None,
+        ):
+            with self.subTest(result=result):
+                self.gateway.validation_result = copy.deepcopy(result)
+                self.assertEqual(
+                    await self.service._config_check(), "valid"
+                )
+        for result in (
+            {"result": "invalid", "errors": None},
+            {"result": "valid", "errors": "safe failure"},
+            "invalid",
+        ):
+            with self.subTest(result=result):
+                self.gateway.validation_result = copy.deepcopy(result)
+                self.assertEqual(
+                    await self.service._config_check(), "failed"
+                )
 
     async def test_audit_and_event_request_ids_match(self):
         created, _ = await self.approved_plan()

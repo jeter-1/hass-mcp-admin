@@ -22,6 +22,7 @@ IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 # RC2dev12 runtime metadata in this feature pull request.
 NEXT_VERSION = "2.0.0-rc2-dev13"
 PROMOTION_FIXTURE_CURRENT_VERSION = "2.0.0-rc2-dev12"
+CURRENT_REPOSITORY_VERSION = "2.0.0-rc2-dev14"
 PLATFORMS = ("linux/amd64", "linux/arm64", "linux/arm/v7")
 BUILD_ARGUMENTS = (
     "BUILD_VERSION",
@@ -112,21 +113,23 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                 NEXT_VERSION,
             )
         else:
-            self.assertEqual(configured_version, NEXT_VERSION)
+            self.assertEqual(configured_version, CURRENT_REPOSITORY_VERSION)
 
-    def test_staged_or_promoted_dev13_orders_before_final_rc3(self):
+    def test_staged_or_advertised_development_version_orders_before_final_rc3(self):
         versions = PROMOTION_MODULE.authoritative_versions(ROOT)
         configured_version = next(iter(versions.values()))
         declaration = ROOT / ".release" / "next-version"
         if declaration.exists():
+            effective_version = declaration.read_text(encoding="utf-8").strip()
             self.assertGreater(
-                AwesomeVersion(NEXT_VERSION),
+                AwesomeVersion(effective_version),
                 AwesomeVersion(configured_version),
             )
         else:
-            self.assertEqual(configured_version, NEXT_VERSION)
+            effective_version = configured_version
+            self.assertEqual(configured_version, CURRENT_REPOSITORY_VERSION)
         self.assertLess(
-            AwesomeVersion(NEXT_VERSION),
+            AwesomeVersion(effective_version),
             AwesomeVersion("2.0.0-rc.3"),
         )
 

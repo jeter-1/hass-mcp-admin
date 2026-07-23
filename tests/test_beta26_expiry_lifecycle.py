@@ -414,13 +414,18 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
         schemas = {
             tool.name: tool.parameters
             for tool in tools
-            if tool.name not in {"list_dashboards", "get_dashboard_config"}
+            if tool.name
+            not in {
+                "list_dashboards",
+                "get_dashboard_config",
+                "create_configuration_plan",
+            }
         }
         encoded = json.dumps(schemas, sort_keys=True, separators=(",", ":")).encode()
         self.assertEqual(hashlib.sha256(encoded).hexdigest(), BETA25_PUBLIC_SCHEMA_SHA256)
-        self.assertEqual(len(tools), 40)
+        self.assertEqual(len(tools), 41)
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES), 40)
+        self.assertEqual(len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES), 41)
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

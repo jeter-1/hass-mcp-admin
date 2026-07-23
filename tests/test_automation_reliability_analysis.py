@@ -396,7 +396,7 @@ class ToolAndSanitizerTests(unittest.TestCase):
     def test_tool_is_registered_once_with_bounded_schema_and_total_is_35(self):
         tools = get_registered_server()._tool_manager.list_tools()
         matches = [tool for tool in tools if tool.name == "automation_reliability_analysis"]
-        self.assertEqual(len(tools), 40)
+        self.assertEqual(len(tools), 41)
         self.assertEqual(len(matches), 1)
         schema = matches[0].parameters
         self.assertEqual(

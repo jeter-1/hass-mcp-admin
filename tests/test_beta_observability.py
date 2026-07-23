@@ -150,6 +150,8 @@ class ErrorTaxonomyTests(unittest.TestCase):
             "change_in_progress", "unsupported_change_operation",
             "high_risk_change_rejected", "automation_validation_failed",
             "automation_apply_failed", "automation_verification_failed",
+            "configuration_validation_failed", "configuration_apply_failed",
+            "configuration_verification_failed", "configuration_partial_failure",
             "rollback_not_available", "rollback_approval_required",
             "rollback_failed", "change_plan_storage_error",
             "invalid_cursor", "stale_cursor", "analysis_unavailable",
@@ -528,7 +530,7 @@ class GatewayAndHealthTests(unittest.TestCase):
         self.assertTrue(payload["success"])
         health = payload["data"]
         self.assertEqual(health["server"]["version"], SERVER_VERSION)
-        self.assertEqual(health["registered_tool_count"], 40)
+        self.assertEqual(health["registered_tool_count"], 41)
         self.assertIn("handoff_generation", health)
         self.assertIn("automation_reliability_analysis", health)
         self.assertIn("governance", health)

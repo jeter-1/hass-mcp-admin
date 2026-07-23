@@ -38,6 +38,10 @@ class ErrorCode(str, Enum):
     AUTOMATION_VALIDATION_FAILED = "automation_validation_failed"
     AUTOMATION_APPLY_FAILED = "automation_apply_failed"
     AUTOMATION_VERIFICATION_FAILED = "automation_verification_failed"
+    CONFIGURATION_VALIDATION_FAILED = "configuration_validation_failed"
+    CONFIGURATION_APPLY_FAILED = "configuration_apply_failed"
+    CONFIGURATION_VERIFICATION_FAILED = "configuration_verification_failed"
+    CONFIGURATION_PARTIAL_FAILURE = "configuration_partial_failure"
     ROLLBACK_NOT_AVAILABLE = "rollback_not_available"
     ROLLBACK_APPROVAL_REQUIRED = "rollback_approval_required"
     ROLLBACK_FAILED = "rollback_failed"
@@ -138,6 +142,10 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
     ErrorCode.AUTOMATION_VALIDATION_FAILED: ErrorDefinition("The proposed automation failed validation.", False, 422, "invalid_params"),
     ErrorCode.AUTOMATION_APPLY_FAILED: ErrorDefinition("Home Assistant could not apply the automation change.", False, 502, "internal_error"),
     ErrorCode.AUTOMATION_VERIFICATION_FAILED: ErrorDefinition("The stored automation did not match the approved configuration.", False, 409, "internal_error"),
+    ErrorCode.CONFIGURATION_VALIDATION_FAILED: ErrorDefinition("The proposed configuration operation failed validation.", False, 422, "invalid_params"),
+    ErrorCode.CONFIGURATION_APPLY_FAILED: ErrorDefinition("Home Assistant could not apply the configuration operation.", False, 502, "internal_error"),
+    ErrorCode.CONFIGURATION_VERIFICATION_FAILED: ErrorDefinition("The stored resource did not match the approved configuration.", False, 409, "internal_error"),
+    ErrorCode.CONFIGURATION_PARTIAL_FAILURE: ErrorDefinition("The ordered configuration plan stopped after a write attempt left the overall result partial or uncertain.", False, 409, "internal_error"),
     ErrorCode.ROLLBACK_NOT_AVAILABLE: ErrorDefinition("Rollback is not available for this change.", False, 409, "invalid_request"),
     ErrorCode.ROLLBACK_APPROVAL_REQUIRED: ErrorDefinition("Rollback requires a separate approval.", False, 409, "invalid_request"),
     ErrorCode.ROLLBACK_FAILED: ErrorDefinition("The governed rollback failed.", False, 502, "internal_error"),
