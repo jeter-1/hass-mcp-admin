@@ -104,8 +104,12 @@ jobs:
           printf '%s\n' \
             'default_config:' \
             'automation: !include automations.yaml' \
+            'input_boolean: {}' \
+            'input_number: {}' \
+            'script: !include scripts.yaml' \
             > "$contract_dir/configuration.yaml"
           : > "$contract_dir/automations.yaml"
+          : > "$contract_dir/scripts.yaml"
           docker pull "$HA_CONTRACT_IMAGE"
           docker run -d --name beta25-real-ha -p 8123:8123 \
             -v "$contract_dir:/config" "$HA_CONTRACT_IMAGE"
