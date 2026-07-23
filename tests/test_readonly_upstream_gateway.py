@@ -1,4 +1,5 @@
 import asyncio
+import ast
 from dataclasses import replace
 import json
 from pathlib import Path
@@ -264,6 +265,25 @@ class PolicyInventoryTests(unittest.TestCase):
         acceptance = (
             ROOT / "scripts" / "exact_image_read_gateway_acceptance.py"
         ).read_text(encoding="utf-8")
+        acceptance_tree = ast.parse(acceptance)
+        baseline_assignment = next(
+            node
+            for node in acceptance_tree.body
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name)
+                and target.id == "EXPECTED_ENGINEERING_BASELINE_COUNT"
+                for target in node.targets
+            )
+        )
+        self.assertEqual(
+            ast.literal_eval(baseline_assignment.value),
+            len(get_registered_server()._tool_manager.list_tools()),
+        )
+        self.assertIn(
+            "len(base_names) == EXPECTED_ENGINEERING_BASELINE_COUNT",
+            acceptance,
+        )
         self.assertIn("exact-image-read-gateway:", workflow)
         self.assertIn(
             "ghcr.io/homeassistant-ai/ha-mcp@sha256:68f386d9becfcc58476f1881a0025f4c6a3ae5874c15cdd61097b14156886292",

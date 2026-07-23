@@ -33,6 +33,7 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
 
 
 EXPECTED_UPSTREAM_VERSION = "7.14.1"
+EXPECTED_ENGINEERING_BASELINE_COUNT = 41
 EXPECTED_STOCK_COUNTS = {
     "automatic_read": 26,
     "mixed_or_requires_wrapper": 14,
@@ -160,7 +161,13 @@ async def inspect_engineering(
     base_names = {
         tool.name for tool in get_registered_server()._tool_manager.list_tools()
     }
-    require(len(base_names) == 40, "local Engineering baseline is not 40 tools")
+    require(
+        len(base_names) == EXPECTED_ENGINEERING_BASELINE_COUNT,
+        (
+            "local Engineering baseline is not "
+            f"{EXPECTED_ENGINEERING_BASELINE_COUNT} tools"
+        ),
+    )
     policy = load_upstream_tool_policy()
     automatic = {
         entry.exposed_name
