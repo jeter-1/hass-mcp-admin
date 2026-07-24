@@ -28,9 +28,10 @@ runtime decision is
    ```
 
 4. Confirm every quarantine entry contains only a bounded tool name, stable
-   input-schema, description-semantics, annotation, or output-contract reason,
-   and expected/observed fingerprints. Do not request raw schemas,
-   descriptions, registry content, or endpoint material through health or logs.
+   input-schema, full-runtime-description, annotation, or output-contract
+   reason, and expected/observed fingerprints. Do not request raw schemas,
+   descriptions, registry content, or endpoint material through health or
+   logs.
 5. Confirm missing and quarantined tools have no route while other exact
    matches remain available. New or newly visible tools, including apparent
    reads and writes, must remain unavailable.

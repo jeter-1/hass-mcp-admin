@@ -79,7 +79,8 @@ Admission requires the exact upstream tool name and the complete
 dispatch-relevant contract owned by Engineering, including:
 
 - the complete canonical input-schema fingerprint;
-- normalized description semantics;
+- the exact domain-separated fingerprint of the complete bounded runtime
+  description;
 - the reviewed safety-annotation projection;
 - output-schema presence and, when present, its complete canonical
   fingerprint; and
@@ -87,12 +88,18 @@ dispatch-relevant contract owned by Engineering, including:
   contract projection.
 
 Descriptions remain untrusted and are never published as remote model-facing
-instructions. Their normalized Unicode/case-insensitive word sequence is part
-of generic semantic admission, so a word-level meaning change quarantines that
-tool while punctuation or case alone does not. Titles, display grouping, and
-other explicitly excluded presentation data cannot authorize a tool.
-Engineering continues to publish its own bounded reviewed descriptions and
-annotations after admission.
+instructions. For each automatic read, the binary policy stores a
+domain-separated SHA-256 fingerprint captured from the pinned image's real
+`tools/list` only after the exact 78-tool stock-catalog fingerprint matched.
+Generic admission accepts only a nonempty runtime description of at most 8,192
+strict UTF-8 bytes whose complete decoded string produces that exact
+fingerprint. It performs no case folding, Unicode normalization, whitespace or
+line-ending normalization, trimming, paragraph extraction, or token
+projection. A change anywhere in the full runtime description therefore
+quarantines only that tool. Titles, display grouping, and other explicitly
+excluded presentation data cannot authorize a tool. Engineering continues to
+publish its own bounded reviewed descriptions and annotations after admission;
+the remote description remains admission evidence only.
 
 The result for each reviewed read is one of:
 

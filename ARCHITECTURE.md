@@ -22,9 +22,10 @@ One generic provider handles the policy-approved read set. The committed stock
 78-tool inventory classifies 26 as automatic reads and blocks every mixed,
 write, action, prohibited, or unsupported tool. Dev15 first requires the exact
 compiled 7.14.1 release/profile. It then exposes only the reviewed subset whose
-exact input-schema fingerprint, normalized description semantics, reviewed
-safety annotations, output-schema presence/fingerprint, and other semantic
-contracts match. Missing reads and contract drift fail closed per tool;
+exact input-schema fingerprint, exact bounded full-runtime-description
+fingerprint, reviewed safety annotations, output-schema
+presence/fingerprint, and other semantic contracts match. Missing reads and
+contract drift fail closed per tool;
 unreviewed additions stay unavailable without harming matches. Another
 observed version cannot authorize itself through identical advertised
 contracts.

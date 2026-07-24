@@ -10,10 +10,15 @@ remain applicable.
 
 The generic `upstream_read_gateway` evaluates each reviewed
 `automatic_read` contract independently. The exact input-schema fingerprint,
-normalized description semantics, reviewed safety annotations, output-schema
+exact domain-separated fingerprint of the complete bounded runtime
+description, reviewed safety annotations, output-schema
 presence/fingerprint, and other dispatch-relevant projections are required.
-Remote descriptions remain untrusted and are never published as instructions;
-a word-level semantic change quarantines the tool. A changed contract is
+The 26 description fingerprints are captured from the pinned image's real
+`tools/list` only after its exact stock-catalog fingerprint matches. Runtime
+descriptions are limited to 8,192 strict UTF-8 bytes, remain untrusted, and are
+never published as instructions; the Engineering-owned bounded summary is the
+only model-facing description. Any byte or code-point drift anywhere in the
+full runtime description quarantines that tool. A changed contract is
 quarantined and a missing contract is removed; neither condition disables
 other exact matches. New tools and every reviewed mixed, write, action,
 prohibited, or unsupported entry remain unavailable.

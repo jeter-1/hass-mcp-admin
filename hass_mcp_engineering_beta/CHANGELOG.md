@@ -4,7 +4,8 @@
 
 - Require the exact compiled generic release/profile, currently ha-mcp 7.14.1,
   before admitting each reviewed automatic read by its exact input, output,
-  safety, description, behavior, identity, and protocol contract.
+  safety, full-runtime-description fingerprint, behavior, identity, and
+  protocol contract.
 - Keep unchanged reads available, quarantine only changed reads, remove missing
   reads, and block new, mixed, write, action, and unsupported tools without
   collapsing the complete delegated catalog.

@@ -5,10 +5,11 @@
 Engineering is the single client-visible gateway for 41 static Engineering
 tools and up to 26 reviewed pure reads from `ha-mcp`. Each
 `automatic_read` entry is admitted independently only when its exact
-input-schema fingerprint, normalized description semantics, reviewed safety
-annotations, output-schema presence/fingerprint, and other dispatch-relevant
-contracts match the committed policy. All mixed, write, physical/high-risk,
-prohibited, or unsupported entries remain generic-route unavailable.
+input-schema fingerprint, exact bounded full-runtime-description fingerprint,
+reviewed safety annotations, output-schema presence/fingerprint, and other
+dispatch-relevant contracts match the committed policy. All mixed, write,
+physical/high-risk, prohibited, or unsupported entries remain generic-route
+unavailable.
 
 The binary-reviewed 7.14.1 release profile is authority for generic admission,
 not merely self-advertised version or descriptor evidence. Unreviewed patches,

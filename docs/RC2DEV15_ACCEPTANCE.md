@@ -51,9 +51,10 @@ use the household instance.
    Require 25 reads, total tool count 66, only
    that tool quarantined, exact expected/observed fingerprints, and an
    unaffected read still callable.
-4. Independently change one read's safety annotations, relevant description
-   semantics, and declared output contract. Each case must quarantine only the
-   affected tool and must never publish the remote metadata.
+4. Independently change one read's safety annotations, any byte or code point
+   in its bounded full runtime description (including a later behavioral
+   paragraph), and its declared output contract. Each case must quarantine
+   only the affected tool and must never publish the remote metadata.
 5. Remove one reviewed read. Require it to disappear immediately after the
    successful probe while the other 25 remain.
 6. Add new reads and writes. Require every new tool and every write/mixed/action
@@ -146,6 +147,10 @@ use the household instance.
 13. Confirm each generic delegated-call audit record contains the bounded
     same-session upstream version evidence and identity status, and contains no
     raw catalog, schema, description, endpoint, credential, or argument value.
+14. Confirm the pinned exact-image job first matches the reviewed 78-tool
+    stock-catalog fingerprint, then independently matches all 26
+    domain-separated full-runtime-description fingerprints before accepting
+    the 67-tool Engineering catalog.
 
 Acceptance passes only when an exact reviewed release/profile is established
 before contract-level reconciliation preserves unaffected reads, while every

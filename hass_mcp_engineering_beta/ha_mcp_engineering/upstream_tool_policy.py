@@ -15,6 +15,10 @@ POLICY_PATH = Path(__file__).with_name("upstream_tool_policy.json")
 POLICY_SCHEMA_VERSION = 1
 REVIEWED_UPSTREAM_SERVER = "ha-mcp"
 REVIEWED_UPSTREAM_VERSION = "7.14.1"
+MAX_RUNTIME_DESCRIPTION_BYTES = 8_192
+_RUNTIME_DESCRIPTION_FINGERPRINT_DOMAIN = (
+    b"ha-mcp-engineering/runtime-description/v1\0"
+)
 CLASSIFICATIONS = frozenset(
     {
         "automatic_read",
@@ -50,6 +54,26 @@ def schema_fingerprint(schema: Any) -> str:
 def catalog_fingerprint(tools: list[dict[str, Any]]) -> str:
     ordered = sorted(tools, key=lambda item: str(item.get("name", "")))
     return hashlib.sha256(canonical_json(ordered)).hexdigest()
+
+
+def runtime_description_fingerprint(value: Any) -> str | None:
+    """Fingerprint one exact, bounded runtime description fail closed."""
+
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > MAX_RUNTIME_DESCRIPTION_BYTES
+    ):
+        return None
+    try:
+        encoded = value.encode("utf-8", errors="strict")
+    except UnicodeEncodeError:
+        return None
+    if len(encoded) > MAX_RUNTIME_DESCRIPTION_BYTES:
+        return None
+    return hashlib.sha256(
+        _RUNTIME_DESCRIPTION_FINGERPRINT_DOMAIN + encoded
+    ).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -193,6 +217,7 @@ class UpstreamToolPolicy:
     reviewed_source_commit: str
     reviewed_stock_catalog_tool_count: int
     reviewed_stock_catalog_fingerprint: str
+    reviewed_runtime_description_fingerprints: tuple[tuple[str, str], ...]
     tools: tuple[UpstreamToolPolicyEntry, ...]
 
     @property
@@ -203,6 +228,12 @@ class UpstreamToolPolicy:
     def classification_counts(self) -> dict[str, int]:
         counts = Counter(entry.classification for entry in self.tools)
         return {name: counts.get(name, 0) for name in sorted(CLASSIFICATIONS)}
+
+    @property
+    def reviewed_runtime_description_fingerprints_by_name(
+        self,
+    ) -> dict[str, str]:
+        return dict(self.reviewed_runtime_description_fingerprints)
 
 
 def load_upstream_tool_policy(path: Path = POLICY_PATH) -> UpstreamToolPolicy:
@@ -219,6 +250,7 @@ def load_upstream_tool_policy(path: Path = POLICY_PATH) -> UpstreamToolPolicy:
         "reviewed_source_commit",
         "reviewed_stock_catalog_tool_count",
         "reviewed_stock_catalog_fingerprint",
+        "reviewed_runtime_description_fingerprints",
         "tools",
     }:
         raise UpstreamToolPolicyError("policy_document_fields_invalid")
@@ -254,6 +286,27 @@ def load_upstream_tool_policy(path: Path = POLICY_PATH) -> UpstreamToolPolicy:
     exposed = [entry.exposed_name for entry in entries]
     if len(exposed) != len(set(exposed)):
         raise UpstreamToolPolicyError("policy_exposed_name_duplicate")
+    description_fingerprints = value[
+        "reviewed_runtime_description_fingerprints"
+    ]
+    automatic_names = {
+        entry.upstream_name
+        for entry in entries
+        if entry.classification == "automatic_read"
+    }
+    if (
+        not isinstance(description_fingerprints, dict)
+        or set(description_fingerprints) != automatic_names
+        or any(
+            not isinstance(name, str)
+            or not isinstance(fingerprint, str)
+            or not _HEX_64.fullmatch(fingerprint)
+            for name, fingerprint in description_fingerprints.items()
+        )
+    ):
+        raise UpstreamToolPolicyError(
+            "policy_runtime_description_fingerprints_invalid"
+        )
     return UpstreamToolPolicy(
         schema_version=value["schema_version"],
         upstream_server=value["upstream_server"],
@@ -264,5 +317,8 @@ def load_upstream_tool_policy(path: Path = POLICY_PATH) -> UpstreamToolPolicy:
         reviewed_stock_catalog_fingerprint=value[
             "reviewed_stock_catalog_fingerprint"
         ],
+        reviewed_runtime_description_fingerprints=tuple(
+            sorted(description_fingerprints.items())
+        ),
         tools=entries,
     )

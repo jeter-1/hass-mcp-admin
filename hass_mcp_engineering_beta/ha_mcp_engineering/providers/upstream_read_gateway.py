@@ -11,7 +11,6 @@ import re
 import threading
 import time
 from typing import Any, Awaitable, Callable
-import unicodedata
 
 from jsonschema import Draft202012Validator, SchemaError
 from mcp.server.fastmcp.tools.base import Tool
@@ -33,6 +32,7 @@ from ..upstream_tool_policy import (
     UpstreamToolPolicyEntry,
     catalog_fingerprint,
     load_upstream_tool_policy,
+    runtime_description_fingerprint,
     schema_fingerprint,
 )
 
@@ -137,8 +137,8 @@ class ReviewedUpstreamReadTool(Tool):
             delegated_read,
             name=exposed_name,
             # Publish only the bounded reviewed description from the manifest.
-            # Remote catalog prose is not part of the schema fingerprint and
-            # must not become model-facing instructions.
+            # The full remote runtime description is admission evidence only;
+            # it must not become model-facing instructions.
             description=entry.description,
             annotations=annotations,
         )
@@ -200,6 +200,7 @@ class _AdmittedRoute:
     observed_tool: dict[str, Any]
     generation: int
     contract_fingerprint: str
+    runtime_description_fingerprint: str
     server_version: str
     protocol_version: str
 
@@ -467,6 +468,9 @@ class UpstreamReadGateway:
                 tool.name for tool in server._tool_manager.list_tools()
                 if tool.name not in self._registered_names
             }
+            reviewed_descriptions = (
+                self._policy.reviewed_runtime_description_fingerprints_by_name
+            )
             generation = self._admission_generation + 1
             exposed: dict[str, _AdmittedRoute] = {}
             dynamic_tools: dict[str, ReviewedUpstreamReadTool] = {}
@@ -500,6 +504,9 @@ class UpstreamReadGateway:
                     observed_tool=tool,
                     generation=generation,
                     contract_fingerprint=decision.expected_fingerprint,
+                    runtime_description_fingerprint=(
+                        reviewed_descriptions[entry.upstream_name]
+                    ),
                     server_version=catalog.server_version,
                     protocol_version=catalog.protocol_version,
                 )
@@ -1181,6 +1188,9 @@ class UpstreamReadGateway:
         quarantined: list[dict[str, str]] = []
         quarantine_reasons: Counter[str] = Counter()
         blocked: list[dict[str, str]] = []
+        reviewed_descriptions = (
+            self._policy.reviewed_runtime_description_fingerprints_by_name
+        )
         for entry in self._policy.tools:
             observed = observed_reviewed.get(entry.upstream_name, [])
             if not observed:
@@ -1193,6 +1203,9 @@ class UpstreamReadGateway:
                         entry,
                         observed[0],
                         protocol_version=catalog.protocol_version,
+                        reviewed_runtime_description_fingerprint=(
+                            reviewed_descriptions[entry.upstream_name]
+                        ),
                     )
                     reason = "duplicate_tool_descriptor"
                     quarantine_reasons[reason] += 1
@@ -1213,6 +1226,9 @@ class UpstreamReadGateway:
                     entry,
                     observed[0],
                     protocol_version=catalog.protocol_version,
+                    reviewed_runtime_description_fingerprint=(
+                        reviewed_descriptions[entry.upstream_name]
+                    ),
                 )
                 if decision.accepted:
                     matched.append(decision)
@@ -1414,6 +1430,9 @@ class UpstreamReadGateway:
                     policy_entry,
                     targets[0],
                     protocol_version=catalog.protocol_version,
+                    reviewed_runtime_description_fingerprint=(
+                        mapping.runtime_description_fingerprint
+                    ),
                 )
                 if (
                     not decision.accepted
@@ -2159,6 +2178,7 @@ def _compare_tool_contract(
     observed_tool: dict[str, Any],
     *,
     protocol_version: str,
+    reviewed_runtime_description_fingerprint: str,
 ) -> _ContractDecision:
     """Compare one advertised tool with binary-owned reviewed authority."""
 
@@ -2174,8 +2194,8 @@ def _compare_tool_contract(
     observed_annotations = _observed_annotation_contract(
         observed_tool.get("annotations")
     )
-    expected_description = _description_semantics(entry.description)
-    observed_description = _description_semantics(
+    expected_description = reviewed_runtime_description_fingerprint
+    observed_description = runtime_description_fingerprint(
         observed_tool.get("description")
     )
     behavior_adapter = (
@@ -2231,7 +2251,7 @@ def _compare_tool_contract(
     expected_contract = {
         "name": entry.upstream_name,
         "input_schema_fingerprint": entry.input_schema_fingerprint,
-        "description_semantics": list(expected_description),
+        "runtime_description_fingerprint": expected_description,
         "annotations": expected_annotations,
         "output_contract": expected_output,
         **expected_static_contract,
@@ -2239,7 +2259,7 @@ def _compare_tool_contract(
     observed_contract = {
         "name": observed_tool.get("name"),
         "input_schema_fingerprint": observed_schema_fingerprint,
-        "description_semantics": list(observed_description),
+        "runtime_description_fingerprint": observed_description,
         "annotations": observed_annotations,
         "output_contract": observed_output,
         **observed_static_contract,
@@ -2249,7 +2269,10 @@ def _compare_tool_contract(
         reason = "tool_name_mismatch"
     elif not input_matches:
         reason = "input_schema_mismatch"
-    elif observed_description != expected_description:
+    elif (
+        observed_description is None
+        or observed_description != expected_description
+    ):
         reason = "description_semantics_mismatch"
     elif observed_annotations != expected_annotations:
         reason = "annotation_mismatch"
@@ -2269,13 +2292,6 @@ def _compare_tool_contract(
         expected_fingerprint=schema_fingerprint(expected_contract),
         observed_fingerprint=schema_fingerprint(observed_contract),
     )
-
-
-def _description_semantics(value: Any) -> tuple[str, ...]:
-    if not isinstance(value, str) or not value or len(value) > 4_000:
-        return ("invalid-description",)
-    normalized = unicodedata.normalize("NFKC", value).casefold()
-    return tuple(re.findall(r"[^\W_]+", normalized, flags=re.UNICODE))
 
 
 def _observed_annotation_contract(value: Any) -> dict[str, Any]:

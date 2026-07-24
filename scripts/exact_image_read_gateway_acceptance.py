@@ -30,6 +30,7 @@ from ha_mcp_engineering.tools import get_registered_server  # noqa: E402
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     catalog_fingerprint,
     load_upstream_tool_policy,
+    runtime_description_fingerprint,
     schema_fingerprint,
 )
 
@@ -673,6 +674,22 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         f"observed={observed_fingerprint} "
         f"expected={policy.reviewed_stock_catalog_fingerprint}",
     )
+    reviewed_descriptions = (
+        policy.reviewed_runtime_description_fingerprints_by_name
+    )
+    description_mismatches = sorted(
+        name
+        for name, expected in reviewed_descriptions.items()
+        if runtime_description_fingerprint(
+            observed_by_name[name].get("description")
+        )
+        != expected
+    )
+    require(
+        not description_mismatches,
+        "reviewed runtime description mismatch: "
+        f"tools={description_mismatches[:MAX_DIAGNOSTIC_ITEMS]}",
+    )
     require(policy.classification_counts == EXPECTED_STOCK_COUNTS, "stock classification counts mismatch")
     engineering = await inspect_engineering(
         args.engineering_endpoint,
@@ -684,6 +701,9 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         "upstream_version": EXPECTED_UPSTREAM_VERSION,
         "observed_catalog_count": len(upstream_tools),
         "observed_catalog_fingerprint": observed_fingerprint,
+        "reviewed_runtime_description_fingerprint_count": len(
+            reviewed_descriptions
+        ),
         "classification_counts": policy.classification_counts,
         **engineering,
     }
