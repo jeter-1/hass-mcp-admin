@@ -24,6 +24,7 @@ from ha_mcp_engineering.clients.mcp import (  # noqa: E402
     validate_dashboard_read_arguments,
 )
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
+from ha_mcp_engineering.errors import DashboardProviderError  # noqa: E402
 from ha_mcp_engineering.providers.upstream_contracts import (  # noqa: E402
     CONTRACT_FAMILY,
     COMPILED_CONTRACT_FAMILIES,
@@ -224,35 +225,48 @@ class ContractFamilyTests(unittest.TestCase):
                 )
                 self.assertFalse(decision.accepted)
 
-    def test_unknown_version_uses_only_an_exact_reviewed_contract_variant(self):
+    def test_unknown_version_requires_exact_release_attestation_first(self):
         entries = tuple((entry, "builtin") for entry in load_attestations())
-        decision = decide_admission(
-            server_name="ha-mcp",
-            server_version="7.14.2",
-            protocol_version="2025-03-26",
-            tool=tool_for("7.14.1"),
-            attestations=entries,
-        )
-        self.assertTrue(decision.accepted)
-        self.assertEqual(decision.status, "admitted_compatible_contract")
-        self.assertIsNone(decision.source)
-        self.assertIsNone(decision.attestation)
-        self.assertTrue(decision.input_match)
-        self.assertTrue(decision.security_match)
-        self.assertTrue(decision.output_match)
-        self.assertTrue(decision.runtime_match)
-
         drifted = tool_for("7.14.1")
         drifted["inputSchema"]["properties"]["include_screenshot"]["default"] = True
-        rejected = decide_admission(
+        for tool in (tool_for("7.14.1"), drifted):
+            decision = decide_admission(
+                server_name="ha-mcp",
+                server_version="7.14.2",
+                protocol_version="2025-03-26",
+                tool=tool,
+                attestations=entries,
+            )
+            self.assertFalse(decision.accepted)
+            self.assertEqual(decision.status, "rejected_unknown_release")
+            self.assertEqual(
+                decision.failure_category, "upstream_attestation_missing"
+            )
+            self.assertIsNone(decision.source)
+            self.assertIsNone(decision.attestation)
+            self.assertIsNone(decision.contract)
+            self.assertFalse(decision.input_match)
+            self.assertFalse(decision.security_match)
+            self.assertFalse(decision.output_match)
+            self.assertFalse(decision.runtime_match)
+
+    def test_exact_attestation_requires_a_reviewed_evidence_source(self):
+        entry = load_attestations()[-1]
+        decision = decide_admission(
             server_name="ha-mcp",
-            server_version="7.14.2",
+            server_version="7.14.1",
             protocol_version="2025-03-26",
-            tool=drifted,
-            attestations=entries,
+            tool=tool_for("7.14.1"),
+            attestations=((entry, "live_self_advertisement"),),
         )
-        self.assertFalse(rejected.accepted)
-        self.assertEqual(rejected.status, "rejected_contract_mismatch")
+        self.assertFalse(decision.accepted)
+        self.assertEqual(decision.status, "rejected_unknown_release")
+        self.assertEqual(
+            decision.failure_category, "upstream_attestation_missing"
+        )
+        self.assertIsNone(decision.source)
+        self.assertIsNone(decision.attestation)
+        self.assertIsNone(decision.contract)
 
     def test_family_tool_and_server_still_fail_closed(self):
         entries = tuple((entry, "builtin") for entry in load_attestations())
@@ -369,7 +383,7 @@ class ContractFamilyTests(unittest.TestCase):
             unavailable.status, "rejected_registry_unavailable"
         )
 
-    def test_compatible_variant_is_order_independent_and_must_be_nonrevoked(self):
+    def test_unknown_release_rejection_is_attestation_order_independent(self):
         entries = load_attestations()
         for ordered in (
             tuple((entry, "builtin") for entry in entries),
@@ -383,29 +397,13 @@ class ContractFamilyTests(unittest.TestCase):
                     tool=tool_for("7.14.1"),
                     attestations=ordered,
                 )
-                self.assertTrue(decision.accepted)
+                self.assertFalse(decision.accepted)
+                self.assertEqual(decision.status, "rejected_unknown_release")
                 self.assertEqual(
-                    decision.status, "admitted_compatible_contract"
+                    decision.failure_category, "upstream_attestation_missing"
                 )
                 self.assertIsNone(decision.attestation)
                 self.assertIsNone(decision.source)
-
-        revoked = tuple(
-            (replace(entry, revoked=True), "remote_cached")
-            for entry in entries
-        )
-        decision = decide_admission(
-            server_name="ha-mcp",
-            server_version="7.14.2",
-            protocol_version="2025-03-26",
-            tool=tool_for("7.14.1"),
-            attestations=revoked,
-        )
-        self.assertFalse(decision.accepted)
-        self.assertEqual(decision.status, "rejected_unknown_release")
-        self.assertEqual(
-            decision.failure_category, "upstream_attestation_missing"
-        )
 
     def test_registry_data_cannot_expand_compiled_capabilities(self):
         self.assertEqual(set(COMPILED_ARGUMENT_SHAPES), {"list_dashboards", "get_dashboard_config"})
@@ -475,17 +473,21 @@ class ProviderAdmissionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result.data["config_hash"], _upstream_hash(config))
                 self.assertEqual(len(result.data["engineering_config_hash"]), 64)
 
-    async def test_compatible_contract_admission_makes_no_release_claims(self):
+    async def test_unattested_contract_is_unavailable_without_release_authority(self):
         transport = FakeTransport(
             "7.14.2",
             {"success": True, "action": "list", "dashboards": [], "count": 0},
         )
         provider = UpstreamDashboardProvider()
         provider.configure(settings(), transport=transport)
-        result = await provider.list_dashboards(limit=10, response_limit=60_000)
-        self.assertEqual(result.data["dashboards"], [])
+        with self.assertRaises(DashboardProviderError):
+            await provider.list_dashboards(limit=10, response_limit=60_000)
         health = provider.health_snapshot()
-        self.assertEqual(health["admission_status"], "admitted_compatible_contract")
+        self.assertEqual(health["admission_status"], "rejected_unknown_release")
+        self.assertEqual(
+            health["validation_reason"], "upstream_attestation_missing"
+        )
+        self.assertEqual(health["capability_status"], "unavailable")
         self.assertIsNone(health["admission_source"])
         self.assertIsNone(health["attestation_entry_id"])
         self.assertIsNone(health["attested_upstream_version"])
@@ -493,11 +495,12 @@ class ProviderAdmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(health["attested_image_index_digest"])
         self.assertEqual(health["observed_upstream_version"], "7.14.2")
         self.assertEqual(health["revocation_status"], "not_evaluated")
-        self.assertTrue(health["input_contract_match"])
-        self.assertTrue(health["security_contract_match"])
-        self.assertTrue(health["output_contract_match"])
-        self.assertTrue(health["runtime_contract_match"])
+        self.assertFalse(health["input_contract_match"])
+        self.assertFalse(health["security_contract_match"])
+        self.assertFalse(health["output_contract_match"])
+        self.assertFalse(health["runtime_contract_match"])
         self.assertEqual(health["runtime_descriptor_drift"], "not_comparable")
+        self.assertEqual(transport.arguments, [])
 
     async def test_exact_get_builder_never_forwards_new_optional_arguments(self):
         config = {"views": [{"title": "Home", "cards": []}]}

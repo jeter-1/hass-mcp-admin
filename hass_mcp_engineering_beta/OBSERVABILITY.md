@@ -8,14 +8,22 @@ admission, and operational reachability. The active decision is
 the release-specific sections below remain historical evidence for the fields
 they introduced.
 
+`/health` remains process liveness. The separate bounded `/ready` response
+contains only `ready`, `initial_reconciliation_required`,
+`initial_reconciliation_complete`, and
+`status=ready|initial_reconciliation_pending`. When upstream is configured,
+`/ready` and authenticated MCP traffic return HTTP 503 until
+`reconcile_until_initialized` returns its first stable or terminal result. An
+unconfigured gateway reports ready immediately for its truthful static catalog.
+
 `get_server_health.upstream_read_gateway` reports:
 
-- `version_status=reviewed_exact|observed_contract_only|not_observed` beside
-  the bounded reviewed and observed versions;
+- `version_status=reviewed_exact|rejected_unreviewed|rejected_identity|rejected_protocol|not_observed`
+  beside the bounded reviewed and observed versions;
 - `observed_upstream_server_name`, `observed_upstream_server_version`,
   `observed_protocol_version`, and
   `observed_identity_status=accepted|rejected|not_observed`;
-- `compatibility_status=exact|compatible|partial|incompatible|reconciling|unavailable`;
+- `compatibility_status=exact|partial|incompatible|reconciling|unavailable`;
 - reviewed automatic-read, exact-matched, dynamically exposed, missing,
   quarantined, and unreviewed observed counts;
 - `schema_mismatch_count`, `description_semantics_mismatch_count`,
@@ -37,27 +45,28 @@ The reviewed automatic-read accounting remains internally complete:
 exact matched + missing + quarantined = reviewed automatic reads
 ```
 
-`exact` means all 26 reviewed reads match at the reviewed evidence version.
-`compatible` means all 26 match at a different observed version. `partial`
-means at least one remains usable while another is missing or quarantined.
-`incompatible` means a stable catalog was evaluated but no reviewed read is
-safe. `reconciling` means a call observed a valid changed version and verified
-its selected target, but the aggregate catalog at that version has not yet
-been reconciled; `admission_status=compatibility_reprobe_pending` retains the
-last admitted routes without claiming all 26 at the new version.
-`unavailable` means the endpoint is unconfigured, identity/protocol
-validation failed, or a catalog cannot currently be obtained. Additional
-unreviewed or blocked tools are reported separately and do not downgrade
-`exact` or `compatible` while all reviewed reads still match.
+`exact` means all 26 reviewed reads match under the compiled exact 7.14.1
+release/profile. `partial` means at least one remains usable while another is
+missing or quarantined. `incompatible` means an authorized stable catalog was
+evaluated but no reviewed read is safe. `reconciling` means a bounded catalog
+reconciliation is in progress. `unavailable` means the endpoint is
+unconfigured, identity/protocol/release authority failed, or a catalog cannot
+currently be obtained. Additional unreviewed or blocked tools are reported
+separately and do not downgrade `exact` while all reviewed reads still match.
 
 Every delegated call performs a same-session `tools/list` check immediately
-before `tools/call`. Missing, duplicate, or changed selected-target evidence
-stops before dispatch and retires only that target route. An exact selected
-target at a different valid bounded version remains callable; the new identity
-evidence is recorded, routes are retained, and compatibility reprobe is
-triggered with aggregate status `reconciling`. A different server name,
-malformed version, or unsupported protocol
-remains a global pre-dispatch failure.
+before `tools/call`. Missing, duplicate, changed selected-target, or
+unreviewed-version evidence stops before dispatch. A matching self-advertised
+target cannot authorize another release. A different server name, malformed
+version, or unsupported protocol likewise remains a global pre-dispatch
+failure.
+
+Each call acquires an immutable current-generation route snapshot under a short
+lease, then performs network I/O without holding a global registry lock. A
+route retired before pre-dispatch validation cannot dispatch. A call already
+committed after successful validation may finish, but cannot republish or
+revive a retired generation. Unrelated reads and reconciliation therefore
+remain independently schedulable.
 
 Unrelated new, changed, malformed, or duplicate unreviewed descriptors do not
 block that target-local check. Reconciliation records them only as bounded,
@@ -76,17 +85,14 @@ registered tools. One missing or quarantined read reports 25 delegated and 66
 registered. The two dashboard wrappers are static tools; their registration
 does not claim that `upstream_dashboard` is currently compatible or reachable.
 
-`get_server_health.upstream_dashboard` remains independent. An unattested
-version whose exact compiled family matches reports
-`admission_status=admitted_compatible_contract`, an observed version, and no
-attestation or release-provenance claim. If an exact-version built-in or signed
-attestation exists, that entry remains authoritative. A mismatch or revocation
-is reported as rejection and cannot fall back to an older contract or the
-unattested path. If the optional signed registry is enabled,
-compatible-family admission additionally requires a currently usable registry;
-an expired exact entry remains deny-only and unavailable evidence cannot revive
-an older contract. Generic quarantine does not change dashboard compatibility,
-and dashboard incompatibility does not change generic-read counts.
+`get_server_health.upstream_dashboard` remains independent. Admission requires
+an exact-version built-in or verified signed attestation before the compiled
+family is evaluated. Missing exact authority, mismatch, or revocation is
+reported as rejection and cannot fall back to an older contract or a
+self-advertised compatible variant. An expired exact entry remains deny-only
+and unavailable registry evidence cannot revive an older contract. Generic
+quarantine does not change dashboard compatibility, and dashboard
+incompatibility does not change generic-read counts.
 
 The fast retry lane exposes bounded transport attempts, next delay, and status
 for boot-order recovery. Connection and timeout failures use the capped fast

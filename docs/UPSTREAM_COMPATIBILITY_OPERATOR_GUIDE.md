@@ -9,13 +9,17 @@ runtime decision is
 
 1. Verify `observed_upstream_server_name`,
    `observed_upstream_server_version`, `observed_protocol_version`, and
-   `observed_identity_status`. The endpoint must still identify as `ha-mcp`,
-   provide bounded version evidence, and negotiate the supported MCP protocol.
-   Identity, malformed-version, or protocol failure is global and must not be
-   worked around with a schema match.
-2. Read `get_server_health.upstream_read_gateway`. Treat
-   `version_status=observed_contract_only` as evidence, not failure. Require
-   the separately reported `compatibility_status`.
+   `observed_identity_status`. The endpoint must identify as `ha-mcp`, match an
+   explicit reviewed release/profile, and negotiate the supported MCP
+   protocol. The compiled generic profile currently authorizes exactly
+   7.14.1. Identity, unreviewed-version, malformed-version, or protocol failure
+   is global and must not be worked around with a self-advertised schema match.
+2. Read `get_server_health.upstream_read_gateway`.
+   `version_status=rejected_unreviewed` is bounded diagnostic evidence that the
+   release lacks authority; it cannot admit a tool or permit dispatch.
+   `rejected_identity` and `rejected_protocol` identify the other global
+   prerequisite failures. Require the separately reported
+   `compatibility_status`.
 3. Compare reviewed automatic-read, exact-matched, missing, quarantined, and
    unreviewed counts. The reviewed accounting must satisfy:
 
@@ -43,32 +47,26 @@ do not increase the registered count.
 Interpret `compatibility_status` as follows:
 
 - `exact`: all reviewed reads match at the reviewed evidence version;
-- `compatible`: all reviewed reads match at another observed version;
 - `partial`: at least one matches and at least one is missing or quarantined;
 - `incompatible`: a stable catalog was evaluated with zero matches; and
-- `reconciling`: a selected target matched at changed bounded version
-  evidence, but aggregate compatibility at that version is not yet known; and
+- `reconciling`: a bounded catalog reconciliation is in progress; and
 - `unavailable`: no valid catalog identity is currently available.
 
 ## Call-time contract check
 
 Admission is not the final dispatch check. In the same MCP session that would
 perform `tools/call`, Engineering first obtains `tools/list`, confirms the
-bounded server identity and protocol, requires the selected upstream target
-exactly once, and compares that target's complete reviewed contract with the
-currently registered route. Missing, duplicate, or changed target evidence
-stops before `tools/call` and removes or quarantines only that route. Other
-matching reviewed routes remain registered.
+bounded server identity, exact reviewed release/profile, and protocol, requires
+the selected upstream target exactly once, and compares that target's complete
+reviewed contract with the currently registered route. Missing, duplicate,
+changed-target, or unreviewed-version evidence stops before `tools/call`.
 
-A different but valid bounded upstream version does not by itself stop the
-call. If the selected target is still exact, Engineering retains the admitted
-routes, records the new version as `observed_contract_only`, performs the one
-bounded dispatch, reports `compatibility_status=reconciling` and
-`admission_status=compatibility_reprobe_pending`, and triggers compatibility
-reprobe. These are last-admitted routes, not a claim that all 26 were already
-verified at the newly observed version. A malformed version,
-different server name, or unsupported protocol remains a global
-pre-dispatch failure.
+A different but syntactically valid upstream version is observed evidence only.
+Even if the selected target self-advertises an exact match, Engineering stops
+before dispatch, enters `blocked_incompatible_upstream`, and waits for the slow
+periodic reconciliation because the release/profile is not authorized. It does
+not enter the fast transport-retry lane. A malformed version, different server
+name, or unsupported protocol is likewise a global pre-dispatch failure.
 
 The call-time check is target-local. Unrelated new, changed, malformed, or
 duplicate unreviewed descriptors cannot authorize a route and do not block an
@@ -77,6 +75,15 @@ records them only as bounded, redacted unreviewed anomalies. It never exposes
 them or infers policy from their contents.
 
 ## Recovery versus incompatibility
+
+Use `/health` for process liveness and `/ready` for initial catalog readiness.
+The readiness response is deliberately bounded to `ready`,
+`initial_reconciliation_required`, `initial_reconciliation_complete`, and
+`status=ready|initial_reconciliation_pending`. With upstream configured,
+HTTP 503 from `/ready` and authenticated MCP paths means the initial
+reconciliation has not yet returned a stable or terminal result. Do not point a
+schema-caching client at the MCP path until `/ready` returns HTTP 200 with
+`ready=true`; otherwise it could retain a transient static-only catalog.
 
 Use the fast bounded retry state only for endpoint startup and transient
 transport availability. A discovered missing or incompatible contract uses the
@@ -106,11 +113,15 @@ A different token keeps the probe stale. Health exposes
 `stale_reprobe_retry_armed`; only the first consecutive stale mismatch receives
 an immediate retry, and continued churn returns to the slow cadence.
 
-Dev15 protects same-session verification and dispatch with one generic-read
-dispatch barrier. Generic delegated calls are therefore serialized, and each
-adds a bounded paginated `tools/list` before `tools/call`. Characterize
-`ha_search` latency and concurrent delegated-read throughput for the candidate;
-do not assume the earlier one-call latency profile is unchanged.
+Dev15 acquires an immutable current-generation route snapshot under a short
+lease, then releases registry coordination before same-session network I/O.
+Generic delegated calls are not globally serialized. Each still adds a bounded
+paginated `tools/list` before `tools/call`. A route retired before
+pre-dispatch validation cannot dispatch; a call already committed after
+successful validation may finish, but cannot republish or revive a retired
+generation. Characterize `ha_search` latency and concurrent delegated-read
+throughput, and prove a slow read blocks neither another read nor
+reconciliation.
 
 ## Controlled upstream update sequence
 
@@ -122,39 +133,36 @@ release merely because a new version is available. Use this sequence:
 2. Exercise that exact target in an isolated disposable environment. Compare
    every reviewed generic-read contract, run the semantic fixtures, and
    evaluate the dashboard wrapper contract independently.
-3. Publish any separately reviewed compatibility evidence that the current
-   mechanism supports. Dev15 supports existing dashboard attestations; generic
+3. Publish separately reviewed release/profile authority through a mechanism
+   the current runtime supports. Dev15 supports exact dashboard attestations;
+   its generic compiled profile remains exactly 7.14.1. Generic
    signed-registry authority is deferred to Dev16.
-4. Upgrade `ha-mcp` only after the target's compiled live contracts or
-   applicable signed evidence are known to pass, and retain the exact prior
-   image as the rollback target.
+4. Upgrade `ha-mcp` only after the target has applicable exact reviewed
+   authority and its disposable contract evidence passes. Retain the exact
+   prior image as the rollback target.
 5. Let Engineering reconcile the live catalog without restarting it.
 6. Verify the observed identity, generic matched/missing/quarantined counts,
    delegated tool count, dashboard status, and zero-write/fallback invariants.
 7. Roll back `ha-mcp` if the required subset is not compatible or the result
    differs from the disposable review.
 
-An unattended update gate may proceed only when the target already has the
-applicable reviewed signed evidence, or when a bounded pre-upgrade check proves
-that its live contract matches the compiled reviewed family. Version presence
-alone is insufficient. Dev15 does not provide a generic registry publisher or
-automatic release-review pipeline, so operators must not describe those
-Dev16/Dev17 capabilities as active.
+An unattended update gate may proceed only when the target already has
+applicable exact reviewed release/profile authority. A bounded pre-upgrade
+contract check is evidence for review; it cannot authorize its own release.
+Dev15 does not provide a generic registry publisher or automatic release-review
+pipeline, so operators must not describe those Dev16/Dev17 capabilities as
+active.
 
-## Dashboard compatible-contract path
+## Dashboard exact-attestation path
 
 The dashboard provider still allows only `ha_config_get_dashboard` through the
 two fixed non-screenshot Engineering operations. Evaluate its exact compiled
 input, safety, output/hash, and runtime contract.
 
-- If an exact-version built-in or verified signed attestation exists, it is
-  authoritative. Revocation or fingerprint mismatch blocks that release.
-  Never substitute an older release entry or the unattested path.
-- If no exact-version entry exists, an exact compiled-family match may report
-  `admitted_compatible_contract`. This status makes no source, image,
-  provenance, or release-attestation claim. If the optional signed registry is
-  enabled, its currently usable state must also establish that no exact entry
-  applies.
+- Require an exact-version built-in or verified signed attestation first.
+  Revocation, missing exact authority, or fingerprint mismatch blocks that
+  release. Never substitute an older release entry or a self-advertised
+  compatible variant.
 - A semantic mismatch remains unavailable regardless of version or signed
   data. Descriptive-only changes may remain informational only when every
   dispatch-relevant projection is exact.
@@ -224,12 +232,11 @@ and `rejected_revoked_attestation` before relying on it.
 On refresh/signature/expiry failure, do not delete the cache or disable security
 checks to restore access. A valid exact-version entry remains authoritative,
 including its revocation state. An expired cached exact entry remains deny-only
-until valid higher-sequence registry data supersedes it. When the registry is
-enabled, an unavailable or hard-expired registry blocks the compiled
-`admitted_compatible_contract` path; it must not revive older binary contract
-evidence. Compare the bounded failure category, repository registry/signature
-files, protected key ID/public key, sequence and expiry. Never paste registry
-private key material into debug output.
+until valid higher-sequence registry data supersedes it. Registry
+unavailability or hard expiry cannot be replaced by self-advertised contract
+equality or older binary evidence. Compare the bounded failure category,
+repository registry/signature files, protected key ID/public key, sequence and
+expiry. Never paste registry private key material into debug output.
 
 ## Deferred generic release support
 
@@ -245,8 +252,9 @@ Dev15 does not generalize the dashboard registry to generic reads.
   updates.
 
 Until those milestones are separately reviewed, the 7.14.1 generic policy is
-the committed contract baseline and observed compatible versions are reported
-without signed generic release provenance.
+the only compiled generic release/profile authority. Other observed versions
+remain unavailable even when their self-advertised contracts match. Automatic
+no-rebuild admission for reviewed newer releases is deferred to Dev16.
 
 ## Deferred registry administration writes
 

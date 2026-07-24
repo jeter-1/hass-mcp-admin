@@ -114,12 +114,12 @@ def policy_entry(
     )
 
 
-def policy(*entries):
+def policy(*entries, reviewed_version="7.14.1"):
     return UpstreamToolPolicy(
         schema_version=1,
         upstream_server="ha-mcp",
-        reviewed_upstream_version="7.14.1",
-        reviewed_source_tag="v7.14.1",
+        reviewed_upstream_version=reviewed_version,
+        reviewed_source_tag=f"v{reviewed_version}",
         reviewed_source_commit="255acec1affa6528004a122eb83e30aee9c77713",
         reviewed_stock_catalog_tool_count=78,
         reviewed_stock_catalog_fingerprint="0" * 64,
@@ -231,6 +231,33 @@ class SuspendedIdentityTransport(FakeTransport):
         )
 
 
+class CommittedSlowTransport(FakeTransport):
+    def __init__(self, tools, *, slow_tool="ha_search"):
+        super().__init__(tools)
+        self.slow_tool = slow_tool
+        self.slow_call_committed = asyncio.Event()
+        self.release_slow_call = asyncio.Event()
+
+    async def execute_read(
+        self, tool_name, arguments, *, timeout_seconds, catalog_validator
+    ):
+        self.attempts.append((tool_name, dict(arguments), timeout_seconds))
+        captured_catalog = self.catalog
+        catalog_validator(captured_catalog)
+        if tool_name == self.slow_tool:
+            self.slow_call_committed.set()
+            await self.release_slow_call.wait()
+        self.calls.append((tool_name, dict(arguments), timeout_seconds))
+        return McpReadResult(
+            protocol_version=captured_catalog.protocol_version,
+            server_name=captured_catalog.server_name,
+            server_version=captured_catalog.server_version,
+            call_result=self.result,
+            connection_latency_ms=1.0,
+            tool_call_latency_ms=2.0,
+        )
+
+
 class StaleDiscoveryTransport(FakeTransport):
     def __init__(self, tools):
         super().__init__(tools)
@@ -247,14 +274,22 @@ class StaleDiscoveryTransport(FakeTransport):
         return captured
 
 
-async def initialize(entries, tools, *, server=None, transport=None, version="7.14.1"):
+async def initialize(
+    entries,
+    tools,
+    *,
+    server=None,
+    transport=None,
+    version="7.14.1",
+    reviewed_version="7.14.1",
+):
     server = server or FastMCP("gateway-test")
     transport = transport or FakeTransport(tools, version=version)
     gateway = UpstreamReadGateway()
     gateway.configure(
         settings(),
         transport=transport,
-        policy=policy(*entries),
+        policy=policy(*entries, reviewed_version=reviewed_version),
         admission_validator=lambda _catalog: None,
     )
     await gateway.initialize(server)
@@ -1139,24 +1174,53 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(route["operation_class"], "automatic_read")
         self.assertEqual(route["fallback"], "none")
 
-    async def test_version_only_and_unknown_major_changes_keep_all_contracts(self):
+    async def test_unreviewed_release_profiles_fail_closed_before_contract_matching(self):
         entries = [policy_entry(f"ha_read_{index}") for index in range(26)]
         tools = [catalog_tool(entry.upstream_name) for entry in entries]
-        for version in ("7.14.2", "8.0.0"):
+        for version in ("7.13.9", "7.14.0", "7.14.2", "8.0.0"):
             with self.subTest(version=version):
                 gateway, server, _ = await initialize(
                     entries, tools, version=version
                 )
-                self.assertEqual(len(server._tool_manager.list_tools()), 26)
+                self.assertEqual(len(server._tool_manager.list_tools()), 0)
                 health = gateway.health_snapshot()
-                self.assertEqual(health["dynamically_exposed_count"], 26)
-                self.assertTrue(health["admission_complete"])
-                self.assertEqual(health["compatibility_status"], "compatible")
-                self.assertEqual(health["admission_status"], "admitted_compatible")
-                self.assertEqual(health["version_status"], "observed_contract_only")
-                self.assertEqual(health["upstream_server_version"], version)
+                self.assertEqual(health["dynamically_exposed_count"], 0)
+                self.assertFalse(health["admission_complete"])
+                self.assertEqual(health["compatibility_status"], "unavailable")
+                self.assertEqual(
+                    health["admission_status"],
+                    "blocked_incompatible_upstream",
+                )
+                self.assertEqual(
+                    health["version_status"], "rejected_unreviewed"
+                )
+                self.assertIsNone(health["upstream_server_version"])
+                self.assertEqual(
+                    health["observed_upstream_server_version"], version
+                )
+                self.assertEqual(
+                    health["observed_identity_status"], "rejected"
+                )
                 self.assertEqual(health["quarantined_automatic_read_count"], 0)
                 self.assertEqual(health["fallback_count"], 0)
+
+    async def test_explicit_reviewed_release_profile_allows_contract_reconciliation(self):
+        entries = [policy_entry(f"ha_read_{index}") for index in range(26)]
+        tools = [catalog_tool(entry.upstream_name) for entry in entries]
+        gateway, server, _ = await initialize(
+            entries,
+            tools,
+            version="7.14.2",
+            reviewed_version="7.14.2",
+        )
+        self.assertEqual(len(server._tool_manager.list_tools()), 26)
+        health = gateway.health_snapshot()
+        self.assertEqual(health["dynamically_exposed_count"], 26)
+        self.assertTrue(health["admission_complete"])
+        self.assertEqual(health["compatibility_status"], "exact")
+        self.assertEqual(health["admission_status"], "admitted_exact")
+        self.assertEqual(health["version_status"], "reviewed_exact")
+        self.assertEqual(health["upstream_server_version"], "7.14.2")
 
 
 class DelegationTests(unittest.IsolatedAsyncioTestCase):
@@ -1208,8 +1272,8 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(value["metadata"]["fallback"], "none")
         self.assertEqual(len(transport.calls), 1)
 
-    async def test_same_session_version_is_staged_for_bounded_audit(self):
-        _gateway, tool, transport, _entry = await self._case()
+    async def test_same_session_unreviewed_version_is_audited_and_rejected(self):
+        gateway, tool, transport, _entry = await self._case()
         transport.catalog = replace(
             transport.catalog, server_version="7.14.2"
         )
@@ -1221,44 +1285,51 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         finally:
             end_request(token)
 
-        self.assertTrue(value["success"])
+        self.assertFalse(value["success"])
+        self.assertEqual(value["error_code"], "provider_unavailable")
+        self.assertEqual(transport.calls, [])
         self.assertEqual(
             telemetry.audit_context["upstream_version_evidence"],
             "7.14.2",
         )
         self.assertEqual(
             telemetry.audit_context["upstream_identity_status"],
-            "accepted",
+            "rejected",
         )
+        health = gateway.health_snapshot()
+        self.assertEqual(
+            health["admission_status"], "blocked_incompatible_upstream"
+        )
+        self.assertEqual(health["version_status"], "rejected_unreviewed")
 
-    async def test_call_time_version_movement_keeps_exact_target_available(self):
+    async def test_call_time_unreviewed_version_retires_all_routes(self):
         gateway, tool, transport, _entry = await self._case()
         transport.catalog = replace(transport.catalog, server_version="7.14.2")
         value = json.loads(await tool.run({"entity_id": "sun.sun"}))
-        self.assertTrue(value["success"])
-        self.assertEqual(value["metadata"]["upstream_version"], "7.14.2")
+        self.assertFalse(value["success"])
+        self.assertEqual(value["error_code"], "provider_unavailable")
         self.assertEqual(len(transport.attempts), 1)
-        self.assertEqual(len(transport.calls), 1)
-        self.assertIsNotNone(
+        self.assertEqual(transport.calls, [])
+        self.assertIsNone(
             gateway._registered_server._tool_manager.get_tool(
                 "ha_get_state"
             )
         )
         health = gateway.health_snapshot()
-        self.assertTrue(health["generic_delegation_available"])
-        self.assertEqual(health["dynamically_exposed_count"], 1)
+        self.assertFalse(health["generic_delegation_available"])
+        self.assertEqual(health["dynamically_exposed_count"], 0)
         self.assertFalse(health["last_discovery_stable"])
         self.assertEqual(
             health["observed_upstream_server_version"], "7.14.2"
         )
-        self.assertEqual(health["compatibility_status"], "reconciling")
+        self.assertEqual(health["compatibility_status"], "unavailable")
         self.assertEqual(
-            health["admission_status"], "compatibility_reprobe_pending"
+            health["admission_status"], "blocked_incompatible_upstream"
         )
         self.assertEqual(
-            health["compatibility_reprobe_status"], "triggered"
+            health["compatibility_reprobe_status"], "waiting"
         )
-        self.assertEqual(health["compatibility_reprobe_trigger_count"], 1)
+        self.assertEqual(health["compatibility_reprobe_trigger_count"], 0)
 
     async def test_same_session_target_drift_quarantines_only_target(self):
         changes = {
@@ -1507,7 +1578,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transport.attempts, [])
         self.assertEqual(transport.calls, [])
 
-    async def test_dispatch_barrier_prevents_mid_call_generation_replacement(self):
+    async def test_retired_prevalidation_lease_never_dispatches(self):
         entry = policy_entry("ha_get_state")
         transport = SuspendedIdentityTransport(
             [catalog_tool(entry.upstream_name)]
@@ -1523,48 +1594,134 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         )
         await asyncio.wait_for(transport.first_call_started.wait(), timeout=1)
 
-        transport.catalog = replace(
-            transport.catalog, server_version="7.14.2"
-        )
         refresh_task = asyncio.create_task(gateway.initialize(server))
-        await asyncio.sleep(0)
-        self.assertFalse(refresh_task.done())
-        transport.release_first_call.set()
-        stale_result = json.loads(await old_call)
-        self.assertTrue(stale_result["success"])
-
         refreshed = await asyncio.wait_for(refresh_task, timeout=1)
+        self.assertTrue(refreshed["admission_complete"])
         new_tool = server._tool_manager.get_tool(entry.upstream_name)
         self.assertIsNotNone(new_tool)
         self.assertIsNot(new_tool, old_tool)
-        self.assertTrue(refreshed["last_discovery_stable"])
+
+        transport.release_first_call.set()
+        stale_result = json.loads(await old_call)
+        self.assertFalse(stale_result["success"])
         self.assertEqual(
-            refreshed["reconciliation_status"], "admitted"
+            stale_result["error_code"], "provider_prohibited"
         )
-        after_refresh = gateway.health_snapshot()
-        self.assertEqual(after_refresh["dynamically_exposed_count"], 1)
+        self.assertEqual(transport.calls, [])
         self.assertIs(
             server._tool_manager.get_tool(entry.upstream_name), new_tool
         )
-        self.assertEqual(
-            after_refresh["upstream_server_version"], "7.14.2"
-        )
-        self.assertEqual(
-            after_refresh["observed_upstream_server_version"], "7.14.2"
-        )
-        self.assertEqual(
-            after_refresh["admission_status"], "admitted_compatible"
-        )
-        self.assertEqual(
-            after_refresh["compatibility_reprobe_trigger_count"], 1
-        )
-        self.assertFalse(gateway._reprobe_event.is_set())
 
-        current_result = json.loads(
-            await new_tool.run({"entity_id": "sun.sun"})
+    async def test_slow_read_does_not_block_unrelated_read(self):
+        entries = [
+            policy_entry("ha_search"),
+            policy_entry("ha_get_state"),
+        ]
+        tools = [catalog_tool(entry.upstream_name) for entry in entries]
+        transport = CommittedSlowTransport(tools)
+        gateway, server, _ = await initialize(
+            entries, tools, transport=transport
         )
-        self.assertTrue(current_result["success"])
+        slow_tool = server._tool_manager.get_tool("ha_search")
+        fast_tool = server._tool_manager.get_tool("ha_get_state")
+
+        slow_task = asyncio.create_task(
+            slow_tool.run({"entity_id": "sun.sun"})
+        )
+        await asyncio.wait_for(
+            transport.slow_call_committed.wait(), timeout=1
+        )
+        fast_result = json.loads(
+            await asyncio.wait_for(
+                fast_tool.run({"entity_id": "sun.sun"}), timeout=1
+            )
+        )
+        self.assertTrue(fast_result["success"])
+        self.assertFalse(slow_task.done())
+
+        transport.release_slow_call.set()
+        slow_result = json.loads(await asyncio.wait_for(slow_task, timeout=1))
+        self.assertTrue(slow_result["success"])
         self.assertEqual(len(transport.calls), 2)
+        self.assertTrue(
+            gateway.health_snapshot()["generic_delegation_available"]
+        )
+
+    async def test_committed_slow_read_does_not_block_discovery_publication(self):
+        entry = policy_entry("ha_search")
+        tools = [catalog_tool(entry.upstream_name)]
+        transport = CommittedSlowTransport(tools)
+        gateway, server, _ = await initialize(
+            [entry], tools, transport=transport
+        )
+        old_tool = server._tool_manager.get_tool(entry.upstream_name)
+        slow_task = asyncio.create_task(
+            old_tool.run({"entity_id": "sun.sun"})
+        )
+        await asyncio.wait_for(
+            transport.slow_call_committed.wait(), timeout=1
+        )
+
+        refreshed = await asyncio.wait_for(
+            gateway.initialize(server), timeout=1
+        )
+        new_tool = server._tool_manager.get_tool(entry.upstream_name)
+        self.assertTrue(refreshed["admission_complete"])
+        self.assertIsNot(new_tool, old_tool)
+        self.assertFalse(slow_task.done())
+
+        transport.release_slow_call.set()
+        slow_result = json.loads(await asyncio.wait_for(slow_task, timeout=1))
+        self.assertTrue(slow_result["success"])
+        health = gateway.health_snapshot()
+        self.assertEqual(health["admission_status"], "admitted_exact")
+        self.assertIs(
+            server._tool_manager.get_tool(entry.upstream_name), new_tool
+        )
+
+    async def test_inflight_retired_route_cannot_revive_quarantined_route(self):
+        entries = [
+            policy_entry("ha_search"),
+            policy_entry("ha_get_state"),
+        ]
+        tools = [catalog_tool(entry.upstream_name) for entry in entries]
+        transport = CommittedSlowTransport(tools)
+        gateway, server, _ = await initialize(
+            entries, tools, transport=transport
+        )
+        old_search = server._tool_manager.get_tool("ha_search")
+        slow_task = asyncio.create_task(
+            old_search.run({"entity_id": "sun.sun"})
+        )
+        await asyncio.wait_for(
+            transport.slow_call_committed.wait(), timeout=1
+        )
+
+        changed_search = catalog_tool(
+            "ha_search", reviewed_schema=schema("changed")
+        )
+        transport.catalog = replace(
+            transport.catalog,
+            tools=(
+                changed_search,
+                catalog_tool("ha_get_state"),
+            ),
+        )
+        refreshed = await asyncio.wait_for(
+            gateway.initialize(server), timeout=1
+        )
+        self.assertEqual(refreshed["admission_status"], "partially_admitted")
+        self.assertIsNone(server._tool_manager.get_tool("ha_search"))
+        self.assertIsNotNone(server._tool_manager.get_tool("ha_get_state"))
+
+        transport.release_slow_call.set()
+        slow_result = json.loads(await asyncio.wait_for(slow_task, timeout=1))
+        self.assertTrue(slow_result["success"])
+        final = gateway.health_snapshot()
+        self.assertEqual(final["admission_status"], "partially_admitted")
+        self.assertEqual(final["dynamically_exposed_count"], 1)
+        self.assertEqual(final["quarantined_automatic_read_count"], 1)
+        self.assertIsNone(server._tool_manager.get_tool("ha_search"))
 
     async def test_search_preserves_upstream_partial_semantics(self):
         value, _gateway = await self._search_case(
@@ -2000,236 +2157,6 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(gateway._reprobe_event.is_set())
         self.assertEqual(len(transport.calls), 3)
 
-    async def test_repeated_stale_churn_gets_one_immediate_retry_then_slow_cadence(self):
-        target = policy_entry("ha_get_state")
-        target_tool = catalog_tool(target.upstream_name)
-        changed_target = catalog_tool(
-            target.upstream_name, schema("changed")
-        )
-        transport = StaleDiscoveryTransport([target_tool])
-        gateway, server, _ = await initialize(
-            [target], [target_tool], transport=transport
-        )
-        admitted = server._tool_manager.get_tool(target.upstream_name)
-        transport.catalog = replace(
-            transport.catalog, server_version="7.14.2"
-        )
-        first_movement = json.loads(
-            await admitted.run({"entity_id": "sun.sun"})
-        )
-        self.assertTrue(first_movement["success"])
-        self.assertEqual(
-            gateway.health_snapshot()[
-                "compatibility_reprobe_trigger_count"
-            ],
-            1,
-        )
-        gateway._reprobe_event.clear()
-
-        for attempt in range(2):
-            transport.discovery_captured.clear()
-            transport.release_discovery.clear()
-            transport.catalog = replace(
-                transport.catalog, tools=(changed_target,)
-            )
-            transport.pause_next_discovery = True
-            stale_initialize = asyncio.create_task(
-                gateway.initialize(server)
-            )
-            await asyncio.wait_for(
-                transport.discovery_captured.wait(), timeout=1
-            )
-            transport.catalog = replace(
-                transport.catalog, tools=(target_tool,)
-            )
-            restored = json.loads(
-                await admitted.run({"entity_id": "sun.sun"})
-            )
-            self.assertTrue(restored["success"])
-            transport.release_discovery.set()
-            discarded = await asyncio.wait_for(
-                stale_initialize, timeout=1
-            )
-            self.assertFalse(discarded["last_discovery_stable"])
-            self.assertTrue(discarded["stale_reprobe_retry_armed"])
-            self.assertEqual(
-                discarded["compatibility_reprobe_status"],
-                "triggered" if attempt == 0 else "waiting",
-            )
-            self.assertEqual(
-                gateway._reprobe_event.is_set(), attempt == 0
-            )
-            gateway._reprobe_event.clear()
-
-        slow_retry_at = "2099-01-01T00:00:00Z"
-        with gateway._lock:
-            gateway._state["compatibility_reprobe_status"] = "waiting"
-            gateway._state[
-                "next_compatibility_reprobe_at"
-            ] = slow_retry_at
-        discovery_attempts = gateway.health_snapshot()[
-            "discovery_attempt_count"
-        ]
-        for observed_version in (
-            "7.14.2",
-            "7.14.3",
-            "7.14.1",
-            "7.14.4",
-        ):
-            transport.catalog = replace(
-                transport.catalog,
-                server_version=observed_version,
-            )
-            result = json.loads(
-                await admitted.run({"entity_id": "sun.sun"})
-            )
-            self.assertTrue(result["success"])
-        waiting = gateway.health_snapshot()
-        self.assertEqual(
-            waiting["compatibility_reprobe_status"], "waiting"
-        )
-        self.assertEqual(
-            waiting["next_compatibility_reprobe_at"], slow_retry_at
-        )
-        self.assertEqual(
-            waiting["compatibility_reprobe_trigger_count"], 1
-        )
-        self.assertEqual(
-            waiting["discovery_attempt_count"], discovery_attempts
-        )
-        self.assertTrue(waiting["stale_reprobe_retry_armed"])
-        self.assertFalse(gateway._reprobe_event.is_set())
-
-        stable = await gateway.initialize(server)
-        self.assertTrue(stable["last_discovery_stable"])
-        self.assertFalse(stable["stale_reprobe_retry_armed"])
-        self.assertFalse(gateway._reprobe_event.is_set())
-        replacement = server._tool_manager.get_tool(
-            target.upstream_name
-        )
-        self.assertIsNot(replacement, admitted)
-
-        transport.catalog = replace(
-            transport.catalog, server_version="7.14.5"
-        )
-        genuinely_new = json.loads(
-            await replacement.run({"entity_id": "sun.sun"})
-        )
-        self.assertTrue(genuinely_new["success"])
-        after_new = gateway.health_snapshot()
-        self.assertEqual(
-            after_new["compatibility_reprobe_trigger_count"], 2
-        )
-        self.assertEqual(
-            after_new["compatibility_reprobe_status"], "triggered"
-        )
-        self.assertTrue(gateway._reprobe_event.is_set())
-
-    async def test_repeated_version_observation_stales_pending_discovery(self):
-        entry = policy_entry("ha_get_state")
-        tool_descriptor = catalog_tool(entry.upstream_name)
-        transport = StaleDiscoveryTransport([tool_descriptor])
-        gateway, server, _ = await initialize(
-            [entry], [tool_descriptor], transport=transport
-        )
-        admitted = server._tool_manager.get_tool(entry.upstream_name)
-        transport.catalog = replace(
-            transport.catalog, server_version="7.14.2"
-        )
-        first = json.loads(
-            await admitted.run({"entity_id": "sun.sun"})
-        )
-        self.assertTrue(first["success"])
-        self.assertEqual(
-            gateway.health_snapshot()[
-                "compatibility_reprobe_trigger_count"
-            ],
-            1,
-        )
-
-        transport.catalog = replace(
-            transport.catalog, server_version="7.14.1"
-        )
-        transport.pause_next_discovery = True
-        stale_initialize = asyncio.create_task(gateway.initialize(server))
-        await asyncio.wait_for(
-            transport.discovery_captured.wait(), timeout=1
-        )
-        transport.catalog = replace(
-            transport.catalog, server_version="7.14.2"
-        )
-        repeated = json.loads(
-            await admitted.run({"entity_id": "sun.sun"})
-        )
-        self.assertTrue(repeated["success"])
-        transport.release_discovery.set()
-        discarded = await asyncio.wait_for(stale_initialize, timeout=1)
-
-        self.assertIs(
-            server._tool_manager.get_tool(entry.upstream_name), admitted
-        )
-        self.assertEqual(
-            discarded["upstream_server_version"], "7.14.1"
-        )
-        self.assertEqual(
-            discarded["observed_upstream_server_version"], "7.14.2"
-        )
-        self.assertEqual(discarded["observed_identity_status"], "accepted")
-        self.assertFalse(discarded["last_discovery_stable"])
-        self.assertEqual(
-            discarded["compatibility_reprobe_trigger_count"], 1
-        )
-        self.assertEqual(len(transport.calls), 2)
-
-    async def test_version_rollback_stales_newer_pending_discovery(self):
-        entry = policy_entry("ha_get_state")
-        tool_descriptor = catalog_tool(entry.upstream_name)
-        transport = StaleDiscoveryTransport([tool_descriptor])
-        gateway, server, _ = await initialize(
-            [entry], [tool_descriptor], transport=transport
-        )
-        admitted = server._tool_manager.get_tool(entry.upstream_name)
-        transport.catalog = replace(
-            transport.catalog, server_version="7.14.2"
-        )
-        changed = json.loads(
-            await admitted.run({"entity_id": "sun.sun"})
-        )
-        self.assertTrue(changed["success"])
-
-        transport.pause_next_discovery = True
-        stale_initialize = asyncio.create_task(gateway.initialize(server))
-        await asyncio.wait_for(
-            transport.discovery_captured.wait(), timeout=1
-        )
-        transport.catalog = replace(
-            transport.catalog, server_version="7.14.1"
-        )
-        rolled_back = json.loads(
-            await admitted.run({"entity_id": "sun.sun"})
-        )
-        self.assertTrue(rolled_back["success"])
-        transport.release_discovery.set()
-        discarded = await asyncio.wait_for(stale_initialize, timeout=1)
-
-        self.assertIs(
-            server._tool_manager.get_tool(entry.upstream_name), admitted
-        )
-        self.assertEqual(
-            discarded["observed_upstream_server_version"], "7.14.1"
-        )
-        self.assertEqual(discarded["version_status"], "reviewed_exact")
-        self.assertEqual(discarded["compatibility_status"], "reconciling")
-        self.assertEqual(
-            discarded["admission_status"],
-            "compatibility_reprobe_pending",
-        )
-        self.assertFalse(discarded["last_discovery_stable"])
-        self.assertEqual(
-            discarded["compatibility_reprobe_trigger_count"], 1
-        )
-        self.assertEqual(len(transport.calls), 2)
-
     async def test_exact_live_restoration_supersedes_stale_drift_discovery(self):
         target = policy_entry("ha_get_state")
         healthy = policy_entry("ha_get_history")
@@ -2372,7 +2299,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(asyncio.CancelledError):
             await task
 
-    async def test_call_time_version_movement_wakes_reprobe_and_recovers(self):
+    async def test_call_time_unreviewed_version_uses_no_fast_retry_lane(self):
         entry = policy_entry("ha_get_state")
         tool_descriptor = catalog_tool(entry.upstream_name)
         transport = FakeTransport([tool_descriptor])
@@ -2380,16 +2307,12 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         gateway = UpstreamReadGateway()
         gateway.configure(settings(), transport=transport, policy=policy(entry))
         first_wait = asyncio.Event()
-        recovered_wait = asyncio.Event()
         waits = 0
 
         async def controlled_sleep(_delay):
             nonlocal waits
             waits += 1
-            if waits == 1:
-                first_wait.set()
-            else:
-                recovered_wait.set()
+            first_wait.set()
             await asyncio.Event().wait()
 
         supervisor = asyncio.create_task(
@@ -2404,34 +2327,84 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         transport.catalog = replace(
             transport.catalog, server_version="7.14.2"
         )
-        retained = json.loads(
+        blocked_result = json.loads(
             await old_tool.run({"entity_id": "sun.sun"})
         )
-        self.assertTrue(retained["success"])
+        self.assertFalse(blocked_result["success"])
         self.assertEqual(
-            retained["metadata"]["upstream_version"], "7.14.2"
+            blocked_result["error_code"], "provider_unavailable"
         )
-        self.assertIsNotNone(
+        self.assertIsNone(
             server._tool_manager.get_tool(entry.upstream_name)
         )
+        await asyncio.sleep(0)
+        self.assertEqual(waits, 1)
+        self.assertFalse(gateway._reprobe_event.is_set())
         self.assertEqual(
             gateway.health_snapshot()["compatibility_reprobe_status"],
-            "triggered",
+            "waiting",
         )
 
-        await asyncio.wait_for(recovered_wait.wait(), timeout=1)
-        recovered = gateway.health_snapshot()
-        self.assertEqual(recovered["upstream_server_version"], "7.14.2")
-        self.assertEqual(recovered["admission_status"], "admitted_compatible")
-        self.assertEqual(recovered["dynamically_exposed_count"], 1)
-        new_tool = server._tool_manager.get_tool(entry.upstream_name)
-        self.assertIsNotNone(new_tool)
-        success = json.loads(
-            await new_tool.run({"entity_id": "sun.sun"})
+        blocked = gateway.health_snapshot()
+        self.assertEqual(
+            blocked["admission_status"], "blocked_incompatible_upstream"
         )
-        self.assertTrue(success["success"])
-        self.assertEqual(len(transport.calls), 2)
-        self.assertEqual(recovered["compatibility_reprobe_trigger_count"], 1)
+        self.assertEqual(blocked["dynamically_exposed_count"], 0)
+        self.assertEqual(transport.calls, [])
+        self.assertEqual(blocked["compatibility_reprobe_trigger_count"], 0)
+        supervisor.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await supervisor
+
+    async def test_supervisor_reuses_terminal_initial_snapshot_before_slow_reprobe(self):
+        entry = policy_entry("ha_get_state")
+        transport = SequencedDiscoveryTransport(
+            [catalog_tool(entry.upstream_name)],
+            [],
+        )
+        transport.catalog = replace(
+            transport.catalog,
+            server_version="7.14.2",
+        )
+        server = FastMCP("initial-snapshot-handoff-test")
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            settings(),
+            transport=transport,
+            policy=policy(entry),
+            admission_validator=lambda _catalog: None,
+        )
+        initial = await gateway.reconcile_until_initialized(
+            server,
+            retry_delays=(0.001,),
+        )
+        self.assertEqual(
+            initial["admission_status"],
+            "blocked_incompatible_upstream",
+        )
+        self.assertEqual(transport.discovery_calls, 1)
+
+        slow_wait_started = asyncio.Event()
+
+        async def controlled_sleep(delay):
+            self.assertEqual(delay, 23.0)
+            slow_wait_started.set()
+            await asyncio.Event().wait()
+
+        supervisor = asyncio.create_task(
+            gateway.supervise_reconciliation(
+                server,
+                initial_snapshot=initial,
+                reprobe_interval_seconds=23.0,
+                sleep=controlled_sleep,
+            )
+        )
+        await asyncio.wait_for(slow_wait_started.wait(), timeout=1)
+        self.assertEqual(transport.discovery_calls, 1)
+        self.assertEqual(
+            gateway.health_snapshot()["compatibility_reprobe_status"],
+            "waiting",
+        )
         supervisor.cancel()
         with self.assertRaises(asyncio.CancelledError):
             await supervisor
@@ -2603,27 +2576,22 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(published["dynamically_exposed_count"], 0)
         self.assertEqual(catalog["dynamic_upstream_count"], 0)
 
-    async def test_newer_successful_call_supersedes_discovery_failure(self):
+    async def test_transient_discovery_failure_does_not_wait_for_slow_read(self):
         entry = policy_entry("ha_get_state")
-        call_started = asyncio.Event()
-        release_call = asyncio.Event()
 
-        class OverlapTransport(SequencedDiscoveryTransport):
-            async def execute_read(
-                self, tool_name, arguments, *, timeout_seconds, catalog_validator
-            ):
-                call_started.set()
-                await release_call.wait()
-                return await super().execute_read(
-                    tool_name,
-                    arguments,
-                    timeout_seconds=timeout_seconds,
-                    catalog_validator=catalog_validator,
-                )
+        class OverlapTransport(CommittedSlowTransport):
+            def __init__(self, tools):
+                super().__init__(tools, slow_tool="ha_get_state")
+                self.discovery_calls = 0
+
+            async def discover(self):
+                self.discovery_calls += 1
+                if self.discovery_calls == 2:
+                    raise DashboardTransportError("connection_failed")
+                return self.catalog
 
         tool = catalog_tool("ha_get_state")
-        transport = OverlapTransport([tool], [])
-        transport.outcomes = [transport.catalog, "connection_failed"]
+        transport = OverlapTransport([tool])
         gateway, server, _ = await initialize(
             [entry], [tool], transport=transport
         )
@@ -2631,29 +2599,36 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         call_task = asyncio.create_task(
             admitted_tool.run({"entity_id": "sun.sun"})
         )
-        await asyncio.wait_for(call_started.wait(), timeout=1)
+        await asyncio.wait_for(
+            transport.slow_call_committed.wait(), timeout=1
+        )
 
-        failed_task = asyncio.create_task(gateway.initialize(server))
-        await asyncio.sleep(0)
-        self.assertFalse(failed_task.done())
-        release_call.set()
+        failed = await asyncio.wait_for(
+            gateway.initialize(server), timeout=1
+        )
+        self.assertEqual(
+            failed["last_discovery_failure_category"],
+            "connection_failed",
+        )
+        self.assertTrue(failed["generic_delegation_available"])
+        self.assertFalse(call_task.done())
+
+        transport.release_slow_call.set()
         result = json.loads(await asyncio.wait_for(call_task, timeout=1))
         self.assertTrue(result["success"])
-        failed = await asyncio.wait_for(failed_task, timeout=1)
-        self.assertIsNone(failed["last_failure_category"])
-        self.assertTrue(failed["generic_delegation_available"])
         self.assertEqual(build_capability_catalog()["dynamic_upstream_count"], 1)
 
         health = gateway.health_snapshot()
         published = build_capability_catalog()["upstream_read_gateway"]
-        self.assertIsNone(health["last_failure_category"])
+        self.assertEqual(
+            health["last_failure_category"], "connection_failed"
+        )
         self.assertTrue(health["generic_delegation_available"])
-        self.assertIsNone(published["last_failure_category"])
+        self.assertEqual(
+            published["last_failure_category"], "connection_failed"
+        )
         self.assertTrue(published["generic_delegation_available"])
         self.assertFalse(health["last_discovery_stable"])
-        self.assertEqual(
-            health["reconciliation_status"], "reprobe_requested"
-        )
         self.assertEqual(capability_for_tool("ha_get_state")["fallback"], "none")
 
     async def test_listeners_start_before_delayed_upstream_recovers_41_to_67(self):

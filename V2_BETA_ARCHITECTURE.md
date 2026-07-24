@@ -10,12 +10,14 @@ annotations, output-schema presence/fingerprint, and other dispatch-relevant
 contracts match the committed policy. All mixed, write, physical/high-risk,
 prohibited, or unsupported entries remain generic-route unavailable.
 
-The reviewed 7.14.1 version, source, and 78-tool catalog are evidence. A version
-change alone does not disable exact contracts, including an otherwise exact
-unknown major. Missing or incompatible reads are removed or quarantined
-individually, and new tools remain unavailable without harming matches. Stock
-catalog count/fingerprint equality stays informational. There is no direct-HA
-fallback.
+The binary-reviewed 7.14.1 release profile is authority for generic admission,
+not merely self-advertised version or descriptor evidence. Unreviewed patches,
+downgrades, prereleases, and unknown majors fail closed before contract
+matching. After exact release authority succeeds, missing or incompatible reads
+are removed or quarantined individually, and new tools remain unavailable
+without harming matches. Stock catalog count/fingerprint equality stays
+informational. Future no-rebuild release admission requires the Dev16 signed
+generic registry. There is no direct-HA fallback.
 
 Fast bounded reconciliation recovers from upstream boot order. A separate slow
 reprobe cadence handles successfully observed stable incompatibility while
@@ -23,9 +25,13 @@ retaining the exact matched subset. Dashboard compiled-contract admission is
 independent from generic reads. See
 [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md).
 
-The transport is stateless. Fresh `tools/list` calls see recovered tools, but a
-client that cached the initial catalog must re-list or reconnect; Engineering
-does not advertise or broadcast a tool-list change notification.
+The transport is stateless. When generic upstream reads are configured,
+authenticated MCP traffic remains unavailable with retryable HTTP 503 until
+the initial bounded reconciliation publishes its stable or terminal catalog.
+The first accepted `tools/list` therefore cannot cache the transient 41-tool
+startup inventory. Later compatibility changes still require clients to
+re-list or reconnect; Engineering does not advertise or broadcast a tool-list
+change notification.
 
 ## RC2dev13 reboot and semantic-completeness correction
 

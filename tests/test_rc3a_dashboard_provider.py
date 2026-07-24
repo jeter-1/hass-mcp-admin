@@ -663,14 +663,14 @@ class CapabilityAndAllowlistTests(unittest.IsolatedAsyncioTestCase):
         transport = FakeTransport(
             handshake_value=handshake(
                 tools=[dashboard_tool(), unrelated],
-                version="7.14.2",
+                version="7.13.0",
             )
         )
         provider = UpstreamDashboardProvider()
         provider.configure(settings(), transport=transport)
         await provider.refresh_capabilities()
         health = provider.health_snapshot()
-        self.assertEqual(health["admission_status"], "admitted_compatible_contract")
+        self.assertEqual(health["admission_status"], "admitted_builtin_attestation")
         self.assertEqual(health["capability_status"], "available")
         self.assertEqual(health["upstream_tool_count"], 2)
         self.assertIsNone(health["catalog_fingerprint"])

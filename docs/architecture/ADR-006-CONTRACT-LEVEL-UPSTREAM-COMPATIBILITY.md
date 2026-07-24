@@ -4,8 +4,7 @@ Status: accepted for Dev15
 
 ## Supersession
 
-This decision supersedes only the exact-version and shared all-or-nothing
-admission rules in:
+This decision supersedes only the shared all-or-nothing admission rules in:
 
 - [ADR-003](ADR-003-REVIEWED-ARGUMENT-CONSTRAINED-DASHBOARD-READS.md);
 - [ADR-004](ADR-004-SIGNED-UPSTREAM-CONTRACT-ADMISSION.md); and
@@ -13,56 +12,65 @@ admission rules in:
 
 Those records remain the history of the releases that implemented them. Their
 fixed tool names, argument constraints, classification boundaries, response
-validation, no-fallback rule, and prohibition on generic writes remain in
-force.
+validation, explicit reviewed release authority, no-fallback rule, and
+prohibition on generic writes remain in force.
 
 ## Context
 
-The first read gateway used `ha-mcp` 7.14.1 as both reviewed evidence and a
-global runtime identity gate. The dashboard provider separately required a
-version-specific release attestation. The application then reused dashboard
-admission as a prerequisite for the generic read gateway.
+The first read gateway used `ha-mcp` 7.14.1 as one global decision for both
+release authority and all 26 reviewed reads. The dashboard provider separately
+required a version-specific release attestation. The application then reused
+dashboard admission as a prerequisite for the generic read gateway.
 
-That design failed closed, but it made unrelated compatibility decisions
-dependent on one version string and one dashboard tool. A release that changed
-only its version could remove 26 otherwise exact reads. One dashboard mismatch
-could remove every generic read, and stable catalog differences used the same
-rapid retry loop intended to recover from upstream boot order.
+That design failed closed, but it made unrelated tool compatibility decisions
+all-or-nothing and dependent on one dashboard tool. One changed or missing read
+could remove all 26 reads, one dashboard mismatch could remove every generic
+read, and stable catalog differences used the same rapid retry loop intended
+to recover from upstream boot order.
 
 The committed 7.14.1 review remains valuable. It defines the stock inventory,
 the 26 approved automatic-read contracts, the blocked classifications, and the
-baseline evidence against which later observations are explained. It does not
-need to make a version string executable authority.
+baseline evidence against which later observations are explained. In Dev15 it
+also remains the exact compiled generic release/profile authority. The
+correction is to evaluate each reviewed tool independently after that authority
+succeeds, not to let a live server authorize an unreviewed release by
+self-advertising an identical contract.
 
 ## Decision
 
-Engineering admits upstream capability at the smallest independently reviewed
+Engineering first establishes explicit reviewed release/profile authority,
+then admits upstream capability at the smallest independently reviewed tool
 contract boundary.
 
 ### Identity and protocol
 
-Server identity and supported MCP protocol remain global prerequisites. A
-different server name, malformed discovery response, unsupported protocol, or
-transport failure cannot be repaired by a matching tool name or schema.
+Server identity, supported MCP protocol, and exact reviewed release/profile
+authority remain global prerequisites. The compiled generic-read profile
+currently authorizes exactly `ha-mcp` 7.14.1. A different server name,
+malformed discovery response, unsupported protocol, unreviewed patch/minor/
+major/prerelease/downgrade, or transport failure cannot be repaired by a
+matching self-advertised tool name or schema.
 
 The observed upstream version is bounded evidence. `version_status` reports it
 relative to the reviewed 7.14.1 baseline as:
 
 - `reviewed_exact` when it equals the reviewed evidence version;
-- `observed_contract_only` when it differs; or
+- `rejected_unreviewed` when a bounded but unauthorized version is observed;
+- `rejected_identity` or `rejected_protocol` for those respective global
+  prerequisite failures; or
 - `not_observed` before a valid catalog identity is available.
 
-A changed version is not itself a compatibility failure. This applies to
-patch, minor, and major changes. Exact contracts from an otherwise valid
-`ha-mcp` identity may be admitted even when no version-specific release record
-exists.
+A changed version is not by itself proof of incompatibility, but neither is it
+authority. Dev15 fails closed until that exact release is represented by an
+explicitly reviewed profile. Dev16 is the planned signed-registry path for
+adding such authority without an Engineering rebuild.
 
 Health retains the bounded observation separately in
 `observed_upstream_server_name`, `observed_upstream_server_version`,
 `observed_protocol_version`, and `observed_identity_status`. The status is
-`accepted` only when the name, version evidence, and protocol pass their global
-checks; rejected or unparseable observations are sanitized and cannot become
-compatibility authority.
+`accepted` only when the name, exact reviewed release/profile, and protocol pass
+their global checks; rejected or unparseable observations are sanitized and
+cannot become compatibility authority.
 
 ### Generic automatic reads
 
@@ -99,21 +107,19 @@ dynamic registration and capability entry are removed atomically. Other exact
 matches remain available.
 
 Before each dispatch, the transport obtains `tools/list` in the same MCP
-session that would issue `tools/call`. Engineering rechecks global identity and
-protocol, requires the selected target exactly once, and compares that target
-with the complete contract bound to the current registration generation.
-Missing, duplicate, or changed selected-target evidence stops before
-`tools/call` and removes or quarantines only that route.
+session that would issue `tools/call`. Engineering rechecks global identity,
+exact release/profile authority, and protocol, requires the selected target
+exactly once, and compares that target with the complete contract bound to the
+current registration generation. Missing, duplicate, changed-target, or
+unreviewed-version evidence stops before `tools/call`; matching
+self-advertised contracts cannot authorize the observed release.
 
-A valid bounded version movement during this check is evidence, not contract
-drift. When the selected target remains exact, the dispatch proceeds once, all
-admitted routes remain registered, the observation becomes
-`observed_contract_only`, aggregate compatibility becomes `reconciling`,
-admission becomes `compatibility_reprobe_pending`, and slow compatibility
-reprobe is triggered. This retains the last admitted routes without claiming
-the complete catalog was verified at the newly observed version. A
-different server name, malformed version, unsupported protocol, stale route
-generation, or changed selected-target contract still fails before dispatch.
+Each call acquires an immutable current-generation route snapshot under a
+short lease. It does not hold a global registry lock while performing network
+I/O. A route retired before its pre-dispatch check fails without `tools/call`;
+unrelated reads and reconciliation can proceed concurrently. A call already
+committed after successful pre-dispatch validation may finish, but its result
+cannot republish or revive a retired generation.
 
 ### New, mixed, action, and write tools
 
@@ -155,21 +161,14 @@ catalog independently:
   is a mixed-operation upstream tool.
 
 The dashboard provider still constructs only the two fixed non-screenshot
-argument shapes and enforces its response and dual-hash contracts. When no
-exact-version attestation exists, an exact compiled contract is reported with
-admission status `admitted_compatible_contract` and makes no
-release-attestation or provenance claim. When the optional signed dashboard
-registry is enabled, a currently usable signed registry must also establish
-that no exact entry applies before this compatible-family path is available.
-
-An exact-version built-in or verified signed attestation, when present, remains
-authoritative. A revoked entry or contract mismatch blocks that exact release;
-the provider must not fall back to an older release contract or to the
-unattested compatible-contract path. An expired cached remote entry is retained
-as deny-only exact-release evidence until a valid higher-sequence registry
-supersedes it; it can never authorize compatibility. With the registry enabled,
-expiry or unavailability after the hard cache limit blocks compatible-family
-admission rather than silently reviving older binary evidence.
+argument shapes and enforces its response and dual-hash contracts. It first
+requires an exact-version built-in or verified signed attestation, then
+evaluates the compiled family. A missing exact attestation, revoked entry, or
+contract mismatch blocks that exact release; the provider must not fall back
+to an older release contract or to an unattested compatible variant. An
+expired cached remote entry is retained as deny-only exact-release evidence
+until a valid higher-sequence registry supersedes it; it can never authorize
+compatibility.
 
 The two Engineering dashboard wrappers remain part of the static catalog.
 Their registration is not a claim that the independently evaluated provider is
@@ -181,20 +180,17 @@ The generic gateway reports one bounded aggregate compatibility state:
 
 - `exact`: all reviewed automatic-read contracts are admitted at the reviewed
   evidence version;
-- `compatible`: all reviewed automatic-read contracts are admitted at a
-  different observed version;
 - `partial`: at least one reviewed read is admitted and at least one is missing
   or quarantined;
 - `incompatible`: a stable catalog was evaluated but no reviewed automatic
   read can be admitted;
-- `reconciling`: a selected target matched at changed bounded version
-  evidence, but aggregate compatibility at that version is not yet known; or
+- `reconciling`: a bounded catalog reconciliation is in progress; or
 - `unavailable`: the provider is unconfigured, global identity/protocol
-  validation failed, or a catalog cannot currently be obtained.
+  or release/profile validation failed, or a catalog cannot currently be
+  obtained.
 
 Unreviewed additions and known blocked tools are counted separately. They do
-not change `exact` or `compatible` to `partial` when all 26 reviewed reads
-still match.
+not change `exact` to `partial` when all 26 reviewed reads still match.
 
 Health and capability output distinguish at least:
 
@@ -232,6 +228,17 @@ signatures, endpoint material, credentials, or raw exceptions.
 
 ### Recovery and reprobe cadence
 
+Liveness and initial catalog readiness are separate. The bounded `/ready`
+response contains only `ready`, `initial_reconciliation_required`,
+`initial_reconciliation_complete`, and
+`status=ready|initial_reconciliation_pending`. When upstream is configured,
+authenticated MCP traffic returns HTTP 503 until
+`reconcile_until_initialized` returns the first stable or terminal
+reconciliation result. This prevents a schema-caching client from accepting the
+transient 41-tool static catalog during upstream startup. An unconfigured
+gateway does not require initial reconciliation and is ready for its truthful
+static catalog.
+
 Two supervised cadences serve different failure classes:
 
 1. **Fast transport startup recovery** handles upstream boot order and transient
@@ -244,10 +251,11 @@ Two supervised cadences serve different failure classes:
    probe loop for a condition that normally requires an upstream or policy
    change.
 
-Dev15 serializes generic delegated calls behind the same-session
-catalog-validation/dispatch barrier and adds bounded paginated `tools/list`
-work before every `tools/call`. Candidate acceptance must re-characterize
-`ha_search` latency and concurrent delegated-read throughput.
+Dev15 adds bounded paginated `tools/list` work before every `tools/call`.
+Delegated calls use immutable route snapshots and short lease acquisition;
+they do not hold a global dispatch or reconciliation lock across network I/O.
+Candidate acceptance must re-characterize `ha_search` latency and concurrent
+delegated-read throughput.
 
 Background discovery and delegated calls may overlap. Engineering fingerprints
 only the admission-relevant identity, protocol, version evidence, and sorted
@@ -277,36 +285,38 @@ Engineering-native. The reviewed generic set contains 26 reads.
 - One missing or quarantined read: 41 static + 25 delegated = 66.
 - New or newly visible blocked tools: the registered count does not increase.
 
-Clients that cache `tools/list` must re-list or reconnect after a dynamic
-subset changes. This decision does not claim `tools/list_changed` notification
-delivery.
+After initial reconciliation, clients that cache `tools/list` must re-list or
+reconnect after a later dynamic subset change. This decision does not claim
+`tools/list_changed` notification delivery.
 
 ## Acceptance examples
 
 Deterministic validation covers:
 
-1. a version-only change retaining all 26 generic reads and compatible
-   dashboard operations;
+1. exact 7.14.1 reviewed-profile admission retaining all 26 generic reads;
 2. one schema, annotation, or semantic change quarantining only its tool;
 3. new reads and writes remaining unavailable without harming exact matches;
 4. a missing reviewed read being removed while the other reads remain;
 5. generic and dashboard admission succeeding or failing independently;
-6. an unknown major version with exact contracts being compatible;
+6. an unreviewed patch, unknown major, or downgrade with self-advertised exact
+   contracts failing closed;
 7. truthful bounded incompatibility and version state;
 8. same-session selected-target revalidation before `tools/call`, with
    missing, duplicate, and changed targets retired independently;
-9. valid call-time version movement retaining routes while triggering a slow
-   reprobe;
+9. call-time unreviewed version movement stopping before dispatch and
+   entering the blocked state without a fast-reprobe trigger, then being
+   reconsidered on the slow periodic cadence;
 10. unrelated malformed or duplicate unreviewed descriptors remaining blocked
     without preventing an exact reviewed target call; and
 11. separate fast transport recovery and slow compatibility reprobe cadence;
     and
-12. sustained equivalent calls cannot starve discovery, while repeated
-    incompatible observations receive at most one immediate stale retry.
+12. a slow delegated read blocks neither another read nor reconciliation, and
+    a completed in-flight call cannot revive a retired route.
 
 The pinned 7.14.1 exact-image gate remains an immutable regression for the
-reviewed source/image and full stock catalog. It is evidence for the baseline,
-not a global version gate for later compatible releases.
+reviewed source/image and full stock catalog. It is the compiled generic
+release/profile authority in Dev15. A later release requires separately
+reviewed authority; automatic no-rebuild admission is deferred to Dev16.
 
 ## Deferred work
 

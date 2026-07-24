@@ -7,29 +7,35 @@ reads. Because the client can expose only one MCP server, Engineering is the
 front door for its 41 static tools plus dynamically discovered,
 exact-contract-matched reads from the reviewed `ha-mcp` policy.
 
-The native listeners do not block on upstream boot order. One supervised
-single-flight recovery lane uses bounded fast delays while the fixed upstream
-endpoint is not ready. Stable missing or incompatible contracts use a separate
-slow reprobe cadence. The 41 static tools and every safely admitted generic
-subset remain available while compatibility is incomplete. Subsequent
-`tools/list` calls see the current subset; stateless clients that cache an
-earlier list must re-list or reconnect.
+The native listeners and liveness endpoint do not block on upstream boot order.
+One supervised single-flight recovery lane uses bounded fast delays while the
+fixed upstream endpoint is not ready. When upstream is configured, `/ready` and
+authenticated MCP traffic return HTTP 503 until the first stable or terminal
+reconciliation result; a schema-caching client therefore cannot capture the
+transient 41-tool catalog. Stable missing or incompatible contracts use a
+separate slow reprobe cadence. After initial readiness, the static tools and
+every safely admitted generic subset remain available during later reprobes.
+Subsequent `tools/list` calls see the current subset; stateless clients that
+cache an earlier list must re-list or reconnect.
 
 One generic provider handles the policy-approved read set. The committed stock
 78-tool inventory classifies 26 as automatic reads and blocks every mixed,
-write, action, prohibited, or unsupported tool. A deployment exposes only the
-reviewed subset whose exact input-schema fingerprint, normalized description
-semantics, reviewed safety annotations, output-schema presence/fingerprint,
-and other semantic contracts match. Missing reads and contract drift fail
-closed per tool;
-unreviewed additions stay unavailable without harming matches. The reviewed
-7.14.1 version is evidence and a changed version is not a global failure when
-the contracts remain exact.
+write, action, prohibited, or unsupported tool. Dev15 first requires the exact
+compiled 7.14.1 release/profile. It then exposes only the reviewed subset whose
+exact input-schema fingerprint, normalized description semantics, reviewed
+safety annotations, output-schema presence/fingerprint, and other semantic
+contracts match. Missing reads and contract drift fail closed per tool;
+unreviewed additions stay unavailable without harming matches. Another
+observed version cannot authorize itself through identical advertised
+contracts.
 
 Dashboard admission is independent. The mixed dashboard operation remains
-reachable only through its existing fixed non-screenshot wrappers; its
-incompatibility cannot remove generic reads, and a generic quarantine cannot
-remove dashboard capability. No delegated call has a direct-HA fallback. See
+reachable only through an exact built-in or verified signed release attestation
+and its existing fixed non-screenshot wrappers; its incompatibility cannot
+remove generic reads, and a generic quarantine cannot remove dashboard
+capability. Delegated calls use immutable route snapshots and short leases so
+network I/O is not globally serialized; retired routes cannot dispatch or be
+revived by a finishing call. No delegated call has a direct-HA fallback. See
 [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md);
 [`ADR-005`](docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md) retains the
 original Phase 1 history.

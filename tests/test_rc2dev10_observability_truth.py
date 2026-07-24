@@ -216,14 +216,25 @@ class RegistryAndDriftTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ContractValidationError):
             ReleaseAttestation.from_mapping(value)
 
-    async def test_compatible_contract_health_does_not_claim_release_provenance(self):
-        health = await provider_health(
-            "7.14.2",
-            published_tool("7.14.1"),
+    async def test_unattested_contract_health_reports_missing_release_authority(self):
+        provider = UpstreamDashboardProvider()
+        provider.configure(
+            settings(),
+            transport=DiscoveryTransport(
+                "7.14.2",
+                published_tool("7.14.1"),
+            ),
+        )
+        with self.assertRaises(DashboardProviderError):
+            await provider.refresh_capabilities()
+        health = provider.health_snapshot()
+        self.assertEqual(
+            health["admission_status"], "rejected_unknown_release"
         )
         self.assertEqual(
-            health["admission_status"], "admitted_compatible_contract"
+            health["validation_reason"], "upstream_attestation_missing"
         )
+        self.assertEqual(health["capability_status"], "unavailable")
         self.assertIsNone(health["admission_source"])
         self.assertIsNone(health["attestation_entry_id"])
         self.assertIsNone(health["attested_upstream_version"])
@@ -232,10 +243,10 @@ class RegistryAndDriftTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["observed_upstream_version"], "7.14.2")
         self.assertEqual(health["revocation_status"], "not_evaluated")
         self.assertEqual(health["runtime_descriptor_drift"], "not_comparable")
-        self.assertTrue(health["input_contract_match"])
-        self.assertTrue(health["security_contract_match"])
-        self.assertTrue(health["output_contract_match"])
-        self.assertTrue(health["runtime_contract_match"])
+        self.assertFalse(health["input_contract_match"])
+        self.assertFalse(health["security_contract_match"])
+        self.assertFalse(health["output_contract_match"])
+        self.assertFalse(health["runtime_contract_match"])
 
     async def test_selected_remote_attestation_supplies_both_evidence_families(self):
         entry = replace(

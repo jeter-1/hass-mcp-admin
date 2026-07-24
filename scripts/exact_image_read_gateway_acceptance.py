@@ -14,6 +14,8 @@ import logging
 from pathlib import Path
 import sys
 from typing import Any
+from urllib.error import HTTPError
+from urllib.parse import urlsplit, urlunsplit
 from urllib.request import urlopen
 
 from mcp import ClientSession
@@ -34,6 +36,9 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
 
 EXPECTED_UPSTREAM_VERSION = "7.14.1"
 EXPECTED_ENGINEERING_BASELINE_COUNT = 41
+ACCEPTANCE_TIMEOUT_SECONDS = 120
+MAX_DIAGNOSTIC_ITEMS = 32
+MAX_FAILURE_MESSAGE_CHARS = 512
 EXPECTED_STOCK_COUNTS = {
     "automatic_read": 26,
     "mixed_or_requires_wrapper": 14,
@@ -58,12 +63,187 @@ REPRESENTATIVE_CALLS = {
 
 
 class AcceptanceFailure(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        diagnostics: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message[:MAX_FAILURE_MESSAGE_CHARS])
+        self.diagnostics = diagnostics or {}
 
 
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AcceptanceFailure(message)
+
+
+def _exception_leaves(exc: BaseException) -> list[BaseException]:
+    if isinstance(exc, BaseExceptionGroup):
+        values: list[BaseException] = []
+        for nested in exc.exceptions[:MAX_DIAGNOSTIC_ITEMS]:
+            values.extend(_exception_leaves(nested))
+            if len(values) >= MAX_DIAGNOSTIC_ITEMS:
+                break
+        return values[:MAX_DIAGNOSTIC_ITEMS]
+    return [exc]
+
+
+def _bounded_failure_result(exc: BaseException) -> dict[str, Any]:
+    leaves = _exception_leaves(exc)
+    acceptance = next(
+        (item for item in leaves if isinstance(item, AcceptanceFailure)),
+        None,
+    )
+    return {
+        "result": "FAIL",
+        "failure": {
+            "category": (
+                "acceptance_failure"
+                if acceptance is not None
+                else "acceptance_execution_failure"
+            ),
+            "message": (
+                str(acceptance)[:MAX_FAILURE_MESSAGE_CHARS]
+                if acceptance is not None
+                else "The bounded exact-image acceptance did not complete."
+            ),
+            "exception_types": sorted(
+                {type(item).__name__[:128] for item in leaves}
+            )[:MAX_DIAGNOSTIC_ITEMS],
+        },
+        "diagnostics": (
+            acceptance.diagnostics
+            if isinstance(acceptance, AcceptanceFailure)
+            else {}
+        ),
+    }
+
+
+def _bounded_catalog_diagnostics(
+    health: dict[str, Any],
+    *,
+    expected_names: set[str],
+    observed_names: set[str],
+    readiness: dict[str, Any],
+) -> dict[str, Any]:
+    gateway_states = find_values(health, "upstream_read_gateway")
+    gateway = next(
+        (item for item in gateway_states if isinstance(item, dict)),
+        {},
+    )
+    scalar_fields = (
+        "configured",
+        "initialized",
+        "generic_delegation_available",
+        "admission_complete",
+        "compatibility_status",
+        "admission_status",
+        "reconciliation_active",
+        "reconciliation_status",
+        "discovery_attempt_count",
+        "retry_count",
+        "last_failure_category",
+        "last_discovery_failure_category",
+        "last_call_failure_category",
+        "upstream_server_name",
+        "upstream_server_version",
+        "observed_upstream_server_name",
+        "observed_upstream_server_version",
+        "observed_protocol_version",
+        "reviewed_upstream_version",
+        "upstream_advertised_tool_count",
+        "observed_advertised_tool_count",
+        "reviewed_automatic_read_count",
+        "exact_matched_automatic_read_count",
+        "dynamically_exposed_count",
+        "missing_automatic_read_count",
+        "quarantined_automatic_read_count",
+        "unreviewed_observed_tool_count",
+        "recommended_action",
+    )
+    bounded_gateway: dict[str, Any] = {}
+    for name in scalar_fields:
+        value = gateway.get(name)
+        if isinstance(value, str):
+            bounded_gateway[name] = value[:256]
+        elif isinstance(value, (bool, int)) or value is None:
+            bounded_gateway[name] = value
+    for name in (
+        "failure_counts",
+        "quarantine_reason_counts",
+        "blocked_classification_counts",
+    ):
+        value = gateway.get(name)
+        if isinstance(value, dict):
+            bounded_gateway[name] = {
+                str(key)[:128]: count
+                for key, count in sorted(
+                    value.items(), key=lambda item: str(item[0])
+                )[:MAX_DIAGNOSTIC_ITEMS]
+                if isinstance(count, int)
+            }
+    bounded_gateway["missing_tools"] = [
+        str(item)[:128]
+        for item in gateway.get("missing_tools", [])
+        if isinstance(item, str)
+    ][:MAX_DIAGNOSTIC_ITEMS]
+    bounded_gateway["quarantined_tools"] = [
+        {
+            name: str(item.get(name))[:128]
+            for name in (
+                "upstream_name",
+                "exposed_name",
+                "reason",
+                "expected_fingerprint",
+                "observed_fingerprint",
+            )
+            if item.get(name) is not None
+        }
+        for item in gateway.get("quarantined_tools", [])
+        if isinstance(item, dict)
+    ][:MAX_DIAGNOSTIC_ITEMS]
+    return {
+        "initial_catalog_readiness": readiness,
+        "missing_expected_tools": sorted(expected_names - observed_names)[
+            :MAX_DIAGNOSTIC_ITEMS
+        ],
+        "unexpected_tools": sorted(observed_names - expected_names)[
+            :MAX_DIAGNOSTIC_ITEMS
+        ],
+        "upstream_read_gateway": bounded_gateway,
+    }
+
+
+def engineering_readiness(endpoint: str) -> dict[str, Any]:
+    parts = urlsplit(endpoint)
+    ready_url = urlunsplit((parts.scheme, parts.netloc, "/ready", "", ""))
+    try:
+        with urlopen(ready_url, timeout=5) as response:  # noqa: S310 - fixed CI endpoint
+            status = response.status
+            raw = response.read(1024)
+    except HTTPError as exc:
+        status = exc.code
+        raw = exc.read(1024)
+    try:
+        value = json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        value = {}
+    return {
+        "http_status": status,
+        "ready": value.get("ready") is True,
+        "initial_reconciliation_required": (
+            value.get("initial_reconciliation_required") is True
+        ),
+        "initial_reconciliation_complete": (
+            value.get("initial_reconciliation_complete") is True
+        ),
+        "status": (
+            value.get("status")[:64]
+            if isinstance(value.get("status"), str)
+            else "unknown"
+        ),
+    }
 
 
 async def list_all_tools(session: ClientSession) -> list[dict[str, Any]]:
@@ -158,6 +338,12 @@ async def inspect_upstream(endpoint: str) -> tuple[list[dict[str, Any]], str]:
 async def inspect_engineering(
     endpoint: str, fixture_stats_url: str, upstream_names: set[str]
 ) -> dict[str, Any]:
+    readiness = engineering_readiness(endpoint)
+    if readiness["http_status"] != 200 or readiness["ready"] is not True:
+        raise AcceptanceFailure(
+            "Engineering did not publish a ready initial catalog.",
+            diagnostics={"initial_catalog_readiness": readiness},
+        )
     base_names = {
         tool.name for tool in get_registered_server()._tool_manager.list_tools()
     }
@@ -184,8 +370,29 @@ async def inspect_engineering(
             advertised = await list_all_tools(session)
             advertised_by_name = {item["name"]: item for item in advertised}
             names = set(advertised_by_name)
-            require(base_names <= names, "an existing Engineering tool is missing")
-            require(automatic <= names, "an exact matched reviewed read is missing")
+            if "get_server_health" not in names:
+                raise AcceptanceFailure(
+                    "The bounded Engineering health tool is missing.",
+                    diagnostics={
+                        "initial_catalog_readiness": readiness,
+                        "missing_expected_tools": ["get_server_health"],
+                        "observed_tool_count": len(names),
+                    },
+                )
+            health_before_result = await session.call_tool(
+                "get_server_health", {}
+            )
+            health_before = decode_tool_result(health_before_result)
+            if not base_names <= names or not automatic <= names:
+                raise AcceptanceFailure(
+                    "The first accepted Engineering catalog is incomplete.",
+                    diagnostics=_bounded_catalog_diagnostics(
+                        health_before,
+                        expected_names=base_names | automatic,
+                        observed_names=names,
+                        readiness=readiness,
+                    ),
+                )
             require("ha_get_logs" not in names, "raw log delegation is reachable")
             require("ha_call_service" not in names, "write-classified tool is advertised")
             require(len(names) == len(base_names | automatic), "unexpected tool exposed")
@@ -207,8 +414,6 @@ async def inspect_engineering(
                     f"reviewed annotation mismatch: {entry.exposed_name}",
                 )
 
-            health_before_result = await session.call_tool("get_server_health", {})
-            health_before = decode_tool_result(health_before_result)
             direct_before = find_values(health_before, "requests_by_provider")
             fallback_before = find_values(health_before, "fallback_count")
             routing_before = next(
@@ -438,6 +643,7 @@ async def inspect_engineering(
         "upstream_name_count": len(upstream_names),
         "direct_provider_snapshots": {"before": direct_before, "after": direct_after},
         "fallback_snapshots": {"before": fallback_before, "after": fallback_after},
+        "initial_catalog_readiness": readiness,
         "fixture_stats": stats,
     }
 
@@ -494,10 +700,21 @@ def main() -> None:
     parser.add_argument("--fixture-stats-url", required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    args.output.parent.mkdir(parents=True, exist_ok=True)
     try:
-        result = asyncio.run(run(args))
-    except AcceptanceFailure as exc:
-        raise SystemExit(f"exact-image read gateway acceptance failed: {exc}") from None
+        result = asyncio.run(
+            asyncio.wait_for(run(args), timeout=ACCEPTANCE_TIMEOUT_SECONDS)
+        )
+    except Exception as exc:
+        failure = _bounded_failure_result(exc)
+        args.output.write_text(
+            json.dumps(failure, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        raise SystemExit(
+            "exact-image read gateway acceptance failed; "
+            "see the bounded result artifact"
+        ) from None
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(
         "exact-image read gateway acceptance: PASS "

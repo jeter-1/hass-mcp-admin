@@ -52,9 +52,10 @@ ChatGPT, Claude, and other MCP-capable clients.
 The v2 pivot makes Engineering the one client-visible front door: it preserves
 its engineering, analysis, governance, verification, and handoff tools while
 dynamically adding only exact contract-matched pure-read operations from the
-reviewed `ha-mcp` policy. The 7.14.1 version and stock catalog remain evidence,
-not a global version gate. Each missing or incompatible read is withheld
-individually; writes and mixed-operation upstream tools remain unavailable
+reviewed `ha-mcp` policy. Dev15 first requires its exact compiled 7.14.1
+release/profile, then withholds each missing or incompatible read individually.
+An unreviewed release cannot authorize itself through matching live
+descriptors; writes and mixed-operation upstream tools remain unavailable
 through the generic gateway. See [ARCHITECTURE.md](ARCHITECTURE.md) for the
 current boundaries.
 
@@ -225,12 +226,11 @@ The dashboard boundary adds only `list_dashboards` and
 secret-configured `upstream_dashboard` MCP provider whose allowlist contains
 only `ha_config_get_dashboard`. Exact reviewed attestations for `ha-mcp`
 7.13.0, 7.14.0, and 7.14.1 retain release provenance for the compiled semantic
-dashboard-read family. An exact-version entry, when present, remains
-authoritative. Only absence of an exact entry permits
-`admitted_compatible_contract` admission without an attestation or provenance
-claim. If the optional signed registry is enabled, this path also requires a
-currently usable registry. Expired exact evidence remains deny-only, and
-registry unavailability cannot revive an older contract.
+dashboard-read family. Dashboard admission requires an exact built-in or
+verified signed attestation for the observed release. Missing exact authority,
+revocation, or contract mismatch blocks with no older-attestation or
+self-advertised compatible-variant fallback. Expired exact evidence remains
+deny-only, and registry unavailability cannot revive an older contract.
 The selected attestation derives retained raw-schema, reviewed-security, and
 runtime-descriptor expectations while keeping those diagnostics distinct from
 normalized semantic compatibility; unrelated catalog and prose drift remain

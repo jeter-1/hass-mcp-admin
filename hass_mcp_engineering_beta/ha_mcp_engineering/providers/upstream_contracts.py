@@ -30,6 +30,9 @@ UPSTREAM_VERSION_EVIDENCE = re.compile(
 BUILTIN_ATTESTATIONS_PATH = (
     Path(__file__).with_name("contracts") / "upstream_dashboard_builtin_attestations.json"
 )
+_ATTESTATION_SOURCES = frozenset(
+    {"builtin", "remote_fresh", "remote_cached", "remote_expired"}
+)
 
 IGNORED_SCHEMA_KEYS = frozenset(
     {"description", "title", "examples", "example", "$comment"}
@@ -583,18 +586,6 @@ def decide_admission(
             None,
             None,
         )
-    try:
-        contract = normalize_runtime_contract(tool, protocol_version=protocol_version)
-    except ContractValidationError as exc:
-        return AdmissionDecision(
-            False,
-            "rejected_contract_mismatch",
-            exc.reason,
-            None,
-            CONTRACT_FAMILY,
-            None,
-            None,
-        )
     if (
         not isinstance(server_version, str)
         or not UPSTREAM_VERSION_EVIDENCE.fullmatch(server_version)
@@ -616,12 +607,13 @@ def decide_admission(
         if entry.server_name == server_name
         and entry.upstream_version == server_version
         and entry.contract_family == CONTRACT_FAMILY
+        and source in _ATTESTATION_SOURCES
     ]
     if exact_release:
         # An exact observed-release attestation is authoritative. In
         # particular, a revoked or mismatched exact entry must not fall back to
-        # an older release that happened to advertise the same normalized
-        # contract.
+        # an older release. The live descriptor is normalized and compared only
+        # after this release authority has been selected.
         entry, source = exact_release[0]
         if source == "remote_expired":
             return AdmissionDecision(
@@ -631,7 +623,7 @@ def decide_admission(
                 source,
                 CONTRACT_FAMILY,
                 entry,
-                contract,
+                None,
             )
         if entry.revoked:
             return AdmissionDecision(
@@ -641,7 +633,21 @@ def decide_admission(
                 source,
                 CONTRACT_FAMILY,
                 entry,
-                contract,
+                None,
+            )
+        try:
+            contract = normalize_runtime_contract(
+                tool, protocol_version=protocol_version
+            )
+        except ContractValidationError as exc:
+            return AdmissionDecision(
+                False,
+                "rejected_contract_mismatch",
+                exc.reason,
+                source,
+                CONTRACT_FAMILY,
+                entry,
+                None,
             )
         matches = _attestation_matches(contract, entry)
         for key in ("input", "security", "output", "runtime"):
@@ -686,34 +692,7 @@ def decide_admission(
             None,
             CONTRACT_FAMILY,
             None,
-            contract,
-        )
-
-    observed_variant = _contract_variant_key(contract)
-    compatible_variants = {
-        _attestation_variant_key(entry)
-        for entry, source in available_attestations
-        if entry.server_name == server_name
-        and entry.contract_family == CONTRACT_FAMILY
-        and not entry.revoked
-        and source != "remote_expired"
-    }
-    if observed_variant in compatible_variants:
-        # Compatibility is semantic-contract evidence only. It must not be
-        # represented as release, source, image, or attestation provenance for
-        # the independently observed server version.
-        return AdmissionDecision(
-            True,
-            "admitted_compatible_contract",
             None,
-            None,
-            CONTRACT_FAMILY,
-            None,
-            contract,
-            input_match=True,
-            security_match=True,
-            output_match=True,
-            runtime_match=True,
         )
 
     return AdmissionDecision(
@@ -723,7 +702,7 @@ def decide_admission(
         None,
         CONTRACT_FAMILY,
         None,
-        contract,
+        None,
     )
 
 
@@ -738,28 +717,6 @@ def _attestation_matches(
         "output": contract.output_fingerprint == entry.output_contract_fingerprint,
         "runtime": contract.runtime_fingerprint == entry.runtime_contract_fingerprint,
     }
-
-
-def _contract_variant_key(
-    contract: NormalizedRuntimeContract,
-) -> tuple[str, str, str, str]:
-    return (
-        contract.input_fingerprint,
-        contract.security_fingerprint,
-        contract.output_fingerprint,
-        contract.runtime_fingerprint,
-    )
-
-
-def _attestation_variant_key(
-    entry: ReleaseAttestation,
-) -> tuple[str, str, str, str]:
-    return (
-        entry.input_contract_fingerprint,
-        entry.security_contract_fingerprint,
-        entry.output_contract_fingerprint,
-        entry.runtime_contract_fingerprint,
-    )
 
 
 def _bounded_string(value: Any, maximum: int) -> str:

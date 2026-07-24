@@ -18,37 +18,37 @@ quarantined and a missing contract is removed; neither condition disables
 other exact matches. New tools and every reviewed mixed, write, action,
 prohibited, or unsupported entry remain unavailable.
 
-The observed `ha-mcp` version is evidence, not executable authority. A patch,
-minor, or major version change can retain the reviewed reads when server
-identity, MCP protocol, tool names, and exact semantic contracts still match.
-Health reports `version_status` as `reviewed_exact`,
-`observed_contract_only`, or `not_observed`. It reports
-`compatibility_status` separately as `exact`, `compatible`, `partial`,
-`incompatible`, or `unavailable`. `compatible` is a complete contract match on
-a non-reviewed observed version. Unreviewed additions do not become callable
-and do not reduce exact matches.
+Live `ha-mcp` version data is evidence, not self-authorizing authority. The
+generic gateway first requires an explicit reviewed release/profile; Dev15's
+compiled profile is exactly 7.14.1. A patch, minor, major, prerelease, or
+downgrade without reviewed authority remains unavailable even when its
+self-advertised contracts match. Health may report an observed version, but
+that observation cannot admit a tool or permit dispatch. After release
+authority succeeds, unreviewed additions do not become callable and do not
+reduce otherwise exact per-tool matches.
 
 Immediately before `tools/call`, Engineering re-lists the catalog in the same
-MCP session and revalidates the selected target against the current-generation
-contract. Missing, duplicate, or changed selected-target evidence stops before
-dispatch and retires only that route. A valid bounded version-only movement
-retains routes and permits an exact target call while triggering compatibility
-reprobe; a different server, malformed version, or unsupported protocol remains
+MCP session and revalidates exact release/profile authority plus the selected
+target against the current-generation contract. Missing, duplicate, changed
+selected-target, or unreviewed-version evidence stops before dispatch. A
+different server, malformed version, or unsupported protocol likewise remains
 global fail-closed. Unrelated malformed or duplicate unreviewed descriptors
 remain unavailable and are bounded anomalies rather than authority for, or a
-block on, that exact target call.
+block on, an exact authorized target call.
+
+Calls acquire immutable route snapshots under short leases and do not hold a
+global registry lock across network I/O. A route retired before pre-dispatch
+validation cannot call upstream. A call already committed after successful
+validation may finish, but cannot republish or revive a retired generation.
 
 Dashboard admission is independent from generic-read admission.
 `ha_config_get_dashboard` remains mixed and cannot enter the generic route.
 The dashboard provider still permits only its two fixed non-screenshot shapes
-and exact response/hash contract. If an exact-version attestation exists, it is
-authoritative: mismatch or revocation blocks that release with no older-release
-or unattested fallback. If no exact-version entry exists, only an exact
-compiled contract-family match may report
-`admitted_compatible_contract`, without claiming release attestation or
-provenance. When the optional signed registry is enabled, compatible-family
-admission also requires a currently usable registry; expired exact entries
-remain deny-only and registry unavailability cannot revive older evidence.
+and exact response/hash contract. It first requires an exact-version built-in
+or verified signed attestation. Missing exact authority, mismatch, or
+revocation blocks that release with no older-release or self-advertised
+compatible-variant fallback. Expired exact entries remain deny-only and
+registry unavailability cannot revive older evidence.
 
 Fast bounded startup recovery is reserved for transport readiness. A stable
 missing or quarantined contract uses a separately reported slow compatibility
@@ -56,6 +56,13 @@ reprobe cadence while the safely admitted subset remains available. Neither
 lane retries a delegated operation semantically. Bounded health may report tool
 names and stable incompatibility reasons, but never raw schemas, remote prose,
 registry material, endpoint data, credentials, or exceptions.
+
+When upstream is configured, the initial catalog is a readiness boundary:
+authenticated MCP traffic returns HTTP 503 until the first stable or terminal
+`reconcile_until_initialized` result. `/ready` exposes only bounded booleans and
+`status=ready|initial_reconciliation_pending`; `/health` remains liveness. This
+prevents a schema-caching client from treating the transient static-only catalog
+as the initialized capability set.
 
 ## RC2dev13 reviewed read-gateway recovery
 

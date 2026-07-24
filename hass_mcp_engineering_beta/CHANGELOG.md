@@ -2,25 +2,31 @@
 
 ## 2.0.0-rc2-dev15 - contract-level upstream compatibility
 
-- Treat the observed ha-mcp version as audited evidence while admitting each
-  reviewed automatic read by its exact input, output, safety, description,
-  behavior, identity, and protocol contract.
+- Require the exact compiled generic release/profile, currently ha-mcp 7.14.1,
+  before admitting each reviewed automatic read by its exact input, output,
+  safety, description, behavior, identity, and protocol contract.
 - Keep unchanged reads available, quarantine only changed reads, remove missing
   reads, and block new, mixed, write, action, and unsupported tools without
   collapsing the complete delegated catalog.
-- Evaluate the argument-constrained dashboard family independently and allow an
-  unknown release to use an identical reviewed contract without claiming
-  release-specific attestation provenance.
+- Evaluate the argument-constrained dashboard family independently and require
+  an exact built-in or verified signed release attestation before applying its
+  compiled contract checks.
 - Preserve last-known-good routes across transient discovery failures, bind
   calls to the admitted catalog generation, and separate fast startup recovery
   from slow compatibility reprobes.
+- Keep process liveness available but return bounded readiness and HTTP 503 for
+  authenticated MCP traffic until configured upstream reconciliation publishes
+  its first stable or terminal catalog result.
 - Let equivalent reviewed-catalog observations publish under busy exact calls,
   while coalescing repeated stale mismatches to one immediate retry and then
   the bounded slow cadence.
-- Revalidate the selected target's exact contract through same-session
-  `tools/list` before `tools/call`; retain routes and trigger reprobe for valid
-  version-only movement while retiring a missing, duplicate, or changed target
-  independently.
+- Revalidate exact release/profile authority and the selected target's contract
+  through same-session `tools/list` before `tools/call`; fail closed on
+  unreviewed version movement while retiring a missing, duplicate, or changed
+  target independently.
+- Use immutable route snapshots and short leases so delegated network I/O is
+  concurrent; a retired route cannot dispatch or be revived by a finishing
+  in-flight call.
 - Keep unrelated malformed or duplicate unreviewed descriptors unavailable as
   bounded reconciliation anomalies without blocking an exact selected target.
 - Preserve stable v1.1.2, public schemas, governed configuration writes,

@@ -674,7 +674,8 @@ class ListenerStartTests(unittest.IsolatedAsyncioTestCase):
         reconciliation_started = asyncio.Event()
         reconciliation_cancelled = asyncio.Event()
 
-        async def reconcile(_server):
+        async def reconcile(_server, *, initial_snapshot=None):
+            self.assertIsNone(initial_snapshot)
             reconciliation_started.set()
             try:
                 await asyncio.Event().wait()
@@ -739,7 +740,8 @@ class ListenerStartTests(unittest.IsolatedAsyncioTestCase):
                 while not self.should_exit:
                     await asyncio.sleep(0)
 
-        async def fail_reconciliation(_server):
+        async def fail_reconciliation(_server, *, initial_snapshot=None):
+            self.assertIsNone(initial_snapshot)
             await asyncio.sleep(0)
             raise RuntimeError("reconciliation supervisor failure")
 

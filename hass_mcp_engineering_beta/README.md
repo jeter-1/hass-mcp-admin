@@ -9,11 +9,16 @@ or container identity.
 After configuring the existing secret-bearing upstream MCP URL, Engineering
 starts with 41 statically registered tools (25 canonical plus 16
 Engineering-native). Fast bounded retries recover when `ha-mcp` is not yet
-reachable after host boot. Once discovery succeeds, each of the 26 reviewed
-pure reads is admitted independently by its exact input-schema fingerprint,
-normalized description semantics, reviewed safety annotations, output-schema
-presence/fingerprint, and fixed semantic contract rather than by version
-equality. A stable missing or incompatible contract uses a slower reprobe
+reachable after host boot. While configured upstream reconciliation is
+initially pending, `/health` remains live but `/ready` and authenticated MCP
+traffic return HTTP 503; schema-caching clients therefore cannot retain that
+transient static-only catalog. Once the first stable or terminal reconciliation
+result is known, `/ready` reports the bounded ready state. If discovery
+establishes the exact compiled generic release/profile (currently `ha-mcp`
+7.14.1), each of the 26 reviewed pure reads is admitted independently by its
+exact input-schema fingerprint, normalized description semantics, reviewed
+safety annotations, output-schema presence/fingerprint, and fixed semantic
+contract. A stable missing or incompatible contract uses a slower reprobe
 cadence.
 
 A complete reviewed set adds 26 delegated reads for 67 registered tools. One
@@ -24,8 +29,10 @@ stateless transport does not broadcast `tools/list_changed`.
 Unlisted, mixed, write, action, prohibited, and unsupported tools are never
 registered. A changed reviewed contract is quarantined individually, and
 delegated reads never fall back to direct Home Assistant access. The reviewed
-7.14.1 version, 78-tool stock inventory, and classification remain evidence;
-compatible patch, minor, or major versions can retain exact contracts.
+7.14.1 version, 78-tool stock inventory, and classification form Dev15's exact
+compiled generic profile. Another version remains unavailable even if its live
+descriptors appear identical; automatic admission under separately reviewed
+signed authority is deferred to Dev16.
 [`ADR-006`](../docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md)
 defines the active boundary, while
 [`ADR-005`](../docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md) retains
@@ -43,13 +50,12 @@ the original Phase 1 decision history.
    only in the password-style `upstream_dashboard_mcp_url` option. Leave it
    empty to keep the optional provider unconfigured.
    Built-in records retain reviewed evidence for `ha-mcp` 7.13.0, 7.14.0, and
-   7.14.1. An exact-version record, when present, is authoritative; mismatch or
-   revocation blocks without fallback. When no exact-version record exists, an
-   exact compiled dashboard contract can report
-   `admitted_compatible_contract` without claiming attestation or release
-   provenance. When the optional signed registry is enabled, that path requires
-   a currently usable registry; expired exact evidence remains deny-only and
-   registry unavailability cannot revive older evidence. Signed release data remains
+   7.14.1. Dashboard admission requires an exact built-in or verified signed
+   release attestation before applying compiled contract checks. Missing exact
+   authority, mismatch, or revocation blocks without an older-attestation or
+   self-advertised compatible-variant fallback. Expired exact evidence remains
+   deny-only and registry unavailability cannot revive older evidence. Signed
+   release data remains
    optional and dashboard-specific: leave
    `upstream_trust_registry_enabled=false` unless the protected registry has
    been initialized; when enabled, configure only the non-secret Ed25519 public
@@ -94,12 +100,18 @@ development scope and pre-deployment gates are recorded in
 milestone narrative is not release authority. Determine exact staged or
 advertised state from version metadata and `scripts/codex-context.py`.
 
+Before connecting an MCP client, require `/ready` HTTP 200 with `ready=true`,
+`initial_reconciliation_complete=true`, and `status=ready`. A configured
+startup still reporting `initial_reconciliation_pending` is not catalog-ready,
+even though `/health` is live.
+
 For any separately authorized deployment, call `server_info(check_ha=false)`
 and verify the expected version, complete release commit SHA, and UTC build
 time. Then call `list_capabilities` and verify the preserved 25-tool canonical
 catalog plus 16 beta-native tools. Without an admitted upstream, MCP
-`tools/list` exposes those 41 tools. With compatible reviewed contracts, it
-also exposes the exact dynamic count reported by `upstream_read_gateway`.
+`tools/list` exposes those 41 tools. With exact reviewed release/profile
+authority and matching per-tool contracts, it also exposes the exact dynamic
+count reported by `upstream_read_gateway`.
 Require `version_status`, `compatibility_status`, missing/quarantine counts,
 and the separate dashboard provider state to agree with the observed catalog;
 do not infer compatibility from the upstream version alone.
@@ -125,11 +137,10 @@ correction a distinct installable version, and preserves deterministic build
 provenance and release compatibility tests. RC3A added dashboard inventory and
 exact configuration evidence through the `reviewed_argument_constrained`
 compiled family `ha_mcp_dashboard_read_v2`. Dev15 now evaluates that family
-independently from the generic read set. An existing exact-version attestation
-remains authoritative; only its absence permits exact
-`admitted_compatible_contract` admission without a provenance claim. With the
-optional signed registry enabled, this also requires currently usable signed
-evidence; expired exact entries remain deny-only. The mixed
+independently from the generic read set. An exact built-in or verified signed
+attestation is required before the compiled family is evaluated; missing,
+expired, revoked, or mismatched exact evidence fails closed without compatible
+variant fallback. The mixed
 upstream tool is not described as globally read-only, and Engineering
 constructs only exact non-screenshot read forms. Screenshots, preference
 writes, dashboard writes, and arbitrary forwarding remain absent. The raw

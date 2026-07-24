@@ -204,6 +204,15 @@ class _AdmittedRoute:
     protocol_version: str
 
 
+@dataclass
+class _RouteLease:
+    """One call's immutable route binding and dispatch linearization state."""
+
+    route: _AdmittedRoute
+    validator_ran: bool = False
+    dispatch_committed: bool = False
+
+
 class UpstreamReadGateway:
     """Discover and register exact policy-approved pure reads through one provider."""
 
@@ -226,7 +235,6 @@ class UpstreamReadGateway:
         self._reprobe_event = asyncio.Event()
         self._initialize_lock = asyncio.Lock()
         self._reconciliation_lock = asyncio.Lock()
-        self._dispatch_lock = asyncio.Lock()
         self._lock = threading.RLock()
         self._state = self._empty_state()
 
@@ -515,11 +523,7 @@ class UpstreamReadGateway:
                 "automatic_read"
             ]
             compatibility_status = (
-                (
-                    "exact"
-                    if catalog.server_version == self._policy.reviewed_upstream_version
-                    else "compatible"
-                )
+                "exact"
                 if full_admission
                 else "partial"
                 if exposed
@@ -528,53 +532,50 @@ class UpstreamReadGateway:
             admission_status = (
                 "admitted_exact"
                 if compatibility_status == "exact"
-                else "admitted_compatible"
-                if compatibility_status == "compatible"
                 else "partially_admitted"
                 if compatibility_status == "partial"
                 else "blocked_incompatible_upstream"
             )
-            await self._dispatch_lock.acquire()
-            try:
-                with self._lock:
-                    epoch_changed = (
-                        discovery_epoch != self._live_observation_epoch
-                    )
-                    newer_live_catalog_matches = (
-                        self._latest_live_contract_epoch
-                        > discovery_epoch
-                        and self._latest_live_contract_token
-                        == candidate_contract_token
-                    )
-                    stale_discovery = (
-                        epoch_changed and not newer_live_catalog_matches
-                    )
+            # Publication is a short copy-on-write registry transaction. It
+            # must never wait for delegated network I/O.
+            with self._lock:
+                epoch_changed = (
+                    discovery_epoch != self._live_observation_epoch
+                )
+                newer_live_catalog_matches = (
+                    self._latest_live_contract_epoch
+                    > discovery_epoch
+                    and self._latest_live_contract_token
+                    == candidate_contract_token
+                )
+                stale_discovery = (
+                    epoch_changed and not newer_live_catalog_matches
+                )
                 if stale_discovery:
-                    with self._lock:
-                        immediate_retry = (
-                            not self._stale_reprobe_retry_armed
-                        )
-                        self._stale_reprobe_retry_armed = True
-                        self._state.update(
-                            {
-                                "last_discovery_stable": False,
-                                "reconciliation_status": (
-                                    "reprobe_requested"
-                                ),
-                                "compatibility_reprobe_status": (
-                                    "triggered"
-                                    if immediate_retry
-                                    else "waiting"
-                                ),
-                                "next_compatibility_reprobe_at": None,
-                                "stale_reprobe_retry_armed": True,
-                                "recommended_action": (
-                                    "A newer live contract observation "
-                                    "superseded this discovery; reconcile "
-                                    "again before publishing it."
-                                ),
-                            }
-                        )
+                    immediate_retry = (
+                        not self._stale_reprobe_retry_armed
+                    )
+                    self._stale_reprobe_retry_armed = True
+                    self._state.update(
+                        {
+                            "last_discovery_stable": False,
+                            "reconciliation_status": (
+                                "reprobe_requested"
+                            ),
+                            "compatibility_reprobe_status": (
+                                "triggered"
+                                if immediate_retry
+                                else "waiting"
+                            ),
+                            "next_compatibility_reprobe_at": None,
+                            "stale_reprobe_retry_armed": True,
+                            "recommended_action": (
+                                "A newer live contract observation "
+                                "superseded this discovery; reconcile "
+                                "again before publishing it."
+                            ),
+                        }
+                    )
                     if immediate_retry:
                         self._reprobe_event.set()
                     else:
@@ -601,8 +602,6 @@ class UpstreamReadGateway:
                     compatibility_status=compatibility_status,
                     admission_status=admission_status,
                 )
-            finally:
-                self._dispatch_lock.release()
             replace_dynamic_upstream_capabilities(
                 self._dynamic_capabilities, self.health_snapshot()
             )
@@ -644,7 +643,7 @@ class UpstreamReadGateway:
         compatibility_status: str,
         admission_status: str,
     ) -> None:
-        """Publish routes, identity, and health under the dispatch barrier."""
+        """Publish one copy-on-write route generation under the state lock."""
 
         assert self._policy is not None
         automatic_count = self._policy.classification_counts[
@@ -658,7 +657,7 @@ class UpstreamReadGateway:
         reason_counts = evaluation.quarantine_reason_counts
         self._replace_registered_tools(server, dynamic_tools)
         self._registered_names = set(dynamic_tools)
-        self._exposed = exposed
+        self._exposed = dict(exposed)
         self._dynamic_capabilities = capabilities
         self._admission_generation = generation
         with self._lock:
@@ -688,12 +687,7 @@ class UpstreamReadGateway:
                     "reviewed_upstream_version": (
                         self._policy.reviewed_upstream_version
                     ),
-                    "version_status": (
-                        "reviewed_exact"
-                        if catalog.server_version
-                        == self._policy.reviewed_upstream_version
-                        else "observed_contract_only"
-                    ),
+                    "version_status": "reviewed_exact",
                     "protocol_version": catalog.protocol_version[:64],
                     "catalog_fingerprint": observed_fingerprint,
                     "observed_catalog_fingerprint": observed_fingerprint,
@@ -815,32 +809,32 @@ class UpstreamReadGateway:
 
         stale_discovery = False
         immediate_retry = False
-        async with self._dispatch_lock:
-            with self._lock:
-                stale_discovery = (
-                    discovery_epoch != self._live_observation_epoch
-                )
+        # A discovery failure publishes immediately; it does not wait for
+        # unrelated delegated calls that may be in flight.
+        with self._lock:
+            stale_discovery = (
+                discovery_epoch != self._live_observation_epoch
+            )
             if stale_discovery:
-                with self._lock:
-                    immediate_retry = not self._stale_reprobe_retry_armed
-                    self._stale_reprobe_retry_armed = True
-                    self._state.update(
-                        {
-                            "last_discovery_stable": False,
-                            "reconciliation_status": "reprobe_requested",
-                            "compatibility_reprobe_status": (
-                                "triggered"
-                                if immediate_retry
-                                else "waiting"
-                            ),
-                            "next_compatibility_reprobe_at": None,
-                            "stale_reprobe_retry_armed": True,
-                            "recommended_action": (
-                                "A newer live contract observation "
-                                "superseded this discovery failure."
-                            ),
-                        }
-                    )
+                immediate_retry = not self._stale_reprobe_retry_armed
+                self._stale_reprobe_retry_armed = True
+                self._state.update(
+                    {
+                        "last_discovery_stable": False,
+                        "reconciliation_status": "reprobe_requested",
+                        "compatibility_reprobe_status": (
+                            "triggered"
+                            if immediate_retry
+                            else "waiting"
+                        ),
+                        "next_compatibility_reprobe_at": None,
+                        "stale_reprobe_retry_armed": True,
+                        "recommended_action": (
+                            "A newer live contract observation "
+                            "superseded this discovery failure."
+                        ),
+                    }
+                )
             else:
                 if catalog is not None:
                     self._record_observed_identity(
@@ -1002,13 +996,18 @@ class UpstreamReadGateway:
         retry_delays: tuple[float, ...] = RECONCILIATION_RETRY_DELAYS_SECONDS,
         reprobe_interval_seconds: float = COMPATIBILITY_REPROBE_INTERVAL_SECONDS,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        initial_snapshot: dict[str, Any] | None = None,
     ) -> None:
         """Keep transport recovery fast and stable compatibility reprobes slow."""
 
         if reprobe_interval_seconds <= 0:
             raise ValueError("reprobe_interval_seconds must be positive")
-        snapshot = await self.reconcile_until_initialized(
-            server, retry_delays=retry_delays, sleep=sleep
+        snapshot = (
+            dict(initial_snapshot)
+            if initial_snapshot is not None
+            else await self.reconcile_until_initialized(
+                server, retry_delays=retry_delays, sleep=sleep
+            )
         )
         if not snapshot["configured"]:
             await asyncio.Future()
@@ -1089,6 +1088,15 @@ class UpstreamReadGateway:
                 for secret in self._known_secrets
             )
         ):
+            raise DashboardTransportError("upstream_version_mismatch")
+        if (
+            self._policy is None
+            or server_version != self._policy.reviewed_upstream_version
+        ):
+            # A self-advertised descriptor is observation, not release
+            # authority. Contract-level reconciliation is permitted only
+            # after the binary policy (or a future verified registry profile)
+            # explicitly admits this exact release.
             raise DashboardTransportError("upstream_version_mismatch")
         if protocol not in SUPPORTED_PROTOCOLS:
             raise DashboardTransportError("unsupported_protocol_version")
@@ -1270,9 +1278,8 @@ class UpstreamReadGateway:
     ) -> tuple[_AdmittedRoute, Any]:
         """Bind one call to the current route and same-session target contract."""
 
-        async with self._dispatch_lock:
-            with self._lock:
-                mapping = self._exposed.get(exposed_name)
+        with self._lock:
+            mapping = self._exposed.get(exposed_name)
             if (
                 not mapping
                 or mapping.entry.classification != "automatic_read"
@@ -1280,194 +1287,201 @@ class UpstreamReadGateway:
                 or mapping.generation != admission_generation
                 or mapping.contract_fingerprint != contract_fingerprint
             ):
+                self._state["prohibited_delegation_attempts"] += 1
+                raise _GatewayFailure(
+                    "prohibited_delegation", dispatched=False
+                )
+            transport = self._transport
+            lease = _RouteLease(route=mapping)
+
+        route_context.update(
+            {"mapping": mapping, "lease": lease, "admitted": True}
+        )
+        if not isinstance(arguments, dict):
+            raise _GatewayFailure("argument_validation", dispatched=False)
+        errors = sorted(
+            Draft202012Validator(reviewed_schema).iter_errors(arguments),
+            key=lambda error: tuple(
+                str(item) for item in error.absolute_path
+            ),
+        )
+        if errors:
+            raise _GatewayFailure("argument_validation", dispatched=False)
+        if transport is None:
+            raise _GatewayFailure("not_configured", dispatched=False)
+
+        attempt_started = time.perf_counter()
+        if telemetry:
+            telemetry.begin_upstream_attempt(attempt_started)
+        try:
+
+            def validate_live_catalog(catalog: McpReadCatalog) -> None:
+                lease.validator_ran = True
                 with self._lock:
-                    self._state["prohibited_delegation_attempts"] += 1
-                raise _GatewayFailure("prohibited_delegation", dispatched=False)
-            route_context.update({"mapping": mapping, "admitted": True})
-            if not isinstance(arguments, dict):
-                raise _GatewayFailure("argument_validation", dispatched=False)
-            errors = sorted(
-                Draft202012Validator(reviewed_schema).iter_errors(arguments),
-                key=lambda error: tuple(
-                    str(item) for item in error.absolute_path
-                ),
-            )
-            if errors:
-                raise _GatewayFailure("argument_validation", dispatched=False)
-            if not self._transport:
-                raise _GatewayFailure("not_configured", dispatched=False)
+                    route_is_current = (
+                        self._exposed.get(exposed_name) is mapping
+                    )
+                if not route_is_current:
+                    raise DashboardTransportError(
+                        "prohibited_delegation"
+                    )
+                if telemetry:
+                    telemetry.audit_context[
+                        "upstream_version_evidence"
+                    ] = self._safe_version_evidence(
+                        catalog.server_version
+                    )
+                    telemetry.audit_context[
+                        "upstream_identity_status"
+                    ] = "observed"
+                try:
+                    self._validate_identity(
+                        catalog.server_name,
+                        catalog.server_version,
+                        catalog.protocol_version,
+                    )
+                except DashboardTransportError:
+                    self._record_observed_identity(
+                        catalog.server_name,
+                        catalog.server_version,
+                        catalog.protocol_version,
+                        accepted=False,
+                    )
+                    if telemetry:
+                        telemetry.audit_context[
+                            "upstream_identity_status"
+                        ] = "rejected"
+                    self._advance_live_observation_epoch()
+                    raise
+                if catalog.protocol_version != mapping.protocol_version:
+                    self._record_observed_identity(
+                        catalog.server_name,
+                        catalog.server_version,
+                        catalog.protocol_version,
+                        accepted=False,
+                    )
+                    if telemetry:
+                        telemetry.audit_context[
+                            "upstream_identity_status"
+                        ] = "rejected"
+                    self._advance_live_observation_epoch()
+                    raise DashboardTransportError(
+                        "unsupported_protocol_version"
+                    )
+                try:
+                    live_evaluation = self._validate_catalog(catalog)
+                    live_contract_token = _catalog_contract_token(
+                        catalog, live_evaluation
+                    )
+                except DashboardTransportError:
+                    self._advance_live_observation_epoch()
+                    raise DashboardTransportError(
+                        "schema_mismatch"
+                    ) from None
 
-            attempt_started = time.perf_counter()
-            if telemetry:
-                telemetry.begin_upstream_attempt(attempt_started)
-            try:
+                targets = [
+                    item
+                    for item in catalog.tools
+                    if isinstance(item, dict)
+                    and item.get("name")
+                    == policy_entry.upstream_name
+                ]
+                if len(targets) != 1:
+                    self._advance_live_observation_epoch()
+                    live_contract_failure.update(
+                        {
+                            "disposition": (
+                                "missing"
+                                if not targets
+                                else "quarantine"
+                            ),
+                            "reason": (
+                                "live_target_missing"
+                                if not targets
+                                else "live_target_duplicate"
+                            ),
+                            "expected_fingerprint": (
+                                mapping.contract_fingerprint
+                            ),
+                            "observed_fingerprint": schema_fingerprint(
+                                {"live_target_count": len(targets)}
+                            ),
+                        }
+                    )
+                    raise DashboardTransportError("schema_mismatch")
 
-                def validate_live_catalog(catalog: McpReadCatalog) -> None:
-                    with self._lock:
-                        route_is_current = (
-                            self._exposed.get(exposed_name) is mapping
-                        )
-                    if not route_is_current:
+                decision = _compare_tool_contract(
+                    policy_entry,
+                    targets[0],
+                    protocol_version=catalog.protocol_version,
+                )
+                if (
+                    not decision.accepted
+                    or decision.expected_fingerprint
+                    != mapping.contract_fingerprint
+                ):
+                    self._advance_live_observation_epoch()
+                    live_contract_failure.update(
+                        {
+                            "disposition": "quarantine",
+                            "reason": (
+                                decision.reason
+                                or "runtime_contract_mismatch"
+                            ),
+                            "expected_fingerprint": (
+                                mapping.contract_fingerprint
+                            ),
+                            "observed_fingerprint": (
+                                decision.observed_fingerprint
+                            ),
+                        }
+                    )
+                    raise DashboardTransportError("schema_mismatch")
+
+                self._record_matching_version_observation(
+                    exposed_name=exposed_name,
+                    mapping=mapping,
+                    catalog=catalog,
+                    live_contract_token=live_contract_token,
+                )
+                # This is the dispatch linearization point. A route retired
+                # before the same-session checks complete can never reach
+                # tools/call. Publication after this point may proceed without
+                # waiting; the immutable leased route may finish but cannot
+                # update or revive a newer generation.
+                with self._lock:
+                    if self._exposed.get(exposed_name) is not mapping:
                         raise DashboardTransportError(
                             "prohibited_delegation"
                         )
-                    if telemetry:
-                        telemetry.audit_context[
-                            "upstream_version_evidence"
-                        ] = self._safe_version_evidence(
-                            catalog.server_version
-                        )
-                        telemetry.audit_context[
-                            "upstream_identity_status"
-                        ] = "observed"
-                    try:
-                        self._validate_identity(
-                            catalog.server_name,
-                            catalog.server_version,
-                            catalog.protocol_version,
-                        )
-                    except DashboardTransportError:
-                        self._record_observed_identity(
-                            catalog.server_name,
-                            catalog.server_version,
-                            catalog.protocol_version,
-                            accepted=False,
-                        )
-                        if telemetry:
-                            telemetry.audit_context[
-                                "upstream_identity_status"
-                            ] = "rejected"
-                        self._advance_live_observation_epoch()
-                        raise
-                    if catalog.protocol_version != mapping.protocol_version:
-                        self._record_observed_identity(
-                            catalog.server_name,
-                            catalog.server_version,
-                            catalog.protocol_version,
-                            accepted=False,
-                        )
-                        if telemetry:
-                            telemetry.audit_context[
-                                "upstream_identity_status"
-                            ] = "rejected"
-                        self._advance_live_observation_epoch()
-                        raise DashboardTransportError(
-                            "unsupported_protocol_version"
-                        )
-                    try:
-                        live_evaluation = self._validate_catalog(catalog)
-                        live_contract_token = _catalog_contract_token(
-                            catalog, live_evaluation
-                        )
-                    except DashboardTransportError:
-                        self._advance_live_observation_epoch()
-                        raise DashboardTransportError(
-                            "schema_mismatch"
-                        ) from None
-
-                    targets = [
-                        item
-                        for item in catalog.tools
-                        if isinstance(item, dict)
-                        and item.get("name")
-                        == policy_entry.upstream_name
-                    ]
-                    if len(targets) != 1:
-                        self._advance_live_observation_epoch()
-                        live_contract_failure.update(
-                            {
-                                "disposition": (
-                                    "missing"
-                                    if not targets
-                                    else "quarantine"
-                                ),
-                                "reason": (
-                                    "live_target_missing"
-                                    if not targets
-                                    else "live_target_duplicate"
-                                ),
-                                "expected_fingerprint": (
-                                    mapping.contract_fingerprint
-                                ),
-                                "observed_fingerprint": schema_fingerprint(
-                                    {"live_target_count": len(targets)}
-                                ),
-                            }
-                        )
-                        raise DashboardTransportError("schema_mismatch")
-
-                    decision = _compare_tool_contract(
-                        policy_entry,
-                        targets[0],
-                        protocol_version=catalog.protocol_version,
-                    )
-                    if (
-                        not decision.accepted
-                        or decision.expected_fingerprint
-                        != mapping.contract_fingerprint
-                    ):
-                        self._advance_live_observation_epoch()
-                        live_contract_failure.update(
-                            {
-                                "disposition": "quarantine",
-                                "reason": (
-                                    decision.reason
-                                    or "runtime_contract_mismatch"
-                                ),
-                                "expected_fingerprint": (
-                                    mapping.contract_fingerprint
-                                ),
-                                "observed_fingerprint": (
-                                    decision.observed_fingerprint
-                                ),
-                            }
-                        )
-                        raise DashboardTransportError("schema_mismatch")
-
-                    if catalog.server_version != mapping.server_version:
-                        self._record_version_evidence_movement(
-                            exposed_name=exposed_name,
-                            mapping=mapping,
-                            catalog=catalog,
-                            live_contract_token=live_contract_token,
-                        )
-                    else:
-                        self._record_matching_version_observation(
-                            exposed_name=exposed_name,
-                            mapping=mapping,
-                            catalog=catalog,
-                            live_contract_token=live_contract_token,
-                        )
-                    if telemetry:
-                        telemetry.audit_context[
-                            "upstream_identity_status"
-                        ] = "accepted"
-
-                exchange = await self._transport.execute_read(
-                    policy_entry.upstream_name,
-                    dict(arguments),
-                    timeout_seconds=policy_entry.timeout_seconds,
-                    catalog_validator=validate_live_catalog,
-                )
-                return mapping, exchange
-            except DashboardTransportError as exc:
-                raise _GatewayFailure(
-                    exc.category,
-                    dispatched=exc.category
-                    not in {
-                        "server_identity_mismatch",
-                        "upstream_version_mismatch",
-                        "unsupported_protocol_version",
-                        "schema_mismatch",
-                        "prohibited_delegation",
-                    },
-                ) from None
-            finally:
-                finished = time.perf_counter()
+                    lease.dispatch_committed = True
                 if telemetry:
-                    telemetry.finish_upstream_attempt(
-                        finished, (finished - attempt_started) * 1_000
-                    )
+                    telemetry.audit_context[
+                        "upstream_identity_status"
+                    ] = "accepted"
+
+            exchange = await transport.execute_read(
+                policy_entry.upstream_name,
+                dict(arguments),
+                timeout_seconds=policy_entry.timeout_seconds,
+                catalog_validator=validate_live_catalog,
+            )
+            if not lease.validator_ran or not lease.dispatch_committed:
+                raise _GatewayFailure(
+                    "prohibited_delegation", dispatched=False
+                )
+            return mapping, exchange
+        except DashboardTransportError as exc:
+            raise _GatewayFailure(
+                exc.category,
+                dispatched=lease.dispatch_committed,
+            ) from None
+        finally:
+            finished = time.perf_counter()
+            if telemetry:
+                telemetry.finish_upstream_attempt(
+                    finished, (finished - attempt_started) * 1_000
+                )
 
     async def execute(
         self,
@@ -1643,11 +1657,12 @@ class UpstreamReadGateway:
             ).to_json(response_limit)
 
     def _remove_registered_tools(self) -> None:
-        if self._registered_server is not None:
-            self._replace_registered_tools(self._registered_server, {})
-        self._registered_names.clear()
-        self._exposed.clear()
-        self._dynamic_capabilities = ()
+        with self._lock:
+            if self._registered_server is not None:
+                self._replace_registered_tools(self._registered_server, {})
+            self._registered_names = set()
+            self._exposed = {}
+            self._dynamic_capabilities = ()
 
     def _reset_contract_accounting_locked(self) -> None:
         """Clear current-catalog terms when no stable catalog is authoritative."""
@@ -1696,8 +1711,12 @@ class UpstreamReadGateway:
                 )
                 replacement.pop(exposed_name, None)
                 self._registered_server._tool_manager._tools = replacement
-            self._registered_names.discard(exposed_name)
-            self._exposed.pop(exposed_name, None)
+            registered_names = set(self._registered_names)
+            registered_names.discard(exposed_name)
+            self._registered_names = registered_names
+            exposed = dict(self._exposed)
+            exposed.pop(exposed_name, None)
+            self._exposed = exposed
             self._dynamic_capabilities = tuple(
                 item
                 for item in self._dynamic_capabilities
@@ -1900,13 +1919,7 @@ class UpstreamReadGateway:
                     "observed_upstream_server_version": safe_version,
                     "observed_protocol_version": safe_protocol,
                     "observed_identity_status": "accepted",
-                    "version_status": (
-                        "reviewed_exact"
-                        if self._policy is not None
-                        and catalog.server_version
-                        == self._policy.reviewed_upstream_version
-                        else "observed_contract_only"
-                    ),
+                    "version_status": "reviewed_exact",
                     "observed_advertised_tool_count": len(catalog.tools),
                     "observed_catalog_fingerprint": None,
                     "last_discovery_stable": False,
@@ -1944,99 +1957,6 @@ class UpstreamReadGateway:
             )
         return True
 
-    def _record_version_evidence_movement(
-        self,
-        *,
-        exposed_name: str,
-        mapping: _AdmittedRoute,
-        catalog: McpReadCatalog,
-        live_contract_token: str,
-    ) -> bool:
-        """Keep exact routes while requesting full catalog reconciliation."""
-
-        trigger = False
-        with self._lock:
-            if self._exposed.get(exposed_name) is not mapping:
-                return False
-            safe_name = self._safe_identity_evidence(catalog.server_name)
-            safe_version = self._safe_version_evidence(
-                catalog.server_version
-            )
-            safe_protocol = self._safe_identity_evidence(
-                catalog.protocol_version
-            )
-            already_pending = (
-                self._state["observed_upstream_server_name"] == safe_name
-                and self._state["observed_upstream_server_version"]
-                == safe_version
-                and self._state["observed_protocol_version"]
-                == safe_protocol
-                and self._state["observed_identity_status"] == "accepted"
-                and not self._state["last_discovery_stable"]
-            )
-            self._record_live_contract_observation_locked(
-                live_contract_token
-            )
-            if already_pending:
-                # A supervisor may already have consumed the one immediate
-                # retry and returned to the slow cadence. Preserve that
-                # scheduling state while still recording the newer full
-                # contract token so an equivalent in-flight discovery can
-                # publish. Presentation status is not a new reprobe signal.
-                return True
-            retry_is_armed = self._stale_reprobe_retry_armed
-            self._state.update(
-                {
-                    "observed_upstream_server_name": safe_name,
-                    "observed_upstream_server_version": safe_version,
-                    "observed_protocol_version": safe_protocol,
-                    "observed_identity_status": "accepted",
-                    "version_status": (
-                        "reviewed_exact"
-                        if self._policy is not None
-                        and catalog.server_version
-                        == self._policy.reviewed_upstream_version
-                        else "observed_contract_only"
-                    ),
-                    "observed_advertised_tool_count": len(catalog.tools),
-                    "observed_catalog_fingerprint": None,
-                    "last_discovery_stable": False,
-                    "observed_catalog_matches_reviewed_stock_fixture": False,
-                    "compatibility_status": "reconciling",
-                    "admission_status": "compatibility_reprobe_pending",
-                    "reconciliation_status": (
-                        self._state["reconciliation_status"]
-                        if retry_is_armed
-                        else "reprobe_requested"
-                    ),
-                    "compatibility_reprobe_status": (
-                        self._state["compatibility_reprobe_status"]
-                        if retry_is_armed
-                        else "triggered"
-                    ),
-                    "next_compatibility_reprobe_at": (
-                        self._state["next_compatibility_reprobe_at"]
-                        if retry_is_armed
-                        else None
-                    ),
-                    "recommended_action": (
-                        "Matching reviewed reads remain available while the "
-                        "changed upstream version evidence is reconciled."
-                    ),
-                }
-            )
-            if not retry_is_armed:
-                self._state[
-                    "compatibility_reprobe_trigger_count"
-                ] += 1
-                trigger = True
-        if trigger:
-            self._reprobe_event.set()
-        replace_dynamic_upstream_capabilities(
-            self._dynamic_capabilities, self.health_snapshot()
-        )
-        return True
-
     def _invalidate_for_identity_movement(
         self,
         category: str,
@@ -2044,7 +1964,7 @@ class UpstreamReadGateway:
         exposed_name: str,
         mapping: _AdmittedRoute,
     ) -> bool:
-        """Retire a stale generation and wake the compatibility supervisor."""
+        """Retire all routes after a hard release/identity incompatibility."""
 
         with self._lock:
             if self._exposed.get(exposed_name) is not mapping:
@@ -2063,18 +1983,21 @@ class UpstreamReadGateway:
                     "collision_mappings": [],
                     "last_discovery_stable": False,
                     "compatibility_status": "unavailable",
-                    "admission_status": "compatibility_reprobe_pending",
-                    "reconciliation_status": "reprobe_requested",
-                    "compatibility_reprobe_status": "triggered",
-                    "next_compatibility_reprobe_at": None,
+                    "admission_status": "blocked_incompatible_upstream",
+                    "version_status": {
+                        "upstream_version_mismatch": "rejected_unreviewed",
+                        "server_identity_mismatch": "rejected_identity",
+                        "unsupported_protocol_version": "rejected_protocol",
+                    }.get(category, "rejected_identity"),
+                    "reconciliation_status": "blocked_incompatible_upstream",
+                    "compatibility_reprobe_status": "waiting",
                     "recommended_action": (
-                        "Reconcile the live upstream catalog before retrying "
-                        "delegated reads."
+                        "Restore the reviewed upstream identity, exact "
+                        "release profile, and supported protocol before "
+                        "retrying delegated reads."
                     ),
                 }
             )
-            self._state["compatibility_reprobe_trigger_count"] += 1
-        self._reprobe_event.set()
         replace_dynamic_upstream_capabilities((), self.health_snapshot())
         return True
 
@@ -2110,6 +2033,13 @@ class UpstreamReadGateway:
             if discovery:
                 self._state["last_discovery_stable"] = False
             if disable_delegation:
+                blocked_incompatible = category in {
+                    "server_identity_mismatch",
+                    "upstream_version_mismatch",
+                    "unsupported_protocol_version",
+                    "invalid_response",
+                    "schema_mismatch",
+                }
                 self._state["initialized"] = False
                 self._state["generic_delegation_available"] = False
                 self._state["admission_complete"] = False
@@ -2122,16 +2052,14 @@ class UpstreamReadGateway:
                 self._state["compatibility_status"] = "unavailable"
                 self._state["admission_status"] = (
                     "blocked_incompatible_upstream"
-                    if category
-                    in {
-                        "server_identity_mismatch",
-                        "upstream_version_mismatch",
-                        "unsupported_protocol_version",
-                        "invalid_response",
-                        "schema_mismatch",
-                    }
+                    if blocked_incompatible
                     else "unavailable"
                 )
+                self._state["version_status"] = {
+                    "upstream_version_mismatch": "rejected_unreviewed",
+                    "server_identity_mismatch": "rejected_identity",
+                    "unsupported_protocol_version": "rejected_protocol",
+                }.get(category, self._state["version_status"])
                 self._state["recommended_action"] = (
                     "Restore the reviewed upstream identity and protocol, or "
                     "roll back to the last compatible upstream version."
@@ -2410,12 +2338,12 @@ def _stable_compatibility(snapshot: dict[str, Any]) -> bool:
         snapshot.get("initialized")
         and snapshot.get("last_discovery_stable")
         and snapshot.get("compatibility_status")
-        in {"exact", "compatible", "partial", "incompatible"}
+        in {"exact", "partial", "incompatible"}
     )
 
 
 def _recommended_action(compatibility_status: str) -> str:
-    if compatibility_status in {"exact", "compatible"}:
+    if compatibility_status == "exact":
         return "No compatibility action is required."
     if compatibility_status == "partial":
         return (

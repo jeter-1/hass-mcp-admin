@@ -19,11 +19,9 @@ and fallback policy. The shipped table contains one family:
 A registry entry may bind an exact `ha-mcp` release to that existing family. An
 exact-version entry, when present, is authoritative for that release. A
 mismatch or revocation blocks it without falling back to an older release entry
-or to unattested compatibility. When no exact-version entry exists, the
-dashboard provider may independently admit an exact compiled family as
-`admitted_compatible_contract`; that status makes no registry, provenance,
-source, or image claim. If the optional registry is enabled, that absence must
-be established from a currently usable signed registry.
+or to self-advertised compatibility. When no exact-version built-in or verified
+signed entry exists, dashboard admission fails closed even if the live
+descriptor matches a compiled family.
 
 An unknown `contract_family` is rejected while parsing. Registry data cannot
 name an arbitrary endpoint, repository, image, tool, argument, operation,
@@ -59,9 +57,8 @@ another URL or filesystem path.
 
 ## Runtime behavior
 
-- Registry disabled: built-in exact-version entries remain authoritative when
-  present; otherwise only exact compiled-family compatibility can be admitted,
-  without an attestation claim.
+- Registry disabled: a built-in exact-version entry is required and remains
+  authoritative. A release without one is unavailable.
 - Registry enabled: validate the configured non-secret Ed25519 public key at
   startup, load an atomic last-known-good cache, then refresh no more often than
   every six hours.
@@ -76,12 +73,9 @@ another URL or filesystem path.
   and remains deny-only after cache expiry until valid higher-sequence data
   supersedes it. Expired evidence cannot authorize a contract. Do not
   substitute an older attestation or the unattested path.
-- No exact-version entry: a bounded refresh may first seek exact evidence; if
-  none exists, evaluate only the binary-owned compiled family. When the
-  registry is enabled this requires a currently usable signed registry; after
-  hard expiry or registry unavailability, compatible-family admission is
-  blocked. Exact semantic compatibility may otherwise report
-  `admitted_compatible_contract`; incompatibility fails before `tools/call`.
+- No exact-version entry: a bounded refresh may seek exact signed evidence. If
+  none exists, admission fails closed before `tools/call`; the binary-owned
+  compiled-family match cannot authorize the release by itself.
 
 Health exposes only bounded status, sequence, timestamps/ages, signature state,
 cache state, refresh/failure category, admission source/status, attestation ID,
@@ -93,9 +87,9 @@ exact-version entry, normalized input/security/output/runtime fingerprints are
 authoritative and deliberately ignore only approved descriptive presentation
 differences. Raw and descriptor fingerprints identify the reviewed published
 representation and support drift diagnostics only. Without an exact entry, the
-same binary-owned compiled semantics are evaluated directly and no release
-evidence is inferred. A catalog fingerprint remains unrelated-tool
-observability and is never a required-tool compatibility gate.
+release is unavailable even if the same binary-owned compiled semantics appear
+to match. A catalog fingerprint remains unrelated-tool observability and is
+never a required-tool compatibility gate.
 
 ## Signing-key operations
 

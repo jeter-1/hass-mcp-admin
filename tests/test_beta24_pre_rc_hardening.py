@@ -65,6 +65,100 @@ class RecordingApp:
         await send({"type": "http.response.body", "body": b"{}"})
 
 
+class CatalogReadinessBarrierTests(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    async def request(gateway, path):
+        messages = []
+
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message):
+            messages.append(message)
+
+        await gateway(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": path,
+                "raw_path": path.encode("ascii"),
+                "headers": [],
+                "client": ("127.0.0.1", 1234),
+            },
+            receive,
+            send,
+        )
+        status = next(
+            item["status"]
+            for item in messages
+            if item["type"] == "http.response.start"
+        )
+        body = b"".join(
+            item.get("body", b"")
+            for item in messages
+            if item["type"] == "http.response.body"
+        )
+        return status, body
+
+    async def test_configured_catalog_blocks_mcp_but_not_liveness(self):
+        app = RecordingApp()
+        gateway = AuthenticatedMcpGateway(
+            app,
+            settings("unused"),
+            AuditLogger("unused", SECRET, enabled=False),
+            require_initial_catalog_reconciliation=True,
+        )
+
+        health_status, _ = await self.request(gateway, "/health")
+        ready_status, ready_body = await self.request(gateway, "/ready")
+        mcp_status, _ = await self.request(gateway, f"/{SECRET}/mcp")
+        unknown_status, _ = await self.request(gateway, "/not-authorized")
+
+        self.assertEqual(health_status, 200)
+        self.assertEqual(ready_status, 503)
+        self.assertEqual(mcp_status, 503)
+        self.assertEqual(unknown_status, 404)
+        self.assertEqual(app.calls, 0)
+        self.assertEqual(
+            json.loads(ready_body),
+            {
+                "initial_reconciliation_complete": False,
+                "initial_reconciliation_required": True,
+                "ready": False,
+                "status": "initial_reconciliation_pending",
+            },
+        )
+
+        gateway.mark_initial_catalog_reconciled()
+        ready_status, ready_body = await self.request(gateway, "/ready")
+        mcp_status, _ = await self.request(gateway, f"/{SECRET}/mcp")
+
+        self.assertEqual(ready_status, 200)
+        self.assertTrue(json.loads(ready_body)["ready"])
+        self.assertEqual(mcp_status, 200)
+        self.assertEqual(app.calls, 1)
+
+    async def test_unconfigured_native_catalog_is_ready_immediately(self):
+        gateway = AuthenticatedMcpGateway(
+            RecordingApp(),
+            settings("unused"),
+            AuditLogger("unused", SECRET, enabled=False),
+        )
+
+        ready_status, ready_body = await self.request(gateway, "/ready")
+
+        self.assertEqual(ready_status, 200)
+        self.assertEqual(
+            json.loads(ready_body)["status"],
+            "ready",
+        )
+        self.assertFalse(
+            gateway.catalog_readiness_state()[
+                "initial_reconciliation_required"
+            ]
+        )
+
+
 def scope(*, peer=("10.0.0.5", 1234), forwarded=None):
     headers = []
     if forwarded is not None:

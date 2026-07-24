@@ -10,13 +10,16 @@ separate release decision.
 
 ## Contract-level delegated-read admission
 
-Dev15 replaces exact-version-only, all-or-nothing generic read admission with a
-binary-reviewed per-tool contract decision. The observed upstream version is
-recorded as evidence, but an unknown version does not by itself disable an
-otherwise identical reviewed contract.
+Dev15 replaces all-or-nothing generic read admission with a layered decision.
+Explicit reviewed release/profile authority is required first. The compiled
+generic-read profile currently authorizes exactly `ha-mcp` 7.14.1; an
+unrecognized patch, minor, major, prerelease, or downgrade remains unavailable
+even when its self-advertised contracts appear identical. Live upstream
+metadata is observation and cannot authorize itself.
 
-For every automatic read, Engineering checks the exact tool name and input
-schema, normalized relevant description semantics, the reviewed MCP safety
+After that release/profile prerequisite succeeds, Engineering evaluates every
+automatic read independently. It checks the exact tool name and input schema,
+normalized relevant description semantics, the reviewed MCP safety
 annotations, the declared output contract, the automatic-read security
 classification, the compiled behavior adapter, and the supported MCP protocol.
 Engineering-owned descriptions and annotations remain the only model-facing
@@ -34,17 +37,15 @@ the catalog and requires the current selected target exactly once with its
 complete reviewed contract before `tools/call`. Missing, duplicate, or changed
 target evidence retires only that route before dispatch.
 
-The current server name and protocol must remain exact. A different valid
-bounded version does not stop an otherwise exact target call or remove the
-admitted set; Engineering records it as observed evidence and triggers slow
-compatibility reprobe while aggregate health reports `reconciling` and
-`compatibility_reprobe_pending`. That state retains the last admitted routes
-without claiming the complete catalog was verified at the newly observed
-version. Unrelated new, changed, malformed, or duplicate
-unreviewed descriptors remain blocked and are reconciled as bounded anomalies
-without preventing that exact target call. Transient connection and timeout
-failures retain the last-known-good set while fast startup recovery continues.
-Stable compatibility differences use the separate slow reprobe lane instead of
+The current server name, exact reviewed release/profile, and protocol must all
+remain authorized. If call-time evidence reports another version, Engineering
+does not dispatch on the self-advertised match. It records bounded evidence,
+fails closed into `blocked_incompatible_upstream`, and waits for the slow
+periodic reconciliation instead of triggering the fast retry lane. Unrelated
+new, changed, malformed, or duplicate unreviewed descriptors remain blocked and
+are reconciled as bounded anomalies. Transient connection and timeout failures
+retain the last-known-good set while fast startup recovery continues. Stable
+compatibility differences use the separate slow reprobe lane instead of
 consuming the fast retry loop.
 
 An admission-relevant token covers only the validated upstream identity,
@@ -57,10 +58,24 @@ churn returns to the slow cadence instead of forming a reprobe loop.
 
 Transient endpoint/session-not-ready evidence uses a bounded 600-second
 startup-ordering grace before moving to the slow cadence, preserving the
-RC2dev13 full-host-reboot recovery window. Same-session catalog verification
-and dispatch are serialized in Dev15, and every generic delegated call adds a
-bounded `tools/list`; candidate validation must therefore re-characterize
-`ha_search` latency and concurrent delegated-read throughput.
+RC2dev13 full-host-reboot recovery window. The bounded `/ready` endpoint reports
+only `ready`, `initial_reconciliation_required`,
+`initial_reconciliation_complete`, and status
+`ready|initial_reconciliation_pending`. When upstream is configured,
+authenticated MCP traffic receives HTTP 503 until
+`reconcile_until_initialized` returns its first stable or terminal result.
+This prevents a schema-caching client from retaining a transient 41-tool
+catalog before the initial result is known. Startup failure diagnostics remain
+bounded and secret-free.
+
+Every generic delegated call adds a bounded same-session `tools/list`, but
+network I/O is not held behind one global dispatch lock. Calls acquire an
+immutable current-generation route snapshot under a short lease, then perform
+validation and dispatch concurrently. A route retired before pre-dispatch
+validation cannot call upstream. A call already committed after successful
+validation may finish, but its completion cannot republish or revive a retired
+generation. Candidate validation must re-characterize `ha_search` latency and
+concurrent delegated-read throughput.
 
 Health reports the bounded `observed_upstream_server_name`,
 `observed_upstream_server_version`, `observed_protocol_version`, and
@@ -78,29 +93,29 @@ argument shapes, suppressed screenshots, unreachable preference writes,
 reviewed safety annotations, output/hash behavior, server identity, and MCP
 protocol.
 
-An exact release attestation, when present, remains authoritative: revocation
-or contract mismatch rejects with no fallback to older evidence. When no exact
-release entry exists, an identical nonrevoked reviewed contract variant may be
-admitted as `admitted_compatible_contract`. That path records the observed
-version but does not claim that an older source commit, image, or release
-attestation covers it. If the optional signed dashboard registry is enabled,
-the compatible-family path additionally requires a currently usable registry.
-An expired cached exact entry remains deny-only until valid higher-sequence
-data supersedes it, so expiry cannot revive a revoked or mismatched release.
+Dashboard admission requires an exact built-in or verified signed attestation
+for the observed release before the compiled family is evaluated. Revocation,
+missing exact authority, or contract mismatch rejects with no fallback to
+older evidence or to a self-advertised compatible variant. An expired cached
+exact entry remains deny-only until valid higher-sequence data supersedes it,
+so expiry cannot revive a revoked or mismatched release.
 
 ## Follow-on milestones
 
-Dev15 uses the committed binary policy and the existing dashboard registry.
+Dev15 uses the exact compiled generic profile and exact dashboard attestations.
 Dev16 is the planned extension of signed, monotonic, expiring, revocable
-compatibility data to the generic read contracts, including cache/expiry,
-rollback/replay protection, revocation, and runtime refresh. Dev17 is the
-planned upstream-release pipeline for isolated catalog capture, catalog and
-annotation diffing, semantic fixtures, dashboard checks, zero-write
-verification, compatibility reports, and reviewed registry-entry pull
-requests. Neither a generic signed-registry update path nor that automated
-pipeline is implemented or implied by this candidate.
+release/profile authority to the generic read contracts, including
+cache/expiry, rollback/replay protection, revocation, and runtime refresh. That
+is the milestone intended to admit a reviewed newer release without rebuilding
+Engineering. Dev17 is the planned upstream-release pipeline for isolated
+catalog capture, catalog and annotation diffing, semantic fixtures, dashboard
+checks, zero-write verification, compatibility reports, and reviewed
+registry-entry pull requests. Neither a generic signed-registry update path nor
+that automated pipeline is implemented or implied by this candidate.
 
-No stable-v1 source, public MCP schema, governed configuration-write behavior,
-workflow YAML, release declaration, container behavior, credential, image,
-tag, publication, deployment, or live Home Assistant system is changed by
-these notes.
+The exact-image CI gate now waits for bounded catalog readiness and retains a
+bounded result artifact on success or failure. No workflow permission,
+publication behavior, stable-v1 source, public MCP schema, governed
+configuration-write behavior, release declaration, Dockerfile, image metadata,
+credential, image, tag, deployment operation, or live Home Assistant system is
+changed.

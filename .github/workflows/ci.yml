@@ -206,13 +206,14 @@ jobs:
             -e UPSTREAM_DASHBOARD_MCP_URL=http://127.0.0.1:18086/synthetic-upstream-secret/mcp \
             engineering-read-gateway-acceptance:test
           for attempt in $(seq 1 90); do
-            status="$(curl --max-time 1 --silent --output /dev/null --write-out '%{http_code}' \
-              "http://127.0.0.1:18100/${ENGINEERING_ACCESS_SECRET}/mcp" || true)"
-            test "$status" != "000" && exit 0
+            status="$(curl --max-time 1 --silent --output /dev/null \
+              --write-out '%{http_code}' http://127.0.0.1:18100/ready || true)"
+            test "$status" = "200" && exit 0
             sleep 1
           done
           exit 1
       - name: Run exact-image authenticated gateway acceptance
+        if: always()
         shell: bash
         run: |
           python scripts/exact_image_read_gateway_acceptance.py \
@@ -221,6 +222,7 @@ jobs:
             --fixture-stats-url http://127.0.0.1:18123/__fixture__/stats \
             --output "$RUNNER_TEMP/exact-image-read-gateway-result.json"
       - name: Upload bounded exact-image result
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: exact-image-read-gateway-result
