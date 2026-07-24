@@ -17,6 +17,7 @@ class ErrorCode(str, Enum):
     HA_TIMEOUT = "home_assistant_timeout"
     ENTITY_NOT_FOUND = "entity_not_found"
     AUTOMATION_NOT_FOUND = "automation_not_found"
+    RESOURCE_NOT_FOUND = "resource_not_found"
     UNSUPPORTED_OPERATION = "unsupported_operation"
     CONFIGURATION_CONFLICT = "configuration_conflict"
     RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
@@ -120,6 +121,7 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
     ErrorCode.HA_TIMEOUT: ErrorDefinition("Home Assistant timed out.", True, 504, "internal_error"),
     ErrorCode.ENTITY_NOT_FOUND: ErrorDefinition("The entity was not found.", False, 404, "invalid_params"),
     ErrorCode.AUTOMATION_NOT_FOUND: ErrorDefinition("The automation was not found.", False, 404, "invalid_params"),
+    ErrorCode.RESOURCE_NOT_FOUND: ErrorDefinition("The requested resource was not found.", False, 404, "invalid_params"),
     ErrorCode.UNSUPPORTED_OPERATION: ErrorDefinition("The operation is unsupported.", False, 405, "method_not_found"),
     ErrorCode.CONFIGURATION_CONFLICT: ErrorDefinition("The configuration conflicts with current state.", False, 409, "invalid_request"),
     ErrorCode.RATE_LIMIT_EXCEEDED: ErrorDefinition("The request rate limit was exceeded.", True, 429, "server_error"),

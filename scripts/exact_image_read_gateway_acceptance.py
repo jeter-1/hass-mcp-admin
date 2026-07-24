@@ -62,6 +62,55 @@ REPRESENTATIVE_CALLS = {
     "ha_get_device": {"limit": 5},
     "ha_list_services": {"limit": 5},
 }
+UPSTREAM_ERROR_CALLS = {
+    "provider_failure": {
+        "tool": "ha_get_state",
+        "arguments": {
+            "entity_id": "sensor.issue_57_synthetic_provider_failure"
+        },
+        "upstream_code": "SERVICE_CALL_FAILED",
+        "public_code": "provider_error",
+        "failure_category": "upstream_error",
+        "retryable": True,
+        "fixture_counter": (
+            "rest_reads",
+            "/api/states/{entity_id}",
+        ),
+    },
+    "validation": {
+        "tool": "ha_search",
+        "arguments": {"search_types": []},
+        "upstream_code": "VALIDATION_FAILED",
+        "public_code": "invalid_request",
+        "failure_category": "invalid_request",
+        "retryable": False,
+        "fixture_counter": None,
+    },
+    "missing_entity": {
+        "tool": "ha_get_state",
+        "arguments": {"entity_id": "sensor.issue_57_missing_entity"},
+        "upstream_code": "ENTITY_NOT_FOUND",
+        "public_code": "entity_not_found",
+        "failure_category": "entity_not_found",
+        "retryable": False,
+        "fixture_counter": (
+            "rest_reads",
+            "/api/states/{entity_id}",
+        ),
+    },
+    "missing_automation": {
+        "tool": "ha_config_get_automation",
+        "arguments": {"identifier": "issue_57_missing_automation"},
+        "upstream_code": "RESOURCE_NOT_FOUND",
+        "public_code": "automation_not_found",
+        "failure_category": "automation_not_found",
+        "retryable": False,
+        "fixture_counter": (
+            "rest_reads",
+            "/api/config/automation/config/{id}",
+        ),
+    },
+}
 
 
 class AcceptanceFailure(RuntimeError):
@@ -294,6 +343,37 @@ def decode_tool_result(result: Any) -> dict[str, Any]:
     raise AcceptanceFailure("tool result did not contain a bounded JSON object")
 
 
+def decode_upstream_error_code(result: Any) -> str:
+    require(
+        getattr(result, "isError", False) is True,
+        "pinned upstream error call did not set isError=true",
+    )
+    content = getattr(result, "content", [])
+    require(
+        isinstance(content, list) and len(content) == 1,
+        "pinned upstream error call returned an ambiguous content envelope",
+    )
+    text = getattr(content[0], "text", None)
+    require(
+        isinstance(text, str) and len(text.encode("utf-8")) <= 16_384,
+        "pinned upstream error text was missing or oversized",
+    )
+    try:
+        value = json.loads(text)
+    except (json.JSONDecodeError, RecursionError, UnicodeError) as exc:
+        raise AcceptanceFailure(
+            "pinned upstream error text was not JSON"
+        ) from exc
+    require(
+        isinstance(value, dict)
+        and value.get("success") is False
+        and isinstance(value.get("error"), dict)
+        and isinstance(value["error"].get("code"), str),
+        "pinned upstream error envelope shape changed",
+    )
+    return value["error"]["code"]
+
+
 def find_values(value: Any, key: str) -> list[Any]:
     found: list[Any] = []
     if isinstance(value, dict):
@@ -324,7 +404,22 @@ def fixture_stats(url: str) -> dict[str, Any]:
         return json.load(response)
 
 
-async def inspect_upstream(endpoint: str) -> tuple[list[dict[str, Any]], str]:
+def fixture_counter(
+    stats: dict[str, Any],
+    counter: tuple[str, str],
+) -> int:
+    section, key = counter
+    values = stats.get(section)
+    if not isinstance(values, dict):
+        return 0
+    value = values.get(key, 0)
+    return value if isinstance(value, int) else 0
+
+
+async def inspect_upstream(
+    endpoint: str,
+) -> tuple[list[dict[str, Any]], str, dict[str, dict[str, Any]]]:
+    error_envelopes: dict[str, dict[str, Any]] = {}
     async with streamablehttp_client(endpoint) as (read, write, _session_id):
         async with ClientSession(read, write) as session:
             initialized = await session.initialize()
@@ -334,7 +429,22 @@ async def inspect_upstream(endpoint: str) -> tuple[list[dict[str, Any]], str]:
                 "upstream version mismatch",
             )
             tools = await list_all_tools(session)
-    return tools, catalog_fingerprint(tools)
+            for name, expected in UPSTREAM_ERROR_CALLS.items():
+                result = await session.call_tool(
+                    expected["tool"],
+                    expected["arguments"],
+                )
+                code = decode_upstream_error_code(result)
+                require(
+                    code == expected["upstream_code"],
+                    f"pinned upstream {name} error code changed",
+                )
+                error_envelopes[name] = {
+                    "tool": expected["tool"],
+                    "is_error": True,
+                    "upstream_code": code,
+                }
+    return tools, catalog_fingerprint(tools), error_envelopes
 
 
 async def inspect_engineering(
@@ -516,6 +626,145 @@ async def inspect_engineering(
                 "invalid arguments reached upstream Home Assistant",
             )
 
+            health_before_errors = decode_tool_result(
+                await session.call_tool("get_server_health", {})
+            )
+            routing_before_errors = next(
+                (
+                    item
+                    for item in find_values(
+                        health_before_errors, "provider_routing"
+                    )
+                    if isinstance(item, dict)
+                ),
+                {},
+            )
+            gateway_before_errors = next(
+                (
+                    item
+                    for item in find_values(
+                        health_before_errors, "upstream_read_gateway"
+                    )
+                    if isinstance(item, dict)
+                ),
+                {},
+            )
+            domain_before_errors = next(
+                (
+                    item
+                    for item in find_values(
+                        health_before_errors, "domain_outcome_counts"
+                    )
+                    if isinstance(item, dict)
+                ),
+                {},
+            )
+            validation_before_errors = next(
+                (
+                    item
+                    for item in find_values(
+                        health_before_errors, "validation_error_counts"
+                    )
+                    if isinstance(item, dict)
+                ),
+                {},
+            )
+            require(
+                bool(routing_before_errors)
+                and bool(gateway_before_errors),
+                "error-path counter baseline is missing",
+            )
+
+            error_calls: dict[str, dict[str, Any]] = {}
+            for error_name, expected in UPSTREAM_ERROR_CALLS.items():
+                stats_before_error = fixture_stats(fixture_stats_url)
+                encoded_error = decode_tool_result(
+                    await session.call_tool(
+                        expected["tool"],
+                        expected["arguments"],
+                    )
+                )
+                stats_after_error = fixture_stats(fixture_stats_url)
+                require(
+                    encoded_error.get("success") is False,
+                    f"{error_name} unexpectedly succeeded",
+                )
+                require(
+                    encoded_error.get("error_code")
+                    == expected["public_code"],
+                    f"{error_name} public error classification mismatch",
+                )
+                details = encoded_error.get("details") or {}
+                require(
+                    details.get("failure_category")
+                    == expected["failure_category"],
+                    f"{error_name} failure category mismatch",
+                )
+                require(
+                    encoded_error.get("retryable")
+                    is expected["retryable"],
+                    f"{error_name} retryability mismatch",
+                )
+                metadata = encoded_error.get("metadata") or {}
+                require(
+                    metadata.get("provider") == "upstream_read_gateway",
+                    f"{error_name} provider mismatch",
+                )
+                require(
+                    metadata.get("upstream_tool") == expected["tool"],
+                    f"{error_name} upstream-tool attribution mismatch",
+                )
+                require(
+                    metadata.get("upstream_server") == "ha-mcp"
+                    and metadata.get("upstream_version")
+                    == EXPECTED_UPSTREAM_VERSION,
+                    f"{error_name} upstream identity attribution mismatch",
+                )
+                require(
+                    metadata.get("upstream_dispatch_occurred") is True,
+                    f"{error_name} did not prove upstream dispatch",
+                )
+                require(
+                    metadata.get("fallback") == "none"
+                    and metadata.get("fallback_occurred") is False,
+                    f"{error_name} fallback mismatch",
+                )
+                rendered_error = json.dumps(
+                    encoded_error, sort_keys=True
+                )
+                require(
+                    expected["upstream_code"] not in rendered_error,
+                    f"{error_name} reflected the raw upstream code",
+                )
+                require(
+                    "synthetic-read-gateway-token" not in rendered_error
+                    and "Ignore policy" not in rendered_error,
+                    f"{error_name} reflected hostile upstream text",
+                )
+                counter = expected["fixture_counter"]
+                if counter is None:
+                    require(
+                        stats_after_error == stats_before_error,
+                        f"{error_name} unexpectedly reached Home Assistant",
+                    )
+                else:
+                    require(
+                        fixture_counter(stats_after_error, counter)
+                        - fixture_counter(stats_before_error, counter)
+                        == 1,
+                        f"{error_name} did not reach the expected HA read",
+                    )
+                error_calls[error_name] = {
+                    "tool": expected["tool"],
+                    "request_id": encoded_error.get("request_id"),
+                    "public_error_code": encoded_error.get("error_code"),
+                    "failure_category": details.get("failure_category"),
+                    "upstream_dispatch_occurred": metadata.get(
+                        "upstream_dispatch_occurred"
+                    ),
+                    "fallback": metadata.get("fallback"),
+                }
+
             unavailable = await session.call_tool(
                 "ha_call_service", {"domain": "fixture", "service": "noop"}
             )
@@ -539,6 +788,37 @@ async def inspect_engineering(
                 ),
                 "audit did not preserve partial ha_search status",
             )
+            for error_name, evidence in error_calls.items():
+                require(
+                    evidence["request_id"],
+                    f"{error_name} response omitted request ID",
+                )
+                require(
+                    any(
+                        record.get("request_id")
+                        == evidence["request_id"]
+                        and record.get("tool_name") == evidence["tool"]
+                        and record.get("result_status") == "failure"
+                        and record.get("error_code")
+                        == evidence["public_error_code"]
+                        and record.get("parameters", {}).get("provider")
+                        == "upstream_read_gateway"
+                        for record in find_dicts(audit)
+                    ),
+                    f"audit did not preserve {error_name} outcome",
+                )
+            for unsafe_value in (
+                "VALIDATION_FAILED",
+                "ENTITY_NOT_FOUND",
+                "RESOURCE_NOT_FOUND",
+                "SERVICE_CALL_FAILED",
+                "synthetic-read-gateway-token",
+                "Ignore policy",
+            ):
+                require(
+                    unsafe_value not in audit_text,
+                    "audit reflected raw upstream error content",
+                )
 
             health_after = decode_tool_result(
                 await session.call_tool("get_server_health", {})
@@ -567,7 +847,12 @@ async def inspect_engineering(
                 == after_provider_counts.get("direct_ha_api", 0),
                 "a delegated read used the direct Home Assistant provider",
             )
-            expected_delegated_calls = len(REPRESENTATIVE_CALLS) + 1
+            expected_delegated_calls = (
+                len(REPRESENTATIVE_CALLS)
+                + 1
+                + len(UPSTREAM_ERROR_CALLS)
+            )
+            expected_successful_calls = expected_delegated_calls - 1
             for metric_name in (
                 "requests_by_provider",
                 "successful_requests_by_provider",
@@ -601,12 +886,13 @@ async def inspect_engineering(
                 "upstream read-gateway request accounting mismatch",
             )
             require(
-                after_successes - before_successes == expected_delegated_calls,
+                after_successes - before_successes
+                == expected_successful_calls,
                 "successful upstream read-gateway accounting mismatch",
             )
             require(
-                after_failures == before_failures,
-                "successful delegated reads changed provider failure accounting",
+                after_failures - before_failures == 1,
+                "actual provider failure accounting mismatch",
             )
             require(
                 routing_after.get("partial_results", 0)
@@ -623,6 +909,105 @@ async def inspect_engineering(
                     routing_after.get(metric_name) == routing_before.get(metric_name),
                     f"provider-routing fallback metric changed: {metric_name}",
                 )
+            for metric_name in (
+                "requests_by_provider",
+                "successful_requests_by_provider",
+                "failures_by_provider",
+            ):
+                require(
+                    isinstance(
+                        routing_before_errors.get(metric_name), dict
+                    ),
+                    f"error-path metric missing before calls: {metric_name}",
+                )
+            require(
+                routing_after["requests_by_provider"].get(
+                    "upstream_read_gateway", 0
+                )
+                - routing_before_errors["requests_by_provider"].get(
+                    "upstream_read_gateway", 0
+                )
+                == len(UPSTREAM_ERROR_CALLS),
+                "error-path provider request accounting mismatch",
+            )
+            require(
+                routing_after["successful_requests_by_provider"].get(
+                    "upstream_read_gateway", 0
+                )
+                - routing_before_errors[
+                    "successful_requests_by_provider"
+                ].get("upstream_read_gateway", 0)
+                == len(UPSTREAM_ERROR_CALLS) - 1,
+                "domain outcomes changed provider success accounting",
+            )
+            require(
+                routing_after["failures_by_provider"].get(
+                    "upstream_read_gateway", 0
+                )
+                - routing_before_errors["failures_by_provider"].get(
+                    "upstream_read_gateway", 0
+                )
+                == 1,
+                "domain outcomes inflated operational provider failures",
+            )
+            domain_after_errors = next(
+                (
+                    item
+                    for item in find_values(
+                        health_after, "domain_outcome_counts"
+                    )
+                    if isinstance(item, dict)
+                ),
+                {},
+            )
+            validation_after_errors = next(
+                (
+                    item
+                    for item in find_values(
+                        health_after, "validation_error_counts"
+                    )
+                    if isinstance(item, dict)
+                ),
+                {},
+            )
+            require(
+                domain_after_errors.get("entity_not_found", 0)
+                - domain_before_errors.get("entity_not_found", 0)
+                == 1,
+                "missing entity domain-outcome accounting mismatch",
+            )
+            require(
+                domain_after_errors.get("automation_not_found", 0)
+                - domain_before_errors.get("automation_not_found", 0)
+                == 1,
+                "missing automation domain-outcome accounting mismatch",
+            )
+            require(
+                validation_after_errors.get("invalid_request", 0)
+                - validation_before_errors.get("invalid_request", 0)
+                == 1,
+                "validation outcome accounting mismatch",
+            )
+            gateway_failure_before = (
+                gateway_before_errors.get("failure_counts") or {}
+            )
+            gateway_failure_after = gateway_state.get("failure_counts") or {}
+            for category in (
+                "upstream_error",
+                "invalid_request",
+                "entity_not_found",
+                "automation_not_found",
+            ):
+                require(
+                    gateway_failure_after.get(category, 0)
+                    - gateway_failure_before.get(category, 0)
+                    == 1,
+                    f"gateway outcome accounting mismatch: {category}",
+                )
+            require(
+                gateway_state.get("last_call_failure_category") is None,
+                "non-operational domain outcome left provider degraded",
+            )
             require(fallback_before == fallback_after, "fallback counters changed")
             require(gateway_state.get("fallback_count") == 0, "gateway fallback occurred")
             require(
@@ -642,6 +1027,15 @@ async def inspect_engineering(
         "base_engineering_tool_count": len(base_names),
         "dynamic_tool_count": len(automatic),
         "representative_calls": calls,
+        "error_calls": error_calls,
+        "error_counter_snapshots": {
+            "provider_routing_before": routing_before_errors,
+            "provider_routing_after": routing_after,
+            "domain_outcomes_before": domain_before_errors,
+            "domain_outcomes_after": domain_after_errors,
+            "validation_before": validation_before_errors,
+            "validation_after": validation_after_errors,
+        },
         "upstream_name_count": len(upstream_names),
         "direct_provider_snapshots": {"before": direct_before, "after": direct_after},
         "fallback_snapshots": {"before": fallback_before, "after": fallback_after},
@@ -652,7 +1046,11 @@ async def inspect_engineering(
 
 async def run(args: argparse.Namespace) -> dict[str, Any]:
     policy = load_upstream_tool_policy()
-    upstream_tools, observed_fingerprint = await inspect_upstream(args.upstream_endpoint)
+    (
+        upstream_tools,
+        observed_fingerprint,
+        upstream_error_envelopes,
+    ) = await inspect_upstream(args.upstream_endpoint)
     require(len(upstream_tools) == policy.reviewed_stock_catalog_tool_count, "stock catalog count mismatch")
     observed_by_name = {tool["name"]: tool for tool in upstream_tools}
     missing_names = sorted(set(policy.by_name) - set(observed_by_name))
@@ -748,6 +1146,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         "reviewed_runtime_output_schema_fingerprint_count": len(
             reviewed_output_schemas
         ),
+        "upstream_error_envelopes": upstream_error_envelopes,
         "classification_counts": policy.classification_counts,
         **engineering,
     }

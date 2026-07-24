@@ -189,7 +189,8 @@ class RuntimeMetrics:
         value = str(category)[:64]
         if value in {
             "entity_not_found", "automation_not_found", "dashboard_not_found",
-            "change_plan_not_found", "unsupported_operation",
+            "change_plan_not_found", "resource_not_found",
+            "unsupported_operation",
         }:
             self.domain_outcome_counts[value] += 1
             return True

@@ -90,6 +90,9 @@ _FAILURE_CATEGORIES = frozenset(
         "argument_validation",
         "invalid_request",
         "capability_unavailable",
+        "entity_not_found",
+        "automation_not_found",
+        "resource_not_found",
         "prohibited_delegation",
         "sanitization_failed",
         "internal_error",
@@ -135,9 +138,77 @@ _UPSTREAM_INTERNAL_CODES = frozenset(
         "INTERNAL_UNEXPECTED",
     }
 )
+# Reviewed domain outcomes are keyed by both the exact admitted tool and the
+# exact structured code emitted by pinned ha-mcp 7.14.1.  The same upstream
+# code has different meanings for different tools, so codes are never promoted
+# globally.  CONFIG_NOT_FOUND and ENTITY_INVALID_ID have no established
+# automatic-read emitter in the pinned source and intentionally have no entry.
+_UPSTREAM_DOMAIN_OUTCOMES = {
+    ("ha_config_get_automation", "RESOURCE_NOT_FOUND"): "automation_not_found",
+    ("ha_config_get_calendar_events", "ENTITY_NOT_FOUND"): "entity_not_found",
+    ("ha_config_get_category", "RESOURCE_NOT_FOUND"): "resource_not_found",
+    ("ha_config_get_label", "RESOURCE_NOT_FOUND"): "resource_not_found",
+    ("ha_config_get_scene", "ENTITY_NOT_FOUND"): "entity_not_found",
+    ("ha_config_get_script", "RESOURCE_NOT_FOUND"): "resource_not_found",
+    ("ha_get_blueprint", "RESOURCE_NOT_FOUND"): "resource_not_found",
+    ("ha_get_device", "ENTITY_NOT_FOUND"): "entity_not_found",
+    ("ha_get_device", "RESOURCE_NOT_FOUND"): "resource_not_found",
+    ("ha_get_entity", "ENTITY_NOT_FOUND"): "entity_not_found",
+    ("ha_get_hacs_info", "RESOURCE_NOT_FOUND"): "resource_not_found",
+    ("ha_get_skill_guide", "RESOURCE_NOT_FOUND"): "resource_not_found",
+    ("ha_get_state", "ENTITY_NOT_FOUND"): "entity_not_found",
+    ("ha_get_zone", "RESOURCE_NOT_FOUND"): "resource_not_found",
+}
+_UPSTREAM_DOMAIN_MESSAGES = {
+    ("ha_config_get_automation", "automation_not_found"): (
+        "The requested automation configuration was not found."
+    ),
+    ("ha_config_get_calendar_events", "entity_not_found"): (
+        "The requested calendar entity was not found."
+    ),
+    ("ha_config_get_category", "resource_not_found"): (
+        "The requested category configuration was not found."
+    ),
+    ("ha_config_get_label", "resource_not_found"): (
+        "The requested label configuration was not found."
+    ),
+    ("ha_config_get_scene", "entity_not_found"): (
+        "The requested scene configuration was not found."
+    ),
+    ("ha_config_get_script", "resource_not_found"): (
+        "The requested script configuration was not found."
+    ),
+    ("ha_get_blueprint", "resource_not_found"): (
+        "The requested blueprint was not found."
+    ),
+    ("ha_get_device", "entity_not_found"): (
+        "The requested entity was not found or has no associated device."
+    ),
+    ("ha_get_device", "resource_not_found"): (
+        "The requested device was not found."
+    ),
+    ("ha_get_entity", "entity_not_found"): (
+        "The requested entity registry entry was not found."
+    ),
+    ("ha_get_hacs_info", "resource_not_found"): (
+        "The requested HACS repository was not found."
+    ),
+    ("ha_get_skill_guide", "resource_not_found"): (
+        "The requested skill guide resource was not found."
+    ),
+    ("ha_get_state", "entity_not_found"): (
+        "The requested entity state was not found."
+    ),
+    ("ha_get_zone", "resource_not_found"): (
+        "The requested zone configuration was not found."
+    ),
+}
 _EXPECTED_PROVIDER_OUTCOMES = {
     "invalid_request": "invalid_request",
     "capability_unavailable": "unsupported_operation",
+    "entity_not_found": "entity_not_found",
+    "automation_not_found": "automation_not_found",
+    "resource_not_found": "resource_not_found",
 }
 
 
@@ -1617,7 +1688,10 @@ class UpstreamReadGateway:
             route_was_admitted = True
             if exchange.call_result.get("isError") is True:
                 raise _GatewayFailure(
-                    _classify_upstream_tool_error(exchange.call_result),
+                    _classify_upstream_tool_error(
+                        policy_entry.upstream_name,
+                        exchange.call_result,
+                    ),
                     dispatched=True,
                 )
             payload = _normalize_upstream_payload(exchange.call_result)
@@ -1755,21 +1829,32 @@ class UpstreamReadGateway:
                 telemetry.completeness = "failed"
                 if category == "timeout":
                     telemetry.timeout_occurred = True
+            failure_metadata = {
+                "provider": PROVIDER_ID,
+                "upstream_tool": policy_entry.upstream_name,
+                "classification": "automatic_read",
+                "upstream_dispatch_occurred": exc.dispatched,
+                "fallback": "none",
+                "fallback_occurred": False,
+            }
+            if exc.dispatched and mapping is not None:
+                failure_metadata.update(
+                    {
+                        "upstream_server": REVIEWED_UPSTREAM_SERVER,
+                        "upstream_version": mapping.server_version,
+                    }
+                )
             return FailureResponse(
                 operation=exposed_name,
                 error="UpstreamReadGatewayError",
                 error_code=code,
-                message=_safe_failure_message(category),
+                message=_safe_failure_message(
+                    category,
+                    policy_entry.upstream_name,
+                ),
                 details={"failure_category": category},
                 retryable=retryable,
-                metadata={
-                    "provider": PROVIDER_ID,
-                    "upstream_tool": policy_entry.upstream_name,
-                    "classification": "automatic_read",
-                    "upstream_dispatch_occurred": exc.dispatched,
-                    "fallback": "none",
-                    "fallback_occurred": False,
-                },
+                metadata=failure_metadata,
                 timing=timing_since(started),
                 request_id=current_request_id(),
             ).to_json(response_limit)
@@ -2478,6 +2563,12 @@ def _public_failure(category: str) -> tuple[str, bool]:
         return "invalid_request", False
     if category == "capability_unavailable":
         return "unsupported_operation", False
+    if category == "entity_not_found":
+        return "entity_not_found", False
+    if category == "automation_not_found":
+        return "automation_not_found", False
+    if category == "resource_not_found":
+        return "resource_not_found", False
     if category == "authentication_failed":
         return "authentication_failure", False
     if category == "prohibited_delegation":
@@ -2498,7 +2589,15 @@ def _public_failure(category: str) -> tuple[str, bool]:
     return "provider_error", category in {"upstream_error"}
 
 
-def _safe_failure_message(category: str) -> str:
+def _safe_failure_message(
+    category: str,
+    upstream_tool: str | None = None,
+) -> str:
+    domain_message = _UPSTREAM_DOMAIN_MESSAGES.get(
+        (upstream_tool, category)
+    )
+    if domain_message is not None:
+        return domain_message
     return {
         "argument_validation": "The request does not match the reviewed upstream schema.",
         "invalid_request": "The reviewed upstream provider rejected the request arguments.",
@@ -2515,7 +2614,29 @@ def _safe_failure_message(category: str) -> str:
     }.get(category, "The reviewed upstream read provider could not complete the request.")
 
 
-def _classify_upstream_tool_error(call_result: dict[str, Any]) -> str:
+def _reject_duplicate_json_members(
+    pairs: list[tuple[str, Any]],
+) -> dict[str, Any]:
+    """Build one JSON object while rejecting ambiguity at every nesting level."""
+
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON object member")
+        value[key] = item
+    return value
+
+
+def _reject_non_finite_json_constant(_value: str) -> None:
+    """Reject Python's non-standard NaN and infinity JSON extensions."""
+
+    raise ValueError("non-finite JSON constant")
+
+
+def _classify_upstream_tool_error(
+    upstream_tool: str,
+    call_result: dict[str, Any],
+) -> str:
     """Classify only the reviewed 7.14.1 structured error discriminator."""
 
     content = call_result.get("content")
@@ -2532,7 +2653,11 @@ def _classify_upstream_tool_error(call_result: dict[str, Any]) -> str:
     try:
         if len(text.encode("utf-8")) > MAX_STRUCTURED_UPSTREAM_ERROR_BYTES:
             return "upstream_error"
-        payload = json.loads(text)
+        payload = json.loads(
+            text,
+            object_pairs_hook=_reject_duplicate_json_members,
+            parse_constant=_reject_non_finite_json_constant,
+        )
     except (RecursionError, TypeError, UnicodeError, ValueError):
         return "upstream_error"
     if (
@@ -2544,6 +2669,11 @@ def _classify_upstream_tool_error(call_result: dict[str, Any]) -> str:
     code = payload["error"].get("code")
     if not isinstance(code, str):
         return "upstream_error"
+    domain_outcome = _UPSTREAM_DOMAIN_OUTCOMES.get(
+        (upstream_tool, code)
+    )
+    if domain_outcome is not None:
+        return domain_outcome
     if code in _UPSTREAM_VALIDATION_CODES:
         return "invalid_request"
     if code in _UPSTREAM_CAPABILITY_CODES:

@@ -76,6 +76,7 @@ async def run_structured(
         domain_category = {
             "entity_not_found": "domain_outcome_entity_not_found",
             "automation_not_found": "domain_outcome_automation_not_found",
+            "resource_not_found": "domain_outcome_resource_not_found",
             "dashboard_not_found": "domain_outcome_dashboard_not_found",
             "change_plan_not_found": "domain_outcome_change_plan_not_found",
         }.get(code.value)

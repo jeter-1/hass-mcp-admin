@@ -29,7 +29,9 @@ exact candidate identity and exact environment.
    secret-scan, PowerShell, protected-path, whitespace, and Evidence gates from
    a clean committed head.
 8. Require the CI exact-image gate to retain the pinned ha-mcp 7.14.1,
-   78-tool, 26-read, 67-total contract.
+   78-tool, 26-read, 67-total contract and exercise its real validation,
+   missing-entity, missing-automation, and provider-failure envelopes through
+   the Engineering gateway.
 
 ## Disposable normalization scenarios
 
@@ -52,12 +54,25 @@ Assistant instance.
 5. Return reviewed authentication, connection, timeout, and internal-provider
    codes independently. Require their Engineering-owned public categories,
    retryability, audit outcomes, and provider-health effects.
-6. Return unknown, malformed, nested, ambiguous, oversized, and hostile error
+6. Return the reviewed tool/code pairs for missing entity state or registry
+   data, automation configuration, calendar entity, category, label, scene,
+   script, blueprint, device, HACS repository, skill-guide resource, and zone.
+   Require the tool-aware bounded message, non-retryability, domain-outcome
+   accounting, and no provider operational-failure increment.
+7. Return `RESOURCE_NOT_FOUND`, `ENTITY_NOT_FOUND`, `CONFIG_NOT_FOUND`, or
+   `ENTITY_INVALID_ID` for a tool/code pair that is not explicitly reviewed.
+   Require the bounded generic provider-failure path; do not infer meaning
+   from the code alone.
+8. Return duplicate JSON members at the envelope, error, and nested-data
+   levels in both allowlisted/unknown orders. Return `NaN`, `Infinity`, and
+   `-Infinity` at top-level and nested positions. Require strict rejection
+   before classification and a bounded operational provider failure.
+9. Return unknown, malformed, nested, ambiguous, oversized, and hostile error
    content containing token-like strings, authorization headers, secret-path
    URLs, control characters, and prompt-like instructions. Require bounded
    generic provider failure with no reflected code, prose, credential,
    metadata, or instruction.
-7. Confirm every failure preserves provider/upstream attribution, the request
+10. Confirm every failure preserves provider/upstream attribution, the request
    ID, `fallback: none`, and `fallback_occurred: false`.
 
 ## Search-routing review
@@ -91,17 +106,23 @@ Do not execute these steps without distinct live-environment authorization.
    the MCP schema, such as an empty `search_types` array if still applicable.
    Expect bounded non-retryable caller validation, no raw upstream text, and no
    provider operational-failure increment.
-4. Call one known optional component-dependent read that is unavailable in the
+4. Call `ha_get_state` for a guaranteed nonexistent test entity. Expect
+   bounded non-retryable `entity_not_found`, no raw upstream text, and no
+   provider operational-failure increment.
+5. Call `ha_config_get_automation` for a guaranteed nonexistent test
+   automation. Expect bounded non-retryable `automation_not_found`, no raw
+   upstream text, and no provider operational-failure increment.
+6. Call one known optional component-dependent read that is unavailable in the
    deployed environment, if applicable. Expect non-retryable
    capability-unavailable semantics rather than a connection error.
-5. Call `ha_search` with a small `config_time_budget`. If the scan cannot
+7. Call `ha_search` with a small `config_time_budget`. If the scan cannot
    complete, expect a successful partial result and no provider-failure
    classification.
-6. Call `get_server_health`. Confirm coherent operational counters and zero
+8. Call `get_server_health`. Confirm coherent operational counters and zero
    fallback.
-7. Inspect `get_audit_log`. Confirm bounded, redacted, truthful classifications
+9. Inspect `get_audit_log`. Confirm bounded, redacted, truthful classifications
    for success, partial, validation, capability, authentication, connection,
-   timeout, and generic provider outcomes.
+   timeout, reviewed domain outcomes, and generic provider outcomes.
 
 Acceptance fails on schema or fingerprint drift, tool-count change,
 self-authorized upstream behavior, leaked provider content, inflated
