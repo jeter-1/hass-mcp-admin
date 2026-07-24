@@ -1019,22 +1019,38 @@ async def inspect_engineering(
                 ),
                 {},
             )
-            require(
+            entity_domain_delta = (
                 domain_after_errors.get("entity_not_found", 0)
                 - domain_before_errors.get("entity_not_found", 0)
-                == 1,
-                "missing entity domain-outcome accounting mismatch",
             )
-            require(
+            automation_domain_delta = (
                 domain_after_errors.get("automation_not_found", 0)
                 - domain_before_errors.get("automation_not_found", 0)
-                == 1,
+            )
+            validation_delta = (
+                validation_after_errors.get("invalid_request", 0)
+                - validation_before_errors.get("invalid_request", 0)
+            )
+            counter_diagnostics = {
+                "domain_outcome_deltas": {
+                    "entity_not_found": entity_domain_delta,
+                    "automation_not_found": automation_domain_delta,
+                },
+                "validation_deltas": {
+                    "invalid_request": validation_delta,
+                },
+            }
+            if entity_domain_delta != 1:
+                raise AcceptanceFailure(
+                    "missing entity domain-outcome accounting mismatch",
+                    diagnostics=counter_diagnostics,
+                )
+            require(
+                automation_domain_delta == 1,
                 "missing automation domain-outcome accounting mismatch",
             )
             require(
-                validation_after_errors.get("invalid_request", 0)
-                - validation_before_errors.get("invalid_request", 0)
-                == 1,
+                validation_delta == 1,
                 "validation outcome accounting mismatch",
             )
             gateway_failure_before = (
