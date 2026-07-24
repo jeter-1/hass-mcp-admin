@@ -1254,9 +1254,8 @@ class PolicyInventoryTests(unittest.TestCase):
             '"domain outcomes inflated operational provider failures"',
             acceptance,
         )
-        self.assertIn("AUDIT_SETTLE_ATTEMPTS = 20", acceptance)
         self.assertIn(
-            "await asyncio.sleep(AUDIT_SETTLE_DELAY_SECONDS)",
+            "bounded_audit_outcome_diagnostics",
             acceptance,
         )
         fixture = (
