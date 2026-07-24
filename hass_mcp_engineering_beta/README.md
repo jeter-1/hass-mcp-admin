@@ -100,11 +100,12 @@ https://BETA_TUNNEL/REDACTED_BETA_SECRET/mcp/
 Direct requests to `/mcp` and `/mcp/` must return `404`. RC2dev12 is immutable
 failed history and must not be treated as accepted. RC2dev13 corrected its
 reboot and completeness defects, and RC2dev14 established practical
-configuration plans. The current local candidate is RC2dev15
-(`2.0.0-rc2-dev15`), which changes upstream compatibility admission. Its
+configuration plans. The current local candidate is RC2dev16
+(`2.0.0-rc2-dev16`), which corrects delegated structured-error normalization
+without changing upstream admission or adding search behavior. Its
 development scope and pre-deployment gates are recorded in
-[`../docs/RC2DEV15_RELEASE_NOTES.md`](../docs/RC2DEV15_RELEASE_NOTES.md) and
-[`../docs/RC2DEV15_ACCEPTANCE.md`](../docs/RC2DEV15_ACCEPTANCE.md). This
+[`../docs/RC2DEV16_RELEASE_NOTES.md`](../docs/RC2DEV16_RELEASE_NOTES.md) and
+[`../docs/RC2DEV16_ACCEPTANCE.md`](../docs/RC2DEV16_ACCEPTANCE.md). This
 milestone narrative is not release authority. Determine exact staged or
 advertised state from version metadata and `scripts/codex-context.py`.
 
