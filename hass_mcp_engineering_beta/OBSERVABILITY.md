@@ -801,6 +801,11 @@ generation, fingerprint, progress, and a per-operation build profile. A
 soft-expired generation is labeled stale and returned while one background
 refresh runs; hard-expired or invalidated evidence is unavailable.
 
+Delegated structured `invalid_request` and `unsupported_operation` answers count
+as completed provider dispatches and classified client/domain outcomes, not
+provider operational failures. Authentication, connection, timeout, and genuine
+upstream failures remain operational failures after dispatch.
+
 Dashboard reachability is timestamped and ages to `unknown`; it is never
 inferred indefinitely from a prior success. Exact dashboard not-found is a
 domain outcome and leaves provider reachability and contract state intact.

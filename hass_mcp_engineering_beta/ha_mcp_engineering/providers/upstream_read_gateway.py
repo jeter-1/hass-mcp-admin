@@ -45,6 +45,7 @@ SUPPORTED_PROTOCOLS = frozenset({REVIEWED_PROTOCOL_VERSION})
 RECONCILIATION_RETRY_DELAYS_SECONDS = (1.0, 2.0, 4.0, 8.0, 16.0, 30.0)
 COMPATIBILITY_REPROBE_INTERVAL_SECONDS = 900.0
 MAX_QUARANTINE_RECORDS = 26
+MAX_STRUCTURED_UPSTREAM_ERROR_BYTES = 16_384
 _TRANSIENT_DISCOVERY_FAILURES = frozenset({"connection_failed", "timeout"})
 _STARTUP_ORDERING_FAILURES = frozenset({"endpoint_rejected"})
 STARTUP_ORDERING_GRACE_SECONDS = 600.0
@@ -87,11 +88,57 @@ _FAILURE_CATEGORIES = frozenset(
         "unsupported_protocol_version",
         "schema_mismatch",
         "argument_validation",
+        "invalid_request",
+        "capability_unavailable",
         "prohibited_delegation",
         "sanitization_failed",
         "internal_error",
     }
 )
+# Exact codes from the compiled, reviewed ha-mcp 7.14.1 profile. They select
+# Engineering-owned categories only; upstream messages, metadata, suggestions,
+# and retryability claims remain untrusted and are never reflected.
+_UPSTREAM_VALIDATION_CODES = frozenset(
+    {
+        "VALIDATION_FAILED",
+        "VALIDATION_INVALID_JSON",
+        "VALIDATION_INVALID_PARAMETER",
+        "VALIDATION_MISSING_PARAMETER",
+    }
+)
+_UPSTREAM_CAPABILITY_CODES = frozenset({"COMPONENT_NOT_INSTALLED"})
+_UPSTREAM_AUTHENTICATION_CODES = frozenset(
+    {
+        "AUTH_INVALID_TOKEN",
+        "AUTH_EXPIRED",
+        "AUTH_INSUFFICIENT_PERMISSIONS",
+        "WEBSOCKET_NOT_AUTHENTICATED",
+    }
+)
+_UPSTREAM_CONNECTION_CODES = frozenset(
+    {
+        "CONNECTION_FAILED",
+        "WEBSOCKET_DISCONNECTED",
+    }
+)
+_UPSTREAM_TIMEOUT_CODES = frozenset(
+    {
+        "CONNECTION_TIMEOUT",
+        "TIMEOUT_OPERATION",
+        "TIMEOUT_WEBSOCKET",
+        "TIMEOUT_API_REQUEST",
+    }
+)
+_UPSTREAM_INTERNAL_CODES = frozenset(
+    {
+        "INTERNAL_ERROR",
+        "INTERNAL_UNEXPECTED",
+    }
+)
+_EXPECTED_PROVIDER_OUTCOMES = {
+    "invalid_request": "invalid_request",
+    "capability_unavailable": "unsupported_operation",
+}
 
 
 class ReviewedUpstreamReadTool(Tool):
@@ -1569,7 +1616,10 @@ class UpstreamReadGateway:
             )
             route_was_admitted = True
             if exchange.call_result.get("isError") is True:
-                raise _GatewayFailure("upstream_error", dispatched=True)
+                raise _GatewayFailure(
+                    _classify_upstream_tool_error(exchange.call_result),
+                    dispatched=True,
+                )
             payload = _normalize_upstream_payload(exchange.call_result)
             sanitation = sanitize_untrusted_data(
                 payload,
@@ -1647,7 +1697,16 @@ class UpstreamReadGateway:
             route_was_admitted = bool(route_context.get("admitted"))
             category = _normalize_category(exc.category)
             if exc.dispatched:
-                METRICS.record_provider_result(PROVIDER_ID, "failed", dispatched=True)
+                classified_outcome = _EXPECTED_PROVIDER_OUTCOMES.get(category)
+                if classified_outcome:
+                    METRICS.record_classified_outcome(classified_outcome)
+                    METRICS.record_provider_result(
+                        PROVIDER_ID, "complete", dispatched=True
+                    )
+                else:
+                    METRICS.record_provider_result(
+                        PROVIDER_ID, "failed", dispatched=True
+                    )
             with self._lock:
                 route_is_current = (
                     route_was_admitted
@@ -1655,13 +1714,20 @@ class UpstreamReadGateway:
                     and self._exposed.get(exposed_name) is mapping
                 )
             if not route_was_admitted or route_is_current:
-                self._record_failure(category, discovery=False)
+                if category in _EXPECTED_PROVIDER_OUTCOMES:
+                    self._record_expected_outcome(category)
+                else:
+                    self._record_failure(category, discovery=False)
             else:
                 # Preserve the historical count without allowing a retired
                 # in-flight generation to overwrite the newer generation's
                 # live failure or availability state.
                 with self._lock:
                     self._state["failure_counts"][category] += 1
+            if category in _EXPECTED_PROVIDER_OUTCOMES and route_is_current:
+                replace_dynamic_upstream_capabilities(
+                    self._dynamic_capabilities, self.health_snapshot()
+                )
             if category in {
                 "server_identity_mismatch",
                 "upstream_version_mismatch",
@@ -2122,6 +2188,17 @@ class UpstreamReadGateway:
                 if not self._state["reconciliation_active"]:
                     self._state["reconciliation_status"] = "idle"
 
+    def _record_expected_outcome(self, category: str) -> None:
+        """Record a structured provider answer without degrading its health."""
+
+        category = _normalize_category(category)
+        with self._lock:
+            self._state["failure_counts"][category] += 1
+            self._state["generic_delegation_available"] = bool(self._exposed)
+            self._state["last_call_failure_category"] = None
+            if self._state["last_discovery_failure_category"] is None:
+                self._state["last_failure_category"] = None
+
     def health_snapshot(self) -> dict[str, Any]:
         with self._lock:
             value = deepcopy(self._state)
@@ -2397,8 +2474,12 @@ def _recommended_action(compatibility_status: str) -> str:
 
 
 def _public_failure(category: str) -> tuple[str, bool]:
-    if category == "argument_validation":
+    if category in {"argument_validation", "invalid_request"}:
         return "invalid_request", False
+    if category == "capability_unavailable":
+        return "unsupported_operation", False
+    if category == "authentication_failed":
+        return "authentication_failure", False
     if category == "prohibited_delegation":
         return "provider_prohibited", False
     if category == "timeout":
@@ -2420,6 +2501,10 @@ def _public_failure(category: str) -> tuple[str, bool]:
 def _safe_failure_message(category: str) -> str:
     return {
         "argument_validation": "The request does not match the reviewed upstream schema.",
+        "invalid_request": "The reviewed upstream provider rejected the request arguments.",
+        "capability_unavailable": (
+            "The reviewed upstream capability is unavailable in this deployment."
+        ),
         "prohibited_delegation": "The upstream tool is not approved for automatic read delegation.",
         "timeout": "The reviewed upstream read timed out.",
         "response_too_large": "The upstream response exceeded the safe response bound.",
@@ -2428,6 +2513,50 @@ def _safe_failure_message(category: str) -> str:
         "protocol_error": "The upstream provider returned an incompatible MCP response.",
         "upstream_error": "The upstream read could not be completed.",
     }.get(category, "The reviewed upstream read provider could not complete the request.")
+
+
+def _classify_upstream_tool_error(call_result: dict[str, Any]) -> str:
+    """Classify only the reviewed 7.14.1 structured error discriminator."""
+
+    content = call_result.get("content")
+    if not isinstance(content, list) or len(content) != 1:
+        return "upstream_error"
+    item = content[0]
+    if (
+        not isinstance(item, dict)
+        or item.get("type") != "text"
+        or not isinstance(item.get("text"), str)
+    ):
+        return "upstream_error"
+    text = item["text"]
+    try:
+        if len(text.encode("utf-8")) > MAX_STRUCTURED_UPSTREAM_ERROR_BYTES:
+            return "upstream_error"
+        payload = json.loads(text)
+    except (RecursionError, TypeError, UnicodeError, ValueError):
+        return "upstream_error"
+    if (
+        not isinstance(payload, dict)
+        or payload.get("success") is not False
+        or not isinstance(payload.get("error"), dict)
+    ):
+        return "upstream_error"
+    code = payload["error"].get("code")
+    if not isinstance(code, str):
+        return "upstream_error"
+    if code in _UPSTREAM_VALIDATION_CODES:
+        return "invalid_request"
+    if code in _UPSTREAM_CAPABILITY_CODES:
+        return "capability_unavailable"
+    if code in _UPSTREAM_AUTHENTICATION_CODES:
+        return "authentication_failed"
+    if code in _UPSTREAM_CONNECTION_CODES:
+        return "connection_failed"
+    if code in _UPSTREAM_TIMEOUT_CODES:
+        return "timeout"
+    if code in _UPSTREAM_INTERNAL_CODES:
+        return "upstream_error"
+    return "upstream_error"
 
 
 def _normalize_upstream_payload(call_result: dict[str, Any]) -> Any:
