@@ -707,6 +707,27 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         "reviewed runtime annotation mismatch: "
         f"tools={annotation_mismatches[:MAX_DIAGNOSTIC_ITEMS]}",
     )
+    reviewed_output_schemas = (
+        policy.reviewed_runtime_output_schema_fingerprints_by_name
+    )
+    output_schema_mismatches: list[str] = []
+    for name, expected in reviewed_output_schemas.items():
+        observed_schema = observed_by_name[name].get("outputSchema")
+        try:
+            actual = (
+                schema_fingerprint(observed_schema)
+                if isinstance(observed_schema, dict)
+                else None
+            )
+        except (TypeError, ValueError, OverflowError):
+            actual = None
+        if actual != expected:
+            output_schema_mismatches.append(name)
+    require(
+        not output_schema_mismatches,
+        "reviewed runtime output-schema mismatch: "
+        f"tools={output_schema_mismatches[:MAX_DIAGNOSTIC_ITEMS]}",
+    )
     require(policy.classification_counts == EXPECTED_STOCK_COUNTS, "stock classification counts mismatch")
     engineering = await inspect_engineering(
         args.engineering_endpoint,
@@ -723,6 +744,9 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         ),
         "reviewed_runtime_annotation_fingerprint_count": len(
             reviewed_annotations
+        ),
+        "reviewed_runtime_output_schema_fingerprint_count": len(
+            reviewed_output_schemas
         ),
         "classification_counts": policy.classification_counts,
         **engineering,

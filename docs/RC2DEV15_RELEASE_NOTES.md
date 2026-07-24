@@ -35,6 +35,12 @@ that are absent remain absent in that evidence; Engineering does not convert
 absence into an invented default. After admission, the client-visible tool
 still receives the stricter Engineering-owned four-boolean annotation policy.
 
+The pinned runtime declares `{"additionalProperties": true, "type": "object"}`
+as the output schema for every reviewed read. Engineering stores an exact
+per-tool fingerprint of that wire schema and rechecks it before dispatch.
+That generic declaration does not authorize new behavior: the bounded opaque
+adapter and the explicit `ha_search` partial-data rule remain binary-owned.
+
 Unchanged reviewed reads remain exposed. A changed read is quarantined with a
 bounded reason and fingerprints. A missing read is removed. New tools remain
 unreviewed and unavailable. Mixed, write, physical/action, prohibited, and

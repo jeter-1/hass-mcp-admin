@@ -34,6 +34,8 @@ unconfigured gateway reports ready immediately for its truthful static catalog.
   emitted;
 - `annotation_mismatch_count` covers exact runtime safety-hint presence/value
   fingerprint drift; raw upstream annotation objects are never emitted;
+- `output_contract_mismatch_count` covers missing, invalid, or changed runtime
+  output schemas and reports only bounded contract fingerprints;
 - bounded quarantine entries containing only tool identity, a stable reason,
   and expected/observed contract fingerprints;
 - fast transport-startup `retry_count`, `next_retry_delay_seconds`, and

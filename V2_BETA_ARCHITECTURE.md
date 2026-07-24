@@ -24,6 +24,9 @@ generic registry. There is no direct-HA fallback.
 Runtime annotation evidence preserves absent versus explicitly false optional
 MCP hints. It does not replace the Engineering-owned four-boolean annotations
 published after a tool is admitted.
+The reviewed runtime output-schema map separately binds each read to the pinned
+generic object schema. Behavioral meaning still comes from the fixed
+Engineering adapter, including the special `ha_search` partial-data rule.
 
 Fast bounded reconciliation recovers from upstream boot order. A separate slow
 reprobe cadence handles successfully observed stable incompatibility while

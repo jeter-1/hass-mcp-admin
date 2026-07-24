@@ -45,6 +45,9 @@ original Phase 1 history.
 The upstream wire-annotation fingerprint preserves whether each optional MCP
 safety hint is absent or explicitly set. It is separate from the stricter
 Engineering-owned annotations published to clients after admission.
+The pinned release also declares the same exact generic object output schema
+for each reviewed read. Engineering fingerprints that wire schema per tool;
+the generic schema itself grants no semantics beyond the fixed bounded adapter.
 
 ## RC2dev7 audit-integrity boundary
 

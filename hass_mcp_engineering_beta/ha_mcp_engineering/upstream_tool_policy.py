@@ -269,6 +269,7 @@ class UpstreamToolPolicy:
     reviewed_stock_catalog_fingerprint: str
     reviewed_runtime_description_fingerprints: tuple[tuple[str, str], ...]
     reviewed_runtime_annotation_fingerprints: tuple[tuple[str, str], ...]
+    reviewed_runtime_output_schema_fingerprints: tuple[tuple[str, str], ...]
     tools: tuple[UpstreamToolPolicyEntry, ...]
 
     @property
@@ -292,6 +293,12 @@ class UpstreamToolPolicy:
     ) -> dict[str, str]:
         return dict(self.reviewed_runtime_annotation_fingerprints)
 
+    @property
+    def reviewed_runtime_output_schema_fingerprints_by_name(
+        self,
+    ) -> dict[str, str]:
+        return dict(self.reviewed_runtime_output_schema_fingerprints)
+
 
 def load_upstream_tool_policy(path: Path = POLICY_PATH) -> UpstreamToolPolicy:
     try:
@@ -309,6 +316,7 @@ def load_upstream_tool_policy(path: Path = POLICY_PATH) -> UpstreamToolPolicy:
         "reviewed_stock_catalog_fingerprint",
         "reviewed_runtime_description_fingerprints",
         "reviewed_runtime_annotation_fingerprints",
+        "reviewed_runtime_output_schema_fingerprints",
         "tools",
     }:
         raise UpstreamToolPolicyError("policy_document_fields_invalid")
@@ -350,6 +358,9 @@ def load_upstream_tool_policy(path: Path = POLICY_PATH) -> UpstreamToolPolicy:
     annotation_fingerprints = value[
         "reviewed_runtime_annotation_fingerprints"
     ]
+    output_schema_fingerprints = value[
+        "reviewed_runtime_output_schema_fingerprints"
+    ]
     automatic_names = {
         entry.upstream_name
         for entry in entries
@@ -381,6 +392,19 @@ def load_upstream_tool_policy(path: Path = POLICY_PATH) -> UpstreamToolPolicy:
         raise UpstreamToolPolicyError(
             "policy_runtime_annotation_fingerprints_invalid"
         )
+    if (
+        not isinstance(output_schema_fingerprints, dict)
+        or set(output_schema_fingerprints) != automatic_names
+        or any(
+            not isinstance(name, str)
+            or not isinstance(fingerprint, str)
+            or not _HEX_64.fullmatch(fingerprint)
+            for name, fingerprint in output_schema_fingerprints.items()
+        )
+    ):
+        raise UpstreamToolPolicyError(
+            "policy_runtime_output_schema_fingerprints_invalid"
+        )
     return UpstreamToolPolicy(
         schema_version=value["schema_version"],
         upstream_server=value["upstream_server"],
@@ -396,6 +420,9 @@ def load_upstream_tool_policy(path: Path = POLICY_PATH) -> UpstreamToolPolicy:
         ),
         reviewed_runtime_annotation_fingerprints=tuple(
             sorted(annotation_fingerprints.items())
+        ),
+        reviewed_runtime_output_schema_fingerprints=tuple(
+            sorted(output_schema_fingerprints.items())
         ),
         tools=entries,
     )

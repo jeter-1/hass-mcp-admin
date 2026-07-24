@@ -197,6 +197,7 @@ class _AdmittedRoute:
     contract_fingerprint: str
     runtime_description_fingerprint: str
     runtime_annotation_fingerprint: str
+    runtime_output_schema_fingerprint: str
     server_version: str
     protocol_version: str
 
@@ -470,6 +471,9 @@ class UpstreamReadGateway:
             reviewed_annotations = (
                 self._policy.reviewed_runtime_annotation_fingerprints_by_name
             )
+            reviewed_output_schemas = (
+                self._policy.reviewed_runtime_output_schema_fingerprints_by_name
+            )
             generation = self._admission_generation + 1
             exposed: dict[str, _AdmittedRoute] = {}
             dynamic_tools: dict[str, ReviewedUpstreamReadTool] = {}
@@ -508,6 +512,9 @@ class UpstreamReadGateway:
                     ),
                     runtime_annotation_fingerprint=(
                         reviewed_annotations[entry.upstream_name]
+                    ),
+                    runtime_output_schema_fingerprint=(
+                        reviewed_output_schemas[entry.upstream_name]
                     ),
                     server_version=catalog.server_version,
                     protocol_version=catalog.protocol_version,
@@ -1196,6 +1203,9 @@ class UpstreamReadGateway:
         reviewed_annotations = (
             self._policy.reviewed_runtime_annotation_fingerprints_by_name
         )
+        reviewed_output_schemas = (
+            self._policy.reviewed_runtime_output_schema_fingerprints_by_name
+        )
         for entry in self._policy.tools:
             observed = observed_reviewed.get(entry.upstream_name, [])
             if not observed:
@@ -1213,6 +1223,9 @@ class UpstreamReadGateway:
                         ),
                         reviewed_runtime_annotation_fingerprint=(
                             reviewed_annotations[entry.upstream_name]
+                        ),
+                        reviewed_runtime_output_schema_fingerprint=(
+                            reviewed_output_schemas[entry.upstream_name]
                         ),
                     )
                     reason = "duplicate_tool_descriptor"
@@ -1239,6 +1252,9 @@ class UpstreamReadGateway:
                     ),
                     reviewed_runtime_annotation_fingerprint=(
                         reviewed_annotations[entry.upstream_name]
+                    ),
+                    reviewed_runtime_output_schema_fingerprint=(
+                        reviewed_output_schemas[entry.upstream_name]
                     ),
                 )
                 if decision.accepted:
@@ -1446,6 +1462,9 @@ class UpstreamReadGateway:
                     ),
                     reviewed_runtime_annotation_fingerprint=(
                         mapping.runtime_annotation_fingerprint
+                    ),
+                    reviewed_runtime_output_schema_fingerprint=(
+                        mapping.runtime_output_schema_fingerprint
                     ),
                 )
                 if (
@@ -2194,6 +2213,7 @@ def _compare_tool_contract(
     protocol_version: str,
     reviewed_runtime_description_fingerprint: str,
     reviewed_runtime_annotation_fingerprint: str,
+    reviewed_runtime_output_schema_fingerprint: str,
 ) -> _ContractDecision:
     """Compare one advertised tool with binary-owned reviewed authority."""
 
@@ -2231,8 +2251,8 @@ def _compare_tool_contract(
     }
     expected_output = {
         "declared_output_schema": {
-            "present": False,
-            "schema_fingerprint": None,
+            "present": True,
+            "schema_fingerprint": reviewed_runtime_output_schema_fingerprint,
         },
         "engineering_consumed_contract": consumed_output_contract,
     }
@@ -2321,8 +2341,12 @@ def _observed_output_contract(tool: dict[str, Any]) -> dict[str, Any]:
     if "outputSchema" not in tool:
         return {"present": False, "schema_fingerprint": None}
     try:
-        fingerprint = schema_fingerprint(tool["outputSchema"])
-    except (TypeError, ValueError, OverflowError):
+        output_schema = tool["outputSchema"]
+        if not isinstance(output_schema, dict):
+            raise TypeError("output schema must be an object")
+        Draft202012Validator.check_schema(output_schema)
+        fingerprint = schema_fingerprint(output_schema)
+    except (SchemaError, TypeError, ValueError, OverflowError):
         fingerprint = schema_fingerprint({"invalid_output_schema": True})
     return {"present": True, "schema_fingerprint": fingerprint}
 

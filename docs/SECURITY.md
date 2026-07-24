@@ -32,6 +32,11 @@ annotations must still identify the tool as read-only and not destructive.
 This upstream evidence is separate from the complete Engineering-owned safety
 annotations published to clients.
 
+Every reviewed read must also retain the pinned generic object output schema,
+matched by an exact per-tool fingerprint. Missing, invalid, or changed output
+schemas quarantine only the affected read. The generic schema cannot expand
+the fixed sanitizer, response bound, fallback prohibition, or behavior adapter.
+
 Live `ha-mcp` version data is evidence, not self-authorizing authority. The
 generic gateway first requires an explicit reviewed release/profile; Dev15's
 compiled profile is exactly 7.14.1. A patch, minor, major, prerelease, or

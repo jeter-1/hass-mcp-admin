@@ -25,6 +25,9 @@ incompatible contract uses a slower reprobe cadence.
 The runtime annotation fingerprint preserves optional-field presence. It is
 separate from the stricter Engineering-owned annotations that clients receive
 after admission.
+Each read also requires its exact pinned generic object output-schema
+fingerprint; the fixed Engineering adapter, not that generic schema, owns
+sanitization, bounds, fallback refusal, and partial-data behavior.
 
 A complete reviewed set adds 26 delegated reads for 67 registered tools. One
 missing or quarantined read leaves the other 25 available for 66 registered

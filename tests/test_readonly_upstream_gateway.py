@@ -129,9 +129,11 @@ def policy(
     reviewed_version="7.14.1",
     reviewed_descriptions=None,
     reviewed_runtime_annotations=None,
+    reviewed_output_schemas=None,
 ):
     reviewed_descriptions = reviewed_descriptions or {}
     reviewed_runtime_annotations = reviewed_runtime_annotations or {}
+    reviewed_output_schemas = reviewed_output_schemas or {}
     description_fingerprints = tuple(
         sorted(
             (
@@ -179,6 +181,24 @@ def policy(
         for _name, fingerprint in annotation_fingerprints
     ):
         raise AssertionError("synthetic annotation fingerprint is invalid")
+    output_schema_fingerprints = tuple(
+        sorted(
+            (
+                entry.upstream_name,
+                schema_fingerprint(
+                    reviewed_output_schemas.get(
+                        entry.upstream_name,
+                        {
+                            "additionalProperties": True,
+                            "type": "object",
+                        },
+                    )
+                ),
+            )
+            for entry in entries
+            if entry.classification == "automatic_read"
+        )
+    )
     return UpstreamToolPolicy(
         schema_version=1,
         upstream_server="ha-mcp",
@@ -189,6 +209,9 @@ def policy(
         reviewed_stock_catalog_fingerprint="0" * 64,
         reviewed_runtime_description_fingerprints=description_fingerprints,
         reviewed_runtime_annotation_fingerprints=annotation_fingerprints,
+        reviewed_runtime_output_schema_fingerprints=(
+            output_schema_fingerprints
+        ),
         tools=tuple(sorted(entries, key=lambda item: item.upstream_name)),
     )
 
@@ -202,6 +225,10 @@ def catalog_tool(name, reviewed_schema=None, description=None):
             else synthetic_runtime_description(name)
         ),
         "inputSchema": reviewed_schema or schema(),
+        "outputSchema": {
+            "additionalProperties": True,
+            "type": "object",
+        },
         "annotations": {
             "readOnlyHint": True,
             "idempotentHint": True,
@@ -353,6 +380,7 @@ async def initialize(
     reviewed_version="7.14.1",
     reviewed_descriptions=None,
     reviewed_runtime_annotations=None,
+    reviewed_output_schemas=None,
 ):
     server = server or FastMCP("gateway-test")
     transport = transport or FakeTransport(tools, version=version)
@@ -365,6 +393,7 @@ async def initialize(
             reviewed_version=reviewed_version,
             reviewed_descriptions=reviewed_descriptions,
             reviewed_runtime_annotations=reviewed_runtime_annotations,
+            reviewed_output_schemas=reviewed_output_schemas,
         ),
         admission_validator=lambda _catalog: None,
     )
@@ -767,6 +796,23 @@ class PolicyInventoryTests(unittest.TestCase):
             fingerprints["ha_get_state"],
         )
 
+    def test_exact_runtime_output_schema_authority_covers_only_automatic_reads(self):
+        value = load_upstream_tool_policy()
+        automatic = {
+            entry.upstream_name
+            for entry in value.tools
+            if entry.classification == "automatic_read"
+        }
+        fingerprints = (
+            value.reviewed_runtime_output_schema_fingerprints_by_name
+        )
+        expected = schema_fingerprint(
+            {"additionalProperties": True, "type": "object"}
+        )
+        self.assertEqual(set(fingerprints), automatic)
+        self.assertEqual(len(fingerprints), 26)
+        self.assertEqual(set(fingerprints.values()), {expected})
+
     def test_runtime_annotation_fingerprint_preserves_presence_and_safety(self):
         reviewed = {
             "readOnlyHint": True,
@@ -901,6 +947,53 @@ class PolicyInventoryTests(unittest.TestCase):
                 with self.assertRaises(UpstreamToolPolicyError):
                     load_upstream_tool_policy(candidate)
 
+    def test_runtime_output_schema_authority_policy_fails_closed(self):
+        policy_path = (
+            BETA
+            / "ha_mcp_engineering"
+            / "upstream_tool_policy.json"
+        )
+        original = json.loads(policy_path.read_text(encoding="utf-8"))
+        automatic_name = next(
+            entry["upstream_name"]
+            for entry in original["tools"]
+            if entry["classification"] == "automatic_read"
+        )
+        blocked_name = next(
+            entry["upstream_name"]
+            for entry in original["tools"]
+            if entry["classification"] != "automatic_read"
+        )
+        cases = {}
+        missing_field = dict(original)
+        missing_field.pop("reviewed_runtime_output_schema_fingerprints")
+        cases["missing_field"] = missing_field
+        missing_tool = json.loads(json.dumps(original))
+        missing_tool["reviewed_runtime_output_schema_fingerprints"].pop(
+            automatic_name
+        )
+        cases["missing_tool"] = missing_tool
+        blocked_tool = json.loads(json.dumps(original))
+        blocked_tool["reviewed_runtime_output_schema_fingerprints"][
+            blocked_name
+        ] = "0" * 64
+        cases["blocked_tool"] = blocked_tool
+        invalid_digest = json.loads(json.dumps(original))
+        invalid_digest["reviewed_runtime_output_schema_fingerprints"][
+            automatic_name
+        ] = "not-a-fingerprint"
+        cases["invalid_digest"] = invalid_digest
+
+        for label, malformed in cases.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as raw:
+                candidate = Path(raw) / "policy.json"
+                candidate.write_text(
+                    json.dumps(malformed),
+                    encoding="utf-8",
+                )
+                with self.assertRaises(UpstreamToolPolicyError):
+                    load_upstream_tool_policy(candidate)
+
     def test_reviewed_annotations_are_per_tool_and_security_owned(self):
         value = load_upstream_tool_policy()
         self.assertTrue(value.by_name["ha_get_hacs_info"].reviewed_annotations.open_world)
@@ -961,6 +1054,14 @@ class PolicyInventoryTests(unittest.TestCase):
         )
         self.assertIn(
             "reviewed_runtime_annotation_fingerprint_count",
+            acceptance,
+        )
+        self.assertIn(
+            "reviewed_runtime_output_schema_fingerprint_count",
+            acceptance,
+        )
+        self.assertIn(
+            "reviewed_runtime_output_schema_fingerprints_by_name",
             acceptance,
         )
         for tool_name in (
@@ -1331,6 +1432,55 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(annotations.destructiveHint)
         self.assertTrue(annotations.idempotentHint)
         self.assertTrue(annotations.openWorldHint)
+
+    async def test_exact_output_schema_is_present_and_key_order_canonical(self):
+        entry = policy_entry("ha_get_state")
+        advertised = catalog_tool(entry.upstream_name)
+        advertised["outputSchema"] = {
+            "type": "object",
+            "additionalProperties": True,
+        }
+        gateway, server, _transport = await initialize(
+            [entry], [advertised]
+        )
+        self.assertIsNotNone(
+            server._tool_manager.get_tool(entry.upstream_name)
+        )
+        self.assertEqual(
+            gateway.health_snapshot()["output_contract_mismatch_count"],
+            0,
+        )
+
+    async def test_missing_or_invalid_output_schema_quarantines_only_target(self):
+        changed = policy_entry("ha_get_state")
+        healthy = policy_entry("ha_get_history")
+        cases = {
+            "missing": None,
+            "non_object": [],
+            "invalid_schema": {"type": "not-a-json-schema-type"},
+        }
+        for label, output_schema in cases.items():
+            with self.subTest(label=label):
+                advertised = catalog_tool(changed.upstream_name)
+                if output_schema is None:
+                    advertised.pop("outputSchema")
+                else:
+                    advertised["outputSchema"] = output_schema
+                gateway, server, _transport = await initialize(
+                    [changed, healthy],
+                    [advertised, catalog_tool(healthy.upstream_name)],
+                )
+                self.assertIsNone(
+                    server._tool_manager.get_tool(changed.upstream_name)
+                )
+                self.assertIsNotNone(
+                    server._tool_manager.get_tool(healthy.upstream_name)
+                )
+                health = gateway.health_snapshot()
+                self.assertEqual(
+                    health["output_contract_mismatch_count"], 1
+                )
+                self.assertEqual(health["dynamically_exposed_count"], 1)
 
     async def test_output_contract_drift_quarantines_only_affected_read(self):
         changed = policy_entry("ha_get_state")
@@ -1891,6 +2041,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
             "output_schema": lambda item: item.update(
                 {"outputSchema": {"type": "object"}}
             ),
+            "output_schema_missing": lambda item: item.pop("outputSchema"),
             "unknown_top_level": lambda item: item.update(
                 {"operationSemantics": {"partial": "changed"}}
             ),

@@ -53,10 +53,10 @@ use the household instance.
    unaffected read still callable.
 4. Independently add, remove, or change one read's safety-annotation field,
    change any byte or code point in its bounded full runtime description
-   (including a later behavioral paragraph), and change its declared output
-   contract. Each case must quarantine only the affected tool and must never
-   publish the remote metadata. Confirm omitted optional annotation fields are
-   not silently normalized to invented defaults.
+   (including a later behavioral paragraph), and add, remove, invalidate, or
+   change its declared output schema. Each case must quarantine only the
+   affected tool and must never publish the remote metadata. Confirm omitted
+   optional annotation fields are not silently normalized to invented defaults.
 5. Remove one reviewed read. Require it to disappear immediately after the
    successful probe while the other 25 remain.
 6. Add new reads and writes. Require every new tool and every write/mixed/action
@@ -151,9 +151,10 @@ use the household instance.
     raw catalog, schema, description, endpoint, credential, or argument value.
 14. Confirm the pinned exact-image job first matches the reviewed 78-tool
     stock-catalog fingerprint, then independently matches all 26
-    domain-separated full-runtime-description fingerprints and all 26 exact
-    runtime safety-annotation presence/value fingerprints before accepting the
-    67-tool Engineering catalog.
+    domain-separated full-runtime-description fingerprints, all 26 exact
+    runtime safety-annotation presence/value fingerprints, and all 26 exact
+    runtime output-schema fingerprints before accepting the 67-tool
+    Engineering catalog.
 
 Acceptance passes only when an exact reviewed release/profile is established
 before contract-level reconciliation preserves unaffected reads, while every

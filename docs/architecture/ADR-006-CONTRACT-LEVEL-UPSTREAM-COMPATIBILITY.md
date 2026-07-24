@@ -109,6 +109,12 @@ hints, malformed titles, a missing or false `readOnlyHint`, and a true
 Engineering's published annotations remain a separate, stricter binary-owned
 policy and are not used as a substitute for the reviewed upstream wire shape.
 
+The pinned release declares the same generic object output schema for all 26
+reads. Its canonical fingerprint is stored for every read and must match at
+discovery and immediately before dispatch. This generic schema is evidence of
+wire compatibility only; the binary-owned behavior adapter defines what
+Engineering consumes and how partial, bounded, sanitized output is reported.
+
 The result for each reviewed read is one of:
 
 - **admitted**: the exact contract is dynamically registered;
