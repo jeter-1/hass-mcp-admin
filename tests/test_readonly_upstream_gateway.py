@@ -1254,6 +1254,11 @@ class PolicyInventoryTests(unittest.TestCase):
             '"domain outcomes inflated operational provider failures"',
             acceptance,
         )
+        self.assertIn("AUDIT_SETTLE_ATTEMPTS = 20", acceptance)
+        self.assertIn(
+            "await asyncio.sleep(AUDIT_SETTLE_DELAY_SECONDS)",
+            acceptance,
+        )
         fixture = (
             ROOT / "scripts" / "fake_ha_read_gateway_contract_server.py"
         ).read_text(encoding="utf-8")

@@ -39,6 +39,8 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
 EXPECTED_UPSTREAM_VERSION = "7.14.1"
 EXPECTED_ENGINEERING_BASELINE_COUNT = 41
 ACCEPTANCE_TIMEOUT_SECONDS = 120
+AUDIT_SETTLE_ATTEMPTS = 20
+AUDIT_SETTLE_DELAY_SECONDS = 0.1
 MAX_DIAGNOSTIC_ITEMS = 32
 MAX_FAILURE_MESSAGE_CHARS = 512
 EXPECTED_STOCK_COUNTS = {
@@ -770,9 +772,46 @@ async def inspect_engineering(
             )
             require(bool(unavailable.isError), "write-classified upstream tool became callable")
 
-            audit = decode_tool_result(
-                await session.call_tool("get_audit_log", {"event": "tool_call", "lines": 200})
-            )
+            # A streamable-HTTP result can become visible immediately before
+            # the authenticated gateway's request-finalization block appends
+            # its audit record. Poll only the bounded audit reader and still
+            # require the exact request-ID set below.
+            audit: dict[str, Any] = {}
+            for audit_attempt in range(AUDIT_SETTLE_ATTEMPTS):
+                audit = decode_tool_result(
+                    await session.call_tool(
+                        "get_audit_log",
+                        {"event": "tool_call", "lines": 200},
+                    )
+                )
+                audit_records = find_dicts(audit)
+                partial_request_id = calls["ha_search_partial"][
+                    "request_id"
+                ]
+                partial_visible = any(
+                    record.get("request_id") == partial_request_id
+                    and record.get("tool_name") == "ha_search"
+                    and record.get("result_status") == "partial"
+                    for record in audit_records
+                )
+                errors_visible = all(
+                    any(
+                        record.get("request_id")
+                        == evidence["request_id"]
+                        and record.get("tool_name") == evidence["tool"]
+                        and record.get("result_status") == "failure"
+                        and record.get("error_code")
+                        == evidence["public_error_code"]
+                        and record.get("parameters", {}).get("provider")
+                        == "upstream_read_gateway"
+                        for record in audit_records
+                    )
+                    for evidence in error_calls.values()
+                )
+                if partial_visible and errors_visible:
+                    break
+                if audit_attempt + 1 < AUDIT_SETTLE_ATTEMPTS:
+                    await asyncio.sleep(AUDIT_SETTLE_DELAY_SECONDS)
             audit_text = json.dumps(audit, sort_keys=True)
             for name, evidence in calls.items():
                 request_id = evidence["request_id"]
