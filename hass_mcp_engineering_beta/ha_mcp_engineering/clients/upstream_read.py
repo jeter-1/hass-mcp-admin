@@ -43,7 +43,7 @@ class McpReadResult:
     tool_call_latency_ms: float
 
 
-IdentityValidator = Callable[[str, str, str], None]
+CatalogValidator = Callable[[McpReadCatalog], None]
 
 
 class McpReadGatewayTransport:
@@ -107,7 +107,7 @@ class McpReadGatewayTransport:
         arguments: dict[str, Any],
         *,
         timeout_seconds: float,
-        identity_validator: IdentityValidator,
+        catalog_validator: CatalogValidator,
     ) -> McpReadResult:
         started = time.perf_counter()
         timeout = timedelta(seconds=max(1.0, float(timeout_seconds)))
@@ -128,7 +128,18 @@ class McpReadGatewayTransport:
                     protocol = str(initialize.protocolVersion)
                     server_name = str(initialize.serverInfo.name)
                     server_version = str(initialize.serverInfo.version)
-                    identity_validator(server_name, server_version, protocol)
+                    tools = await self._list_all_tools(session)
+                    catalog_validator(
+                        McpReadCatalog(
+                            protocol_version=protocol,
+                            server_name=server_name,
+                            server_version=server_version,
+                            tools=tuple(tools),
+                            connection_latency_ms=round(
+                                (time.perf_counter() - started) * 1_000, 3
+                            ),
+                        )
+                    )
                     connected = time.perf_counter()
                     result = await session.call_tool(
                         tool_name,

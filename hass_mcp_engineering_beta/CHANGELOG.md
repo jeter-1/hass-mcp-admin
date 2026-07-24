@@ -1,5 +1,43 @@
 # Changelog
 
+## 2.0.0-rc2-dev15 - contract-level upstream compatibility
+
+- Require the exact compiled generic release/profile, currently ha-mcp 7.14.1,
+  before admitting each reviewed automatic read by its exact input, output,
+  safety, full-runtime-description fingerprint, behavior, identity, and
+  protocol contract.
+- Separate exact upstream wire-annotation presence/value fingerprints from the
+  stricter Engineering-owned annotations published after admission; never
+  normalize omitted optional hints into invented defaults.
+- Bind each reviewed read to the pinned generic object output-schema
+  fingerprint at discovery and immediately before dispatch.
+- Keep unchanged reads available, quarantine only changed reads, remove missing
+  reads, and block new, mixed, write, action, and unsupported tools without
+  collapsing the complete delegated catalog.
+- Evaluate the argument-constrained dashboard family independently and require
+  an exact built-in or verified signed release attestation before applying its
+  compiled contract checks.
+- Preserve last-known-good routes across transient discovery failures, bind
+  calls to the admitted catalog generation, and separate fast startup recovery
+  from slow compatibility reprobes.
+- Keep process liveness available but return bounded readiness and HTTP 503 for
+  authenticated MCP traffic until configured upstream reconciliation publishes
+  its first stable or terminal catalog result.
+- Let equivalent reviewed-catalog observations publish under busy exact calls,
+  while coalescing repeated stale mismatches to one immediate retry and then
+  the bounded slow cadence.
+- Revalidate exact release/profile authority and the selected target's contract
+  through same-session `tools/list` before `tools/call`; fail closed on
+  unreviewed version movement while retiring a missing, duplicate, or changed
+  target independently.
+- Use immutable route snapshots and short leases so delegated network I/O is
+  concurrent; a retired route cannot dispatch or be revived by a finishing
+  in-flight call.
+- Keep unrelated malformed or duplicate unreviewed descriptors unavailable as
+  bounded reconciliation anomalies without blocking an exact selected target.
+- Preserve stable v1.1.2, public schemas, governed configuration writes,
+  `ha_search` completeness truth, and the no-fallback boundary.
+
 ## 2.0.0-rc2-dev14 - practical governed configuration plans
 
 - Add one bounded `create_configuration_plan` entry point for ordered

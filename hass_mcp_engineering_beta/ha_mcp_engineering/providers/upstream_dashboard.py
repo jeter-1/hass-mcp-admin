@@ -695,43 +695,16 @@ class UpstreamDashboardProvider:
             self._raise("not_configured", dispatched=False)
         return await self._transport.discover()
 
-    def validate_read_gateway_catalog(self, catalog: Any) -> None:
-        """Apply the existing built-in release admission to a full read catalog.
-
-        The generic gateway owns policy matching for every pure-read tool.  This
-        adapter deliberately reuses the already accepted release identity,
-        protocol, and dashboard contract admission without changing it.
-        """
-
-        self._validate_handshake(
-            McpDashboardHandshake(
-                protocol_version=str(catalog.protocol_version),
-                server_name=str(catalog.server_name),
-                server_version=str(catalog.server_version),
-                tools=tuple(catalog.tools),
-                connection_latency_ms=float(catalog.connection_latency_ms),
-            )
-        )
-
     def _validate_handshake(self, handshake: McpDashboardHandshake) -> None:
         tools = list(handshake.tools)
-        tool = next(
-            (item for item in tools if item.get("name") == REQUIRED_DASHBOARD_TOOL),
-            None,
-        )
-        catalog_fingerprint = _stable_hash(
-            sorted(
-                (
-                    {
-                        "name": item.get("name"),
-                        "inputSchema": item.get("inputSchema"),
-                        "annotations": item.get("annotations"),
-                    }
-                    for item in tools
-                ),
-                key=lambda item: str(item["name"]),
-            )
-        )
+        required_tools = [
+            item
+            for item in tools
+            if isinstance(item, dict)
+            and item.get("name") == REQUIRED_DASHBOARD_TOOL
+        ]
+        tool = required_tools[0] if len(required_tools) == 1 else None
+        catalog_fingerprint = _diagnostic_catalog_fingerprint(tools)
         server_name = self._safe_string(
             handshake.server_name, max_chars=MAX_IDENTITY_CHARS
         )
@@ -751,18 +724,24 @@ class UpstreamDashboardProvider:
             )
             state.upstream_tool_count = len(tools)
             state.catalog_fingerprint = catalog_fingerprint
-            state.required_tool_present = tool is not None
+            state.required_tool_present = bool(required_tools)
             state.last_successful_handshake_timestamp = _utc_now()
             state.reachability_checked_at = _utc_now()
             state.reachability_source = "active_probe"
             state.connection_latencies.append(handshake.connection_latency_ms)
 
-        if tool is None:
+        if not required_tools:
             with self._lock:
                 self._state.required_schema_compatible = False
                 self._state.capability_status = "unavailable"
                 self._state.validation_reason = "required_tool_missing"
             raise DashboardTransportError("required_tool_missing")
+        if len(required_tools) != 1:
+            with self._lock:
+                self._state.required_schema_compatible = False
+                self._state.capability_status = "unavailable"
+                self._state.validation_reason = "invalid_response"
+            raise DashboardTransportError("invalid_response")
 
         schema = tool.get("inputSchema")
         try:
@@ -825,20 +804,27 @@ class UpstreamDashboardProvider:
             protocol_version=handshake.protocol_version,
             tool=tool,
             attestations=attestations,
+            compatible_fallback_rejection=(
+                self._registry.compatible_contract_fallback_rejection()
+            ),
         )
-        runtime_descriptor_drift = _runtime_descriptor_drift(
-            runtime_descriptor_match=runtime_descriptor_match,
-            published_runtime_descriptor_match=(
-                published_runtime_descriptor_match
-            ),
-            semantic_contract_match=all(
-                (
-                    admission.input_match,
-                    admission.security_match,
-                    admission.output_match,
-                    admission.runtime_match,
-                )
-            ),
+        runtime_descriptor_drift = (
+            _runtime_descriptor_drift(
+                runtime_descriptor_match=runtime_descriptor_match,
+                published_runtime_descriptor_match=(
+                    published_runtime_descriptor_match
+                ),
+                semantic_contract_match=all(
+                    (
+                        admission.input_match,
+                        admission.security_match,
+                        admission.output_match,
+                        admission.runtime_match,
+                    )
+                ),
+            )
+            if informational_attestation is not None
+            else "not_comparable"
         )
         try:
             if not admission.accepted:
@@ -1592,6 +1578,34 @@ def _stable_hash(value: Any) -> str:
     """Canonical full fingerprint used for schemas and bounded catalogs."""
 
     return _engineering_config_hash(value)
+
+
+def _diagnostic_catalog_fingerprint(tools: list[Any]) -> str | None:
+    """Return best-effort whole-catalog evidence without gating one tool.
+
+    Dashboard admission depends only on the exact required-tool descriptor.
+    Unrelated descriptor drift or a value that cannot be represented as JSON
+    may make this diagnostic unavailable, but cannot disable an otherwise
+    compatible dashboard-read contract.
+    """
+
+    try:
+        projection = []
+        for item in tools:
+            if not isinstance(item, dict):
+                return None
+            projection.append(
+                {
+                    "name": item.get("name"),
+                    "inputSchema": item.get("inputSchema"),
+                    "annotations": item.get("annotations"),
+                }
+            )
+        return _stable_hash(
+            sorted(projection, key=lambda item: str(item["name"]))
+        )
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 def _reviewed_security_contract_projection(

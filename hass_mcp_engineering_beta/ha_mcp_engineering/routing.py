@@ -7,6 +7,7 @@ import hashlib
 import ipaddress
 import json
 import logging
+import re
 import threading
 import time
 
@@ -31,6 +32,11 @@ from .request_context import begin_request, current_telemetry, end_request
 MAX_BUCKET_STORE_SIZE = 1000
 MAX_MCP_OUTCOME_CAPTURE_BYTES = 1_100_000
 UNKNOWN_CLIENT_IDENTITY = "unknown"
+UPSTREAM_VERSION_AUDIT_PATTERN = re.compile(
+    r"^(?:0|[1-9][0-9]{0,3})\.(?:0|[1-9][0-9]{0,3})\."
+    r"(?:0|[1-9][0-9]{0,3})(?:-[0-9A-Za-z.-]{1,64})?"
+    r"(?:\+[0-9A-Za-z.-]{1,64})?$"
+)
 
 
 def _jsonrpc_response_from_body(body: bytes) -> dict | None:
@@ -126,11 +132,25 @@ class TokenBucket:
 
 
 class AuthenticatedMcpGateway:
-    def __init__(self, app, settings: Settings, audit: AuditLogger):
+    def __init__(
+        self,
+        app,
+        settings: Settings,
+        audit: AuditLogger,
+        *,
+        require_initial_catalog_reconciliation: bool = False,
+    ):
         self.app = app
         self.settings = settings
         self.audit = audit
         self.prefix = f"/{settings.access_secret}"
+        self._initial_catalog_reconciliation_required = bool(
+            require_initial_catalog_reconciliation
+        )
+        self._initial_catalog_reconciliation_complete = not (
+            self._initial_catalog_reconciliation_required
+        )
+        self._catalog_readiness_lock = threading.Lock()
         self.clients: OrderedDict[str, TokenBucket] = OrderedDict()
         self.auth_failures: OrderedDict[str, TokenBucket] = OrderedDict()
         self._bucket_lock = threading.Lock()
@@ -142,6 +162,38 @@ class AuthenticatedMcpGateway:
             settings.rate_limit_per_minute * 2, settings.rate_limit_burst * 2
         )
         self.logger = get_logger("gateway")
+
+    @property
+    def initial_catalog_reconciliation_required(self) -> bool:
+        return self._initial_catalog_reconciliation_required
+
+    def mark_initial_catalog_reconciled(self) -> None:
+        """Publish readiness only after the configured initial reconcile returns."""
+
+        with self._catalog_readiness_lock:
+            self._initial_catalog_reconciliation_complete = True
+
+    def catalog_readiness_state(self) -> dict[str, bool | str]:
+        with self._catalog_readiness_lock:
+            complete = self._initial_catalog_reconciliation_complete
+        return {
+            "ready": complete,
+            "initial_reconciliation_required": (
+                self._initial_catalog_reconciliation_required
+            ),
+            "initial_reconciliation_complete": complete,
+            "status": "ready" if complete else "initial_reconciliation_pending",
+        }
+
+    async def _respond_catalog_readiness(self, send, request_id: str) -> None:
+        state = self.catalog_readiness_state()
+        await self._respond(
+            send,
+            200 if state["ready"] else 503,
+            json.dumps(state, separators=(",", ":"), sort_keys=True).encode("utf-8"),
+            request_id,
+            b"application/json",
+        )
 
     @staticmethod
     def _header(scope, wanted: bytes) -> str | None:
@@ -276,6 +328,8 @@ class AuthenticatedMcpGateway:
         try:
             if path == "/health":
                 return await self._respond(send, 200, b"ok", request_id)
+            if path == "/ready":
+                return await self._respond_catalog_readiness(send, request_id)
 
             if not path.startswith(self.prefix + "/") and path != self.prefix:
                 bucket = self._bucket(self.auth_failures, client_ip, 0.5, 5)
@@ -301,6 +355,13 @@ class AuthenticatedMcpGateway:
                 })
                 body = b"not found" if status == 404 else b"too many requests"
                 return await self._respond(send, status, body, request_id)
+
+            if not self.catalog_readiness_state()["ready"]:
+                telemetry.error_code = ErrorCode.PROVIDER_UNAVAILABLE.value
+                telemetry.result_status = "failure"
+                telemetry.completeness = "failed"
+                telemetry.response_status = 503
+                return await self._respond_catalog_readiness(send, request_id)
 
             client_bucket = self._bucket(
                 self.clients,
@@ -644,6 +705,33 @@ class AuthenticatedMcpGateway:
                         "argument_fields": sorted(
                             str(key)[:64] for key in parameters
                         )[:64],
+                        "upstream_version_evidence": (
+                            telemetry.audit_context.get(
+                                "upstream_version_evidence"
+                            )
+                            if isinstance(
+                                telemetry.audit_context.get(
+                                    "upstream_version_evidence"
+                                ),
+                                str,
+                            )
+                            and UPSTREAM_VERSION_AUDIT_PATTERN.fullmatch(
+                                telemetry.audit_context[
+                                    "upstream_version_evidence"
+                                ]
+                            )
+                            else "unknown"
+                        ),
+                        "upstream_identity_status": (
+                            telemetry.audit_context.get(
+                                "upstream_identity_status"
+                            )
+                            if telemetry.audit_context.get(
+                                "upstream_identity_status"
+                            )
+                            in {"accepted", "rejected"}
+                            else "unknown"
+                        ),
                     }
                 self.audit.write(AuditRecord(
                     request_id=request_id,

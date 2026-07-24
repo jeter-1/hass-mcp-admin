@@ -34,6 +34,14 @@
 > The Phase 1 single-server architecture pivot and its complete reviewed
 > `ha-mcp` 7.14.1 policy inventory are documented in
 > [`ADR-005`](docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md).
+> Dev15 contract-level compatibility, partial quarantine, dashboard
+> independence, and retry-cadence separation are documented in
+> [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md).
+> The current local Engineering candidate is `2.0.0-rc2-dev15`; its
+> development scope and pre-deployment gates are recorded in
+> [`docs/RC2DEV15_RELEASE_NOTES.md`](docs/RC2DEV15_RELEASE_NOTES.md) and
+> [`docs/RC2DEV15_ACCEPTANCE.md`](docs/RC2DEV15_ACCEPTANCE.md). Those documents
+> do not publish, deploy, or accept the candidate.
 > Repository-specific local and remote Codex development procedures are in
 > [`docs/CODEX_WORKFLOW.md`](docs/CODEX_WORKFLOW.md).
 
@@ -43,9 +51,13 @@ ChatGPT, Claude, and other MCP-capable clients.
 
 The v2 pivot makes Engineering the one client-visible front door: it preserves
 its engineering, analysis, governance, verification, and handoff tools while
-dynamically adding only exact reviewed pure-read operations from `ha-mcp` 7.14.1.
-Writes and mixed-operation upstream tools remain unavailable through the generic
-gateway. See [ARCHITECTURE.md](ARCHITECTURE.md) for the current boundaries.
+dynamically adding only exact contract-matched pure-read operations from the
+reviewed `ha-mcp` policy. Dev15 first requires its exact compiled 7.14.1
+release/profile, then withholds each missing or incompatible read individually.
+An unreviewed release cannot authorize itself through matching live
+descriptors; writes and mixed-operation upstream tools remain unavailable
+through the generic gateway. See [ARCHITECTURE.md](ARCHITECTURE.md) for the
+current boundaries.
 
 Current tools:
 
@@ -63,7 +75,7 @@ Current tools:
 | Beta analysis | `entity_dependency_analysis`, `automation_reliability_analysis`, `change_impact_analysis`, `configuration_integrity_analysis`, `incident_correlation`, `handoff_generation` |
 | Governance | `create_change_plan`, `get_change_plan`, `list_change_plans`, `approve_change_plan`, `apply_change_plan`, `rollback_change` |
 | General execution | `call_service` is compatibility-visible but fails closed in v2; Phase 1 does not delegate service execution or any upstream write |
-| Reviewed upstream reads | Up to 26 exact-schema-matching `ha-mcp` 7.14.1 reads are added by supervised startup reconciliation; see [ADR-005](docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md) for the stock inventory and blocked classifications |
+| Reviewed upstream reads | Up to 26 exact semantic-contract-matching `ha-mcp` reads are admitted independently; one missing or quarantined read leaves the other matches available, and no new or write tool is inferred into policy. See [ADR-006](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md). |
 
 It runs against the Supervisor's internal HA proxy, so **no long-lived access token is
 needed** — auth to HA is handled by the injected `SUPERVISOR_TOKEN`.
@@ -195,25 +207,34 @@ HTTP 200 — the log records the attempt and whether `confirm` was set, not the 
 outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 1–500 lines. See [`docs/AUDIT_LOG.md`](docs/AUDIT_LOG.md).
 
-## Engineering beta/RC analytical milestones
+## Engineering beta/RC milestones
 
-The published `2.0.0-rc2-dev12` candidate remains immutable failed history and
-is not accepted. RC2dev13 is its corrective release target for automatic
-read-gateway reconciliation and `ha_search` completeness. Determine whether
-that target is staged or advertised from authoritative version metadata and
-`scripts/codex-context.py`, not from this milestone narrative. Engineering has
-40 statically registered tools: 25 canonical plus 15 Engineering-native. Audit
+The current local Engineering candidate is RC2dev15
+(`2.0.0-rc2-dev15`). The published `2.0.0-rc2-dev12` candidate remains
+immutable failed history and is not accepted. RC2dev13 corrected its
+read-gateway reconciliation and `ha_search` completeness defects; RC2dev14
+added practical configuration plans; and RC2dev15 moves upstream admission to
+independent contract-level decisions. Determine staged or advertised release
+state from authoritative version metadata and `scripts/codex-context.py`, not
+from this milestone narrative. Engineering has 41 statically registered
+tools: 25 canonical plus 16 Engineering-native. Audit
 filters parse each bounded JSONL
 record and compare only the exact top-level event, so the routed audit reader's
 own nested filter argument cannot create false security evidence.
-It adds only `list_dashboards` and `get_dashboard_config`, backed by an optional
+The dashboard boundary adds only `list_dashboards` and
+`get_dashboard_config`, backed by an optional
 secret-configured `upstream_dashboard` MCP provider whose allowlist contains
 only `ha_config_get_dashboard`. Exact reviewed attestations for `ha-mcp`
-7.13.0, 7.14.0, and 7.14.1 bind release provenance to a compiled semantic
-dashboard-read family. The selected attestation derives retained raw-schema, reviewed-security,
-and runtime-descriptor expectations from the exact selected attestation, while
-keeping those diagnostics distinct from the normalized admission gate;
-unrelated catalog and prose drift remain observability evidence.
+7.13.0, 7.14.0, and 7.14.1 retain release provenance for the compiled semantic
+dashboard-read family. Dashboard admission requires an exact built-in or
+verified signed attestation for the observed release. Missing exact authority,
+revocation, or contract mismatch blocks with no older-attestation or
+self-advertised compatible-variant fallback. Expired exact evidence remains
+deny-only, and registry unavailability cannot revive an older contract.
+The selected attestation derives retained raw-schema, reviewed-security, and
+runtime-descriptor expectations while keeping those diagnostics distinct from
+normalized semantic compatibility; unrelated catalog and prose drift remain
+observability evidence.
 Engineering constructs only exact non-screenshot read forms. The mixed upstream
 tool is not described as globally read-only. The generic
 `StandardHaMcpGateway` remains unavailable. No dashboard write, service,

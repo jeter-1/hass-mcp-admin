@@ -654,6 +654,48 @@ class CapabilityAndAllowlistTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(transport.tool_dispatch_count, 0)
 
+    async def test_unrelated_catalog_diagnostics_cannot_block_exact_target(self):
+        unrelated = {
+            "name": "ha_unrelated_future_tool",
+            "inputSchema": {"type": "object", "not_json": {"value"}},
+            "annotations": {"destructiveHint": True},
+        }
+        transport = FakeTransport(
+            handshake_value=handshake(
+                tools=[dashboard_tool(), unrelated],
+                version="7.13.0",
+            )
+        )
+        provider = UpstreamDashboardProvider()
+        provider.configure(settings(), transport=transport)
+        await provider.refresh_capabilities()
+        health = provider.health_snapshot()
+        self.assertEqual(health["admission_status"], "admitted_builtin_attestation")
+        self.assertEqual(health["capability_status"], "available")
+        self.assertEqual(health["upstream_tool_count"], 2)
+        self.assertIsNone(health["catalog_fingerprint"])
+        self.assertTrue(health["required_schema_compatible"])
+
+    async def test_duplicate_required_tool_is_ambiguous_and_never_dispatched(self):
+        transport = FakeTransport(
+            handshake_value=handshake(
+                tools=[dashboard_tool(), dashboard_tool()]
+            )
+        )
+        provider = UpstreamDashboardProvider()
+        provider.configure(settings(), transport=transport)
+        with self.assertRaises(Exception) as caught:
+            await provider.list_dashboards(limit=10, response_limit=60_000)
+        self.assertEqual(
+            caught.exception.code,
+            ErrorCode.UPSTREAM_DASHBOARD_INVALID_RESPONSE,
+        )
+        self.assertEqual(transport.tool_dispatch_count, 0)
+        health = provider.health_snapshot()
+        self.assertTrue(health["required_tool_present"])
+        self.assertFalse(health["required_schema_compatible"])
+        self.assertEqual(health["validation_reason"], "invalid_response")
+
     async def test_url_path_and_list_only_schema_incompatibility(self):
         incompatible = (
             dashboard_schema(properties={"url_path": {"type": "integer"}}),

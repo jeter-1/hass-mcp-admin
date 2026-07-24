@@ -1,8 +1,93 @@
 # Beta provider security boundaries
 
+## Dev15 contract-level upstream compatibility
+
+[ADR-006](architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md)
+supersedes the exact-version and shared all-or-nothing admission portions of
+the historical RC3A, RC2dev9, and RC2dev13 designs below. Their fixed identity,
+protocol, tool-name, argument, response, no-write, and no-fallback boundaries
+remain applicable.
+
+The generic `upstream_read_gateway` evaluates each reviewed
+`automatic_read` contract independently. The exact input-schema fingerprint,
+exact domain-separated fingerprint of the complete bounded runtime
+description, exact runtime safety-annotation presence/value fingerprint,
+output-schema
+presence/fingerprint, and other dispatch-relevant projections are required.
+The 26 description and annotation fingerprints are captured from the pinned
+image's real `tools/list` only after its exact stock-catalog fingerprint
+matches. Runtime
+descriptions are limited to 8,192 strict UTF-8 bytes, remain untrusted, and are
+never published as instructions; the Engineering-owned bounded summary is the
+only model-facing description. Any byte or code-point drift anywhere in the
+full runtime description quarantines that tool. A changed contract is
+quarantined and a missing contract is removed; neither condition disables
+other exact matches. New tools and every reviewed mixed, write, action,
+prohibited, or unsupported entry remain unavailable.
+
+The annotation fingerprint records presence as well as Boolean value for each
+MCP safety hint. An omitted optional hint is not normalized to `false` or
+`true`; adding, removing, or changing a hint is contract drift. Runtime
+annotations must still identify the tool as read-only and not destructive.
+This upstream evidence is separate from the complete Engineering-owned safety
+annotations published to clients.
+
+Every reviewed read must also retain the pinned generic object output schema,
+matched by an exact per-tool fingerprint. Missing, invalid, or changed output
+schemas quarantine only the affected read. The generic schema cannot expand
+the fixed sanitizer, response bound, fallback prohibition, or behavior adapter.
+
+Live `ha-mcp` version data is evidence, not self-authorizing authority. The
+generic gateway first requires an explicit reviewed release/profile; Dev15's
+compiled profile is exactly 7.14.1. A patch, minor, major, prerelease, or
+downgrade without reviewed authority remains unavailable even when its
+self-advertised contracts match. Health may report an observed version, but
+that observation cannot admit a tool or permit dispatch. After release
+authority succeeds, unreviewed additions do not become callable and do not
+reduce otherwise exact per-tool matches.
+
+Immediately before `tools/call`, Engineering re-lists the catalog in the same
+MCP session and revalidates exact release/profile authority plus the selected
+target against the current-generation contract. Missing, duplicate, changed
+selected-target, or unreviewed-version evidence stops before dispatch. A
+different server, malformed version, or unsupported protocol likewise remains
+global fail-closed. Unrelated malformed or duplicate unreviewed descriptors
+remain unavailable and are bounded anomalies rather than authority for, or a
+block on, an exact authorized target call.
+
+Calls acquire immutable route snapshots under short leases and do not hold a
+global registry lock across network I/O. A route retired before pre-dispatch
+validation cannot call upstream. A call already committed after successful
+validation may finish, but cannot republish or revive a retired generation.
+
+Dashboard admission is independent from generic-read admission.
+`ha_config_get_dashboard` remains mixed and cannot enter the generic route.
+The dashboard provider still permits only its two fixed non-screenshot shapes
+and exact response/hash contract. It first requires an exact-version built-in
+or verified signed attestation. Missing exact authority, mismatch, or
+revocation blocks that release with no older-release or self-advertised
+compatible-variant fallback. Expired exact entries remain deny-only and
+registry unavailability cannot revive older evidence.
+
+Fast bounded startup recovery is reserved for transport readiness. A stable
+missing or quarantined contract uses a separately reported slow compatibility
+reprobe cadence while the safely admitted subset remains available. Neither
+lane retries a delegated operation semantically. Bounded health may report tool
+names and stable incompatibility reasons, but never raw schemas, remote prose,
+registry material, endpoint data, credentials, or exceptions.
+
+When upstream is configured, the initial catalog is a readiness boundary:
+authenticated MCP traffic returns HTTP 503 until the first stable or terminal
+`reconcile_until_initialized` result. `/ready` exposes only bounded booleans and
+`status=ready|initial_reconciliation_pending`; `/health` remains liveness. This
+prevents a schema-caching client from treating the transient static-only catalog
+as the initialized capability set.
+
 ## RC2dev13 reviewed read-gateway recovery
 
-The generic `upstream_read_gateway` is separate from the unavailable legacy
+This section records the RC2dev13 recovery design; ADR-006 supersedes its exact
+version and single-cadence rules. The generic `upstream_read_gateway` is
+separate from the unavailable legacy
 `standard_ha_mcp` route. One supervised, single-flight reconciliation loop
 retries only the configured fixed upstream endpoint. Every attempt revalidates
 exact server identity, version, protocol, reviewed policy, and input schemas;

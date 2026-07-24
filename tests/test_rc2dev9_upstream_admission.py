@@ -24,6 +24,7 @@ from ha_mcp_engineering.clients.mcp import (  # noqa: E402
     validate_dashboard_read_arguments,
 )
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
+from ha_mcp_engineering.errors import DashboardProviderError  # noqa: E402
 from ha_mcp_engineering.providers.upstream_contracts import (  # noqa: E402
     CONTRACT_FAMILY,
     COMPILED_CONTRACT_FAMILIES,
@@ -224,18 +225,51 @@ class ContractFamilyTests(unittest.TestCase):
                 )
                 self.assertFalse(decision.accepted)
 
-    def test_unknown_version_family_tool_and_server_fail_closed(self):
+    def test_unknown_version_requires_exact_release_attestation_first(self):
         entries = tuple((entry, "builtin") for entry in load_attestations())
-        self.assertEqual(
-            decide_admission(
+        drifted = tool_for("7.14.1")
+        drifted["inputSchema"]["properties"]["include_screenshot"]["default"] = True
+        for tool in (tool_for("7.14.1"), drifted):
+            decision = decide_admission(
                 server_name="ha-mcp",
                 server_version="7.14.2",
                 protocol_version="2025-03-26",
-                tool=tool_for("7.14.1"),
+                tool=tool,
                 attestations=entries,
-            ).status,
-            "rejected_unknown_release",
+            )
+            self.assertFalse(decision.accepted)
+            self.assertEqual(decision.status, "rejected_unknown_release")
+            self.assertEqual(
+                decision.failure_category, "upstream_attestation_missing"
+            )
+            self.assertIsNone(decision.source)
+            self.assertIsNone(decision.attestation)
+            self.assertIsNone(decision.contract)
+            self.assertFalse(decision.input_match)
+            self.assertFalse(decision.security_match)
+            self.assertFalse(decision.output_match)
+            self.assertFalse(decision.runtime_match)
+
+    def test_exact_attestation_requires_a_reviewed_evidence_source(self):
+        entry = load_attestations()[-1]
+        decision = decide_admission(
+            server_name="ha-mcp",
+            server_version="7.14.1",
+            protocol_version="2025-03-26",
+            tool=tool_for("7.14.1"),
+            attestations=((entry, "live_self_advertisement"),),
         )
+        self.assertFalse(decision.accepted)
+        self.assertEqual(decision.status, "rejected_unknown_release")
+        self.assertEqual(
+            decision.failure_category, "upstream_attestation_missing"
+        )
+        self.assertIsNone(decision.source)
+        self.assertIsNone(decision.attestation)
+        self.assertIsNone(decision.contract)
+
+    def test_family_tool_and_server_still_fail_closed(self):
+        entries = tuple((entry, "builtin") for entry in load_attestations())
         self.assertEqual(
             decide_admission(
                 server_name="HA-MCP",
@@ -257,6 +291,119 @@ class ContractFamilyTests(unittest.TestCase):
         )
         self.assertEqual(renamed_decision.status, "rejected_contract_mismatch")
         self.assertEqual(renamed_decision.failure_category, "required_tool_missing")
+
+    def test_exact_release_mismatch_and_revocation_never_fall_back(self):
+        base = load_attestations()[-1]
+        entries = tuple((entry, "builtin") for entry in load_attestations())
+        mismatched = replace(
+            base,
+            entry_id="ha-mcp-v7.14.2-mismatch",
+            upstream_version="7.14.2",
+            source_tag="v7.14.2",
+            input_contract_fingerprint="0" * 64,
+        )
+        decision = decide_admission(
+            server_name="ha-mcp",
+            server_version="7.14.2",
+            protocol_version="2025-03-26",
+            tool=tool_for("7.14.1"),
+            attestations=(*entries, (mismatched, "remote_fresh")),
+        )
+        self.assertFalse(decision.accepted)
+        self.assertEqual(decision.status, "rejected_contract_mismatch")
+        self.assertEqual(
+            decision.failure_category, "upstream_input_contract_mismatch"
+        )
+        self.assertIs(decision.attestation, mismatched)
+
+        revoked = replace(
+            base,
+            entry_id="ha-mcp-v7.14.2-revoked",
+            upstream_version="7.14.2",
+            source_tag="v7.14.2",
+            revoked=True,
+        )
+        decision = decide_admission(
+            server_name="ha-mcp",
+            server_version="7.14.2",
+            protocol_version="2025-03-26",
+            tool=tool_for("7.14.1"),
+            attestations=(*entries, (revoked, "remote_fresh")),
+        )
+        self.assertFalse(decision.accepted)
+        self.assertEqual(decision.status, "rejected_revoked_attestation")
+        self.assertIs(decision.attestation, revoked)
+
+    def test_expired_exact_release_and_registry_enabled_fallback_fail_closed(self):
+        base = load_attestations()[-1]
+        expired = replace(
+            base,
+            entry_id="ha-mcp-v7.14.2-expired",
+            upstream_version="7.14.2",
+            source_tag="v7.14.2",
+        )
+        decision = decide_admission(
+            server_name="ha-mcp",
+            server_version="7.14.2",
+            protocol_version="2025-03-26",
+            tool=tool_for("7.14.1"),
+            attestations=((expired, "remote_expired"),),
+        )
+        self.assertFalse(decision.accepted)
+        self.assertEqual(decision.status, "rejected_expired_attestation")
+        self.assertEqual(
+            decision.failure_category, "upstream_registry_expired"
+        )
+
+        expired_only = decide_admission(
+            server_name="ha-mcp",
+            server_version="7.14.3",
+            protocol_version="2025-03-26",
+            tool=tool_for("7.14.1"),
+            attestations=((expired, "remote_expired"),),
+        )
+        self.assertFalse(expired_only.accepted)
+        self.assertEqual(expired_only.status, "rejected_unknown_release")
+
+        unavailable = decide_admission(
+            server_name="ha-mcp",
+            server_version="7.14.3",
+            protocol_version="2025-03-26",
+            tool=tool_for("7.14.1"),
+            attestations=tuple(
+                (entry, "builtin") for entry in load_attestations()
+            ),
+            compatible_fallback_rejection=(
+                "rejected_registry_unavailable",
+                "upstream_registry_unavailable",
+            ),
+        )
+        self.assertFalse(unavailable.accepted)
+        self.assertEqual(
+            unavailable.status, "rejected_registry_unavailable"
+        )
+
+    def test_unknown_release_rejection_is_attestation_order_independent(self):
+        entries = load_attestations()
+        for ordered in (
+            tuple((entry, "builtin") for entry in entries),
+            tuple((entry, "builtin") for entry in reversed(entries)),
+        ):
+            with self.subTest(order=[entry.upstream_version for entry, _ in ordered]):
+                decision = decide_admission(
+                    server_name="ha-mcp",
+                    server_version="7.14.2",
+                    protocol_version="2025-03-26",
+                    tool=tool_for("7.14.1"),
+                    attestations=ordered,
+                )
+                self.assertFalse(decision.accepted)
+                self.assertEqual(decision.status, "rejected_unknown_release")
+                self.assertEqual(
+                    decision.failure_category, "upstream_attestation_missing"
+                )
+                self.assertIsNone(decision.attestation)
+                self.assertIsNone(decision.source)
 
     def test_registry_data_cannot_expand_compiled_capabilities(self):
         self.assertEqual(set(COMPILED_ARGUMENT_SHAPES), {"list_dashboards", "get_dashboard_config"})
@@ -325,6 +472,35 @@ class ProviderAdmissionTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(result.data["config_hash"], _upstream_hash(config))
                 self.assertEqual(len(result.data["engineering_config_hash"]), 64)
+
+    async def test_unattested_contract_is_unavailable_without_release_authority(self):
+        transport = FakeTransport(
+            "7.14.2",
+            {"success": True, "action": "list", "dashboards": [], "count": 0},
+        )
+        provider = UpstreamDashboardProvider()
+        provider.configure(settings(), transport=transport)
+        with self.assertRaises(DashboardProviderError):
+            await provider.list_dashboards(limit=10, response_limit=60_000)
+        health = provider.health_snapshot()
+        self.assertEqual(health["admission_status"], "rejected_unknown_release")
+        self.assertEqual(
+            health["validation_reason"], "upstream_attestation_missing"
+        )
+        self.assertEqual(health["capability_status"], "unavailable")
+        self.assertIsNone(health["admission_source"])
+        self.assertIsNone(health["attestation_entry_id"])
+        self.assertIsNone(health["attested_upstream_version"])
+        self.assertIsNone(health["attested_source_commit"])
+        self.assertIsNone(health["attested_image_index_digest"])
+        self.assertEqual(health["observed_upstream_version"], "7.14.2")
+        self.assertEqual(health["revocation_status"], "not_evaluated")
+        self.assertFalse(health["input_contract_match"])
+        self.assertFalse(health["security_contract_match"])
+        self.assertFalse(health["output_contract_match"])
+        self.assertFalse(health["runtime_contract_match"])
+        self.assertEqual(health["runtime_descriptor_drift"], "not_comparable")
+        self.assertEqual(transport.arguments, [])
 
     async def test_exact_get_builder_never_forwards_new_optional_arguments(self):
         config = {"views": [{"title": "Home", "cards": []}]}
@@ -623,6 +799,362 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertFalse(rejected.accepted)
             self.assertEqual(rejected.status, "rejected_revoked_attestation")
+
+    async def test_expired_cached_exact_revocation_remains_a_denial_after_restart(self):
+        revoked_raw = signed_registry(
+            self.private_key,
+            sequence=12,
+            entries=[self.future_entry(revoked=True)],
+            now=self.now,
+        )
+
+        async def fetch(url, maximum):
+            return revoked_raw[1 if url.endswith("sig.json") else 0]
+
+        clock = {"now": self.now}
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "cache.json"
+            manager = UpstreamTrustRegistry(
+                enabled=True,
+                public_key=self.public_key,
+                cache_path=cache,
+                fetcher=fetch,
+                now=lambda: clock["now"],
+            )
+            self.assertTrue(await manager.refresh())
+            clock["now"] = self.now + timedelta(days=8)
+
+            restarted = UpstreamTrustRegistry(
+                enabled=True,
+                public_key=self.public_key,
+                cache_path=cache,
+                fetcher=fetch,
+                now=lambda: clock["now"],
+            )
+            self.assertEqual(restarted.snapshot()["cache_status"], "expired")
+            attestations = restarted.effective_attestations()
+            selected = [
+                (entry, source)
+                for entry, source in attestations
+                if entry.upstream_version == "7.14.2"
+            ]
+            self.assertEqual(len(selected), 1)
+            self.assertEqual(selected[0][1], "remote_expired")
+            decision = decide_admission(
+                server_name="ha-mcp",
+                server_version="7.14.2",
+                protocol_version="2025-03-26",
+                tool=tool_for("7.14.1"),
+                attestations=attestations,
+                compatible_fallback_rejection=(
+                    restarted.compatible_contract_fallback_rejection()
+                ),
+            )
+            self.assertFalse(decision.accepted)
+            self.assertEqual(decision.status, "rejected_expired_attestation")
+            self.assertEqual(
+                decision.failure_category, "upstream_registry_expired"
+            )
+
+    async def test_expiry_remains_deny_only_after_clock_rewind_until_valid_refresh(self):
+        initial = signed_registry(
+            self.private_key,
+            sequence=30,
+            entries=[self.future_entry()],
+            now=self.now,
+        )
+        rollback = signed_registry(
+            self.private_key,
+            sequence=29,
+            entries=[self.future_entry()],
+            now=self.now,
+        )
+        replacement = signed_registry(
+            self.private_key,
+            sequence=31,
+            entries=[self.future_entry()],
+            now=self.now,
+        )
+        current = {"pair": initial}
+
+        async def fetch(url, maximum):
+            return current["pair"][1 if url.endswith("sig.json") else 0]
+
+        clock = {"now": self.now}
+        with tempfile.TemporaryDirectory() as directory:
+            manager = UpstreamTrustRegistry(
+                enabled=True,
+                public_key=self.public_key,
+                cache_path=Path(directory) / "cache.json",
+                fetcher=fetch,
+                now=lambda: clock["now"],
+            )
+            self.assertTrue(await manager.refresh())
+
+            clock["now"] = self.now + timedelta(days=3)
+            expired = [
+                source
+                for entry, source in manager.effective_attestations()
+                if entry.upstream_version == "7.14.2"
+            ]
+            self.assertEqual(expired, ["remote_expired"])
+            self.assertEqual(manager.snapshot()["cache_status"], "expired")
+
+            clock["now"] = self.now
+            rewound = [
+                source
+                for entry, source in manager.effective_attestations()
+                if entry.upstream_version == "7.14.2"
+            ]
+            self.assertEqual(rewound, ["remote_expired"])
+            self.assertEqual(
+                manager.compatible_contract_fallback_rejection(),
+                ("rejected_expired_attestation", "upstream_registry_expired"),
+            )
+
+            current["pair"] = initial
+            self.assertFalse(await manager.refresh())
+            self.assertEqual(
+                manager.last_failure_category,
+                "upstream_registry_rollback",
+            )
+            self.assertEqual(
+                [
+                    source
+                    for entry, source in manager.effective_attestations()
+                    if entry.upstream_version == "7.14.2"
+                ],
+                ["remote_expired"],
+            )
+
+            current["pair"] = rollback
+            self.assertFalse(await manager.refresh())
+            self.assertEqual(
+                [
+                    source
+                    for entry, source in manager.effective_attestations()
+                    if entry.upstream_version == "7.14.2"
+                ],
+                ["remote_expired"],
+            )
+
+            current["pair"] = replacement
+            self.assertTrue(await manager.refresh())
+            self.assertEqual(
+                [
+                    source
+                    for entry, source in manager.effective_attestations()
+                    if entry.upstream_version == "7.14.2"
+                ],
+                ["remote_fresh"],
+            )
+            self.assertIsNone(manager.compatible_contract_fallback_rejection())
+            self.assertEqual(manager.snapshot()["cache_status"], "valid")
+
+    async def test_backward_clock_before_accepted_at_is_bounded_and_deny_only(self):
+        remote = signed_registry(
+            self.private_key,
+            sequence=35,
+            entries=[self.future_entry()],
+            now=self.now,
+        )
+
+        async def fetch(url, maximum):
+            return remote[1 if url.endswith("sig.json") else 0]
+
+        clock = {"now": self.now}
+        with tempfile.TemporaryDirectory() as directory:
+            manager = UpstreamTrustRegistry(
+                enabled=True,
+                public_key=self.public_key,
+                cache_path=Path(directory) / "cache.json",
+                fetcher=fetch,
+                now=lambda: clock["now"],
+            )
+            self.assertTrue(await manager.refresh())
+
+            clock["now"] = self.now - timedelta(seconds=1)
+            snapshot = manager.snapshot()
+            self.assertEqual(snapshot["cache_status"], "expired")
+            self.assertEqual(
+                snapshot["last_registry_failure_category"],
+                "upstream_registry_expired",
+            )
+            self.assertEqual(snapshot["cache_age_seconds"], 0.0)
+            self.assertEqual(snapshot["registry_age_seconds"], 0.0)
+            self.assertEqual(
+                [
+                    source
+                    for entry, source in manager.effective_attestations()
+                    if entry.upstream_version == "7.14.2"
+                ],
+                ["remote_expired"],
+            )
+
+            clock["now"] = self.now
+            self.assertEqual(manager.snapshot()["cache_status"], "expired")
+            self.assertEqual(
+                [
+                    source
+                    for entry, source in manager.effective_attestations()
+                    if entry.upstream_version == "7.14.2"
+                ],
+                ["remote_expired"],
+            )
+
+    async def test_restart_clock_rewind_cannot_revive_revoked_builtin_attestation(self):
+        revoked = signed_registry(
+            self.private_key,
+            sequence=36,
+            entries=[self.future_entry(version="7.14.1", revoked=True)],
+            now=self.now,
+        )
+        older = signed_registry(
+            self.private_key,
+            sequence=35,
+            entries=[self.future_entry(version="7.14.1")],
+            now=self.now,
+        )
+        replacement = signed_registry(
+            self.private_key,
+            sequence=37,
+            entries=[self.future_entry(version="7.14.1")],
+            now=self.now,
+        )
+        current = {"pair": revoked}
+
+        async def fetch(url, maximum):
+            return current["pair"][1 if url.endswith("sig.json") else 0]
+
+        clock = {"now": self.now}
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "cache.json"
+            manager = UpstreamTrustRegistry(
+                enabled=True,
+                public_key=self.public_key,
+                cache_path=cache,
+                fetcher=fetch,
+                now=lambda: clock["now"],
+            )
+            self.assertTrue(await manager.refresh())
+
+            # Rewind beyond the normal five-minute signature clock-skew
+            # allowance. The cached registry is no longer positive authority,
+            # but its exact built-in revocation must survive the restart.
+            clock["now"] = self.now - timedelta(minutes=10)
+            restarted = UpstreamTrustRegistry(
+                enabled=True,
+                public_key=self.public_key,
+                cache_path=cache,
+                fetcher=fetch,
+                now=lambda: clock["now"],
+            )
+            self.assertEqual(restarted.snapshot()["cache_status"], "expired")
+            decision = decide_admission(
+                server_name="ha-mcp",
+                server_version="7.14.1",
+                protocol_version="2025-03-26",
+                tool=tool_for("7.14.1"),
+                attestations=restarted.effective_attestations(),
+                compatible_fallback_rejection=(
+                    restarted.compatible_contract_fallback_rejection()
+                ),
+            )
+            self.assertFalse(decision.accepted)
+            self.assertEqual(decision.status, "rejected_expired_attestation")
+            self.assertEqual(
+                [
+                    (entry.revoked, source)
+                    for entry, source in restarted.effective_attestations()
+                    if entry.upstream_version == "7.14.1"
+                ],
+                [(True, "remote_expired")],
+            )
+
+            clock["now"] = self.now
+            self.assertFalse(await restarted.refresh())
+            self.assertEqual(
+                restarted.last_failure_category,
+                "upstream_registry_rollback",
+            )
+
+            current["pair"] = older
+            self.assertFalse(await restarted.refresh())
+            self.assertEqual(
+                restarted.last_failure_category,
+                "upstream_registry_rollback",
+            )
+
+            current["pair"] = replacement
+            self.assertTrue(await restarted.refresh())
+            restored = decide_admission(
+                server_name="ha-mcp",
+                server_version="7.14.1",
+                protocol_version="2025-03-26",
+                tool=tool_for("7.14.1"),
+                attestations=restarted.effective_attestations(),
+            )
+            self.assertTrue(restored.accepted)
+            self.assertEqual(
+                restored.status,
+                "admitted_signed_registry_attestation",
+            )
+
+    async def test_invalid_cached_at_never_publishes_remote_registry_state(self):
+        remote = signed_registry(
+            self.private_key,
+            sequence=40,
+            entries=[self.future_entry()],
+            now=self.now,
+        )
+
+        async def fetch(url, maximum):
+            return remote[1 if url.endswith("sig.json") else 0]
+
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "cache.json"
+            manager = UpstreamTrustRegistry(
+                enabled=True,
+                public_key=self.public_key,
+                cache_path=cache,
+                fetcher=fetch,
+                now=lambda: self.now,
+            )
+            self.assertTrue(await manager.refresh())
+
+            envelope = json.loads(cache.read_text(encoding="utf-8"))
+            envelope["cached_at"] = "not-a-timestamp"
+            cache.write_bytes(canonical_json(envelope))
+
+            restarted = UpstreamTrustRegistry(
+                enabled=True,
+                public_key=self.public_key,
+                cache_path=cache,
+                fetcher=fetch,
+                now=lambda: self.now,
+            )
+            snapshot = restarted.snapshot()
+            self.assertEqual(snapshot["cache_status"], "invalid")
+            self.assertEqual(
+                snapshot["last_registry_failure_category"],
+                "upstream_registry_cache_invalid",
+            )
+            self.assertIsNone(snapshot["registry_sequence"])
+            self.assertIsNone(snapshot["registry_generated_at"])
+            self.assertIsNone(snapshot["signature_valid"])
+            self.assertFalse(
+                any(
+                    entry.upstream_version == "7.14.2"
+                    for entry, _source in restarted.effective_attestations()
+                )
+            )
+            self.assertEqual(
+                restarted.compatible_contract_fallback_rejection(),
+                (
+                    "rejected_registry_unavailable",
+                    "upstream_registry_cache_invalid",
+                ),
+            )
 
     def test_duplicate_json_keys_and_unknown_fields_rejected(self):
         signature = canonical_json(

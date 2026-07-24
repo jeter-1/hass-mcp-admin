@@ -103,6 +103,7 @@ class UpstreamTrustRegistry:
         self._now = now or (lambda: datetime.now(timezone.utc))
         self._builtins = load_attestations()
         self._remote: VerifiedRegistry | None = None
+        self._remote_deny_only = False
         self._lock = asyncio.Lock()
         self._last_refresh_monotonic: float | None = None
         self.health = RegistryHealth(enabled=enabled)
@@ -139,14 +140,30 @@ class UpstreamTrustRegistry:
             )
             for entry in self._builtins
         }
-        if self._remote is not None and self._registry_is_usable(self._remote):
-            source = "remote_fresh" if self.health.refresh_status == "success" else "remote_cached"
+        if self._remote is not None:
+            usable = self._registry_is_usable(self._remote)
+            source = (
+                "remote_fresh"
+                if usable and self.health.refresh_status == "success"
+                else "remote_cached"
+                if usable
+                else "remote_expired"
+            )
             for entry in self._remote.entries:
                 keyed[(entry.server_name, entry.upstream_version, entry.contract_family)] = (
                     entry,
                     source,
                 )
         return tuple(keyed[key] for key in sorted(keyed))
+
+    def compatible_contract_fallback_rejection(self) -> tuple[str, str] | None:
+        """Require usable signed evidence before registry-enabled family admission."""
+
+        if not self._enabled:
+            return None
+        if self._remote is not None and self._registry_is_usable(self._remote):
+            return None
+        return self.admission_rejection()
 
     async def refresh_if_due(self, *, force: bool = False) -> bool:
         if not self._enabled:
@@ -181,8 +198,16 @@ class UpstreamTrustRegistry:
                         and verified.payload_digest != self._remote.payload_digest
                     ):
                         raise RegistryValidationError("upstream_registry_replay_conflict")
+                    if (
+                        self._remote_deny_only
+                        and verified.sequence == self._remote.sequence
+                    ):
+                        raise RegistryValidationError("upstream_registry_rollback")
+                if not self._candidate_is_usable(verified):
+                    raise RegistryValidationError("upstream_registry_expired")
                 self._write_cache(registry_raw, signature_raw, verified)
                 self._remote = verified
+                self._remote_deny_only = False
                 self.health.sequence = verified.sequence
                 self.health.generated_at = verified.generated_at
                 self.health.refresh_status = "success"
@@ -209,6 +234,8 @@ class UpstreamTrustRegistry:
 
     def snapshot(self) -> dict[str, Any]:
         registry = self._remote
+        if registry is not None:
+            self._registry_is_usable(registry)
         now = self._now()
         cache_age = (
             None
@@ -241,7 +268,11 @@ class UpstreamTrustRegistry:
     def admission_rejection(self) -> tuple[str, str]:
         """Translate a failed required refresh into bounded admission evidence."""
 
-        category = self.health.last_failure_category or "upstream_registry_unavailable"
+        category = (
+            "upstream_registry_expired"
+            if self.health.cache_status == "expired"
+            else self.health.last_failure_category or "upstream_registry_unavailable"
+        )
         if category == "upstream_registry_invalid_signature":
             return "rejected_signature_failure", category
         if category == "upstream_registry_expired":
@@ -268,13 +299,43 @@ class UpstreamTrustRegistry:
                 return result
 
     def _registry_is_usable(self, registry: VerifiedRegistry) -> bool:
+        if registry is self._remote and self._remote_deny_only:
+            self._mark_remote_deny_only()
+            return False
+        try:
+            usable = self._candidate_is_usable(registry)
+        except RegistryValidationError:
+            if registry is not self._remote:
+                raise
+            self._mark_remote_deny_only()
+            return False
+        if not usable and registry is self._remote:
+            # Expiry is a one-way transition for the currently accepted
+            # registry. A wall-clock rewind must not revive positive
+            # compatibility authority; only a successfully verified,
+            # strictly higher-sequence refresh may replace this tombstone.
+            self._mark_remote_deny_only()
+        return usable
+
+    def _candidate_is_usable(self, registry: VerifiedRegistry) -> bool:
         now = self._now()
         accepted = _parse_timestamp(registry.accepted_at)
+        generated = _parse_timestamp(registry.generated_at)
         expires = _parse_timestamp(registry.expires_at)
-        usable = now <= expires and (now - accepted).total_seconds() <= CACHE_HARD_AGE_SECONDS
-        if not usable and self.health.cache_status == "valid":
-            self.health.cache_status = "expired"
-        return usable
+        if (
+            accepted > now
+            or generated.timestamp() - now.timestamp() > MAX_CLOCK_SKEW_SECONDS
+        ):
+            raise RegistryValidationError("upstream_registry_timestamp_invalid")
+        return (
+            now <= expires
+            and (now - accepted).total_seconds() <= CACHE_HARD_AGE_SECONDS
+        )
+
+    def _mark_remote_deny_only(self) -> None:
+        self._remote_deny_only = True
+        self.health.cache_status = "expired"
+        self.health.last_failure_category = "upstream_registry_expired"
 
     def _load_cache(self) -> None:
         try:
@@ -297,20 +358,52 @@ class UpstreamTrustRegistry:
                 now=self._now(),
                 source="remote_cached",
                 accepted_at=envelope["cached_at"],
+                _allow_expired_for_denial=True,
             )
-            if not self._registry_is_usable(verified):
-                raise RegistryValidationError("upstream_registry_expired")
+            # Validate the unsigned cache timestamp's shape before publishing
+            # any remote state. Once the signed registry and a syntactically
+            # valid acceptance timestamp have both been verified, however,
+            # temporal unusability must retain the registry as denial-only
+            # authority. In particular, a small wall-clock rollback during a
+            # restart must not forget a cached revocation and revive the
+            # superseded built-in attestation.
+            _parse_timestamp(verified.accepted_at)
+            try:
+                usable = self._candidate_is_usable(verified)
+            except RegistryValidationError as exc:
+                if exc.category != "upstream_registry_timestamp_invalid":
+                    raise
+                usable = False
             self._remote = verified
+            self._remote_deny_only = not usable
             self.health.sequence = verified.sequence
             self.health.generated_at = verified.generated_at
             self.health.signature_valid = True
-            self.health.cache_status = "valid"
             self.health.cache_loaded_at = verified.accepted_at
+            if usable:
+                self.health.cache_status = "valid"
+            else:
+                # Retain only as an exact-release denial tombstone. Admission
+                # never uses an expired entry as positive compatibility
+                # evidence, but forgetting it could revive an older compiled
+                # family or built-in entry after restart.
+                self.health.cache_status = "expired"
+                self.health.last_failure_category = "upstream_registry_expired"
         except FileNotFoundError:
+            self._clear_remote_cache_state()
             self.health.cache_status = "missing"
         except Exception:
+            self._clear_remote_cache_state()
             self.health.cache_status = "invalid"
             self.health.last_failure_category = "upstream_registry_cache_invalid"
+
+    def _clear_remote_cache_state(self) -> None:
+        self._remote = None
+        self._remote_deny_only = False
+        self.health.sequence = None
+        self.health.generated_at = None
+        self.health.signature_valid = None
+        self.health.cache_loaded_at = None
 
     def _write_cache(
         self,
@@ -354,6 +447,7 @@ def verify_registry(
     now: datetime,
     source: str,
     accepted_at: str | None = None,
+    _allow_expired_for_denial: bool = False,
 ) -> VerifiedRegistry:
     if public_key is None:
         raise RegistryValidationError("upstream_registry_public_key_missing")
@@ -391,9 +485,17 @@ def verify_registry(
         raise RegistryValidationError("upstream_registry_sequence_invalid")
     generated = _parse_timestamp(registry["generated_at"])
     expires = _parse_timestamp(registry["expires_at"])
-    if generated.timestamp() - now.timestamp() > MAX_CLOCK_SKEW_SECONDS or expires <= generated:
+    if expires <= generated:
         raise RegistryValidationError("upstream_registry_expired")
-    if now > expires:
+    if (
+        generated.timestamp() - now.timestamp() > MAX_CLOCK_SKEW_SECONDS
+        and not _allow_expired_for_denial
+    ):
+        # A cache load may preserve an otherwise well-formed, signature-verified
+        # registry as denial-only authority across a wall-clock rollback. Fresh
+        # registry data never receives that exception.
+        raise RegistryValidationError("upstream_registry_expired")
+    if now > expires and not _allow_expired_for_denial:
         raise RegistryValidationError("upstream_registry_expired")
     entries_value = registry["entries"]
     if not isinstance(entries_value, list) or len(entries_value) > 512:

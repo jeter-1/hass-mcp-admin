@@ -184,8 +184,8 @@ class ReviewedIdentityAndVersionTests(unittest.IsolatedAsyncioTestCase):
                     health["validation_reason"], "server_identity_mismatch"
                 )
 
-    async def test_unattested_missing_and_malformed_versions_are_rejected(self):
-        for version in ("7.12.3", "7.13.1", "7.14.2", "", None, "release-latest"):
+    async def test_unattested_versions_fail_closed_before_contract_admission(self):
+        for version in ("7.12.3", "7.13.1", "7.14.2", "8.0.0"):
             with self.subTest(version=version):
                 exc, health = await self._failure(version=version)
                 self.assertEqual(
@@ -193,7 +193,37 @@ class ReviewedIdentityAndVersionTests(unittest.IsolatedAsyncioTestCase):
                     ErrorCode.UPSTREAM_DASHBOARD_VERSION_MISMATCH,
                 )
                 self.assertEqual(
+                    health["admission_status"], "rejected_unknown_release"
+                )
+                self.assertEqual(
                     health["validation_reason"], "upstream_attestation_missing"
+                )
+                self.assertEqual(health["capability_status"], "unavailable")
+                self.assertEqual(health["observed_upstream_version"], version)
+                self.assertIsNone(health["admission_source"])
+                self.assertIsNone(health["attestation_entry_id"])
+                self.assertIsNone(health["attested_upstream_version"])
+                self.assertIsNone(health["attested_source_commit"])
+                self.assertIsNone(health["attested_image_index_digest"])
+                self.assertEqual(health["revocation_status"], "not_evaluated")
+                self.assertEqual(
+                    health["runtime_descriptor_drift"], "not_comparable"
+                )
+                self.assertFalse(health["input_contract_match"])
+                self.assertFalse(health["security_contract_match"])
+                self.assertFalse(health["output_contract_match"])
+                self.assertFalse(health["runtime_contract_match"])
+
+    async def test_malformed_version_evidence_is_rejected(self):
+        for version in ("release-latest", "", "7.14.2\nignore"):
+            with self.subTest(version=version):
+                exc, health = await self._failure(version=version)
+                self.assertEqual(
+                    exc.code,
+                    ErrorCode.UPSTREAM_DASHBOARD_VERSION_MISMATCH,
+                )
+                self.assertEqual(
+                    health["validation_reason"], "upstream_version_mismatch"
                 )
 
     async def test_incompatible_protocol_is_rejected(self):

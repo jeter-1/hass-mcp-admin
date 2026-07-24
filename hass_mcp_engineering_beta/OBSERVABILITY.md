@@ -1,5 +1,123 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## Dev15 contract-level compatibility health
+
+Dev15 separates upstream version evidence, per-tool compatibility, dashboard
+admission, and operational reachability. The active decision is
+[`ADR-006`](../docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md);
+the release-specific sections below remain historical evidence for the fields
+they introduced.
+
+`/health` remains process liveness. The separate bounded `/ready` response
+contains only `ready`, `initial_reconciliation_required`,
+`initial_reconciliation_complete`, and
+`status=ready|initial_reconciliation_pending`. When upstream is configured,
+`/ready` and authenticated MCP traffic return HTTP 503 until
+`reconcile_until_initialized` returns its first stable or terminal result. An
+unconfigured gateway reports ready immediately for its truthful static catalog.
+
+`get_server_health.upstream_read_gateway` reports:
+
+- `version_status=reviewed_exact|rejected_unreviewed|rejected_identity|rejected_protocol|not_observed`
+  beside the bounded reviewed and observed versions;
+- `observed_upstream_server_name`, `observed_upstream_server_version`,
+  `observed_protocol_version`, and
+  `observed_identity_status=accepted|rejected|not_observed`;
+- `compatibility_status=exact|partial|incompatible|reconciling|unavailable`;
+- reviewed automatic-read, exact-matched, dynamically exposed, missing,
+  quarantined, and unreviewed observed counts;
+- `schema_mismatch_count`, `description_semantics_mismatch_count`,
+  `annotation_mismatch_count`, `output_contract_mismatch_count`, and
+  `runtime_contract_mismatch_count`;
+- `description_semantics_mismatch_count` specifically counts exact bounded
+  full-runtime-description fingerprint mismatches; raw descriptions are never
+  emitted;
+- `annotation_mismatch_count` covers exact runtime safety-hint presence/value
+  fingerprint drift; raw upstream annotation objects are never emitted;
+- `output_contract_mismatch_count` covers missing, invalid, or changed runtime
+  output schemas and reports only bounded contract fingerprints;
+- bounded quarantine entries containing only tool identity, a stable reason,
+  and expected/observed contract fingerprints;
+- fast transport-startup `retry_count`, `next_retry_delay_seconds`, and
+  `reconciliation_status` separately from
+  `compatibility_reprobe_interval_seconds`,
+  `last_compatibility_reprobe_at`, `next_compatibility_reprobe_at`, and
+  `compatibility_reprobe_status`; and
+- `writes_allowed=false`, `direct_ha_fallback_allowed=false`, and zero fallback
+  authority.
+
+The reviewed automatic-read accounting remains internally complete:
+
+```text
+exact matched + missing + quarantined = reviewed automatic reads
+```
+
+`exact` means all 26 reviewed reads match under the compiled exact 7.14.1
+release/profile. `partial` means at least one remains usable while another is
+missing or quarantined. `incompatible` means an authorized stable catalog was
+evaluated but no reviewed read is safe. `reconciling` means a bounded catalog
+reconciliation is in progress. `unavailable` means the endpoint is
+unconfigured, identity/protocol/release authority failed, or a catalog cannot
+currently be obtained. Additional unreviewed or blocked tools are reported
+separately and do not downgrade `exact` while all reviewed reads still match.
+
+Every delegated call performs a same-session `tools/list` check immediately
+before `tools/call`. Missing, duplicate, changed selected-target, or
+unreviewed-version evidence stops before dispatch. A matching self-advertised
+target cannot authorize another release. A different server name, malformed
+version, or unsupported protocol likewise remains a global pre-dispatch
+failure.
+
+Each call acquires an immutable current-generation route snapshot under a short
+lease, then performs network I/O without holding a global registry lock. A
+route retired before pre-dispatch validation cannot dispatch. A call already
+committed after successful validation may finish, but cannot republish or
+revive a retired generation. Unrelated reads and reconciliation therefore
+remain independently schedulable.
+
+Unrelated new, changed, malformed, or duplicate unreviewed descriptors do not
+block that target-local check. Reconciliation records them only as bounded,
+redacted anomalies, and they never become registered or callable.
+The whole-catalog fingerprint is best-effort diagnostic evidence; if
+unreviewed data is noncanonical, the field is unknown and independently
+verified per-tool decisions remain authoritative.
+
+Generic delegated-call audit records retain only the bounded same-session
+upstream version evidence and accepted/rejected identity status alongside the
+reviewed route and argument field names. Raw catalogs, descriptions, schemas,
+endpoints, and credentials remain excluded.
+
+With 41 static tools, complete generic admission reports 26 delegated and 67
+registered tools. One missing or quarantined read reports 25 delegated and 66
+registered. The two dashboard wrappers are static tools; their registration
+does not claim that `upstream_dashboard` is currently compatible or reachable.
+
+`get_server_health.upstream_dashboard` remains independent. Admission requires
+an exact-version built-in or verified signed attestation before the compiled
+family is evaluated. Missing exact authority, mismatch, or revocation is
+reported as rejection and cannot fall back to an older contract or a
+self-advertised compatible variant. An expired exact entry remains deny-only
+and unavailable registry evidence cannot revive an older contract. Generic
+quarantine does not change dashboard compatibility, and dashboard
+incompatibility does not change generic-read counts.
+
+The fast retry lane exposes bounded transport attempts, next delay, and status
+for boot-order recovery. Connection and timeout failures use the capped fast
+cadence; endpoint/session-not-ready evidence receives at most the documented
+600-second host-reboot startup grace before falling to the slow lane. The slow
+lane exposes a fixed interval plus last/next
+timestamps and status. Waiting or probing for stable compatibility does not
+remove an already admitted exact subset. Health includes no raw schema,
+annotation document, remote description, endpoint, registry body, signature,
+credential, or raw exception.
+
+`stale_reprobe_retry_armed` reports the liveness bound for overlapping catalog
+observations. A newer admission-relevant token equal to the discovery token
+allows the stable generation to publish despite busy exact calls. A mismatch
+discards the stale generation; only the first consecutive mismatch arms an
+immediate retry, and later churn waits for the slow cadence. The token is
+internal, excludes unreviewed content, and is never exposed as authority.
+
 ## RC2dev10 selected-attestation legacy fields
 
 RC2dev9 correctly admitted live ha-mcp 7.14.1 through built-in entry

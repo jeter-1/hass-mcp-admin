@@ -93,6 +93,9 @@ class SelectedRegistry:
     def effective_attestations(self):
         return ((self.entry, self.source),)
 
+    def compatible_contract_fallback_rejection(self):
+        return None
+
     def refresh_due(self):
         return False
 
@@ -212,6 +215,38 @@ class RegistryAndDriftTests(unittest.IsolatedAsyncioTestCase):
         value["raw_input_schema_fingerprint"] = "not-a-fingerprint"
         with self.assertRaises(ContractValidationError):
             ReleaseAttestation.from_mapping(value)
+
+    async def test_unattested_contract_health_reports_missing_release_authority(self):
+        provider = UpstreamDashboardProvider()
+        provider.configure(
+            settings(),
+            transport=DiscoveryTransport(
+                "7.14.2",
+                published_tool("7.14.1"),
+            ),
+        )
+        with self.assertRaises(DashboardProviderError):
+            await provider.refresh_capabilities()
+        health = provider.health_snapshot()
+        self.assertEqual(
+            health["admission_status"], "rejected_unknown_release"
+        )
+        self.assertEqual(
+            health["validation_reason"], "upstream_attestation_missing"
+        )
+        self.assertEqual(health["capability_status"], "unavailable")
+        self.assertIsNone(health["admission_source"])
+        self.assertIsNone(health["attestation_entry_id"])
+        self.assertIsNone(health["attested_upstream_version"])
+        self.assertIsNone(health["attested_source_commit"])
+        self.assertIsNone(health["attested_image_index_digest"])
+        self.assertEqual(health["observed_upstream_version"], "7.14.2")
+        self.assertEqual(health["revocation_status"], "not_evaluated")
+        self.assertEqual(health["runtime_descriptor_drift"], "not_comparable")
+        self.assertFalse(health["input_contract_match"])
+        self.assertFalse(health["security_contract_match"])
+        self.assertFalse(health["output_contract_match"])
+        self.assertFalse(health["runtime_contract_match"])
 
     async def test_selected_remote_attestation_supplies_both_evidence_families(self):
         entry = replace(
@@ -336,7 +371,8 @@ class CapabilityMetadataTests(unittest.TestCase):
             if item["tool"] in {"list_dashboards", "get_dashboard_config"}:
                 self.assertEqual(item["trust_profile"], CONTRACT_FAMILY)
                 self.assertNotIn("version-pinned", item["security_justification"])
-                self.assertIn("exact reviewed release attestation", item["security_justification"])
+                self.assertIn("exact compiled dashboard-read contract family", item["security_justification"])
+                self.assertIn("exact release attestation authoritative", item["security_justification"])
         serialized = json.dumps({"catalog": catalog, "matrix": CAPABILITY_PROVIDER_MATRIX})
         self.assertNotIn("ha_mcp_7_13_dashboard_read_v1", serialized)
 

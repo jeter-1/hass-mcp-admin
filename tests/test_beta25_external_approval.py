@@ -674,7 +674,8 @@ class ListenerStartTests(unittest.IsolatedAsyncioTestCase):
         reconciliation_started = asyncio.Event()
         reconciliation_cancelled = asyncio.Event()
 
-        async def reconcile(_server):
+        async def reconcile(_server, *, initial_snapshot=None):
+            self.assertIsNone(initial_snapshot)
             reconciliation_started.set()
             try:
                 await asyncio.Event().wait()
@@ -689,7 +690,7 @@ class ListenerStartTests(unittest.IsolatedAsyncioTestCase):
             "ha_mcp_engineering.application.create_approval_application",
             return_value=object(),
         ), patch(
-            "ha_mcp_engineering.application.UPSTREAM_READ_GATEWAY.reconcile_until_initialized",
+            "ha_mcp_engineering.application.UPSTREAM_READ_GATEWAY.supervise_reconciliation",
             side_effect=reconcile,
         ):
             await asyncio.wait_for(_serve(self.configured()), timeout=1)
@@ -739,7 +740,8 @@ class ListenerStartTests(unittest.IsolatedAsyncioTestCase):
                 while not self.should_exit:
                     await asyncio.sleep(0)
 
-        async def fail_reconciliation(_server):
+        async def fail_reconciliation(_server, *, initial_snapshot=None):
+            self.assertIsNone(initial_snapshot)
             await asyncio.sleep(0)
             raise RuntimeError("reconciliation supervisor failure")
 
@@ -751,7 +753,7 @@ class ListenerStartTests(unittest.IsolatedAsyncioTestCase):
             "ha_mcp_engineering.application.create_approval_application",
             return_value=object(),
         ), patch(
-            "ha_mcp_engineering.application.UPSTREAM_READ_GATEWAY.reconcile_until_initialized",
+            "ha_mcp_engineering.application.UPSTREAM_READ_GATEWAY.supervise_reconciliation",
             side_effect=fail_reconciliation,
         ):
             with self.assertRaisesRegex(

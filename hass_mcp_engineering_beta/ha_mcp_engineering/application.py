@@ -123,7 +123,16 @@ def create_application(settings: Settings | None = None):
         enabled=settings.audit_enabled,
         max_payload_chars=settings.audit_max_payload_chars,
     )
-    gateway = AuthenticatedMcpGateway(server.streamable_http_app(), settings, audit)
+    gateway = AuthenticatedMcpGateway(
+        server.streamable_http_app(),
+        settings,
+        audit,
+        require_initial_catalog_reconciliation=bool(
+            parse_upstream_dashboard_endpoint(
+                settings.upstream_dashboard_mcp_url
+            )
+        ),
+    )
     GOVERNANCE.configure(settings, audit, HomeAssistantRestClient(settings))
     DEPENDENCY_ANALYSIS.configure(
         HomeAssistantRestClient(settings),
@@ -176,10 +185,10 @@ def create_application(settings: Settings | None = None):
         timeout=settings.ha_timeout_seconds,
     )
     UPSTREAM_DASHBOARD.configure(settings)
-    UPSTREAM_READ_GATEWAY.configure(
-        settings,
-        admission_validator=UPSTREAM_DASHBOARD.validate_read_gateway_catalog,
-    )
+    # Generic pure reads are admitted independently per tool. The dashboard
+    # provider retains its own stricter mixed-tool contract and cannot disable
+    # unrelated generic reads when only that contract is unavailable.
+    UPSTREAM_READ_GATEWAY.configure(settings)
     HEALTH.configure(
         settings,
         audit,
@@ -201,6 +210,24 @@ def create_approval_application():
     """Create the private Ingress application after governance is configured."""
 
     return create_ingress_web_application(GOVERNANCE)
+
+
+async def _supervise_upstream_reconciliation(
+    gateway: AuthenticatedMcpGateway,
+) -> None:
+    """Publish the first stable catalog before accepting MCP sessions."""
+
+    server = get_registered_server()
+    initial_snapshot = None
+    if getattr(gateway, "initial_catalog_reconciliation_required", False):
+        initial_snapshot = (
+            await UPSTREAM_READ_GATEWAY.reconcile_until_initialized(server)
+        )
+        gateway.mark_initial_catalog_reconciled()
+    await UPSTREAM_READ_GATEWAY.supervise_reconciliation(
+        server,
+        initial_snapshot=initial_snapshot,
+    )
 
 
 async def _serve(settings: Settings) -> None:
@@ -232,18 +259,8 @@ async def _serve(settings: Settings) -> None:
     approval_server.install_signal_handlers = lambda: None
     mcp_task = asyncio.create_task(mcp_server.serve())
     approval_task = asyncio.create_task(approval_server.serve())
-    # Start with the 41 native tools, then keep exact, fail-closed upstream
-    # admission under supervision until ha-mcp becomes ready after host boot.
-    async def supervise_upstream_reconciliation() -> None:
-        await UPSTREAM_READ_GATEWAY.reconcile_until_initialized(
-            get_registered_server()
-        )
-        # Normal admission completes the reconciliation loop. Keep its
-        # supervisor pending so only an unexpected exception stops the process.
-        await asyncio.Future()
-
     upstream_reconciliation_task = asyncio.create_task(
-        supervise_upstream_reconciliation(),
+        _supervise_upstream_reconciliation(gateway),
         name="upstream-read-gateway-reconciliation",
     )
     registry_refresh_task = (
