@@ -717,6 +717,14 @@ class GenericReadAuditTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(record["result_status"], "failure")
                 self.assertEqual(record["error_code"], error_code)
                 self.assertEqual(
+                    record["parameters"]["provider"],
+                    "upstream_read_gateway",
+                )
+                self.assertEqual(
+                    record["parameters"]["classification"],
+                    "automatic_read",
+                )
+                self.assertEqual(
                     record["parameters"]["argument_fields"],
                     ["search_types"],
                 )
