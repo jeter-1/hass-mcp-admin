@@ -26,7 +26,12 @@ from .models import FailureResponse, Timing
 from .observability import METRICS
 from .providers.dispatch import CANONICAL_DISPATCHER
 from .providers.routing import requires_prevalidation_enforcement
-from .request_context import begin_request, current_telemetry, end_request
+from .request_context import (
+    RequestTelemetry,
+    begin_request,
+    current_telemetry,
+    end_request,
+)
 
 
 MAX_BUCKET_STORE_SIZE = 1000
@@ -37,6 +42,28 @@ UPSTREAM_VERSION_AUDIT_PATTERN = re.compile(
     r"(?:0|[1-9][0-9]{0,3})(?:-[0-9A-Za-z.-]{1,64})?"
     r"(?:\+[0-9A-Za-z.-]{1,64})?$"
 )
+
+
+def _delegated_audit_attribution(
+    telemetry: RequestTelemetry,
+) -> dict[str, str]:
+    version = telemetry.audit_context.get("upstream_version_evidence")
+    identity = telemetry.audit_context.get("upstream_identity_status")
+    return {
+        "provider": "upstream_read_gateway",
+        "classification": "automatic_read",
+        "upstream_version_evidence": (
+            version
+            if isinstance(version, str)
+            and UPSTREAM_VERSION_AUDIT_PATTERN.fullmatch(version)
+            else "unknown"
+        ),
+        "upstream_identity_status": (
+            identity
+            if identity in {"accepted", "rejected"}
+            else "unknown"
+        ),
+    }
 
 
 def _jsonrpc_response_from_body(body: bytes) -> dict | None:
@@ -569,6 +596,13 @@ class AuthenticatedMcpGateway:
                             str(key)[:64] for key in parameters
                         )[:32],
                     }
+                    if (
+                        capability.get("category")
+                        == "upstream_read_gateway"
+                    ):
+                        audit_parameters.update(
+                            _delegated_audit_attribution(telemetry)
+                        )
                     resource_ids = {}
                 elif tool_name == "upsert_automation":
                     # Preserve only the bounded target and fail-closed reason;
@@ -700,39 +734,13 @@ class AuthenticatedMcpGateway:
                     # untrusted content.  Audit only the reviewed route,
                     # bounded field names, and already-bounded *_id resources.
                     audit_parameters = {
-                        "provider": "upstream_read_gateway",
-                        "classification": "automatic_read",
                         "argument_fields": sorted(
                             str(key)[:64] for key in parameters
                         )[:64],
-                        "upstream_version_evidence": (
-                            telemetry.audit_context.get(
-                                "upstream_version_evidence"
-                            )
-                            if isinstance(
-                                telemetry.audit_context.get(
-                                    "upstream_version_evidence"
-                                ),
-                                str,
-                            )
-                            and UPSTREAM_VERSION_AUDIT_PATTERN.fullmatch(
-                                telemetry.audit_context[
-                                    "upstream_version_evidence"
-                                ]
-                            )
-                            else "unknown"
-                        ),
-                        "upstream_identity_status": (
-                            telemetry.audit_context.get(
-                                "upstream_identity_status"
-                            )
-                            if telemetry.audit_context.get(
-                                "upstream_identity_status"
-                            )
-                            in {"accepted", "rejected"}
-                            else "unknown"
-                        ),
                     }
+                    audit_parameters.update(
+                        _delegated_audit_attribution(telemetry)
+                    )
                 self.audit.write(AuditRecord(
                     request_id=request_id,
                     tool_name=tool_name,

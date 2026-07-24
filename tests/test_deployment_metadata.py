@@ -168,7 +168,12 @@ class VersionComparisonTests(unittest.TestCase):
         )
         self.assertTrue(
             VALIDATOR.is_newer_version(
-                "2.0.0-rc.3", "2.0.0-rc2-dev15"
+                "2.0.0-rc2-dev16", "2.0.0-rc2-dev15"
+            )
+        )
+        self.assertTrue(
+            VALIDATOR.is_newer_version(
+                "2.0.0-rc.3", "2.0.0-rc2-dev16"
             )
         )
         self.assertTrue(

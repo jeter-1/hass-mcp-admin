@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.0.0-rc2-dev16 - delegated error normalization
+
+- Classify only explicitly allowlisted structured ha-mcp 7.14.1 error codes,
+  preserving caller validation, optional-capability, authentication,
+  connection, timeout, and internal-provider distinctions.
+- Keep arbitrary, malformed, oversized, and unknown upstream error content on
+  the bounded generic provider-error path without reflecting upstream prose,
+  metadata, or retryability.
+- Record caller validation and capability-unavailable answers as completed
+  provider dispatches rather than operational provider failures, while
+  retaining truthful failure audit outcomes.
+- Document how clients should choose filtered entity discovery, exact
+  dependency analysis, known-configuration reads, and broad configuration-text
+  search with truthful partial coverage.
+- Preserve the 41 Engineering plus 26 delegated catalog, exact upstream
+  admission, public schemas, zero fallback, governed writes, dashboard
+  behavior, and stable v1.1.2.
+- Defer the separately planned generic signed-registry milestone; Dev16 adds no
+  registry lifecycle, search implementation, deployment, or publication path.
+
 ## 2.0.0-rc2-dev15 - contract-level upstream compatibility
 
 - Require the exact compiled generic release/profile, currently ha-mcp 7.14.1,

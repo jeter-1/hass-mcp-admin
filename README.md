@@ -37,10 +37,10 @@
 > Dev15 contract-level compatibility, partial quarantine, dashboard
 > independence, and retry-cadence separation are documented in
 > [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md).
-> The current local Engineering candidate is `2.0.0-rc2-dev15`; its
+> The current local Engineering candidate is `2.0.0-rc2-dev16`; its
 > development scope and pre-deployment gates are recorded in
-> [`docs/RC2DEV15_RELEASE_NOTES.md`](docs/RC2DEV15_RELEASE_NOTES.md) and
-> [`docs/RC2DEV15_ACCEPTANCE.md`](docs/RC2DEV15_ACCEPTANCE.md). Those documents
+> [`docs/RC2DEV16_RELEASE_NOTES.md`](docs/RC2DEV16_RELEASE_NOTES.md) and
+> [`docs/RC2DEV16_ACCEPTANCE.md`](docs/RC2DEV16_ACCEPTANCE.md). Those documents
 > do not publish, deploy, or accept the candidate.
 > Repository-specific local and remote Codex development procedures are in
 > [`docs/CODEX_WORKFLOW.md`](docs/CODEX_WORKFLOW.md).
@@ -209,14 +209,16 @@ outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 
 ## Engineering beta/RC milestones
 
-The current local Engineering candidate is RC2dev15
-(`2.0.0-rc2-dev15`). The published `2.0.0-rc2-dev12` candidate remains
+The current local Engineering candidate is RC2dev16
+(`2.0.0-rc2-dev16`). The published `2.0.0-rc2-dev12` candidate remains
 immutable failed history and is not accepted. RC2dev13 corrected its
 read-gateway reconciliation and `ha_search` completeness defects; RC2dev14
 added practical configuration plans; and RC2dev15 moves upstream admission to
-independent contract-level decisions. Determine staged or advertised release
-state from authoritative version metadata and `scripts/codex-context.py`, not
-from this milestone narrative. Engineering has 41 statically registered
+independent contract-level decisions. RC2dev16 corrects delegated structured
+error normalization and documents search routing without adding search
+behavior. Determine staged or advertised release state from authoritative
+version metadata and `scripts/codex-context.py`, not from this milestone
+narrative. Engineering has 41 statically registered
 tools: 25 canonical plus 16 Engineering-native. Audit
 filters parse each bounded JSONL
 record and compare only the exact top-level event, so the routed audit reader's

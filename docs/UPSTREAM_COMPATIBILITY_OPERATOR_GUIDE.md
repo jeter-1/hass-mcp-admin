@@ -54,6 +54,31 @@ Interpret `compatibility_status` as follows:
 - `reconciling`: a bounded catalog reconciliation is in progress; and
 - `unavailable`: no valid catalog identity is currently available.
 
+## Choosing a search or analysis path
+
+Use the narrowest existing capability that answers the question:
+
+| Need | Preferred existing capability |
+| --- | --- |
+| Find entities by name, domain, area, or state | Filtered `ha_search` or `search_entities` |
+| Find exact static references to an entity | `entity_dependency_analysis` |
+| Read a known automation configuration | `ha_config_get_automation` or `get_automation_config`, according to the required provider surface |
+| Search arbitrary text across configuration bodies | `ha_search` with explicit `search_types` |
+| Bound a broad configuration scan | `config_time_budget`, accepting truthful partial coverage |
+| Perform a routine household action | The standard Home Assistant MCP action capability, not an Engineering fallback path |
+
+Broad automation configuration-body search can be materially slower when
+upstream bulk access is unavailable and `ha-mcp` must fetch automations
+individually. `config_time_budget` bounds the configuration-fetch phase; it is
+not necessarily a strict end-to-end wall-clock deadline. A partial result is not
+exhaustive.
+
+The Engineering dependency index performs structured entity-reference analysis;
+it is not an arbitrary free-text search index. The optional companion component
+is not required by the Engineering server and must not be recommended merely as
+a routine latency fix. Issue 57 introduces no new Engineering search
+implementation and does not alter `ha_search`.
+
 ## Call-time contract check
 
 Admission is not the final dispatch check. In the same MCP session that would
