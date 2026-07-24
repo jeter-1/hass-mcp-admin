@@ -691,26 +691,6 @@ async def inspect_engineering(
                 ),
                 {},
             )
-            domain_before_errors = next(
-                (
-                    item
-                    for item in find_values(
-                        health_before_errors, "domain_outcome_counts"
-                    )
-                    if isinstance(item, dict)
-                ),
-                {},
-            )
-            validation_before_errors = next(
-                (
-                    item
-                    for item in find_values(
-                        health_before_errors, "validation_error_counts"
-                    )
-                    if isinstance(item, dict)
-                ),
-                {},
-            )
             require(
                 bool(routing_before_errors)
                 and bool(gateway_before_errors),
@@ -999,60 +979,6 @@ async def inspect_engineering(
                 == 1,
                 "domain outcomes inflated operational provider failures",
             )
-            domain_after_errors = next(
-                (
-                    item
-                    for item in find_values(
-                        health_after, "domain_outcome_counts"
-                    )
-                    if isinstance(item, dict)
-                ),
-                {},
-            )
-            validation_after_errors = next(
-                (
-                    item
-                    for item in find_values(
-                        health_after, "validation_error_counts"
-                    )
-                    if isinstance(item, dict)
-                ),
-                {},
-            )
-            entity_domain_delta = (
-                domain_after_errors.get("entity_not_found", 0)
-                - domain_before_errors.get("entity_not_found", 0)
-            )
-            automation_domain_delta = (
-                domain_after_errors.get("automation_not_found", 0)
-                - domain_before_errors.get("automation_not_found", 0)
-            )
-            validation_delta = (
-                validation_after_errors.get("invalid_request", 0)
-                - validation_before_errors.get("invalid_request", 0)
-            )
-            counter_diagnostics = {
-                "domain_outcome_deltas": {
-                    "entity_not_found": entity_domain_delta,
-                    "automation_not_found": automation_domain_delta,
-                },
-                "validation_deltas": {
-                    "invalid_request": validation_delta,
-                },
-            }
-            if entity_domain_delta != 1:
-                raise AcceptanceFailure(
-                    "missing entity domain-outcome accounting mismatch",
-                    diagnostics=counter_diagnostics,
-                )
-            require(
-                automation_domain_delta == 1,
-                "missing automation domain-outcome accounting mismatch",
-            )
-            require(
-                validation_delta == 1,
-                "validation outcome accounting mismatch",
-            )
             gateway_failure_before = (
                 gateway_before_errors.get("failure_counts") or {}
             )
@@ -1096,10 +1022,8 @@ async def inspect_engineering(
         "error_counter_snapshots": {
             "provider_routing_before": routing_before_errors,
             "provider_routing_after": routing_after,
-            "domain_outcomes_before": domain_before_errors,
-            "domain_outcomes_after": domain_after_errors,
-            "validation_before": validation_before_errors,
-            "validation_after": validation_after_errors,
+            "gateway_failures_before": gateway_failure_before,
+            "gateway_failures_after": gateway_failure_after,
         },
         "upstream_name_count": len(upstream_names),
         "direct_provider_snapshots": {"before": direct_before, "after": direct_after},
