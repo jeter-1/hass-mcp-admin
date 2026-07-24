@@ -17,9 +17,14 @@ result is known, `/ready` reports the bounded ready state. If discovery
 establishes the exact compiled generic release/profile (currently `ha-mcp`
 7.14.1), each of the 26 reviewed pure reads is admitted independently by its
 exact input-schema fingerprint, exact bounded full-runtime-description
-fingerprint, reviewed safety annotations, output-schema
+fingerprint, exact runtime safety-annotation presence/value fingerprint,
+output-schema
 presence/fingerprint, and fixed semantic contract. A stable missing or
 incompatible contract uses a slower reprobe cadence.
+
+The runtime annotation fingerprint preserves optional-field presence. It is
+separate from the stricter Engineering-owned annotations that clients receive
+after admission.
 
 A complete reviewed set adds 26 delegated reads for 67 registered tools. One
 missing or quarantined read leaves the other 25 available for 66 registered

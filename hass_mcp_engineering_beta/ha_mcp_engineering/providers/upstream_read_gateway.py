@@ -32,6 +32,7 @@ from ..upstream_tool_policy import (
     UpstreamToolPolicyEntry,
     catalog_fingerprint,
     load_upstream_tool_policy,
+    runtime_annotation_fingerprint,
     runtime_description_fingerprint,
     schema_fingerprint,
 )
@@ -52,12 +53,6 @@ _UPSTREAM_VERSION_EVIDENCE = re.compile(
     r"^(?:0|[1-9][0-9]{0,3})\.(?:0|[1-9][0-9]{0,3})\."
     r"(?:0|[1-9][0-9]{0,3})(?:-[0-9A-Za-z.-]{1,64})?"
     r"(?:\+[0-9A-Za-z.-]{1,64})?$"
-)
-_SAFETY_ANNOTATION_FIELDS = (
-    "readOnlyHint",
-    "destructiveHint",
-    "idempotentHint",
-    "openWorldHint",
 )
 _ALLOWED_TOOL_DESCRIPTOR_FIELDS = frozenset(
     {
@@ -201,6 +196,7 @@ class _AdmittedRoute:
     generation: int
     contract_fingerprint: str
     runtime_description_fingerprint: str
+    runtime_annotation_fingerprint: str
     server_version: str
     protocol_version: str
 
@@ -471,6 +467,9 @@ class UpstreamReadGateway:
             reviewed_descriptions = (
                 self._policy.reviewed_runtime_description_fingerprints_by_name
             )
+            reviewed_annotations = (
+                self._policy.reviewed_runtime_annotation_fingerprints_by_name
+            )
             generation = self._admission_generation + 1
             exposed: dict[str, _AdmittedRoute] = {}
             dynamic_tools: dict[str, ReviewedUpstreamReadTool] = {}
@@ -506,6 +505,9 @@ class UpstreamReadGateway:
                     contract_fingerprint=decision.expected_fingerprint,
                     runtime_description_fingerprint=(
                         reviewed_descriptions[entry.upstream_name]
+                    ),
+                    runtime_annotation_fingerprint=(
+                        reviewed_annotations[entry.upstream_name]
                     ),
                     server_version=catalog.server_version,
                     protocol_version=catalog.protocol_version,
@@ -1191,6 +1193,9 @@ class UpstreamReadGateway:
         reviewed_descriptions = (
             self._policy.reviewed_runtime_description_fingerprints_by_name
         )
+        reviewed_annotations = (
+            self._policy.reviewed_runtime_annotation_fingerprints_by_name
+        )
         for entry in self._policy.tools:
             observed = observed_reviewed.get(entry.upstream_name, [])
             if not observed:
@@ -1205,6 +1210,9 @@ class UpstreamReadGateway:
                         protocol_version=catalog.protocol_version,
                         reviewed_runtime_description_fingerprint=(
                             reviewed_descriptions[entry.upstream_name]
+                        ),
+                        reviewed_runtime_annotation_fingerprint=(
+                            reviewed_annotations[entry.upstream_name]
                         ),
                     )
                     reason = "duplicate_tool_descriptor"
@@ -1228,6 +1236,9 @@ class UpstreamReadGateway:
                     protocol_version=catalog.protocol_version,
                     reviewed_runtime_description_fingerprint=(
                         reviewed_descriptions[entry.upstream_name]
+                    ),
+                    reviewed_runtime_annotation_fingerprint=(
+                        reviewed_annotations[entry.upstream_name]
                     ),
                 )
                 if decision.accepted:
@@ -1432,6 +1443,9 @@ class UpstreamReadGateway:
                     protocol_version=catalog.protocol_version,
                     reviewed_runtime_description_fingerprint=(
                         mapping.runtime_description_fingerprint
+                    ),
+                    reviewed_runtime_annotation_fingerprint=(
+                        mapping.runtime_annotation_fingerprint
                     ),
                 )
                 if (
@@ -2179,21 +2193,27 @@ def _compare_tool_contract(
     *,
     protocol_version: str,
     reviewed_runtime_description_fingerprint: str,
+    reviewed_runtime_annotation_fingerprint: str,
 ) -> _ContractDecision:
     """Compare one advertised tool with binary-owned reviewed authority."""
 
-    expected_annotations = {
-        "fields_valid": True,
-        "values": {
-            "readOnlyHint": entry.reviewed_annotations.read_only,
-            "destructiveHint": entry.reviewed_annotations.destructive,
-            "idempotentHint": entry.reviewed_annotations.idempotent,
-            "openWorldHint": entry.reviewed_annotations.open_world,
-        },
+    published_annotations = {
+        "readOnlyHint": entry.reviewed_annotations.read_only,
+        "destructiveHint": entry.reviewed_annotations.destructive,
+        "idempotentHint": entry.reviewed_annotations.idempotent,
+        "openWorldHint": entry.reviewed_annotations.open_world,
     }
-    observed_annotations = _observed_annotation_contract(
+    expected_annotations = {
+        "runtime_fingerprint": reviewed_runtime_annotation_fingerprint,
+        "published_policy": published_annotations,
+    }
+    observed_annotation_fingerprint = runtime_annotation_fingerprint(
         observed_tool.get("annotations")
     )
+    observed_annotations = {
+        "runtime_fingerprint": observed_annotation_fingerprint,
+        "published_policy": published_annotations,
+    }
     expected_description = reviewed_runtime_description_fingerprint
     observed_description = runtime_description_fingerprint(
         observed_tool.get("description")
@@ -2274,7 +2294,10 @@ def _compare_tool_contract(
         or observed_description != expected_description
     ):
         reason = "description_semantics_mismatch"
-    elif observed_annotations != expected_annotations:
+    elif (
+        observed_annotation_fingerprint is None
+        or observed_annotations != expected_annotations
+    ):
         reason = "annotation_mismatch"
     elif observed_output != expected_output:
         reason = "output_contract_mismatch"
@@ -2292,29 +2315,6 @@ def _compare_tool_contract(
         expected_fingerprint=schema_fingerprint(expected_contract),
         observed_fingerprint=schema_fingerprint(observed_contract),
     )
-
-
-def _observed_annotation_contract(value: Any) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        return {
-            "fields_valid": False,
-            "values": {name: None for name in _SAFETY_ANNOTATION_FIELDS},
-        }
-    allowed = {*_SAFETY_ANNOTATION_FIELDS, "title"}
-    fields_valid = (
-        not (set(value) - allowed)
-        and all(name in value for name in _SAFETY_ANNOTATION_FIELDS)
-        and all(isinstance(value.get(name), bool) for name in _SAFETY_ANNOTATION_FIELDS)
-    )
-    return {
-        "fields_valid": fields_valid,
-        "values": {
-            name: value.get(name)
-            if isinstance(value.get(name), bool)
-            else None
-            for name in _SAFETY_ANNOTATION_FIELDS
-        },
-    }
 
 
 def _observed_output_contract(tool: dict[str, Any]) -> dict[str, Any]:

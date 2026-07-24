@@ -6,7 +6,8 @@ Engineering is the single client-visible gateway for 41 static Engineering
 tools and up to 26 reviewed pure reads from `ha-mcp`. Each
 `automatic_read` entry is admitted independently only when its exact
 input-schema fingerprint, exact bounded full-runtime-description fingerprint,
-reviewed safety annotations, output-schema presence/fingerprint, and other
+exact runtime safety-annotation presence/value fingerprint, output-schema
+presence/fingerprint, and other
 dispatch-relevant contracts match the committed policy. All mixed, write,
 physical/high-risk, prohibited, or unsupported entries remain generic-route
 unavailable.
@@ -19,6 +20,10 @@ are removed or quarantined individually, and new tools remain unavailable
 without harming matches. Stock catalog count/fingerprint equality stays
 informational. Future no-rebuild release admission requires the Dev16 signed
 generic registry. There is no direct-HA fallback.
+
+Runtime annotation evidence preserves absent versus explicitly false optional
+MCP hints. It does not replace the Engineering-owned four-boolean annotations
+published after a tool is admitted.
 
 Fast bounded reconciliation recovers from upstream boot order. A separate slow
 reprobe cadence handles successfully observed stable incompatibility while

@@ -31,7 +31,8 @@ runtime decision is
    input-schema, full-runtime-description, annotation, or output-contract
    reason, and expected/observed fingerprints. Do not request raw schemas,
    descriptions, registry content, or endpoint material through health or
-   logs.
+   logs. Annotation matching preserves optional-field presence; absence is not
+   converted into an assumed Boolean default.
 5. Confirm missing and quarantined tools have no route while other exact
    matches remain available. New or newly visible tools, including apparent
    reads and writes, must remain unavailable.

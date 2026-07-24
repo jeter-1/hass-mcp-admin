@@ -6,6 +6,9 @@
   before admitting each reviewed automatic read by its exact input, output,
   safety, full-runtime-description fingerprint, behavior, identity, and
   protocol contract.
+- Separate exact upstream wire-annotation presence/value fingerprints from the
+  stricter Engineering-owned annotations published after admission; never
+  normalize omitted optional hints into invented defaults.
 - Keep unchanged reads available, quarantine only changed reads, remove missing
   reads, and block new, mixed, write, action, and unsupported tools without
   collapsing the complete delegated catalog.

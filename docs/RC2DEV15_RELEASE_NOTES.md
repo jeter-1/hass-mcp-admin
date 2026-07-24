@@ -20,13 +20,20 @@ metadata is observation and cannot authorize itself.
 After that release/profile prerequisite succeeds, Engineering evaluates every
 automatic read independently. It checks the exact tool name and input schema,
 the exact domain-separated fingerprint of the complete bounded runtime
-description, the reviewed MCP safety annotations, the declared output
-contract, the automatic-read security classification, the compiled behavior
-adapter, and the supported MCP protocol. The 26 fingerprints were captured
-from the pinned image's real `tools/list` after the exact stock-catalog
-fingerprint matched. Engineering-owned descriptions and annotations remain
-the only model-facing policy. Remote descriptions, schemas, or annotations
-never expand authority.
+description, the exact runtime safety-annotation presence/value fingerprint,
+the declared output contract, the automatic-read security classification, the
+compiled behavior adapter, and the supported MCP protocol. The 26 per-tool
+description fingerprints and 26 per-tool annotation fingerprints were
+captured from the pinned image's real `tools/list` after the exact
+stock-catalog fingerprint matched. Engineering-owned descriptions and
+annotations remain the only model-facing policy. Remote descriptions, schemas,
+or annotations never expand authority.
+
+The safety-annotation comparison uses a separate exact, domain-separated
+fingerprint of the runtime presence/value projection. Optional upstream hints
+that are absent remain absent in that evidence; Engineering does not convert
+absence into an invented default. After admission, the client-visible tool
+still receives the stricter Engineering-owned four-boolean annotation policy.
 
 Unchanged reviewed reads remain exposed. A changed read is quarantined with a
 bounded reason and fingerprints. A missing read is removed. New tools remain

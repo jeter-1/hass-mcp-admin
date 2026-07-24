@@ -32,6 +32,8 @@ unconfigured gateway reports ready immediately for its truthful static catalog.
 - `description_semantics_mismatch_count` specifically counts exact bounded
   full-runtime-description fingerprint mismatches; raw descriptions are never
   emitted;
+- `annotation_mismatch_count` covers exact runtime safety-hint presence/value
+  fingerprint drift; raw upstream annotation objects are never emitted;
 - bounded quarantine entries containing only tool identity, a stable reason,
   and expected/observed contract fingerprints;
 - fast transport-startup `retry_count`, `next_retry_delay_seconds`, and

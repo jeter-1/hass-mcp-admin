@@ -23,7 +23,8 @@ One generic provider handles the policy-approved read set. The committed stock
 write, action, prohibited, or unsupported tool. Dev15 first requires the exact
 compiled 7.14.1 release/profile. It then exposes only the reviewed subset whose
 exact input-schema fingerprint, exact bounded full-runtime-description
-fingerprint, reviewed safety annotations, output-schema
+fingerprint, exact runtime safety-annotation presence/value fingerprint,
+output-schema
 presence/fingerprint, and other semantic contracts match. Missing reads and
 contract drift fail closed per tool;
 unreviewed additions stay unavailable without harming matches. Another
@@ -40,6 +41,10 @@ revived by a finishing call. No delegated call has a direct-HA fallback. See
 [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md);
 [`ADR-005`](docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md) retains the
 original Phase 1 history.
+
+The upstream wire-annotation fingerprint preserves whether each optional MCP
+safety hint is absent or explicitly set. It is separate from the stricter
+Engineering-owned annotations published to clients after admission.
 
 ## RC2dev7 audit-integrity boundary
 

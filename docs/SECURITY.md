@@ -11,10 +11,12 @@ remain applicable.
 The generic `upstream_read_gateway` evaluates each reviewed
 `automatic_read` contract independently. The exact input-schema fingerprint,
 exact domain-separated fingerprint of the complete bounded runtime
-description, reviewed safety annotations, output-schema
+description, exact runtime safety-annotation presence/value fingerprint,
+output-schema
 presence/fingerprint, and other dispatch-relevant projections are required.
-The 26 description fingerprints are captured from the pinned image's real
-`tools/list` only after its exact stock-catalog fingerprint matches. Runtime
+The 26 description and annotation fingerprints are captured from the pinned
+image's real `tools/list` only after its exact stock-catalog fingerprint
+matches. Runtime
 descriptions are limited to 8,192 strict UTF-8 bytes, remain untrusted, and are
 never published as instructions; the Engineering-owned bounded summary is the
 only model-facing description. Any byte or code-point drift anywhere in the
@@ -22,6 +24,13 @@ full runtime description quarantines that tool. A changed contract is
 quarantined and a missing contract is removed; neither condition disables
 other exact matches. New tools and every reviewed mixed, write, action,
 prohibited, or unsupported entry remain unavailable.
+
+The annotation fingerprint records presence as well as Boolean value for each
+MCP safety hint. An omitted optional hint is not normalized to `false` or
+`true`; adding, removing, or changing a hint is contract drift. Runtime
+annotations must still identify the tool as read-only and not destructive.
+This upstream evidence is separate from the complete Engineering-owned safety
+annotations published to clients.
 
 Live `ha-mcp` version data is evidence, not self-authorizing authority. The
 generic gateway first requires an explicit reviewed release/profile; Dev15's

@@ -50,6 +50,7 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     UpstreamToolPolicyEntry,
     UpstreamToolPolicyError,
     load_upstream_tool_policy,
+    runtime_annotation_fingerprint,
     runtime_description_fingerprint,
     schema_fingerprint,
 )
@@ -127,8 +128,10 @@ def policy(
     *entries,
     reviewed_version="7.14.1",
     reviewed_descriptions=None,
+    reviewed_runtime_annotations=None,
 ):
     reviewed_descriptions = reviewed_descriptions or {}
+    reviewed_runtime_annotations = reviewed_runtime_annotations or {}
     description_fingerprints = tuple(
         sorted(
             (
@@ -149,6 +152,33 @@ def policy(
         for _name, fingerprint in description_fingerprints
     ):
         raise AssertionError("synthetic description fingerprint is invalid")
+    annotation_fingerprints = tuple(
+        sorted(
+            (
+                entry.upstream_name,
+                runtime_annotation_fingerprint(
+                    reviewed_runtime_annotations.get(
+                        entry.upstream_name,
+                        {
+                            "readOnlyHint": True,
+                            "idempotentHint": True,
+                            "openWorldHint": (
+                                entry.reviewed_annotations.open_world
+                            ),
+                            "title": entry.upstream_name,
+                        },
+                    )
+                ),
+            )
+            for entry in entries
+            if entry.classification == "automatic_read"
+        )
+    )
+    if any(
+        fingerprint is None
+        for _name, fingerprint in annotation_fingerprints
+    ):
+        raise AssertionError("synthetic annotation fingerprint is invalid")
     return UpstreamToolPolicy(
         schema_version=1,
         upstream_server="ha-mcp",
@@ -158,6 +188,7 @@ def policy(
         reviewed_stock_catalog_tool_count=78,
         reviewed_stock_catalog_fingerprint="0" * 64,
         reviewed_runtime_description_fingerprints=description_fingerprints,
+        reviewed_runtime_annotation_fingerprints=annotation_fingerprints,
         tools=tuple(sorted(entries, key=lambda item: item.upstream_name)),
     )
 
@@ -173,7 +204,6 @@ def catalog_tool(name, reviewed_schema=None, description=None):
         "inputSchema": reviewed_schema or schema(),
         "annotations": {
             "readOnlyHint": True,
-            "destructiveHint": False,
             "idempotentHint": True,
             "openWorldHint": False,
             "title": name,
@@ -322,6 +352,7 @@ async def initialize(
     version="7.14.1",
     reviewed_version="7.14.1",
     reviewed_descriptions=None,
+    reviewed_runtime_annotations=None,
 ):
     server = server or FastMCP("gateway-test")
     transport = transport or FakeTransport(tools, version=version)
@@ -333,6 +364,7 @@ async def initialize(
             *entries,
             reviewed_version=reviewed_version,
             reviewed_descriptions=reviewed_descriptions,
+            reviewed_runtime_annotations=reviewed_runtime_annotations,
         ),
         admission_validator=lambda _catalog: None,
     )
@@ -703,6 +735,78 @@ class PolicyInventoryTests(unittest.TestCase):
             )
         )
 
+    def test_exact_runtime_annotation_authority_covers_only_automatic_reads(self):
+        value = load_upstream_tool_policy()
+        automatic = {
+            entry.upstream_name
+            for entry in value.tools
+            if entry.classification == "automatic_read"
+        }
+        fingerprints = (
+            value.reviewed_runtime_annotation_fingerprints_by_name
+        )
+        self.assertEqual(set(fingerprints), automatic)
+        self.assertEqual(len(fingerprints), 26)
+        self.assertTrue(
+            all(
+                len(fingerprint) == 64
+                and set(fingerprint) <= set("0123456789abcdef")
+                for fingerprint in fingerprints.values()
+            )
+        )
+        self.assertNotEqual(
+            fingerprints["ha_get_operation_status"],
+            fingerprints["ha_get_state"],
+        )
+        self.assertEqual(
+            fingerprints["ha_get_skill_guide"],
+            fingerprints["ha_get_state"],
+        )
+        self.assertNotEqual(
+            fingerprints["ha_config_list_dashboard_resources"],
+            fingerprints["ha_get_state"],
+        )
+
+    def test_runtime_annotation_fingerprint_preserves_presence_and_safety(self):
+        reviewed = {
+            "readOnlyHint": True,
+            "idempotentHint": True,
+            "openWorldHint": False,
+            "title": "Get State",
+        }
+        fingerprint = runtime_annotation_fingerprint(reviewed)
+        self.assertIsNotNone(fingerprint)
+        renamed = dict(reviewed, title="Read State")
+        self.assertEqual(
+            runtime_annotation_fingerprint(renamed),
+            fingerprint,
+        )
+        explicit_false = dict(reviewed, destructiveHint=False)
+        self.assertNotEqual(
+            runtime_annotation_fingerprint(explicit_false),
+            fingerprint,
+        )
+        missing_idempotent = dict(reviewed)
+        missing_idempotent.pop("idempotentHint")
+        self.assertNotEqual(
+            runtime_annotation_fingerprint(missing_idempotent),
+            fingerprint,
+        )
+        invalid = (
+            None,
+            {},
+            {"readOnlyHint": False},
+            {"readOnlyHint": True, "destructiveHint": True},
+            {"readOnlyHint": True, "openWorldHint": "false"},
+            {"readOnlyHint": True, "unknownHint": False},
+            {"readOnlyHint": True, "title": ""},
+            {"readOnlyHint": True, "title": "\ud800"},
+            {"readOnlyHint": True, "title": "x" * 513},
+        )
+        for value in invalid:
+            with self.subTest(value=value):
+                self.assertIsNone(runtime_annotation_fingerprint(value))
+
     def test_runtime_description_authority_policy_fails_closed(self):
         policy_path = (
             BETA
@@ -736,6 +840,53 @@ class PolicyInventoryTests(unittest.TestCase):
         cases["blocked_tool"] = blocked_tool
         invalid_digest = json.loads(json.dumps(original))
         invalid_digest["reviewed_runtime_description_fingerprints"][
+            automatic_name
+        ] = "not-a-fingerprint"
+        cases["invalid_digest"] = invalid_digest
+
+        for label, malformed in cases.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as raw:
+                candidate = Path(raw) / "policy.json"
+                candidate.write_text(
+                    json.dumps(malformed),
+                    encoding="utf-8",
+                )
+                with self.assertRaises(UpstreamToolPolicyError):
+                    load_upstream_tool_policy(candidate)
+
+    def test_runtime_annotation_authority_policy_fails_closed(self):
+        policy_path = (
+            BETA
+            / "ha_mcp_engineering"
+            / "upstream_tool_policy.json"
+        )
+        original = json.loads(policy_path.read_text(encoding="utf-8"))
+        automatic_name = next(
+            entry["upstream_name"]
+            for entry in original["tools"]
+            if entry["classification"] == "automatic_read"
+        )
+        blocked_name = next(
+            entry["upstream_name"]
+            for entry in original["tools"]
+            if entry["classification"] != "automatic_read"
+        )
+        cases = {}
+        missing_field = dict(original)
+        missing_field.pop("reviewed_runtime_annotation_fingerprints")
+        cases["missing_field"] = missing_field
+        missing_tool = json.loads(json.dumps(original))
+        missing_tool["reviewed_runtime_annotation_fingerprints"].pop(
+            automatic_name
+        )
+        cases["missing_tool"] = missing_tool
+        blocked_tool = json.loads(json.dumps(original))
+        blocked_tool["reviewed_runtime_annotation_fingerprints"][
+            blocked_name
+        ] = "0" * 64
+        cases["blocked_tool"] = blocked_tool
+        invalid_digest = json.loads(json.dumps(original))
+        invalid_digest["reviewed_runtime_annotation_fingerprints"][
             automatic_name
         ] = "not-a-fingerprint"
         cases["invalid_digest"] = invalid_digest
@@ -803,8 +954,13 @@ class PolicyInventoryTests(unittest.TestCase):
         self.assertIn("exact_image_read_gateway_acceptance.py", workflow)
         self.assertIn("--engineering-endpoint", workflow)
         self.assertIn("runtime_description_fingerprint", acceptance)
+        self.assertIn("runtime_annotation_fingerprint", acceptance)
         self.assertIn(
             "reviewed_runtime_description_fingerprint_count",
+            acceptance,
+        )
+        self.assertIn(
+            "reviewed_runtime_annotation_fingerprint_count",
             acceptance,
         )
         for tool_name in (
@@ -870,6 +1026,120 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(tool.annotations.destructiveHint)
         self.assertFalse(tool.annotations.openWorldHint)
         self.assertTrue(gateway.health_snapshot()["generic_delegation_available"])
+
+    async def test_reviewed_wire_annotation_omissions_publish_strict_policy(self):
+        entry = policy_entry("ha_get_state")
+        advertised = catalog_tool(entry.upstream_name)
+        self.assertNotIn("destructiveHint", advertised["annotations"])
+        _gateway, server, _transport = await initialize(
+            [entry], [advertised]
+        )
+        published = server._tool_manager.get_tool(entry.upstream_name)
+        self.assertIsNotNone(published)
+        self.assertTrue(published.annotations.readOnlyHint)
+        self.assertFalse(published.annotations.destructiveHint)
+        self.assertTrue(published.annotations.idempotentHint)
+        self.assertFalse(published.annotations.openWorldHint)
+
+    async def test_operation_status_exact_two_hint_wire_contract_is_admitted(self):
+        entry = policy_entry("ha_get_operation_status")
+        advertised = catalog_tool(entry.upstream_name)
+        advertised["annotations"].pop("idempotentHint")
+        reviewed_runtime_annotations = {
+            entry.upstream_name: dict(advertised["annotations"])
+        }
+        _gateway, server, _transport = await initialize(
+            [entry],
+            [advertised],
+            reviewed_runtime_annotations=reviewed_runtime_annotations,
+        )
+        self.assertIsNotNone(
+            server._tool_manager.get_tool(entry.upstream_name)
+        )
+
+        drifted = catalog_tool(entry.upstream_name)
+        gateway, drifted_server, _transport = await initialize(
+            [entry],
+            [drifted],
+            reviewed_runtime_annotations=reviewed_runtime_annotations,
+        )
+        self.assertIsNone(
+            drifted_server._tool_manager.get_tool(entry.upstream_name)
+        )
+        self.assertEqual(
+            gateway.health_snapshot()["annotation_mismatch_count"],
+            1,
+        )
+
+    async def test_wire_annotation_presence_drift_is_quarantined(self):
+        entry = policy_entry("ha_get_state")
+        cases = {
+            "explicit_destructive_false": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "idempotentHint": True,
+                "openWorldHint": False,
+            },
+            "missing_idempotent": {
+                "readOnlyHint": True,
+                "openWorldHint": False,
+            },
+            "missing_open_world": {
+                "readOnlyHint": True,
+                "idempotentHint": True,
+            },
+            "changed_open_world": {
+                "readOnlyHint": True,
+                "idempotentHint": True,
+                "openWorldHint": True,
+            },
+            "missing_read_only": {
+                "idempotentHint": True,
+                "openWorldHint": False,
+            },
+            "false_read_only": {
+                "readOnlyHint": False,
+                "idempotentHint": True,
+                "openWorldHint": False,
+            },
+            "destructive_true": {
+                "readOnlyHint": True,
+                "destructiveHint": True,
+                "idempotentHint": True,
+                "openWorldHint": False,
+            },
+            "unknown_hint": {
+                "readOnlyHint": True,
+                "idempotentHint": True,
+                "openWorldHint": False,
+                "futureSafetyHint": False,
+            },
+            "non_boolean_hint": {
+                "readOnlyHint": True,
+                "idempotentHint": "true",
+                "openWorldHint": False,
+            },
+            "malformed_title": {
+                "readOnlyHint": True,
+                "idempotentHint": True,
+                "openWorldHint": False,
+                "title": {"text": "Get State"},
+            },
+        }
+        for label, annotations in cases.items():
+            with self.subTest(label=label):
+                advertised = catalog_tool(entry.upstream_name)
+                advertised["annotations"] = annotations
+                gateway, server, _transport = await initialize(
+                    [entry], [advertised]
+                )
+                self.assertIsNone(
+                    server._tool_manager.get_tool(entry.upstream_name)
+                )
+                self.assertEqual(
+                    gateway.health_snapshot()["annotation_mismatch_count"],
+                    1,
+                )
 
     async def test_semantic_description_drift_quarantines_only_that_tool(self):
         changed = policy_entry("ha_get_state")
@@ -1599,6 +1869,9 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
             ),
             "annotations": lambda item: item["annotations"].update(
                 {"destructiveHint": True}
+            ),
+            "annotation_presence": lambda item: item["annotations"].update(
+                {"destructiveHint": False}
             ),
             "description": lambda item: item.update(
                 {

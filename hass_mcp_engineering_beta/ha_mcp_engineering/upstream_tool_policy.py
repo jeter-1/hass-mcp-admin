@@ -16,8 +16,18 @@ POLICY_SCHEMA_VERSION = 1
 REVIEWED_UPSTREAM_SERVER = "ha-mcp"
 REVIEWED_UPSTREAM_VERSION = "7.14.1"
 MAX_RUNTIME_DESCRIPTION_BYTES = 8_192
+MAX_RUNTIME_ANNOTATION_TITLE_BYTES = 512
 _RUNTIME_DESCRIPTION_FINGERPRINT_DOMAIN = (
     b"ha-mcp-engineering/runtime-description/v1\0"
+)
+_RUNTIME_ANNOTATION_FINGERPRINT_DOMAIN = (
+    b"ha-mcp-engineering/runtime-safety-annotations/v1\0"
+)
+RUNTIME_SAFETY_ANNOTATION_FIELDS = (
+    "readOnlyHint",
+    "destructiveHint",
+    "idempotentHint",
+    "openWorldHint",
 )
 CLASSIFICATIONS = frozenset(
     {
@@ -73,6 +83,46 @@ def runtime_description_fingerprint(value: Any) -> str | None:
         return None
     return hashlib.sha256(
         _RUNTIME_DESCRIPTION_FINGERPRINT_DOMAIN + encoded
+    ).hexdigest()
+
+
+def runtime_annotation_fingerprint(value: Any) -> str | None:
+    """Fingerprint exact safe wire annotations, preserving field presence."""
+
+    if not isinstance(value, dict):
+        return None
+    allowed = {*RUNTIME_SAFETY_ANNOTATION_FIELDS, "title"}
+    if set(value) - allowed:
+        return None
+    title = value.get("title")
+    if "title" in value:
+        if not isinstance(title, str) or not title:
+            return None
+        try:
+            title_bytes = title.encode("utf-8", errors="strict")
+        except UnicodeEncodeError:
+            return None
+        if len(title_bytes) > MAX_RUNTIME_ANNOTATION_TITLE_BYTES:
+            return None
+    projection: dict[str, dict[str, bool | None]] = {}
+    for name in RUNTIME_SAFETY_ANNOTATION_FIELDS:
+        present = name in value
+        observed = value.get(name)
+        if present and not isinstance(observed, bool):
+            return None
+        projection[name] = {
+            "present": present,
+            "value": observed if present else None,
+        }
+    read_only = projection["readOnlyHint"]
+    destructive = projection["destructiveHint"]
+    if not read_only["present"] or read_only["value"] is not True:
+        return None
+    if destructive["present"] and destructive["value"] is not False:
+        return None
+    return hashlib.sha256(
+        _RUNTIME_ANNOTATION_FINGERPRINT_DOMAIN
+        + canonical_json(projection)
     ).hexdigest()
 
 
@@ -218,6 +268,7 @@ class UpstreamToolPolicy:
     reviewed_stock_catalog_tool_count: int
     reviewed_stock_catalog_fingerprint: str
     reviewed_runtime_description_fingerprints: tuple[tuple[str, str], ...]
+    reviewed_runtime_annotation_fingerprints: tuple[tuple[str, str], ...]
     tools: tuple[UpstreamToolPolicyEntry, ...]
 
     @property
@@ -235,6 +286,12 @@ class UpstreamToolPolicy:
     ) -> dict[str, str]:
         return dict(self.reviewed_runtime_description_fingerprints)
 
+    @property
+    def reviewed_runtime_annotation_fingerprints_by_name(
+        self,
+    ) -> dict[str, str]:
+        return dict(self.reviewed_runtime_annotation_fingerprints)
+
 
 def load_upstream_tool_policy(path: Path = POLICY_PATH) -> UpstreamToolPolicy:
     try:
@@ -251,6 +308,7 @@ def load_upstream_tool_policy(path: Path = POLICY_PATH) -> UpstreamToolPolicy:
         "reviewed_stock_catalog_tool_count",
         "reviewed_stock_catalog_fingerprint",
         "reviewed_runtime_description_fingerprints",
+        "reviewed_runtime_annotation_fingerprints",
         "tools",
     }:
         raise UpstreamToolPolicyError("policy_document_fields_invalid")
@@ -289,6 +347,9 @@ def load_upstream_tool_policy(path: Path = POLICY_PATH) -> UpstreamToolPolicy:
     description_fingerprints = value[
         "reviewed_runtime_description_fingerprints"
     ]
+    annotation_fingerprints = value[
+        "reviewed_runtime_annotation_fingerprints"
+    ]
     automatic_names = {
         entry.upstream_name
         for entry in entries
@@ -307,6 +368,19 @@ def load_upstream_tool_policy(path: Path = POLICY_PATH) -> UpstreamToolPolicy:
         raise UpstreamToolPolicyError(
             "policy_runtime_description_fingerprints_invalid"
         )
+    if (
+        not isinstance(annotation_fingerprints, dict)
+        or set(annotation_fingerprints) != automatic_names
+        or any(
+            not isinstance(name, str)
+            or not isinstance(fingerprint, str)
+            or not _HEX_64.fullmatch(fingerprint)
+            for name, fingerprint in annotation_fingerprints.items()
+        )
+    ):
+        raise UpstreamToolPolicyError(
+            "policy_runtime_annotation_fingerprints_invalid"
+        )
     return UpstreamToolPolicy(
         schema_version=value["schema_version"],
         upstream_server=value["upstream_server"],
@@ -319,6 +393,9 @@ def load_upstream_tool_policy(path: Path = POLICY_PATH) -> UpstreamToolPolicy:
         ],
         reviewed_runtime_description_fingerprints=tuple(
             sorted(description_fingerprints.items())
+        ),
+        reviewed_runtime_annotation_fingerprints=tuple(
+            sorted(annotation_fingerprints.items())
         ),
         tools=entries,
     )

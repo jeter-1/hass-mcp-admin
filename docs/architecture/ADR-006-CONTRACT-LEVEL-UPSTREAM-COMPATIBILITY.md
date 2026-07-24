@@ -81,7 +81,8 @@ dispatch-relevant contract owned by Engineering, including:
 - the complete canonical input-schema fingerprint;
 - the exact domain-separated fingerprint of the complete bounded runtime
   description;
-- the reviewed safety-annotation projection;
+- the exact domain-separated fingerprint of the runtime safety-annotation
+  presence/value projection;
 - output-schema presence and, when present, its complete canonical
   fingerprint; and
 - any other bounded top-level semantic metadata included by the reviewed
@@ -100,6 +101,13 @@ quarantines only that tool. Titles, display grouping, and other explicitly
 excluded presentation data cannot authorize a tool. Engineering continues to
 publish its own bounded reviewed descriptions and annotations after admission;
 the remote description remains admission evidence only.
+
+The annotation projection likewise preserves whether every optional MCP safety
+hint is absent or explicitly Boolean. It rejects unknown fields, non-Boolean
+hints, malformed titles, a missing or false `readOnlyHint`, and a true
+`destructiveHint`. Presence or value drift quarantines only that tool.
+Engineering's published annotations remain a separate, stricter binary-owned
+policy and are not used as a substitute for the reviewed upstream wire shape.
 
 The result for each reviewed read is one of:
 
