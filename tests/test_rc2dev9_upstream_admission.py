@@ -141,7 +141,9 @@ def public_key_text(private_key):
 class ContractFamilyTests(unittest.TestCase):
     def test_all_reviewed_versions_have_exact_builtin_attestations(self):
         entries = {item.upstream_version: item for item in load_attestations()}
-        self.assertEqual(set(entries), {"7.13.0", "7.14.0", "7.14.1"})
+        self.assertEqual(
+            set(entries), {"7.13.0", "7.14.0", "7.14.1", "7.14.2"}
+        )
         for version in entries:
             contract = normalize_runtime_contract(
                 tool_for(version), protocol_version="2025-03-26"
@@ -232,7 +234,7 @@ class ContractFamilyTests(unittest.TestCase):
         for tool in (tool_for("7.14.1"), drifted):
             decision = decide_admission(
                 server_name="ha-mcp",
-                server_version="7.14.2",
+                server_version="7.14.3",
                 protocol_version="2025-03-26",
                 tool=tool,
                 attestations=entries,
@@ -297,14 +299,14 @@ class ContractFamilyTests(unittest.TestCase):
         entries = tuple((entry, "builtin") for entry in load_attestations())
         mismatched = replace(
             base,
-            entry_id="ha-mcp-v7.14.2-mismatch",
-            upstream_version="7.14.2",
-            source_tag="v7.14.2",
+            entry_id="ha-mcp-v7.14.3-mismatch",
+            upstream_version="7.14.3",
+            source_tag="v7.14.3",
             input_contract_fingerprint="0" * 64,
         )
         decision = decide_admission(
             server_name="ha-mcp",
-            server_version="7.14.2",
+            server_version="7.14.3",
             protocol_version="2025-03-26",
             tool=tool_for("7.14.1"),
             attestations=(*entries, (mismatched, "remote_fresh")),
@@ -318,14 +320,14 @@ class ContractFamilyTests(unittest.TestCase):
 
         revoked = replace(
             base,
-            entry_id="ha-mcp-v7.14.2-revoked",
-            upstream_version="7.14.2",
-            source_tag="v7.14.2",
+            entry_id="ha-mcp-v7.14.3-revoked",
+            upstream_version="7.14.3",
+            source_tag="v7.14.3",
             revoked=True,
         )
         decision = decide_admission(
             server_name="ha-mcp",
-            server_version="7.14.2",
+            server_version="7.14.3",
             protocol_version="2025-03-26",
             tool=tool_for("7.14.1"),
             attestations=(*entries, (revoked, "remote_fresh")),
@@ -338,13 +340,13 @@ class ContractFamilyTests(unittest.TestCase):
         base = load_attestations()[-1]
         expired = replace(
             base,
-            entry_id="ha-mcp-v7.14.2-expired",
-            upstream_version="7.14.2",
-            source_tag="v7.14.2",
+            entry_id="ha-mcp-v7.14.3-expired",
+            upstream_version="7.14.3",
+            source_tag="v7.14.3",
         )
         decision = decide_admission(
             server_name="ha-mcp",
-            server_version="7.14.2",
+            server_version="7.14.3",
             protocol_version="2025-03-26",
             tool=tool_for("7.14.1"),
             attestations=((expired, "remote_expired"),),
@@ -357,7 +359,7 @@ class ContractFamilyTests(unittest.TestCase):
 
         expired_only = decide_admission(
             server_name="ha-mcp",
-            server_version="7.14.3",
+            server_version="7.14.4",
             protocol_version="2025-03-26",
             tool=tool_for("7.14.1"),
             attestations=((expired, "remote_expired"),),
@@ -392,7 +394,7 @@ class ContractFamilyTests(unittest.TestCase):
             with self.subTest(order=[entry.upstream_version for entry, _ in ordered]):
                 decision = decide_admission(
                     server_name="ha-mcp",
-                    server_version="7.14.2",
+                    server_version="7.14.3",
                     protocol_version="2025-03-26",
                     tool=tool_for("7.14.1"),
                     attestations=ordered,
@@ -430,7 +432,7 @@ class ContractFamilyTests(unittest.TestCase):
 
 class ProviderAdmissionTests(unittest.IsolatedAsyncioTestCase):
     async def test_positive_list_get_and_not_found_for_all_builtins(self):
-        for version in ("7.13.0", "7.14.0", "7.14.1"):
+        for version in ("7.13.0", "7.14.0", "7.14.1", "7.14.2"):
             with self.subTest(version=version):
                 transport = FakeTransport(
                     version,
@@ -475,7 +477,7 @@ class ProviderAdmissionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unattested_contract_is_unavailable_without_release_authority(self):
         transport = FakeTransport(
-            "7.14.2",
+            "7.14.3",
             {"success": True, "action": "list", "dashboards": [], "count": 0},
         )
         provider = UpstreamDashboardProvider()
@@ -493,7 +495,7 @@ class ProviderAdmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(health["attested_upstream_version"])
         self.assertIsNone(health["attested_source_commit"])
         self.assertIsNone(health["attested_image_index_digest"])
-        self.assertEqual(health["observed_upstream_version"], "7.14.2")
+        self.assertEqual(health["observed_upstream_version"], "7.14.3")
         self.assertEqual(health["revocation_status"], "not_evaluated")
         self.assertFalse(health["input_contract_match"])
         self.assertFalse(health["security_contract_match"])
@@ -540,7 +542,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.public_key = public_key_text(self.private_key)
         self.now = datetime(2026, 7, 20, 0, 0, tzinfo=timezone.utc)
 
-    def future_entry(self, *, version="7.14.2", revoked=False):
+    def future_entry(self, *, version="7.14.3", revoked=False):
         base = load_attestations()[-1]
         value = dict(base.__dict__)
         value.update(
@@ -667,7 +669,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertTrue(await manager.refresh())
             self.assertTrue(cache.exists())
-            self.assertTrue(manager.has_exact_attestation("ha-mcp", "7.14.2"))
+            self.assertTrue(manager.has_exact_attestation("ha-mcp", "7.14.3"))
             current["pair"] = responses[1]
             self.assertFalse(await manager.refresh())
             self.assertEqual(manager.snapshot()["last_registry_failure_category"], "upstream_registry_rollback")
@@ -676,7 +678,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
             selected = [
                 entry
                 for entry, _source in manager.effective_attestations()
-                if entry.upstream_version == "7.14.2"
+                if entry.upstream_version == "7.14.3"
             ][0]
             self.assertTrue(selected.revoked)
 
@@ -703,7 +705,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(await manager.refresh())
             current["pair"] = (b"{}", b"{}")
             self.assertFalse(await manager.refresh())
-            self.assertTrue(manager.has_exact_attestation("ha-mcp", "7.14.2"))
+            self.assertTrue(manager.has_exact_attestation("ha-mcp", "7.14.3"))
 
             restarted = UpstreamTrustRegistry(
                 enabled=True,
@@ -712,20 +714,20 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
                 fetcher=fetch,
                 now=lambda: self.now,
             )
-            self.assertTrue(restarted.has_exact_attestation("ha-mcp", "7.14.2"))
+            self.assertTrue(restarted.has_exact_attestation("ha-mcp", "7.14.3"))
             self.assertEqual(restarted.snapshot()["cache_status"], "valid")
 
     async def test_equal_sequence_with_different_content_is_rejected(self):
         first = signed_registry(
             self.private_key,
             sequence=7,
-            entries=[self.future_entry(version="7.14.2")],
+            entries=[self.future_entry(version="7.14.3")],
             now=self.now,
         )
         conflicting = signed_registry(
             self.private_key,
             sequence=7,
-            entries=[self.future_entry(version="7.14.3")],
+            entries=[self.future_entry(version="7.14.4")],
             now=self.now,
         )
         current = {"pair": first}
@@ -748,8 +750,8 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
                 manager.snapshot()["last_registry_failure_category"],
                 "upstream_registry_replay_conflict",
             )
-            self.assertTrue(manager.has_exact_attestation("ha-mcp", "7.14.2"))
-            self.assertFalse(manager.has_exact_attestation("ha-mcp", "7.14.3"))
+            self.assertTrue(manager.has_exact_attestation("ha-mcp", "7.14.3"))
+            self.assertFalse(manager.has_exact_attestation("ha-mcp", "7.14.4"))
 
     async def test_signed_future_entry_and_higher_sequence_revocation_need_no_code_change(self):
         future = self.future_entry()
@@ -781,7 +783,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(await manager.refresh())
             admitted = decide_admission(
                 server_name="ha-mcp",
-                server_version="7.14.2",
+                server_version="7.14.3",
                 protocol_version="2025-03-26",
                 tool=tool_for("7.14.1"),
                 attestations=manager.effective_attestations(),
@@ -792,7 +794,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(await manager.refresh())
             rejected = decide_admission(
                 server_name="ha-mcp",
-                server_version="7.14.2",
+                server_version="7.14.3",
                 protocol_version="2025-03-26",
                 tool=tool_for("7.14.1"),
                 attestations=manager.effective_attestations(),
@@ -836,13 +838,13 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
             selected = [
                 (entry, source)
                 for entry, source in attestations
-                if entry.upstream_version == "7.14.2"
+                if entry.upstream_version == "7.14.3"
             ]
             self.assertEqual(len(selected), 1)
             self.assertEqual(selected[0][1], "remote_expired")
             decision = decide_admission(
                 server_name="ha-mcp",
-                server_version="7.14.2",
+                server_version="7.14.3",
                 protocol_version="2025-03-26",
                 tool=tool_for("7.14.1"),
                 attestations=attestations,
@@ -895,7 +897,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
             expired = [
                 source
                 for entry, source in manager.effective_attestations()
-                if entry.upstream_version == "7.14.2"
+                if entry.upstream_version == "7.14.3"
             ]
             self.assertEqual(expired, ["remote_expired"])
             self.assertEqual(manager.snapshot()["cache_status"], "expired")
@@ -904,7 +906,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
             rewound = [
                 source
                 for entry, source in manager.effective_attestations()
-                if entry.upstream_version == "7.14.2"
+                if entry.upstream_version == "7.14.3"
             ]
             self.assertEqual(rewound, ["remote_expired"])
             self.assertEqual(
@@ -922,7 +924,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
                 [
                     source
                     for entry, source in manager.effective_attestations()
-                    if entry.upstream_version == "7.14.2"
+                    if entry.upstream_version == "7.14.3"
                 ],
                 ["remote_expired"],
             )
@@ -933,7 +935,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
                 [
                     source
                     for entry, source in manager.effective_attestations()
-                    if entry.upstream_version == "7.14.2"
+                    if entry.upstream_version == "7.14.3"
                 ],
                 ["remote_expired"],
             )
@@ -944,7 +946,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
                 [
                     source
                     for entry, source in manager.effective_attestations()
-                    if entry.upstream_version == "7.14.2"
+                    if entry.upstream_version == "7.14.3"
                 ],
                 ["remote_fresh"],
             )
@@ -986,7 +988,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
                 [
                     source
                     for entry, source in manager.effective_attestations()
-                    if entry.upstream_version == "7.14.2"
+                    if entry.upstream_version == "7.14.3"
                 ],
                 ["remote_expired"],
             )
@@ -997,7 +999,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
                 [
                     source
                     for entry, source in manager.effective_attestations()
-                    if entry.upstream_version == "7.14.2"
+                    if entry.upstream_version == "7.14.3"
                 ],
                 ["remote_expired"],
             )
@@ -1144,7 +1146,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(snapshot["signature_valid"])
             self.assertFalse(
                 any(
-                    entry.upstream_version == "7.14.2"
+                    entry.upstream_version == "7.14.3"
                     for entry, _source in restarted.effective_attestations()
                 )
             )

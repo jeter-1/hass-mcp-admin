@@ -1739,7 +1739,10 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         health = gateway.health_snapshot()
         self.assertEqual(health["unreviewed_tool_count"], 1)
         self.assertEqual(health["unreviewed_tools"], ["ha_new_read"])
-        self.assertEqual(health["compatibility_registry_status"], "binary_policy_only")
+        self.assertEqual(
+            health["compatibility_registry_status"],
+            "compiled_reviewed_release_registry",
+        )
 
     async def test_unreviewed_tool_identity_is_bounded_and_secret_redacted(self):
         entry = policy_entry("ha_get_state")

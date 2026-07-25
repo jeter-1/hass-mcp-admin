@@ -122,7 +122,7 @@ async def provider_health(version: str, tool: dict | None = None, registry=None)
 class BuiltinObservabilityMatrixTests(unittest.IsolatedAsyncioTestCase):
     async def test_all_builtin_releases_select_truthful_legacy_evidence(self):
         entries = {entry.upstream_version: entry for entry in load_attestations()}
-        for version in ("7.13.0", "7.14.0", "7.14.1"):
+        for version in ("7.13.0", "7.14.0", "7.14.1", "7.14.2"):
             with self.subTest(version=version):
                 health = await provider_health(version)
                 entry = entries[version]
@@ -221,7 +221,7 @@ class RegistryAndDriftTests(unittest.IsolatedAsyncioTestCase):
         provider.configure(
             settings(),
             transport=DiscoveryTransport(
-                "7.14.2",
+                "7.14.3",
                 published_tool("7.14.1"),
             ),
         )
@@ -240,7 +240,7 @@ class RegistryAndDriftTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(health["attested_upstream_version"])
         self.assertIsNone(health["attested_source_commit"])
         self.assertIsNone(health["attested_image_index_digest"])
-        self.assertEqual(health["observed_upstream_version"], "7.14.2")
+        self.assertEqual(health["observed_upstream_version"], "7.14.3")
         self.assertEqual(health["revocation_status"], "not_evaluated")
         self.assertEqual(health["runtime_descriptor_drift"], "not_comparable")
         self.assertFalse(health["input_contract_match"])
@@ -251,14 +251,14 @@ class RegistryAndDriftTests(unittest.IsolatedAsyncioTestCase):
     async def test_selected_remote_attestation_supplies_both_evidence_families(self):
         entry = replace(
             load_attestations()[-1],
-            entry_id="ha-mcp-v7.14.2-synthetic",
-            upstream_version="7.14.2",
-            source_tag="v7.14.2",
+            entry_id="ha-mcp-v7.14.3-synthetic",
+            upstream_version="7.14.3",
+            source_tag="v7.14.3",
         )
         for source in ("remote_fresh", "remote_cached"):
             with self.subTest(source=source):
                 health = await provider_health(
-                    "7.14.2",
+                    "7.14.3",
                     published_tool("7.14.1"),
                     SelectedRegistry(entry, source),
                 )
@@ -274,7 +274,14 @@ class RegistryAndDriftTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(health["runtime_contract_match"])
 
     async def test_revoked_selected_attestation_fails_closed_truthfully(self):
-        entry = replace(load_attestations()[-1], revoked=True)
+        entry = replace(
+            next(
+                item
+                for item in load_attestations()
+                if item.upstream_version == "7.14.1"
+            ),
+            revoked=True,
+        )
         provider = UpstreamDashboardProvider()
         provider.configure(
             settings(),
@@ -295,7 +302,11 @@ class RegistryAndDriftTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(health["runtime_contract_match"])
 
     def test_informational_fingerprints_cannot_enable_admission(self):
-        entry = load_attestations()[-1]
+        entry = next(
+            item
+            for item in load_attestations()
+            if item.upstream_version == "7.14.1"
+        )
         poisoned = replace(
             entry,
             input_contract_fingerprint="0" * 64,
