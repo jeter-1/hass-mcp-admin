@@ -136,6 +136,10 @@ EXPECTED_OPERATIONAL_ERROR_CALLS = sum(
 )
 
 
+def expected_successful_delegated_calls(total_calls: int) -> int:
+    return total_calls - EXPECTED_OPERATIONAL_ERROR_CALLS
+
+
 class AcceptanceFailure(RuntimeError):
     def __init__(
         self,
@@ -915,7 +919,9 @@ async def inspect_engineering(
                 + 1
                 + len(UPSTREAM_ERROR_CALLS)
             )
-            expected_successful_calls = expected_delegated_calls - 1
+            expected_successful_calls = expected_successful_delegated_calls(
+                expected_delegated_calls
+            )
             for metric_name in (
                 "requests_by_provider",
                 "successful_requests_by_provider",
