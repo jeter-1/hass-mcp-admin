@@ -509,7 +509,7 @@ is never included in an exception log.
 
 ## MCP SDK and dependency boundary
 
-Engineering version `2.0.1-rc1-dev1` pins the stable MCP 1.x SDK at 1.28.1.
+Engineering version `2.0.1-rc1-dev2` pins the stable MCP 1.x SDK at 1.28.1.
 Every required contact with the SDK's private FastMCP tool registry is isolated
 in `mcp_sdk_compatibility.py`. The adapter admits only the reviewed SDK version
 and expected mapping shape, returns read-only mapping snapshots containing
@@ -521,8 +521,9 @@ registration path or fallback.
 
 The SDK compatibility boundary also initializes outbound upstream sessions
 with reviewed protocol `2025-03-26`. A newer SDK default cannot silently
-broaden exact `ha-mcp` 7.14.1 admission; a different returned protocol remains
-an incompatible-upstream failure.
+broaden admission beyond the compiled exact `ha-mcp` 7.14.1 and 7.14.2
+release entries; a different returned protocol remains an
+incompatible-upstream failure.
 
 The upgrade moves the Engineering runtime beyond the affected package-version
 ranges for CVE-2025-53366, CVE-2025-53365, CVE-2026-52869, and

@@ -186,6 +186,11 @@ class VersionComparisonTests(unittest.TestCase):
                 "2.0.1-rc1-dev1", "2.0.0"
             )
         )
+        self.assertTrue(
+            VALIDATOR.is_newer_version(
+                "2.0.1-rc1-dev2", "2.0.1-rc1-dev1"
+            )
+        )
 
     def test_version_comparison_uses_awesomeversion_25_8_0(self):
         requirements = (ROOT / "tests" / "requirements.txt").read_text(
@@ -580,10 +585,10 @@ class CIWorkflowTests(unittest.TestCase):
         )
 
     def test_current_assurance_docs_record_dns_and_stable_boundaries(self):
-        release = (ROOT / "docs" / "RC1DEV1_RELEASE_NOTES.md").read_text(
+        release = (ROOT / "docs" / "RC1DEV2_RELEASE_NOTES.md").read_text(
             encoding="utf-8"
         )
-        acceptance = (ROOT / "docs" / "RC1DEV1_ACCEPTANCE.md").read_text(
+        acceptance = (ROOT / "docs" / "RC1DEV2_ACCEPTANCE.md").read_text(
             encoding="utf-8"
         )
         security = (ROOT / "docs" / "SECURITY.md").read_text(
