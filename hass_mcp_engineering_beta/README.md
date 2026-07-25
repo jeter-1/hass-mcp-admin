@@ -1,7 +1,7 @@
 # HA MCP Engineering Server Beta
 
 This directory contains the Engineering v2 add-on, promoted in place to
-`2.0.1-rc1-dev1`. Its technical “Beta” display name, slug, image repository, and runtime
+`2.0.1-rc1-dev2`. Its technical “Beta” display name, slug, image repository, and runtime
 identity remain unchanged to avoid a migration. Stable v1.1.2
 `hass_mcp_admin` source remains in the repository as operationally retired
 history; it is not part of Engineering dependency assurance or supported
@@ -17,8 +17,8 @@ initially pending, `/health` remains live but `/ready` and authenticated MCP
 traffic return HTTP 503; schema-caching clients therefore cannot retain that
 transient static-only catalog. Once the first stable or terminal reconciliation
 result is known, `/ready` reports the bounded ready state. If discovery
-establishes the exact compiled generic release/profile (currently `ha-mcp`
-7.14.1), each of the 26 reviewed pure reads is admitted independently by its
+establishes an exact compiled generic release entry (`ha-mcp` 7.14.1 or
+7.14.2), each of the 26 reviewed pure reads is admitted independently by its
 exact input-schema fingerprint, exact bounded full-runtime-description
 fingerprint, exact runtime safety-annotation presence/value fingerprint,
 output-schema
@@ -39,11 +39,10 @@ stateless transport does not broadcast `tools/list_changed`.
 
 Unlisted, mixed, write, action, prohibited, and unsupported tools are never
 registered. A changed reviewed contract is quarantined individually, and
-delegated reads never fall back to direct Home Assistant access. The reviewed
-7.14.1 version, 78-tool stock inventory, and classification form Dev15's exact
-compiled generic profile. Another version remains unavailable even if its live
-descriptors appear identical; automatic admission under separately reviewed
-signed authority remains deferred.
+delegated reads never fall back to direct Home Assistant access. Each reviewed
+release has its own 78-tool policy and complete per-tool evidence. An unknown
+version remains unavailable even if its live descriptors appear identical;
+generated candidate evidence cannot authorize itself.
 [`ADR-006`](../docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md)
 defines the active boundary, while
 [`ADR-005`](../docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md) retains
@@ -104,12 +103,12 @@ Direct requests to `/mcp` and `/mcp/` must return `404`. RC2dev12 is immutable
 failed history and must not be treated as accepted. RC2dev13 corrected its
 reboot and completeness defects, RC2dev14 established practical configuration
 plans, and RC2dev16 corrected delegated structured-error normalization without
-changing upstream admission or adding search behavior. Version `2.0.1-rc1-dev1`
-hardens that accepted runtime's MCP SDK boundary and direct dependencies
-without changing public MCP contracts. Its changes, rollback, and acceptance
-requirements are recorded in
-[`../docs/RC1DEV1_RELEASE_NOTES.md`](../docs/RC1DEV1_RELEASE_NOTES.md) and
-[`../docs/RC1DEV1_ACCEPTANCE.md`](../docs/RC1DEV1_ACCEPTANCE.md). Determine
+changing upstream admission or adding search behavior. Version `2.0.1-rc1-dev2`
+adds exact reviewed 7.14.2 compatibility while retaining 7.14.1 and the
+hardened MCP SDK boundary. Its changes, rollback, and acceptance requirements
+are recorded in
+[`../docs/RC1DEV2_RELEASE_NOTES.md`](../docs/RC1DEV2_RELEASE_NOTES.md) and
+[`../docs/RC1DEV2_ACCEPTANCE.md`](../docs/RC1DEV2_ACCEPTANCE.md). Determine
 exact advertised state from version metadata and `scripts/codex-context.py`.
 
 Before connecting an MCP client, require `/ready` HTTP 200 with `ready=true`,

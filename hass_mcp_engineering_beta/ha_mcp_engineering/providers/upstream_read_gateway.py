@@ -29,9 +29,12 @@ from ..sanitization import sanitize_untrusted_data
 from ..tool_framework import timing_since
 from ..upstream_tool_policy import (
     REVIEWED_UPSTREAM_SERVER,
+    ReviewedUpstreamRelease,
+    ReviewedUpstreamReleaseRegistry,
     UpstreamToolPolicy,
     UpstreamToolPolicyEntry,
     catalog_fingerprint,
+    load_reviewed_upstream_release_registry,
     load_upstream_tool_policy,
     runtime_annotation_fingerprint,
     runtime_description_fingerprint,
@@ -346,6 +349,10 @@ class UpstreamReadGateway:
         self._settings: Settings | None = None
         self._known_secrets: tuple[str, ...] = ()
         self._policy: UpstreamToolPolicy | None = None
+        self._release_registry: (
+            ReviewedUpstreamReleaseRegistry | None
+        ) = None
+        self._active_release: ReviewedUpstreamRelease | None = None
         self._admission_validator: AdmissionValidator | None = None
         self._registered_server: Any = None
         self._registered_tool_registry: McpSdkToolRegistry | None = None
@@ -378,6 +385,24 @@ class UpstreamReadGateway:
             "observed_protocol_version": None,
             "observed_identity_status": "not_observed",
             "reviewed_upstream_version": None,
+            "reviewed_supported_versions": [],
+            "reviewed_release_count": 0,
+            "selected_compatibility_entry_id": None,
+            "reviewed_source_commit": None,
+            "reviewed_image_index_digest": None,
+            "reviewed_architecture_image_digests": {},
+            "reviewed_image_revision": None,
+            "reviewed_allowed_protocol_versions": [],
+            "runtime_artifact_provenance_observed": False,
+            "runtime_source_commit_observed": None,
+            "runtime_image_index_digest_observed": None,
+            "runtime_architecture_image_digest_observed": None,
+            "runtime_image_revision_observed": None,
+            "runtime_artifact_provenance_status": (
+                "unobserved_by_mcp_discovery"
+            ),
+            "catalog_comparison_status": "not_observed",
+            "dashboard_attestation_status": "not_observed",
             "version_status": "not_observed",
             "admission_status": "unavailable",
             "protocol_version": None,
@@ -435,7 +460,7 @@ class UpstreamReadGateway:
             "last_discovery_stable": False,
             "compatibility_status": "unavailable",
             "last_compatible_version": None,
-            "compatibility_registry_status": "binary_policy_only",
+            "compatibility_registry_status": "compiled_reviewed_release_registry",
             "recommended_action": "Wait for the configured upstream provider.",
             "reconciliation_active": False,
             "reconciliation_status": "idle",
@@ -462,6 +487,9 @@ class UpstreamReadGateway:
         *,
         transport: McpReadGatewayTransport | Any | None = None,
         policy: UpstreamToolPolicy | None = None,
+        release_registry: (
+            ReviewedUpstreamReleaseRegistry | None
+        ) = None,
         admission_validator: AdmissionValidator | None = None,
     ) -> None:
         self._remove_registered_tools()
@@ -479,7 +507,22 @@ class UpstreamReadGateway:
                 if item
             )
         )
-        self._policy = policy or load_upstream_tool_policy()
+        if policy is not None and release_registry is not None:
+            raise ValueError(
+                "policy and release_registry are mutually exclusive"
+            )
+        self._release_registry = (
+            None
+            if policy is not None
+            else release_registry
+            or load_reviewed_upstream_release_registry()
+        )
+        self._policy = (
+            policy
+            if policy is not None
+            else self._release_registry.default_release.policy
+        )
+        self._active_release = None
         self._admission_validator = admission_validator
         self._admission_generation = 0
         self._live_observation_epoch = 0
@@ -500,11 +543,18 @@ class UpstreamReadGateway:
             else None
         )
         counts = self._policy.classification_counts
+        supported_versions = (
+            list(self._release_registry.supported_versions)
+            if self._release_registry is not None
+            else [self._policy.reviewed_upstream_version]
+        )
         self._state = self._empty_state()
         self._state.update(
             {
                 "configured": bool(endpoint),
                 "reviewed_upstream_version": self._policy.reviewed_upstream_version,
+                "reviewed_supported_versions": supported_versions,
+                "reviewed_release_count": len(supported_versions),
                 "reviewed_policy_entry_count": len(self._policy.tools),
                 "automatic_read_count": counts["automatic_read"],
                 "reviewed_automatic_read_count": counts["automatic_read"],
@@ -580,11 +630,17 @@ class UpstreamReadGateway:
         identity_validated = False
         try:
             catalog = await self._transport.discover()
-            self._validate_identity(catalog.server_name, catalog.server_version, catalog.protocol_version)
+            selected_policy, selected_release = self._validate_identity(
+                catalog.server_name,
+                catalog.server_version,
+                catalog.protocol_version,
+            )
             identity_validated = True
             if self._admission_validator is not None:
                 self._admission_validator(catalog)
-            evaluation = self._validate_catalog(catalog)
+            evaluation = self._validate_catalog(
+                catalog, policy=selected_policy
+            )
             candidate_contract_token = _catalog_contract_token(
                 catalog, evaluation
             )
@@ -595,13 +651,13 @@ class UpstreamReadGateway:
                 self._registered_names
             )
             reviewed_descriptions = (
-                self._policy.reviewed_runtime_description_fingerprints_by_name
+                selected_policy.reviewed_runtime_description_fingerprints_by_name
             )
             reviewed_annotations = (
-                self._policy.reviewed_runtime_annotation_fingerprints_by_name
+                selected_policy.reviewed_runtime_annotation_fingerprints_by_name
             )
             reviewed_output_schemas = (
-                self._policy.reviewed_runtime_output_schema_fingerprints_by_name
+                selected_policy.reviewed_runtime_output_schema_fingerprints_by_name
             )
             generation = self._admission_generation + 1
             exposed: dict[str, _AdmittedRoute] = {}
@@ -664,7 +720,7 @@ class UpstreamReadGateway:
                         "collision": exposed_name != entry.upstream_name,
                     }
                 )
-            full_admission = len(exposed) == self._policy.classification_counts[
+            full_admission = len(exposed) == selected_policy.classification_counts[
                 "automatic_read"
             ]
             compatibility_status = (
@@ -746,6 +802,8 @@ class UpstreamReadGateway:
                     full_admission=full_admission,
                     compatibility_status=compatibility_status,
                     admission_status=admission_status,
+                    policy=selected_policy,
+                    release=selected_release,
                 )
             replace_dynamic_upstream_capabilities(
                 self._dynamic_capabilities, self.health_snapshot()
@@ -787,11 +845,12 @@ class UpstreamReadGateway:
         full_admission: bool,
         compatibility_status: str,
         admission_status: str,
+        policy: UpstreamToolPolicy,
+        release: ReviewedUpstreamRelease | None,
     ) -> None:
         """Publish one copy-on-write route generation under the state lock."""
 
-        assert self._policy is not None
-        automatic_count = self._policy.classification_counts[
+        automatic_count = policy.classification_counts[
             "automatic_read"
         ]
         accounted = (
@@ -805,6 +864,8 @@ class UpstreamReadGateway:
         self._exposed = dict(exposed)
         self._dynamic_capabilities = capabilities
         self._admission_generation = generation
+        self._policy = policy
+        self._active_release = release
         with self._lock:
             self._state.update(
                 {
@@ -830,7 +891,49 @@ class UpstreamReadGateway:
                     ),
                     "observed_identity_status": "accepted",
                     "reviewed_upstream_version": (
-                        self._policy.reviewed_upstream_version
+                        policy.reviewed_upstream_version
+                    ),
+                    "selected_compatibility_entry_id": (
+                        release.entry_id if release is not None else None
+                    ),
+                    "reviewed_source_commit": (
+                        release.source_commit
+                        if release is not None
+                        else policy.reviewed_source_commit
+                    ),
+                    "reviewed_image_index_digest": (
+                        release.image_index_digest
+                        if release is not None
+                        else None
+                    ),
+                    "reviewed_architecture_image_digests": (
+                        release.architecture_image_digests_by_platform
+                        if release is not None
+                        else {}
+                    ),
+                    "reviewed_image_revision": (
+                        release.image_revision
+                        if release is not None
+                        else None
+                    ),
+                    "reviewed_allowed_protocol_versions": (
+                        list(release.allowed_protocol_versions)
+                        if release is not None
+                        else [REVIEWED_PROTOCOL_VERSION]
+                    ),
+                    "runtime_artifact_provenance_observed": False,
+                    "runtime_source_commit_observed": None,
+                    "runtime_image_index_digest_observed": None,
+                    "runtime_architecture_image_digest_observed": None,
+                    "runtime_image_revision_observed": None,
+                    "runtime_artifact_provenance_status": (
+                        "unobserved_by_mcp_discovery"
+                    ),
+                    "catalog_comparison_status": compatibility_status,
+                    "dashboard_attestation_status": (
+                        release.dashboard_attestation_status
+                        if release is not None
+                        else "not_evaluated"
                     ),
                     "version_status": "reviewed_exact",
                     "protocol_version": catalog.protocol_version[:64],
@@ -929,9 +1032,9 @@ class UpstreamReadGateway:
                     ],
                     "observed_catalog_matches_reviewed_stock_fixture": (
                         len(catalog.tools)
-                        == self._policy.reviewed_stock_catalog_tool_count
+                        == policy.reviewed_stock_catalog_tool_count
                         and observed_fingerprint
-                        == self._policy.reviewed_stock_catalog_fingerprint
+                        == policy.reviewed_stock_catalog_fingerprint
                     ),
                     "stale_reprobe_retry_armed": False,
                 }
@@ -1222,7 +1325,12 @@ class UpstreamReadGateway:
                     task.cancel()
             await asyncio.gather(sleep_task, event_task, return_exceptions=True)
 
-    def _validate_identity(self, server_name: str, server_version: str, protocol: str) -> None:
+    def _validate_identity(
+        self,
+        server_name: str,
+        server_version: str,
+        protocol: str,
+    ) -> tuple[UpstreamToolPolicy, ReviewedUpstreamRelease | None]:
         if server_name != REVIEWED_UPSTREAM_SERVER:
             raise DashboardTransportError("server_identity_mismatch")
         if (
@@ -1234,17 +1342,28 @@ class UpstreamReadGateway:
             )
         ):
             raise DashboardTransportError("upstream_version_mismatch")
+        if protocol not in SUPPORTED_PROTOCOLS:
+            raise DashboardTransportError("unsupported_protocol_version")
+        if self._release_registry is not None:
+            release = self._release_registry.by_version.get(server_version)
+            if release is None:
+                # Matching a known catalog is not authority for an unknown
+                # release. An exact source-controlled version entry is required.
+                raise DashboardTransportError("upstream_version_mismatch")
+            if (
+                release.server_name != server_name
+                or protocol not in release.allowed_protocol_versions
+            ):
+                raise DashboardTransportError(
+                    "unsupported_protocol_version"
+                )
+            return release.policy, release
         if (
             self._policy is None
             or server_version != self._policy.reviewed_upstream_version
         ):
-            # A self-advertised descriptor is observation, not release
-            # authority. Contract-level reconciliation is permitted only
-            # after the binary policy (or a future verified registry profile)
-            # explicitly admits this exact release.
             raise DashboardTransportError("upstream_version_mismatch")
-        if protocol not in SUPPORTED_PROTOCOLS:
-            raise DashboardTransportError("unsupported_protocol_version")
+        return self._policy, None
 
     def _record_observed_identity(
         self,
@@ -1296,10 +1415,14 @@ class UpstreamReadGateway:
         return safe if _UPSTREAM_VERSION_EVIDENCE.fullmatch(safe) else "unknown"
 
     def _validate_catalog(
-        self, catalog: McpReadCatalog
+        self,
+        catalog: McpReadCatalog,
+        *,
+        policy: UpstreamToolPolicy | None = None,
     ) -> _CatalogEvaluation:
-        assert self._policy is not None
-        policy = self._policy.by_name
+        selected_policy = policy or self._policy
+        assert selected_policy is not None
+        policy_by_name = selected_policy.by_name
         observed_reviewed: dict[str, list[dict[str, Any]]] = {}
         unreviewed: list[str] = []
         unreviewed_occurrences: Counter[str] = Counter()
@@ -1313,7 +1436,7 @@ class UpstreamReadGateway:
             ):
                 unreviewed.append(self._safe_observed_tool_name(name))
                 continue
-            if name in policy:
+            if name in policy_by_name:
                 observed_reviewed.setdefault(name, []).append(item)
                 continue
             unreviewed_occurrences[name] += 1
@@ -1327,15 +1450,15 @@ class UpstreamReadGateway:
         quarantine_reasons: Counter[str] = Counter()
         blocked: list[dict[str, str]] = []
         reviewed_descriptions = (
-            self._policy.reviewed_runtime_description_fingerprints_by_name
+            selected_policy.reviewed_runtime_description_fingerprints_by_name
         )
         reviewed_annotations = (
-            self._policy.reviewed_runtime_annotation_fingerprints_by_name
+            selected_policy.reviewed_runtime_annotation_fingerprints_by_name
         )
         reviewed_output_schemas = (
-            self._policy.reviewed_runtime_output_schema_fingerprints_by_name
+            selected_policy.reviewed_runtime_output_schema_fingerprints_by_name
         )
-        for entry in self._policy.tools:
+        for entry in selected_policy.tools:
             observed = observed_reviewed.get(entry.upstream_name, [])
             if not observed:
                 if entry.classification == "automatic_read":
@@ -1507,7 +1630,7 @@ class UpstreamReadGateway:
                         "upstream_identity_status"
                     ] = "observed"
                 try:
-                    self._validate_identity(
+                    live_policy, live_release = self._validate_identity(
                         catalog.server_name,
                         catalog.server_version,
                         catalog.protocol_version,
@@ -1540,8 +1663,21 @@ class UpstreamReadGateway:
                     raise DashboardTransportError(
                         "unsupported_protocol_version"
                     )
+                if (
+                    catalog.server_version != mapping.server_version
+                    or (
+                        live_release is not None
+                        and live_release.version != mapping.server_version
+                    )
+                ):
+                    self._advance_live_observation_epoch()
+                    raise DashboardTransportError(
+                        "upstream_version_mismatch"
+                    )
                 try:
-                    live_evaluation = self._validate_catalog(catalog)
+                    live_evaluation = self._validate_catalog(
+                        catalog, policy=live_policy
+                    )
                     live_contract_token = _catalog_contract_token(
                         catalog, live_evaluation
                     )
@@ -2247,6 +2383,7 @@ class UpstreamReadGateway:
             if discovery:
                 self._state["last_discovery_stable"] = False
             if disable_delegation:
+                self._active_release = None
                 blocked_incompatible = category in {
                     "server_identity_mismatch",
                     "upstream_version_mismatch",
@@ -2262,6 +2399,21 @@ class UpstreamReadGateway:
                 self._state["collision_count"] = 0
                 self._state["exposed_tools"] = []
                 self._state["collision_mappings"] = []
+                self._state["selected_compatibility_entry_id"] = None
+                self._state["reviewed_source_commit"] = None
+                self._state["reviewed_image_index_digest"] = None
+                self._state["reviewed_architecture_image_digests"] = {}
+                self._state["reviewed_image_revision"] = None
+                self._state["reviewed_allowed_protocol_versions"] = []
+                self._state["catalog_comparison_status"] = {
+                    "upstream_version_mismatch": "unknown_version",
+                    "schema_mismatch": "reviewed_runtime_drift",
+                }.get(category, "unavailable")
+                self._state["dashboard_attestation_status"] = (
+                    "unknown_version"
+                    if category == "upstream_version_mismatch"
+                    else "unavailable"
+                )
                 self._reset_contract_accounting_locked()
                 self._state["compatibility_status"] = "unavailable"
                 self._state["admission_status"] = (
@@ -2274,12 +2426,26 @@ class UpstreamReadGateway:
                     "server_identity_mismatch": "rejected_identity",
                     "unsupported_protocol_version": "rejected_protocol",
                 }.get(category, self._state["version_status"])
-                self._state["recommended_action"] = (
-                    "Restore the reviewed upstream identity and protocol, or "
-                    "roll back to the last compatible upstream version."
-                    if self._state["admission_status"]
-                    == "blocked_incompatible_upstream"
-                    else "Restore upstream connectivity or authentication."
+                self._state["recommended_action"] = {
+                    "upstream_version_mismatch": (
+                        "The observed upstream version is not reviewed. "
+                        "Capture and review it, or roll back to the last "
+                        "compatible version."
+                    ),
+                    "schema_mismatch": (
+                        "The reviewed upstream version has runtime contract "
+                        "drift. Review quarantines or roll back upstream."
+                    ),
+                    "server_identity_mismatch": (
+                        "Restore the reviewed ha-mcp server identity."
+                    ),
+                    "unsupported_protocol_version": (
+                        "Restore the reviewed MCP protocol or roll back "
+                        "upstream."
+                    ),
+                }.get(
+                    category,
+                    "Restore upstream connectivity or authentication.",
                 )
                 if not self._state["reconciliation_active"]:
                     self._state["reconciliation_status"] = "idle"
@@ -2557,7 +2723,11 @@ def _stable_compatibility(snapshot: dict[str, Any]) -> bool:
 
 def _recommended_action(compatibility_status: str) -> str:
     if compatibility_status == "exact":
-        return "No compatibility action is required."
+        return (
+            "The observed MCP contract matches reviewed evidence. Verify the "
+            "running upstream image digest and revision independently during "
+            "deployment; MCP discovery does not observe artifact provenance."
+        )
     if compatibility_status == "partial":
         return (
             "Review quarantined, missing, and unreviewed tool contracts; "

@@ -78,6 +78,32 @@
       "review_evidence_digest": "sha256:4ddabd412c5cc4dd4e90d193537f5c90628bd8903620257401ab5b59762dcd59",
       "reviewed_at": "2026-07-19T23:30:00Z",
       "revoked": false
+    },
+    {
+      "entry_id": "ha-mcp-v7.14.2-7917b2d3",
+      "server_name": "ha-mcp",
+      "upstream_version": "7.14.2",
+      "source_tag": "v7.14.2",
+      "source_commit": "904c14ebbe76de700f7c3535f5cc71c017dca12e",
+      "image_index_digest": "sha256:7917b2d385e16e43f45f92fc72a757e5c0aec8d88b3cd69fe64f3b5106cbfe36",
+      "platform_digests": {
+        "linux/amd64": "sha256:e973144b62fbc873650c8d9c5aaf4d627d9e0a41b88df95178b2293f6d8026c0",
+        "linux/arm64": "sha256:5aa0814b9efc60c753d2acfed5b0fba37f09efe5aca08a5bb790807212f54c8d"
+      },
+      "image_revision": "c435dcb866a617da44e0527e0f4feca3b0612822",
+      "contract_family": "ha_mcp_dashboard_read_v2",
+      "input_contract_fingerprint": "91b0d1f6a5113591c8c02e9576bdc2e3664ace91d72a5ef4827729162a7ac90a",
+      "security_contract_fingerprint": "955fdf97a832c8d16fc24c5f7eeabcce517695b8891b74d2108b5e6f84eca4f1",
+      "output_contract_fingerprint": "9db14b83579f9ec897cc6d97640a3ad67899055b57d18c815c4119192a04dbb7",
+      "runtime_contract_fingerprint": "019e43aba44efbc63604fe26f51a40540243d83ae056461923321f6205c982a4",
+      "catalog_fingerprint": "c6bd074d9ee1e832bd90318398c00efd9a9ffd983d5444817bc830208cbfc47c",
+      "raw_input_schema_fingerprint": "e75e5454fc3039b3a67014dd3f9af7c2c946e0263e3b35e478d57ae72254846f",
+      "reviewed_security_descriptor_fingerprint": "0cc05e110458c3019a0156f074d863afd2d6e0ad3bc2b222fae2ddf2c6398327",
+      "fixture_runtime_descriptor_fingerprint": "a6b7b65a0bda740f107a8e88942d436b92dbbb453d827138b97daebdbd50fe33",
+      "published_runtime_descriptor_fingerprint": "a65eedbeb51f524bc19d3d32f8b2a455bd4157c83c68943d8569554365eec49a",
+      "review_evidence_digest": "sha256:c12cb8441d5b6f0a3cb45b38cabf72b40c5f74a028f09a995be65d9b6bb67de3",
+      "reviewed_at": "2026-07-25T20:31:37Z",
+      "revoked": false
     }
   ]
 }

@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.0.1-rc1-dev2 - reviewed upstream release updateability
+
+- Replace the single reviewed generic-read release assumption with a compiled,
+  source-controlled registry containing exact `ha-mcp` 7.14.1 and 7.14.2
+  identity, provenance, image, protocol, catalog, per-tool contract, policy,
+  dashboard, and review evidence.
+- Admit only an exact reviewed version and exact per-tool contract; quarantine
+  changed reads independently, keep new tools unreviewed and unexposed, report
+  removed tools, and fail closed for unknown versions.
+- Reconcile version changes atomically so one Engineering image can move
+  between the two reviewed upstream releases without stale routes or a rebuild.
+- Add deterministic capture, normalization, fingerprint, diff, validation,
+  report, and candidate-generation tooling. Generated candidates remain
+  unapproved until a reviewed source change authorizes them.
+- Extend pinned-image CI across exact 7.14.1 and 7.14.2 image digests while
+  retaining the original gate.
+- Record that both reviewed upstream versions return the ambiguous
+  `SERVICE_CALL_FAILED` envelope for a missing `ha_get_entity` registry entry.
+  Engineering preserves the bounded generic operational failure rather than
+  classifying untrusted English prose as a not-found outcome.
+- Preserve 41 Engineering tools, 26 delegated automatic reads when either
+  exact catalog is fully admitted, 67 total tools, generic-write prohibition,
+  public schemas, governance, audit, redaction, and zero fallback.
+
 ## 2.0.1-rc1-dev1 - MCP SDK and dependency hardening
 
 - Centralize the pinned MCP SDK's private FastMCP tool-registry access behind

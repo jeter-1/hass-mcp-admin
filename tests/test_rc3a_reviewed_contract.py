@@ -185,7 +185,7 @@ class ReviewedIdentityAndVersionTests(unittest.IsolatedAsyncioTestCase):
                 )
 
     async def test_unattested_versions_fail_closed_before_contract_admission(self):
-        for version in ("7.12.3", "7.13.1", "7.14.2", "8.0.0"):
+        for version in ("7.12.3", "7.13.1", "7.14.3", "8.0.0"):
             with self.subTest(version=version):
                 exc, health = await self._failure(version=version)
                 self.assertEqual(

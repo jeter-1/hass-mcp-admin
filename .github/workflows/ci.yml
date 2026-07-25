@@ -32,6 +32,16 @@ jobs:
         run: python -m compileall -q hass_mcp_admin hass_mcp_engineering_beta tests
       - name: Validate deployment metadata
         run: python scripts/validate_addon_metadata.py --repo-root . --base-ref origin/main
+      - name: Validate reviewed upstream registry evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/review_upstream_read_release.py validate
+          python scripts/review_upstream_read_release.py generate \
+            --output "$RUNNER_TEMP/generated-upstream-release-registry.json"
+          python scripts/review_upstream_read_release.py registry-diff \
+            --expected hass_mcp_engineering_beta/ha_mcp_engineering/upstream_release_registry.json \
+            --actual "$RUNNER_TEMP/generated-upstream-release-registry.json"
       - name: Validate PowerShell deployment script syntax
         shell: pwsh
         run: '[scriptblock]::Create((Get-Content -Raw "scripts/deploy-beta.ps1")) | Out-Null'
@@ -127,12 +137,34 @@ jobs:
           docker rm -f beta25-real-ha >/dev/null 2>&1 || true
           sudo rm -rf "$RUNNER_TEMP/beta25-real-ha"
 
+  prepare_exact_image_matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.reviewed-registry.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Derive exact-image matrix from reviewed registry
+        id: reviewed-registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          matrix="$(python3 scripts/review_upstream_read_release.py ci-matrix)"
+          test -n "$matrix"
+          printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
+
   exact-image-read-gateway:
+    needs: prepare_exact_image_matrix
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare_exact_image_matrix.outputs.matrix) }}
     env:
-      UPSTREAM_IMAGE: ghcr.io/homeassistant-ai/ha-mcp@sha256:68f386d9becfcc58476f1881a0025f4c6a3ae5874c15cdd61097b14156886292
-      UPSTREAM_VERSION: "7.14.1"
+      UPSTREAM_IMAGE: ${{ matrix.upstream_image }}
+      UPSTREAM_VERSION: ${{ matrix.upstream_version }}
+      EXPECTED_IMAGE_INDEX_DIGEST: ${{ matrix.image_index_digest }}
+      EXPECTED_IMAGE_REVISION: ${{ matrix.image_revision }}
+      EXPECTED_ARCHITECTURE_IMAGE_DIGESTS: ${{ toJSON(matrix.architecture_image_digests) }}
       ENGINEERING_ACCESS_SECRET: synthetic-engineering-access-secret
     steps:
       - uses: actions/checkout@v4
@@ -159,8 +191,54 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          resolved_index_digest="$(
+            docker buildx imagetools inspect "$UPSTREAM_IMAGE" |
+              sed -nE 's/^Digest:[[:space:]]*(sha256:[0-9a-f]{64})$/\1/p' |
+              head -n 1
+          )"
+          test "$resolved_index_digest" = "$EXPECTED_IMAGE_INDEX_DIGEST"
+          docker buildx imagetools inspect "$UPSTREAM_IMAGE" --raw \
+            > "$RUNNER_TEMP/reviewed-upstream-index.json"
+          python3 - "$RUNNER_TEMP/reviewed-upstream-index.json" <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import sys
+
+          manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          expected = json.loads(
+              os.environ["EXPECTED_ARCHITECTURE_IMAGE_DIGESTS"]
+          )
+          observed = {}
+          for item in manifest.get("manifests", []):
+              platform = item.get("platform") or {}
+              os_name = platform.get("os")
+              architecture = platform.get("architecture")
+              variant = platform.get("variant")
+              if not isinstance(os_name, str) or not isinstance(
+                  architecture, str
+              ):
+                  continue
+              if os_name == "unknown" and architecture == "unknown":
+                  continue
+              name = f"{os_name}/{architecture}"
+              if isinstance(variant, str) and variant:
+                  name += f"/{variant}"
+              observed[name] = item.get("digest")
+          if observed != expected:
+              raise SystemExit(
+                  "reviewed platform digest map does not match OCI index"
+              )
+          PY
           docker pull "$UPSTREAM_IMAGE"
-          test "$(docker image inspect "$UPSTREAM_IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = "$UPSTREAM_VERSION"
+          test "$(
+            docker image inspect "$UPSTREAM_IMAGE" \
+              --format '{{index .Config.Labels "org.opencontainers.image.version"}}'
+          )" = "$UPSTREAM_VERSION"
+          test "$(
+            docker image inspect "$UPSTREAM_IMAGE" \
+              --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'
+          )" = "$EXPECTED_IMAGE_REVISION"
           docker run --detach --rm --network host --name exact-read-gateway-upstream \
             --read-only --tmpfs /tmp --tmpfs /home/mcpuser/.ha-mcp \
             -e HOMEASSISTANT_URL=http://127.0.0.1:18123 \
@@ -218,15 +296,34 @@ jobs:
         run: |
           python scripts/exact_image_read_gateway_acceptance.py \
             --upstream-endpoint http://127.0.0.1:18086/synthetic-upstream-secret/mcp \
+            --expected-upstream-version "$UPSTREAM_VERSION" \
             --engineering-endpoint "http://127.0.0.1:18100/${ENGINEERING_ACCESS_SECRET}/mcp" \
             --fixture-stats-url http://127.0.0.1:18123/__fixture__/stats \
             --output "$RUNNER_TEMP/exact-image-read-gateway-result.json"
+      - name: Verify deterministic upstream contract capture
+        if: always()
+        shell: bash
+        run: |
+          python scripts/review_upstream_read_release.py capture \
+            --endpoint http://127.0.0.1:18086/synthetic-upstream-secret/mcp \
+            --output "$RUNNER_TEMP/upstream-contract-capture-1.json"
+          python scripts/review_upstream_read_release.py capture \
+            --endpoint http://127.0.0.1:18086/synthetic-upstream-secret/mcp \
+            --output "$RUNNER_TEMP/upstream-contract-capture-2.json"
+          cmp \
+            "$RUNNER_TEMP/upstream-contract-capture-1.json" \
+            "$RUNNER_TEMP/upstream-contract-capture-2.json"
+          cmp \
+            "$RUNNER_TEMP/upstream-contract-capture-1.json" \
+            "docs/evidence/upstream-read-compatibility/ha-mcp-${UPSTREAM_VERSION}.json"
       - name: Upload bounded exact-image result
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: exact-image-read-gateway-result
-          path: ${{ runner.temp }}/exact-image-read-gateway-result.json
+          name: exact-image-read-gateway-${{ matrix.upstream_version }}
+          path: |
+            ${{ runner.temp }}/exact-image-read-gateway-result.json
+            ${{ runner.temp }}/upstream-contract-capture-1.json
           if-no-files-found: error
           retention-days: 14
       - name: Remove disposable exact-image environment

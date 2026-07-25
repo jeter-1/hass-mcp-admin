@@ -1188,7 +1188,29 @@ class PolicyInventoryTests(unittest.TestCase):
         )
         self.assertIn("exact-image-read-gateway:", workflow)
         self.assertIn(
-            "ghcr.io/homeassistant-ai/ha-mcp@sha256:68f386d9becfcc58476f1881a0025f4c6a3ae5874c15cdd61097b14156886292",
+            "review_upstream_read_release.py ci-matrix",
+            workflow,
+        )
+        self.assertIn(
+            "fromJSON(needs.prepare_exact_image_matrix.outputs.matrix)",
+            workflow,
+        )
+        self.assertIn("EXPECTED_IMAGE_INDEX_DIGEST", workflow)
+        self.assertIn("EXPECTED_IMAGE_REVISION", workflow)
+        self.assertIn(
+            "EXPECTED_ARCHITECTURE_IMAGE_DIGESTS", workflow
+        )
+        self.assertIn("org.opencontainers.image.revision", workflow)
+        self.assertIn(
+            "docs/evidence/upstream-read-compatibility/ha-mcp-${UPSTREAM_VERSION}.json",
+            workflow,
+        )
+        self.assertNotIn(
+            "68f386d9becfcc58476f1881a0025f4c6a3ae5874c15cdd61097b14156886292",
+            workflow,
+        )
+        self.assertNotIn(
+            "7917b2d385e16e43f45f92fc72a757e5c0aec8d88b3cd69fe64f3b5106cbfe36",
             workflow,
         )
         self.assertIn("fake_ha_read_gateway_contract_server.py", workflow)
@@ -1739,7 +1761,10 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         health = gateway.health_snapshot()
         self.assertEqual(health["unreviewed_tool_count"], 1)
         self.assertEqual(health["unreviewed_tools"], ["ha_new_read"])
-        self.assertEqual(health["compatibility_registry_status"], "binary_policy_only")
+        self.assertEqual(
+            health["compatibility_registry_status"],
+            "compiled_reviewed_release_registry",
+        )
 
     async def test_unreviewed_tool_identity_is_bounded_and_secret_redacted(self):
         entry = policy_entry("ha_get_state")

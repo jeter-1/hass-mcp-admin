@@ -1,6 +1,6 @@
 # ADR-006: Contract-level upstream compatibility admission
 
-Status: accepted for Dev15
+Status: accepted for Dev15; amended for 2.0.1-rc1-dev2
 
 ## Supersession
 
@@ -30,45 +30,47 @@ to recover from upstream boot order.
 
 The committed 7.14.1 review remains valuable. It defines the stock inventory,
 the 26 approved automatic-read contracts, the blocked classifications, and the
-baseline evidence against which later observations are explained. In Dev15 it
-also remains the exact compiled generic release/profile authority. The
-correction is to evaluate each reviewed tool independently after that authority
-succeeds, not to let a live server authorize an unreviewed release by
-self-advertising an identical contract.
+baseline evidence against which later observations are explained. Dev2 adds a
+separate exact 7.14.2 entry after a complete pinned-image comparison. The
+correction is to evaluate each reviewed tool independently after exact
+version-scoped authority succeeds, not to let a live server authorize an
+unreviewed release by self-advertising an identical contract.
 
 ## Decision
 
-Engineering first establishes explicit reviewed release/profile authority,
+Engineering first establishes explicit reviewed release-entry authority,
 then admits upstream capability at the smallest independently reviewed tool
 contract boundary.
 
 ### Identity and protocol
 
-Server identity, supported MCP protocol, and exact reviewed release/profile
-authority remain global prerequisites. The compiled generic-read profile
-currently authorizes exactly `ha-mcp` 7.14.1. A different server name,
+Server identity, supported MCP protocol, and exact reviewed release-entry
+authority remain global prerequisites. The compiled generic-read registry
+currently authorizes exact `ha-mcp` 7.14.1 and 7.14.2 entries. A different server name,
 malformed discovery response, unsupported protocol, unreviewed patch/minor/
 major/prerelease/downgrade, or transport failure cannot be repaired by a
 matching self-advertised tool name or schema.
 
 The observed upstream version is bounded evidence. `version_status` reports it
-relative to the reviewed 7.14.1 baseline as:
+relative to the compiled registry as:
 
-- `reviewed_exact` when it equals the reviewed evidence version;
+- `reviewed_exact` when it selects an exact reviewed entry;
 - `rejected_unreviewed` when a bounded but unauthorized version is observed;
 - `rejected_identity` or `rejected_protocol` for those respective global
   prerequisite failures; or
 - `not_observed` before a valid catalog identity is available.
 
 A changed version is not by itself proof of incompatibility, but neither is it
-authority. Dev15 fails closed until that exact release is represented by an
-explicitly reviewed profile. Dev16 is the planned signed-registry path for
-adding such authority without an Engineering rebuild.
+authority. Engineering fails closed until that exact release is represented by
+a human-reviewed, source-controlled entry. Candidate capture and comparison
+data cannot authorize itself. The same Engineering image can switch between
+compiled entries after fresh reconciliation; this is not automatic tracking of
+upstream latest and is separate from dashboard-only signed attestations.
 
 Health retains the bounded observation separately in
 `observed_upstream_server_name`, `observed_upstream_server_version`,
 `observed_protocol_version`, and `observed_identity_status`. The status is
-`accepted` only when the name, exact reviewed release/profile, and protocol pass
+`accepted` only when the name, exact reviewed release entry, and protocol pass
 their global checks; rejected or unparseable observations are sanitized and
 cannot become compatibility authority.
 
@@ -129,7 +131,7 @@ matches remain available.
 
 Before each dispatch, the transport obtains `tools/list` in the same MCP
 session that would issue `tools/call`. Engineering rechecks global identity,
-exact release/profile authority, and protocol, requires the selected target
+exact release-entry authority, and protocol, requires the selected target
 exactly once, and compares that target with the complete contract bound to the
 current registration generation. Missing, duplicate, changed-target, or
 unreviewed-version evidence stops before `tools/call`; matching
@@ -207,7 +209,7 @@ The generic gateway reports one bounded aggregate compatibility state:
   read can be admitted;
 - `reconciling`: a bounded catalog reconciliation is in progress; or
 - `unavailable`: the provider is unconfigured, global identity/protocol
-  or release/profile validation failed, or a catalog cannot currently be
+  or release-entry validation failed, or a catalog cannot currently be
   obtained.
 
 Unreviewed additions and known blocked tools are counted separately. They do
@@ -314,7 +316,8 @@ reconnect after a later dynamic subset change. This decision does not claim
 
 Deterministic validation covers:
 
-1. exact 7.14.1 reviewed-profile admission retaining all 26 generic reads;
+1. exact 7.14.1 and 7.14.2 release-entry admission, each retaining all 26
+   generic reads;
 2. one schema, annotation, or semantic change quarantining only its tool;
 3. new reads and writes remaining unavailable without harming exact matches;
 4. a missing reviewed read being removed while the other reads remain;
@@ -332,26 +335,29 @@ Deterministic validation covers:
 11. separate fast transport recovery and slow compatibility reprobe cadence;
     and
 12. a slow delegated read blocks neither another read nor reconciliation, and
-    a completed in-flight call cannot revive a retired route.
+    a completed in-flight call cannot revive a retired route; and
+13. atomic 7.14.1-to-7.14.2 switching and rollback, with unknown versions,
+    new tools, removed tools, and changed reads remaining fail closed.
 
-The pinned 7.14.1 exact-image gate remains an immutable regression for the
-reviewed source/image and full stock catalog. It is the compiled generic
-release/profile authority in Dev15. A later release requires separately
-reviewed authority; automatic no-rebuild admission is deferred to Dev16.
+The pinned 7.14.1 exact-image gate remains an immutable regression for its
+reviewed source/image and full stock catalog. The digest-pinned 7.14.2 matrix
+entry proves its separate compiled authority. A later release still requires
+complete capture, comparison, and human-reviewed source authority.
 
 ## Deferred work
 
-Dev15 does not add generic signed-registry authority or release automation.
+The compiled generic registry is intentionally source-controlled. It does not
+add generic signed-registry authority, runtime policy downloads, or automatic
+tracking of upstream latest.
 
-- **Dev16** may define a signed, data-only evidence and revocation format for
+- A later release may define a signed, data-only evidence and revocation format for
   generic reviewed-read contract families, including cache/expiry behavior,
   rollback and replay protection, revocation, and runtime refresh. The binary
   must continue to own all executable classifications, normalization, routes,
   and bounds.
-- **Dev17** may automate immutable source/image resolution, disposable runtime
-  extraction, catalog/annotation diffing, semantic fixtures, dashboard
-  contract testing, zero-write verification, compatibility reports, and draft
-  evidence updates for reviewed releases.
+- Dev2 supplies deterministic local capture, normalization, fingerprint, diff,
+  validation, report, and unapproved-candidate generation. Immutable
+  source/image resolution and draft policy PR creation remain human-controlled.
 
 Neither follow-on may activate a new tool, write, action, argument, provider,
 or fallback from signed data alone. Those require separately reviewed runtime

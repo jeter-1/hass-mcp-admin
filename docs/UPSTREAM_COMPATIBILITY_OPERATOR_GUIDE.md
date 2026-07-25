@@ -10,10 +10,10 @@ runtime decision is
 1. Verify `observed_upstream_server_name`,
    `observed_upstream_server_version`, `observed_protocol_version`, and
    `observed_identity_status`. The endpoint must identify as `ha-mcp`, match an
-   explicit reviewed release/profile, and negotiate the supported MCP
-   protocol. The compiled generic profile currently authorizes exactly
-   7.14.1. Identity, unreviewed-version, malformed-version, or protocol failure
-   is global and must not be worked around with a self-advertised schema match.
+   explicit reviewed release entry, and negotiate the supported MCP protocol.
+   The compiled registry currently authorizes exact 7.14.1 and 7.14.2 entries.
+   Identity, unreviewed-version, malformed-version, or protocol failure is
+   global and must not be worked around with a self-advertised schema match.
 2. Read `get_server_health.upstream_read_gateway`.
    `version_status=rejected_unreviewed` is bounded diagnostic evidence that the
    release lacks authority; it cannot admit a tool or permit dispatch.
@@ -157,28 +157,38 @@ release merely because a new version is available. Use this sequence:
 
 1. Detect the upstream release and resolve its exact immutable source and image
    identity.
-2. Exercise that exact target in an isolated disposable environment. Compare
-   every reviewed generic-read contract, run the semantic fixtures, and
-   evaluate the dashboard wrapper contract independently.
-3. Publish separately reviewed release/profile authority through a mechanism
-   the current runtime supports. Dev15 supports exact dashboard attestations;
-   its generic compiled profile remains exactly 7.14.1. Generic
-   signed-registry authority is deferred to Dev16.
-4. Upgrade `ha-mcp` only after the target has applicable exact reviewed
+2. Use `scripts/review_upstream_read_release.py capture` against that exact
+   image in an isolated disposable environment. Normalize and fingerprint the
+   capture twice and require byte-for-byte deterministic evidence.
+3. Use the tool's `diff` and `report` operations to review every input,
+   description, annotation, output, runtime, policy, delegation, and dashboard
+   change. A generated `candidate` entry is deliberately marked unapproved and
+   cannot become runtime authority without a separately reviewed source change.
+4. Add the complete reviewed release entry, exact per-tool policy, immutable
+   source/image evidence, and an exact dashboard attestation or explicit
+   quarantine. Run `validate`; never edit fingerprints merely to satisfy it.
+5. Upgrade `ha-mcp` only after the target has applicable exact reviewed
    authority and its disposable contract evidence passes. Retain the exact
    prior image as the rollback target.
-5. Let Engineering reconcile the live catalog without restarting it.
-6. Verify the observed identity, generic matched/missing/quarantined counts,
+6. Let Engineering reconcile the live catalog without restarting it.
+7. Verify the observed identity, selected registry entry, source/image
+   evidence, generic matched/missing/quarantined counts,
    delegated tool count, dashboard status, and zero-write/fallback invariants.
-7. Roll back `ha-mcp` if the required subset is not compatible or the result
+8. Roll back `ha-mcp` if the required subset is not compatible or the result
    differs from the disposable review.
 
 An unattended update gate may proceed only when the target already has
 applicable exact reviewed release/profile authority. A bounded pre-upgrade
 contract check is evidence for review; it cannot authorize its own release.
-Dev15 does not provide a generic registry publisher or automatic release-review
-pipeline, so operators must not describe those Dev16/Dev17 capabilities as
-active.
+The compiled registry is source-controlled and contains human-owned policy; it
+does not fetch policy or automatically track an upstream latest tag.
+
+Rolling between reviewed 7.14.1 and 7.14.2 triggers fresh discovery and atomic
+route replacement in the same Engineering image. Unknown releases admit no
+delegated reads. An exact reviewed release may still expose a safe exact subset:
+changed reads are quarantined, new tools remain unreviewed, removed tools are
+reported, and write or mixed classifications remain blocked. A full-catalog
+fingerprint is diagnostic evidence and never substitutes for per-tool checks.
 
 ## Dashboard exact-attestation path
 

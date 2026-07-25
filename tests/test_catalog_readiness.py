@@ -91,6 +91,19 @@ class ApplicationCatalogReadinessTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ExactImageDiagnosticTests(unittest.TestCase):
+    def test_operational_errors_are_excluded_from_success_accounting(self):
+        total_calls = (
+            len(acceptance.REPRESENTATIVE_CALLS)
+            + 1
+            + len(acceptance.UPSTREAM_ERROR_CALLS)
+        )
+
+        self.assertEqual(acceptance.EXPECTED_OPERATIONAL_ERROR_CALLS, 2)
+        self.assertEqual(
+            acceptance.expected_successful_delegated_calls(total_calls),
+            total_calls - 2,
+        )
+
     def test_catalog_failure_diagnostics_are_bounded_and_whitelisted(self):
         secret = "synthetic-secret-that-must-not-be-emitted"
         diagnostics = acceptance._bounded_catalog_diagnostics(
@@ -158,6 +171,8 @@ class ExactImageDiagnosticTests(unittest.TestCase):
                 "exact_image_read_gateway_acceptance.py",
                 "--upstream-endpoint",
                 "http://127.0.0.1:18086/synthetic/mcp",
+                "--expected-upstream-version",
+                "7.14.1",
                 "--engineering-endpoint",
                 "http://127.0.0.1:18100/synthetic/mcp",
                 "--fixture-stats-url",
