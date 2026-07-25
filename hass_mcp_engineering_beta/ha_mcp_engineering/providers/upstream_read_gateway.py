@@ -273,9 +273,14 @@ class ReviewedUpstreamReadTool(Tool):
         tool._contract_fingerprint = contract_fingerprint
         return tool
 
-    async def run(self, arguments: dict[str, Any], context: Any = None) -> Any:
+    async def run(
+        self,
+        arguments: dict[str, Any],
+        context: Any = None,
+        convert_result: bool = False,
+    ) -> Any:
         del context
-        return await self._gateway.execute(
+        result = await self._gateway.execute(
             exposed_name=self.name,
             arguments=arguments,
             reviewed_schema=self._schema,
@@ -283,6 +288,9 @@ class ReviewedUpstreamReadTool(Tool):
             admission_generation=self._admission_generation,
             contract_fingerprint=self._contract_fingerprint,
         )
+        if convert_result:
+            return self.fn_metadata.convert_result(result)
+        return result
 
 
 AdmissionValidator = Callable[[McpReadCatalog], None]

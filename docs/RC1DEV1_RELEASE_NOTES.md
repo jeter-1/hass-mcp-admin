@@ -48,7 +48,9 @@ DNS-rebinding protection remains enabled: a configured loopback server accepts
 its loopback Host identity and rejects an untrusted Host before tool dispatch.
 Outbound Engineering sessions explicitly request reviewed protocol
 `2025-03-26`; MCP 1.28's newer default is not used to broaden the exact
-`ha-mcp` 7.14.1 admission contract.
+`ha-mcp` 7.14.1 admission contract. Delegated tools implement MCP 1.28's
+explicit result-conversion callback while retaining the existing bounded JSON
+text content and reviewed output contract.
 
 Stable v1.1.2 and its dependency manifest are unchanged.
 

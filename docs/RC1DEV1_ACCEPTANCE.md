@@ -23,11 +23,13 @@ scope.
 6. Confirm outbound Engineering initialization requests reviewed protocol
    `2025-03-26`, while a different returned protocol still fails exact
    admission closed.
-7. Resolve the exact Engineering runtime requirements and run pinned pip-audit
+7. Confirm delegated tools support MCP 1.28 result conversion without changing
+   their bounded JSON text content or reviewed output contract.
+8. Resolve the exact Engineering runtime requirements and run pinned pip-audit
    in strict mode with no ignored advisory.
-8. Run the complete Python, compilation, metadata, YAML, dependency,
+9. Run the complete Python, compilation, metadata, YAML, dependency,
    secret-scan, PowerShell, protected-path, whitespace, and Evidence gates.
-9. Build stable and Engineering images and validate Engineering no-push builds
+10. Build stable and Engineering images and validate Engineering no-push builds
    for amd64, arm64, and arm/v7.
 
 ## Contract comparison

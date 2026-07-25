@@ -2176,6 +2176,36 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(value["metadata"]["fallback"], "none")
         self.assertEqual(len(transport.calls), 1)
 
+    async def test_mcp_128_result_conversion_preserves_json_text(self):
+        raw = {
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        {
+                            "entity_id": "sun.sun",
+                            "state": "above_horizon",
+                        }
+                    ),
+                }
+            ],
+            "isError": False,
+        }
+        _gateway, tool, _transport, _entry = await self._case(result=raw)
+
+        content = await tool.run(
+            {"entity_id": "sun.sun"},
+            convert_result=True,
+        )
+
+        self.assertEqual(len(content), 1)
+        value = json.loads(content[0].text)
+        self.assertTrue(value["success"])
+        self.assertEqual(
+            value["metadata"]["provider"],
+            "upstream_read_gateway",
+        )
+
     async def test_same_session_unreviewed_version_is_audited_and_rejected(self):
         gateway, tool, transport, _entry = await self._case()
         transport.catalog = replace(

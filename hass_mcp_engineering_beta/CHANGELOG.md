@@ -18,6 +18,8 @@
 - Preserve exact `ha-mcp` 7.14.1 admission by explicitly requesting reviewed
   upstream protocol `2025-03-26` instead of broadening to the SDK's newer
   default.
+- Implement MCP 1.28's delegated result-conversion callback while preserving
+  the established bounded JSON text response and reviewed output contract.
 - Preserve public schemas, fingerprints, provider policy, audit semantics,
   governance, dashboard behavior, zero fallback, and stable v1.1.2.
 
