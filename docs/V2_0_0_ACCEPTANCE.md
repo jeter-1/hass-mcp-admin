@@ -76,6 +76,10 @@ Before merge and again at the exact GA source:
 10. Confirm no delegated write, direct Home Assistant fallback, provider
     fallback, arbitrary forwarding, service/device execution, registry
     administration, dashboard write, or new tool is reachable.
+11. Confirm release detection reaches the pre-versioned GA publication path
+    after merge, squash, or rebase, and skips recursion only when the complete
+    commit subject exactly equals
+    `Promote HA MCP Engineering Server 2.0.0`.
 
 A fingerprint difference is not expected from the version change because the
 reviewed fingerprints cover upstream tool contracts, not Engineering build
