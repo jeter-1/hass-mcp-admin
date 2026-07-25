@@ -325,18 +325,15 @@ def resolve_documents(repo_root: Path, version: str) -> dict[str, Any]:
             f"Unsupported Engineering version format {version!r}; stop release or "
             "deployment work until an exact repository convention is defined."
         )
-    elif identity["kind"] == "stable":
-        result["limitations"].append(
-            f"The repository defines no exact stable release-notes and acceptance-document "
-            f"convention for {version}; stop release or deployment work until one is "
-            "established."
-        )
     else:
-        rc_number = identity["rc"]
-        if identity["kind"] == "development_rc":
-            stem = f"RC{rc_number}DEV{identity['dev']}"
+        if identity["kind"] == "stable":
+            stem = f"V{identity['core'].replace('.', '_')}"
         else:
-            stem = f"RC{rc_number}"
+            rc_number = identity["rc"]
+            if identity["kind"] == "development_rc":
+                stem = f"RC{rc_number}DEV{identity['dev']}"
+            else:
+                stem = f"RC{rc_number}"
         docs_root = repo_root / "docs"
         candidates = {
             "active_release_notes": docs_root / f"{stem}_RELEASE_NOTES.md",

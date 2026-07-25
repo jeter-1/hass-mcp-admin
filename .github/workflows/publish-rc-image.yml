@@ -39,16 +39,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          current_version="$(sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' hass_mcp_engineering_beta/config.yaml)"
+          commit_subject="$(git log -1 --pretty=%s)"
+          automated_release_subject="Promote HA MCP Engineering Server ${current_version}"
           if [[ -f .release/next-version ]]; then
             echo "should_promote=true" >> "$GITHUB_OUTPUT"
             echo "release_mode=staged" >> "$GITHUB_OUTPUT"
-          elif [[ "$(git log -1 --pretty=%s)" == "Promote HA MCP Engineering Server "* ]]; then
+          elif [[ -n "$current_version" && "$commit_subject" == "$automated_release_subject" ]]; then
             echo "should_promote=false" >> "$GITHUB_OUTPUT"
             echo "release_mode=none" >> "$GITHUB_OUTPUT"
             echo "The atomic release commit is already promoted." >> "$GITHUB_STEP_SUMMARY"
           else
             before="${{ github.event.before }}"
-            current_version="$(sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' hass_mcp_engineering_beta/config.yaml)"
             previous_version=""
             if [[ "$before" =~ ^[0-9a-f]{40}$ ]] && git cat-file -e "${before}^{commit}" 2>/dev/null; then
               previous_version="$(git show "${before}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"

@@ -22,7 +22,7 @@ IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 # RC2dev12 runtime metadata in this feature pull request.
 NEXT_VERSION = "2.0.0-rc2-dev13"
 PROMOTION_FIXTURE_CURRENT_VERSION = "2.0.0-rc2-dev12"
-CURRENT_REPOSITORY_VERSION = "2.0.0-rc2-dev16"
+CURRENT_REPOSITORY_VERSION = "2.0.0"
 PLATFORMS = ("linux/amd64", "linux/arm64", "linux/arm/v7")
 BUILD_ARGUMENTS = (
     "BUILD_VERSION",
@@ -115,7 +115,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         else:
             self.assertEqual(configured_version, CURRENT_REPOSITORY_VERSION)
 
-    def test_staged_or_advertised_development_version_orders_before_final_rc3(self):
+    def test_staged_development_or_advertised_ga_version_is_ordered(self):
         versions = PROMOTION_MODULE.authoritative_versions(ROOT)
         configured_version = next(iter(versions.values()))
         declaration = ROOT / ".release" / "next-version"
@@ -128,10 +128,15 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         else:
             effective_version = configured_version
             self.assertEqual(configured_version, CURRENT_REPOSITORY_VERSION)
-        self.assertLess(
-            AwesomeVersion(effective_version),
-            AwesomeVersion("2.0.0-rc.3"),
-        )
+        if declaration.exists():
+            self.assertLess(
+                AwesomeVersion(effective_version),
+                AwesomeVersion("2.0.0-rc.3"),
+            )
+        else:
+            ga_version = AwesomeVersion(effective_version)
+            self.assertEqual(ga_version, AwesomeVersion("2.0.0"))
+            self.assertGreater(ga_version, AwesomeVersion("2.0.0-rc.3"))
 
     def test_complete_validation_precedes_release_detection_and_promotion(self):
         self.assertEqual(
@@ -163,6 +168,184 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         self.assertIn('--deployed-version "$deployed_version"', prepare)
         self.assertIn('--base-ref "$validation_base"', prepare)
         self.assertIn('git status --porcelain', prepare)
+
+    def run_release_detector(
+        self,
+        *,
+        subject,
+        current_version=CURRENT_REPOSITORY_VERSION,
+        previous_version="2.0.0-rc2-dev16",
+        staged_version=None,
+    ):
+        bash = shutil.which("bash")
+        if bash is None:
+            self.skipTest("bash is required to execute the release detector")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "hass_mcp_engineering_beta" / "config.yaml"
+            config.parent.mkdir(parents=True)
+
+            def git(*arguments):
+                return subprocess.run(
+                    ["git", *arguments],
+                    cwd=root,
+                    text=True,
+                    capture_output=True,
+                    check=True,
+                ).stdout.strip()
+
+            git("init")
+            git("config", "user.name", "Detector Fixture")
+            git("config", "user.email", "detector-fixture@example.invalid")
+            config.write_text(
+                f'version: "{previous_version}"\n',
+                encoding="utf-8",
+            )
+            git("add", "hass_mcp_engineering_beta/config.yaml")
+            git("commit", "-m", "Establish previous Engineering version")
+            before = git("rev-parse", "HEAD")
+
+            config.write_text(
+                f'version: "{current_version}"\n',
+                encoding="utf-8",
+            )
+            if staged_version is not None:
+                declaration = root / ".release" / "next-version"
+                declaration.parent.mkdir()
+                declaration.write_text(f"{staged_version}\n", encoding="utf-8")
+                git("add", ".release/next-version")
+            git("add", "hass_mcp_engineering_beta/config.yaml")
+            git("commit", "-m", subject)
+
+            output = root / "github-output"
+            summary = root / "github-summary"
+            environment = os.environ.copy()
+            environment["GITHUB_OUTPUT"] = str(output)
+            environment["GITHUB_STEP_SUMMARY"] = str(summary)
+            detector = str(self.jobs["detect-release"]["steps"][-1]["run"])
+            detector = detector.replace("${{ github.event.before }}", before)
+            result = subprocess.run(
+                [bash, "-c", detector],
+                cwd=root,
+                text=True,
+                capture_output=True,
+                check=False,
+                env=environment,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            values = assignment_lines(output.read_text(encoding="utf-8"))
+            self.assertEqual(git("tag", "--list"), "")
+            return values, (
+                summary.read_text(encoding="utf-8")
+                if summary.exists()
+                else ""
+            )
+
+    def test_release_detector_trusts_only_exact_current_bot_subject(self):
+        exact_bot_subject = (
+            f"Promote HA MCP Engineering Server {CURRENT_REPOSITORY_VERSION}"
+        )
+        cases = (
+            (exact_bot_subject, False, "none"),
+            ("Promote HA MCP Engineering Server 2.0.0 GA", True, "preversioned"),
+            (
+                "Promote HA MCP Engineering Server 2.0.0 GA (#59)",
+                True,
+                "preversioned",
+            ),
+            (f"{exact_bot_subject} extra", True, "preversioned"),
+            (
+                "Promote HA MCP Engineering Server 2.0.0-rc2-dev16",
+                True,
+                "preversioned",
+            ),
+            ("Promote HA MCP Engineering Server 2.0.1", True, "preversioned"),
+            ("Promote Engineering server to 2.0.0", True, "preversioned"),
+            ("Promote Engineering server to 2.0.0 (#59)", True, "preversioned"),
+            (
+                "Merge pull request #59 from jeter-1/release/v2.0.0-ga",
+                True,
+                "preversioned",
+            ),
+            ("promote HA MCP Engineering Server 2.0.0", True, "preversioned"),
+            ("Promote  HA MCP Engineering Server 2.0.0", True, "preversioned"),
+        )
+        for subject, should_promote, release_mode in cases:
+            with self.subTest(subject=subject):
+                values, summary = self.run_release_detector(subject=subject)
+                self.assertEqual(
+                    values,
+                    {
+                        "should_promote": str(should_promote).lower(),
+                        "release_mode": release_mode,
+                    },
+                )
+                if should_promote:
+                    self.assertNotIn("already promoted", summary)
+                else:
+                    self.assertIn("already promoted", summary)
+
+    def test_exact_automated_subject_prevents_recursive_rc_publication(self):
+        version = "2.0.0-rc2-dev16"
+        values, summary = self.run_release_detector(
+            subject=f"Promote HA MCP Engineering Server {version}",
+            current_version=version,
+            previous_version="2.0.0-rc2-dev15",
+        )
+        self.assertEqual(
+            values,
+            {"should_promote": "false", "release_mode": "none"},
+        )
+        self.assertIn("already promoted", summary)
+
+    def test_staged_and_preversioned_rc_detection_remain_unchanged(self):
+        staged_values, _ = self.run_release_detector(
+            subject="Prepare the next reviewed RC correction",
+            current_version="2.0.0-rc2-dev15",
+            previous_version="2.0.0-rc2-dev14",
+            staged_version="2.0.0-rc2-dev16",
+        )
+        self.assertEqual(
+            staged_values,
+            {"should_promote": "true", "release_mode": "staged"},
+        )
+
+        preversioned_values, _ = self.run_release_detector(
+            subject="Promote reviewed RC correction",
+            current_version="2.0.0-rc2-dev16",
+            previous_version="2.0.0-rc2-dev15",
+        )
+        self.assertEqual(
+            preversioned_values,
+            {"should_promote": "true", "release_mode": "preversioned"},
+        )
+
+    def test_detector_subject_matches_automated_release_commit_exactly(self):
+        detect = str(self.jobs["detect-release"]["steps"][-1]["run"])
+        prepare = str(next(
+            step["run"]
+            for step in self.steps
+            if step.get("name") == "Prepare local immutable release commit"
+        ))
+        self.assertIn(
+            'automated_release_subject="Promote HA MCP Engineering Server ${current_version}"',
+            detect,
+        )
+        self.assertIn(
+            '"$commit_subject" == "$automated_release_subject"',
+            detect,
+        )
+        self.assertNotIn(
+            '== "Promote HA MCP Engineering Server "*',
+            detect,
+        )
+        self.assertNotIn("docker", detect)
+        self.assertNotIn("git tag", detect)
+        self.assertNotIn("git push", detect)
+        self.assertIn(
+            'git commit -m "Promote HA MCP Engineering Server ${version}"',
+            prepare,
+        )
 
     def test_only_main_promotion_job_can_write_contents_or_packages(self):
         writers = {
@@ -445,6 +628,18 @@ class PromotionScriptTests(unittest.TestCase):
                 self.module.validate_document_authority(
                     Path(directory), NEXT_VERSION
                 )
+
+    def test_repository_ga_document_authority_is_exact(self):
+        resolution = self.module.validate_document_authority(ROOT, "2.0.0")
+        self.assertEqual(resolution["resolution_status"], "exact")
+        self.assertEqual(
+            resolution["active_release_notes"],
+            "docs/V2_0_0_RELEASE_NOTES.md",
+        )
+        self.assertEqual(
+            resolution["active_acceptance_document"],
+            "docs/V2_0_0_ACCEPTANCE.md",
+        )
 
 
 class RegistryTagGuardTests(unittest.TestCase):
