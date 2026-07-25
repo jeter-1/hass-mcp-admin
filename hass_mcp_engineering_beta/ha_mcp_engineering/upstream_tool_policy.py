@@ -17,12 +17,19 @@ RELEASE_REGISTRY_PATH = Path(__file__).with_name(
 )
 POLICY_SCHEMA_VERSION = 1
 RELEASE_REGISTRY_FORMAT_VERSION = 1
+REVIEWED_CAPTURE_FORMAT_VERSION = 1
 REVIEWED_UPSTREAM_SERVER = "ha-mcp"
 REVIEWED_UPSTREAM_VERSION = "7.14.1"
 REVIEWED_UPSTREAM_PROTOCOL = "2025-03-26"
 UPSTREAM_SOURCE_REPOSITORY = "https://github.com/homeassistant-ai/ha-mcp"
 _POLICY_RESOURCE = re.compile(
     r"^upstream_tool_policy(?:_[0-9]+_[0-9]+_[0-9]+)?\.json$"
+)
+_CAPTURE_RESOURCE = re.compile(
+    r"^docs/evidence/upstream-read-compatibility/"
+    r"ha-mcp-(?:0|[1-9][0-9]{0,3})\."
+    r"(?:0|[1-9][0-9]{0,3})\."
+    r"(?:0|[1-9][0-9]{0,3})\.json$"
 )
 MAX_RUNTIME_DESCRIPTION_BYTES = 8_192
 MAX_RUNTIME_ANNOTATION_TITLE_BYTES = 512
@@ -450,12 +457,17 @@ class ReviewedUpstreamRelease:
     image_revision: str
     advertised_tool_count: int
     catalog_fingerprint: str
+    capture_resource: str
+    capture_sha256: str
+    capture_format_version: int
     policy_resource: str
     policy_sha256: str
     review_provenance: tuple[str, ...]
     review_date: str
     dashboard_attestation_status: str
     dashboard_attestation_entry_id: str | None
+    dashboard_attestation_fingerprint: str | None
+    dashboard_compiled_constraints_fingerprint: str | None
     error_contract_fingerprint: str
     entity_lookup_missing_resource_status: str
     tool_contracts: tuple[tuple[str, ReviewedReleaseToolContract], ...]
@@ -709,6 +721,9 @@ def _load_reviewed_release(
         "image_revision",
         "advertised_tool_count",
         "catalog_fingerprint",
+        "capture_resource",
+        "capture_sha256",
+        "capture_format_version",
         "policy_resource",
         "policy_sha256",
         "review_provenance",
@@ -808,6 +823,31 @@ def _load_reviewed_release(
         raise UpstreamToolPolicyError(
             "release_registry_catalog_fingerprint_invalid"
         )
+    capture_resource = value["capture_resource"]
+    if (
+        not isinstance(capture_resource, str)
+        or not _CAPTURE_RESOURCE.fullmatch(capture_resource)
+        or capture_resource
+        != (
+            "docs/evidence/upstream-read-compatibility/"
+            f"ha-mcp-{version}.json"
+        )
+    ):
+        raise UpstreamToolPolicyError(
+            "release_registry_capture_resource_invalid"
+        )
+    capture_sha256 = value["capture_sha256"]
+    if (
+        not isinstance(capture_sha256, str)
+        or not _SHA256_DIGEST.fullmatch(capture_sha256)
+    ):
+        raise UpstreamToolPolicyError(
+            "release_registry_capture_digest_invalid"
+        )
+    if value["capture_format_version"] != REVIEWED_CAPTURE_FORMAT_VERSION:
+        raise UpstreamToolPolicyError(
+            "release_registry_capture_format_invalid"
+        )
     resource = value["policy_resource"]
     if (
         not isinstance(resource, str)
@@ -874,12 +914,20 @@ def _load_reviewed_release(
     if not isinstance(dashboard, dict) or set(dashboard) != {
         "status",
         "entry_id",
+        "attestation_fingerprint",
+        "compiled_constraints_fingerprint",
     }:
         raise UpstreamToolPolicyError(
             "release_registry_dashboard_attestation_invalid"
         )
     dashboard_status = dashboard["status"]
     dashboard_entry_id = dashboard["entry_id"]
+    dashboard_attestation_fingerprint = dashboard[
+        "attestation_fingerprint"
+    ]
+    dashboard_constraints_fingerprint = dashboard[
+        "compiled_constraints_fingerprint"
+    ]
     if dashboard_status not in {"reviewed", "quarantined"}:
         raise UpstreamToolPolicyError(
             "release_registry_dashboard_attestation_invalid"
@@ -888,11 +936,23 @@ def _load_reviewed_release(
         if (
             not isinstance(dashboard_entry_id, str)
             or not 1 <= len(dashboard_entry_id) <= 128
+            or not isinstance(dashboard_attestation_fingerprint, str)
+            or not _HEX_64.fullmatch(
+                dashboard_attestation_fingerprint
+            )
+            or not isinstance(dashboard_constraints_fingerprint, str)
+            or not _HEX_64.fullmatch(
+                dashboard_constraints_fingerprint
+            )
         ):
             raise UpstreamToolPolicyError(
                 "release_registry_dashboard_attestation_invalid"
             )
-    elif dashboard_entry_id is not None:
+    elif (
+        dashboard_entry_id is not None
+        or dashboard_attestation_fingerprint is not None
+        or dashboard_constraints_fingerprint is not None
+    ):
         raise UpstreamToolPolicyError(
             "release_registry_dashboard_attestation_invalid"
         )
@@ -958,14 +1018,492 @@ def _load_reviewed_release(
         image_revision=value["image_revision"],
         advertised_tool_count=tool_count,
         catalog_fingerprint=catalog,
+        capture_resource=capture_resource,
+        capture_sha256=capture_sha256,
+        capture_format_version=value["capture_format_version"],
         policy_resource=resource,
         policy_sha256=expected_policy_digest,
         review_provenance=tuple(provenance),
         review_date=review_date,
         dashboard_attestation_status=dashboard_status,
         dashboard_attestation_entry_id=dashboard_entry_id,
+        dashboard_attestation_fingerprint=(
+            dashboard_attestation_fingerprint
+        ),
+        dashboard_compiled_constraints_fingerprint=(
+            dashboard_constraints_fingerprint
+        ),
         error_contract_fingerprint=error_contract,
         entity_lookup_missing_resource_status=entity_status,
         tool_contracts=tuple(sorted(tool_contracts.items())),
         policy=policy,
     )
+
+
+def reviewed_tool_contracts_from_capture(
+    capture_value: dict[str, Any],
+    policy: UpstreamToolPolicy,
+) -> dict[str, dict[str, Any]]:
+    """Derive the complete evidence ledger from one normalized capture."""
+
+    policy_by_name = policy.by_name
+    values: dict[str, dict[str, Any]] = {}
+    tools = capture_value.get("tools")
+    if not isinstance(tools, list):
+        raise UpstreamToolPolicyError("reviewed_capture_tools_invalid")
+    for tool in tools:
+        if not isinstance(tool, dict):
+            raise UpstreamToolPolicyError(
+                "reviewed_capture_tool_descriptor_invalid"
+            )
+        name = tool.get("name")
+        if not isinstance(name, str) or name not in policy_by_name:
+            raise UpstreamToolPolicyError(
+                "reviewed_capture_tool_policy_missing"
+            )
+        if "inputSchema" not in tool:
+            raise UpstreamToolPolicyError(
+                "reviewed_capture_tool_descriptor_invalid"
+            )
+        policy_entry = policy_by_name[name]
+        classification = policy_entry.classification
+        values[name] = {
+            "input_schema_fingerprint": schema_fingerprint(
+                tool["inputSchema"]
+            ),
+            "description_fingerprint": (
+                runtime_description_fingerprint(
+                    tool.get("description")
+                )
+                or schema_fingerprint({"invalid_description": True})
+            ),
+            "annotation_fingerprint": schema_fingerprint(
+                {
+                    "present": "annotations" in tool,
+                    "value": tool.get("annotations"),
+                }
+            ),
+            "output_contract_fingerprint": schema_fingerprint(
+                {
+                    "present": "outputSchema" in tool,
+                    "value": tool.get("outputSchema"),
+                }
+            ),
+            "runtime_contract_fingerprint": schema_fingerprint(tool),
+            "policy_classification": classification,
+            "reviewed_automatic_read": (
+                classification == "automatic_read"
+            ),
+            "quarantine_reason": (
+                None
+                if classification == "automatic_read"
+                else f"policy:{classification}"
+            ),
+        }
+    if set(values) != set(policy_by_name):
+        raise UpstreamToolPolicyError(
+            "reviewed_capture_tool_contracts_incomplete"
+        )
+    return dict(sorted(values.items()))
+
+
+def _reviewed_capture(
+    release: ReviewedUpstreamRelease,
+    *,
+    repository_root: Path,
+    verify_digest: bool,
+) -> tuple[dict[str, Any], str]:
+    capture_path = repository_root / release.capture_resource
+    try:
+        raw = capture_path.read_bytes()
+    except OSError as exc:
+        raise UpstreamToolPolicyError(
+            "reviewed_capture_unreadable"
+        ) from exc
+    digest = "sha256:" + hashlib.sha256(raw).hexdigest()
+    if verify_digest and digest != release.capture_sha256:
+        raise UpstreamToolPolicyError(
+            "reviewed_capture_digest_mismatch"
+        )
+    capture_value = _load_strict_json(
+        capture_path, error="reviewed_capture_invalid"
+    )
+    if (
+        not isinstance(capture_value, dict)
+        or set(capture_value)
+        != {
+            "capture_format_version",
+            "catalog_fingerprint",
+            "error_shapes",
+            "protocol_version",
+            "server_name",
+            "server_version",
+            "tool_count",
+            "tools",
+        }
+    ):
+        raise UpstreamToolPolicyError(
+            "reviewed_capture_fields_invalid"
+        )
+    if raw != canonical_json(capture_value) + b"\n":
+        raise UpstreamToolPolicyError(
+            "reviewed_capture_not_canonical"
+        )
+    if (
+        capture_value["capture_format_version"]
+        != REVIEWED_CAPTURE_FORMAT_VERSION
+        or capture_value["capture_format_version"]
+        != release.capture_format_version
+    ):
+        raise UpstreamToolPolicyError(
+            "reviewed_capture_format_mismatch"
+        )
+    if (
+        capture_value["server_name"] != release.server_name
+        or capture_value["server_version"] != release.version
+        or capture_value["protocol_version"]
+        not in release.allowed_protocol_versions
+    ):
+        raise UpstreamToolPolicyError(
+            "reviewed_capture_identity_mismatch"
+        )
+    tools = capture_value["tools"]
+    if (
+        not isinstance(tools, list)
+        or not 1 <= len(tools) <= 512
+        or any(not isinstance(tool, dict) for tool in tools)
+    ):
+        raise UpstreamToolPolicyError(
+            "reviewed_capture_tools_invalid"
+        )
+    names = [tool.get("name") for tool in tools]
+    if (
+        any(
+            not isinstance(name, str)
+            or not _TOOL_NAME.fullmatch(name)
+            for name in names
+        )
+        or names != sorted(names)
+        or len(names) != len(set(names))
+    ):
+        raise UpstreamToolPolicyError(
+            "reviewed_capture_tool_order_or_uniqueness_invalid"
+        )
+    observed_catalog_fingerprint = catalog_fingerprint(tools)
+    if (
+        capture_value["tool_count"] != len(tools)
+        or capture_value["catalog_fingerprint"]
+        != observed_catalog_fingerprint
+    ):
+        raise UpstreamToolPolicyError(
+            "reviewed_capture_catalog_invalid"
+        )
+    if not isinstance(capture_value["error_shapes"], dict):
+        raise UpstreamToolPolicyError(
+            "reviewed_capture_error_shapes_invalid"
+        )
+    return capture_value, digest
+
+
+def _dashboard_attestation_projection(attestation: Any) -> dict[str, Any]:
+    return {
+        "entry_id": attestation.entry_id,
+        "server_name": attestation.server_name,
+        "upstream_version": attestation.upstream_version,
+        "source_tag": attestation.source_tag,
+        "source_commit": attestation.source_commit,
+        "image_index_digest": attestation.image_index_digest,
+        "platform_digests": dict(attestation.platform_digests),
+        "image_revision": attestation.image_revision,
+        "contract_family": attestation.contract_family,
+        "input_contract_fingerprint": (
+            attestation.input_contract_fingerprint
+        ),
+        "security_contract_fingerprint": (
+            attestation.security_contract_fingerprint
+        ),
+        "output_contract_fingerprint": (
+            attestation.output_contract_fingerprint
+        ),
+        "runtime_contract_fingerprint": (
+            attestation.runtime_contract_fingerprint
+        ),
+        "catalog_fingerprint": attestation.catalog_fingerprint,
+        "raw_input_schema_fingerprint": (
+            attestation.raw_input_schema_fingerprint
+        ),
+        "reviewed_security_descriptor_fingerprint": (
+            attestation.reviewed_security_descriptor_fingerprint
+        ),
+        "fixture_runtime_descriptor_fingerprint": (
+            attestation.fixture_runtime_descriptor_fingerprint
+        ),
+        "published_runtime_descriptor_fingerprint": (
+            attestation.published_runtime_descriptor_fingerprint
+        ),
+        "review_evidence_digest": attestation.review_evidence_digest,
+        "reviewed_at": attestation.reviewed_at,
+        "revoked": attestation.revoked,
+    }
+
+
+def _dashboard_compiled_constraints_projection(
+    contract_family: str,
+) -> dict[str, Any]:
+    from .providers.upstream_contracts import (
+        ALLOWED_SCHEMA_PROPERTIES,
+        COMPILED_ARGUMENT_SHAPES,
+        COMPILED_CONTRACT_FAMILIES,
+        PROHIBITED_ARGUMENTS,
+    )
+
+    family = COMPILED_CONTRACT_FAMILIES.get(contract_family)
+    if family is None:
+        raise UpstreamToolPolicyError(
+            "release_registry_dashboard_contract_family_invalid"
+        )
+    return {
+        "family": {
+            "family_id": family.family_id,
+            "tool_name": family.tool_name,
+            "trust_mode": family.trust_mode,
+            "protocol_version": family.protocol_version,
+            "normalizer": family.normalizer,
+            "response_policy": family.response_policy,
+            "hash_contract": dict(family.hash_contract),
+            "error_taxonomy": list(family.error_taxonomy),
+        },
+        "compiled_argument_shapes": COMPILED_ARGUMENT_SHAPES,
+        "allowed_schema_properties": sorted(
+            ALLOWED_SCHEMA_PROPERTIES
+        ),
+        "prohibited_arguments": sorted(PROHIBITED_ARGUMENTS),
+    }
+
+
+def _dashboard_evidence(
+    release: ReviewedUpstreamRelease,
+    *,
+    dashboard_attestations_path: Path | None,
+) -> tuple[str, str]:
+    from .providers.upstream_contracts import (
+        BUILTIN_ATTESTATIONS_PATH,
+        load_attestations,
+    )
+
+    path = (
+        dashboard_attestations_path
+        if dashboard_attestations_path is not None
+        else BUILTIN_ATTESTATIONS_PATH
+    )
+    try:
+        attestations = load_attestations(path)
+    except Exception as exc:
+        raise UpstreamToolPolicyError(
+            "release_registry_dashboard_attestations_invalid"
+        ) from exc
+    matches = [
+        item
+        for item in attestations
+        if item.entry_id == release.dashboard_attestation_entry_id
+    ]
+    if len(matches) != 1:
+        raise UpstreamToolPolicyError(
+            "release_registry_dashboard_attestation_missing"
+        )
+    attestation = matches[0]
+    if (
+        attestation.revoked
+        or attestation.server_name != release.server_name
+        or attestation.upstream_version != release.version
+        or attestation.source_tag != release.release_tag
+        or attestation.source_commit != release.source_commit
+        or attestation.image_index_digest
+        != release.image_index_digest
+        or dict(attestation.platform_digests)
+        != release.architecture_image_digests_by_platform
+        or attestation.image_revision != release.image_revision
+        or (
+            attestation.catalog_fingerprint is not None
+            and attestation.catalog_fingerprint
+            != release.catalog_fingerprint
+        )
+    ):
+        raise UpstreamToolPolicyError(
+            "release_registry_dashboard_attestation_mismatch"
+        )
+    attestation_fingerprint = schema_fingerprint(
+        _dashboard_attestation_projection(attestation)
+    )
+    constraints_fingerprint = schema_fingerprint(
+        _dashboard_compiled_constraints_projection(
+            attestation.contract_family
+        )
+    )
+    return attestation_fingerprint, constraints_fingerprint
+
+
+def generated_reviewed_release_registry(
+    path: Path = RELEASE_REGISTRY_PATH,
+    *,
+    repository_root: Path,
+    dashboard_attestations_path: Path | None = None,
+) -> dict[str, Any]:
+    """Regenerate every evidence-derived registry field deterministically."""
+
+    raw_registry = _load_strict_json(
+        path, error="release_registry_document_unreadable"
+    )
+    registry = load_reviewed_upstream_release_registry(path)
+    if not isinstance(raw_registry, dict):
+        raise UpstreamToolPolicyError(
+            "release_registry_document_fields_invalid"
+        )
+    generated = json.loads(canonical_json(raw_registry))
+    raw_by_version = {
+        item["version"]: item for item in generated["releases"]
+    }
+    for release in registry.releases:
+        raw_release = raw_by_version[release.version]
+        capture_value, capture_digest = _reviewed_capture(
+            release,
+            repository_root=repository_root,
+            verify_digest=False,
+        )
+        contracts = reviewed_tool_contracts_from_capture(
+            capture_value, release.policy
+        )
+        for name, expected in contracts.items():
+            policy_entry = release.policy.by_name[name]
+            if (
+                expected["input_schema_fingerprint"]
+                != policy_entry.input_schema_fingerprint
+            ):
+                raise UpstreamToolPolicyError(
+                    "reviewed_capture_policy_schema_mismatch"
+                )
+        automatic_names = {
+            entry.upstream_name
+            for entry in release.policy.tools
+            if entry.classification == "automatic_read"
+        }
+        captured_by_name = {
+            item["name"]: item for item in capture_value["tools"]
+        }
+        if release.policy.reviewed_runtime_description_fingerprints_by_name != {
+            name: (
+                runtime_description_fingerprint(
+                    captured_by_name[name].get("description")
+                )
+                or ""
+            )
+            for name in sorted(automatic_names)
+        }:
+            raise UpstreamToolPolicyError(
+                "reviewed_capture_policy_description_mismatch"
+            )
+        if release.policy.reviewed_runtime_annotation_fingerprints_by_name != {
+            name: (
+                runtime_annotation_fingerprint(
+                    captured_by_name[name].get("annotations")
+                )
+                or ""
+            )
+            for name in sorted(automatic_names)
+        }:
+            raise UpstreamToolPolicyError(
+                "reviewed_capture_policy_annotation_mismatch"
+            )
+        if (
+            release.policy.reviewed_runtime_output_schema_fingerprints_by_name
+            != {
+                name: schema_fingerprint(
+                    captured_by_name[name].get("outputSchema")
+                )
+                for name in sorted(automatic_names)
+            }
+        ):
+            raise UpstreamToolPolicyError(
+                "reviewed_capture_policy_output_mismatch"
+            )
+        raw_release["capture_sha256"] = capture_digest
+        raw_release["capture_format_version"] = capture_value[
+            "capture_format_version"
+        ]
+        raw_release["advertised_tool_count"] = capture_value[
+            "tool_count"
+        ]
+        raw_release["catalog_fingerprint"] = capture_value[
+            "catalog_fingerprint"
+        ]
+        raw_release["error_contract_fingerprint"] = schema_fingerprint(
+            capture_value["error_shapes"]
+        )
+        raw_release["tool_contracts"] = contracts
+        if release.dashboard_attestation_status == "reviewed":
+            (
+                attestation_fingerprint,
+                constraints_fingerprint,
+            ) = _dashboard_evidence(
+                release,
+                dashboard_attestations_path=(
+                    dashboard_attestations_path
+                ),
+            )
+            raw_release["dashboard_attestation"][
+                "attestation_fingerprint"
+            ] = attestation_fingerprint
+            raw_release["dashboard_attestation"][
+                "compiled_constraints_fingerprint"
+            ] = constraints_fingerprint
+    return generated
+
+
+def validate_reviewed_release_evidence(
+    path: Path = RELEASE_REGISTRY_PATH,
+    *,
+    repository_root: Path,
+    dashboard_attestations_path: Path | None = None,
+) -> ReviewedUpstreamReleaseRegistry:
+    """Bind the committed registry to exact captures and dashboard evidence."""
+
+    raw_registry = _load_strict_json(
+        path, error="release_registry_document_unreadable"
+    )
+    registry = load_reviewed_upstream_release_registry(path)
+    for release in registry.releases:
+        _reviewed_capture(
+            release,
+            repository_root=repository_root,
+            verify_digest=True,
+        )
+    generated = generated_reviewed_release_registry(
+        path,
+        repository_root=repository_root,
+        dashboard_attestations_path=dashboard_attestations_path,
+    )
+    if canonical_json(raw_registry) != canonical_json(generated):
+        raise UpstreamToolPolicyError(
+            "release_registry_generated_evidence_drift"
+        )
+    for release in registry.releases:
+        if release.dashboard_attestation_status == "reviewed":
+            (
+                attestation_fingerprint,
+                constraints_fingerprint,
+            ) = _dashboard_evidence(
+                release,
+                dashboard_attestations_path=(
+                    dashboard_attestations_path
+                ),
+            )
+            if (
+                release.dashboard_attestation_fingerprint
+                != attestation_fingerprint
+                or release.dashboard_compiled_constraints_fingerprint
+                != constraints_fingerprint
+            ):
+                raise UpstreamToolPolicyError(
+                    "release_registry_dashboard_evidence_drift"
+                )
+    return registry

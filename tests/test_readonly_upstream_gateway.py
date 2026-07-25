@@ -1188,7 +1188,29 @@ class PolicyInventoryTests(unittest.TestCase):
         )
         self.assertIn("exact-image-read-gateway:", workflow)
         self.assertIn(
-            "ghcr.io/homeassistant-ai/ha-mcp@sha256:68f386d9becfcc58476f1881a0025f4c6a3ae5874c15cdd61097b14156886292",
+            "review_upstream_read_release.py ci-matrix",
+            workflow,
+        )
+        self.assertIn(
+            "fromJSON(needs.prepare_exact_image_matrix.outputs.matrix)",
+            workflow,
+        )
+        self.assertIn("EXPECTED_IMAGE_INDEX_DIGEST", workflow)
+        self.assertIn("EXPECTED_IMAGE_REVISION", workflow)
+        self.assertIn(
+            "EXPECTED_ARCHITECTURE_IMAGE_DIGESTS", workflow
+        )
+        self.assertIn("org.opencontainers.image.revision", workflow)
+        self.assertIn(
+            "docs/evidence/upstream-read-compatibility/ha-mcp-${UPSTREAM_VERSION}.json",
+            workflow,
+        )
+        self.assertNotIn(
+            "68f386d9becfcc58476f1881a0025f4c6a3ae5874c15cdd61097b14156886292",
+            workflow,
+        )
+        self.assertNotIn(
+            "7917b2d385e16e43f45f92fc72a757e5c0aec8d88b3cd69fe64f3b5106cbfe36",
             workflow,
         )
         self.assertIn("fake_ha_read_gateway_contract_server.py", workflow)

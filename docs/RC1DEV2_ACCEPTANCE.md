@@ -15,12 +15,17 @@ merge, and deployment are outside this contract.
    `2bdbdee51950bcc54635231001595f01a0eb0ba3`.
 2. Validate the two exact registry entries and immutable source/image evidence
    recorded in the release notes.
-3. Capture each exact image twice through reviewed protocol `2025-03-26`;
+3. Require each registry entry's canonical capture resource and SHA-256 hash,
+   regenerate every catalog, error, and per-tool contract field from that
+   capture, and require a clean generated-registry diff.
+4. Cross-check every reviewed dashboard entry against the authoritative
+   built-in attestation and compiled constrained-read contract.
+5. Capture each exact image twice through reviewed protocol `2025-03-26`;
    require deterministic normalized artifacts and fingerprints.
-4. Require 78 `unchanged_exact` comparison results and zero metadata-only,
+6. Require 78 `unchanged_exact` comparison results and zero metadata-only,
    compatible, incompatible, new, removed, renamed, or classification-review
    results for the 7.14.1-to-7.14.2 comparison.
-5. Reject duplicate versions, conflicting digests, incomplete contracts,
+7. Reject duplicate versions, conflicting digests, incomplete contracts,
    unknown classifications, mismatched policy hashes, and generated
    `candidate_unapproved` entries.
 
@@ -56,11 +61,15 @@ capability unavailable, authentication, connection, timeout, internal
 provider failure, hostile error text, redaction, audit attribution, health
 counter semantics, and zero fallback.
 
-Health and capability output must report the observed upstream version, all
-locally reviewed versions, selected entry, source/image/protocol evidence,
-comparison status, exact admitted and quarantined counts, missing reads, new
-unreviewed tools, mismatch reason counts, dashboard attestation, last compatible
-version, reconciliation state, and a truthful operator action.
+Health and capability output must report the observed upstream identity,
+version, protocol, tool count, and catalog independently from all locally
+reviewed versions, selected entry, reviewed source/image evidence, comparison
+status, exact admitted and quarantined counts, missing reads, new unreviewed
+tools, mismatch reason counts, dashboard attestation, last compatible version,
+reconciliation state, and a truthful operator action. Source commit, image
+index/platform digests, and OCI revision must remain explicitly unobserved by
+MCP discovery; operator guidance must require independent deployment
+verification rather than claim that no action is needed.
 
 For `ha_get_entity`, exercise a valid registry entity and a guaranteed missing
 registry entity against both exact images. Until upstream supplies a stable
@@ -77,10 +86,13 @@ compilation, strict dependency audit, metadata, YAML, secret scan, PowerShell,
 protected-path, whitespace, Evidence, disposable Home Assistant, Engineering
 image, retired stable-v1 packaging, amd64, arm64, and arm/v7 no-push gates.
 
-The exact-image job must remain a digest-pinned matrix for both 7.14.1 and
-7.14.2. It must not pull `latest`, publish an image, create a tag, or use live
-Home Assistant credentials. Do not update expected fingerprints merely to make
-a gate pass.
+The exact-image job must derive its digest-pinned 7.14.1/7.14.2 matrix from the
+reviewed registry rather than duplicate version or digest literals in workflow
+YAML. Before starting each image, require the independently resolved index
+digest, complete reviewed platform-digest map, OCI version label, and OCI
+revision label to match the selected registry entry. It must not pull `latest`,
+publish an image, create a tag, or use live Home Assistant credentials. Do not
+update expected fingerprints merely to make a gate pass.
 
 Confirm public schemas, Engineering tool registrations, policy classifications,
 the 41-plus-26 composition, exact admission, governance, audit, no-fallback

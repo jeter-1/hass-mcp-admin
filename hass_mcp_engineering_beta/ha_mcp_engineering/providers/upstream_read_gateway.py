@@ -388,10 +388,19 @@ class UpstreamReadGateway:
             "reviewed_supported_versions": [],
             "reviewed_release_count": 0,
             "selected_compatibility_entry_id": None,
-            "active_source_commit": None,
-            "active_image_index_digest": None,
-            "active_architecture_image_digests": {},
-            "active_protocol_version": None,
+            "reviewed_source_commit": None,
+            "reviewed_image_index_digest": None,
+            "reviewed_architecture_image_digests": {},
+            "reviewed_image_revision": None,
+            "reviewed_allowed_protocol_versions": [],
+            "runtime_artifact_provenance_observed": False,
+            "runtime_source_commit_observed": None,
+            "runtime_image_index_digest_observed": None,
+            "runtime_architecture_image_digest_observed": None,
+            "runtime_image_revision_observed": None,
+            "runtime_artifact_provenance_status": (
+                "unobserved_by_mcp_discovery"
+            ),
             "catalog_comparison_status": "not_observed",
             "dashboard_attestation_status": "not_observed",
             "version_status": "not_observed",
@@ -887,24 +896,39 @@ class UpstreamReadGateway:
                     "selected_compatibility_entry_id": (
                         release.entry_id if release is not None else None
                     ),
-                    "active_source_commit": (
+                    "reviewed_source_commit": (
                         release.source_commit
                         if release is not None
                         else policy.reviewed_source_commit
                     ),
-                    "active_image_index_digest": (
+                    "reviewed_image_index_digest": (
                         release.image_index_digest
                         if release is not None
                         else None
                     ),
-                    "active_architecture_image_digests": (
+                    "reviewed_architecture_image_digests": (
                         release.architecture_image_digests_by_platform
                         if release is not None
                         else {}
                     ),
-                    "active_protocol_version": catalog.protocol_version[
-                        :64
-                    ],
+                    "reviewed_image_revision": (
+                        release.image_revision
+                        if release is not None
+                        else None
+                    ),
+                    "reviewed_allowed_protocol_versions": (
+                        list(release.allowed_protocol_versions)
+                        if release is not None
+                        else [REVIEWED_PROTOCOL_VERSION]
+                    ),
+                    "runtime_artifact_provenance_observed": False,
+                    "runtime_source_commit_observed": None,
+                    "runtime_image_index_digest_observed": None,
+                    "runtime_architecture_image_digest_observed": None,
+                    "runtime_image_revision_observed": None,
+                    "runtime_artifact_provenance_status": (
+                        "unobserved_by_mcp_discovery"
+                    ),
                     "catalog_comparison_status": compatibility_status,
                     "dashboard_attestation_status": (
                         release.dashboard_attestation_status
@@ -2376,10 +2400,11 @@ class UpstreamReadGateway:
                 self._state["exposed_tools"] = []
                 self._state["collision_mappings"] = []
                 self._state["selected_compatibility_entry_id"] = None
-                self._state["active_source_commit"] = None
-                self._state["active_image_index_digest"] = None
-                self._state["active_architecture_image_digests"] = {}
-                self._state["active_protocol_version"] = None
+                self._state["reviewed_source_commit"] = None
+                self._state["reviewed_image_index_digest"] = None
+                self._state["reviewed_architecture_image_digests"] = {}
+                self._state["reviewed_image_revision"] = None
+                self._state["reviewed_allowed_protocol_versions"] = []
                 self._state["catalog_comparison_status"] = {
                     "upstream_version_mismatch": "unknown_version",
                     "schema_mismatch": "reviewed_runtime_drift",
@@ -2698,7 +2723,11 @@ def _stable_compatibility(snapshot: dict[str, Any]) -> bool:
 
 def _recommended_action(compatibility_status: str) -> str:
     if compatibility_status == "exact":
-        return "No compatibility action is required."
+        return (
+            "The observed MCP contract matches reviewed evidence. Verify the "
+            "running upstream image digest and revision independently during "
+            "deployment; MCP discovery does not observe artifact provenance."
+        )
     if compatibility_status == "partial":
         return (
             "Review quarantined, missing, and unreviewed tool contracts; "

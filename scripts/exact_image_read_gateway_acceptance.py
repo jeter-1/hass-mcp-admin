@@ -1064,16 +1064,49 @@ async def inspect_engineering(
                 "selected compatibility entry mismatch",
             )
             require(
-                gateway_state.get("active_source_commit")
+                gateway_state.get("reviewed_source_commit")
                 == release.source_commit
-                and gateway_state.get("active_image_index_digest")
-                == release.image_index_digest,
-                "active source/image evidence mismatch",
+                and gateway_state.get("reviewed_image_index_digest")
+                == release.image_index_digest
+                and gateway_state.get("reviewed_image_revision")
+                == release.image_revision,
+                "reviewed source/image evidence mismatch",
             )
             require(
-                gateway_state.get("active_protocol_version")
-                == "2025-03-26",
-                "active protocol evidence mismatch",
+                gateway_state.get("observed_protocol_version")
+                == "2025-03-26"
+                and gateway_state.get(
+                    "reviewed_allowed_protocol_versions"
+                )
+                == ["2025-03-26"],
+                "observed/reviewed protocol evidence mismatch",
+            )
+            require(
+                gateway_state.get(
+                    "runtime_artifact_provenance_observed"
+                )
+                is False
+                and gateway_state.get(
+                    "runtime_source_commit_observed"
+                )
+                is None
+                and gateway_state.get(
+                    "runtime_image_index_digest_observed"
+                )
+                is None
+                and gateway_state.get(
+                    "runtime_architecture_image_digest_observed"
+                )
+                is None
+                and gateway_state.get(
+                    "runtime_image_revision_observed"
+                )
+                is None
+                and gateway_state.get(
+                    "runtime_artifact_provenance_status"
+                )
+                == "unobserved_by_mcp_discovery",
+                "runtime artifact provenance was falsely claimed",
             )
             require(
                 gateway_state.get("catalog_comparison_status") == "exact"

@@ -10,15 +10,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 from copy import deepcopy
+import difflib
 import hashlib
 import json
 from pathlib import Path
 import sys
 from typing import Any
-
-from mcp import types
-from mcp.client.streamable_http import streamablehttp_client
-
 
 ROOT = Path(__file__).resolve().parents[1]
 BETA = ROOT / "hass_mcp_engineering_beta"
@@ -28,13 +25,14 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     ReviewedUpstreamReleaseRegistry,
     canonical_json,
     catalog_fingerprint,
+    generated_reviewed_release_registry,
     load_reviewed_upstream_release_registry,
+    load_upstream_tool_policy,
+    reviewed_tool_contracts_from_capture,
     runtime_annotation_fingerprint,
     runtime_description_fingerprint,
     schema_fingerprint,
-)
-from ha_mcp_engineering.mcp_sdk_compatibility import (  # noqa: E402
-    ReviewedProtocolClientSession,
+    validate_reviewed_release_evidence,
 )
 
 
@@ -170,6 +168,13 @@ async def list_tools(
 
 
 async def capture(endpoint: str) -> dict[str, Any]:
+    from mcp import types
+    from mcp.client.streamable_http import streamablehttp_client
+
+    from ha_mcp_engineering.mcp_sdk_compatibility import (
+        ReviewedProtocolClientSession,
+    )
+
     async with streamablehttp_client(endpoint) as (
         read_stream,
         write_stream,
@@ -210,51 +215,6 @@ async def capture(endpoint: str) -> dict[str, Any]:
                 "tools": tools,
                 "error_shapes": errors,
             }
-
-
-def tool_contracts(
-    capture_value: dict[str, Any],
-    policy_value: dict[str, Any],
-) -> dict[str, dict[str, Any]]:
-    policy_by_name = {
-        item["upstream_name"]: item for item in policy_value["tools"]
-    }
-    values: dict[str, dict[str, Any]] = {}
-    for tool in capture_value["tools"]:
-        name = tool["name"]
-        policy = policy_by_name[name]
-        classification = policy["classification"]
-        output = {
-            "present": "outputSchema" in tool,
-            "value": tool.get("outputSchema"),
-        }
-        values[name] = {
-            "input_schema_fingerprint": schema_fingerprint(
-                tool["inputSchema"]
-            ),
-            "description_fingerprint": (
-                runtime_description_fingerprint(tool.get("description"))
-                or schema_fingerprint({"invalid_description": True})
-            ),
-            "annotation_fingerprint": schema_fingerprint(
-                {
-                    "present": "annotations" in tool,
-                    "value": tool.get("annotations"),
-                }
-            ),
-            "output_contract_fingerprint": schema_fingerprint(output),
-            "runtime_contract_fingerprint": schema_fingerprint(tool),
-            "policy_classification": classification,
-            "reviewed_automatic_read": (
-                classification == "automatic_read"
-            ),
-            "quarantine_reason": (
-                None
-                if classification == "automatic_read"
-                else f"policy:{classification}"
-            ),
-        }
-    return dict(sorted(values.items()))
 
 
 def comparison(
@@ -405,6 +365,25 @@ def comparison(
 def candidate_entry(args: argparse.Namespace) -> None:
     capture_value = strict_load(args.capture)
     policy = strict_load(args.base_policy)
+    if args.dashboard_status == "reviewed" and (
+        not args.dashboard_entry_id
+        or not args.dashboard_attestation_fingerprint
+        or not args.dashboard_constraints_fingerprint
+    ):
+        raise SystemExit(
+            "reviewed dashboard candidates require exact attestation and "
+            "compiled-constraint fingerprints"
+        )
+    if args.dashboard_status == "quarantined" and any(
+        (
+            args.dashboard_entry_id,
+            args.dashboard_attestation_fingerprint,
+            args.dashboard_constraints_fingerprint,
+        )
+    ):
+        raise SystemExit(
+            "quarantined dashboard candidates cannot carry trusted evidence"
+        )
     if capture_value["server_version"] != args.version:
         raise SystemExit("capture version does not match candidate version")
     if capture_value["server_name"] != "ha-mcp":
@@ -468,8 +447,27 @@ def candidate_entry(args: argparse.Namespace) -> None:
         "sha256:"
         + hashlib.sha256(args.output_policy.read_bytes()).hexdigest()
     )
-    contracts = tool_contracts(capture_value, policy)
+    reviewed_policy = load_upstream_tool_policy(
+        args.output_policy,
+        expected_version=args.version,
+        expected_source_tag=f"v{args.version}",
+        expected_source_commit=args.source_commit,
+    )
+    contracts = reviewed_tool_contracts_from_capture(
+        capture_value, reviewed_policy
+    )
     error_contract = schema_fingerprint(capture_value["error_shapes"])
+    try:
+        capture_resource = args.capture.resolve().relative_to(
+            ROOT.resolve()
+        ).as_posix()
+    except ValueError as exc:
+        raise SystemExit(
+            "candidate capture must be committed below the repository root"
+        ) from exc
+    capture_digest = (
+        "sha256:" + hashlib.sha256(args.capture.read_bytes()).hexdigest()
+    )
     entry = {
         "entry_id": (
             f"ha-mcp-v{args.version}-"
@@ -492,6 +490,11 @@ def candidate_entry(args: argparse.Namespace) -> None:
         "catalog_fingerprint": capture_value[
             "catalog_fingerprint"
         ],
+        "capture_resource": capture_resource,
+        "capture_sha256": capture_digest,
+        "capture_format_version": capture_value[
+            "capture_format_version"
+        ],
         "policy_resource": args.output_policy.name,
         "policy_sha256": policy_digest,
         "review_provenance": [
@@ -502,6 +505,12 @@ def candidate_entry(args: argparse.Namespace) -> None:
         "dashboard_attestation": {
             "status": args.dashboard_status,
             "entry_id": args.dashboard_entry_id,
+            "attestation_fingerprint": (
+                args.dashboard_attestation_fingerprint
+            ),
+            "compiled_constraints_fingerprint": (
+                args.dashboard_constraints_fingerprint
+            ),
         },
         "error_contract_fingerprint": error_contract,
         "entity_lookup_missing_resource_status": (
@@ -570,6 +579,43 @@ def parse_args() -> argparse.Namespace:
             / "upstream_release_registry.json"
         ),
     )
+    validate.add_argument(
+        "--repository-root",
+        type=Path,
+        default=ROOT,
+    )
+
+    generate = commands.add_parser("generate")
+    generate.add_argument(
+        "--registry",
+        type=Path,
+        default=(
+            BETA
+            / "ha_mcp_engineering"
+            / "upstream_release_registry.json"
+        ),
+    )
+    generate.add_argument(
+        "--repository-root",
+        type=Path,
+        default=ROOT,
+    )
+    generate.add_argument("--output", type=Path, required=True)
+
+    registry_diff = commands.add_parser("registry-diff")
+    registry_diff.add_argument("--expected", type=Path, required=True)
+    registry_diff.add_argument("--actual", type=Path, required=True)
+
+    matrix = commands.add_parser("ci-matrix")
+    matrix.add_argument(
+        "--registry",
+        type=Path,
+        default=(
+            BETA
+            / "ha_mcp_engineering"
+            / "upstream_release_registry.json"
+        ),
+    )
 
     report = commands.add_parser("report")
     report.add_argument("--comparison", type=Path, required=True)
@@ -591,6 +637,8 @@ def parse_args() -> argparse.Namespace:
         required=True,
     )
     candidate.add_argument("--dashboard-entry-id")
+    candidate.add_argument("--dashboard-attestation-fingerprint")
+    candidate.add_argument("--dashboard-constraints-fingerprint")
     candidate.add_argument("--output-policy", type=Path, required=True)
     candidate.add_argument("--output-entry", type=Path, required=True)
     return parser.parse_args()
@@ -636,7 +684,10 @@ def main() -> None:
         )
     elif args.command == "validate":
         registry: ReviewedUpstreamReleaseRegistry = (
-            load_reviewed_upstream_release_registry(args.registry)
+            validate_reviewed_release_evidence(
+                args.registry,
+                repository_root=args.repository_root,
+            )
         )
         print(
             json.dumps(
@@ -651,6 +702,60 @@ def main() -> None:
                     "release_count": len(registry.releases),
                 },
                 sort_keys=True,
+            )
+        )
+    elif args.command == "generate":
+        write_json(
+            args.output,
+            generated_reviewed_release_registry(
+                args.registry,
+                repository_root=args.repository_root,
+            ),
+        )
+    elif args.command == "registry-diff":
+        expected = canonical_json(strict_load(args.expected)) + b"\n"
+        actual = canonical_json(strict_load(args.actual)) + b"\n"
+        if expected != actual:
+            print(
+                "".join(
+                    difflib.unified_diff(
+                        expected.decode("utf-8").splitlines(True),
+                        actual.decode("utf-8").splitlines(True),
+                        fromfile=str(args.expected),
+                        tofile=str(args.actual),
+                    )
+                ),
+                end="",
+            )
+            raise SystemExit(1)
+    elif args.command == "ci-matrix":
+        registry = load_reviewed_upstream_release_registry(
+            args.registry
+        )
+        print(
+            json.dumps(
+                {
+                    "include": [
+                        {
+                            "upstream_version": release.version,
+                            "upstream_image": (
+                                "ghcr.io/homeassistant-ai/ha-mcp@"
+                                f"{release.image_index_digest}"
+                            ),
+                            "image_index_digest": (
+                                release.image_index_digest
+                            ),
+                            "image_revision": release.image_revision,
+                            "architecture_image_digests": (
+                                release
+                                .architecture_image_digests_by_platform
+                            ),
+                        }
+                        for release in registry.releases
+                    ]
+                },
+                sort_keys=True,
+                separators=(",", ":"),
             )
         )
     elif args.command == "report":

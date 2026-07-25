@@ -38,13 +38,18 @@ schemas quarantine only the affected read. The generic schema cannot expand
 the fixed sanitizer, response bound, fallback prohibition, or behavior adapter.
 
 Live `ha-mcp` version data is evidence, not self-authorizing authority. The
-generic gateway first requires an explicit reviewed release/profile; Dev15's
-compiled profile is exactly 7.14.1. A patch, minor, major, prerelease, or
-downgrade without reviewed authority remains unavailable even when its
-self-advertised contracts match. Health may report an observed version, but
-that observation cannot admit a tool or permit dispatch. After release
-authority succeeds, unreviewed additions do not become callable and do not
-reduce otherwise exact per-tool matches.
+generic gateway first requires an explicit reviewed release entry. RC1-dev2
+contains separate exact entries for 7.14.1 and 7.14.2; a patch, minor, major,
+prerelease, or downgrade without reviewed authority remains unavailable even
+when its self-advertised contracts match. Health reports the observed MCP
+identity, version, protocol, tool count, and catalog separately from reviewed
+source/image evidence. MCP discovery does not observe the running container's
+source commit, index digest, platform digest, or OCI revision, so those fields
+are explicitly reported as unobserved. Deployment and exact-image CI must
+verify artifact provenance independently. Neither reviewed evidence nor live
+observation alone can admit a tool: the exact release entry and per-tool live
+contract must both match. Unreviewed additions remain unavailable without
+reducing otherwise exact per-tool matches.
 
 Immediately before `tools/call`, Engineering re-lists the catalog in the same
 MCP session and revalidates exact release/profile authority plus the selected
@@ -133,7 +138,8 @@ deprecated single-release profile ID was `ha_mcp_7_13_dashboard_read_v1`.
 RC2dev9 replaced that active profile with compiled family
 `ha_mcp_dashboard_read_v2`. RC2dev10 continues to require server name `ha-mcp`,
 protocol `2025-03-26`, exact tool name, exact reviewed annotations and one exact
-reviewed release attestation. Built-in entries cover 7.13.0, 7.14.0 and 7.14.1;
+reviewed release attestation. Built-in entries cover 7.13.0, 7.14.0, 7.14.1,
+and 7.14.2;
 a verified signed registry may supply another exact release for the already
 compiled family. No version range is admitted.
 
@@ -524,6 +530,20 @@ with reviewed protocol `2025-03-26`. A newer SDK default cannot silently
 broaden admission beyond the compiled exact `ha-mcp` 7.14.1 and 7.14.2
 release entries; a different returned protocol remains an
 incompatible-upstream failure.
+
+Each reviewed read-release entry is bound to a canonical committed capture by
+repository-relative resource name and SHA-256 digest. Repository validation
+recomputes the catalog count/fingerprint, error-shape fingerprint, and every
+per-tool input, description, annotation, output, and runtime fingerprint from
+that capture, then joins those facts with the separately human-owned policy.
+Generated candidates never approve policy. The same validation cross-checks
+each dashboard reference against the authoritative built-in attestation and a
+fingerprint of the compiled non-screenshot argument constraints. CI derives its
+exact-image matrix from this registry and independently verifies the resolved
+index digest, platform manifests, OCI version, and OCI revision before starting
+the image. A later live deployment must perform the equivalent provenance
+verification outside MCP; the Engineering process cannot claim it observed
+container provenance through tool discovery.
 
 The upgrade moves the Engineering runtime beyond the affected package-version
 ranges for CVE-2025-53366, CVE-2025-53365, CVE-2026-52869, and
