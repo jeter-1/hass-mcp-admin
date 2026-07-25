@@ -43,7 +43,7 @@ from ha_mcp_engineering.providers.routing import (  # noqa: E402
     CapabilityRoute,
     routing_for_tool,
 )
-from ha_mcp_engineering.tools import get_registered_server  # noqa: E402
+from ha_mcp_engineering.tools import get_registered_server, registered_tools  # noqa: E402
 
 
 ANALYSIS_TIME = datetime(2026, 7, 21, 12, 0, tzinfo=timezone.utc)
@@ -542,7 +542,7 @@ class CapabilityAndSchemaTests(unittest.TestCase):
         self.assertEqual([item["capability"] for item in PLANNED_CAPABILITIES], [])
 
     def test_real_tools_list_contains_40_and_public_schema_is_bounded(self):
-        tools = get_registered_server()._tool_manager.list_tools()
+        tools = registered_tools(get_registered_server()).values()
         self.assertEqual(len(tools), 41)
         tool = next(item for item in tools if item.name == "incident_correlation")
         schema = tool.parameters

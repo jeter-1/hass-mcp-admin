@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.0.1-rc1-dev1 - MCP SDK and dependency hardening
+
+- Centralize the pinned MCP SDK's private FastMCP tool-registry access behind
+  one fail-closed compatibility adapter with startup shape validation,
+  immutable snapshots, exact removal, and atomic replacement.
+- Upgrade `mcp` from 1.9.0 to 1.28.1, the newest compatible stable 1.x release,
+  while preserving Streamable HTTP, the exact reviewed `ha-mcp` 7.14.1
+  admission contract, and the 41 plus 26 tool composition.
+- Upgrade the directly used Engineering web and security dependencies to
+  `aiohttp` 3.14.2, `uvicorn` 0.51.0, `starlette` 1.3.1, and `cryptography`
+  48.0.1; retain the already-current PyYAML and jsonschema pins.
+- Add a pinned `pip-audit` pull-request gate to the reusable validation
+  workflow required by release promotion.
+- Retain the one-second Engineering transport floor as explicit policy while
+  removing the obsolete MCP 1.9.0 fractional-timeout rationale.
+- Preserve public schemas, fingerprints, provider policy, audit semantics,
+  governance, dashboard behavior, zero fallback, and stable v1.1.2.
+
 ## 2.0.0 - GA promotion
 
 - Promote the accepted RC2dev16 runtime without changing functional behavior,

@@ -35,7 +35,7 @@ from ha_mcp_engineering.routing import (  # noqa: E402
     _structured_tool_failure_code,
 )
 from ha_mcp_engineering.tools.registry import get_registered_server  # noqa: E402
-from ha_mcp_engineering.tools import compatibility  # noqa: E402
+from ha_mcp_engineering.tools import compatibility, registered_tools  # noqa: E402
 from ha_mcp_engineering.version import SERVER_VERSION  # noqa: E402
 
 PROMOTION_SPEC = importlib.util.spec_from_file_location(
@@ -86,7 +86,7 @@ class Rc2dev8RawPrevalidationTests(unittest.TestCase):
             streamable_http_path="/mcp",
             stateless_http=True,
         )
-        for tool in get_registered_server()._tool_manager.list_tools():
+        for tool in registered_tools(get_registered_server()).values():
             fresh_server.tool(
                 name=tool.name,
                 description=tool.description,
@@ -102,7 +102,10 @@ class Rc2dev8RawPrevalidationTests(unittest.TestCase):
             _settings(cls.audit_path),
             AuditLogger(str(cls.audit_path), SECRET),
         )
-        cls.client_context = TestClient(gateway)
+        cls.client_context = TestClient(
+            gateway,
+            base_url="http://127.0.0.1:8100",
+        )
         cls.client = cls.client_context.__enter__()
 
     @classmethod
@@ -451,6 +454,28 @@ class Rc2dev8RawPrevalidationTests(unittest.TestCase):
         self.assertEqual(audit["error_code"], "invalid_request")
         self.assertNotIn("broken", json.dumps(audit))
 
+    def test_mcp_sdk_rejects_untrusted_host_before_tool_dispatch(self):
+        response = self.client.post(
+            f"/{SECRET}/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": "rc2dev8-untrusted-host",
+                "method": "tools/call",
+                "params": {
+                    "name": "server_info",
+                    "arguments": {"check_ha": False},
+                },
+            },
+            headers={
+                "accept": "application/json, text/event-stream",
+                "content-type": "application/json",
+                "host": "testserver",
+            },
+        )
+
+        self.assertEqual(response.status_code, 421)
+        self.assertNotIn("server_info", response.text)
+
     def test_transport_size_limit_wins_before_policy(self):
         request_id = "rc2dev8-oversized-policy-request"
         response = self.client.post(
@@ -488,7 +513,7 @@ class McpOutcomeClassificationTests(unittest.TestCase):
         )
         tools = {
             tool.name: tool
-            for tool in get_registered_server()._tool_manager.list_tools()
+            for tool in registered_tools(get_registered_server()).values()
         }
         self.assertEqual(len(tools), 41)
         catalog = build_capability_catalog()

@@ -466,15 +466,18 @@ class AuthenticatedMcpGateway:
 
             forwarded = dict(scope)
             forwarded["path"] = path[len(self.prefix):] or "/"
-            if forwarded["path"] == "/mcp":
-                forwarded["path"] = "/mcp/"
+            if forwarded["path"] in {"/mcp", "/mcp/"}:
+                # MCP 1.28 registers the configured streamable route exactly.
+                # Normalize both accepted external forms to that internal path
+                # so Starlette never emits a client-visible slash redirect.
+                forwarded["path"] = "/mcp"
             if forwarded.get("raw_path"):
                 raw_prefix = self.prefix.encode()
                 raw_path = forwarded["raw_path"]
                 if raw_path.startswith(raw_prefix):
                     forwarded["raw_path"] = raw_path[len(raw_prefix):] or b"/"
-                    if forwarded["raw_path"] == b"/mcp":
-                        forwarded["raw_path"] = b"/mcp/"
+                    if forwarded["raw_path"] in {b"/mcp", b"/mcp/"}:
+                        forwarded["raw_path"] = b"/mcp"
 
             async def correlated_send(message):
                 if message["type"] == "http.response.start":

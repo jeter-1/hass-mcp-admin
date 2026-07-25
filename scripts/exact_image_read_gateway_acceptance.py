@@ -26,7 +26,10 @@ ROOT = Path(__file__).resolve().parents[1]
 BETA = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA))
 
-from ha_mcp_engineering.tools import get_registered_server  # noqa: E402
+from ha_mcp_engineering.tools import (  # noqa: E402
+    get_registered_server,
+    registered_tools,
+)
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     catalog_fingerprint,
     load_upstream_tool_policy,
@@ -499,7 +502,7 @@ async def inspect_engineering(
             diagnostics={"initial_catalog_readiness": readiness},
         )
     base_names = {
-        tool.name for tool in get_registered_server()._tool_manager.list_tools()
+        tool.name for tool in registered_tools(get_registered_server()).values()
     }
     require(
         len(base_names) == EXPECTED_ENGINEERING_BASELINE_COUNT,

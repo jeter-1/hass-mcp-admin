@@ -32,6 +32,7 @@ from ha_mcp_engineering.providers.routing import (  # noqa: E402
     ANALYTICAL_PROVIDER_POLICIES, CapabilityRoute, routing_for_tool,
 )
 from ha_mcp_engineering.tools.registry import get_registered_server  # noqa: E402
+from ha_mcp_engineering.tools import registered_tools  # noqa: E402
 
 
 class FakeIndex:
@@ -498,7 +499,7 @@ class PublicContractTests(unittest.TestCase):
         self.assertEqual(matrix["fallback_policy"], "none")
 
     def test_tools_list_has_40_and_schema_is_bounded(self):
-        tools = get_registered_server()._tool_manager.list_tools()
+        tools = registered_tools(get_registered_server()).values()
         self.assertEqual(len(tools), 41)
         tool = next(item for item in tools if item.name == "handoff_generation")
         props = tool.parameters["properties"]

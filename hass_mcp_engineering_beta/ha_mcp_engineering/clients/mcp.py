@@ -61,9 +61,8 @@ class McpDashboardTransport:
 
     def __init__(self, url: str, *, timeout_seconds: float, client_version: str):
         self._url = url
-        # mcp 1.9.0 reads timedelta.seconds, which truncates fractional values.
-        # Keep the lower bound at one complete second to avoid an unintended
-        # zero-second connect deadline.
+        # Preserve the reviewed Engineering minimum timeout even though the
+        # pinned SDK handles fractional timedelta values correctly.
         self._timeout = timedelta(seconds=max(1.0, float(timeout_seconds)))
         self._client_info = types.Implementation(
             name="hass-mcp-engineering-dashboard",
@@ -80,8 +79,7 @@ class McpDashboardTransport:
 
     @staticmethod
     def _silence_url_bearing_library_logs() -> None:
-        # mcp 1.9.0 logs the complete streamable-HTTP endpoint at INFO and can
-        # include it in lower-level exception messages. The Engineering server
+        # Keep SDK endpoint-bearing transport diagnostics disabled. Engineering
         # exposes its own bounded category metrics instead.
         for name in ("mcp.client.streamable_http", "httpx", "httpcore"):
             logger = logging.getLogger(name)
@@ -240,8 +238,8 @@ def _classify_transport_exception(exc: BaseException) -> str:
             getattr(error, "code", None) == 32600
             and getattr(error, "message", None) == "Session terminated"
         ):
-            # mcp 1.9.0 converts an HTTP 404 during a fresh streamable-HTTP
-            # request into this synthetic MCP error and discards the status.
+            # Some streamable-HTTP implementations convert a fresh-request 404
+            # into this synthetic MCP error and discard the HTTP status.
             return "endpoint_rejected"
     for leaf in leaves:
         name = type(leaf).__name__.lower()

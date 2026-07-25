@@ -23,7 +23,11 @@ from ha_mcp_engineering.providers import (  # noqa: E402
     routing_for_tool,
 )
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
-from ha_mcp_engineering.tools import compatibility, get_registered_server  # noqa: E402
+from ha_mcp_engineering.tools import (  # noqa: E402
+    compatibility,
+    get_registered_server,
+    registered_tools,
+)
 
 
 class CanonicalRoutingTests(unittest.IsolatedAsyncioTestCase):
@@ -403,7 +407,7 @@ class CanonicalRoutingTests(unittest.IsolatedAsyncioTestCase):
 
 class ToolListSerializationTests(unittest.TestCase):
     def test_all_41_registered_tools_have_serializable_json_schemas(self):
-        tools = get_registered_server()._tool_manager.list_tools()
+        tools = registered_tools(get_registered_server()).values()
         names = [tool.name for tool in tools]
         self.assertEqual(len(names), 41)
         self.assertEqual(len(names), len(set(names)))

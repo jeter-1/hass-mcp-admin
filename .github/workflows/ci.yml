@@ -22,12 +22,12 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: |
-            hass_mcp_admin/requirements.txt
-            hass_mcp_admin/requirements-dev.txt
             hass_mcp_engineering_beta/requirements.txt
             tests/requirements.txt
       - name: Install dependencies
-        run: python -m pip install -r hass_mcp_admin/requirements-dev.txt -r hass_mcp_engineering_beta/requirements.txt -r tests/requirements.txt
+        run: python -m pip install -r hass_mcp_engineering_beta/requirements.txt -r tests/requirements.txt
+      - name: Audit Engineering dependencies
+        run: python -m pip_audit --strict --progress-spinner off --requirement hass_mcp_engineering_beta/requirements.txt
       - name: Compile Python
         run: python -m compileall -q hass_mcp_admin hass_mcp_engineering_beta tests
       - name: Validate deployment metadata

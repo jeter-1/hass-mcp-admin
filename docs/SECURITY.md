@@ -505,3 +505,28 @@ keyed IDs, and narrowly recognized prose forms are replaced with
 The sanitizer deliberately does not redact unrelated hexadecimal values such as
 Git commit SHAs. Sanitizer failure remains fail closed, and the original payload
 is never included in an exception log.
+
+## MCP SDK and dependency boundary
+
+Engineering version `2.0.1-rc1-dev1` pins the stable MCP 1.x SDK at 1.28.1.
+Every required contact with the SDK's private FastMCP tool registry is isolated
+in `mcp_sdk_compatibility.py`. The adapter admits only the reviewed SDK version
+and expected mapping shape, returns immutable snapshots, validates complete
+replacement candidates before publication, and fails startup with bounded
+Engineering-owned wording when the contract is unavailable. There is no
+alternate registration path or fallback.
+
+The upgrade removes the Engineering runtime from the affected MCP ranges for
+CVE-2025-53366, CVE-2025-53365, CVE-2025-66416, CVE-2026-52869, and
+CVE-2026-59950. Directly used `aiohttp`, `starlette`, `uvicorn`, and
+`cryptography` pins were reviewed and advanced with the SDK. Pull-request
+validation runs pinned `pip-audit` against the Engineering runtime
+requirements, fails on dependency resolution or an applicable known
+vulnerability, and is reused by the protected promotion workflow. No advisory
+exceptions are configured.
+
+The scanner is point-in-time public-advisory evidence, not a proof that
+dependencies are defect-free. The repository retains exact top-level pins but
+does not yet commit a transitive lock with hashes; CI and image builds resolve
+the transitive graph from those pins. Stable v1.1.2 has an isolated frozen
+manifest and is not changed by this maintenance line.

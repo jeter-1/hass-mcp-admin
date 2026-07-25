@@ -181,12 +181,18 @@ class VersionComparisonTests(unittest.TestCase):
                 "2.0.0", "2.0.0-rc.3"
             )
         )
+        self.assertTrue(
+            VALIDATOR.is_newer_version(
+                "2.0.1-rc1-dev1", "2.0.0"
+            )
+        )
 
     def test_version_comparison_uses_awesomeversion_25_8_0(self):
         requirements = (ROOT / "tests" / "requirements.txt").read_text(
             encoding="utf-8"
         )
         self.assertIn("awesomeversion==25.8.0", requirements)
+        self.assertIn("pip-audit==2.10.1", requirements)
         self.assertEqual(
             VALIDATOR.version_key("2.0.0-rc2-dev1").strategy.name,
             "SEMVER",
