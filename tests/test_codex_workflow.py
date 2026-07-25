@@ -617,17 +617,33 @@ class ContextToolTests(unittest.TestCase):
             any("RC3A" in path for path in documents["historical_references"])
         )
 
-    def test_stable_version_form_is_recognized_without_inventing_authority(self):
-        payload = json.loads(self.isolated_context("2.0.0"))
+    def test_stable_version_form_uses_exact_versioned_document_convention(self):
+        version = "2.0.0"
+        payload = json.loads(
+            self.isolated_context(
+                version,
+                {
+                    "docs/V2_0_0_RELEASE_NOTES.md": self.version_document(
+                        "2.0.0 release", version
+                    ),
+                    "docs/V2_0_0_ACCEPTANCE.md": self.version_document(
+                        "2.0.0 acceptance", version
+                    ),
+                },
+            )
+        )
         self.assertEqual(payload["versions"]["release_stage"], "stable")
-        self.assertEqual(payload["documents"]["resolution_status"], "unsupported")
-        self.assertEqual(payload["documents"]["active_release_notes"], "unknown")
+        self.assertEqual(payload["documents"]["resolution_status"], "exact")
+        self.assertEqual(
+            payload["documents"]["active_release_notes"],
+            "docs/V2_0_0_RELEASE_NOTES.md",
+        )
         self.assertEqual(
             payload["documents"]["active_acceptance_document"],
-            "unknown",
+            "docs/V2_0_0_ACCEPTANCE.md",
         )
 
-    def test_stable_version_without_established_convention_fails_closed(self):
+    def test_unversioned_stable_documents_do_not_gain_authority(self):
         documents = json.loads(
             self.isolated_context(
                 "1.1.2",
@@ -641,7 +657,7 @@ class ContextToolTests(unittest.TestCase):
                 },
             )
         )["documents"]
-        self.assertEqual(documents["resolution_status"], "unsupported")
+        self.assertEqual(documents["resolution_status"], "missing")
         self.assertEqual(documents["active_release_notes"], "unknown")
         self.assertEqual(documents["active_acceptance_document"], "unknown")
         self.assertEqual(documents["historical_references"], [])

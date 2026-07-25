@@ -22,7 +22,7 @@ IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 # RC2dev12 runtime metadata in this feature pull request.
 NEXT_VERSION = "2.0.0-rc2-dev13"
 PROMOTION_FIXTURE_CURRENT_VERSION = "2.0.0-rc2-dev12"
-CURRENT_REPOSITORY_VERSION = "2.0.0-rc2-dev16"
+CURRENT_REPOSITORY_VERSION = "2.0.0"
 PLATFORMS = ("linux/amd64", "linux/arm64", "linux/arm/v7")
 BUILD_ARGUMENTS = (
     "BUILD_VERSION",
@@ -115,7 +115,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         else:
             self.assertEqual(configured_version, CURRENT_REPOSITORY_VERSION)
 
-    def test_staged_or_advertised_development_version_orders_before_final_rc3(self):
+    def test_staged_development_or_advertised_ga_version_is_ordered(self):
         versions = PROMOTION_MODULE.authoritative_versions(ROOT)
         configured_version = next(iter(versions.values()))
         declaration = ROOT / ".release" / "next-version"
@@ -128,10 +128,15 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         else:
             effective_version = configured_version
             self.assertEqual(configured_version, CURRENT_REPOSITORY_VERSION)
-        self.assertLess(
-            AwesomeVersion(effective_version),
-            AwesomeVersion("2.0.0-rc.3"),
-        )
+        if declaration.exists():
+            self.assertLess(
+                AwesomeVersion(effective_version),
+                AwesomeVersion("2.0.0-rc.3"),
+            )
+        else:
+            ga_version = AwesomeVersion(effective_version)
+            self.assertEqual(ga_version, AwesomeVersion("2.0.0"))
+            self.assertGreater(ga_version, AwesomeVersion("2.0.0-rc.3"))
 
     def test_complete_validation_precedes_release_detection_and_promotion(self):
         self.assertEqual(
@@ -445,6 +450,18 @@ class PromotionScriptTests(unittest.TestCase):
                 self.module.validate_document_authority(
                     Path(directory), NEXT_VERSION
                 )
+
+    def test_repository_ga_document_authority_is_exact(self):
+        resolution = self.module.validate_document_authority(ROOT, "2.0.0")
+        self.assertEqual(resolution["resolution_status"], "exact")
+        self.assertEqual(
+            resolution["active_release_notes"],
+            "docs/V2_0_0_RELEASE_NOTES.md",
+        )
+        self.assertEqual(
+            resolution["active_acceptance_document"],
+            "docs/V2_0_0_ACCEPTANCE.md",
+        )
 
 
 class RegistryTagGuardTests(unittest.TestCase):

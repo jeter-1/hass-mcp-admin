@@ -373,7 +373,7 @@ class AddonMetadataValidationTests(unittest.TestCase):
             VALIDATOR.validate_repository(
                 ROOT,
                 base_ref="origin/main",
-                deployed_version="2.0.0-rc.3",
+                deployed_version="2.0.1",
                 paths={"hass_mcp_engineering_beta/config.yaml"},
                 unreleased_integrity_check=integrity_check,
             )
@@ -392,6 +392,15 @@ class AddonMetadataValidationTests(unittest.TestCase):
 
 
 class UnreleasedRcIntegrityTests(unittest.TestCase):
+    def setUp(self):
+        version_patch = patch.object(
+            VALIDATOR,
+            "BETA_VERSION",
+            "2.0.0-rc2-dev16",
+        )
+        version_patch.start()
+        self.addCleanup(version_patch.stop)
+
     @staticmethod
     def result(returncode, stdout="", stderr=""):
         return VALIDATOR.subprocess.CompletedProcess(

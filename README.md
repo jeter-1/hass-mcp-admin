@@ -1,10 +1,13 @@
 # HA MCP Engineering Server
 
-> The stable production add-on remains v1.1.2 at `hass_mcp_admin` on port
-> `8099`. An isolated v2 beta/RC add-on is available at
+> Stable v1.1.2 remains available at `hass_mcp_admin` on port `8099` as a
+> temporary reduced-capability rollback option. The Engineering v2 add-on is
+> promoted in place to `2.0.0` at
 > [`hass_mcp_engineering_beta/`](hass_mcp_engineering_beta/) on port `8100`.
-> See [`V2_BETA_ARCHITECTURE.md`](V2_BETA_ARCHITECTURE.md) before installing or
-> migrating tools. Beta release and cache-refresh procedures are documented in
+> Its existing technical “Beta” identity is retained to avoid a slug or runtime
+> identity migration. See [`V2_BETA_ARCHITECTURE.md`](V2_BETA_ARCHITECTURE.md)
+> before installing or migrating tools. Historical beta release and
+> cache-refresh procedures are documented in
 > [`docs/BETA_DEPLOYMENT.md`](docs/BETA_DEPLOYMENT.md).
 > The beta approval workflow is documented in
 > [`docs/CHANGE_GOVERNANCE.md`](docs/CHANGE_GOVERNANCE.md).
@@ -37,11 +40,11 @@
 > Dev15 contract-level compatibility, partial quarantine, dashboard
 > independence, and retry-cadence separation are documented in
 > [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md).
-> The current local Engineering candidate is `2.0.0-rc2-dev16`; its
-> development scope and pre-deployment gates are recorded in
-> [`docs/RC2DEV16_RELEASE_NOTES.md`](docs/RC2DEV16_RELEASE_NOTES.md) and
-> [`docs/RC2DEV16_ACCEPTANCE.md`](docs/RC2DEV16_ACCEPTANCE.md). Those documents
-> do not publish, deploy, or accept the candidate.
+> The current Engineering version is `2.0.0`. Its GA release, in-place upgrade,
+> rollback, and post-publication acceptance requirements are recorded in
+> [`docs/V2_0_0_RELEASE_NOTES.md`](docs/V2_0_0_RELEASE_NOTES.md) and
+> [`docs/V2_0_0_ACCEPTANCE.md`](docs/V2_0_0_ACCEPTANCE.md). Those documents do
+> not publish, deploy, or accept the release.
 > Repository-specific local and remote Codex development procedures are in
 > [`docs/CODEX_WORKFLOW.md`](docs/CODEX_WORKFLOW.md).
 
@@ -207,18 +210,21 @@ HTTP 200 — the log records the attempt and whether `confirm` was set, not the 
 outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 1–500 lines. See [`docs/AUDIT_LOG.md`](docs/AUDIT_LOG.md).
 
-## Engineering beta/RC milestones
+## Engineering v2 milestones
 
-The current local Engineering candidate is RC2dev16
-(`2.0.0-rc2-dev16`). The published `2.0.0-rc2-dev12` candidate remains
-immutable failed history and is not accepted. RC2dev13 corrected its
+The current Engineering version is `2.0.0`, a no-functional-change promotion
+of the accepted RC2dev16 source. The published `2.0.0-rc2-dev12` candidate
+remains immutable failed history and is not accepted. RC2dev13 corrected its
 read-gateway reconciliation and `ha_search` completeness defects; RC2dev14
 added practical configuration plans; and RC2dev15 moves upstream admission to
 independent contract-level decisions. RC2dev16 corrects delegated structured
 error normalization and documents search routing without adding search
-behavior. Determine staged or advertised release state from authoritative
-version metadata and `scripts/codex-context.py`, not from this milestone
-narrative. Engineering has 41 statically registered
+behavior. The GA release and acceptance authority are
+[`docs/V2_0_0_RELEASE_NOTES.md`](docs/V2_0_0_RELEASE_NOTES.md) and
+[`docs/V2_0_0_ACCEPTANCE.md`](docs/V2_0_0_ACCEPTANCE.md). Determine advertised
+release state from authoritative version metadata and
+`scripts/codex-context.py`, not from this milestone narrative. Engineering has
+41 statically registered
 tools: 25 canonical plus 16 Engineering-native. Audit
 filters parse each bounded JSONL
 record and compare only the exact top-level event, so the routed audit reader's

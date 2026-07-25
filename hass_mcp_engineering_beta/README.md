@@ -1,8 +1,10 @@
 # HA MCP Engineering Server Beta
 
-This directory is the isolated v2 beta/RC add-on. It can run beside the stable
-`hass_mcp_admin` add-on without sharing its port, options, secret, audit file,
-or container identity.
+This directory contains the Engineering v2 add-on, promoted in place to
+`2.0.0`. Its technical “Beta” display name, slug, image repository, and runtime
+identity remain unchanged to avoid a migration. It can run beside the stable
+v1.1.2 `hass_mcp_admin` add-on without sharing its port, options, secret, audit
+file, or container identity.
 
 ## Contract-level reviewed upstream reads
 
@@ -40,7 +42,7 @@ delegated reads never fall back to direct Home Assistant access. The reviewed
 7.14.1 version, 78-tool stock inventory, and classification form Dev15's exact
 compiled generic profile. Another version remains unavailable even if its live
 descriptors appear identical; automatic admission under separately reviewed
-signed authority is deferred to Dev16.
+signed authority remains deferred.
 [`ADR-006`](../docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md)
 defines the active boundary, while
 [`ADR-005`](../docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md) retains
@@ -99,14 +101,14 @@ https://BETA_TUNNEL/REDACTED_BETA_SECRET/mcp/
 
 Direct requests to `/mcp` and `/mcp/` must return `404`. RC2dev12 is immutable
 failed history and must not be treated as accepted. RC2dev13 corrected its
-reboot and completeness defects, and RC2dev14 established practical
-configuration plans. The current local candidate is RC2dev16
-(`2.0.0-rc2-dev16`), which corrects delegated structured-error normalization
-without changing upstream admission or adding search behavior. Its
-development scope and pre-deployment gates are recorded in
-[`../docs/RC2DEV16_RELEASE_NOTES.md`](../docs/RC2DEV16_RELEASE_NOTES.md) and
-[`../docs/RC2DEV16_ACCEPTANCE.md`](../docs/RC2DEV16_ACCEPTANCE.md). This
-milestone narrative is not release authority. Determine exact staged or
+reboot and completeness defects, RC2dev14 established practical configuration
+plans, and RC2dev16 corrected delegated structured-error normalization without
+changing upstream admission or adding search behavior. Version `2.0.0`
+promotes that accepted Dev16 behavior without a functional change. Its
+in-place upgrade, rollback, and post-publication acceptance requirements are
+recorded in
+[`../docs/V2_0_0_RELEASE_NOTES.md`](../docs/V2_0_0_RELEASE_NOTES.md) and
+[`../docs/V2_0_0_ACCEPTANCE.md`](../docs/V2_0_0_ACCEPTANCE.md). Determine exact
 advertised state from version metadata and `scripts/codex-context.py`.
 
 Before connecting an MCP client, require `/ready` HTTP 200 with `ready=true`,
@@ -213,13 +215,19 @@ docker build -t hass-mcp-engineering-beta:test .\hass_mcp_engineering_beta
 
 ## Removal and rollback
 
-To roll back, point beta clients back to the stable v1 endpoint, stop the beta
-add-on, and uninstall **HA MCP Engineering Server Beta**. Removing beta deletes
-only beta add-on state; it does not change production v1.1.2. Confirm the stable
-health endpoint on port `8099` and call its `server_info` after rollback.
+For an immediate GA rollback, reinstall the exact accepted Dev16 version or
+image under the same add-on identity and retain its `/data`, options, secrets,
+and connector endpoint. Verify the Dev16 version and source SHA, then repeat
+foundation, admission, governance-persistence, audit, and no-fallback checks.
 
-Do not uninstall, reconfigure, or overwrite `hass_mcp_admin` as part of a beta
-rollback.
+For a legacy rollback, stop the v2 add-on and re-enable stable v1.1.2 only when
+its reduced capability set is acceptable. Do not run both servers on
+conflicting ports, and do not imply that v1.1.2 contains v2 governance or
+delegated-read features. Do not uninstall, reconfigure, or overwrite
+`hass_mcp_admin` as part of the GA promotion.
+
+The exact accepted image, source SHA, and complete procedures are in
+[`../docs/V2_0_0_RELEASE_NOTES.md`](../docs/V2_0_0_RELEASE_NOTES.md).
 
 ## Architecture and migration
 

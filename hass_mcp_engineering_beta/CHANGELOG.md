@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.0.0 - GA promotion
+
+- Promote the accepted RC2dev16 runtime without changing functional behavior,
+  public schemas, reviewed fingerprints, provider policy, admission, routing,
+  tool registration, governance, dashboard reads, or fallback enforcement.
+- Retain the existing `hass_mcp_engineering_beta` slug, port `8100`, Ingress,
+  image repository, options, `/data` persistence, connector identity, and
+  runtime/display name to avoid migration or contract drift.
+- Preserve 41 Engineering tools plus 26 exact reviewed `ha-mcp` 7.14.1 reads
+  for 67 total tools when fully admitted.
+- Add exact GA release, in-place upgrade, rollback, provenance, and acceptance
+  guidance while keeping stable v1.1.2 unchanged as a temporary legacy
+  rollback installation.
+
 ## 2.0.0-rc2-dev16 - delegated error normalization
 
 - Classify only explicitly allowlisted structured ha-mcp 7.14.1 error codes,
