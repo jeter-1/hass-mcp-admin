@@ -10,9 +10,10 @@ import logging
 import time
 from typing import Any, Callable
 
-from mcp import ClientSession, types
+from mcp import types
 from mcp.client.streamable_http import streamablehttp_client
 
+from ..mcp_sdk_compatibility import ReviewedProtocolClientSession as ClientSession
 from .mcp import (
     MAX_TOOL_CATALOG_PAGES,
     MAX_TOOL_CATALOG_SIZE,

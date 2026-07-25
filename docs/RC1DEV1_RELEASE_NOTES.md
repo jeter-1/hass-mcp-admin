@@ -46,6 +46,9 @@ path forms are normalized to MCP 1.28's exact internal Streamable HTTP route,
 so the existing no-redirect client contract is preserved. MCP 1.28's
 DNS-rebinding protection remains enabled: a configured loopback server accepts
 its loopback Host identity and rejects an untrusted Host before tool dispatch.
+Outbound Engineering sessions explicitly request reviewed protocol
+`2025-03-26`; MCP 1.28's newer default is not used to broaden the exact
+`ha-mcp` 7.14.1 admission contract.
 
 Stable v1.1.2 and its dependency manifest are unchanged.
 

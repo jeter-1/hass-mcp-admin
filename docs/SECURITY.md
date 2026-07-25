@@ -516,6 +516,11 @@ replacement candidates before publication, and fails startup with bounded
 Engineering-owned wording when the contract is unavailable. There is no
 alternate registration path or fallback.
 
+The SDK compatibility boundary also initializes outbound upstream sessions
+with reviewed protocol `2025-03-26`. A newer SDK default cannot silently
+broaden exact `ha-mcp` 7.14.1 admission; a different returned protocol remains
+an incompatible-upstream failure.
+
 The upgrade removes the Engineering runtime from the affected MCP ranges for
 CVE-2025-53366, CVE-2025-53365, CVE-2025-66416, CVE-2026-52869, and
 CVE-2026-59950. Directly used `aiohttp`, `starlette`, `uvicorn`, and

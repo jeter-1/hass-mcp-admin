@@ -1,9 +1,9 @@
-"""Fail-closed compatibility boundary for the pinned MCP SDK tool registry.
+"""Fail-closed compatibility boundary for the pinned MCP SDK.
 
 The SDK does not yet expose every registry operation required for transactional
 dynamic read admission. Keep the reviewed private integration in this module so
-an SDK shape change is detected at startup instead of silently changing the
-served tool catalog.
+an SDK shape or protocol-default change cannot silently change the served tool
+catalog or broaden the reviewed upstream contract.
 """
 
 from __future__ import annotations
@@ -12,32 +12,83 @@ from importlib.metadata import PackageNotFoundError, version
 from types import MappingProxyType
 from typing import Any, Mapping
 
+from mcp import ClientSession, types
 from mcp.server.fastmcp.tools.base import Tool
 
 
 PINNED_MCP_SDK_VERSION = "1.28.1"
+REVIEWED_UPSTREAM_PROTOCOL_VERSION = "2025-03-26"
 _COMPATIBILITY_ERROR_MESSAGE = (
-    "The pinned MCP SDK registry contract is unavailable; startup is blocked."
+    "The pinned MCP SDK compatibility contract is unavailable; startup is blocked."
 )
 
 
 class McpSdkCompatibilityError(RuntimeError):
-    """Bounded fail-closed error for an unsupported MCP SDK registry shape."""
+    """Bounded fail-closed error for an unsupported MCP SDK contract."""
 
     def __init__(self) -> None:
         super().__init__(_COMPATIBILITY_ERROR_MESSAGE)
+
+
+def _require_pinned_sdk_version() -> None:
+    try:
+        sdk_version = version("mcp")
+    except PackageNotFoundError:
+        raise McpSdkCompatibilityError() from None
+    if sdk_version != PINNED_MCP_SDK_VERSION:
+        raise McpSdkCompatibilityError()
+
+
+async def initialize_reviewed_upstream_session(
+    session: Any,
+    client_info: types.Implementation,
+) -> types.InitializeResult:
+    """Initialize one outbound session with the reviewed upstream protocol.
+
+    MCP 1.28.1 defaults to a newer protocol than the exact ha-mcp 7.14.1
+    contract reviewed by Engineering. Use the SDK's public request surface to
+    retain that reviewed protocol instead of broadening admission.
+    """
+
+    _require_pinned_sdk_version()
+    result = await session.send_request(
+        types.ClientRequest(
+            types.InitializeRequest(
+                params=types.InitializeRequestParams(
+                    protocolVersion=REVIEWED_UPSTREAM_PROTOCOL_VERSION,
+                    capabilities=types.ClientCapabilities(),
+                    clientInfo=client_info,
+                ),
+            )
+        ),
+        types.InitializeResult,
+    )
+    await session.send_notification(
+        types.ClientNotification(types.InitializedNotification())
+    )
+    return result
+
+
+class ReviewedProtocolClientSession(ClientSession):
+    """ClientSession that preserves the exact reviewed upstream protocol."""
+
+    def __init__(self, *args: Any, client_info: types.Implementation, **kwargs: Any):
+        _require_pinned_sdk_version()
+        self.__engineering_client_info = client_info
+        super().__init__(*args, client_info=client_info, **kwargs)
+
+    async def initialize(self) -> types.InitializeResult:
+        return await initialize_reviewed_upstream_session(
+            self,
+            self.__engineering_client_info,
+        )
 
 
 class McpSdkToolRegistry:
     """Reviewed adapter around the pinned FastMCP tool-registry structure."""
 
     def __init__(self, server: Any) -> None:
-        try:
-            sdk_version = version("mcp")
-        except PackageNotFoundError:
-            raise McpSdkCompatibilityError() from None
-        if sdk_version != PINNED_MCP_SDK_VERSION:
-            raise McpSdkCompatibilityError()
+        _require_pinned_sdk_version()
 
         manager = getattr(server, "_tool_manager", None)
         if manager is None:

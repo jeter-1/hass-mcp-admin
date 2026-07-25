@@ -15,6 +15,9 @@
   workflow required by release promotion.
 - Retain the one-second Engineering transport floor as explicit policy while
   removing the obsolete MCP 1.9.0 fractional-timeout rationale.
+- Preserve exact `ha-mcp` 7.14.1 admission by explicitly requesting reviewed
+  upstream protocol `2025-03-26` instead of broadening to the SDK's newer
+  default.
 - Preserve public schemas, fingerprints, provider policy, audit semantics,
   governance, dashboard behavior, zero fallback, and stable v1.1.2.
 

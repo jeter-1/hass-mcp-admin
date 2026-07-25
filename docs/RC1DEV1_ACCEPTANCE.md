@@ -20,11 +20,14 @@ scope.
    replacement, atomic replacement, and exact-removal adapter cases.
 5. Require installed MCP SDK version 1.28.1 and fail closed for any other
    version or incompatible registry shape.
-6. Resolve the exact Engineering runtime requirements and run pinned pip-audit
+6. Confirm outbound Engineering initialization requests reviewed protocol
+   `2025-03-26`, while a different returned protocol still fails exact
+   admission closed.
+7. Resolve the exact Engineering runtime requirements and run pinned pip-audit
    in strict mode with no ignored advisory.
-7. Run the complete Python, compilation, metadata, YAML, dependency,
+8. Run the complete Python, compilation, metadata, YAML, dependency,
    secret-scan, PowerShell, protected-path, whitespace, and Evidence gates.
-8. Build stable and Engineering images and validate Engineering no-push builds
+9. Build stable and Engineering images and validate Engineering no-push builds
    for amd64, arm64, and arm/v7.
 
 ## Contract comparison

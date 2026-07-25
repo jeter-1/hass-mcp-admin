@@ -1,8 +1,10 @@
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+from mcp import types
 from mcp.server.fastmcp import FastMCP
 
 
@@ -17,6 +19,8 @@ from ha_mcp_engineering.mcp_sdk_compatibility import (  # noqa: E402
     McpSdkCompatibilityError,
     McpSdkToolRegistry,
     PINNED_MCP_SDK_VERSION,
+    REVIEWED_UPSTREAM_PROTOCOL_VERSION,
+    initialize_reviewed_upstream_session,
     registered_tools,
 )
 
@@ -92,7 +96,7 @@ class McpSdkCompatibilityTests(unittest.TestCase):
             with self.subTest(server=server):
                 with self.assertRaisesRegex(
                     McpSdkCompatibilityError,
-                    "^The pinned MCP SDK registry contract is unavailable; "
+                    "^The pinned MCP SDK compatibility contract is unavailable; "
                     "startup is blocked\\.$",
                 ):
                     McpSdkToolRegistry(server)
@@ -104,6 +108,52 @@ class McpSdkCompatibilityTests(unittest.TestCase):
         ):
             with self.assertRaises(McpSdkCompatibilityError):
                 McpSdkToolRegistry(server_with_tools())
+
+    def test_outbound_initialization_preserves_reviewed_protocol(self):
+        events = []
+        client_info = types.Implementation(
+            name="engineering-compatibility-test",
+            version="2.0.1-rc1-dev1",
+        )
+        expected = types.InitializeResult(
+            protocolVersion=REVIEWED_UPSTREAM_PROTOCOL_VERSION,
+            capabilities=types.ServerCapabilities(),
+            serverInfo=types.Implementation(name="ha-mcp", version="7.14.1"),
+        )
+
+        class Session:
+            async def send_request(self, request, result_type):
+                self.assert_request = request
+                self.assert_result_type = result_type
+                events.append("initialize")
+                return expected
+
+            async def send_notification(self, notification):
+                self.assert_notification = notification
+                events.append("initialized")
+
+        session = Session()
+        result = asyncio.run(
+            initialize_reviewed_upstream_session(session, client_info)
+        )
+
+        params = session.assert_request.root.params
+        self.assertEqual(
+            params.protocolVersion,
+            REVIEWED_UPSTREAM_PROTOCOL_VERSION,
+        )
+        self.assertEqual(params.clientInfo, client_info)
+        self.assertEqual(params.capabilities, types.ClientCapabilities())
+        self.assertIs(
+            session.assert_result_type,
+            types.InitializeResult,
+        )
+        self.assertIsInstance(
+            session.assert_notification.root,
+            types.InitializedNotification,
+        )
+        self.assertIs(result, expected)
+        self.assertEqual(events, ["initialize", "initialized"])
 
     def test_private_registry_access_is_isolated_to_adapter(self):
         package = ENGINEERING_PACKAGE / "ha_mcp_engineering"

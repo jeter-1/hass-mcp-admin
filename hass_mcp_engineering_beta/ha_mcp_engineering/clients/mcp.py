@@ -11,8 +11,10 @@ import socket
 import time
 from typing import Any, Callable
 
-from mcp import ClientSession, types
+from mcp import types
 from mcp.client.streamable_http import streamablehttp_client
+
+from ..mcp_sdk_compatibility import ReviewedProtocolClientSession as ClientSession
 
 
 REQUIRED_DASHBOARD_TOOL = "ha_config_get_dashboard"
