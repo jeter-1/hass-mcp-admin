@@ -39,7 +39,7 @@ from ha_mcp_engineering.governance.storage import ChangePlanRepository  # noqa: 
 from ha_mcp_engineering.handoff.provider import EngineeringHandoffProvider  # noqa: E402
 from ha_mcp_engineering.health import HealthRegistry  # noqa: E402
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
-from ha_mcp_engineering.tools import get_registered_server  # noqa: E402
+from ha_mcp_engineering.tools import get_registered_server, registered_tools  # noqa: E402
 from ha_mcp_engineering.tools import compatibility, governance as governance_tools  # noqa: E402
 from ha_mcp_engineering.version import SCHEMA_VERSION  # noqa: E402
 
@@ -410,7 +410,7 @@ class Beta26LifecycleTests(unittest.IsolatedAsyncioTestCase):
 
 class Beta26PublicCompatibilityTests(unittest.TestCase):
     def test_beta25_public_schema_snapshot_and_catalog_are_unchanged(self):
-        tools = get_registered_server()._tool_manager.list_tools()
+        tools = registered_tools(get_registered_server()).values()
         schemas = {
             tool.name: tool.parameters
             for tool in tools

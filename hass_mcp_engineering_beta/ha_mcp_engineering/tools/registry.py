@@ -10,29 +10,29 @@ from .governance import GOVERNANCE_TOOLS
 from .analysis import ANALYSIS_TOOLS
 from .dashboard import DASHBOARD_TOOLS
 from ..capabilities import CAPABILITIES
+from ..mcp_sdk_compatibility import McpSdkToolRegistry
 from ..providers.dispatch import CANONICAL_DISPATCHER
 from ..providers.routing import CapabilityRoute, routing_for_tool
 
 _SERVER = compatibility.mcp
-if "get_server_health" not in {
-    tool.name for tool in _SERVER._tool_manager.list_tools()
-}:
+_SDK_TOOLS = McpSdkToolRegistry(_SERVER)
+if "get_server_health" not in _SDK_TOOLS.snapshot():
     # Register the beta-native tool explicitly on the FastMCP instance used to
     # serve tools/list. This avoids relying on capability metadata or an import
     # side effect as proof that the tool is callable.
     _SERVER.tool()(compatibility.get_server_health)
 
-_registered = {tool.name for tool in _SERVER._tool_manager.list_tools()}
+_registered = set(_SDK_TOOLS.snapshot())
 for governance_tool in GOVERNANCE_TOOLS:
     if governance_tool.__name__ not in _registered:
         _SERVER.tool()(governance_tool)
 
-_registered = {tool.name for tool in _SERVER._tool_manager.list_tools()}
+_registered = set(_SDK_TOOLS.snapshot())
 for analysis_tool in ANALYSIS_TOOLS:
     if analysis_tool.__name__ not in _registered:
         _SERVER.tool()(analysis_tool)
 
-_registered = {tool.name for tool in _SERVER._tool_manager.list_tools()}
+_registered = set(_SDK_TOOLS.snapshot())
 _DASHBOARD_READ_ANNOTATIONS = ToolAnnotations(
     readOnlyHint=True,
     destructiveHint=False,
@@ -72,11 +72,11 @@ for capability in CAPABILITIES:
     decision = routing_for_tool(name)
     if decision.route in {CapabilityRoute.ENGINEERING_NATIVE, CapabilityRoute.UNSUPPORTED}:
         continue
-    existing = _SERVER._tool_manager.get_tool(name)
+    existing = _SDK_TOOLS.get(name)
     if not existing:
         continue
     wrapped = _routed_wrapper(name, existing.fn)
-    del _SERVER._tool_manager._tools[name]
+    _SDK_TOOLS.remove_exact(name)
     _SERVER.tool(name=name)(wrapped)
     setattr(compatibility, name, wrapped)
 

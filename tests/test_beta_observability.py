@@ -43,7 +43,7 @@ from ha_mcp_engineering.request_context import (  # noqa: E402
 )
 from ha_mcp_engineering.routing import AuthenticatedMcpGateway  # noqa: E402
 from ha_mcp_engineering.tool_framework import run_structured  # noqa: E402
-from ha_mcp_engineering.tools import compatibility  # noqa: E402
+from ha_mcp_engineering.tools import compatibility, registered_tools  # noqa: E402
 from ha_mcp_engineering.version import SERVER_VERSION  # noqa: E402
 
 
@@ -718,7 +718,7 @@ class GatewayAndHealthTests(unittest.TestCase):
 
     def test_get_server_health_is_beta_only(self):
         beta_names = {
-            tool.name for tool in compatibility.mcp._tool_manager.list_tools()
+            tool.name for tool in registered_tools(compatibility.mcp).values()
         }
         production_source = (PRODUCTION_DIR / "server.py").read_text()
         self.assertIn("get_server_health", beta_names)

@@ -1,5 +1,38 @@
 # Changelog
 
+## 2.0.1-rc1-dev1 - MCP SDK and dependency hardening
+
+- Centralize the pinned MCP SDK's private FastMCP tool-registry access behind
+  one fail-closed compatibility adapter with startup shape validation,
+  read-only mapping snapshots, exact removal, cached version validation, and
+  transactional replacement with restoration on post-check failure.
+- Upgrade `mcp` from 1.9.0 to 1.28.1, the newest compatible stable 1.x release,
+  while preserving Streamable HTTP, the exact reviewed `ha-mcp` 7.14.1
+  admission contract, and the 41 plus 26 tool composition.
+- Upgrade the directly used Engineering web and security dependencies to
+  `aiohttp` 3.14.2, `uvicorn` 0.51.0, `starlette` 1.3.1, and `cryptography`
+  48.0.1; retain the already-current PyYAML and jsonschema pins.
+- Add a pinned `pip-audit` pull-request gate to the reusable validation
+  workflow required by release promotion.
+- Retain the one-second Engineering transport floor as explicit policy while
+  removing the obsolete MCP 1.9.0 fractional-timeout rationale.
+- Preserve exact `ha-mcp` 7.14.1 admission by explicitly requesting reviewed
+  upstream protocol `2025-03-26` instead of broadening to the SDK's newer
+  default.
+- Implement MCP 1.28's delegated result-conversion callback while preserving
+  the established bounded JSON text response and reviewed output contract.
+- Preserve the normal MCP 1.28 `ClientSession` initialization state, including
+  the public server-capabilities accessor, while requesting the exact reviewed
+  protocol.
+- Record CVE-2025-66416 as a mitigated, deferred production configuration risk
+  tracked by issue #62; do not infer loopback Host protection for the
+  production `0.0.0.0` bind.
+- Retire stable v1.1.2 as an operational rollback target and scope dependency
+  audit and behavioral tests to the Engineering server. Historical v1 source
+  and packaging remain unchanged.
+- Preserve public schemas, fingerprints, provider policy, audit semantics,
+  governance, dashboard behavior, and zero fallback.
+
 ## 2.0.0 - GA promotion
 
 - Promote the accepted RC2dev16 runtime without changing functional behavior,
@@ -11,8 +44,8 @@
 - Preserve 41 Engineering tools plus 26 exact reviewed `ha-mcp` 7.14.1 reads
   for 67 total tools when fully admitted.
 - Add exact GA release, in-place upgrade, rollback, provenance, and acceptance
-  guidance while keeping stable v1.1.2 unchanged as a temporary legacy
-  rollback installation.
+  guidance. Stable v1.1.2 was retained unchanged at release time but is now
+  operationally retired and is not a supported rollback installation.
 
 ## 2.0.0-rc2-dev16 - delegated error normalization
 

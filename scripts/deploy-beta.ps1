@@ -191,7 +191,7 @@ try {
         Write-Host "Skipped by request."
     }
     elseif ($FullTests) {
-        Invoke-External -Label "Run complete test suite" -Executable $PythonExecutable -Arguments @(
+        Invoke-External -Label "Run complete Engineering test suite" -Executable $PythonExecutable -Arguments @(
             "-m", "unittest", "discover", "-s", "tests", "-v"
         ) -SuppressOutput
     }

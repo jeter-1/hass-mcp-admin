@@ -53,7 +53,7 @@ from ha_mcp_engineering.providers.routing import (  # noqa: E402
     TOOL_CAPABILITY_POLICY,
     routing_for_tool,
 )
-from ha_mcp_engineering.tools import get_registered_server  # noqa: E402
+from ha_mcp_engineering.tools import get_registered_server, registered_tools  # noqa: E402
 from ha_mcp_engineering.version import SCHEMA_VERSION  # noqa: E402
 
 
@@ -145,7 +145,7 @@ def enum_rows(value, path=""):
 
 class RC1PublicContractTests(unittest.TestCase):
     def test_exact_beta26_tool_names_schemas_and_enums_are_frozen(self):
-        tools = get_registered_server()._tool_manager.list_tools()
+        tools = registered_tools(get_registered_server()).values()
         names = tuple(sorted(tool.name for tool in tools))
         schemas = {tool.name: tool.parameters for tool in tools}
         beta26_schemas = {

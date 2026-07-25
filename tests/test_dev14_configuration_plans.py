@@ -42,7 +42,7 @@ from ha_mcp_engineering.request_context import (  # noqa: E402
     begin_request,
     end_request,
 )
-from ha_mcp_engineering.tools import get_registered_server  # noqa: E402
+from ha_mcp_engineering.tools import get_registered_server, registered_tools  # noqa: E402
 from ha_mcp_engineering.tools.governance import (  # noqa: E402
     create_configuration_plan as create_configuration_plan_tool,
 )
@@ -2496,7 +2496,7 @@ class NegativeReachabilityTests(unittest.TestCase):
     def test_public_operation_schema_is_explicit_bounded_and_closed(self):
         tool = next(
             item
-            for item in get_registered_server()._tool_manager.list_tools()
+            for item in registered_tools(get_registered_server()).values()
             if item.name == "create_configuration_plan"
         )
         schema = tool.parameters
@@ -2535,7 +2535,7 @@ class NegativeReachabilityTests(unittest.TestCase):
     def test_only_governed_configuration_planner_is_newly_exposed(self):
         names = {
             tool.name
-            for tool in get_registered_server()._tool_manager.list_tools()
+            for tool in registered_tools(get_registered_server()).values()
         }
         self.assertIn("create_configuration_plan", names)
         for prohibited in (

@@ -31,7 +31,7 @@ from ha_mcp_engineering.dependency.service import EntityDependencyAnalysisServic
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError, InvalidRequestError  # noqa: E402
 from ha_mcp_engineering.observability import METRICS  # noqa: E402
 from ha_mcp_engineering.providers import EvidenceRequest, ProviderCapability  # noqa: E402
-from ha_mcp_engineering.tools import get_registered_server  # noqa: E402
+from ha_mcp_engineering.tools import get_registered_server, registered_tools  # noqa: E402
 from ha_mcp_engineering.tools import compatibility  # noqa: E402
 from unittest.mock import AsyncMock, patch
 
@@ -374,7 +374,7 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
 
 class ToolContractTests(unittest.TestCase):
     def test_tool_is_registered_once_and_schema_is_exact(self):
-        tools = get_registered_server()._tool_manager.list_tools()
+        tools = registered_tools(get_registered_server()).values()
         matches = [tool for tool in tools if tool.name == "entity_dependency_analysis"]
         self.assertEqual(len(tools), 41)
         self.assertEqual(len(matches), 1)

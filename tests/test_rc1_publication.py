@@ -22,7 +22,7 @@ IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 # RC2dev12 runtime metadata in this feature pull request.
 NEXT_VERSION = "2.0.0-rc2-dev13"
 PROMOTION_FIXTURE_CURRENT_VERSION = "2.0.0-rc2-dev12"
-CURRENT_REPOSITORY_VERSION = "2.0.0"
+CURRENT_REPOSITORY_VERSION = "2.0.1-rc1-dev1"
 PLATFORMS = ("linux/amd64", "linux/arm64", "linux/arm/v7")
 BUILD_ARGUMENTS = (
     "BUILD_VERSION",
@@ -115,7 +115,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         else:
             self.assertEqual(configured_version, CURRENT_REPOSITORY_VERSION)
 
-    def test_staged_development_or_advertised_ga_version_is_ordered(self):
+    def test_staged_or_advertised_version_is_ordered(self):
         versions = PROMOTION_MODULE.authoritative_versions(ROOT)
         configured_version = next(iter(versions.values()))
         declaration = ROOT / ".release" / "next-version"
@@ -134,9 +134,12 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                 AwesomeVersion("2.0.0-rc.3"),
             )
         else:
-            ga_version = AwesomeVersion(effective_version)
-            self.assertEqual(ga_version, AwesomeVersion("2.0.0"))
-            self.assertGreater(ga_version, AwesomeVersion("2.0.0-rc.3"))
+            maintenance_version = AwesomeVersion(effective_version)
+            self.assertEqual(
+                maintenance_version,
+                AwesomeVersion(CURRENT_REPOSITORY_VERSION),
+            )
+            self.assertGreater(maintenance_version, AwesomeVersion("2.0.0"))
 
     def test_complete_validation_precedes_release_detection_and_promotion(self):
         self.assertEqual(
@@ -149,6 +152,35 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             {"validate", "detect-release"},
         )
         self.assertIn("workflow_call", workflow_events(self.ci))
+
+    def test_dependency_audit_is_a_required_release_validation_gate(self):
+        validate_steps = self.ci["jobs"]["validate"]["steps"]
+        audit = next(
+            step
+            for step in validate_steps
+            if step.get("name") == "Audit Engineering dependencies"
+        )
+        self.assertEqual(
+            audit["run"],
+            "python -m pip_audit --strict --progress-spinner off "
+            "--requirement hass_mcp_engineering_beta/requirements.txt",
+        )
+        install = next(
+            step
+            for step in validate_steps
+            if step.get("name") == "Install dependencies"
+        )
+        self.assertIn("hass_mcp_engineering_beta/requirements.txt", install["run"])
+        self.assertNotIn("hass_mcp_admin/requirements-dev.txt", install["run"])
+        release_install = next(
+            step
+            for step in self.steps
+            if step.get("name") == "Install release validation dependencies"
+        )
+        self.assertNotIn(
+            "hass_mcp_admin/requirements-dev.txt",
+            release_install["run"],
+        )
 
     def test_preversioned_release_transition_is_detected_and_validated(self):
         detect = str(self.jobs["detect-release"]["steps"][-1]["run"])

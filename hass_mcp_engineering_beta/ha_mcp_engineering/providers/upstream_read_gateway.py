@@ -21,6 +21,7 @@ from ..capabilities import replace_dynamic_upstream_capabilities
 from ..clients.mcp import DashboardTransportError
 from ..clients.upstream_read import McpReadCatalog, McpReadGatewayTransport
 from ..configuration import Settings, parse_upstream_dashboard_endpoint
+from ..mcp_sdk_compatibility import McpSdkToolRegistry
 from ..models import FailureResponse, SuccessResponse
 from ..observability import METRICS
 from ..request_context import current_request_id, current_telemetry
@@ -272,9 +273,14 @@ class ReviewedUpstreamReadTool(Tool):
         tool._contract_fingerprint = contract_fingerprint
         return tool
 
-    async def run(self, arguments: dict[str, Any], context: Any = None) -> Any:
+    async def run(
+        self,
+        arguments: dict[str, Any],
+        context: Any = None,
+        convert_result: bool = False,
+    ) -> Any:
         del context
-        return await self._gateway.execute(
+        result = await self._gateway.execute(
             exposed_name=self.name,
             arguments=arguments,
             reviewed_schema=self._schema,
@@ -282,6 +288,9 @@ class ReviewedUpstreamReadTool(Tool):
             admission_generation=self._admission_generation,
             contract_fingerprint=self._contract_fingerprint,
         )
+        if convert_result:
+            return self.fn_metadata.convert_result(result)
+        return result
 
 
 AdmissionValidator = Callable[[McpReadCatalog], None]
@@ -339,6 +348,7 @@ class UpstreamReadGateway:
         self._policy: UpstreamToolPolicy | None = None
         self._admission_validator: AdmissionValidator | None = None
         self._registered_server: Any = None
+        self._registered_tool_registry: McpSdkToolRegistry | None = None
         self._registered_names: set[str] = set()
         self._exposed: dict[str, _AdmittedRoute] = {}
         self._dynamic_capabilities: tuple[dict[str, Any], ...] = ()
@@ -540,7 +550,9 @@ class UpstreamReadGateway:
     async def _initialize_once(self, server: Any) -> dict[str, Any]:
         """Discover once and transactionally replace this provider's dynamic tools."""
 
+        registry = McpSdkToolRegistry(server)
         self._registered_server = server
+        self._registered_tool_registry = registry
         with self._lock:
             discovery_epoch = self._live_observation_epoch
             self._state.update(
@@ -579,10 +591,9 @@ class UpstreamReadGateway:
             observed_fingerprint = _safe_catalog_fingerprint(
                 list(catalog.tools)
             )
-            base_names = {
-                tool.name for tool in server._tool_manager.list_tools()
-                if tool.name not in self._registered_names
-            }
+            base_names = set(registry.snapshot()).difference(
+                self._registered_names
+            )
             reviewed_descriptions = (
                 self._policy.reviewed_runtime_description_fingerprints_by_name
             )
@@ -1908,12 +1919,10 @@ class UpstreamReadGateway:
         with self._lock:
             if self._exposed.get(exposed_name) is not mapping:
                 return False
-            if self._registered_server is not None:
-                replacement = dict(
-                    self._registered_server._tool_manager._tools
-                )
+            if self._registered_tool_registry is not None:
+                replacement = dict(self._registered_tool_registry.snapshot())
                 replacement.pop(exposed_name, None)
-                self._registered_server._tool_manager._tools = replacement
+                self._registered_tool_registry.replace(replacement)
             registered_names = set(self._registered_names)
             registered_names.discard(exposed_name)
             self._registered_names = registered_names
@@ -2209,11 +2218,13 @@ class UpstreamReadGateway:
     ) -> None:
         """Publish one complete dynamic registry generation."""
 
-        replacement = dict(server._tool_manager._tools)
+        registry = McpSdkToolRegistry(server)
+        replacement = dict(registry.snapshot())
         for name in self._registered_names:
             replacement.pop(name, None)
         replacement.update(dynamic_tools)
-        server._tool_manager._tools = replacement
+        registry.replace(replacement)
+        self._registered_tool_registry = registry
 
     def _record_failure(
         self,

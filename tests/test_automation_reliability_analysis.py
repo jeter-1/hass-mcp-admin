@@ -28,7 +28,7 @@ from ha_mcp_engineering.reliability.provider import DirectHaReliabilityProvider 
 from ha_mcp_engineering.reliability.service import AutomationReliabilityAnalysisService  # noqa: E402
 from ha_mcp_engineering.reliability.rules import evaluate_rules  # noqa: E402
 from ha_mcp_engineering.sanitization import sanitize_untrusted_data  # noqa: E402
-from ha_mcp_engineering.tools import get_registered_server  # noqa: E402
+from ha_mcp_engineering.tools import get_registered_server, registered_tools  # noqa: E402
 
 
 AUTOMATION_ID = "reliability_test"
@@ -394,7 +394,7 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
 
 class ToolAndSanitizerTests(unittest.TestCase):
     def test_tool_is_registered_once_with_bounded_schema_and_total_is_35(self):
-        tools = get_registered_server()._tool_manager.list_tools()
+        tools = registered_tools(get_registered_server()).values()
         matches = [tool for tool in tools if tool.name == "automation_reliability_analysis"]
         self.assertEqual(len(tools), 41)
         self.assertEqual(len(matches), 1)

@@ -178,8 +178,9 @@ route failures report `connection_failed`; genuine deadline expiry reports
 `timeout`. These categories never include raw endpoint or exception text.
 
 The provider adds no Supervisor permission and performs no discovery. Existing
-direct-HA policies, governance, external approval, and production v1.1.2 remain
-unchanged. See
+direct-HA policies, governance, and external approval remain unchanged.
+Historical v1.1.2 source is operationally retired and outside this provider
+contract. See
 [`ADR-003`](architecture/ADR-003-REVIEWED-ARGUMENT-CONSTRAINED-DASHBOARD-READS.md)
 and [`RC3A_RELEASE_NOTES.md`](RC3A_RELEASE_NOTES.md).
 
@@ -505,3 +506,49 @@ keyed IDs, and narrowly recognized prose forms are replaced with
 The sanitizer deliberately does not redact unrelated hexadecimal values such as
 Git commit SHAs. Sanitizer failure remains fail closed, and the original payload
 is never included in an exception log.
+
+## MCP SDK and dependency boundary
+
+Engineering version `2.0.1-rc1-dev1` pins the stable MCP 1.x SDK at 1.28.1.
+Every required contact with the SDK's private FastMCP tool registry is isolated
+in `mcp_sdk_compatibility.py`. The adapter admits only the reviewed SDK version
+and expected mapping shape, returns read-only mapping snapshots containing
+shared `Tool` objects, validates complete replacement candidates, restores the
+previous registry if post-assignment verification fails, and fails startup
+with bounded Engineering-owned wording when the contract is unavailable.
+Exact SDK version resolution is cached once per process. There is no alternate
+registration path or fallback.
+
+The SDK compatibility boundary also initializes outbound upstream sessions
+with reviewed protocol `2025-03-26`. A newer SDK default cannot silently
+broaden exact `ha-mcp` 7.14.1 admission; a different returned protocol remains
+an incompatible-upstream failure.
+
+The upgrade moves the Engineering runtime beyond the affected package-version
+ranges for CVE-2025-53366, CVE-2025-53365, CVE-2026-52869, and
+CVE-2026-59950. Directly used `aiohttp`, `starlette`, `uvicorn`, and
+`cryptography` pins were reviewed and advanced with the SDK. Pull-request
+validation runs pinned `pip-audit` against the Engineering runtime
+requirements, fails on dependency resolution or an applicable known
+vulnerability, and is reused by the protected promotion workflow. No advisory
+exceptions are configured.
+
+CVE-2025-66416 remains a reviewed, mitigated, deferred configuration risk.
+MCP 1.28.1 supplies Host and Origin controls and automatically configures them
+for loopback binds, but the Engineering production FastMCP instance binds to
+`0.0.0.0` without an explicit transport-security policy. Secret-path
+authentication, complete authenticated-path audit redaction, access-log
+suppression, the minimum secret length, and authentication/general rate
+limiting reduce exposure but do not establish Host or Origin enforcement.
+Supported Host and Origin values depend on Supervisor, LAN, connector, and
+tunnel topology and are not guessed in this maintenance change. Issue #62
+tracks configurable production enforcement and exact-image tests with reviewed
+deployment values.
+
+The scanner is point-in-time public-advisory evidence, not a proof that
+dependencies are defect-free. The repository retains exact top-level pins but
+does not yet commit a transitive lock with hashes; CI and image builds resolve
+the transitive graph from those pins. This assurance applies only to the HA MCP
+Engineering dependency set. Stable v1.1.2 is operationally retired historical
+source, is not covered by the Engineering audit, and is not a supported
+rollback target.

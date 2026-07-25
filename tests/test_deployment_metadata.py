@@ -181,12 +181,18 @@ class VersionComparisonTests(unittest.TestCase):
                 "2.0.0", "2.0.0-rc.3"
             )
         )
+        self.assertTrue(
+            VALIDATOR.is_newer_version(
+                "2.0.1-rc1-dev1", "2.0.0"
+            )
+        )
 
     def test_version_comparison_uses_awesomeversion_25_8_0(self):
         requirements = (ROOT / "tests" / "requirements.txt").read_text(
             encoding="utf-8"
         )
         self.assertIn("awesomeversion==25.8.0", requirements)
+        self.assertIn("pip-audit==2.10.1", requirements)
         self.assertEqual(
             VALIDATOR.version_key("2.0.0-rc2-dev1").strategy.name,
             "SEMVER",
@@ -557,6 +563,56 @@ class CIWorkflowTests(unittest.TestCase):
         self.assertNotIn("docker/login-action", self.workflow)
         self.assertNotIn("push: true", self.workflow)
 
+    def test_engineering_discovery_excludes_retired_stable_behavior(self):
+        historical = (
+            ROOT / "tests" / "historical_stable_v1_gateway.py",
+            ROOT / "tests" / "historical_stable_v1_metadata.py",
+        )
+        for path in historical:
+            with self.subTest(path=path.name):
+                self.assertTrue(path.is_file())
+                self.assertFalse(path.name.startswith("test"))
+        self.assertIn("Run Engineering unit tests", self.workflow)
+        self.assertNotIn("hass_mcp_admin/requirements", self.workflow)
+        self.assertIn(
+            "Build retired stable-v1 image packaging",
+            self.workflow,
+        )
+
+    def test_current_assurance_docs_record_dns_and_stable_boundaries(self):
+        release = (ROOT / "docs" / "RC1DEV1_RELEASE_NOTES.md").read_text(
+            encoding="utf-8"
+        )
+        acceptance = (ROOT / "docs" / "RC1DEV1_ACCEPTANCE.md").read_text(
+            encoding="utf-8"
+        )
+        security = (ROOT / "docs" / "SECURITY.md").read_text(
+            encoding="utf-8"
+        )
+        combined = "\n".join((release, acceptance, security))
+
+        self.assertIn("`0.0.0.0`", combined)
+        self.assertIn("issue #62", combined)
+        self.assertIn("mitigated, deferred configuration risk", combined)
+        self.assertNotIn("DNS-rebinding protection remains enabled", combined)
+        self.assertNotIn(
+            "CVE-2025-53366, CVE-2025-53365, CVE-2025-66416",
+            combined,
+        )
+        self.assertIn("operationally retired", combined)
+        self.assertIn(
+            "sha256:d91246deab5b50749430f5194b5a9fe1473171526fe4f8551c89b1b3259ff130",
+            combined,
+        )
+
+    def test_exact_image_contract_makes_no_host_rejection_claim(self):
+        source = (
+            ROOT / "scripts" / "exact_image_read_gateway_acceptance.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertNotIn("DNS-rebinding", source)
+        self.assertNotIn("untrusted-host", source)
+
 
 class DeploymentScriptTests(unittest.TestCase):
     @classmethod
@@ -586,7 +642,7 @@ class DeploymentScriptTests(unittest.TestCase):
         self.assertNotIn("[string]$Webhook", self.script)
 
     def test_test_output_is_suppressed_to_protect_authenticated_paths(self):
-        self.assertIn('"Run complete test suite"', self.script)
+        self.assertIn('"Run complete Engineering test suite"', self.script)
         self.assertGreaterEqual(self.script.count("-SuppressOutput"), 3)
 
 

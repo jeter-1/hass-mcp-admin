@@ -48,7 +48,7 @@ from ha_mcp_engineering.providers.routing import (  # noqa: E402
     routing_for_tool,
 )
 from ha_mcp_engineering.routing import AuthenticatedMcpGateway  # noqa: E402
-from ha_mcp_engineering.tools import get_registered_server  # noqa: E402
+from ha_mcp_engineering.tools import get_registered_server, registered_tools  # noqa: E402
 
 
 ANALYSIS_TIME = datetime(2026, 7, 20, 12, 0, tzinfo=timezone.utc)
@@ -685,7 +685,7 @@ class ProviderAndPublicContractTests(unittest.IsolatedAsyncioTestCase):
             {item["capability"] for item in PLANNED_CAPABILITIES},
             set(),
         )
-        tools = get_registered_server()._tool_manager._tools
+        tools = registered_tools(get_registered_server())
         self.assertEqual(len(tools), 41)
         self.assertIn("configuration_integrity_analysis", tools)
         schema = tools["configuration_integrity_analysis"].parameters

@@ -1,15 +1,15 @@
-# Beta deployment and validation
+# Historical beta deployment and validation
 
-The beta add-on is isolated from production. Production remains **HA MCP
-Engineering Server** v1.1.2 (`hass_mcp_admin`, port 8099). RC v2.0.0-rc.2
-is **HA MCP Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100).
-The workflow in this document deploys or updates only the beta.
+This document records the former beta deployment process and is not current
+2.0.x rollback guidance. At the time, RC v2.0.0-rc.2 ran as **HA MCP
+Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100) beside
+v1.1.2 (`hass_mcp_admin`, port 8099). Stable v1.1.2 is now operationally
+retired; use the current Engineering release notes for rollback.
 
-RC2 must expose 38 registered/25 canonical tools and no planned feature
-capabilities. It adds no tool or schema, so connector recreation is not normally
-required. Follow the user-run acceptance procedure in
-[`RC2_ACCEPTANCE.md`](RC2_ACCEPTANCE.md). Rollback affects only beta/RC;
-production v1.1.2 remains on port 8099.
+RC2 had to expose 38 registered/25 canonical tools and no planned feature
+capabilities. It added no tool or schema, so connector recreation was not
+normally required. The historical user-run acceptance procedure is in
+[`RC2_ACCEPTANCE.md`](RC2_ACCEPTANCE.md).
 
 ## Before opening or merging a beta release
 
@@ -81,7 +81,7 @@ agree. The controlled publisher also creates
 `ghcr.io/jeter-1/hass-mcp-engineering-beta:sha-<commit>` for the exact source
 commit and publishes one manifest covering `linux/amd64`, `linux/arm64`, and
 `linux/arm/v7` for the declared `amd64`, `aarch64`, and `armv7` app
-architectures. Production v1.1.2 has no registry-image change.
+architectures. The then-separate v1.1.2 image had no registry-image change.
 
 Pull-request CI builds and validates the RC image and all declared
 architectures without pushing. Merging the pull request alone neither publishes
@@ -146,7 +146,7 @@ Perform these steps in this exact order:
 12. Verify `build_sha` matches the tagged source commit.
 13. Verify `build_time` is populated and valid UTC RFC3339.
 14. Continue the documented RC2 deployed acceptance.
-15. Do not modify or disable production v1.1.2.
+15. At the time, do not modify or disable the separate v1.1.2 installation.
 
 For step 7, compare the manifest-list digest returned without credentials with
 the digest recorded by the publishing job for the immutable version tag. Do
@@ -490,9 +490,8 @@ installation path. Local builds without supplied provenance safely report
 Keep the existing Beta 26 connector for the in-place upgrade, then compare it
 with one fresh RC2 connector as described in
 [`RC2_ACCEPTANCE.md`](RC2_ACCEPTANCE.md). RC2 starts directly on persisted Beta
-26 governance data without migration or startup rewrite. Production v1.1.2
-remains installed and running throughout RC testing and is outside RC
-deployment, acceptance, and rollback.
+26 governance data without migration or startup rewrite. The then-separate
+v1.1.2 installation remained outside RC deployment, acceptance, and rollback.
 
 ## Beta 26 expiry lifecycle deployment and troubleshooting
 
@@ -517,9 +516,9 @@ replacement must not outlive the plan.
 
 Expired-authority apply and rollback refusals are local governance outcomes:
 they must precede Home Assistant/provider write work and must not increment
-provider failure counters. Production v1.1.2 is not part of diagnosis or
-rollback. Rollback means a later Beta that reverts or corrects the defect, never
-lowering the add-on version in place.
+provider failure counters. The then-separate v1.1.2 installation was not part
+of diagnosis or beta rollback. Current 2.0.1 rollback guidance instead targets
+the exact published Engineering 2.0.0 image.
 
 ## Beta 25 external approval deployment
 

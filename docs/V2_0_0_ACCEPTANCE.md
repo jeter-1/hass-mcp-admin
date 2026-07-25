@@ -224,12 +224,11 @@ Rollback requires separate authorization.
    no-fallback checks.
 5. Confirm no migration or data repair is required.
 
-### Legacy v1.1.2 rollback
+### Retired stable-v1 source
 
-Stop the v2 add-on before re-enabling stable v1.1.2. Use the legacy server only
-when its reduced capability set is acceptable; it does not provide v2
-governance, external approval, delegated reads, dashboard reads, or v2
-analyses. Do not configure conflicting ports.
+Stable v1.1.2 is retained as historical repository source but is operationally
+retired. It is not a supported rollback target, is not part of current
+Engineering dependency assurance, and is not functionally equivalent to v2.
 
 ## Known limitations
 
@@ -239,7 +238,7 @@ analyses. Do not configure conflicting ports.
 - Signed generic compatibility-registry operations are deferred.
 - Broader dashboard and entity/device registry administration are deferred.
 - The accepted technical slug and runtime/display identity retain “beta”.
-- Stable v1.1.2 is retained temporarily as a reduced-capability rollback
+- Stable v1.1.2 is historical source only and not an operational rollback
   option.
 
 Acceptance fails on unexplained fingerprint drift, schema or tool-count change,

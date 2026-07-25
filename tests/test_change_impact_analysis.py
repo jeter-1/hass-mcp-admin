@@ -63,7 +63,7 @@ from ha_mcp_engineering.sanitization import (  # noqa: E402
     SANITIZATION_FAILURE_MARKER,
     SanitizationResult,
 )
-from ha_mcp_engineering.tools import get_registered_server  # noqa: E402
+from ha_mcp_engineering.tools import get_registered_server, registered_tools  # noqa: E402
 from ha_mcp_engineering.capabilities import (  # noqa: E402
     BETA_NATIVE_CAPABILITIES,
     PLANNED_CAPABILITIES,
@@ -1774,7 +1774,7 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
 
 class ToolCompatibilityTests(unittest.TestCase):
     def test_additive_dev14_tool_and_all_prior_schemas_unchanged(self):
-        tools = get_registered_server()._tool_manager.list_tools()
+        tools = registered_tools(get_registered_server()).values()
         self.assertEqual(len(tools), 41)
         current = {item.name: item for item in tools}
         self.assertEqual(

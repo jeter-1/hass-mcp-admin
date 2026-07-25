@@ -61,7 +61,7 @@ from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
     _engineering_config_hash,
     _upstream_config_hash,
 )
-from ha_mcp_engineering.tools import compatibility  # noqa: E402
+from ha_mcp_engineering.tools import compatibility, registered_tools  # noqa: E402
 from ha_mcp_engineering.tools.registry import get_registered_server  # noqa: E402
 from ha_mcp_engineering.version import SERVER_VERSION  # noqa: E402
 
@@ -437,8 +437,26 @@ class AddonIsolationTests(unittest.TestCase):
     def test_dependencies_are_exactly_pinned(self):
         production = (PRODUCTION_DIR / "requirements.txt").read_text().splitlines()
         beta = (BETA_DIR / "requirements.txt").read_text().splitlines()
-        self.assertTrue(set(production).issubset(beta))
-        self.assertIn("PyYAML==6.0.2", beta)
+        self.assertEqual(
+            production,
+            [
+                "mcp==1.9.0",
+                "aiohttp==3.9.5",
+                "uvicorn==0.29.0",
+            ],
+        )
+        self.assertEqual(
+            beta,
+            [
+                "mcp==1.28.1",
+                "aiohttp==3.14.2",
+                "uvicorn==0.51.0",
+                "starlette==1.3.1",
+                "PyYAML==6.0.2",
+                "cryptography==48.0.1",
+                "jsonschema==4.25.1",
+            ],
+        )
         self.assertTrue(all("==" in requirement for requirement in beta))
 
     def test_required_v2_boundaries_and_documentation_exist(self):
@@ -494,6 +512,8 @@ class AddonIsolationTests(unittest.TestCase):
         self.assertTrue((ROOT / "docs" / "RC2_ACCEPTANCE.md").is_file())
         self.assertTrue((ROOT / "docs" / "RC3A_RELEASE_NOTES.md").is_file())
         self.assertTrue((ROOT / "docs" / "RC3A_ACCEPTANCE.md").is_file())
+        self.assertTrue((ROOT / "docs" / "RC1DEV1_RELEASE_NOTES.md").is_file())
+        self.assertTrue((ROOT / "docs" / "RC1DEV1_ACCEPTANCE.md").is_file())
         self.assertTrue((ROOT / "docs" / "TOKEN_EFFICIENCY.md").is_file())
         self.assertTrue(
             (ROOT / "docs" / "CONFIGURATION_INTEGRITY_ANALYSIS.md").is_file()
@@ -507,10 +527,10 @@ class ToolParityTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.production_tools = {
-            tool.name: tool for tool in production_server.mcp._tool_manager.list_tools()
+            tool.name: tool for tool in registered_tools(production_server.mcp).values()
         }
         cls.beta_tools = {
-            tool.name: tool for tool in get_registered_server()._tool_manager.list_tools()
+            tool.name: tool for tool in registered_tools(get_registered_server()).values()
         }
 
     def test_all_25_tools_are_registered(self):
@@ -698,6 +718,22 @@ class BetaApplicationTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertNotIn("location", response.headers)
                 self.assertIn("protocolVersion", response.text)
+
+    def test_malformed_streamable_http_request_is_bounded_and_server_survives(self):
+        response = self.client.post(
+            f"/{SECRET}/mcp",
+            content=b'{"jsonrpc":"2.0",',
+            headers={
+                "accept": "application/json, text/event-stream",
+                "content-type": "application/json",
+                "x-request-id": "malformed-mcp-request-123",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertLess(len(response.content), 1024)
+        self.assertNotIn(SECRET, response.text)
+        self.assertEqual(self.client.get("/health").status_code, 200)
 
     def test_tools_list_exposes_all_beta_native_tools(self):
         initialized = self.initialize(f"/{SECRET}/mcp")
@@ -1369,7 +1405,7 @@ class BetaApplicationTests(unittest.TestCase):
             service.gateway = previous_gateway
 
     def test_governance_input_schemas_are_intentional(self):
-        tools = {tool.name: tool.parameters for tool in get_registered_server()._tool_manager.list_tools()}
+        tools = {tool.name: tool.parameters for tool in registered_tools(get_registered_server()).values()}
         expected_properties = {
             "create_change_plan": {"title", "description", "operation", "automation_id", "proposed_config", "expiration_minutes", "caller_context"},
             "create_configuration_plan": {"title", "description", "operations", "expiration_minutes", "caller_context"},
@@ -1734,7 +1770,8 @@ class BetaApplicationTests(unittest.TestCase):
         settings = beta_settings(str(Path(self.tempdir.name) / "startup-audit.jsonl"))
         output = io.StringIO()
         with patch("ha_mcp_engineering.application.load_settings", return_value=settings), patch(
-            "ha_mcp_engineering.application.uvicorn.run"
+            "ha_mcp_engineering.application._serve",
+            new=AsyncMock(),
         ), redirect_stderr(output):
             from ha_mcp_engineering.application import main
 

@@ -320,8 +320,8 @@ number of items in `items_by_section.risks`; `open_item_count` and
 `authorization_required_count` include only current actionable items. Retained
 expired, superseded, rolled-back, or validation-only history does not inflate them.
 
-These contracts apply only to `hass_mcp_engineering_beta`. Production v1.1.2
-runtime behavior and logging remain unchanged.
+These contracts apply only to `hass_mcp_engineering_beta`. Retired v1.1.2
+runtime behavior and logging are outside current Engineering assurance.
 
 Governed automation changes add safe lifecycle events and bounded governance
 health counts. Proposed/current configurations, approval notes, hashes, secrets,

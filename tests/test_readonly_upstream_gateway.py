@@ -44,7 +44,7 @@ from ha_mcp_engineering.request_context import (  # noqa: E402
     end_request,
 )
 from ha_mcp_engineering.routing import AuthenticatedMcpGateway  # noqa: E402
-from ha_mcp_engineering.tools import get_registered_server  # noqa: E402
+from ha_mcp_engineering.tools import get_registered_server, registered_tools  # noqa: E402
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     ReviewedToolAnnotations,
     UpstreamToolPolicy,
@@ -1158,7 +1158,7 @@ class PolicyInventoryTests(unittest.TestCase):
         self.assertTrue(all(not item.destructive for item in automatic_annotations.values()))
 
     def test_engineering_catalog_is_41_without_upstream_discovery(self):
-        self.assertEqual(len(get_registered_server()._tool_manager.list_tools()), 41)
+        self.assertEqual(len(registered_tools(get_registered_server()).values()), 41)
 
     def test_exact_image_acceptance_is_committed_to_ci(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
@@ -1180,7 +1180,7 @@ class PolicyInventoryTests(unittest.TestCase):
         )
         self.assertEqual(
             ast.literal_eval(baseline_assignment.value),
-            len(get_registered_server()._tool_manager.list_tools()),
+            len(registered_tools(get_registered_server()).values()),
         )
         self.assertIn(
             "len(base_names) == EXPECTED_ENGINEERING_BASELINE_COUNT",
@@ -1294,7 +1294,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         gateway, server, _ = await initialize(
             [entry], [advertised]
         )
-        tool = server._tool_manager.get_tool("ha_get_state")
+        tool = registered_tools(server).get("ha_get_state")
         self.assertIsNotNone(tool)
         self.assertEqual(tool.parameters, reviewed)
         self.assertEqual(tool.description, entry.description)
@@ -1310,7 +1310,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         _gateway, server, _transport = await initialize(
             [entry], [advertised]
         )
-        published = server._tool_manager.get_tool(entry.upstream_name)
+        published = registered_tools(server).get(entry.upstream_name)
         self.assertIsNotNone(published)
         self.assertTrue(published.annotations.readOnlyHint)
         self.assertFalse(published.annotations.destructiveHint)
@@ -1330,7 +1330,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             reviewed_runtime_annotations=reviewed_runtime_annotations,
         )
         self.assertIsNotNone(
-            server._tool_manager.get_tool(entry.upstream_name)
+            registered_tools(server).get(entry.upstream_name)
         )
 
         drifted = catalog_tool(entry.upstream_name)
@@ -1340,7 +1340,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             reviewed_runtime_annotations=reviewed_runtime_annotations,
         )
         self.assertIsNone(
-            drifted_server._tool_manager.get_tool(entry.upstream_name)
+            registered_tools(drifted_server).get(entry.upstream_name)
         )
         self.assertEqual(
             gateway.health_snapshot()["annotation_mismatch_count"],
@@ -1410,7 +1410,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                     [entry], [advertised]
                 )
                 self.assertIsNone(
-                    server._tool_manager.get_tool(entry.upstream_name)
+                    registered_tools(server).get(entry.upstream_name)
                 )
                 self.assertEqual(
                     gateway.health_snapshot()["annotation_mismatch_count"],
@@ -1428,8 +1428,8 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             [changed, healthy],
             [advertised, catalog_tool(healthy.upstream_name)],
         )
-        self.assertIsNone(server._tool_manager.get_tool(changed.upstream_name))
-        self.assertIsNotNone(server._tool_manager.get_tool(healthy.upstream_name))
+        self.assertIsNone(registered_tools(server).get(changed.upstream_name))
+        self.assertIsNotNone(registered_tools(server).get(healthy.upstream_name))
         health = gateway.health_snapshot()
         self.assertEqual(health["description_semantics_mismatch_count"], 1)
         self.assertEqual(health["admission_status"], "partially_admitted")
@@ -1453,7 +1453,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertIsNotNone(
-            server._tool_manager.get_tool(entry.upstream_name)
+            registered_tools(server).get(entry.upstream_name)
         )
         health = gateway.health_snapshot()
         self.assertEqual(health["description_semantics_mismatch_count"], 0)
@@ -1463,7 +1463,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         entry = policy_entry("ha_get_state")
         advertised = catalog_tool(entry.upstream_name)
         _gateway, server, _transport = await initialize([entry], [advertised])
-        published = server._tool_manager.get_tool(entry.upstream_name)
+        published = registered_tools(server).get(entry.upstream_name)
         self.assertIsNotNone(published)
         self.assertEqual(published.description, entry.description)
         self.assertNotIn("search keywords", published.description)
@@ -1483,10 +1483,10 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             [advertised, catalog_tool(healthy.upstream_name)],
         )
         self.assertIsNone(
-            server._tool_manager.get_tool(changed.upstream_name)
+            registered_tools(server).get(changed.upstream_name)
         )
         self.assertIsNotNone(
-            server._tool_manager.get_tool(healthy.upstream_name)
+            registered_tools(server).get(healthy.upstream_name)
         )
         health = gateway.health_snapshot()
         self.assertEqual(health["description_semantics_mismatch_count"], 1)
@@ -1513,7 +1513,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                     [entry], [advertised]
                 )
                 self.assertIsNone(
-                    server._tool_manager.get_tool(entry.upstream_name)
+                    registered_tools(server).get(entry.upstream_name)
                 )
                 self.assertEqual(
                     gateway.health_snapshot()[
@@ -1545,7 +1545,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertIsNotNone(
-            server._tool_manager.get_tool(entry.upstream_name)
+            registered_tools(server).get(entry.upstream_name)
         )
 
     async def test_invalid_runtime_description_fails_closed(self):
@@ -1569,7 +1569,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                     [entry], [advertised]
                 )
                 self.assertIsNone(
-                    server._tool_manager.get_tool(entry.upstream_name)
+                    registered_tools(server).get(entry.upstream_name)
                 )
                 health = gateway.health_snapshot()
                 self.assertEqual(
@@ -1590,7 +1590,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             "openWorldHint": False,
         }
         gateway, server, _ = await initialize([entry], [advertised])
-        self.assertIsNone(server._tool_manager.get_tool("ha_get_hacs_info"))
+        self.assertIsNone(registered_tools(server).get("ha_get_hacs_info"))
         health = gateway.health_snapshot()
         self.assertEqual(health["annotation_mismatch_count"], 1)
         self.assertEqual(
@@ -1602,7 +1602,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         advertised = catalog_tool(entry.upstream_name)
         advertised["annotations"]["openWorldHint"] = True
         _gateway, server, _ = await initialize([entry], [advertised])
-        annotations = server._tool_manager.get_tool(entry.upstream_name).annotations
+        annotations = registered_tools(server).get(entry.upstream_name).annotations
         self.assertTrue(annotations.readOnlyHint)
         self.assertFalse(annotations.destructiveHint)
         self.assertTrue(annotations.idempotentHint)
@@ -1619,7 +1619,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             [entry], [advertised]
         )
         self.assertIsNotNone(
-            server._tool_manager.get_tool(entry.upstream_name)
+            registered_tools(server).get(entry.upstream_name)
         )
         self.assertEqual(
             gateway.health_snapshot()["output_contract_mismatch_count"],
@@ -1646,10 +1646,10 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                     [advertised, catalog_tool(healthy.upstream_name)],
                 )
                 self.assertIsNone(
-                    server._tool_manager.get_tool(changed.upstream_name)
+                    registered_tools(server).get(changed.upstream_name)
                 )
                 self.assertIsNotNone(
-                    server._tool_manager.get_tool(healthy.upstream_name)
+                    registered_tools(server).get(healthy.upstream_name)
                 )
                 health = gateway.health_snapshot()
                 self.assertEqual(
@@ -1666,8 +1666,8 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             [changed, healthy],
             [advertised, catalog_tool(healthy.upstream_name)],
         )
-        self.assertIsNone(server._tool_manager.get_tool(changed.upstream_name))
-        self.assertIsNotNone(server._tool_manager.get_tool(healthy.upstream_name))
+        self.assertIsNone(registered_tools(server).get(changed.upstream_name))
+        self.assertIsNotNone(registered_tools(server).get(healthy.upstream_name))
         health = gateway.health_snapshot()
         self.assertEqual(health["output_contract_mismatch_count"], 1)
         self.assertEqual(health["dynamically_exposed_count"], 1)
@@ -1688,10 +1688,10 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                 )
                 health = gateway.health_snapshot()
                 self.assertIsNone(
-                    server._tool_manager.get_tool(changed.upstream_name)
+                    registered_tools(server).get(changed.upstream_name)
                 )
                 self.assertIsNotNone(
-                    server._tool_manager.get_tool(healthy.upstream_name)
+                    registered_tools(server).get(healthy.upstream_name)
                 )
                 self.assertEqual(
                     health["runtime_contract_mismatch_count"], 1
@@ -1716,7 +1716,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             gateway.health_snapshot()["runtime_contract_mismatch_count"], 0
         )
         self.assertIsNotNone(
-            server._tool_manager.get_tool(entry.upstream_name)
+            registered_tools(server).get(entry.upstream_name)
         )
 
     async def test_multiple_reads_share_one_generic_provider(self):
@@ -1724,8 +1724,8 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         gateway, server, _ = await initialize(
             entries, [catalog_tool(entry.upstream_name) for entry in entries]
         )
-        state = server._tool_manager.get_tool("ha_get_state")
-        history = server._tool_manager.get_tool("ha_get_history")
+        state = registered_tools(server).get("ha_get_state")
+        history = registered_tools(server).get("ha_get_history")
         self.assertIs(state._gateway, gateway)
         self.assertIs(history._gateway, gateway)
         self.assertEqual(gateway.health_snapshot()["dynamically_exposed_count"], 2)
@@ -1735,7 +1735,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         gateway, server, _ = await initialize(
             [entry], [catalog_tool("ha_get_state"), catalog_tool("ha_new_read")]
         )
-        self.assertIsNone(server._tool_manager.get_tool("ha_new_read"))
+        self.assertIsNone(registered_tools(server).get("ha_new_read"))
         health = gateway.health_snapshot()
         self.assertEqual(health["unreviewed_tool_count"], 1)
         self.assertEqual(health["unreviewed_tools"], ["ha_new_read"])
@@ -1762,7 +1762,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         gateway, server, _ = await initialize(
             [entry], [catalog_tool("ha_get_state", changed)]
         )
-        self.assertIsNone(server._tool_manager.get_tool("ha_get_state"))
+        self.assertIsNone(registered_tools(server).get("ha_get_state"))
         self.assertEqual(gateway.health_snapshot()["schema_mismatch_count"], 1)
         self.assertEqual(
             gateway.health_snapshot()["schema_mismatched_automatic_read_count"],
@@ -1785,7 +1785,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_missing_reviewed_read_is_not_reported_as_schema_drift(self):
         entry = policy_entry("ha_get_state")
         gateway, server, _ = await initialize([entry], [])
-        self.assertIsNone(server._tool_manager.get_tool("ha_get_state"))
+        self.assertIsNone(registered_tools(server).get("ha_get_state"))
         health = gateway.health_snapshot()
         self.assertEqual(health["missing_reviewed_read_count"], 1)
         self.assertEqual(health["missing_automatic_read_count"], 1)
@@ -1795,11 +1795,11 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         entries = [policy_entry("ha_get_state"), policy_entry("ha_get_history")]
         tools = [catalog_tool(entry.upstream_name) for entry in entries]
         gateway, server, transport = await initialize(entries, tools)
-        self.assertIsNotNone(server._tool_manager.get_tool("ha_get_history"))
+        self.assertIsNotNone(registered_tools(server).get("ha_get_history"))
         transport.catalog = replace(transport.catalog, tools=(tools[0],))
         refreshed = await gateway.initialize(server)
-        self.assertIsNotNone(server._tool_manager.get_tool("ha_get_state"))
-        self.assertIsNone(server._tool_manager.get_tool("ha_get_history"))
+        self.assertIsNotNone(registered_tools(server).get("ha_get_state"))
+        self.assertIsNone(registered_tools(server).get("ha_get_history"))
         self.assertEqual(refreshed["dynamically_exposed_count"], 1)
         self.assertEqual(refreshed["missing_automatic_read_count"], 1)
         self.assertEqual(refreshed["missing_tools"], ["ha_get_history"])
@@ -1818,9 +1818,9 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                 catalog_tool("ha_unreviewed_read"),
             ],
         )
-        self.assertIsNotNone(server._tool_manager.get_tool("ha_get_state"))
-        self.assertIsNone(server._tool_manager.get_tool("ha_get_history"))
-        self.assertIsNone(server._tool_manager.get_tool("ha_get_entity"))
+        self.assertIsNotNone(registered_tools(server).get("ha_get_state"))
+        self.assertIsNone(registered_tools(server).get("ha_get_history"))
+        self.assertIsNone(registered_tools(server).get("ha_get_entity"))
         health = gateway.health_snapshot()
         self.assertTrue(health["generic_delegation_available"])
         self.assertEqual(health["reviewed_automatic_read_count"], 3)
@@ -1848,7 +1848,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             entries, [catalog_tool(entry.upstream_name) for entry in entries]
         )
         for entry in entries:
-            self.assertIsNone(server._tool_manager.get_tool(entry.upstream_name))
+            self.assertIsNone(registered_tools(server).get(entry.upstream_name))
         health = gateway.health_snapshot()
         self.assertEqual(health["dynamically_exposed_count"], 0)
         self.assertEqual(len(health["blocked_tools"]), len(classifications))
@@ -1860,13 +1860,13 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             return {"implementation": "engineering", "entity_id": entity_id}
 
         server.tool(name="ha_get_state")(existing)
-        original = server._tool_manager.get_tool("ha_get_state")
+        original = registered_tools(server).get("ha_get_state")
         entry = policy_entry("ha_get_state")
         gateway, server, _ = await initialize(
             [entry], [catalog_tool("ha_get_state")], server=server
         )
-        self.assertIs(server._tool_manager.get_tool("ha_get_state"), original)
-        self.assertIsNotNone(server._tool_manager.get_tool("ha_mcp__ha_get_state"))
+        self.assertIs(registered_tools(server).get("ha_get_state"), original)
+        self.assertIsNotNone(registered_tools(server).get("ha_mcp__ha_get_state"))
         self.assertEqual(gateway.health_snapshot()["collision_count"], 1)
 
     async def test_live_retirement_clears_only_affected_collision_mapping(self):
@@ -1876,7 +1876,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             return {"implementation": "engineering", "entity_id": entity_id}
 
         server.tool(name="ha_get_state")(existing)
-        original = server._tool_manager.get_tool("ha_get_state")
+        original = registered_tools(server).get("ha_get_state")
         target = policy_entry("ha_get_state")
         healthy = policy_entry("ha_get_history")
         target_tool = catalog_tool(target.upstream_name)
@@ -1888,7 +1888,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             server=server,
             transport=transport,
         )
-        alias = server._tool_manager.get_tool("ha_mcp__ha_get_state")
+        alias = registered_tools(server).get("ha_mcp__ha_get_state")
         self.assertIsNotNone(alias)
         transport.catalog = replace(
             transport.catalog, tools=(healthy_tool,)
@@ -1900,13 +1900,13 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(result["success"])
         self.assertIs(
-            server._tool_manager.get_tool("ha_get_state"), original
+            registered_tools(server).get("ha_get_state"), original
         )
         self.assertIsNone(
-            server._tool_manager.get_tool("ha_mcp__ha_get_state")
+            registered_tools(server).get("ha_mcp__ha_get_state")
         )
         self.assertIsNotNone(
-            server._tool_manager.get_tool("ha_get_history")
+            registered_tools(server).get("ha_get_history")
         )
         health = gateway.health_snapshot()
         self.assertEqual(health["collision_count"], 0)
@@ -1929,7 +1929,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertIsNotNone(
-            server._tool_manager.get_tool(entry.upstream_name)
+            registered_tools(server).get(entry.upstream_name)
         )
         health = gateway.health_snapshot()
         self.assertTrue(health["generic_delegation_available"])
@@ -1954,7 +1954,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertIsNotNone(
-            server._tool_manager.get_tool(entry.upstream_name)
+            registered_tools(server).get(entry.upstream_name)
         )
         health = gateway.health_snapshot()
         self.assertTrue(health["admission_complete"])
@@ -1977,10 +1977,10 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertIsNone(
-            server._tool_manager.get_tool(changed.upstream_name)
+            registered_tools(server).get(changed.upstream_name)
         )
         self.assertIsNotNone(
-            server._tool_manager.get_tool(healthy.upstream_name)
+            registered_tools(server).get(healthy.upstream_name)
         )
         health = gateway.health_snapshot()
         self.assertEqual(health["dynamically_exposed_count"], 1)
@@ -2038,7 +2038,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                 gateway, server, _ = await initialize(
                     entries, tools, version=version
                 )
-                self.assertEqual(len(server._tool_manager.list_tools()), 0)
+                self.assertEqual(len(registered_tools(server).values()), 0)
                 health = gateway.health_snapshot()
                 self.assertEqual(health["dynamically_exposed_count"], 0)
                 self.assertFalse(health["admission_complete"])
@@ -2069,7 +2069,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
             version="7.14.2",
             reviewed_version="7.14.2",
         )
-        self.assertEqual(len(server._tool_manager.list_tools()), 26)
+        self.assertEqual(len(registered_tools(server).values()), 26)
         health = gateway.health_snapshot()
         self.assertEqual(health["dynamically_exposed_count"], 26)
         self.assertTrue(health["admission_complete"])
@@ -2136,7 +2136,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         )
         return (
             gateway,
-            server._tool_manager.get_tool(tool_name),
+            registered_tools(server).get(tool_name),
             transport,
             entry,
         )
@@ -2148,7 +2148,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         gateway, server, _ = await initialize(
             [entry], [catalog_tool("ha_search")], transport=transport
         )
-        encoded = await server._tool_manager.get_tool("ha_search").run(
+        encoded = await registered_tools(server).get("ha_search").run(
             {"entity_id": "sun.sun"}
         )
         return json.loads(encoded), gateway
@@ -2175,6 +2175,36 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(value["metadata"]["provider"], "upstream_read_gateway")
         self.assertEqual(value["metadata"]["fallback"], "none")
         self.assertEqual(len(transport.calls), 1)
+
+    async def test_mcp_128_result_conversion_preserves_json_text(self):
+        raw = {
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        {
+                            "entity_id": "sun.sun",
+                            "state": "above_horizon",
+                        }
+                    ),
+                }
+            ],
+            "isError": False,
+        }
+        _gateway, tool, _transport, _entry = await self._case(result=raw)
+
+        content = await tool.run(
+            {"entity_id": "sun.sun"},
+            convert_result=True,
+        )
+
+        self.assertEqual(len(content), 1)
+        value = json.loads(content[0].text)
+        self.assertTrue(value["success"])
+        self.assertEqual(
+            value["metadata"]["provider"],
+            "upstream_read_gateway",
+        )
 
     async def test_same_session_unreviewed_version_is_audited_and_rejected(self):
         gateway, tool, transport, _entry = await self._case()
@@ -2215,7 +2245,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(transport.attempts), 1)
         self.assertEqual(transport.calls, [])
         self.assertIsNone(
-            gateway._registered_server._tool_manager.get_tool(
+            registered_tools(gateway._registered_server).get(
                 "ha_get_state"
             )
         )
@@ -2292,7 +2322,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
                 )
 
                 result = json.loads(
-                    await server._tool_manager.get_tool(
+                    await registered_tools(server).get(
                         target.upstream_name
                     ).run({"entity_id": "sun.sun"})
                 )
@@ -2307,10 +2337,10 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(transport.calls, [])
                 self.assertIsNone(
-                    server._tool_manager.get_tool(target.upstream_name)
+                    registered_tools(server).get(target.upstream_name)
                 )
                 self.assertIsNotNone(
-                    server._tool_manager.get_tool(healthy.upstream_name)
+                    registered_tools(server).get(healthy.upstream_name)
                 )
                 health = gateway.health_snapshot()
                 self.assertEqual(health["dynamically_exposed_count"], 1)
@@ -2340,7 +2370,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         )
 
         result = json.loads(
-            await server._tool_manager.get_tool(target.upstream_name).run(
+            await registered_tools(server).get(target.upstream_name).run(
                 {"entity_id": "sun.sun"}
             )
         )
@@ -2348,10 +2378,10 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["success"])
         self.assertEqual(transport.calls, [])
         self.assertIsNone(
-            server._tool_manager.get_tool(target.upstream_name)
+            registered_tools(server).get(target.upstream_name)
         )
         self.assertIsNotNone(
-            server._tool_manager.get_tool(healthy.upstream_name)
+            registered_tools(server).get(healthy.upstream_name)
         )
         health = gateway.health_snapshot()
         self.assertEqual(health["missing_tools"], [target.upstream_name])
@@ -2376,7 +2406,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         )
 
         result = json.loads(
-            await server._tool_manager.get_tool(target.upstream_name).run(
+            await registered_tools(server).get(target.upstream_name).run(
                 {"entity_id": "sun.sun"}
             )
         )
@@ -2384,10 +2414,10 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["success"])
         self.assertEqual(transport.calls, [])
         self.assertIsNone(
-            server._tool_manager.get_tool(target.upstream_name)
+            registered_tools(server).get(target.upstream_name)
         )
         self.assertIsNotNone(
-            server._tool_manager.get_tool(healthy.upstream_name)
+            registered_tools(server).get(healthy.upstream_name)
         )
         health = gateway.health_snapshot()
         self.assertEqual(
@@ -2418,7 +2448,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         )
 
         result = json.loads(
-            await server._tool_manager.get_tool(target.upstream_name).run(
+            await registered_tools(server).get(target.upstream_name).run(
                 {"entity_id": "sun.sun"}
             )
         )
@@ -2426,10 +2456,10 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["success"])
         self.assertEqual(len(transport.calls), 1)
         self.assertIsNotNone(
-            server._tool_manager.get_tool(target.upstream_name)
+            registered_tools(server).get(target.upstream_name)
         )
         self.assertIsNotNone(
-            server._tool_manager.get_tool(unrelated.upstream_name)
+            registered_tools(server).get(unrelated.upstream_name)
         )
         self.assertEqual(
             gateway.health_snapshot()["dynamically_exposed_count"], 2
@@ -2453,7 +2483,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         )
 
         result = json.loads(
-            await server._tool_manager.get_tool("ha_get_state").run(
+            await registered_tools(server).get("ha_get_state").run(
                 {"entity_id": "sun.sun"}
             )
         )
@@ -2464,8 +2494,8 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
             "upstream_version_mismatch",
         )
         self.assertEqual(transport.calls, [])
-        self.assertIsNone(server._tool_manager.get_tool("ha_get_state"))
-        self.assertIsNone(server._tool_manager.get_tool("ha_get_history"))
+        self.assertIsNone(registered_tools(server).get("ha_get_state"))
+        self.assertIsNone(registered_tools(server).get("ha_get_history"))
         invalid = gateway.health_snapshot()
         self.assertEqual(invalid["accounted_automatic_read_count"], 0)
         self.assertFalse(invalid["automatic_read_accounting_valid"])
@@ -2487,7 +2517,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         refreshed = await gateway.initialize(server)
         self.assertTrue(refreshed["admission_complete"])
         self.assertIsNot(
-            old_tool, server._tool_manager.get_tool("ha_get_state")
+            old_tool, registered_tools(server).get("ha_get_state")
         )
         value = json.loads(await old_tool.run({"entity_id": "sun.sun"}))
         self.assertEqual(value["error_code"], "provider_prohibited")
@@ -2504,7 +2534,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
             [catalog_tool(entry.upstream_name)],
             transport=transport,
         )
-        old_tool = server._tool_manager.get_tool(entry.upstream_name)
+        old_tool = registered_tools(server).get(entry.upstream_name)
         old_call = asyncio.create_task(
             old_tool.run({"entity_id": "sun.sun"})
         )
@@ -2513,7 +2543,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         refresh_task = asyncio.create_task(gateway.initialize(server))
         refreshed = await asyncio.wait_for(refresh_task, timeout=1)
         self.assertTrue(refreshed["admission_complete"])
-        new_tool = server._tool_manager.get_tool(entry.upstream_name)
+        new_tool = registered_tools(server).get(entry.upstream_name)
         self.assertIsNotNone(new_tool)
         self.assertIsNot(new_tool, old_tool)
 
@@ -2525,7 +2555,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(transport.calls, [])
         self.assertIs(
-            server._tool_manager.get_tool(entry.upstream_name), new_tool
+            registered_tools(server).get(entry.upstream_name), new_tool
         )
 
     async def test_slow_read_does_not_block_unrelated_read(self):
@@ -2538,8 +2568,8 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         gateway, server, _ = await initialize(
             entries, tools, transport=transport
         )
-        slow_tool = server._tool_manager.get_tool("ha_search")
-        fast_tool = server._tool_manager.get_tool("ha_get_state")
+        slow_tool = registered_tools(server).get("ha_search")
+        fast_tool = registered_tools(server).get("ha_get_state")
 
         slow_task = asyncio.create_task(
             slow_tool.run({"entity_id": "sun.sun"})
@@ -2570,7 +2600,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         gateway, server, _ = await initialize(
             [entry], tools, transport=transport
         )
-        old_tool = server._tool_manager.get_tool(entry.upstream_name)
+        old_tool = registered_tools(server).get(entry.upstream_name)
         slow_task = asyncio.create_task(
             old_tool.run({"entity_id": "sun.sun"})
         )
@@ -2581,7 +2611,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         refreshed = await asyncio.wait_for(
             gateway.initialize(server), timeout=1
         )
-        new_tool = server._tool_manager.get_tool(entry.upstream_name)
+        new_tool = registered_tools(server).get(entry.upstream_name)
         self.assertTrue(refreshed["admission_complete"])
         self.assertIsNot(new_tool, old_tool)
         self.assertFalse(slow_task.done())
@@ -2592,7 +2622,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         health = gateway.health_snapshot()
         self.assertEqual(health["admission_status"], "admitted_exact")
         self.assertIs(
-            server._tool_manager.get_tool(entry.upstream_name), new_tool
+            registered_tools(server).get(entry.upstream_name), new_tool
         )
 
     async def test_inflight_retired_route_cannot_revive_quarantined_route(self):
@@ -2605,7 +2635,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         gateway, server, _ = await initialize(
             entries, tools, transport=transport
         )
-        old_search = server._tool_manager.get_tool("ha_search")
+        old_search = registered_tools(server).get("ha_search")
         slow_task = asyncio.create_task(
             old_search.run({"entity_id": "sun.sun"})
         )
@@ -2627,8 +2657,8 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
             gateway.initialize(server), timeout=1
         )
         self.assertEqual(refreshed["admission_status"], "partially_admitted")
-        self.assertIsNone(server._tool_manager.get_tool("ha_search"))
-        self.assertIsNotNone(server._tool_manager.get_tool("ha_get_state"))
+        self.assertIsNone(registered_tools(server).get("ha_search"))
+        self.assertIsNotNone(registered_tools(server).get("ha_get_state"))
 
         transport.release_slow_call.set()
         slow_result = json.loads(await asyncio.wait_for(slow_task, timeout=1))
@@ -2637,7 +2667,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(final["admission_status"], "partially_admitted")
         self.assertEqual(final["dynamically_exposed_count"], 1)
         self.assertEqual(final["quarantined_automatic_read_count"], 1)
-        self.assertIsNone(server._tool_manager.get_tool("ha_search"))
+        self.assertIsNone(registered_tools(server).get("ha_search"))
 
     async def test_search_preserves_upstream_partial_semantics(self):
         value, _gateway = await self._search_case(
@@ -2726,7 +2756,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         )
         transport.error = "connection_failed"
         value = json.loads(
-            await server._tool_manager.get_tool("ha_get_state").run(
+            await registered_tools(server).get("ha_get_state").run(
                 {"entity_id": "sun.sun"}
             )
         )
@@ -2769,7 +2799,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
             [catalog_tool("ha_search", reviewed_schema)],
             transport=transport,
         )
-        tool = server._tool_manager.get_tool("ha_search")
+        tool = registered_tools(server).get("ha_search")
         telemetry, token = begin_request("delegated-validation")
         try:
             encoded = await tool.run(
@@ -3317,7 +3347,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         )
         transport.error = "protocol_error"
         value = json.loads(
-            await server._tool_manager.get_tool("ha_get_state").run(
+            await registered_tools(server).get("ha_get_state").run(
                 {"entity_id": "sun.sun"}
             )
         )
@@ -3487,6 +3517,40 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
     def tearDown(self):
         replace_dynamic_upstream_capabilities((), {})
 
+    async def test_supported_but_unreviewed_protocol_remains_blocked(self):
+        entry = policy_entry("ha_get_state")
+        transport = FakeTransport([catalog_tool(entry.upstream_name)])
+        transport.catalog = replace(
+            transport.catalog,
+            protocol_version="2025-06-18",
+        )
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            settings(),
+            transport=transport,
+            policy=policy(entry),
+            admission_validator=lambda _catalog: None,
+        )
+
+        state = await gateway.reconcile_until_initialized(
+            FastMCP("unreviewed-protocol-test"),
+            sleep=lambda _delay: asyncio.sleep(0),
+        )
+
+        self.assertEqual(
+            state["last_discovery_failure_category"],
+            "unsupported_protocol_version",
+        )
+        self.assertEqual(
+            state["admission_status"],
+            "blocked_incompatible_upstream",
+        )
+        self.assertEqual(state["version_status"], "rejected_protocol")
+        self.assertEqual(state["dynamically_exposed_count"], 0)
+        self.assertEqual(state["observed_protocol_version"], "2025-06-18")
+        self.assertEqual(state["observed_identity_status"], "rejected")
+        self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
+
     async def test_transient_startup_failure_recovers_without_restart(self):
         entry = policy_entry("ha_get_state")
         transport = SequencedDiscoveryTransport(
@@ -3521,8 +3585,8 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         await asyncio.wait_for(sleep_started.wait(), timeout=1)
-        self.assertIsNotNone(server._tool_manager.get_tool("native_read"))
-        self.assertIsNone(server._tool_manager.get_tool("ha_get_state"))
+        self.assertIsNotNone(registered_tools(server).get("native_read"))
+        self.assertIsNone(registered_tools(server).get("ha_get_state"))
         waiting = gateway.health_snapshot()
         self.assertEqual(waiting["reconciliation_status"], "waiting")
         self.assertEqual(waiting["last_failure_category"], "connection_failed")
@@ -3536,9 +3600,9 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(recovered["discovery_attempt_count"], 2)
         self.assertEqual(recovered["retry_count"], 1)
         self.assertEqual(delays, [1.0])
-        self.assertIsNotNone(server._tool_manager.get_tool("ha_get_state"))
+        self.assertIsNotNone(registered_tools(server).get("ha_get_state"))
         self.assertEqual(
-            [tool.name for tool in server._tool_manager.list_tools()].count(
+            [tool.name for tool in registered_tools(server).values()].count(
                 "ha_get_state"
             ),
             1,
@@ -3618,7 +3682,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
             [target_tool, healthy_tool],
             transport=transport,
         )
-        admitted_target = server._tool_manager.get_tool(
+        admitted_target = registered_tools(server).get(
             target.upstream_name
         )
         transport.pause_next_discovery = True
@@ -3639,16 +3703,16 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertFalse(blocked["success"])
         self.assertIsNone(
-            server._tool_manager.get_tool(target.upstream_name)
+            registered_tools(server).get(target.upstream_name)
         )
         transport.release_discovery.set()
         discarded = await asyncio.wait_for(stale_initialize, timeout=1)
 
         self.assertIsNone(
-            server._tool_manager.get_tool(target.upstream_name)
+            registered_tools(server).get(target.upstream_name)
         )
         self.assertIsNotNone(
-            server._tool_manager.get_tool(healthy.upstream_name)
+            registered_tools(server).get(healthy.upstream_name)
         )
         self.assertEqual(discarded["dynamically_exposed_count"], 1)
         self.assertEqual(
@@ -3671,7 +3735,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         gateway, server, _ = await initialize(
             entries, tools, transport=transport
         )
-        admitted_target = server._tool_manager.get_tool("ha_get_state")
+        admitted_target = registered_tools(server).get("ha_get_state")
         transport.pause_next_discovery = True
         stale_initialize = asyncio.create_task(gateway.initialize(server))
         await asyncio.wait_for(
@@ -3692,8 +3756,8 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         transport.release_discovery.set()
         discarded = await asyncio.wait_for(stale_initialize, timeout=1)
 
-        self.assertIsNone(server._tool_manager.get_tool("ha_get_state"))
-        self.assertIsNone(server._tool_manager.get_tool("ha_get_history"))
+        self.assertIsNone(registered_tools(server).get("ha_get_state"))
+        self.assertIsNone(registered_tools(server).get("ha_get_history"))
         self.assertEqual(discarded["dynamically_exposed_count"], 0)
         self.assertEqual(discarded["accounted_automatic_read_count"], 0)
         self.assertFalse(discarded["automatic_read_accounting_valid"])
@@ -3712,7 +3776,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         gateway, server, _ = await initialize(
             [entry], [tool_descriptor], transport=transport
         )
-        admitted = server._tool_manager.get_tool(entry.upstream_name)
+        admitted = registered_tools(server).get(entry.upstream_name)
 
         transport.pause_next_discovery = True
         matching_initialize = asyncio.create_task(
@@ -3731,7 +3795,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
             matching_initialize, timeout=1
         )
 
-        replacement = server._tool_manager.get_tool(
+        replacement = registered_tools(server).get(
             entry.upstream_name
         )
         self.assertIsNot(replacement, admitted)
@@ -3754,7 +3818,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
             [target_tool, healthy_tool],
             transport=transport,
         )
-        admitted_target = server._tool_manager.get_tool(
+        admitted_target = registered_tools(server).get(
             target.upstream_name
         )
         changed_target = catalog_tool(
@@ -3782,11 +3846,11 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         discarded = await asyncio.wait_for(stale_initialize, timeout=1)
 
         self.assertIs(
-            server._tool_manager.get_tool(target.upstream_name),
+            registered_tools(server).get(target.upstream_name),
             admitted_target,
         )
         self.assertIsNotNone(
-            server._tool_manager.get_tool(healthy.upstream_name)
+            registered_tools(server).get(healthy.upstream_name)
         )
         self.assertEqual(discarded["dynamically_exposed_count"], 2)
         self.assertEqual(
@@ -3822,7 +3886,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         degraded = await gateway.reconcile_until_initialized(
             server, sleep=unexpected_sleep
         )
-        names = {tool.name for tool in server._tool_manager.list_tools()}
+        names = {tool.name for tool in registered_tools(server).values()}
         self.assertEqual(len(names), 51)
         self.assertTrue(degraded["initialized"])
         self.assertFalse(degraded["admission_complete"])
@@ -3868,14 +3932,14 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         await asyncio.wait_for(first_wait.wait(), timeout=1)
-        self.assertEqual(len(server._tool_manager.list_tools()), 51)
+        self.assertEqual(len(registered_tools(server).values()), 51)
         self.assertEqual(
             gateway.health_snapshot()["admission_status"], "partially_admitted"
         )
         release_first_wait.set()
         await asyncio.wait_for(second_wait.wait(), timeout=1)
         recovered = gateway.health_snapshot()
-        self.assertEqual(len(server._tool_manager.list_tools()), 67)
+        self.assertEqual(len(registered_tools(server).values()), 67)
         self.assertTrue(recovered["admission_complete"])
         self.assertEqual(recovered["admission_status"], "admitted_exact")
         self.assertEqual(transport.discovery_calls, 2)
@@ -3907,7 +3971,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         await asyncio.wait_for(first_wait.wait(), timeout=1)
-        old_tool = server._tool_manager.get_tool(entry.upstream_name)
+        old_tool = registered_tools(server).get(entry.upstream_name)
         transport.catalog = replace(
             transport.catalog, server_version="7.14.2"
         )
@@ -3919,7 +3983,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
             blocked_result["error_code"], "provider_unavailable"
         )
         self.assertIsNone(
-            server._tool_manager.get_tool(entry.upstream_name)
+            registered_tools(server).get(entry.upstream_name)
         )
         await asyncio.sleep(0)
         self.assertEqual(waits, 1)
@@ -4101,7 +4165,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         await asyncio.wait_for(slow_wait_started.wait(), timeout=1)
-        self.assertEqual(len(server._tool_manager.list_tools()), 67)
+        self.assertEqual(len(registered_tools(server).values()), 67)
         waiting = gateway.health_snapshot()
         self.assertEqual(waiting["compatibility_reprobe_status"], "waiting")
         self.assertEqual(waiting["compatibility_reprobe_interval_seconds"], 17.0)
@@ -4109,7 +4173,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         release_slow_wait.set()
         await asyncio.wait_for(second_discovery_started.wait(), timeout=1)
 
-        tool_names = {tool.name for tool in server._tool_manager.list_tools()}
+        tool_names = {tool.name for tool in registered_tools(server).values()}
         health = gateway.health_snapshot()
         catalog = build_capability_catalog()
         metadata = build_server_metadata(
@@ -4179,7 +4243,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         gateway, server, _ = await initialize(
             [entry], [tool], transport=transport
         )
-        admitted_tool = server._tool_manager.get_tool("ha_get_state")
+        admitted_tool = registered_tools(server).get("ha_get_state")
         call_task = asyncio.create_task(
             admitted_tool.run({"entity_id": "sun.sun"})
         )
@@ -4245,7 +4309,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
 
             @staticmethod
             def assert_retry_state(server, health):
-                if len(server._tool_manager.list_tools()) != 41:
+                if len(registered_tools(server).values()) != 41:
                     raise AssertionError("native catalog changed during startup retry")
                 if health["dynamically_exposed_count"] != 0:
                     raise AssertionError("delegated tool appeared before admission")
@@ -4300,7 +4364,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(started_ports, {configured.port, configured.ingress_port})
         self.assertTrue(failure_observed.is_set())
         self.assertEqual(transport.discovery_calls, 2)
-        self.assertEqual(len(server._tool_manager.list_tools()), 67)
+        self.assertEqual(len(registered_tools(server).values()), 67)
         self.assertTrue(gateway.health_snapshot()["admission_complete"])
 
     async def test_concurrent_reconciliation_is_single_flight(self):
@@ -4337,7 +4401,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(first_state["admission_complete"])
         self.assertTrue(second_state["admission_complete"])
         self.assertEqual(transport.discovery_calls, 2)
-        names = [tool.name for tool in server._tool_manager.list_tools()]
+        names = [tool.name for tool in registered_tools(server).values()]
         self.assertEqual(names.count("ha_get_state"), 1)
         self.assertNotIn("ha_mcp__ha_get_state", names)
 
