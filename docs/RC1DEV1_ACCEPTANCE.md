@@ -13,24 +13,33 @@ scope.
 
 1. Require source ancestry from accepted 2.0.0 commit
    `496006b77039a42d7a8c8f23c0bbb292f5f0ddcd`.
-2. Confirm stable v1.1.2 files are byte-for-byte unchanged.
+2. Confirm historical stable v1.1.2 files are byte-for-byte unchanged and its
+   behavioral tests are excluded from the Engineering dependency environment.
 3. Confirm all production `_tool_manager` and private tool-map access is
    isolated in `mcp_sdk_compatibility.py`.
 4. Exercise supported, missing-manager, missing-map, wrong-map, invalid
-   replacement, atomic replacement, and exact-removal adapter cases.
+   replacement, transactional restoration, cached version validation,
+   read-only mapping snapshot, and exact-removal adapter cases.
 5. Require installed MCP SDK version 1.28.1 and fail closed for any other
    version or incompatible registry shape.
 6. Confirm outbound Engineering initialization requests reviewed protocol
    `2025-03-26`, while a different returned protocol still fails exact
-   admission closed.
+   admission closed. Compare normal and reviewed sessions and require the same
+   returned server information, server capabilities, public
+   `get_server_capabilities()` result, and initialized notification.
 7. Confirm delegated tools support MCP 1.28 result conversion without changing
    their bounded JSON text content or reviewed output contract.
-8. Resolve the exact Engineering runtime requirements and run pinned pip-audit
-   in strict mode with no ignored advisory.
+8. Resolve only the exact Engineering runtime requirements and run pinned
+   pip-audit in strict mode with no ignored advisory. Do not describe this as
+   retired stable-v1 dependency assurance.
 9. Run the complete Python, compilation, metadata, YAML, dependency,
    secret-scan, PowerShell, protected-path, whitespace, and Evidence gates.
-10. Build stable and Engineering images and validate Engineering no-push builds
-   for amd64, arm64, and arm/v7.
+10. Build the historical stable-v1 image as packaging evidence only, build the
+    Engineering image, and validate Engineering no-push builds for amd64,
+    arm64, and arm/v7.
+11. Confirm production FastMCP remains bound to `0.0.0.0` without an explicit
+    Host or Origin policy. Treat CVE-2025-66416 as a mitigated, deferred
+    configuration risk tracked by issue #62, not as fixed by the SDK upgrade.
 
 ## Contract comparison
 
@@ -48,7 +57,8 @@ Require unchanged evidence for:
 - dependency indexing, governance, approval, apply verification, and rollback;
 - audit, redaction, health accounting, provider attribution, and zero fallback;
   and
-- stable v1.1.2 packaging and behavior.
+- unchanged historical stable v1.1.2 source and packaging, without claiming
+  dependency-faithful behavioral validation or supported rollback.
 
 Do not update expected fingerprints merely to pass validation.
 
@@ -60,8 +70,9 @@ admission, invalid request, missing entity, missing automation, unavailable
 capability, partial search, quarantine, every reviewed fingerprint mismatch,
 unknown upstream tool, unavailable/recovery behavior, timeout, malformed
 Streamable HTTP traffic, and session/transport failure. Require process
-continuity, bounded failures, configured-host admission, untrusted-host
-rejection before tool dispatch, truthful counters, and zero fallback.
+continuity, bounded failures, truthful counters, and zero fallback. Do not
+claim production Host or Origin rejection: the exact-image job does not send
+or verify reviewed production Host values.
 
 The disposable Home Assistant contract tests may use only their pinned,
 ephemeral test environment. They must not access a household or deployed Home
@@ -82,5 +93,10 @@ After eventual publication and deployment, an independent reviewer should:
 6. Verify provider, health, audit, redaction, and zero-fallback accounting.
 7. Send malformed and transport-failure traffic only through an approved safe
    harness and confirm the server remains running.
-8. If specifically authorized, roll back to the exact accepted 2.0.0 image and
-   verify version, SHA, persistence, delegated reads, governance, and fallback.
+8. Confirm documentation does not claim production DNS-rebinding protection.
+9. If specifically authorized, roll back to the exact published 2.0.0
+   Engineering image
+   `ghcr.io/jeter-1/hass-mcp-engineering-beta@sha256:d91246deab5b50749430f5194b5a9fe1473171526fe4f8551c89b1b3259ff130`
+   from source SHA
+   `496006b77039a42d7a8c8f23c0bbb292f5f0ddcd`, and verify version, SHA,
+   persistence, delegated reads, governance, and fallback.

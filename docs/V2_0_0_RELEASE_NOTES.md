@@ -105,7 +105,7 @@ It preserves:
   semantics;
 - dashboard, dependency-index, governance, approval, apply, verification, and
   rollback behavior; and
-- stable v1.1.2 under `hass_mcp_admin/`.
+- historical stable v1.1.2 source under `hass_mcp_admin/`.
 
 No data migration or connector recreation is required. A normal add-on restart
 occurs as part of the Home Assistant add-on update.
@@ -154,12 +154,11 @@ Retain the same add-on identity and `/data`. Verify version
 `247c755ccde050f0b7062a71a7fb1a7a845aaf2e`, foundation health, exact
 upstream admission, governance-plan readability, and audit persistence.
 
-### Legacy rollback
+### Retired stable-v1 source
 
-When the reduced capability set is acceptable, stop the v2 Engineering add-on
-and re-enable stable v1.1.2 on port `8099`. Do not run both servers on a
-conflicting port. Stable v1.1.2 does not contain v2 governance, external
-approval, dashboard-read, dependency-index, or delegated-read capabilities.
+Stable v1.1.2 is retained as historical repository source but is operationally
+retired. It is not a supported rollback target, is not part of current
+Engineering dependency assurance, and is not functionally equivalent to v2.
 
 No rollback migration script is required or added.
 
@@ -174,8 +173,8 @@ No rollback migration script is required or added.
   are deferred.
 - The technical add-on slug, image repository, server ID, and displayed name
   retain “beta” to avoid identity and migration changes.
-- Stable v1.1.2 remains available temporarily as a legacy rollback option with
-  a smaller capability set.
+- Stable v1.1.2 remains historical source only and is not an operational
+  rollback option.
 
 Deferred work is not included in 2.0.0.
 

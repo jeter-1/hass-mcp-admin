@@ -177,6 +177,8 @@ jobs:
             --expected-version "$version" \
             --deployed-version "$deployed_version"
           python -m compileall -q hass_mcp_admin hass_mcp_engineering_beta tests
+          # Historical stable-v1 behavior modules intentionally do not match
+          # the Engineering test*.py discovery pattern.
           python -m unittest discover -s tests -v
           git diff --check "$validation_base..HEAD"
 

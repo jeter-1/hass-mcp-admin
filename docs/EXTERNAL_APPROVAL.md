@@ -269,5 +269,5 @@ access the deployed environment.
     plans historical; zero failed applies/audit write failures/prohibited
     fallbacks; healthy storage; no replay or unauthorized write.
 
-Production v1.1.2 (`hass_mcp_admin`, port `8099`) is outside this procedure and
-must not be accessed or modified.
+Historical v1.1.2 source (`hass_mcp_admin`) is outside this procedure. The
+retired add-on must not be re-enabled as an Engineering rollback.

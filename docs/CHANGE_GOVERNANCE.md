@@ -108,10 +108,11 @@ unbounded diffs, secrets, authentication,
 and prior approval as reusable authority are excluded.
 
 Version 2.0.0-rc.2 requires external Home Assistant administrator approval for controlled
-Home Assistant automation creation and updates. It does not alter production
-v1.1.2 and does not govern scripts, scenes, dashboards, helpers, integrations,
-devices, add-ons, system configuration, arbitrary direct service calls, or
-automation deletion.
+Home Assistant automation creation and updates. It did not alter the then-separate
+v1.1.2 server, whose retained source is now historical and operationally retired.
+It does not govern scripts, scenes, dashboards, helpers, integrations, devices,
+add-ons, system configuration, arbitrary direct service calls, or automation
+deletion.
 
 ## Architecture
 

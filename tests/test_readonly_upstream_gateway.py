@@ -3517,6 +3517,40 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
     def tearDown(self):
         replace_dynamic_upstream_capabilities((), {})
 
+    async def test_supported_but_unreviewed_protocol_remains_blocked(self):
+        entry = policy_entry("ha_get_state")
+        transport = FakeTransport([catalog_tool(entry.upstream_name)])
+        transport.catalog = replace(
+            transport.catalog,
+            protocol_version="2025-06-18",
+        )
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            settings(),
+            transport=transport,
+            policy=policy(entry),
+            admission_validator=lambda _catalog: None,
+        )
+
+        state = await gateway.reconcile_until_initialized(
+            FastMCP("unreviewed-protocol-test"),
+            sleep=lambda _delay: asyncio.sleep(0),
+        )
+
+        self.assertEqual(
+            state["last_discovery_failure_category"],
+            "unsupported_protocol_version",
+        )
+        self.assertEqual(
+            state["admission_status"],
+            "blocked_incompatible_upstream",
+        )
+        self.assertEqual(state["version_status"], "rejected_protocol")
+        self.assertEqual(state["dynamically_exposed_count"], 0)
+        self.assertEqual(state["observed_protocol_version"], "2025-06-18")
+        self.assertEqual(state["observed_identity_status"], "rejected")
+        self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
+
     async def test_transient_startup_failure_recovers_without_restart(self):
         entry = policy_entry("ha_get_state")
         transport = SequencedDiscoveryTransport(

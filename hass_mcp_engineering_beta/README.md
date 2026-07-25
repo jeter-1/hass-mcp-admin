@@ -2,9 +2,10 @@
 
 This directory contains the Engineering v2 add-on, promoted in place to
 `2.0.1-rc1-dev1`. Its technical “Beta” display name, slug, image repository, and runtime
-identity remain unchanged to avoid a migration. It can run beside the stable
-v1.1.2 `hass_mcp_admin` add-on without sharing its port, options, secret, audit
-file, or container identity.
+identity remain unchanged to avoid a migration. Stable v1.1.2
+`hass_mcp_admin` source remains in the repository as operationally retired
+history; it is not part of Engineering dependency assurance or supported
+rollback.
 
 ## Contract-level reviewed upstream reads
 
@@ -215,16 +216,15 @@ docker build -t hass-mcp-engineering-beta:test .\hass_mcp_engineering_beta
 
 ## Removal and rollback
 
-For an immediate GA rollback, reinstall the exact accepted Dev16 version or
-image under the same add-on identity and retain its `/data`, options, secrets,
-and connector endpoint. Verify the Dev16 version and source SHA, then repeat
+For a 2.0.1 rollback, reinstall the exact published 2.0.0 Engineering image
+`ghcr.io/jeter-1/hass-mcp-engineering-beta@sha256:d91246deab5b50749430f5194b5a9fe1473171526fe4f8551c89b1b3259ff130`
+under the same v2 add-on identity. Retain `/data`, options, secrets, and the
+connector endpoint. Verify version `2.0.0`, source SHA
+`496006b77039a42d7a8c8f23c0bbb292f5f0ddcd`, and health, then repeat
 foundation, admission, governance-persistence, audit, and no-fallback checks.
 
-For a legacy rollback, stop the v2 add-on and re-enable stable v1.1.2 only when
-its reduced capability set is acceptable. Do not run both servers on
-conflicting ports, and do not imply that v1.1.2 contains v2 governance or
-delegated-read features. Do not uninstall, reconfigure, or overwrite
-`hass_mcp_admin` as part of the GA promotion.
+Stable v1.1.2 is historical source only. Do not re-enable, rehabilitate, or
+describe it as an equivalent recovery path for Engineering v2.
 
 The exact accepted image, source SHA, and complete procedures are in
 [`../docs/V2_0_0_RELEASE_NOTES.md`](../docs/V2_0_0_RELEASE_NOTES.md).

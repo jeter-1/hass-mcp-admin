@@ -86,6 +86,7 @@ class Rc2dev8RawPrevalidationTests(unittest.TestCase):
             streamable_http_path="/mcp",
             stateless_http=True,
         )
+        cls.fresh_server = fresh_server
         for tool in registered_tools(get_registered_server()).values():
             fresh_server.tool(
                 name=tool.name,
@@ -454,7 +455,9 @@ class Rc2dev8RawPrevalidationTests(unittest.TestCase):
         self.assertEqual(audit["error_code"], "invalid_request")
         self.assertNotIn("broken", json.dumps(audit))
 
-    def test_mcp_sdk_rejects_untrusted_host_before_tool_dispatch(self):
+    def test_loopback_sdk_fixture_rejects_untrusted_host_before_dispatch(self):
+        self.assertEqual(self.fresh_server.settings.host, "127.0.0.1")
+        self.assertIsNotNone(self.fresh_server.settings.transport_security)
         response = self.client.post(
             f"/{SECRET}/mcp",
             json={

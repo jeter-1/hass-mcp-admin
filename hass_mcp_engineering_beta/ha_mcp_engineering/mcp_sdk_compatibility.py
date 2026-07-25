@@ -8,12 +8,14 @@ catalog or broaden the reviewed upstream contract.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
 from types import MappingProxyType
 from typing import Any, Mapping
 
 from mcp import ClientSession, types
 from mcp.server.fastmcp.tools.base import Tool
+from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS
 
 
 PINNED_MCP_SDK_VERSION = "1.28.1"
@@ -30,7 +32,10 @@ class McpSdkCompatibilityError(RuntimeError):
         super().__init__(_COMPATIBILITY_ERROR_MESSAGE)
 
 
+@lru_cache(maxsize=1)
 def _require_pinned_sdk_version() -> None:
+    """Resolve and admit the exact SDK version once per process."""
+
     try:
         sdk_version = version("mcp")
     except PackageNotFoundError:
@@ -63,6 +68,14 @@ async def initialize_reviewed_upstream_session(
         ),
         types.InitializeResult,
     )
+    if result.protocolVersion not in SUPPORTED_PROTOCOL_VERSIONS:
+        raise RuntimeError(
+            "The upstream MCP server returned an unsupported protocol version."
+        )
+    # MCP 1.28.1 backs its public get_server_capabilities() accessor with this
+    # state. The adapter owns this narrowly reviewed private SDK contact so the
+    # exact-protocol initialization preserves the normal ClientSession contract.
+    session._server_capabilities = result.capabilities
     await session.send_notification(
         types.ClientNotification(types.InitializedNotification())
     )
@@ -103,7 +116,7 @@ class McpSdkToolRegistry:
         return PINNED_MCP_SDK_VERSION
 
     def snapshot(self) -> Mapping[str, Tool]:
-        """Return an immutable snapshot after revalidating the SDK shape."""
+        """Return a read-only mapping snapshot containing shared Tool objects."""
 
         return MappingProxyType(dict(self._validated_tools()))
 
@@ -113,15 +126,22 @@ class McpSdkToolRegistry:
         return self._validated_tools().get(name)
 
     def replace(self, tools: Mapping[str, Tool]) -> None:
-        """Atomically replace the registry with a fully validated copy."""
+        """Transactionally replace the registry with a fully validated copy."""
 
         replacement = dict(tools)
         self._validate_mapping(replacement)
+        original = self._validated_tools()
         try:
             self._manager._tools = replacement
+            if self._validated_tools() is not replacement:
+                raise McpSdkCompatibilityError()
         except Exception:
-            raise McpSdkCompatibilityError() from None
-        if self._validated_tools() is not replacement:
+            try:
+                self._manager._tools = original
+                if self._validated_tools() is not original:
+                    raise McpSdkCompatibilityError()
+            except Exception:
+                raise McpSdkCompatibilityError() from None
             raise McpSdkCompatibilityError()
 
     def remove_exact(self, name: str) -> bool:
@@ -155,6 +175,6 @@ class McpSdkToolRegistry:
 
 
 def registered_tools(server: Any) -> Mapping[str, Tool]:
-    """Expose a validated immutable registry snapshot to source and tests."""
+    """Expose a validated read-only registry snapshot to source and tests."""
 
     return McpSdkToolRegistry(server).snapshot()

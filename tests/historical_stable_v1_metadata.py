@@ -1,3 +1,5 @@
+"""Historical stable-v1 behavior; excluded from Engineering test discovery."""
+
 import importlib.util
 from pathlib import Path
 import unittest

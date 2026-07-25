@@ -1,8 +1,9 @@
 # HA MCP Engineering Server
 
-> Stable v1.1.2 remains available at `hass_mcp_admin` on port `8099` as a
-> temporary reduced-capability rollback option. The Engineering v2 add-on is
-> promoted in place to `2.0.0` at
+> Stable v1.1.2 under `hass_mcp_admin` is retained as historical repository
+> source but is operationally retired. It is not covered by the Engineering
+> dependency audit and is not a supported rollback option. The Engineering v2
+> add-on is promoted in place to `2.0.0` at
 > [`hass_mcp_engineering_beta/`](hass_mcp_engineering_beta/) on port `8100`.
 > Its existing technical “Beta” identity is retained to avoid a slug or runtime
 > identity migration. See [`V2_BETA_ARCHITECTURE.md`](V2_BETA_ARCHITECTURE.md)
@@ -253,7 +254,8 @@ optimistic-lock hash and separately returns a full 64-character Engineering
 evidence hash calculated before sanitization.
 RC2 governance, external approval, direct-HA policies, and idempotent
 plan/challenge expiry remain intact. No planned feature capability remains.
-Production v1.1.2, `hass_mcp_admin`, and port 8099 remain unchanged. See
+Historical v1.1.2 source, `hass_mcp_admin`, and its packaging remain unchanged;
+the add-on is now operationally retired. See
 [`docs/RC2DEV10_RELEASE_NOTES.md`](docs/RC2DEV10_RELEASE_NOTES.md),
 [`docs/RC2DEV10_ACCEPTANCE.md`](docs/RC2DEV10_ACCEPTANCE.md),
 [`docs/RC2DEV9_RELEASE_NOTES.md`](docs/RC2DEV9_RELEASE_NOTES.md),
