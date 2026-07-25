@@ -130,9 +130,17 @@ jobs:
   exact-image-read-gateway:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - upstream_version: "7.14.1"
+            upstream_image: ghcr.io/homeassistant-ai/ha-mcp@sha256:68f386d9becfcc58476f1881a0025f4c6a3ae5874c15cdd61097b14156886292
+          - upstream_version: "7.14.2"
+            upstream_image: ghcr.io/homeassistant-ai/ha-mcp@sha256:7917b2d385e16e43f45f92fc72a757e5c0aec8d88b3cd69fe64f3b5106cbfe36
     env:
-      UPSTREAM_IMAGE: ghcr.io/homeassistant-ai/ha-mcp@sha256:68f386d9becfcc58476f1881a0025f4c6a3ae5874c15cdd61097b14156886292
-      UPSTREAM_VERSION: "7.14.1"
+      UPSTREAM_IMAGE: ${{ matrix.upstream_image }}
+      UPSTREAM_VERSION: ${{ matrix.upstream_version }}
       ENGINEERING_ACCESS_SECRET: synthetic-engineering-access-secret
     steps:
       - uses: actions/checkout@v4
@@ -218,15 +226,31 @@ jobs:
         run: |
           python scripts/exact_image_read_gateway_acceptance.py \
             --upstream-endpoint http://127.0.0.1:18086/synthetic-upstream-secret/mcp \
+            --expected-upstream-version "$UPSTREAM_VERSION" \
             --engineering-endpoint "http://127.0.0.1:18100/${ENGINEERING_ACCESS_SECRET}/mcp" \
             --fixture-stats-url http://127.0.0.1:18123/__fixture__/stats \
             --output "$RUNNER_TEMP/exact-image-read-gateway-result.json"
+      - name: Verify deterministic upstream contract capture
+        if: always()
+        shell: bash
+        run: |
+          python scripts/review_upstream_read_release.py capture \
+            --endpoint http://127.0.0.1:18086/synthetic-upstream-secret/mcp \
+            --output "$RUNNER_TEMP/upstream-contract-capture-1.json"
+          python scripts/review_upstream_read_release.py capture \
+            --endpoint http://127.0.0.1:18086/synthetic-upstream-secret/mcp \
+            --output "$RUNNER_TEMP/upstream-contract-capture-2.json"
+          cmp \
+            "$RUNNER_TEMP/upstream-contract-capture-1.json" \
+            "$RUNNER_TEMP/upstream-contract-capture-2.json"
       - name: Upload bounded exact-image result
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: exact-image-read-gateway-result
-          path: ${{ runner.temp }}/exact-image-read-gateway-result.json
+          name: exact-image-read-gateway-${{ matrix.upstream_version }}
+          path: |
+            ${{ runner.temp }}/exact-image-read-gateway-result.json
+            ${{ runner.temp }}/upstream-contract-capture-1.json
           if-no-files-found: error
           retention-days: 14
       - name: Remove disposable exact-image environment

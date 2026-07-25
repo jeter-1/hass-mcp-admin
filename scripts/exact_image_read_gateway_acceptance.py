@@ -1,4 +1,4 @@
-"""Exact ha-mcp 7.14.1 image acceptance for the read-only gateway.
+"""Exact reviewed ha-mcp image acceptance for the read-only gateway.
 
 This script is intentionally transport-level.  CI starts the reviewed image,
 the current Engineering image, and the synthetic read-only HA fixture before
@@ -32,14 +32,13 @@ from ha_mcp_engineering.tools import (  # noqa: E402
 )
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     catalog_fingerprint,
-    load_upstream_tool_policy,
+    load_reviewed_upstream_release_registry,
     runtime_annotation_fingerprint,
     runtime_description_fingerprint,
     schema_fingerprint,
 )
 
 
-EXPECTED_UPSTREAM_VERSION = "7.14.1"
 EXPECTED_ENGINEERING_BASELINE_COUNT = 41
 ACCEPTANCE_TIMEOUT_SECONDS = 120
 MAX_DIAGNOSTIC_ITEMS = 32
@@ -113,7 +112,28 @@ UPSTREAM_ERROR_CALLS = {
             "/api/config/automation/config/{id}",
         ),
     },
+    "ambiguous_missing_registry_entity": {
+        "tool": "ha_get_entity",
+        "arguments": {
+            "entity_id": (
+                "sensor.compatibility_review_missing_registry_entity"
+            )
+        },
+        "upstream_code": "SERVICE_CALL_FAILED",
+        "public_code": "provider_error",
+        "failure_category": "upstream_error",
+        "retryable": True,
+        "fixture_counter": (
+            "websocket_reads",
+            "config/entity_registry/get",
+        ),
+    },
 }
+EXPECTED_OPERATIONAL_ERROR_CALLS = sum(
+    1
+    for value in UPSTREAM_ERROR_CALLS.values()
+    if value["failure_category"] == "upstream_error"
+)
 
 
 class AcceptanceFailure(RuntimeError):
@@ -463,6 +483,8 @@ def fixture_counter(
 
 async def inspect_upstream(
     endpoint: str,
+    *,
+    expected_upstream_version: str,
 ) -> tuple[list[dict[str, Any]], str, dict[str, dict[str, Any]]]:
     error_envelopes: dict[str, dict[str, Any]] = {}
     async with streamablehttp_client(endpoint) as (read, write, _session_id):
@@ -470,7 +492,7 @@ async def inspect_upstream(
             initialized = await session.initialize()
             require(initialized.serverInfo.name == "ha-mcp", "upstream name mismatch")
             require(
-                initialized.serverInfo.version == EXPECTED_UPSTREAM_VERSION,
+                initialized.serverInfo.version == expected_upstream_version,
                 "upstream version mismatch",
             )
             tools = await list_all_tools(session)
@@ -493,7 +515,13 @@ async def inspect_upstream(
 
 
 async def inspect_engineering(
-    endpoint: str, fixture_stats_url: str, upstream_names: set[str]
+    endpoint: str,
+    fixture_stats_url: str,
+    upstream_names: set[str],
+    *,
+    expected_upstream_version: str,
+    policy: Any,
+    release: Any,
 ) -> dict[str, Any]:
     readiness = engineering_readiness(endpoint)
     if readiness["http_status"] != 200 or readiness["ready"] is not True:
@@ -511,7 +539,6 @@ async def inspect_engineering(
             f"{EXPECTED_ENGINEERING_BASELINE_COUNT} tools"
         ),
     )
-    policy = load_upstream_tool_policy()
     automatic = {
         entry.exposed_name
         for entry in policy.tools
@@ -591,7 +618,11 @@ async def inspect_engineering(
                 metadata = value.get("metadata") or {}
                 require(metadata.get("provider") == "upstream_read_gateway", f"{name} provider mismatch")
                 require(metadata.get("fallback") == "none", f"{name} fallback mismatch")
-                require(metadata.get("upstream_version") == EXPECTED_UPSTREAM_VERSION, f"{name} version mismatch")
+                require(
+                    metadata.get("upstream_version")
+                    == expected_upstream_version,
+                    f"{name} version mismatch",
+                )
                 if name == "ha_search":
                     data = value.get("data") or {}
                     upstream_partial = data.get("partial")
@@ -742,7 +773,7 @@ async def inspect_engineering(
                 require(
                     metadata.get("upstream_server") == "ha-mcp"
                     and metadata.get("upstream_version")
-                    == EXPECTED_UPSTREAM_VERSION,
+                    == expected_upstream_version,
                     f"{error_name} upstream identity attribution mismatch",
                 )
                 require(
@@ -923,7 +954,8 @@ async def inspect_engineering(
                 "successful upstream read-gateway accounting mismatch",
             )
             require(
-                after_failures - before_failures == 1,
+                after_failures - before_failures
+                == EXPECTED_OPERATIONAL_ERROR_CALLS,
                 "actual provider failure accounting mismatch",
             )
             require(
@@ -969,7 +1001,10 @@ async def inspect_engineering(
                 - routing_before_errors[
                     "successful_requests_by_provider"
                 ].get("upstream_read_gateway", 0)
-                == len(UPSTREAM_ERROR_CALLS) - 1,
+                == (
+                    len(UPSTREAM_ERROR_CALLS)
+                    - EXPECTED_OPERATIONAL_ERROR_CALLS
+                ),
                 "domain outcomes changed provider success accounting",
             )
             require(
@@ -979,34 +1014,66 @@ async def inspect_engineering(
                 - routing_before_errors["failures_by_provider"].get(
                     "upstream_read_gateway", 0
                 )
-                == 1,
+                == EXPECTED_OPERATIONAL_ERROR_CALLS,
                 "domain outcomes inflated operational provider failures",
             )
             gateway_failure_before = (
                 gateway_before_errors.get("failure_counts") or {}
             )
             gateway_failure_after = gateway_state.get("failure_counts") or {}
-            for category in (
-                "upstream_error",
-                "invalid_request",
-                "entity_not_found",
-                "automation_not_found",
+            expected_category_deltas = {
+                "upstream_error": EXPECTED_OPERATIONAL_ERROR_CALLS,
+                "invalid_request": 1,
+                "entity_not_found": 1,
+                "automation_not_found": 1,
+            }
+            for category, expected_delta in (
+                expected_category_deltas.items()
             ):
                 require(
                     gateway_failure_after.get(category, 0)
                     - gateway_failure_before.get(category, 0)
-                    == 1,
+                    == expected_delta,
                     f"gateway outcome accounting mismatch: {category}",
                 )
             require(
-                gateway_state.get("last_call_failure_category") is None,
-                "non-operational domain outcome left provider degraded",
+                gateway_state.get("last_call_failure_category")
+                == "upstream_error",
+                "ambiguous entity lookup was not kept fail closed",
             )
             require(fallback_before == fallback_after, "fallback counters changed")
             require(gateway_state.get("fallback_count") == 0, "gateway fallback occurred")
             require(
                 gateway_state.get("dynamically_exposed_count") == len(automatic),
                 "dynamic exposure count mismatch",
+            )
+            require(
+                set(gateway_state.get("reviewed_supported_versions") or ())
+                >= {"7.14.1", "7.14.2"},
+                "compiled reviewed-version diagnostics are incomplete",
+            )
+            require(
+                gateway_state.get("selected_compatibility_entry_id")
+                == release.entry_id,
+                "selected compatibility entry mismatch",
+            )
+            require(
+                gateway_state.get("active_source_commit")
+                == release.source_commit
+                and gateway_state.get("active_image_index_digest")
+                == release.image_index_digest,
+                "active source/image evidence mismatch",
+            )
+            require(
+                gateway_state.get("active_protocol_version")
+                == "2025-03-26",
+                "active protocol evidence mismatch",
+            )
+            require(
+                gateway_state.get("catalog_comparison_status") == "exact"
+                and gateway_state.get("dashboard_attestation_status")
+                == "reviewed",
+                "active compatibility diagnostics are not exact",
             )
             require(
                 gateway_state.get("observed_catalog_matches_reviewed_stock_fixture") is True,
@@ -1037,12 +1104,22 @@ async def inspect_engineering(
 
 
 async def run(args: argparse.Namespace) -> dict[str, Any]:
-    policy = load_upstream_tool_policy()
+    registry = load_reviewed_upstream_release_registry()
+    release = registry.by_version.get(args.expected_upstream_version)
+    require(
+        release is not None,
+        "requested exact-image version has no compiled review entry",
+    )
+    assert release is not None
+    policy = release.policy
     (
         upstream_tools,
         observed_fingerprint,
         upstream_error_envelopes,
-    ) = await inspect_upstream(args.upstream_endpoint)
+    ) = await inspect_upstream(
+        args.upstream_endpoint,
+        expected_upstream_version=args.expected_upstream_version,
+    )
     require(len(upstream_tools) == policy.reviewed_stock_catalog_tool_count, "stock catalog count mismatch")
     observed_by_name = {tool["name"]: tool for tool in upstream_tools}
     missing_names = sorted(set(policy.by_name) - set(observed_by_name))
@@ -1123,10 +1200,13 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         args.engineering_endpoint,
         args.fixture_stats_url,
         set(observed_by_name),
+        expected_upstream_version=args.expected_upstream_version,
+        policy=policy,
+        release=release,
     )
     return {
         "result": "PASS",
-        "upstream_version": EXPECTED_UPSTREAM_VERSION,
+        "upstream_version": args.expected_upstream_version,
         "observed_catalog_count": len(upstream_tools),
         "observed_catalog_fingerprint": observed_fingerprint,
         "reviewed_runtime_description_fingerprint_count": len(
@@ -1151,6 +1231,7 @@ def main() -> None:
         logger.propagate = False
     parser = argparse.ArgumentParser()
     parser.add_argument("--upstream-endpoint", required=True)
+    parser.add_argument("--expected-upstream-version", required=True)
     parser.add_argument("--engineering-endpoint", required=True)
     parser.add_argument("--fixture-stats-url", required=True)
     parser.add_argument("--output", type=Path, required=True)
