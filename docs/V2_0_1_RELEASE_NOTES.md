@@ -134,17 +134,22 @@ connector defect.
 
 ## In-place upgrade
 
-After an independently approved merge, protected publication, and deployment:
+After an independently approved merge, the protected publication workflow
+builds and publishes the final 2.0.1 image, records its SBOM and provenance,
+and creates and pushes the annotated `v2.0.1` tag.
 
 1. Record the exact 2.0.1 source SHA, image-index digest, architecture digests,
-   OCI labels, provenance, and SBOM evidence.
-2. Update the existing **HA MCP Engineering Server Beta** installation in
-   place.
+   OCI labels, provenance, SBOM, and annotated-tag evidence.
+2. Update the existing **HA MCP Engineering Server Beta** installation in place
+   to the exact published 2.0.1 artifact.
 3. Retain slug `hass_mcp_engineering_beta`, MCP port `8100`, Ingress, options,
    secrets, connector endpoint, and persistent `/data`.
 4. Allow the normal add-on restart; do not restart Home Assistant.
-5. Verify the requirements in
+5. Verify the deployed version, build revision, and image provenance, then run
+   the final GA acceptance test in
    [`V2_0_1_ACCEPTANCE.md`](V2_0_1_ACCEPTANCE.md).
+6. Create the GitHub Release only after deployment and smoke testing succeed,
+   using the verified tag, image, provenance, and deployment evidence.
 
 No storage, governance, audit, connector, or configuration migration is
 introduced.
