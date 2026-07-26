@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.1.0-beta.1 - 2.1A operational administration Dev1
+
+- Add the proposal-only `create_backup_plan` tool and contract-v3 operational
+  plans while reusing exact external approval, apply, storage, and audit
+  authority.
+- Add an Engineering-owned constrained provider for only
+  `ha_manage_backup(scope="snapshot", action="create", name=...)` under the
+  exact reviewed 7.14.1 and 7.14.2 contracts. Generic mixed-tool exposure,
+  arbitrary arguments, restore, deletion, and fallback remain prohibited.
+- Persist dispatch intent and consume approval before the one permitted
+  provider invocation. Ambiguous transport outcomes enter verification-only
+  recovery and never trigger blind creation retries.
+- Verify completion independently through bounded `backup/info` evidence,
+  distinguishing operation completion and inventory readback from unsupported
+  archive-content integrity validation.
+- Formalize strict reusable configuration-check evidence for later reload and
+  restart milestones without changing the read-only `check_config` surface.
+- Add operational audit and health evidence with explicit persistent,
+  process-cumulative, and active-state counter sources.
+- Increase the complete catalog truthfully to 42 Engineering tools plus 26
+  delegated reads, for 68 total. Existing upstream fingerprints and policies
+  remain unchanged.
+
 ## 2.0.1 - GA promotion
 
 - Promote the accepted `2.0.1-rc1-dev2` runtime without changing public
