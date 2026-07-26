@@ -22,7 +22,7 @@ IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 # RC2dev12 runtime metadata in this feature pull request.
 NEXT_VERSION = "2.0.0-rc2-dev13"
 PROMOTION_FIXTURE_CURRENT_VERSION = "2.0.0-rc2-dev12"
-CURRENT_REPOSITORY_VERSION = "2.0.1-rc1-dev2"
+CURRENT_REPOSITORY_VERSION = "2.0.1"
 PLATFORMS = ("linux/amd64", "linux/arm64", "linux/arm/v7")
 BUILD_ARGUMENTS = (
     "BUILD_VERSION",
@@ -279,9 +279,9 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         )
         cases = (
             (exact_bot_subject, False, "none"),
-            ("Promote HA MCP Engineering Server 2.0.0 GA", True, "preversioned"),
+            ("Promote HA MCP Engineering Server 2.0.1 GA", True, "preversioned"),
             (
-                "Promote HA MCP Engineering Server 2.0.0 GA (#59)",
+                "Promote HA MCP Engineering Server 2.0.1 GA (#65)",
                 True,
                 "preversioned",
             ),
@@ -291,16 +291,16 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                 True,
                 "preversioned",
             ),
-            ("Promote HA MCP Engineering Server 2.0.1", True, "preversioned"),
-            ("Promote Engineering server to 2.0.0", True, "preversioned"),
-            ("Promote Engineering server to 2.0.0 (#59)", True, "preversioned"),
+            ("Promote HA MCP Engineering Server 2.0.2", True, "preversioned"),
+            ("Promote Engineering server to 2.0.1", True, "preversioned"),
+            ("Promote Engineering server to 2.0.1 (#65)", True, "preversioned"),
             (
-                "Merge pull request #59 from jeter-1/release/v2.0.0-ga",
+                "Merge pull request #65 from jeter-1/release/2.0.1",
                 True,
                 "preversioned",
             ),
-            ("promote HA MCP Engineering Server 2.0.0", True, "preversioned"),
-            ("Promote  HA MCP Engineering Server 2.0.0", True, "preversioned"),
+            ("promote HA MCP Engineering Server 2.0.1", True, "preversioned"),
+            ("Promote  HA MCP Engineering Server 2.0.1", True, "preversioned"),
         )
         for subject, should_promote, release_mode in cases:
             with self.subTest(subject=subject):
@@ -662,15 +662,15 @@ class PromotionScriptTests(unittest.TestCase):
                 )
 
     def test_repository_ga_document_authority_is_exact(self):
-        resolution = self.module.validate_document_authority(ROOT, "2.0.0")
+        resolution = self.module.validate_document_authority(ROOT, "2.0.1")
         self.assertEqual(resolution["resolution_status"], "exact")
         self.assertEqual(
             resolution["active_release_notes"],
-            "docs/V2_0_0_RELEASE_NOTES.md",
+            "docs/V2_0_1_RELEASE_NOTES.md",
         )
         self.assertEqual(
             resolution["active_acceptance_document"],
-            "docs/V2_0_0_ACCEPTANCE.md",
+            "docs/V2_0_1_ACCEPTANCE.md",
         )
 
 

@@ -191,6 +191,11 @@ class VersionComparisonTests(unittest.TestCase):
                 "2.0.1-rc1-dev2", "2.0.1-rc1-dev1"
             )
         )
+        self.assertTrue(
+            VALIDATOR.is_newer_version(
+                "2.0.1", "2.0.1-rc1-dev2"
+            )
+        )
 
     def test_version_comparison_uses_awesomeversion_25_8_0(self):
         requirements = (ROOT / "tests" / "requirements.txt").read_text(
@@ -585,10 +590,10 @@ class CIWorkflowTests(unittest.TestCase):
         )
 
     def test_current_assurance_docs_record_dns_and_stable_boundaries(self):
-        release = (ROOT / "docs" / "RC1DEV2_RELEASE_NOTES.md").read_text(
+        release = (ROOT / "docs" / "V2_0_1_RELEASE_NOTES.md").read_text(
             encoding="utf-8"
         )
-        acceptance = (ROOT / "docs" / "RC1DEV2_ACCEPTANCE.md").read_text(
+        acceptance = (ROOT / "docs" / "V2_0_1_ACCEPTANCE.md").read_text(
             encoding="utf-8"
         )
         security = (ROOT / "docs" / "SECURITY.md").read_text(
@@ -609,6 +614,39 @@ class CIWorkflowTests(unittest.TestCase):
             "sha256:d91246deab5b50749430f5194b5a9fe1473171526fe4f8551c89b1b3259ff130",
             combined,
         )
+
+    def test_2_0_1_ga_docs_preserve_release_and_operational_contracts(self):
+        release = (ROOT / "docs" / "V2_0_1_RELEASE_NOTES.md").read_text(
+            encoding="utf-8"
+        )
+        acceptance = (ROOT / "docs" / "V2_0_1_ACCEPTANCE.md").read_text(
+            encoding="utf-8"
+        )
+        operator = (
+            ROOT / "docs" / "UPSTREAM_COMPATIBILITY_OPERATOR_GUIDE.md"
+        ).read_text(encoding="utf-8")
+        combined = "\n".join((release, acceptance, operator))
+
+        for expected in (
+            "Version: `2.0.1`",
+            "156 records total",
+            "41 Engineering tools plus 26 delegated reads",
+            "c6bd074d9ee1e832bd90318398c00efd9a9ffd983d5444817bc830208cbfc47c",
+            "HA MCP Engineering Server 2.0.1",
+            "ha-mcp 7.14.2",
+            "Home Assistant 2026.7.3",
+            "up to approximately 15 minutes",
+            "Restarting the Engineering add-on forces immediate rediscovery",
+            "provider_error` / `upstream_error` / `retryable=true",
+            "does not independently observe the running upstream artifact",
+            "No fallback is used during the transition",
+            "7.14.1 -> 7.14.2 -> 7.14.1 -> 7.14.2",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, combined)
+
+        self.assertIn("exclusive compatibility restriction", release)
+        self.assertIn("2.1.0 features\n+are not included", release)
 
     def test_exact_image_contract_makes_no_host_rejection_claim(self):
         source = (

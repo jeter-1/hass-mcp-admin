@@ -81,6 +81,13 @@ lane retries a delegated operation semantically. Bounded health may report tool
 names and stable incompatibility reasons, but never raw schemas, remote prose,
 registry material, endpoint data, credentials, or exceptions.
 
+For a reviewed upstream version transition, call-time validation fails closed
+until the periodic compatibility reprobe publishes the newly selected exact
+release. That can take up to approximately 15 minutes; restarting Engineering
+forces immediate rediscovery. Dashboard and delegated-read providers may
+temporarily observe different versions, and delegated reads may be unavailable.
+No fallback or write authority is introduced during this interval.
+
 When upstream is configured, the initial catalog is a readiness boundary:
 authenticated MCP traffic returns HTTP 503 until the first stable or terminal
 `reconcile_until_initialized` result. `/ready` exposes only bounded booleans and
@@ -515,7 +522,7 @@ is never included in an exception log.
 
 ## MCP SDK and dependency boundary
 
-Engineering version `2.0.1-rc1-dev2` pins the stable MCP 1.x SDK at 1.28.1.
+Engineering version `2.0.1` pins the stable MCP 1.x SDK at 1.28.1.
 Every required contact with the SDK's private FastMCP tool registry is isolated
 in `mcp_sdk_compatibility.py`. The adapter admits only the reviewed SDK version
 and expected mapping shape, returns read-only mapping snapshots containing
