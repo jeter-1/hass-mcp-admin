@@ -28,6 +28,7 @@ from ha_mcp_engineering.application import _serve  # noqa: E402
 from ha_mcp_engineering.clients.mcp import DashboardTransportError  # noqa: E402
 from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
     BeforeDispatchFailure,
+    CatalogValidationFailure,
     McpReadCatalog,
     McpReadGatewayTransport,
     McpReadResult,
@@ -581,6 +582,90 @@ class ReadGatewayTransportTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(caught.exception.category, "schema_mismatch")
         self.assertEqual(events, ["initialize", "tools/list", "validator"])
+
+    async def test_untyped_validator_failure_is_wrapped_and_not_reflected(self):
+        events = []
+
+        @asynccontextmanager
+        async def fake_streamable(_url, **_kwargs):
+            yield ("read", "write", lambda: "session-id")
+
+        class Session:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+            async def initialize(self):
+                return types.InitializeResult(
+                    protocolVersion="2025-03-26",
+                    capabilities=types.ServerCapabilities(),
+                    serverInfo=types.Implementation(
+                        name="ha-mcp", version="7.14.2"
+                    ),
+                )
+
+            async def list_tools(self, cursor=None):
+                del cursor
+                events.append("tools/list")
+                return types.ListToolsResult(
+                    tools=[
+                        types.Tool(
+                            name="ha_manage_backup",
+                            description="Reviewed backup operation.",
+                            inputSchema=schema("scope"),
+                        )
+                    ]
+                )
+
+            async def call_tool(self, _name, _arguments, **_kwargs):
+                events.append("tools/call")
+                raise AssertionError("tools/call must remain unreachable")
+
+        validator_failure = RuntimeError(
+            "synthetic-secret validator detail"
+        )
+
+        def reject(_catalog):
+            events.append("validator")
+            raise validator_failure
+
+        transport = McpReadGatewayTransport(
+            "http://upstream.invalid/synthetic-secret/mcp",
+            timeout_seconds=3,
+            client_version="2.1.0-beta.1",
+        )
+        with (
+            patch(
+                "ha_mcp_engineering.clients.upstream_read."
+                "streamablehttp_client",
+                fake_streamable,
+            ),
+            patch(
+                "ha_mcp_engineering.clients.upstream_read.ClientSession",
+                Session,
+            ),
+            self.assertRaises(CatalogValidationFailure) as caught,
+        ):
+            await transport.execute_read(
+                "ha_manage_backup",
+                {
+                    "scope": "snapshot",
+                    "action": "create",
+                    "name": "Exact backup",
+                },
+                timeout_seconds=3,
+                catalog_validator=reject,
+            )
+        self.assertIs(caught.exception.cause, validator_failure)
+        self.assertNotIn(
+            "synthetic-secret", str(caught.exception)
+        )
+        self.assertEqual(events, ["tools/list", "validator"])
 
     async def test_pre_dispatch_failure_is_not_reclassified_as_upstream(self):
         events = []

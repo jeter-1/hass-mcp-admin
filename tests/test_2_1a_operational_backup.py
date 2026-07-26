@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+import hashlib
+import importlib
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
+
+from mcp import types as mcp_types
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +28,7 @@ from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
     BeforeDispatchFailure,
     McpReadCatalog,
+    McpReadGatewayTransport,
 )
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
 from ha_mcp_engineering.governance.config_validation import (  # noqa: E402
@@ -29,8 +36,10 @@ from ha_mcp_engineering.governance.config_validation import (  # noqa: E402
 )
 from ha_mcp_engineering.governance.models import (  # noqa: E402
     ApprovalState,
+    ChangePlan,
     PlanStatus,
 )
+from ha_mcp_engineering.governance.runtime import GOVERNANCE  # noqa: E402
 from ha_mcp_engineering.governance.operational import (  # noqa: E402
     BackupAdministrationGateway,
     OperationalGatewayError,
@@ -42,9 +51,13 @@ from ha_mcp_engineering.governance.storage import (  # noqa: E402
     ChangePlanStorageError,
 )
 from ha_mcp_engineering.providers.operational_backup import (  # noqa: E402
+    OperationalBackupProviderError,
     ReviewedOperationalBackupProvider,
 )
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
+from ha_mcp_engineering.tools.governance import (  # noqa: E402
+    apply_change_plan as public_apply_change_plan,
+)
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     load_reviewed_upstream_release_registry,
 )
@@ -59,6 +72,87 @@ class Clock:
 
     def advance(self, **kwargs) -> None:
         self.value += timedelta(**kwargs)
+
+
+EXACT_2_0_1_SOURCE_SHA = "4942770a2fd80fed613eb1f42ed84ba9fa1c134c"
+EXACT_2_0_1_GOVERNANCE_HASHES = {
+    "models.py": (
+        "1bc329c0809b063bf5a7da3eed66e424b05e3021d86f670b190dcbee58777e0f"
+    ),
+    "storage.py": (
+        "9f934483708586af4fd1284cbb1dc394d0b08097325bb277989c4b7a5dd66547"
+    ),
+}
+EXACT_2_0_1_SERVICE_HASH = (
+    "460ec75defb658dfc88b6ffc2fa55b260dd33486453c754af7d19760a213e909"
+)
+
+
+def exact_2_0_1_source(filename: str, expected_hash: str) -> bytes:
+    source_path = (
+        "hass_mcp_engineering_beta/ha_mcp_engineering/governance/"
+        f"{filename}"
+    )
+    result = subprocess.run(
+        [
+            "git",
+            "show",
+            f"{EXACT_2_0_1_SOURCE_SHA}:{source_path}",
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+    )
+    actual_hash = hashlib.sha256(result.stdout).hexdigest()
+    if actual_hash != expected_hash:
+        raise AssertionError(
+            f"exact 2.0.1 {filename} source hash changed: {actual_hash}"
+        )
+    return result.stdout
+
+
+def load_exact_2_0_1_governance(temp_root: Path):
+    """Load the exact released storage implementation from its source commit."""
+
+    package_name = "exact_2_0_1_governance"
+    package = temp_root / package_name
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    for filename, expected_hash in EXACT_2_0_1_GOVERNANCE_HASHES.items():
+        (package / filename).write_bytes(
+            exact_2_0_1_source(filename, expected_hash)
+        )
+    for module_name in (
+        f"{package_name}.storage",
+        f"{package_name}.models",
+        package_name,
+    ):
+        sys.modules.pop(module_name, None)
+    sys.path.insert(0, str(temp_root))
+    try:
+        models = importlib.import_module(f"{package_name}.models")
+        storage = importlib.import_module(f"{package_name}.storage")
+    finally:
+        sys.path.remove(str(temp_root))
+    return models, storage
+
+
+def initialize_exact_2_0_1_service_storage(repository, now: datetime) -> None:
+    """Execute the exact released service-startup storage sequence."""
+
+    service_source = exact_2_0_1_source(
+        "service.py", EXACT_2_0_1_SERVICE_HASH
+    )
+    startup_sequence = (
+        b"self.repository.cleanup(now=self.now())\n"
+        b"        self.repository.recover_incomplete(self._timestamp())"
+    )
+    if startup_sequence not in service_source:
+        raise AssertionError(
+            "exact 2.0.1 service storage initialization changed"
+        )
+    repository.cleanup(now=now)
+    repository.recover_incomplete(now.isoformat())
 
 
 def provider_evidence(version: str = "7.14.2") -> dict:
@@ -108,6 +202,7 @@ class FakeOperationalGateway:
     def __init__(self) -> None:
         self.dispatch_count = 0
         self.planning_count = 0
+        self.verification_requests = []
         self.mode = "success"
         self.verification = "verified"
         self.evidence = provider_evidence()
@@ -168,7 +263,8 @@ class FakeOperationalGateway:
             name=name,
         )
 
-    async def verify_full_backup(self, **_kwargs):
+    async def verify_full_backup(self, **kwargs):
+        self.verification_requests.append(deepcopy(kwargs))
         if self.verification == "unavailable":
             raise OperationalGatewayError("verification_timeout")
         if self.verification == "pending":
@@ -699,6 +795,265 @@ class OperationalBackupLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "applied")
         self.assertEqual(self.gateway.dispatch_count, 0)
 
+    async def _create_downgrade_records(self):
+        applied = await self.create("Downgrade applied")
+        applied_plan = await self.grant(applied)
+        applied_result = await self.service.apply(
+            applied_plan["plan_id"], applied_plan["plan_hash"]
+        )
+        self.assertEqual(applied_result["status"], "applied")
+
+        verification = await self.create("Downgrade verification")
+        verification_plan = await self.grant(verification)
+        self.gateway.mode = "ambiguous"
+        self.gateway.verification = "pending"
+        with self.assertRaises(GovernanceError) as pending:
+            await self.service.apply(
+                verification_plan["plan_id"],
+                verification_plan["plan_hash"],
+            )
+        self.assertEqual(
+            pending.exception.code,
+            ErrorCode.BACKUP_DISPATCH_INDETERMINATE,
+        )
+        verification_value = self.repository.get(
+            verification_plan["plan_id"]
+        )
+        verification_value.operational.dispatch.update(
+            {
+                "provider_operation_id": "job-preserved",
+                "correlation_evidence": "request-and-operation-bound",
+            }
+        )
+        verification_value.operational.verification.evidence.update(
+            {
+                "provider_operation_id": "job-preserved",
+                "ambiguous_dispatch_preserved": True,
+            }
+        )
+        self.repository.save(verification_value)
+        verification_record = verification_value.to_dict()
+        self.gateway.mode = "success"
+        self.gateway.verification = "verified"
+
+        awaiting = await self.create("Downgrade awaiting")
+        # All backup plans intentionally share one global target, so creating
+        # the awaiting fixture supersedes the active verification fixture.
+        # Restore the exact pre-supersession record to model retained /data
+        # containing each reviewed lifecycle state.
+        self.repository.save(ChangePlan.from_dict(verification_record))
+
+        legacy = await self.service.create_plan(
+            title="2.0.1 legacy plan",
+            description="Exact downgrade storage fixture",
+            operation="create_automation",
+            automation_id="downgrade_legacy",
+            proposed_config={
+                "alias": "Downgrade legacy",
+                "trigger": [],
+                "condition": [],
+                "action": [],
+            },
+        )
+        return {
+            "awaiting": awaiting["plan"],
+            "applied": applied_plan,
+            "verification_required": verification_plan,
+            "legacy": legacy,
+        }
+
+    async def test_exact_2_0_1_quarantines_the_reviewed_head_legacy_layout(self):
+        records = await self._create_downgrade_records()
+        exact_root = Path(self.temp.name) / "exact-old-layout"
+        exact_root.mkdir()
+        for key in ("awaiting", "applied", "verification_required"):
+            plan_id = records[key]["plan_id"]
+            current = next(
+                self.repository.root.rglob(f"{plan_id}.json")
+            )
+            (exact_root / current.name).write_bytes(current.read_bytes())
+
+        _, exact_storage = load_exact_2_0_1_governance(
+            Path(self.temp.name) / "exact-source-reproduction"
+        )
+        repository_2_0_1 = exact_storage.ChangePlanRepository(exact_root)
+        initialize_exact_2_0_1_service_storage(
+            repository_2_0_1, self.clock()
+        )
+        self.assertEqual(repository_2_0_1.list(), [])
+        self.assertEqual(repository_2_0_1.corruption_count, 3)
+        self.assertEqual(
+            len(list((exact_root / "quarantine").glob("*.corrupt"))),
+            3,
+        )
+
+    async def test_operational_records_survive_exact_2_0_1_downgrade(self):
+        records = await self._create_downgrade_records()
+        operational_ids = {
+            records[key]["plan_id"]
+            for key in ("awaiting", "applied", "verification_required")
+        }
+        before_records = {
+            plan_id: self.repository.get(plan_id).to_dict()
+            for plan_id in operational_ids
+        }
+        self.assertEqual(
+            before_records[records["awaiting"]["plan_id"]]["status"],
+            PlanStatus.AWAITING_APPROVAL.value,
+        )
+        self.assertEqual(
+            before_records[records["applied"]["plan_id"]]["status"],
+            PlanStatus.APPLIED.value,
+        )
+        self.assertEqual(
+            before_records[
+                records["verification_required"]["plan_id"]
+            ]["status"],
+            PlanStatus.VERIFICATION_REQUIRED.value,
+        )
+        self.assertEqual(
+            before_records[records["applied"]["plan_id"]]["approval"][
+                "state"
+            ],
+            ApprovalState.CONSUMED.value,
+        )
+        self.assertEqual(
+            before_records[
+                records["verification_required"]["plan_id"]
+            ]["operational"]["dispatch"]["attempt_count"],
+            1,
+        )
+        before_files = {}
+        for plan_id in operational_ids:
+            path = next(self.repository.root.rglob(f"{plan_id}.json"))
+            self.assertEqual(
+                path.parent.name, "operational-administration-v3"
+            )
+            before_files[plan_id] = {
+                "relative_path": path.relative_to(self.repository.root),
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                "mtime_ns": path.stat().st_mtime_ns,
+            }
+
+        _, exact_storage = load_exact_2_0_1_governance(
+            Path(self.temp.name) / "exact-source-round-trip"
+        )
+        repository_2_0_1 = exact_storage.ChangePlanRepository(
+            self.repository.root
+        )
+        initialize_exact_2_0_1_service_storage(
+            repository_2_0_1, self.clock()
+        )
+        legacy_plans = repository_2_0_1.list()
+
+        self.assertEqual(repository_2_0_1.corruption_count, 0)
+        self.assertEqual(len(legacy_plans), 1)
+        self.assertEqual(
+            legacy_plans[0].plan_id, records["legacy"]["plan_id"]
+        )
+        self.assertEqual(
+            list((self.repository.root / "quarantine").glob("*.corrupt")),
+            [],
+        )
+        self.assertEqual(
+            list(
+                (
+                    self.repository.operational_root / "quarantine"
+                ).glob("*.corrupt")
+            ),
+            [],
+        )
+        for plan_id, before in before_files.items():
+            path = self.repository.root / before["relative_path"]
+            self.assertTrue(path.is_file())
+            self.assertEqual(
+                hashlib.sha256(path.read_bytes()).hexdigest(),
+                before["sha256"],
+            )
+            self.assertEqual(path.stat().st_mtime_ns, before["mtime_ns"])
+
+        reupgraded = ChangePlanRepository(self.repository.root)
+        reupgraded_service = ChangeGovernanceService(
+            reupgraded,
+            LegacyGateway(),
+            now=self.clock,
+            operational_gateway=self.gateway,
+        )
+        for plan_id, before in before_records.items():
+            self.assertEqual(reupgraded.get(plan_id).to_dict(), before)
+            self.assertEqual(
+                reupgraded_service.plan_hash(reupgraded.get(plan_id)),
+                next(
+                    record["plan_hash"]
+                    for record in records.values()
+                    if record["plan_id"] == plan_id
+                ),
+            )
+
+        awaiting = records["awaiting"]
+        with self.assertRaises(GovernanceError) as governed:
+            await reupgraded_service.apply(
+                awaiting["plan_id"], awaiting["plan_hash"]
+            )
+        self.assertEqual(
+            governed.exception.code, ErrorCode.EXTERNAL_APPROVAL_REQUIRED
+        )
+
+        dispatches_before = self.gateway.dispatch_count
+        applied = records["applied"]
+        replay = await reupgraded_service.apply(
+            applied["plan_id"], applied["plan_hash"]
+        )
+        self.assertEqual(replay["status"], "already_applied")
+
+        verification = records["verification_required"]
+        resolved = await reupgraded_service.apply(
+            verification["plan_id"], verification["plan_hash"]
+        )
+        self.assertEqual(resolved["status"], "applied")
+        self.assertFalse(resolved["redispatch_performed"])
+        self.assertEqual(self.gateway.dispatch_count, dispatches_before)
+        self.assertEqual(
+            self.gateway.verification_requests[-1]["operation_id"],
+            "job-preserved",
+        )
+        self.assertEqual(
+            reupgraded.get(verification["plan_id"]).plan_id,
+            verification["plan_id"],
+        )
+
+    async def test_operational_namespace_quarantines_only_owned_corruption(self):
+        created = await self.create("Namespace corruption")
+        plan_id = created["plan"]["plan_id"]
+        operational_path = (
+            self.repository.operational_root / f"{plan_id}.json"
+        )
+        legacy_path = self.repository.root / f"{plan_id}.json"
+        legacy_path.write_bytes(operational_path.read_bytes())
+        with self.assertRaises(ChangePlanStorageError):
+            self.repository.get(plan_id)
+        self.assertEqual(self.repository.corruption_count, 0)
+        self.assertTrue(legacy_path.is_file())
+        self.assertTrue(operational_path.is_file())
+
+        legacy_path.unlink()
+        operational_path.write_text("{not-json", encoding="utf-8")
+        self.assertEqual(self.repository.list(), [])
+        self.assertEqual(self.repository.corruption_count, 1)
+        self.assertEqual(
+            list(self.repository.quarantine.glob("*.corrupt")), []
+        )
+        self.assertEqual(
+            len(
+                list(
+                    self.repository.operational_quarantine.glob(
+                        "*.corrupt"
+                    )
+                )
+            ),
+            1,
+        )
+
     async def test_verification_failure_is_terminal_and_not_rollbackable(self):
         created = await self.create()
         plan = await self.grant(created)
@@ -988,6 +1343,412 @@ def exact_catalog(version: str) -> McpReadCatalog:
 
 
 class OperationalProviderContractTests(unittest.IsolatedAsyncioTestCase):
+    async def test_real_transport_preserves_call_time_catalog_drift(self):
+        drift = exact_catalog("7.14.2")
+        tools = [deepcopy(item) for item in drift.tools]
+        target = next(
+            item for item in tools if item["name"] == "ha_manage_backup"
+        )
+        target["description"] = "Unreviewed call-time contract."
+        calls = 0
+
+        @asynccontextmanager
+        async def fake_streamable(_url, **_kwargs):
+            yield ("read", "write", lambda: "session-id")
+
+        class Session:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+            async def initialize(self):
+                return mcp_types.InitializeResult(
+                    protocolVersion=drift.protocol_version,
+                    capabilities=mcp_types.ServerCapabilities(),
+                    serverInfo=mcp_types.Implementation(
+                        name=drift.server_name,
+                        version=drift.server_version,
+                    ),
+                )
+
+            async def list_tools(self, cursor=None):
+                del cursor
+                return mcp_types.ListToolsResult(
+                    tools=[
+                        mcp_types.Tool.model_validate(item)
+                        for item in tools
+                    ]
+                )
+
+            async def call_tool(self, _name, _arguments, **_kwargs):
+                nonlocal calls
+                calls += 1
+                raise AssertionError("tools/call must remain unreachable")
+
+        provider = ReviewedOperationalBackupProvider()
+        provider._transport = McpReadGatewayTransport(
+            "http://upstream.invalid/synthetic-secret/mcp",
+            timeout_seconds=3,
+            client_version="2.1.0-beta.1",
+        )
+        provider._state.configured = True
+        with (
+            patch(
+                "ha_mcp_engineering.clients.upstream_read."
+                "streamablehttp_client",
+                fake_streamable,
+            ),
+            patch(
+                "ha_mcp_engineering.clients.upstream_read.ClientSession",
+                Session,
+            ),
+            self.assertRaises(OperationalBackupProviderError) as caught,
+        ):
+            await provider.create_full_backup(
+                "Exact backup", before_dispatch=lambda: None
+            )
+        self.assertEqual(
+            caught.exception.category, "reviewed_contract_mismatch"
+        )
+        self.assertFalse(caught.exception.dispatched)
+        health = provider.health_snapshot()
+        self.assertEqual(
+            health["failure_counts"]["reviewed_contract_mismatch"], 1
+        )
+        self.assertEqual(health["failure_counts"].get("provider_error", 0), 0)
+        self.assertEqual(health["dispatch_count"], 0)
+        self.assertEqual(health["fallback_count"], 0)
+        self.assertEqual(calls, 0)
+
+    async def test_public_apply_preserves_all_call_time_drift_categories(self):
+        cases = (
+            ("catalog_mismatch", "catalog_mismatch"),
+            ("tool_removed", "required_tool_missing"),
+            ("input_changed", "reviewed_contract_mismatch"),
+            ("annotation_changed", "reviewed_contract_mismatch"),
+            ("runtime_output_changed", "reviewed_contract_mismatch"),
+            ("unreviewed_version", "upstream_version_mismatch"),
+            ("transport_failure", "provider_error"),
+        )
+        for drift_kind, expected_category in cases:
+            with self.subTest(drift_kind=drift_kind):
+                exact = exact_catalog("7.14.2")
+                tools = [deepcopy(item) for item in exact.tools]
+                target = next(
+                    item
+                    for item in tools
+                    if item["name"] == "ha_manage_backup"
+                )
+                if drift_kind == "catalog_mismatch":
+                    other = next(
+                        item
+                        for item in tools
+                        if item["name"] == "ha_get_state"
+                    )
+                    other["description"] = "Unreviewed catalog drift."
+                elif drift_kind == "tool_removed":
+                    tools.remove(target)
+                elif drift_kind == "input_changed":
+                    target["inputSchema"] = deepcopy(target["inputSchema"])
+                    target["inputSchema"]["properties"]["action"][
+                        "description"
+                    ] = "Unreviewed input contract."
+                elif drift_kind == "annotation_changed":
+                    target["annotations"] = deepcopy(
+                        target.get("annotations") or {}
+                    )
+                    target["annotations"]["destructiveHint"] = False
+                elif drift_kind == "runtime_output_changed":
+                    target["outputSchema"] = {
+                        "type": "object",
+                        "properties": {
+                            "unreviewed": {"type": "boolean"}
+                        },
+                    }
+
+                drift = McpReadCatalog(
+                    protocol_version=exact.protocol_version,
+                    server_name=exact.server_name,
+                    server_version=(
+                        "7.14.99"
+                        if drift_kind == "unreviewed_version"
+                        else exact.server_version
+                    ),
+                    tools=tuple(tools),
+                    connection_latency_ms=1.0,
+                )
+                session_count = 0
+                tool_call_count = 0
+
+                @asynccontextmanager
+                async def fake_streamable(_url, **_kwargs):
+                    yield ("read", "write", lambda: "session-id")
+
+                class Session:
+                    def __init__(self, *_args, **_kwargs):
+                        nonlocal session_count
+                        self.index = session_count
+                        session_count += 1
+                        self.catalog = exact if self.index < 2 else drift
+
+                    async def __aenter__(self):
+                        return self
+
+                    async def __aexit__(
+                        self, _exc_type, _exc, _tb
+                    ):
+                        return None
+
+                    async def initialize(self):
+                        return mcp_types.InitializeResult(
+                            protocolVersion=self.catalog.protocol_version,
+                            capabilities=mcp_types.ServerCapabilities(),
+                            serverInfo=mcp_types.Implementation(
+                                name=self.catalog.server_name,
+                                version=self.catalog.server_version,
+                            ),
+                        )
+
+                    async def list_tools(self, cursor=None):
+                        del cursor
+                        if (
+                            self.index == 2
+                            and drift_kind == "transport_failure"
+                        ):
+                            raise RuntimeError(
+                                "untrusted synthetic transport content"
+                            )
+                        return mcp_types.ListToolsResult(
+                            tools=[
+                                mcp_types.Tool.model_validate(item)
+                                for item in self.catalog.tools
+                            ]
+                        )
+
+                    async def call_tool(
+                        self, _name, _arguments, **_kwargs
+                    ):
+                        nonlocal tool_call_count
+                        tool_call_count += 1
+                        raise AssertionError(
+                            "tools/call must remain unreachable"
+                        )
+
+                provider = ReviewedOperationalBackupProvider()
+                provider._transport = McpReadGatewayTransport(
+                    "http://upstream.invalid/synthetic-secret/mcp",
+                    timeout_seconds=3,
+                    client_version="2.1.0-beta.1",
+                )
+                provider._state.configured = True
+                websocket = InventoryWebSocket(
+                    {
+                        "state": "idle",
+                        "backups": [
+                            {
+                                "backup_id": "existing",
+                                "name": "Existing",
+                                "date": "2026-07-25T12:00:00+00:00",
+                                "size_bytes": 20,
+                            }
+                        ],
+                        "last_action_event": {
+                            "state": "completed",
+                            "backup_id": "existing",
+                        },
+                    }
+                )
+                clock = Clock()
+                with tempfile.TemporaryDirectory() as temp_name:
+                    repository = ChangePlanRepository(
+                        Path(temp_name) / "plans"
+                    )
+                    audit_path = Path(temp_name) / "audit.jsonl"
+                    service = ChangeGovernanceService(
+                        repository,
+                        LegacyGateway(),
+                        AuditLogger(
+                            str(audit_path),
+                            "catalog-drift-test-access-secret",
+                        ),
+                        now=clock,
+                        operational_gateway=BackupAdministrationGateway(
+                            provider, websocket
+                        ),
+                    )
+                    telemetry, context = begin_request(
+                        f"catalog-drift-{drift_kind}"
+                    )
+                    telemetry.caller_id = "mcp-requester"
+                    previous_service = GOVERNANCE.service
+                    try:
+                        with (
+                            patch(
+                                "ha_mcp_engineering.clients.upstream_read."
+                                "streamablehttp_client",
+                                fake_streamable,
+                            ),
+                            patch(
+                                "ha_mcp_engineering.clients.upstream_read."
+                                "ClientSession",
+                                Session,
+                            ),
+                        ):
+                            created = await service.create_backup_plan(
+                                backup_name=(
+                                    f"Catalog drift {drift_kind}"
+                                )
+                            )
+                            plan = created["plan"]
+                            pending = service.approve(
+                                plan["plan_id"], plan["plan_hash"]
+                            )
+                            _, csrf = await service.issue_external_csrf(
+                                plan["plan_id"],
+                                pending["challenge_id"],
+                            )
+                            await service.decide_external_approval(
+                                plan_id=plan["plan_id"],
+                                challenge_id=pending["challenge_id"],
+                                expected_plan_hash=plan["plan_hash"],
+                                approval_kind="apply",
+                                csrf_nonce=csrf,
+                                decision="approve",
+                                approver_principal=(
+                                    "home_assistant_admin_ingress:fixture"
+                                ),
+                            )
+                            GOVERNANCE.service = service
+                            public = json.loads(
+                                await public_apply_change_plan(
+                                    plan["plan_id"], plan["plan_hash"]
+                                )
+                            )
+                    finally:
+                        GOVERNANCE.service = previous_service
+                        end_request(context)
+
+                    self.assertFalse(public["success"])
+                    self.assertEqual(
+                        public["error_code"],
+                        ErrorCode.BACKUP_PROVIDER_UNAVAILABLE.value,
+                    )
+                    self.assertTrue(public["retryable"])
+                    self.assertEqual(
+                        public["details"]["failure_category"],
+                        expected_category,
+                    )
+                    self.assertEqual(
+                        public["details"]["failure_stage"],
+                        "pre_dispatch",
+                    )
+                    self.assertFalse(
+                        public["details"][
+                            "provider_dispatch_occurred"
+                        ]
+                    )
+                    self.assertFalse(
+                        public["details"]["backup_creation_attempted"]
+                    )
+                    self.assertEqual(
+                        public["details"]["fallback"], "none"
+                    )
+                    self.assertFalse(
+                        public["details"]["fallback_occurred"]
+                    )
+
+                    persisted = repository.get(plan["plan_id"])
+                    self.assertEqual(persisted.status, PlanStatus.APPROVED)
+                    self.assertEqual(
+                        persisted.approval.state, ApprovalState.APPROVED
+                    )
+                    self.assertIsNone(persisted.approval.consumed_at)
+                    self.assertEqual(
+                        persisted.operational.dispatch["attempt_count"], 0
+                    )
+                    self.assertFalse(
+                        persisted.operational.dispatch["dispatched"]
+                    )
+                    rejected_events = [
+                        event
+                        for event in persisted.events
+                        if event.event
+                        == "operational_backup_dispatch_rejected"
+                    ]
+                    self.assertEqual(len(rejected_events), 1)
+                    self.assertEqual(
+                        rejected_events[0].error_code,
+                        ErrorCode.BACKUP_PROVIDER_UNAVAILABLE.value,
+                    )
+                    self.assertNotIn(
+                        ErrorCode.BACKUP_CREATION_FAILED.value,
+                        [event.error_code for event in persisted.events],
+                    )
+
+                    health = provider.health_snapshot()
+                    self.assertEqual(
+                        health["failure_counts"][expected_category], 1
+                    )
+                    self.assertEqual(
+                        sum(health["failure_counts"].values()), 1
+                    )
+                    if expected_category != "provider_error":
+                        self.assertEqual(
+                            health["failure_counts"].get(
+                                "provider_error", 0
+                            ),
+                            0,
+                        )
+                    self.assertEqual(health["dispatch_count"], 0)
+                    self.assertEqual(health["fallback_count"], 0)
+                    self.assertEqual(tool_call_count, 0)
+                    self.assertEqual(
+                        service.health_summary()[
+                            "approval_consumption_count"
+                        ],
+                        0,
+                    )
+
+                    audit_records = [
+                        json.loads(line)
+                        for line in audit_path.read_text().splitlines()
+                    ]
+                    rejected_audit = [
+                        item
+                        for item in audit_records
+                        if item["event"]
+                        == "operational_backup_dispatch_rejected"
+                    ]
+                    self.assertEqual(len(rejected_audit), 1)
+                    self.assertEqual(
+                        rejected_audit[0]["failure_category"],
+                        expected_category,
+                    )
+                    self.assertEqual(
+                        rejected_audit[0]["failure_stage"],
+                        "pre_dispatch",
+                    )
+                    self.assertFalse(
+                        rejected_audit[0][
+                            "provider_dispatch_occurred"
+                        ]
+                    )
+                    self.assertEqual(
+                        rejected_audit[0]["fallback"], "none"
+                    )
+                    self.assertFalse(
+                        rejected_audit[0]["fallback_occurred"]
+                    )
+                    self.assertNotIn(
+                        "untrusted synthetic transport content",
+                        json.dumps(audit_records),
+                    )
+
     async def test_both_reviewed_releases_admit_only_constructed_create(self):
         for version in ("7.14.1", "7.14.2"):
             with self.subTest(version=version):

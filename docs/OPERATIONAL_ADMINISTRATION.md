@@ -60,6 +60,21 @@ When transport loss or timeout means dispatch may have occurred, the plan
 becomes `verification_required`; later calls resume readback only and never
 send another create request. Restart recovery applies the same rule.
 
+Call-time catalog validation is a pre-dispatch boundary. If the required tool
+is removed, its reviewed input, annotation, output, or runtime contract
+changes, the wider catalog drifts, or the upstream version becomes unreviewed,
+the shared transport preserves the typed validator result. Public apply returns
+bounded `backup_provider_unavailable` evidence with the precise failure
+category, `failure_stage=pre_dispatch`,
+`provider_dispatch_occurred=false`, `backup_creation_attempted=false`, and
+zero fallback. Approval is not consumed. Restore exact provider evidence and
+replan rather than treating the result as failed backup creation.
+
+Provider health owns one failure count for the precise validation category.
+Governance owns the plan lifecycle record, one audit event, and public error
+mapping. The transport only preserves the typed boundary and does not count a
+second generic provider failure.
+
 Verification requires exactly one newly observed backup outside the approved
 baseline, the exact requested name, a date in the bounded apply window,
 `state=idle`, a completed last-action event, a matching identifier where
@@ -70,6 +85,26 @@ separates operation completion, inventory readback, and
 Backup deletion is destructive and out of scope, so
 `rollback_available=false`. A global lock is intentional because Home
 Assistant backup creation is not safely concurrent.
+
+## Persistence and downgrade behavior
+
+Existing contract-v1 and contract-v2 configuration plans remain in the legacy
+governance namespace. Contract-v3 operational plans are written
+transactionally under `operational-administration-v3`, including a separate
+owned quarantine location for actual corruption. Listing and lookup span both
+namespaces deterministically and reject duplicate plan IDs.
+
+Downgrading to exact 2.0.1 with retained `/data` leaves the operational
+namespace byte-preserved. Version 2.0.1 neither displays nor processes those
+records, but it does not quarantine, modify, or delete them; legacy
+configuration plans remain available. Reinstalling 2.1 restores the original
+operational records and resumes `verification_required` plans through
+readback only.
+
+Operational plans cannot be approved, applied, or recovered while 2.0.1 is
+running. Do not manually move operational records into the legacy namespace or
+recreate a pending operation during the downgrade. Re-upgrade to 2.1 to resume
+recovery.
 
 ## Configuration validation foundation
 

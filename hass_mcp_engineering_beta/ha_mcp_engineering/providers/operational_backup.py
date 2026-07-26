@@ -14,6 +14,7 @@ from typing import Any, Awaitable, Callable
 from ..clients.mcp import DashboardTransportError
 from ..clients.upstream_read import (
     BeforeDispatchFailure,
+    CatalogValidationFailure,
     McpReadCatalog,
     McpReadGatewayTransport,
 )
@@ -226,6 +227,10 @@ class ReviewedOperationalBackupProvider:
             raise
         except BeforeDispatchFailure as exc:
             raise exc.cause
+        except CatalogValidationFailure as exc:
+            if isinstance(exc.cause, OperationalBackupProviderError):
+                raise exc.cause
+            self._fail("provider_error", dispatched=False)
         except DashboardTransportError as exc:
             category = _transport_category(exc.category)
             if dispatched and category in {"provider_timeout", "provider_unavailable"}:
@@ -285,8 +290,6 @@ class ReviewedOperationalBackupProvider:
             }
         except (TypeError, ValueError, OverflowError):
             self._fail("invalid_response", dispatched=False)
-        if observed_catalog_fingerprint != release.catalog_fingerprint:
-            self._fail("catalog_mismatch", dispatched=False)
         if (
             expected.policy_classification != "mixed_or_requires_wrapper"
             or expected.reviewed_automatic_read
@@ -296,6 +299,8 @@ class ReviewedOperationalBackupProvider:
             )
         ):
             self._fail("reviewed_contract_mismatch", dispatched=False)
+        if observed_catalog_fingerprint != release.catalog_fingerprint:
+            self._fail("catalog_mismatch", dispatched=False)
         return BackupProviderEvidence(
             provider=PROVIDER_ID,
             server_name=catalog.server_name,

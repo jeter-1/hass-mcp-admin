@@ -57,6 +57,14 @@ class BeforeDispatchFailure(RuntimeError):
         self.cause = cause
 
 
+class CatalogValidationFailure(RuntimeError):
+    """Preserve a typed local validator failure without exposing it broadly."""
+
+    def __init__(self, cause: BaseException) -> None:
+        super().__init__("The local catalog validator failed.")
+        self.cause = cause
+
+
 class McpReadGatewayTransport:
     """Open bounded sessions without exposing the secret-bearing endpoint."""
 
@@ -141,17 +149,31 @@ class McpReadGatewayTransport:
                     server_name = str(initialize.serverInfo.name)
                     server_version = str(initialize.serverInfo.version)
                     tools = await self._list_all_tools(session)
-                    catalog_validator(
-                        McpReadCatalog(
-                            protocol_version=protocol,
-                            server_name=server_name,
-                            server_version=server_version,
-                            tools=tuple(tools),
-                            connection_latency_ms=round(
-                                (time.perf_counter() - started) * 1_000, 3
-                            ),
+                    try:
+                        catalog_validator(
+                            McpReadCatalog(
+                                protocol_version=protocol,
+                                server_name=server_name,
+                                server_version=server_version,
+                                tools=tuple(tools),
+                                connection_latency_ms=round(
+                                    (time.perf_counter() - started) * 1_000, 3
+                                ),
+                            )
                         )
-                    )
+                    except DashboardTransportError:
+                        raise
+                    except BaseException as exc:
+                        if isinstance(
+                            exc,
+                            (
+                                asyncio.CancelledError,
+                                KeyboardInterrupt,
+                                SystemExit,
+                            ),
+                        ):
+                            raise
+                        raise CatalogValidationFailure(exc) from None
                     if before_dispatch is not None:
                         try:
                             prepared = before_dispatch()
@@ -200,7 +222,11 @@ class McpReadGatewayTransport:
                         connection_latency_ms=round((connected - started) * 1_000, 3),
                         tool_call_latency_ms=round((finished - connected) * 1_000, 3),
                     )
-        except (DashboardTransportError, BeforeDispatchFailure):
+        except (
+            DashboardTransportError,
+            BeforeDispatchFailure,
+            CatalogValidationFailure,
+        ):
             raise
         except BaseException as exc:
             if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)):

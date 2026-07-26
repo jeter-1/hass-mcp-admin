@@ -8,10 +8,16 @@ import os
 from pathlib import Path
 import re
 import threading
-from .models import ChangePlan, PlanStatus, StepExecutionStatus
+from .models import (
+    ChangeOperation,
+    ChangePlan,
+    PlanStatus,
+    StepExecutionStatus,
+)
 
 
 PLAN_ID = re.compile(r"^[a-f0-9]{32}$")
+OPERATIONAL_NAMESPACE = "operational-administration-v3"
 TERMINAL_STATUSES = {
     PlanStatus.VALIDATION_FAILED,
     PlanStatus.APPLIED,
@@ -41,6 +47,10 @@ class ChangePlanRepository:
     def __init__(self, root: str | Path, *, retention_days: int = 90):
         self.root = Path(root)
         self.quarantine = self.root / "quarantine"
+        self.operational_root = self.root / OPERATIONAL_NAMESPACE
+        self.operational_quarantine = (
+            self.operational_root / "quarantine"
+        )
         self.retention_days = retention_days
         self.corruption_count = 0
         self.write_failures = 0
@@ -48,16 +58,23 @@ class ChangePlanRepository:
         try:
             self.root.mkdir(parents=True, exist_ok=True)
             self.quarantine.mkdir(parents=True, exist_ok=True)
+            self.operational_root.mkdir(parents=True, exist_ok=True)
+            self.operational_quarantine.mkdir(
+                parents=True, exist_ok=True
+            )
         except OSError as exc:
-            raise ChangePlanStorageError("Unable to initialize governance storage") from exc
+            raise ChangePlanStorageError(
+                "Unable to initialize governance storage"
+            ) from exc
 
-    def _path(self, plan_id: str) -> Path:
+    def _path(self, plan_id: str, *, operational: bool = False) -> Path:
         if not PLAN_ID.fullmatch(plan_id):
             raise ChangePlanStorageError("Invalid change plan identifier")
-        return self.root / f"{plan_id}.json"
+        directory = self.operational_root if operational else self.root
+        return directory / f"{plan_id}.json"
 
-    def _read_path(self, plan_id: str) -> Path | None:
-        """Return a safe record path, or None for a non-record identifier.
+    def _read_paths(self, plan_id: str) -> tuple[Path, Path] | None:
+        """Return safe legacy and operational record paths.
 
         Invalid/nonexistent identifiers are lookup misses, not storage health
         failures. Save paths remain strict because generated plan IDs must
@@ -65,31 +82,80 @@ class ChangePlanRepository:
         """
         if not PLAN_ID.fullmatch(plan_id):
             return None
-        return self.root / f"{plan_id}.json"
+        return (
+            self._path(plan_id),
+            self._path(plan_id, operational=True),
+        )
+
+    @staticmethod
+    def _is_operational(plan: ChangePlan) -> bool:
+        return (
+            plan.contract_version == 3
+            and plan.plan_family == "operational_administration"
+            and plan.operation == ChangeOperation.CREATE_FULL_BACKUP
+            and plan.operational is not None
+        )
+
+    def _path_for_plan(self, plan: ChangePlan) -> Path:
+        if self._is_operational(plan):
+            return self._path(plan.plan_id, operational=True)
+        if plan.contract_version >= 3:
+            raise ChangePlanStorageError(
+                "Unsupported governance storage contract"
+            )
+        return self._path(plan.plan_id)
 
     def save(self, plan: ChangePlan) -> None:
-        path = self._path(plan.plan_id)
-        temporary = path.with_suffix(f".tmp-{os.getpid()}-{threading.get_ident()}")
-        payload = json.dumps(plan.to_dict(), sort_keys=True, separators=(",", ":"))
+        path = self._path_for_plan(plan)
+        other = (
+            self._path(plan.plan_id)
+            if path.parent == self.operational_root
+            else self._path(plan.plan_id, operational=True)
+        )
+        temporary = path.with_suffix(
+            f".tmp-{os.getpid()}-{threading.get_ident()}"
+        )
+        payload = json.dumps(
+            plan.to_dict(), sort_keys=True, separators=(",", ":")
+        )
         try:
             with self._lock:
+                if other.exists():
+                    raise ChangePlanStorageError(
+                        "Ambiguous governance record identifier"
+                    )
                 with open(temporary, "x", encoding="utf-8") as handle:
                     handle.write(payload)
                     handle.flush()
                     os.fsync(handle.fileno())
                 os.replace(temporary, path)
+        except ChangePlanStorageError:
+            raise
         except OSError as exc:
             self.write_failures += 1
             try:
                 temporary.unlink(missing_ok=True)
             except OSError:
                 pass
-            raise ChangePlanStorageError("Atomic governance storage write failed") from exc
+            raise ChangePlanStorageError(
+                "Atomic governance storage write failed"
+            ) from exc
 
     def get(self, plan_id: str) -> ChangePlan | None:
-        path = self._read_path(plan_id)
-        if path is None:
+        paths = self._read_paths(plan_id)
+        if paths is None:
             return None
+        with self._lock:
+            existing = [path for path in paths if path.exists()]
+            if len(existing) > 1:
+                raise ChangePlanStorageError(
+                    "Ambiguous governance record identifier"
+                )
+            if not existing:
+                return self._load(paths[0])
+            return self._load(existing[0])
+
+    def _load(self, path: Path) -> ChangePlan | None:
         try:
             with self._lock:
                 value = json.loads(path.read_text(encoding="utf-8"))
@@ -104,22 +170,38 @@ class ChangePlanRepository:
 
     def list(self) -> list[ChangePlan]:
         plans = []
-        for path in sorted(self.root.glob("*.json")):
-            try:
-                plan = self.get(path.stem)
-            except ChangePlanStorageError:
-                # Corrupt records are quarantined and do not block startup or
-                # healthy records. Genuine directory enumeration failures are
-                # raised by glob before this point.
-                continue
-            if plan:
-                plans.append(plan)
+        with self._lock:
+            paths = sorted(self.root.glob("*.json")) + sorted(
+                self.operational_root.glob("*.json")
+            )
+            identifiers = [path.stem for path in paths]
+            if len(identifiers) != len(set(identifiers)):
+                raise ChangePlanStorageError(
+                    "Ambiguous governance record identifier"
+                )
+            for path in paths:
+                try:
+                    plan = self._load(path)
+                except ChangePlanStorageError:
+                    # Corrupt records are quarantined and do not block startup
+                    # or healthy records. Directory enumeration failures are
+                    # raised by glob before this point.
+                    continue
+                if plan:
+                    plans.append(plan)
         return sorted(plans, key=lambda plan: plan.created_at, reverse=True)
 
     def _quarantine(self, path: Path) -> None:
         self.corruption_count += 1
         try:
-            destination = self.quarantine / f"{path.stem}.{int(datetime.now().timestamp())}.corrupt"
+            quarantine = (
+                self.operational_quarantine
+                if path.parent == self.operational_root
+                else self.quarantine
+            )
+            destination = quarantine / (
+                f"{path.stem}.{int(datetime.now().timestamp())}.corrupt"
+            )
             os.replace(path, destination)
         except OSError:
             try:
@@ -140,7 +222,7 @@ class ChangePlanRepository:
                 continue
             if updated < cutoff:
                 try:
-                    self._path(plan.plan_id).unlink(missing_ok=True)
+                    self._path_for_plan(plan).unlink(missing_ok=True)
                     removed += 1
                 except OSError:
                     self.write_failures += 1

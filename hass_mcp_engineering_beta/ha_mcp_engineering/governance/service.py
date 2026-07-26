@@ -1045,6 +1045,8 @@ class ChangeGovernanceService:
         duration_ms: float | None = None,
         approval_principal: str | None = None,
         operation_step: ConfigurationOperation | None = None,
+        failure_category: str | None = None,
+        failure_stage: str | None = None,
     ) -> None:
         request_id = current_request_id()
         caller_id = current_caller_id()
@@ -1128,6 +1130,10 @@ class ChangeGovernanceService:
                     "rollback_available": False,
                 }
             )
+            if failure_category is not None:
+                safe["failure_category"] = failure_category
+            if failure_stage is not None:
+                safe["failure_stage"] = failure_stage
         # Persist the event and lifecycle state before emitting a success audit.
         # If storage fails, the caller returns change_plan_storage_error and no
         # misleading success record is produced.
@@ -2875,13 +2881,32 @@ class ChangeGovernanceService:
                     code = self._operational_error_code(
                         exc.category, dispatched=False
                     )
+                    failure_details = {
+                        "failure_category": exc.category,
+                        "failure_stage": "pre_dispatch",
+                        "provider_dispatch_occurred": False,
+                        "backup_creation_attempted": False,
+                        "fallback": "none",
+                        "fallback_occurred": False,
+                        "required_action": (
+                            "refresh_provider_evidence_and_replan"
+                        ),
+                    }
+                    plan.failure_information = {
+                        "error_code": code.value,
+                        **failure_details,
+                    }
                     self._record(
                         plan,
                         "operational_backup_dispatch_rejected",
                         "failure",
                         error_code=code.value,
+                        failure_category=exc.category,
+                        failure_stage="pre_dispatch",
                     )
-                    raise GovernanceError(code) from None
+                    raise GovernanceError(
+                        code, details=failure_details
+                    ) from None
                 if exc.category in {
                     "permission_failure",
                     "backup_rejected",
@@ -3048,6 +3073,18 @@ class ChangeGovernanceService:
             "provider_unavailable",
         }:
             return ErrorCode.BACKUP_DISPATCH_INDETERMINATE
+        if not dispatched and category in {
+            "catalog_mismatch",
+            "reviewed_contract_mismatch",
+            "server_identity_mismatch",
+            "upstream_version_mismatch",
+            "unsupported_protocol_version",
+            "required_tool_missing",
+            "invalid_response",
+            "protocol_error",
+            "provider_error",
+        }:
+            return ErrorCode.BACKUP_PROVIDER_UNAVAILABLE
         return {
             "invalid_request": ErrorCode.INVALID_REQUEST,
             "provider_unavailable": ErrorCode.BACKUP_PROVIDER_UNAVAILABLE,

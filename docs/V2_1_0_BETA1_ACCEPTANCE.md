@@ -58,5 +58,16 @@ approved publication and deployment:
 8. Exercise ambiguous recovery only in a specifically authorized disposable
    environment. Never induce it on production merely for acceptance.
 
-Rollback of this candidate is source/image rollback to exact 2.0.1. A created
-backup is not deleted automatically, and no storage migration is required.
+Rollback of this candidate is source/image rollback to exact 2.0.1 with
+retained `/data`. Contract-v3 operational records remain byte-preserved in the
+separate `operational-administration-v3` namespace. Exact 2.0.1 does not
+display, process, quarantine, modify, or delete that namespace; its legacy
+configuration plans remain readable and operational. Reinstalling 2.1 restores
+the exact plan IDs, hashes, approvals, dispatch evidence, lifecycle state, and
+readback-only recovery.
+
+Operational plans cannot be approved, applied, or recovered while 2.0.1 is
+running. Never move their files into the legacy governance namespace or
+manually recreate a pending or `verification_required` operation. Re-upgrade
+to 2.1 before resuming operational recovery. A created backup is not deleted
+automatically, and no storage migration is required merely to downgrade.

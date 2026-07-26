@@ -230,6 +230,18 @@ connector endpoint. Verify version `2.0.1`, source SHA
 `4942770a2fd80fed613eb1f42ed84ba9fa1c134c`, and health, then repeat
 foundation, admission, governance-persistence, audit, and no-fallback checks.
 
+Retained `/data` keeps contract-v3 operational-administration records in the
+separate `operational-administration-v3` namespace. Version 2.0.1 does not
+display or process those records, but it does not enumerate, quarantine,
+modify, or delete them. Legacy configuration plans continue to operate under
+2.0.1. Reinstalling 2.1 restores access to the preserved operational plans and
+resumes any required readback-only verification.
+
+Operational plans cannot be approved, applied, or recovered while 2.0.1 is
+running. Do not manually move them into the legacy governance namespace, and
+do not recreate a pending or `verification_required` operation during the
+downgrade. Re-upgrade to 2.1 to resume operational-plan recovery.
+
 Stable v1.1.2 is historical source only. Do not re-enable, rehabilitate, or
 describe it as an equivalent recovery path for Engineering v2.
 

@@ -32,12 +32,18 @@ write, fallback, restore, delete, reload, or restart.
 One new proposal tool makes the fully admitted catalog 42 Engineering tools
 plus 26 delegated reads, or 68 total. Existing contract-v1 and contract-v2
 plans preserve their serialization and hashes; operational plans use contract
-version 3.
+version 3 and a separate `operational-administration-v3` persistence namespace.
+Exact 2.0.1 enumerates only the legacy namespace, so a retained-data downgrade
+preserves but cannot display or operate on contract-v3 records. Re-upgrading
+restores access and readback-only recovery without migration or redispatch.
 
 The selected upstream operation excludes the recorder database and does not
 independently validate archive contents. A global backup lock reduces
 availability but prevents unsafe concurrent creation. Unknown or drifting
-provider contracts block the operation.
+provider contracts block the operation before dispatch. The provider owns the
+single precise health failure count, governance owns one lifecycle/audit event
+and public mapping, and the shared transport preserves the typed validator
+boundary without adding a second generic failure.
 
 The recovery-verification model can later hold reload or restart recovery
 evidence, but only backup fields are implemented in Dev1.
