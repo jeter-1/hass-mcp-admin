@@ -389,7 +389,7 @@ class AddonMetadataValidationTests(unittest.TestCase):
             VALIDATOR.validate_repository(
                 ROOT,
                 base_ref="origin/main",
-                deployed_version="2.0.1",
+                deployed_version="2.0.2",
                 paths={"hass_mcp_engineering_beta/config.yaml"},
                 unreleased_integrity_check=integrity_check,
             )
@@ -646,7 +646,7 @@ class CIWorkflowTests(unittest.TestCase):
                 self.assertIn(expected, combined)
 
         self.assertIn("exclusive compatibility restriction", release)
-        self.assertIn("2.1.0 features\n+are not included", release)
+        self.assertIn("2.1.0 features\nare not included", release)
 
     def test_exact_image_contract_makes_no_host_rejection_claim(self):
         source = (
