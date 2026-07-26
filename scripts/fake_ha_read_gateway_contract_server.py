@@ -1,14 +1,16 @@
-"""Disposable, read-only HA fixture for the exact-image gateway acceptance.
+"""Disposable HA fixture for exact-image read and governed-backup acceptance.
 
 The fixture implements the bounded REST and WebSocket reads used by the
-representative ha-mcp 7.14.1 gateway calls.  Every HTTP mutation is rejected;
-the stats endpoint lets CI prove that no mutating request was attempted.
+representative reviewed ha-mcp releases. Every HTTP mutation and every
+WebSocket mutation other than one exact synthetic ``backup/generate`` contract
+is rejected. The stats endpoint lets CI prove the reached operation surface.
 """
 
 from __future__ import annotations
 
 import argparse
 from collections import Counter
+from datetime import UTC, datetime
 import json
 from typing import Any
 
@@ -133,6 +135,9 @@ class FixtureState:
         self.http_mutations: Counter[str] = Counter()
         self.websocket_reads: Counter[str] = Counter()
         self.websocket_mutations: Counter[str] = Counter()
+        self.operational_backup_creates: list[dict[str, Any]] = []
+        self.backups: list[dict[str, Any]] = []
+        self.last_backup_event: dict[str, Any] | None = None
 
     def snapshot(self) -> dict[str, Any]:
         return {
@@ -140,6 +145,9 @@ class FixtureState:
             "http_mutations": dict(self.http_mutations),
             "websocket_reads": dict(self.websocket_reads),
             "websocket_mutations": dict(self.websocket_mutations),
+            "operational_backup_creates": list(
+                self.operational_backup_creates
+            ),
         }
 
 
@@ -273,7 +281,73 @@ def _result_for(message_type: str, request_data: dict[str, Any]) -> Any:
             ]
             for entity_id in request_data.get("entity_ids", [])
         }
+    if message_type == "backup/config/info":
+        return {
+            "config": {
+                "create_backup": {
+                    "password": "synthetic-backup-password"
+                }
+            }
+        }
+    if message_type == "backup/agents/info":
+        return {
+            "agents": [
+                {"agent_id": "hassio.local", "name": "local"}
+            ]
+        }
+    if message_type == "backup/info":
+        return {
+            "state": "idle",
+            "backups": list(STATE.backups),
+            "last_action_event": STATE.last_backup_event,
+        }
     return None
+
+
+def _generate_backup(request_data: dict[str, Any]) -> dict[str, Any] | None:
+    name = request_data.get("name")
+    expected = {
+        "agent_ids": ["hassio.local"],
+        "include_homeassistant": True,
+        "include_database": False,
+        "include_all_addons": True,
+    }
+    if (
+        not isinstance(name, str)
+        or not 1 <= len(name) <= 96
+        or any(request_data.get(key) != value for key, value in expected.items())
+        or not isinstance(request_data.get("password"), str)
+        or not request_data["password"]
+    ):
+        return None
+    backup_id = f"fixture-backup-{len(STATE.backups) + 1}"
+    job_id = f"fixture-job-{len(STATE.backups) + 1}"
+    date = datetime.now(UTC).isoformat()
+    STATE.operational_backup_creates.append(
+        {
+            "name": name,
+            **expected,
+            "password_present": True,
+        }
+    )
+    STATE.backups.append(
+        {
+            "backup_id": backup_id,
+            "name": name,
+            "date": date,
+            "agents": {
+                "hassio.local": {
+                    "size": 4096,
+                    "protected": True,
+                }
+            },
+        }
+    )
+    STATE.last_backup_event = {
+        "state": "completed",
+        "backup_id": backup_id,
+    }
+    return {"backup_job_id": job_id}
 
 
 async def websocket(request: web.Request) -> web.WebSocketResponse:
@@ -296,6 +370,31 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
         request_id = request_data.get("id")
         message_type = str(request_data.get("type", ""))
         lowered = message_type.lower()
+        if message_type == "backup/generate":
+            generated = _generate_backup(request_data)
+            if generated is None:
+                STATE.websocket_mutations[message_type] += 1
+                await ws.send_json(
+                    {
+                        "id": request_id,
+                        "type": "result",
+                        "success": False,
+                        "error": {
+                            "code": "invalid_format",
+                            "message": "Governed backup contract mismatch.",
+                        },
+                    }
+                )
+            else:
+                await ws.send_json(
+                    {
+                        "id": request_id,
+                        "type": "result",
+                        "success": True,
+                        "result": generated,
+                    }
+                )
+            continue
         if any(token in lowered for token in ("/update", "/create", "/delete", "call_service", "reload")):
             STATE.websocket_mutations[message_type] += 1
             await ws.send_json(

@@ -155,6 +155,11 @@ class ErrorTaxonomyTests(unittest.TestCase):
             "configuration_verification_failed", "configuration_partial_failure",
             "rollback_not_available", "rollback_approval_required",
             "rollback_failed", "change_plan_storage_error",
+            "backup_provider_unavailable", "backup_permission_failure",
+            "backup_creation_rejected", "backup_creation_failed",
+            "backup_operation_timeout", "backup_verification_timeout",
+            "backup_verification_failed", "backup_dispatch_indeterminate",
+            "duplicate_apply_attempt", "internal_invariant_violation",
             "invalid_cursor", "stale_cursor", "analysis_unavailable",
             "provider_unavailable", "provider_timeout", "provider_error",
             "provider_prohibited",
@@ -196,6 +201,7 @@ class ErrorTaxonomyTests(unittest.TestCase):
             ErrorCode.UPSTREAM_DASHBOARD_CONNECTION_FAILED,
             ErrorCode.UPSTREAM_DASHBOARD_TIMEOUT,
             ErrorCode.UPSTREAM_DASHBOARD_UPSTREAM_ERROR,
+            ErrorCode.BACKUP_PROVIDER_UNAVAILABLE,
         ):
             self.assertTrue(error_definition(code).retryable)
         for code in (
@@ -531,7 +537,7 @@ class GatewayAndHealthTests(unittest.TestCase):
         self.assertTrue(payload["success"])
         health = payload["data"]
         self.assertEqual(health["server"]["version"], SERVER_VERSION)
-        self.assertEqual(health["registered_tool_count"], 41)
+        self.assertEqual(health["registered_tool_count"], 42)
         self.assertIn("handoff_generation", health)
         self.assertIn("automation_reliability_analysis", health)
         self.assertIn("governance", health)

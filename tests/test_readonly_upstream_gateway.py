@@ -27,6 +27,7 @@ from ha_mcp_engineering.capabilities import (  # noqa: E402
 from ha_mcp_engineering.application import _serve  # noqa: E402
 from ha_mcp_engineering.clients.mcp import DashboardTransportError  # noqa: E402
 from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
+    BeforeDispatchFailure,
     McpReadCatalog,
     McpReadGatewayTransport,
     McpReadResult,
@@ -239,7 +240,7 @@ def catalog_tool(name, reviewed_schema=None, description=None):
     }
 
 
-def server_with_native_tools(count=41):
+def server_with_native_tools(count=42):
     server = FastMCP("gateway-inventory-test")
     for index in range(count):
         async def native_read():
@@ -580,6 +581,96 @@ class ReadGatewayTransportTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(caught.exception.category, "schema_mismatch")
         self.assertEqual(events, ["initialize", "tools/list", "validator"])
+
+    async def test_pre_dispatch_failure_is_not_reclassified_as_upstream(self):
+        events = []
+
+        @asynccontextmanager
+        async def fake_streamable(_url, **_kwargs):
+            yield ("read", "write", lambda: "session-id")
+
+        class Session:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+            async def initialize(self):
+                events.append("initialize")
+                return types.InitializeResult(
+                    protocolVersion="2025-03-26",
+                    capabilities=types.ServerCapabilities(),
+                    serverInfo=types.Implementation(
+                        name="ha-mcp", version="7.14.2"
+                    ),
+                )
+
+            async def list_tools(self, cursor=None):
+                del cursor
+                events.append("tools/list")
+                return types.ListToolsResult(
+                    tools=[
+                        types.Tool(
+                            name="ha_manage_backup",
+                            description="Reviewed backup operation.",
+                            inputSchema=schema("scope"),
+                        )
+                    ]
+                )
+
+            async def call_tool(self, _name, _arguments, **_kwargs):
+                events.append("tools/call")
+                raise AssertionError("tools/call must remain unreachable")
+
+        local_failure = RuntimeError("synthetic persistence failure")
+
+        async def before_dispatch():
+            events.append("before_dispatch")
+            raise local_failure
+
+        transport = McpReadGatewayTransport(
+            "http://upstream.invalid/synthetic-secret/mcp",
+            timeout_seconds=3,
+            client_version="2.1.0-beta.1",
+        )
+        with (
+            patch(
+                "ha_mcp_engineering.clients.upstream_read.streamablehttp_client",
+                fake_streamable,
+            ),
+            patch(
+                "ha_mcp_engineering.clients.upstream_read.ClientSession",
+                Session,
+            ),
+            self.assertRaises(BeforeDispatchFailure) as caught,
+        ):
+            await transport.execute_read(
+                "ha_manage_backup",
+                {
+                    "scope": "snapshot",
+                    "action": "create",
+                    "name": "Exact backup",
+                },
+                timeout_seconds=3,
+                catalog_validator=lambda _catalog: events.append(
+                    "validator"
+                ),
+                before_dispatch=before_dispatch,
+            )
+        self.assertIs(caught.exception.cause, local_failure)
+        self.assertEqual(
+            events,
+            [
+                "initialize",
+                "tools/list",
+                "validator",
+                "before_dispatch",
+            ],
+        )
 
 
 class GenericReadAuditTests(unittest.IsolatedAsyncioTestCase):
@@ -1157,8 +1248,8 @@ class PolicyInventoryTests(unittest.TestCase):
         self.assertTrue(all(item.read_only for item in automatic_annotations.values()))
         self.assertTrue(all(not item.destructive for item in automatic_annotations.values()))
 
-    def test_engineering_catalog_is_41_without_upstream_discovery(self):
-        self.assertEqual(len(registered_tools(get_registered_server()).values()), 41)
+    def test_engineering_catalog_is_42_without_upstream_discovery(self):
+        self.assertEqual(len(registered_tools(get_registered_server()).values()), 42)
 
     def test_exact_image_acceptance_is_committed_to_ci(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
@@ -2049,7 +2140,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         )
         catalog = build_capability_catalog()
         self.assertEqual(catalog["dynamic_upstream_count"], 1)
-        self.assertEqual(catalog["engineering_registered_count"], 41)
+        self.assertEqual(catalog["engineering_registered_count"], 42)
         route = capability_for_tool("ha_get_state")
         self.assertEqual(route["provider"], "upstream_read_gateway")
         self.assertEqual(route["operation_class"], "automatic_read")
@@ -3912,7 +4003,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
             server, sleep=unexpected_sleep
         )
         names = {tool.name for tool in registered_tools(server).values()}
-        self.assertEqual(len(names), 51)
+        self.assertEqual(len(names), 52)
         self.assertTrue(degraded["initialized"])
         self.assertFalse(degraded["admission_complete"])
         self.assertEqual(degraded["dynamically_exposed_count"], 10)
@@ -3957,14 +4048,14 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         await asyncio.wait_for(first_wait.wait(), timeout=1)
-        self.assertEqual(len(registered_tools(server).values()), 51)
+        self.assertEqual(len(registered_tools(server).values()), 52)
         self.assertEqual(
             gateway.health_snapshot()["admission_status"], "partially_admitted"
         )
         release_first_wait.set()
         await asyncio.wait_for(second_wait.wait(), timeout=1)
         recovered = gateway.health_snapshot()
-        self.assertEqual(len(registered_tools(server).values()), 67)
+        self.assertEqual(len(registered_tools(server).values()), 68)
         self.assertTrue(recovered["admission_complete"])
         self.assertEqual(recovered["admission_status"], "admitted_exact")
         self.assertEqual(transport.discovery_calls, 2)
@@ -4190,7 +4281,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         await asyncio.wait_for(slow_wait_started.wait(), timeout=1)
-        self.assertEqual(len(registered_tools(server).values()), 67)
+        self.assertEqual(len(registered_tools(server).values()), 68)
         waiting = gateway.health_snapshot()
         self.assertEqual(waiting["compatibility_reprobe_status"], "waiting")
         self.assertEqual(waiting["compatibility_reprobe_interval_seconds"], 17.0)
@@ -4206,7 +4297,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
             runtime_mode="home_assistant_addon",
             ha_connection={"checked": False, "status": "not_checked"},
         )
-        self.assertEqual(len(tool_names), 67)
+        self.assertEqual(len(tool_names), 68)
         self.assertTrue(health["initialized"])
         self.assertTrue(health["generic_delegation_available"])
         self.assertEqual(health["reconciliation_status"], "idle")
@@ -4214,12 +4305,12 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["dynamically_exposed_count"], 26)
         self.assertEqual(len(health["exposed_tools"]), 26)
         self.assertEqual(catalog["dynamic_upstream_count"], 26)
-        self.assertEqual(catalog["registered_count"], 67)
+        self.assertEqual(catalog["registered_count"], 68)
         self.assertEqual(
             catalog["upstream_read_gateway"]["dynamically_exposed_count"], 26
         )
         self.assertEqual(metadata["dynamic_upstream_tool_count"], 26)
-        self.assertEqual(metadata["tool_count"], 67)
+        self.assertEqual(metadata["tool_count"], 68)
         self.assertEqual(capability_for_tool("ha_read_0")["fallback"], "none")
 
         task.cancel()
@@ -4304,7 +4395,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(health["last_discovery_stable"])
         self.assertEqual(capability_for_tool("ha_get_state")["fallback"], "none")
 
-    async def test_listeners_start_before_delayed_upstream_recovers_41_to_67(self):
+    async def test_listeners_start_before_delayed_upstream_recovers_42_to_68(self):
         entries = [policy_entry(f"ha_read_{index}") for index in range(26)]
         tools = [catalog_tool(entry.upstream_name) for entry in entries]
         listeners_started = asyncio.Event()
@@ -4334,7 +4425,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
 
             @staticmethod
             def assert_retry_state(server, health):
-                if len(registered_tools(server).values()) != 41:
+                if len(registered_tools(server).values()) != 42:
                     raise AssertionError("native catalog changed during startup retry")
                 if health["dynamically_exposed_count"] != 0:
                     raise AssertionError("delegated tool appeared before admission")
@@ -4389,7 +4480,7 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(started_ports, {configured.port, configured.ingress_port})
         self.assertTrue(failure_observed.is_set())
         self.assertEqual(transport.discovery_calls, 2)
-        self.assertEqual(len(registered_tools(server).values()), 67)
+        self.assertEqual(len(registered_tools(server).values()), 68)
         self.assertTrue(gateway.health_snapshot()["admission_complete"])
 
     async def test_concurrent_reconciliation_is_single_flight(self):

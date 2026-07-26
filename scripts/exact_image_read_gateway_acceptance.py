@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from datetime import datetime, timezone
 import json
 import logging
 from pathlib import Path
@@ -30,6 +31,16 @@ from ha_mcp_engineering.tools import (  # noqa: E402
     get_registered_server,
     registered_tools,
 )
+from ha_mcp_engineering.clients.websocket import (  # noqa: E402
+    HomeAssistantWebSocketClient,
+)
+from ha_mcp_engineering.configuration import Settings  # noqa: E402
+from ha_mcp_engineering.governance.operational import (  # noqa: E402
+    BackupAdministrationGateway,
+)
+from ha_mcp_engineering.providers.operational_backup import (  # noqa: E402
+    ReviewedOperationalBackupProvider,
+)
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     catalog_fingerprint,
     load_reviewed_upstream_release_registry,
@@ -39,7 +50,7 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
 )
 
 
-EXPECTED_ENGINEERING_BASELINE_COUNT = 41
+EXPECTED_ENGINEERING_BASELINE_COUNT = 42
 ACCEPTANCE_TIMEOUT_SECONDS = 120
 MAX_DIAGNOSTIC_ITEMS = 32
 MAX_FAILURE_MESSAGE_CHARS = 512
@@ -1142,6 +1153,158 @@ async def inspect_engineering(
     }
 
 
+async def inspect_operational_backup(
+    *,
+    upstream_endpoint: str,
+    engineering_endpoint: str,
+    fixture_stats_url: str,
+    ha_url: str,
+    ha_token: str,
+    expected_upstream_version: str,
+    release: Any,
+) -> dict[str, Any]:
+    """Exercise the public proposal and exact runtime provider against the image."""
+
+    backup_name = (
+        f"Exact image governed backup {expected_upstream_version}"
+    )
+    before = fixture_stats(fixture_stats_url)
+    creates_before = len(before.get("operational_backup_creates") or [])
+    async with streamablehttp_client(engineering_endpoint) as (
+        read,
+        write,
+        _session_id,
+    ):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            proposal = decode_tool_result(
+                await session.call_tool(
+                    "create_backup_plan",
+                    {"backup_name": backup_name},
+                )
+            )
+    require(
+        proposal.get("success") is True,
+        "governed backup proposal failed in the exact image",
+    )
+    proposal_data = proposal.get("data") or {}
+    require(
+        proposal_data.get("proposal_only") is True
+        and proposal_data.get("provider_dispatch_occurred") is False,
+        "governed backup planning did not remain proposal-only",
+    )
+    after_proposal = fixture_stats(fixture_stats_url)
+    require(
+        len(after_proposal.get("operational_backup_creates") or [])
+        == creates_before,
+        "backup planning dispatched an operational write",
+    )
+
+    settings = Settings(
+        ha_url=ha_url,
+        ha_token=ha_token,
+        access_secret="synthetic-exact-image-engineering-secret",
+        port=0,
+        audit_path="/tmp/synthetic-exact-image-audit.jsonl",
+        rate_limit_per_minute=1,
+        rate_limit_burst=1,
+        destructive_services=frozenset(),
+        upstream_dashboard_mcp_url=upstream_endpoint,
+    )
+    provider = ReviewedOperationalBackupProvider()
+    provider.configure(settings)
+    gateway = BackupAdministrationGateway(
+        provider,
+        HomeAssistantWebSocketClient(settings),
+    )
+    planning = await gateway.planning_evidence()
+    provider_evidence = planning.get("provider") or {}
+    require(
+        provider_evidence.get("server_version")
+        == expected_upstream_version
+        and provider_evidence.get("compatibility_entry_id")
+        == release.entry_id,
+        "operational provider selected the wrong reviewed release",
+    )
+    dispatch_persisted = False
+
+    async def before_dispatch() -> None:
+        nonlocal dispatch_persisted
+        require(
+            not dispatch_persisted,
+            "operational dispatch callback ran more than once",
+        )
+        dispatch_persisted = True
+
+    dispatched = await gateway.create_full_backup(
+        backup_name,
+        before_dispatch=before_dispatch,
+    )
+    require(
+        dispatch_persisted,
+        "operational dispatch did not persist evidence before provider call",
+    )
+    verification = await gateway.verify_full_backup(
+        requested_name=backup_name,
+        baseline_ids=list(
+            (planning.get("baseline") or {}).get("backup_ids") or []
+        ),
+        apply_started_at=datetime.now(timezone.utc).isoformat(),
+        backup_id=dispatched.backup_id,
+        operation_id=dispatched.operation_id,
+    )
+    require(
+        verification.get("status") == "verified",
+        "independent backup/info verification did not pass",
+    )
+    after = fixture_stats(fixture_stats_url)
+    creates = after.get("operational_backup_creates") or []
+    require(
+        len(creates) - creates_before == 1,
+        "exactly one governed backup creation was not observed",
+    )
+    reached = creates[-1]
+    require(
+        reached
+        == {
+            "name": backup_name,
+            "agent_ids": ["hassio.local"],
+            "include_homeassistant": True,
+            "include_database": False,
+            "include_all_addons": True,
+            "password_present": True,
+        },
+        "the pinned image received arguments outside the reviewed contract",
+    )
+    health = provider.health_snapshot()
+    require(
+        health.get("dispatch_count") == 1
+        and health.get("fallback_count") == 0,
+        "operational provider accounting or fallback policy changed",
+    )
+    require(
+        not after.get("http_mutations")
+        and not after.get("websocket_mutations"),
+        "an unreviewed mutation reached the HA fixture",
+    )
+    return {
+        "proposal_only": True,
+        "provider": provider_evidence.get("provider"),
+        "compatibility_entry_id": provider_evidence.get(
+            "compatibility_entry_id"
+        ),
+        "dispatch_count": health.get("dispatch_count"),
+        "verified_backup_id": verification.get("evidence", {}).get(
+            "backup_id"
+        ),
+        "archive_integrity_validated": verification.get(
+            "evidence", {}
+        ).get("archive_integrity_validated"),
+        "fallback_count": health.get("fallback_count"),
+        "exact_arguments": reached,
+    }
+
+
 async def run(args: argparse.Namespace) -> dict[str, Any]:
     registry = load_reviewed_upstream_release_registry()
     release = registry.by_version.get(args.expected_upstream_version)
@@ -1243,6 +1406,15 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         policy=policy,
         release=release,
     )
+    operational_backup = await inspect_operational_backup(
+        upstream_endpoint=args.upstream_endpoint,
+        engineering_endpoint=args.engineering_endpoint,
+        fixture_stats_url=args.fixture_stats_url,
+        ha_url=args.ha_url,
+        ha_token=args.ha_token,
+        expected_upstream_version=args.expected_upstream_version,
+        release=release,
+    )
     return {
         "result": "PASS",
         "upstream_version": args.expected_upstream_version,
@@ -1259,6 +1431,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         ),
         "upstream_error_envelopes": upstream_error_envelopes,
         "classification_counts": policy.classification_counts,
+        "operational_backup": operational_backup,
         **engineering,
     }
 
@@ -1273,6 +1446,8 @@ def main() -> None:
     parser.add_argument("--expected-upstream-version", required=True)
     parser.add_argument("--engineering-endpoint", required=True)
     parser.add_argument("--fixture-stats-url", required=True)
+    parser.add_argument("--ha-url", required=True)
+    parser.add_argument("--ha-token", required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     args.output.parent.mkdir(parents=True, exist_ok=True)

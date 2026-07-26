@@ -299,6 +299,8 @@ jobs:
             --expected-upstream-version "$UPSTREAM_VERSION" \
             --engineering-endpoint "http://127.0.0.1:18100/${ENGINEERING_ACCESS_SECRET}/mcp" \
             --fixture-stats-url http://127.0.0.1:18123/__fixture__/stats \
+            --ha-url http://127.0.0.1:18123 \
+            --ha-token synthetic-read-gateway-token \
             --output "$RUNNER_TEMP/exact-image-read-gateway-result.json"
       - name: Verify deterministic upstream contract capture
         if: always()

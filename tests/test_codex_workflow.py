@@ -449,6 +449,32 @@ class ContextToolTests(unittest.TestCase):
             "docs/RC2DEV12_ACCEPTANCE.md",
         )
 
+    def test_exact_semantic_beta_pair_is_active(self):
+        version = "2.1.0-beta.1"
+        payload = json.loads(
+            self.isolated_context(
+                version,
+                {
+                    "docs/V2_1_0_BETA1_RELEASE_NOTES.md": (
+                        self.version_document("2.1A Dev1 release", version)
+                    ),
+                    "docs/V2_1_0_BETA1_ACCEPTANCE.md": (
+                        self.version_document("2.1A Dev1 acceptance", version)
+                    ),
+                },
+            )
+        )
+        self.assertEqual(payload["versions"]["release_stage"], "beta 1")
+        self.assertEqual(payload["documents"]["resolution_status"], "exact")
+        self.assertEqual(
+            payload["documents"]["active_release_notes"],
+            "docs/V2_1_0_BETA1_RELEASE_NOTES.md",
+        )
+        self.assertEqual(
+            payload["documents"]["active_acceptance_document"],
+            "docs/V2_1_0_BETA1_ACCEPTANCE.md",
+        )
+
     def test_staged_release_has_separate_exact_promotion_authority(self):
         current = "2.0.0-rc2-dev12"
         staged = "2.0.0-rc2-dev13"

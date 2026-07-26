@@ -60,7 +60,7 @@ def captured_tools(version: str) -> list[dict]:
     return value["tools"]
 
 
-def server_with_native_tools(count: int = 41) -> FastMCP:
+def server_with_native_tools(count: int = 42) -> FastMCP:
     server = FastMCP("reviewed-release-registry-test")
     for index in range(count):
         async def native_read() -> str:
