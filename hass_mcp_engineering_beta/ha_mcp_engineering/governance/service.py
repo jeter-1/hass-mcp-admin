@@ -33,10 +33,13 @@ from .models import (
     ChangeTarget,
     ChangeVerification,
     ConfigurationOperation,
+    OperationalPlanDetails,
     PlanStatus,
+    RecoveryVerification,
     RiskLevel,
     StepExecutionStatus,
 )
+from .config_validation import normalize_configuration_validation
 from .normalize import (
     AUTOMATION_NORMALIZATION_VERSION,
     normalize_automation,
@@ -62,6 +65,11 @@ from .storage import (
     ChangePlanStorageError,
     is_terminal_plan,
 )
+from .operational import (
+    BackupAdministrationGateway,
+    OperationalGatewayError,
+    normalize_backup_name,
+)
 from .validation import sanitize_context, validate_automation
 
 
@@ -70,6 +78,7 @@ APPROVAL_CHANNEL = "home_assistant_ingress"
 APPROVAL_CHALLENGE_TTL = timedelta(minutes=15)
 DEFAULT_APPROVER_PRINCIPAL = "home_assistant_admin_ingress"
 CONFIGURATION_PLAN_CONTRACT_VERSION = 2
+OPERATIONAL_PLAN_CONTRACT_VERSION = 3
 MAX_CONFIGURATION_OPERATIONS = 8
 SUPPORTED_CONFIGURATION_RESOURCES = frozenset({"automation", "script", "helper"})
 SUPPORTED_HELPER_TYPES = frozenset({"input_boolean", "input_number"})
@@ -856,12 +865,14 @@ class ChangeGovernanceService:
         *,
         now: Callable[[], datetime] | None = None,
         sensitive_values: tuple[str, ...] = (),
+        operational_gateway: BackupAdministrationGateway | Any | None = None,
     ):
         self.repository = repository
         self.gateway = gateway
         self.audit = audit
         self.now = now or (lambda: datetime.now(timezone.utc))
         self.sensitive_values = tuple(value for value in sensitive_values if value)
+        self.operational_gateway = operational_gateway
         self.logger = get_logger("governance")
         self._plan_locks: dict[str, asyncio.Lock] = {}
         self._target_locks: dict[object, asyncio.Lock] = {}
@@ -879,7 +890,37 @@ class ChangeGovernanceService:
 
     @staticmethod
     def plan_hash(plan: ChangePlan) -> str:
-        if plan.contract_version >= CONFIGURATION_PLAN_CONTRACT_VERSION:
+        if plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION:
+            operational = plan.operational
+            if operational is None:
+                return stable_hash({"invalid_operational_plan": plan.plan_id})
+            immutable = {
+                "contract_version": plan.contract_version,
+                "plan_family": plan.plan_family,
+                "plan_id": plan.plan_id,
+                "plan_version": plan.plan_version,
+                "operation": plan.operation.value,
+                "target_type": plan.target_type,
+                "target_id": plan.target_id,
+                "expires_at": plan.expires_at,
+                "requested_name": operational.requested_name,
+                "provider": operational.provider,
+                "provider_capability_evidence": (
+                    operational.provider_capability_evidence
+                ),
+                "expected_effects": operational.expected_effects,
+                "preconditions": operational.preconditions,
+                "verification_contract": operational.verification_contract,
+                "baseline": operational.baseline,
+                "limitations": operational.limitations,
+                "rollback_available": operational.rollback_available,
+                "risk_level": plan.risk.level.value,
+                "risk_apply_allowed": plan.risk.apply_allowed,
+                "approval_kind": plan.approval.approval_kind,
+                "approval_authority_version": plan.approval.authority_version,
+            }
+            return stable_hash(immutable)
+        if plan.contract_version == CONFIGURATION_PLAN_CONTRACT_VERSION:
             immutable_operations = []
             for operation in sorted(plan.operations, key=lambda item: item.order):
                 immutable_operations.append(
@@ -1066,6 +1107,27 @@ class ChangeGovernanceService:
             # Preserve their exact event shape.
             safe.pop("operation_id", None)
             safe.pop("operation_order", None)
+        if (
+            plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION
+            and plan.operational is not None
+        ):
+            safe.update(
+                {
+                    "plan_family": plan.plan_family,
+                    "provider": plan.operational.provider,
+                    "provider_dispatch_occurred": bool(
+                        plan.operational.dispatch.get("dispatched")
+                    ),
+                    "provider_operation_id": (
+                        plan.operational.dispatch.get(
+                            "provider_operation_id"
+                        )
+                    ),
+                    "fallback_occurred": False,
+                    "fallback": "none",
+                    "rollback_available": False,
+                }
+            )
         # Persist the event and lifecycle state before emitting a success audit.
         # If storage fails, the caller returns change_plan_storage_error and no
         # misleading success record is produced.
@@ -1077,8 +1139,10 @@ class ChangeGovernanceService:
             logging.INFO if result_status == "success" else logging.WARNING,
             event,
             (
-                "Governed configuration-plan lifecycle event."
-                if plan.contract_version >= CONFIGURATION_PLAN_CONTRACT_VERSION
+                "Governed operational-administration lifecycle event."
+                if plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION
+                else "Governed configuration-plan lifecycle event."
+                if plan.contract_version == CONFIGURATION_PLAN_CONTRACT_VERSION
                 else "Governed automation change lifecycle event."
             ),
             context=safe,
@@ -1089,6 +1153,17 @@ class ChangeGovernanceService:
         # particular, an expired plan must never be "expired" again merely
         # because a read surface inspects it.
         if is_terminal_plan(plan):
+            return False
+        if (
+            plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION
+            and plan.status
+            in {PlanStatus.APPLYING, PlanStatus.VERIFICATION_REQUIRED}
+            and plan.operational is not None
+            and plan.operational.dispatch.get("attempt_count") == 1
+        ):
+            # Expiration limits authority to dispatch. Once exact-once
+            # dispatch evidence exists, read-only verification must remain
+            # available indefinitely and must never reopen write authority.
             return False
         if self.now() >= datetime.fromisoformat(plan.expires_at):
             plan.status = PlanStatus.EXPIRED
@@ -1261,7 +1336,16 @@ class ChangeGovernanceService:
             "expires_at": plan.expires_at,
             "apply_allowed": bool(self._public(plan, include_configs=False)["apply_allowed"]),
         }
-        if plan.contract_version >= CONFIGURATION_PLAN_CONTRACT_VERSION:
+        if plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION:
+            value.update(
+                {
+                    "contract_version": plan.contract_version,
+                    "plan_family": plan.plan_family,
+                    "execution_outcome": plan.execution_outcome,
+                    "rollback_available": False,
+                }
+            )
+        elif plan.contract_version == CONFIGURATION_PLAN_CONTRACT_VERSION:
             value.update(
                 {
                     "contract_version": plan.contract_version,
@@ -1311,7 +1395,9 @@ class ChangeGovernanceService:
 
     @classmethod
     def _plan_target_keys(cls, plan: ChangePlan) -> set[tuple[str, str]]:
-        if plan.contract_version >= CONFIGURATION_PLAN_CONTRACT_VERSION:
+        if plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION:
+            return {("operational_backup", "global")}
+        if plan.contract_version == CONFIGURATION_PLAN_CONTRACT_VERSION:
             return {cls._operation_target_key(item) for item in plan.operations}
         return {(plan.target_type, plan.target_id)}
 
@@ -1456,6 +1542,175 @@ class ChangeGovernanceService:
             evidence=evidence,
             warnings=warnings,
         )
+
+    async def create_backup_plan(
+        self,
+        *,
+        backup_name: str = "",
+        title: str = "Create governed Home Assistant backup",
+        description: str = (
+            "Create one reviewed local Home Assistant configuration and add-on backup."
+        ),
+        expiration_minutes: int = 60,
+        caller_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Create a proposal only; provider creation is unreachable here."""
+
+        if self.operational_gateway is None:
+            raise GovernanceError(ErrorCode.BACKUP_PROVIDER_UNAVAILABLE)
+        now = self.now()
+        try:
+            normalized_name = normalize_backup_name(
+                backup_name, generated_at=now
+            )
+        except (TypeError, ValueError) as exc:
+            raise GovernanceError(
+                ErrorCode.INVALID_REQUEST,
+                details={"reason": "invalid_backup_name"},
+            ) from exc
+        if any(secret and secret in normalized_name for secret in self.sensitive_values):
+            raise GovernanceError(
+                ErrorCode.INVALID_REQUEST,
+                details={"reason": "backup_name_contains_sensitive_data"},
+            )
+        expiration_minutes = max(5, min(int(expiration_minutes), 1440))
+        try:
+            evidence = await self.operational_gateway.planning_evidence()
+        except OperationalGatewayError as exc:
+            raise GovernanceError(
+                self._operational_error_code(exc.category, dispatched=False)
+            ) from None
+        provider_evidence = evidence.get("provider")
+        baseline = evidence.get("baseline")
+        if not isinstance(provider_evidence, dict) or not isinstance(
+            baseline, dict
+        ):
+            raise GovernanceError(ErrorCode.INTERNAL_INVARIANT_VIOLATION)
+        if (
+            baseline.get("inventory_readable") is not True
+            or not isinstance(baseline.get("backup_ids"), list)
+            or baseline.get("operation_state") != "idle"
+        ):
+            raise GovernanceError(ErrorCode.BACKUP_PROVIDER_UNAVAILABLE)
+        risk = ChangeRiskAssessment(
+            level=RiskLevel.MEDIUM,
+            reasons=[
+                "Backup creation is an administrative infrastructure write.",
+                "The operation consumes local storage and cannot be automatically rolled back.",
+            ],
+            apply_allowed=True,
+            evidence=[
+                {
+                    "field": "operation",
+                    "trigger": "governed_full_backup_creation",
+                }
+            ],
+            warnings=[
+                "The reviewed provider excludes the recorder database.",
+                "Archive-content integrity is not independently validated.",
+            ],
+        )
+        operational = OperationalPlanDetails(
+            schema_version=1,
+            family="operational_administration",
+            operation=ChangeOperation.CREATE_FULL_BACKUP.value,
+            requested_name=normalized_name,
+            provider=str(provider_evidence.get("provider") or ""),
+            provider_capability_evidence=provider_evidence,
+            expected_effects=[
+                "Create one new local Home Assistant backup archive.",
+                "Include Home Assistant configuration and all add-ons when supervised.",
+                "Exclude the recorder database under the reviewed upstream contract.",
+            ],
+            preconditions=[
+                "Home Assistant backup inventory is readable.",
+                "The exact reviewed upstream backup contract is admitted.",
+                "One unexpired external administrator approval is bound to this plan hash.",
+            ],
+            verification_contract={
+                "version": 1,
+                "required": [
+                    "new_backup_identifier",
+                    "not_in_preapply_baseline",
+                    "completed_operation_state",
+                    "readable_metadata",
+                    "exact_name",
+                    "creation_time_in_apply_window",
+                    "nonzero_size_when_reported",
+                    "post_apply_inventory_readable",
+                ],
+                "archive_integrity_validation": "unsupported",
+                "no_blind_redispatch": True,
+            },
+            baseline=baseline,
+            dispatch={
+                "attempt_count": 0,
+                "dispatched": False,
+                "request_id": None,
+                "attempted_at": None,
+                "provider_operation_id": None,
+                "backup_id": None,
+            },
+            verification=RecoveryVerification(),
+            limitations=[
+                "Recorder database content is excluded by the reviewed provider.",
+                "Archive-content integrity is not independently validated.",
+                "Restore, delete, download, retention, and external-storage operations are unavailable.",
+            ],
+            rollback_available=False,
+        )
+        plan = ChangePlan(
+            plan_id=self._new_id(),
+            plan_version=1,
+            created_at=now.isoformat(),
+            updated_at=now.isoformat(),
+            expires_at=(now + timedelta(minutes=expiration_minutes)).isoformat(),
+            status=PlanStatus.AWAITING_APPROVAL,
+            title=title[:160],
+            description=description[:1000],
+            requested_by=current_caller_id(),
+            target=ChangeTarget("backup", "local_full_backup"),
+            operation=ChangeOperation.CREATE_FULL_BACKUP,
+            proposed_config={},
+            current_config=None,
+            normalized_proposed_config={},
+            normalized_current_config=None,
+            current_state_fingerprint=stable_hash(baseline),
+            proposed_config_hash=stable_hash(
+                {
+                    "operation": ChangeOperation.CREATE_FULL_BACKUP.value,
+                    "name": normalized_name,
+                }
+            ),
+            risk=risk,
+            normalization_version=1,
+            warnings=list(risk.warnings),
+            validation_results={
+                "valid": True,
+                "planning_write_performed": False,
+                "provider_available": True,
+                "home_assistant_connected": True,
+            },
+            dry_run_results={
+                "operation": ChangeOperation.CREATE_FULL_BACKUP.value,
+                "provider_dispatch_occurred": False,
+                "rollback_available": False,
+            },
+            rollback=ChangeRollback(available=False, status="unavailable"),
+            caller_context=sanitize_context(caller_context),
+            contract_version=OPERATIONAL_PLAN_CONTRACT_VERSION,
+            plan_family="operational_administration",
+            operational=operational,
+            execution_outcome="not_applied",
+        )
+        self._supersede_prior(plan)
+        self._record(plan, "operational_backup_plan_created", "success")
+        return {
+            "status": "awaiting_approval",
+            "proposal_only": True,
+            "provider_dispatch_occurred": False,
+            "plan": self._public(plan, include_configs=False),
+        }
 
     async def create_plan(
         self,
@@ -2241,7 +2496,27 @@ class ChangeGovernanceService:
             "snapshot_fingerprint": plan.snapshot.fingerprint if plan.snapshot and plan.approval.approval_kind == "rollback" else None,
             "rollback_target": plan.target_id if plan.approval.approval_kind == "rollback" else None,
         }
-        if plan.contract_version >= CONFIGURATION_PLAN_CONTRACT_VERSION:
+        if plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION:
+            operational = plan.operational
+            if operational is None:
+                raise GovernanceError(ErrorCode.INTERNAL_INVARIANT_VIOLATION)
+            summary["operational_review"] = {
+                "family": operational.family,
+                "operation": operational.operation,
+                "requested_name": operational.requested_name,
+                "provider": operational.provider,
+                "expected_effects": operational.expected_effects[:10],
+                "preconditions": operational.preconditions[:10],
+                "verification_contract": operational.verification_contract,
+                "limitations": operational.limitations[:10],
+                "rollback_available": False,
+                "provider_arguments": {
+                    "scope": "snapshot",
+                    "action": "create",
+                    "name": operational.requested_name,
+                },
+            }
+        elif plan.contract_version == CONFIGURATION_PLAN_CONTRACT_VERSION:
             operation_summaries = []
             for operation in sorted(
                 plan.operations, key=lambda item: item.order
@@ -2349,7 +2624,7 @@ class ChangeGovernanceService:
             if (
                 decision == "approve"
                 and plan.contract_version
-                >= CONFIGURATION_PLAN_CONTRACT_VERSION
+                == CONFIGURATION_PLAN_CONTRACT_VERSION
                 and not self._configuration_approval_review_complete(plan)
             ):
                 self._reject_external_decision(
@@ -2405,7 +2680,11 @@ class ChangeGovernanceService:
         plan_lock = self._plan_locks.setdefault(plan_id, asyncio.Lock())
         async with plan_lock:
             plan = self._load(plan_id)
-            if plan.contract_version >= CONFIGURATION_PLAN_CONTRACT_VERSION:
+            if plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION:
+                return await self._apply_operational_backup(
+                    plan, expected_plan_hash
+                )
+            if plan.contract_version == CONFIGURATION_PLAN_CONTRACT_VERSION:
                 return await self._apply_configuration_plan(
                     plan, expected_plan_hash
                 )
@@ -2427,6 +2706,362 @@ class ChangeGovernanceService:
                 raise GovernanceError(ErrorCode.CHANGE_IN_PROGRESS)
             async with target_lock:
                 return await self._apply_locked(plan, expected_plan_hash)
+
+    async def _apply_operational_backup(
+        self, plan: ChangePlan, expected_plan_hash: str
+    ) -> dict[str, Any]:
+        self._resolve_lifecycle(plan)
+        if plan.status == PlanStatus.EXPIRED:
+            raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
+        self._require_current_normalization(plan)
+        operational = plan.operational
+        if operational is None or self.operational_gateway is None:
+            raise GovernanceError(ErrorCode.INTERNAL_INVARIANT_VIOLATION)
+        calculated = self.plan_hash(plan)
+        if not expected_plan_hash or expected_plan_hash != calculated:
+            self._reject_apply(
+                plan,
+                ErrorCode.APPROVAL_HASH_MISMATCH,
+                details={
+                    "hash_validation": {
+                        "performed": bool(expected_plan_hash),
+                        "result": (
+                            "mismatch"
+                            if expected_plan_hash
+                            else "not_supplied"
+                        ),
+                    }
+                },
+            )
+        if plan.status == PlanStatus.APPLIED:
+            return {
+                "status": "already_applied",
+                "provider_dispatch_occurred": True,
+                "redispatch_performed": False,
+                "plan": self._public(plan, include_configs=False),
+            }
+        if (
+            plan.status == PlanStatus.APPLYING
+            and operational.dispatch.get("attempt_count") == 1
+        ):
+            plan.status = PlanStatus.VERIFICATION_REQUIRED
+            plan.execution_outcome = "indeterminate"
+            operational.final_outcome = "verification_required"
+            operational.verification.status = "verification_required"
+            operational.verification.evidence = {
+                "reason": "resumed_after_incomplete_apply",
+                "redispatch_performed": False,
+            }
+            self._record(
+                plan,
+                "operational_backup_dispatch_indeterminate",
+                "partial",
+                error_code=(
+                    ErrorCode.BACKUP_DISPATCH_INDETERMINATE.value
+                ),
+            )
+            return await self._resume_operational_verification(plan)
+        if plan.status == PlanStatus.VERIFICATION_REQUIRED:
+            return await self._resume_operational_verification(plan)
+        if plan.status in {
+            PlanStatus.FAILED,
+            PlanStatus.VERIFICATION_FAILED,
+        } or plan.approval.state == ApprovalState.CONSUMED:
+            raise GovernanceError(ErrorCode.DUPLICATE_APPLY_ATTEMPT)
+        if plan.status == PlanStatus.REJECTED or plan.approval.state == ApprovalState.REJECTED:
+            self._reject_apply(plan, ErrorCode.CHANGE_PLAN_REJECTED)
+        if not self._valid_external_approval(plan, "apply"):
+            self._reject_apply(plan, ErrorCode.EXTERNAL_APPROVAL_REQUIRED)
+        if plan.approval.bound_plan_hash != calculated:
+            self._reject_apply(plan, ErrorCode.APPROVAL_HASH_MISMATCH)
+
+        target_lock = self._target_locks.setdefault(
+            ("operational_backup", "global"), asyncio.Lock()
+        )
+        if target_lock.locked():
+            self._reject_apply(plan, ErrorCode.CHANGE_IN_PROGRESS)
+        async with target_lock:
+            try:
+                fresh = await self.operational_gateway.planning_evidence()
+            except OperationalGatewayError as exc:
+                self._record(
+                    plan,
+                    "operational_backup_preflight_failed",
+                    "failure",
+                    error_code=self._operational_error_code(
+                        exc.category, dispatched=False
+                    ).value,
+                )
+                raise GovernanceError(
+                    self._operational_error_code(
+                        exc.category, dispatched=False
+                    )
+                ) from None
+            planned_provider = operational.provider_capability_evidence
+            observed_provider = fresh.get("provider")
+            observed_baseline = fresh.get("baseline")
+            if (
+                not isinstance(observed_provider, dict)
+                or not isinstance(observed_baseline, dict)
+                or any(
+                    observed_provider.get(field)
+                    != planned_provider.get(field)
+                    for field in (
+                        "provider",
+                        "server_name",
+                        "server_version",
+                        "protocol_version",
+                        "compatibility_entry_id",
+                        "catalog_fingerprint",
+                        "tool_contract_fingerprint",
+                    )
+                )
+                or observed_baseline.get("backup_ids")
+                != operational.baseline.get("backup_ids")
+                or observed_baseline.get("operation_state") != "idle"
+            ):
+                self._record(
+                    plan,
+                    "operational_backup_preflight_failed",
+                    "failure",
+                    error_code=ErrorCode.STALE_TARGET_STATE.value,
+                )
+                raise GovernanceError(ErrorCode.STALE_TARGET_STATE)
+
+            async def before_dispatch() -> None:
+                if operational.dispatch.get("attempt_count") not in {0, None}:
+                    raise GovernanceError(
+                        ErrorCode.DUPLICATE_APPLY_ATTEMPT
+                    )
+                plan.status = PlanStatus.APPLYING
+                plan.execution_outcome = "dispatching"
+                plan.apply_request_id = current_request_id()
+                plan.approval.state = ApprovalState.CONSUMED
+                plan.approval.consumed_at = self._timestamp()
+                operational.dispatch.update(
+                    {
+                        "attempt_count": 1,
+                        "dispatched": True,
+                        "request_id": plan.apply_request_id,
+                        "attempted_at": self._timestamp(),
+                    }
+                )
+                self._record(
+                    plan,
+                    "operational_backup_dispatch_recorded",
+                    "success",
+                )
+
+            try:
+                dispatch = await self.operational_gateway.create_full_backup(
+                    operational.requested_name,
+                    before_dispatch=before_dispatch,
+                )
+                operational.dispatch.update(
+                    {
+                        "provider_operation_id": dispatch.operation_id,
+                        "backup_id": dispatch.backup_id,
+                        "provider_response_received": True,
+                        "provider_response_at": self._timestamp(),
+                    }
+                )
+                self._record(
+                    plan,
+                    "operational_backup_provider_completed",
+                    "success",
+                )
+            except OperationalGatewayError as exc:
+                if not exc.dispatched:
+                    code = self._operational_error_code(
+                        exc.category, dispatched=False
+                    )
+                    self._record(
+                        plan,
+                        "operational_backup_dispatch_rejected",
+                        "failure",
+                        error_code=code.value,
+                    )
+                    raise GovernanceError(code) from None
+                if exc.category in {
+                    "permission_failure",
+                    "backup_rejected",
+                    "backup_failed",
+                }:
+                    code = self._operational_error_code(
+                        exc.category, dispatched=True
+                    )
+                    operational.final_outcome = "provider_rejected"
+                    plan.status = PlanStatus.FAILED
+                    plan.execution_outcome = "failed"
+                    operational.dispatch["provider_response_received"] = True
+                    operational.dispatch["failure_category"] = exc.category
+                    plan.failure_information = {
+                        "error_code": code.value,
+                        "failure_category": exc.category,
+                        "provider_dispatch_occurred": True,
+                        "redispatch_performed": False,
+                    }
+                    self._record(
+                        plan,
+                        "operational_backup_provider_failed",
+                        "failure",
+                        error_code=code.value,
+                    )
+                    raise GovernanceError(code) from None
+                operational.final_outcome = "verification_required"
+                plan.status = PlanStatus.VERIFICATION_REQUIRED
+                plan.execution_outcome = "indeterminate"
+                operational.dispatch["provider_response_received"] = False
+                operational.dispatch["failure_category"] = exc.category
+                self._record(
+                    plan,
+                    "operational_backup_dispatch_indeterminate",
+                    "partial",
+                    error_code=ErrorCode.BACKUP_DISPATCH_INDETERMINATE.value,
+                )
+                return await self._resume_operational_verification(
+                    plan, initial_error=exc.category
+                )
+            return await self._resume_operational_verification(plan)
+
+    async def _resume_operational_verification(
+        self,
+        plan: ChangePlan,
+        *,
+        initial_error: str | None = None,
+    ) -> dict[str, Any]:
+        operational = plan.operational
+        if operational is None or self.operational_gateway is None:
+            raise GovernanceError(ErrorCode.INTERNAL_INVARIANT_VIOLATION)
+        if operational.dispatch.get("attempt_count") != 1:
+            raise GovernanceError(ErrorCode.INTERNAL_INVARIANT_VIOLATION)
+        verification = operational.verification
+        verification.attempt_count += 1
+        verification.checked_at = self._timestamp()
+        self._record(
+            plan,
+            "operational_backup_verification_started",
+            "success",
+        )
+        try:
+            result = await self.operational_gateway.verify_full_backup(
+                requested_name=operational.requested_name,
+                baseline_ids=list(
+                    operational.baseline.get("backup_ids") or []
+                ),
+                apply_started_at=str(
+                    operational.dispatch.get("attempted_at") or plan.updated_at
+                ),
+                backup_id=operational.dispatch.get("backup_id"),
+                operation_id=operational.dispatch.get(
+                    "provider_operation_id"
+                ),
+            )
+        except OperationalGatewayError as exc:
+            verification.status = "verification_required"
+            verification.inventory_readable = False
+            verification.evidence = {
+                "failure_category": exc.category,
+                "redispatch_performed": False,
+            }
+            plan.status = PlanStatus.VERIFICATION_REQUIRED
+            plan.execution_outcome = "indeterminate"
+            operational.final_outcome = "verification_required"
+            code = self._operational_error_code(
+                exc.category, dispatched=True
+            )
+            self._record(
+                plan,
+                "operational_backup_verification_deferred",
+                "partial",
+                error_code=code.value,
+            )
+            raise GovernanceError(code) from None
+
+        verification.status = str(result.get("status") or "failed")
+        verification.operation_completed = result.get(
+            "operation_completed"
+        )
+        verification.inventory_readable = result.get("inventory_readable")
+        verification.archive_integrity_validated = False
+        verification.mismatch_fields = [
+            str(item)[:160]
+            for item in (result.get("mismatch_fields") or [])[:20]
+        ]
+        verification.evidence = dict(result.get("evidence") or {})
+        if verification.status == "verified":
+            plan.status = PlanStatus.APPLIED
+            plan.applied_at = self._timestamp()
+            plan.execution_outcome = "applied_verified"
+            operational.final_outcome = "backup_created_and_verified"
+            self._record(
+                plan,
+                "operational_backup_verified",
+                "success",
+            )
+            return {
+                "status": "applied",
+                "provider_dispatch_occurred": True,
+                "redispatch_performed": False,
+                "verification": verification.__dict__,
+                "rollback_available": False,
+                "plan": self._public(plan, include_configs=False),
+            }
+        if verification.status == "pending":
+            plan.status = PlanStatus.VERIFICATION_REQUIRED
+            plan.execution_outcome = "indeterminate"
+            operational.final_outcome = "verification_required"
+            code = (
+                ErrorCode.BACKUP_DISPATCH_INDETERMINATE
+                if initial_error
+                else ErrorCode.BACKUP_VERIFICATION_TIMEOUT
+            )
+            self._record(
+                plan,
+                "operational_backup_verification_deferred",
+                "partial",
+                error_code=code.value,
+            )
+            raise GovernanceError(code)
+        plan.status = PlanStatus.VERIFICATION_FAILED
+        plan.execution_outcome = "verification_failed"
+        operational.final_outcome = "verification_failed"
+        plan.failure_information = {
+            "error_code": ErrorCode.BACKUP_VERIFICATION_FAILED.value,
+            "mismatch_fields": verification.mismatch_fields,
+        }
+        self._record(
+            plan,
+            "operational_backup_verification_failed",
+            "failure",
+            error_code=ErrorCode.BACKUP_VERIFICATION_FAILED.value,
+        )
+        raise GovernanceError(ErrorCode.BACKUP_VERIFICATION_FAILED)
+
+    @staticmethod
+    def _operational_error_code(
+        category: str, *, dispatched: bool
+    ) -> ErrorCode:
+        if dispatched and category in {
+            "indeterminate_dispatch",
+            "provider_timeout",
+            "provider_unavailable",
+        }:
+            return ErrorCode.BACKUP_DISPATCH_INDETERMINATE
+        return {
+            "invalid_request": ErrorCode.INVALID_REQUEST,
+            "provider_unavailable": ErrorCode.BACKUP_PROVIDER_UNAVAILABLE,
+            "permission_failure": ErrorCode.BACKUP_PERMISSION_FAILURE,
+            "backup_rejected": ErrorCode.BACKUP_CREATION_REJECTED,
+            "backup_failed": ErrorCode.BACKUP_CREATION_FAILED,
+            "provider_timeout": ErrorCode.BACKUP_OPERATION_TIMEOUT,
+            "verification_timeout": ErrorCode.BACKUP_VERIFICATION_TIMEOUT,
+            "verification_failed": ErrorCode.BACKUP_VERIFICATION_FAILED,
+            "indeterminate_dispatch": ErrorCode.BACKUP_DISPATCH_INDETERMINATE,
+            "internal_invariant_violation": (
+                ErrorCode.INTERNAL_INVARIANT_VIOLATION
+            ),
+        }.get(category, ErrorCode.BACKUP_CREATION_FAILED)
 
     def _configuration_writer_available(
         self, operations: list[ConfigurationOperation]
@@ -3662,7 +4297,65 @@ class ChangeGovernanceService:
         )
 
     def _require_current_normalization(self, plan: ChangePlan) -> None:
-        if plan.contract_version >= CONFIGURATION_PLAN_CONTRACT_VERSION:
+        if plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION:
+            operational = plan.operational
+            try:
+                normalized_name = normalize_backup_name(
+                    operational.requested_name if operational else None,
+                    generated_at=self.now(),
+                )
+            except (TypeError, ValueError):
+                normalized_name = ""
+            constraints = (
+                operational.provider_capability_evidence.get(
+                    "argument_constraints"
+                )
+                if operational
+                and isinstance(
+                    operational.provider_capability_evidence, dict
+                )
+                else None
+            )
+            if (
+                operational is None
+                or operational.schema_version != 1
+                or operational.family != "operational_administration"
+                or operational.operation
+                != ChangeOperation.CREATE_FULL_BACKUP.value
+                or plan.plan_family != "operational_administration"
+                or plan.operation != ChangeOperation.CREATE_FULL_BACKUP
+                or plan.target_type != "backup"
+                or plan.target_id != "local_full_backup"
+                or normalized_name != operational.requested_name
+                or operational.provider != "upstream_operational_backup"
+                or not isinstance(constraints, dict)
+                or constraints.get("scope") != "snapshot"
+                or constraints.get("action") != "create"
+                or constraints.get("restore_allowed") is not False
+                or constraints.get("delete_allowed") is not False
+                or constraints.get("arbitrary_arguments_allowed") is not False
+                or operational.rollback_available
+                or plan.rollback.available
+                or stable_hash(operational.baseline)
+                != plan.current_state_fingerprint
+                or stable_hash(
+                    {
+                        "operation": ChangeOperation.CREATE_FULL_BACKUP.value,
+                        "name": operational.requested_name,
+                    }
+                )
+                != plan.proposed_config_hash
+            ):
+                raise GovernanceError(
+                    ErrorCode.APPROVAL_HASH_MISMATCH,
+                    details={
+                        "resource_id": plan.plan_id,
+                        "reason": "operational_plan_contract_mismatch",
+                    },
+                )
+            self._require_v2_persisted_plan_safe(plan)
+            return
+        elif plan.contract_version == CONFIGURATION_PLAN_CONTRACT_VERSION:
             self._require_v2_persisted_plan_safe(plan)
             if (
                 plan.contract_version != CONFIGURATION_PLAN_CONTRACT_VERSION
@@ -3766,46 +4459,10 @@ class ChangeGovernanceService:
                 },
             )
 
-        is_object = isinstance(result, dict)
-        result_present = is_object and "result" in result
-        errors_present = is_object and "errors" in result
-        raw_result = result.get("result") if is_object else result
-        raw_errors = result.get("errors") if is_object else None
-        safe_result = sanitize_untrusted_data(
-            raw_result,
+        return normalize_configuration_validation(
+            result,
             known_secrets=self.sensitive_values,
-            max_string=2048,
-        ).value
-        safe_errors = sanitize_untrusted_data(
-            raw_errors,
-            known_secrets=self.sensitive_values,
-            max_string=2048,
-        ).value
-
-        if not is_object:
-            reason = "malformed_response"
-        elif not result_present:
-            reason = "missing_result"
-        elif raw_result != "valid":
-            reason = "configuration_invalid"
-        elif not errors_present:
-            reason = "missing_errors"
-        elif raw_errors is not None:
-            reason = "configuration_errors_present"
-        else:
-            reason = "explicit_valid_result"
-
-        details = {
-            "response_type": type(result).__name__,
-            "result_present": result_present,
-            "result": safe_result,
-            "errors_present": errors_present,
-            "errors": safe_errors,
-            "reason": reason,
-        }
-        if reason == "explicit_valid_result":
-            return "valid", details
-        return "failed", details
+        )
 
     async def _config_check(self) -> str:
         # Contract-v1 compatibility path. Historical automation plans accepted
@@ -3950,6 +4607,22 @@ class ChangeGovernanceService:
         plans = self.resolved_plans()
         storage = self.repository.health()
         events = [event.event for plan in plans for event in plan.events]
+        operational_plans = [
+            plan
+            for plan in plans
+            if plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION
+            and plan.operation == ChangeOperation.CREATE_FULL_BACKUP
+        ]
+        operational_failures = sorted(
+            (
+                event
+                for plan in operational_plans
+                for event in plan.events
+                if event.error_code
+            ),
+            key=lambda event: event.timestamp,
+            reverse=True,
+        )
         approval_failures = sorted(
             (
                 event
@@ -3960,7 +4633,7 @@ class ChangeGovernanceService:
             key=lambda event: event.timestamp,
             reverse=True,
         )
-        return {
+        summary = {
             "enabled": True,
             "storage": storage,
             "storage_status": storage["status"],
@@ -4015,6 +4688,82 @@ class ChangeGovernanceService:
                 None,
             ),
         }
+        summary["approval_consumption_count"] += events.count(
+            "operational_backup_dispatch_recorded"
+        )
+        summary["operational_administration"] = {
+            "counter_sources": {
+                "plans_and_outcomes": "persistent_governance_state",
+                "active_applies": "current_process_state",
+                "provider": "cumulative_process_state",
+            },
+            "plans_by_type": {
+                "create_full_backup": len(operational_plans),
+            },
+            "backup_plans_created": events.count(
+                "operational_backup_plan_created"
+            ),
+            "backup_applies_attempted": events.count(
+                "operational_backup_dispatch_recorded"
+            ),
+            "successful_backups": sum(
+                plan.status == PlanStatus.APPLIED
+                for plan in operational_plans
+            ),
+            "failed_backups": sum(
+                plan.status
+                in {PlanStatus.FAILED, PlanStatus.VERIFICATION_FAILED}
+                for plan in operational_plans
+            ),
+            "indeterminate_outcomes": sum(
+                plan.status == PlanStatus.VERIFICATION_REQUIRED
+                for plan in operational_plans
+            ),
+            "verification_failures": sum(
+                plan.status == PlanStatus.VERIFICATION_FAILED
+                for plan in operational_plans
+            ),
+            "active_operational_applies": int(
+                bool(
+                    self._target_locks.get(
+                        ("operational_backup", "global")
+                    )
+                    and self._target_locks[
+                        ("operational_backup", "global")
+                    ].locked()
+                )
+            ),
+            "last_successful_backup_at": next(
+                (
+                    plan.applied_at
+                    for plan in sorted(
+                        operational_plans,
+                        key=lambda item: item.applied_at or "",
+                        reverse=True,
+                    )
+                    if plan.applied_at
+                ),
+                None,
+            ),
+            "last_operational_failure_category": (
+                operational_failures[0].error_code
+                if operational_failures
+                else None
+            ),
+            "provider": (
+                self.operational_gateway.health_snapshot()
+                if self.operational_gateway is not None
+                else {
+                    "configured": False,
+                    "operational_status": "unavailable",
+                    "fallback_count": 0,
+                    "fallback_policy": "none",
+                }
+            ),
+            "fallback_count": 0,
+            "rollback_available": False,
+        }
+        return summary
 
 
 def _mismatch_fields(expected: dict[str, Any], actual: dict[str, Any]) -> list[str]:

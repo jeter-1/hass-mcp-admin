@@ -14,6 +14,7 @@ class PlanStatus(str, Enum):
     AWAITING_APPROVAL = "awaiting_approval"
     APPROVED = "approved"
     APPLYING = "applying"
+    VERIFICATION_REQUIRED = "verification_required"
     APPLIED = "applied"
     VERIFICATION_FAILED = "verification_failed"
     FAILED = "failed"
@@ -29,6 +30,7 @@ class ChangeOperation(str, Enum):
     CREATE_AUTOMATION = "create_automation"
     UPDATE_AUTOMATION = "update_automation"
     CONFIGURATION_PLAN = "configuration_plan"
+    CREATE_FULL_BACKUP = "create_full_backup"
 
 
 class RiskLevel(str, Enum):
@@ -196,6 +198,52 @@ class ConfigurationOperation:
 
 
 @dataclass
+class RecoveryVerification:
+    """Bounded operation verification that can resume without redispatch."""
+
+    contract_version: int = 1
+    status: str = "not_run"
+    attempt_count: int = 0
+    checked_at: str | None = None
+    operation_completed: bool | None = None
+    inventory_readable: bool | None = None
+    archive_integrity_validated: bool = False
+    mismatch_fields: list[str] = field(default_factory=list)
+    evidence: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class OperationalPlanDetails:
+    """Versioned, operation-specific administrative plan evidence."""
+
+    schema_version: int
+    family: str
+    operation: str
+    requested_name: str
+    provider: str
+    provider_capability_evidence: dict[str, Any]
+    expected_effects: list[str]
+    preconditions: list[str]
+    verification_contract: dict[str, Any]
+    baseline: dict[str, Any]
+    dispatch: dict[str, Any] = field(default_factory=dict)
+    verification: RecoveryVerification = field(
+        default_factory=RecoveryVerification
+    )
+    final_outcome: str | None = None
+    limitations: list[str] = field(default_factory=list)
+    rollback_available: bool = False
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "OperationalPlanDetails":
+        data = dict(value)
+        data["verification"] = RecoveryVerification(
+            **data.get("verification", {})
+        )
+        return cls(**data)
+
+
+@dataclass
 class ChangePlan:
     plan_id: str
     plan_version: int
@@ -233,6 +281,8 @@ class ChangePlan:
     operations: list[ConfigurationOperation] = field(default_factory=list)
     execution_outcome: str | None = None
     configuration_check_status: str | None = None
+    plan_family: str = "configuration_change"
+    operational: OperationalPlanDetails | None = None
 
     @property
     def target_type(self) -> str:
@@ -268,6 +318,13 @@ class ChangePlan:
             value.pop("operations", None)
             value.pop("execution_outcome", None)
             value.pop("configuration_check_status", None)
+            value.pop("plan_family", None)
+            value.pop("operational", None)
+        elif self.contract_version == 2:
+            # Contract-v2 records predate operational administration. Preserve
+            # their exact persisted representation.
+            value.pop("plan_family", None)
+            value.pop("operational", None)
         return value
 
     @classmethod
@@ -280,6 +337,12 @@ class ChangePlan:
         ]
         data.setdefault("execution_outcome", None)
         data.setdefault("configuration_check_status", None)
+        data.setdefault("plan_family", "configuration_change")
+        data["operational"] = (
+            OperationalPlanDetails.from_dict(data["operational"])
+            if isinstance(data.get("operational"), dict)
+            else None
+        )
         # Records written before Beta 24 did not declare their normalization
         # contract. Keep them readable as v1 records, but governance refuses
         # to approve or apply them under the new hash semantics.

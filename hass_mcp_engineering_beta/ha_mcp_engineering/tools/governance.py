@@ -29,6 +29,32 @@ ConfigurationOperations = Annotated[
 ]
 
 
+async def create_backup_plan(
+    backup_name: Annotated[str, Field(max_length=96)] = "",
+    expiration_minutes: Annotated[int, Field(ge=5, le=1440)] = 60,
+) -> str:
+    """Propose one governed local backup; planning never dispatches creation.
+
+    The operation is fixed to the reviewed snapshot/create provider contract.
+    Restore, delete, download, partial selection, retention, credentials, and
+    arbitrary provider arguments are not accepted. Exact external administrator
+    approval and a later apply_change_plan call are required.
+    """
+    return await run_structured(
+        "create_backup_plan",
+        "Created a governed backup proposal without dispatching backup creation.",
+        lambda: GOVERNANCE.require().create_backup_plan(
+            backup_name=backup_name,
+            expiration_minutes=expiration_minutes,
+        ),
+        metadata={
+            "resource_type": "backup",
+            "operation": "create_full_backup",
+        },
+        response_limit=SETTINGS.response_size_limit,
+    )
+
+
 async def create_change_plan(
     title: str,
     description: str,
@@ -159,6 +185,7 @@ async def rollback_change(plan_id: str, expected_plan_hash: str = "") -> str:
 
 
 GOVERNANCE_TOOLS = (
+    create_backup_plan,
     create_change_plan,
     create_configuration_plan,
     get_change_plan,

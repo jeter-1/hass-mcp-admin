@@ -32,6 +32,7 @@ class ProviderCapability(str, Enum):
     EXACT_VERIFICATION = "exact_verification"
     GOVERNED_ROLLBACK = "governed_rollback"
     GOVERNANCE_PERSISTENCE = "governance_persistence"
+    OPERATIONAL_ADMINISTRATION = "operational_administration"
     RISK_ASSESSMENT = "risk_assessment"
     DEPENDENCY_ANALYSIS = "dependency_analysis"
     RELIABILITY_ANALYSIS = "reliability_analysis"

@@ -40,6 +40,7 @@ class RoutingDecision:
 
 _ENGINEERING_NATIVE = {
     ProviderCapability.GOVERNANCE_PERSISTENCE,
+    ProviderCapability.OPERATIONAL_ADMINISTRATION,
     ProviderCapability.RISK_ASSESSMENT,
     ProviderCapability.DEPENDENCY_ANALYSIS,
     ProviderCapability.RELIABILITY_ANALYSIS,
@@ -140,6 +141,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "get_server_health": ProviderCapability.AUDIT,
     "create_change_plan": ProviderCapability.RISK_ASSESSMENT,
     "create_configuration_plan": ProviderCapability.RISK_ASSESSMENT,
+    "create_backup_plan": ProviderCapability.OPERATIONAL_ADMINISTRATION,
     "get_change_plan": ProviderCapability.GOVERNANCE_PERSISTENCE,
     "list_change_plans": ProviderCapability.GOVERNANCE_PERSISTENCE,
     "approve_change_plan": ProviderCapability.GOVERNANCE_PERSISTENCE,

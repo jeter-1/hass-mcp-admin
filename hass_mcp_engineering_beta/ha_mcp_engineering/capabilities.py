@@ -74,6 +74,21 @@ PLANNED_CAPABILITIES: tuple[dict[str, str], ...] = ()
 
 BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
     {
+        "tool": "create_backup_plan",
+        "category": "operational_administration",
+        "status": "beta_native",
+        "risk": "infrastructure_write",
+        "additive": True,
+        "operation_class": "proposal",
+        "routing": "engineering_native",
+        "provider": "upstream_operational_backup",
+        "policy": "governed_full_backup_create_proposal",
+        "fallback": "none",
+        "external_approval_required": True,
+        "rollback_available": False,
+        "direct_write_allowed": False,
+    },
+    {
         "tool": "get_server_health",
         "category": "observability",
         "status": "beta_native",

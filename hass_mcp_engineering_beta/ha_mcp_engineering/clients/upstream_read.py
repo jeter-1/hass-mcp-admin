@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from datetime import timedelta
 import json
 import logging
+import inspect
 import time
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 from mcp import types
 from mcp.client.streamable_http import streamablehttp_client
@@ -45,6 +46,15 @@ class McpReadResult:
 
 
 CatalogValidator = Callable[[McpReadCatalog], None]
+BeforeDispatch = Callable[[], None | Awaitable[None]]
+
+
+class BeforeDispatchFailure(RuntimeError):
+    """Preserve a local persistence failure without classifying it as upstream."""
+
+    def __init__(self, cause: BaseException) -> None:
+        super().__init__("The local pre-dispatch callback failed.")
+        self.cause = cause
 
 
 class McpReadGatewayTransport:
@@ -109,6 +119,7 @@ class McpReadGatewayTransport:
         *,
         timeout_seconds: float,
         catalog_validator: CatalogValidator,
+        before_dispatch: BeforeDispatch | None = None,
     ) -> McpReadResult:
         started = time.perf_counter()
         timeout = timedelta(seconds=max(1.0, float(timeout_seconds)))
@@ -141,6 +152,22 @@ class McpReadGatewayTransport:
                             ),
                         )
                     )
+                    if before_dispatch is not None:
+                        try:
+                            prepared = before_dispatch()
+                            if inspect.isawaitable(prepared):
+                                await prepared
+                        except BaseException as exc:
+                            if isinstance(
+                                exc,
+                                (
+                                    asyncio.CancelledError,
+                                    KeyboardInterrupt,
+                                    SystemExit,
+                                ),
+                            ):
+                                raise
+                            raise BeforeDispatchFailure(exc) from None
                     connected = time.perf_counter()
                     result = await session.call_tool(
                         tool_name,
@@ -173,7 +200,7 @@ class McpReadGatewayTransport:
                         connection_latency_ms=round((connected - started) * 1_000, 3),
                         tool_call_latency_ms=round((finished - connected) * 1_000, 3),
                     )
-        except DashboardTransportError:
+        except (DashboardTransportError, BeforeDispatchFailure):
             raise
         except BaseException as exc:
             if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)):

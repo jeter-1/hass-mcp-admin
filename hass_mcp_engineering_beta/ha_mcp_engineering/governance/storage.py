@@ -151,6 +151,44 @@ class ChangePlanRepository:
         for plan in self.list():
             if plan.status not in {PlanStatus.APPLYING}:
                 continue
+            if (
+                plan.contract_version == 3
+                and plan.operation.value == "create_full_backup"
+                and plan.operational is not None
+            ):
+                dispatch = plan.operational.dispatch
+                if dispatch.get("attempt_count") == 1:
+                    plan.status = PlanStatus.VERIFICATION_REQUIRED
+                    plan.execution_outcome = "indeterminate"
+                    plan.operational.final_outcome = "verification_required"
+                    plan.operational.verification.status = (
+                        "verification_required"
+                    )
+                    plan.operational.verification.evidence = {
+                        "reason": "server_restart_after_dispatch",
+                        "redispatch_performed": False,
+                    }
+                    plan.failure_information = {
+                        "error_code": "backup_dispatch_indeterminate",
+                        "reason": (
+                            "A dispatched backup apply was recovered after "
+                            "restart and requires read-only verification."
+                        ),
+                    }
+                else:
+                    plan.status = PlanStatus.FAILED
+                    plan.execution_outcome = "not_applied"
+                    plan.failure_information = {
+                        "error_code": "backup_creation_failed",
+                        "reason": (
+                            "An operational apply was interrupted before "
+                            "provider dispatch."
+                        ),
+                    }
+                plan.updated_at = timestamp
+                self.save(plan)
+                recovered += 1
+                continue
             if plan.contract_version >= 2:
                 attempted_write_count = 0
                 successful_write_count = 0

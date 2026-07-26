@@ -47,6 +47,16 @@ class ErrorCode(str, Enum):
     ROLLBACK_APPROVAL_REQUIRED = "rollback_approval_required"
     ROLLBACK_FAILED = "rollback_failed"
     CHANGE_PLAN_STORAGE_ERROR = "change_plan_storage_error"
+    BACKUP_PROVIDER_UNAVAILABLE = "backup_provider_unavailable"
+    BACKUP_PERMISSION_FAILURE = "backup_permission_failure"
+    BACKUP_CREATION_REJECTED = "backup_creation_rejected"
+    BACKUP_CREATION_FAILED = "backup_creation_failed"
+    BACKUP_OPERATION_TIMEOUT = "backup_operation_timeout"
+    BACKUP_VERIFICATION_TIMEOUT = "backup_verification_timeout"
+    BACKUP_VERIFICATION_FAILED = "backup_verification_failed"
+    BACKUP_DISPATCH_INDETERMINATE = "backup_dispatch_indeterminate"
+    DUPLICATE_APPLY_ATTEMPT = "duplicate_apply_attempt"
+    INTERNAL_INVARIANT_VIOLATION = "internal_invariant_violation"
     INVALID_CURSOR = "invalid_cursor"
     STALE_CURSOR = "stale_cursor"
     ANALYSIS_UNAVAILABLE = "analysis_unavailable"
@@ -152,6 +162,16 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
     ErrorCode.ROLLBACK_APPROVAL_REQUIRED: ErrorDefinition("Rollback requires a separate approval.", False, 409, "invalid_request"),
     ErrorCode.ROLLBACK_FAILED: ErrorDefinition("The governed rollback failed.", False, 502, "internal_error"),
     ErrorCode.CHANGE_PLAN_STORAGE_ERROR: ErrorDefinition("Governance storage is unavailable.", True, 503, "internal_error"),
+    ErrorCode.BACKUP_PROVIDER_UNAVAILABLE: ErrorDefinition("The reviewed backup provider is unavailable.", True, 503, "internal_error"),
+    ErrorCode.BACKUP_PERMISSION_FAILURE: ErrorDefinition("The backup provider lacks the required permission.", False, 403, "invalid_request"),
+    ErrorCode.BACKUP_CREATION_REJECTED: ErrorDefinition("The backup request was rejected before creation could begin.", False, 409, "invalid_request"),
+    ErrorCode.BACKUP_CREATION_FAILED: ErrorDefinition("Home Assistant reported that backup creation failed.", False, 502, "internal_error"),
+    ErrorCode.BACKUP_OPERATION_TIMEOUT: ErrorDefinition("The backup operation did not complete within its bounded verification window.", False, 504, "internal_error"),
+    ErrorCode.BACKUP_VERIFICATION_TIMEOUT: ErrorDefinition("Backup verification is still required; creation will not be retried.", False, 504, "internal_error"),
+    ErrorCode.BACKUP_VERIFICATION_FAILED: ErrorDefinition("Independent backup readback did not satisfy the approved verification contract.", False, 409, "internal_error"),
+    ErrorCode.BACKUP_DISPATCH_INDETERMINATE: ErrorDefinition("Backup dispatch may have occurred; verification is required and creation will not be retried.", False, 409, "internal_error"),
+    ErrorCode.DUPLICATE_APPLY_ATTEMPT: ErrorDefinition("The operational apply was already dispatched and will not be repeated.", False, 409, "invalid_request"),
+    ErrorCode.INTERNAL_INVARIANT_VIOLATION: ErrorDefinition("An operational governance invariant failed closed.", False, 500, "internal_error"),
     ErrorCode.INVALID_CURSOR: ErrorDefinition("The pagination cursor is invalid.", False, 400, "invalid_params"),
     ErrorCode.STALE_CURSOR: ErrorDefinition(
         "The pagination snapshot expired or its dependency index changed; restart pagination.",
