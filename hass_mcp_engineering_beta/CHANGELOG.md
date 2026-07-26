@@ -1,5 +1,38 @@
 # Changelog
 
+## 2.0.1 - GA promotion
+
+- Promote the accepted `2.0.1-rc1-dev2` runtime without changing public
+  schemas, reviewed fingerprints, compatibility policy, admission, routing,
+  tool registration, governance, audit, dashboard constraints, or fallback
+  enforcement.
+- Retain the MCP SDK upgrade from 1.9.0 to 1.28.1, strict dependency auditing,
+  fail-closed private SDK registry integration, transactional dynamic-registry
+  replacement and restoration, server capability behavior, and the prohibition
+  on generic upstream write delegation.
+- Retain source-controlled compatibility entries for exact `ha-mcp` 7.14.1 and
+  7.14.2. Each entry has 78 release-specific tool-contract records, for 156
+  total, and admits only its 26 explicitly reviewed automatic reads. Unknown
+  versions fail closed; new or changed tools are not automatically admitted;
+  per-tool quarantine remains available; and direct Home Assistant fallback
+  remains prohibited.
+- Retain SHA-256-bound canonical captures, complete per-tool fingerprint
+  regeneration, deterministic registry drift validation, separately
+  human-owned classifications and automatic-read decisions, dashboard
+  decisions bound to exact built-in attestations, and a registry-derived
+  exact-image CI matrix that verifies image-index, platform, OCI version, and
+  OCI revision evidence before startup.
+- Keep runtime-observed MCP identity separate from reviewed image and source
+  evidence. The runtime does not claim to observe the live upstream container
+  digest; deployment artifact verification remains an operator responsibility.
+- Record operator-provided acceptance with reviewed 7.14.1 and 7.14.2,
+  including `7.14.1 -> 7.14.2 -> 7.14.1 -> 7.14.2` transition testing without
+  rebuilding Engineering.
+- Preserve 41 Engineering tools plus 26 delegated reads for 67 total under
+  complete admission, the catalog fingerprint
+  `c6bd074d9ee1e832bd90318398c00efd9a9ffd983d5444817bc830208cbfc47c`,
+  zero fallback, and stable v1.1.2 historical-source isolation.
+
 ## 2.0.1-rc1-dev2 - reviewed upstream release updateability
 
 - Replace the single reviewed generic-read release assumption with a compiled,

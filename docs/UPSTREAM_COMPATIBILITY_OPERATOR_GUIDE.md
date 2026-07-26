@@ -190,6 +190,21 @@ changed reads are quarantined, new tools remain unreviewed, removed tools are
 reported, and write or mixed classifications remain blocked. A full-catalog
 fingerprint is diagnostic evidence and never substitutes for per-tool checks.
 
+When the upstream `ha-mcp` version changes, a delegated route that observes the
+new version fails closed until compatibility reconciliation admits that exact
+reviewed release. Automatic compatibility reprobes are periodic and can take up
+to approximately 15 minutes. Restarting the Engineering add-on forces immediate
+rediscovery. No fallback is used during the transition.
+
+The dashboard and delegated-read providers reconcile independently and may
+temporarily report different observed upstream versions. Delegated calls can
+fail during that interval. This is an availability limitation, not a relaxation
+of write safety or admission policy. Wait for reconciliation or restart
+Engineering before treating those delegated-read failures as a connector
+defect. Do not claim that a live artifact digest or source revision was verified
+from MCP discovery; deployment artifact verification remains an operator
+responsibility.
+
 ## Dashboard exact-attestation path
 
 The dashboard provider still allows only `ha_config_get_dashboard` through the

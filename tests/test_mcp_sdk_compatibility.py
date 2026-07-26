@@ -161,7 +161,7 @@ class McpSdkCompatibilityTests(unittest.TestCase):
         events = []
         client_info = types.Implementation(
             name="engineering-compatibility-test",
-            version="2.0.1-rc1-dev2",
+            version="2.0.1",
         )
         expected = types.InitializeResult(
             protocolVersion=REVIEWED_UPSTREAM_PROTOCOL_VERSION,
@@ -209,7 +209,7 @@ class McpSdkCompatibilityTests(unittest.TestCase):
         events = []
         client_info = types.Implementation(
             name="engineering-compatibility-test",
-            version="2.0.1-rc1-dev2",
+            version="2.0.1",
         )
 
         class Session:
@@ -245,7 +245,7 @@ class McpSdkCompatibilityTests(unittest.TestCase):
             write_send, write_receive = anyio.create_memory_object_stream(1)
             client_info = types.Implementation(
                 name="engineering-compatibility-test",
-                version="2.0.1-rc1-dev2",
+                version="2.0.1",
             )
             expected = types.InitializeResult(
                 protocolVersion=REVIEWED_UPSTREAM_PROTOCOL_VERSION,

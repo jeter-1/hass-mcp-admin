@@ -3,7 +3,7 @@
 > Stable v1.1.2 under `hass_mcp_admin` is retained as historical repository
 > source but is operationally retired. It is not covered by the Engineering
 > dependency audit and is not a supported rollback option. The Engineering v2
-> add-on is promoted in place to `2.0.0` at
+> add-on is promoted in place to `2.0.1` at
 > [`hass_mcp_engineering_beta/`](hass_mcp_engineering_beta/) on port `8100`.
 > Its existing technical “Beta” identity is retained to avoid a slug or runtime
 > identity migration. See [`V2_BETA_ARCHITECTURE.md`](V2_BETA_ARCHITECTURE.md)
@@ -41,10 +41,10 @@
 > Dev15 contract-level compatibility, partial quarantine, dashboard
 > independence, and retry-cadence separation are documented in
 > [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md).
-> The current Engineering version is `2.0.0`. Its GA release, in-place upgrade,
+> The current Engineering version is `2.0.1`. Its GA release, in-place upgrade,
 > rollback, and post-publication acceptance requirements are recorded in
-> [`docs/V2_0_0_RELEASE_NOTES.md`](docs/V2_0_0_RELEASE_NOTES.md) and
-> [`docs/V2_0_0_ACCEPTANCE.md`](docs/V2_0_0_ACCEPTANCE.md). Those documents do
+> [`docs/V2_0_1_RELEASE_NOTES.md`](docs/V2_0_1_RELEASE_NOTES.md) and
+> [`docs/V2_0_1_ACCEPTANCE.md`](docs/V2_0_1_ACCEPTANCE.md). Those documents do
 > not publish, deploy, or accept the release.
 > Repository-specific local and remote Codex development procedures are in
 > [`docs/CODEX_WORKFLOW.md`](docs/CODEX_WORKFLOW.md).
@@ -213,16 +213,12 @@ outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 
 ## Engineering v2 milestones
 
-The current Engineering version is `2.0.0`, a no-functional-change promotion
-of the accepted RC2dev16 source. The published `2.0.0-rc2-dev12` candidate
-remains immutable failed history and is not accepted. RC2dev13 corrected its
-read-gateway reconciliation and `ha_search` completeness defects; RC2dev14
-added practical configuration plans; and RC2dev15 moves upstream admission to
-independent contract-level decisions. RC2dev16 corrects delegated structured
-error normalization and documents search routing without adding search
-behavior. The GA release and acceptance authority are
-[`docs/V2_0_0_RELEASE_NOTES.md`](docs/V2_0_0_RELEASE_NOTES.md) and
-[`docs/V2_0_0_ACCEPTANCE.md`](docs/V2_0_0_ACCEPTANCE.md). Determine advertised
+The current Engineering version is `2.0.1`, a release-only promotion of the
+accepted `2.0.1-rc1-dev2` runtime. It retains the hardened MCP 1.28.1 SDK
+boundary and exact reviewed `ha-mcp` 7.14.1/7.14.2 compatibility registry.
+The GA release and acceptance authority are
+[`docs/V2_0_1_RELEASE_NOTES.md`](docs/V2_0_1_RELEASE_NOTES.md) and
+[`docs/V2_0_1_ACCEPTANCE.md`](docs/V2_0_1_ACCEPTANCE.md). Determine advertised
 release state from authoritative version metadata and
 `scripts/codex-context.py`, not from this milestone narrative. Engineering has
 41 statically registered

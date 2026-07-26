@@ -1,7 +1,7 @@
 # HA MCP Engineering Server Beta
 
 This directory contains the Engineering v2 add-on, promoted in place to
-`2.0.1-rc1-dev2`. Its technical “Beta” display name, slug, image repository, and runtime
+`2.0.1`. Its technical “Beta” display name, slug, image repository, and runtime
 identity remain unchanged to avoid a migration. Stable v1.1.2
 `hass_mcp_admin` source remains in the repository as operationally retired
 history; it is not part of Engineering dependency assurance or supported
@@ -103,12 +103,13 @@ Direct requests to `/mcp` and `/mcp/` must return `404`. RC2dev12 is immutable
 failed history and must not be treated as accepted. RC2dev13 corrected its
 reboot and completeness defects, RC2dev14 established practical configuration
 plans, and RC2dev16 corrected delegated structured-error normalization without
-changing upstream admission or adding search behavior. Version `2.0.1-rc1-dev2`
-adds exact reviewed 7.14.2 compatibility while retaining 7.14.1 and the
-hardened MCP SDK boundary. Its changes, rollback, and acceptance requirements
-are recorded in
-[`../docs/RC1DEV2_RELEASE_NOTES.md`](../docs/RC1DEV2_RELEASE_NOTES.md) and
-[`../docs/RC1DEV2_ACCEPTANCE.md`](../docs/RC1DEV2_ACCEPTANCE.md). Determine
+changing upstream admission or adding search behavior. Version `2.0.1`
+promotes the accepted RC1-dev2 behavior without a functional change. It retains
+exact reviewed 7.14.2 compatibility, reviewed 7.14.1 rollback compatibility,
+and the hardened MCP SDK boundary. Its changes, rollback, and acceptance
+requirements are recorded in
+[`../docs/V2_0_1_RELEASE_NOTES.md`](../docs/V2_0_1_RELEASE_NOTES.md) and
+[`../docs/V2_0_1_ACCEPTANCE.md`](../docs/V2_0_1_ACCEPTANCE.md). Determine
 exact advertised state from version metadata and `scripts/codex-context.py`.
 
 Before connecting an MCP client, require `/ready` HTTP 200 with `ready=true`,
