@@ -113,8 +113,8 @@ class ExactImageDiagnosticTests(unittest.TestCase):
             },
         )
         self.assertEqual(
-            acceptance.EXPECTED_LAST_OUTCOME_CATEGORY,
-            "entity_not_found",
+            acceptance.EXPECTED_LAST_CALL_FAILURE_CATEGORY,
+            None,
         )
 
     def test_catalog_failure_diagnostics_are_bounded_and_whitelisted(self):

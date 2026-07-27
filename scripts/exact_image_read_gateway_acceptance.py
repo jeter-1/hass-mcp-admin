@@ -151,9 +151,12 @@ for expected_error in UPSTREAM_ERROR_CALLS.values():
     EXPECTED_OUTCOME_CATEGORY_COUNTS[category] = (
         EXPECTED_OUTCOME_CATEGORY_COUNTS.get(category, 0) + 1
     )
-EXPECTED_LAST_OUTCOME_CATEGORY = next(
-    reversed(UPSTREAM_ERROR_CALLS.values())
-)["failure_category"]
+_expected_last_outcome = next(reversed(UPSTREAM_ERROR_CALLS.values()))
+EXPECTED_LAST_CALL_FAILURE_CATEGORY = (
+    _expected_last_outcome["failure_category"]
+    if _expected_last_outcome["failure_category"] == "upstream_error"
+    else None
+)
 
 
 def expected_successful_delegated_calls(total_calls: int) -> int:
@@ -1058,8 +1061,8 @@ async def inspect_engineering(
                 )
             require(
                 gateway_state.get("last_call_failure_category")
-                == EXPECTED_LAST_OUTCOME_CATEGORY,
-                "last gateway outcome category mismatch",
+                == EXPECTED_LAST_CALL_FAILURE_CATEGORY,
+                "last operational gateway failure category mismatch",
             )
             require(fallback_before == fallback_after, "fallback counters changed")
             require(gateway_state.get("fallback_count") == 0, "gateway fallback occurred")
