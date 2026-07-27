@@ -558,8 +558,9 @@ reports 45 Engineering tools plus 26 delegated reads, or 71 total.
 The complete source and later operator-controlled runtime procedure is in
 [`V2_1_0_BETA2_ACCEPTANCE.md`](V2_1_0_BETA2_ACCEPTANCE.md). Do not run reload
 or restart acceptance from CI or ordinary source review. Each operation needs
-a separately approved exact plan hash. A lost response must be followed with
-`get_change_plan` or another `apply_change_plan` verification call; never
-create a replacement plan merely to repeat the action. Engineering reconciles
-durable verification-pending plans after startup and periodically while
-running, without redispatch.
+a separately approved exact plan hash. After a lost response, use
+`get_change_plan` to observe automatic startup or periodic readback
+reconciliation. A later `apply_change_plan` may resume readback while still
+pending, but is not required for a normally verified Engineering self-restart.
+Never create a replacement plan merely to repeat the action. Reconciliation is
+bounded and cannot redispatch.

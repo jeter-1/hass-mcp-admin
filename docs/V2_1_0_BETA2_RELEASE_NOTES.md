@@ -30,9 +30,14 @@ domain state.
 
 Add-on restart accepts one installed slug and binds name and installed version.
 The provider can only construct `action="restart"`. Engineering self-restart
-is recoverable because the dispatch record is durable before termination and a
-new process-instance identity is checked at startup. The exact `ha_mcp` add-on
-must regain reviewed identity, protocol, catalog, and admission.
+is recoverable because the dispatch record is durable before termination and
+startup automatically attempts bounded readback-only verification. A changed
+process-instance identity, exact add-on readback, runtime identity, governance
+health, and audit continuity are required. The exact `ha_mcp` add-on must
+regain reviewed identity, protocol, catalog, and admission. Other add-ons use
+the explicitly weaker provider-acknowledgement grade. Add-on restart
+intentionally does not require Home Assistant configuration validation, but
+identity, provider, approval, and verification preconditions remain mandatory.
 
 Home Assistant restart runs full validation before the one fixed
 `confirm=true` dispatch. Recovery checks Home Assistant identity, Engineering
@@ -44,10 +49,17 @@ fallback. Connectivity alone does not prove restart.
 
 Provider response loss or expected restart disruption creates a durable
 verification-pending state. The original MCP call need not remain open.
-Background and startup reconciliation perform readback only. Repeated
-`apply_change_plan` calls return the persisted result or resume verification;
-they cannot repeat an action. Incomplete evidence remains pending or
-indeterminate. Rollback is unavailable.
+Startup reconciliation immediately performs a bounded readback-only pass, and
+the 30-second background loop retries plans still pending. `get_change_plan`
+can return the automatically completed result; a later `apply_change_plan` may
+resume readback but is not required for the normal successful self-restart
+path. No reconciliation path can repeat an action. Incomplete evidence remains
+pending or indeterminate. Rollback is unavailable.
+
+Add-on verification records exactly one proof grade when successful:
+`process_identity`, `upstream_readmission`, or
+`provider_acknowledgement`. Historical plans without this additive evidence
+field remain readable and retain their existing hashes.
 
 The public operational plan removes the unrelated generic configuration
 verification field and identifies `operational.verification` as authoritative.

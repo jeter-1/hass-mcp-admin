@@ -117,10 +117,28 @@ version, state, and exact provider contract. Apply rejects changed identity.
 Verification requires the exact slug, name, unchanged version, running state,
 and restart evidence beyond merely observing a running add-on. The Engineering
 add-on is recognized only by its exact technical slug; its self-restart is
-proved after startup by a changed persisted process-instance identity. The
-reviewed upstream add-on is recognized only by the exact `ha_mcp` slug and
-`Home Assistant MCP Server` name and must regain exact compatibility admission
-before success. Other add-ons require exact provider completion evidence.
+proved after startup by a changed persisted process-instance identity, exact
+add-on readback, restored runtime identity, healthy governance storage, and
+available audit continuity. The reviewed upstream add-on is recognized only by
+the exact `ha_mcp` slug and `Home Assistant MCP Server` name and must regain
+exact identity, version, protocol, catalog, and compatibility admission before
+success. Other add-ons require exact provider completion evidence.
+
+Verified add-on restarts expose one additive
+`operational.verification.evidence.restart_proof` grade:
+
+- `process_identity` requires a changed Engineering process instance plus the
+  complete self-restart readback contract;
+- `upstream_readmission` requires the exact upstream add-on to be running and
+  the reviewed upstream identity, version, protocol, catalog, and gateway
+  admission to be restored; and
+- `provider_acknowledgement` means the exact other add-on is running with
+  unchanged identity after the provider acknowledged the restart. This is
+  weaker evidence and does not claim an independently observed process cycle.
+
+Historical records without `restart_proof` remain readable. Verification
+evidence is mutable lifecycle evidence and is excluded from the immutable plan
+hash.
 
 `create_home_assistant_restart_plan` captures Home Assistant identity,
 Engineering build and tool counts, upstream identity and admission, governance
@@ -138,11 +156,19 @@ fallback. Current connectivity alone never proves a restart.
 Before any action call, immutable dispatch intent, request ID, attempt count,
 and approval consumption are committed transactionally. Provider response loss
 after that boundary becomes `verification_pending`; it does not reopen write
-authority. `get_change_plan` exposes the durable state, a later
-`apply_change_plan` resumes readback only, and a bounded background supervisor
-reconciles eligible plans every 30 seconds. Startup recovery converts an
-interrupted dispatched plan to the same readback-only state. Concurrent apply
-and reconciliation share a per-plan lock.
+authority. Startup recovery immediately attempts bounded readback-only
+verification, and the background supervisor retries plans that remain pending
+every 30 seconds. Each pass is bounded by eligible-plan count and execution
+time, isolates per-plan failures, and excludes unapproved, undispatched, and
+terminal plans. Concurrent apply and reconciliation share per-plan and exact
+operation-target locks.
+
+Automatic startup verification is the normal Engineering self-restart path:
+`get_change_plan` is sufficient to retrieve the automatically completed
+result. A later `apply_change_plan` may request or resume readback when evidence
+is still pending, but it is not required after a successful automatic
+reconciliation. Neither startup, periodic, nor caller-requested reconciliation
+can invoke an operational provider action or redispatch.
 
 Success returns the persisted verified result. Pending evidence remains
 pending. A deterministic post-dispatch mismatch becomes verification failed.
@@ -182,7 +208,11 @@ Backup creation does not require configuration validation. Controlled reload
 and Home Assistant restart require a fresh successful check during planning
 and again immediately before apply. Evidence distinguishes `valid`, `invalid`,
 `unavailable`, and `failed`; no immutable whole-config fingerprint is claimed.
-Add-on restart does not claim or require configuration validation.
+Add-on restart intentionally does not require Home Assistant configuration
+validation because it may be needed while Home Assistant configuration is
+invalid or unrelated to the add-on problem. It still requires exact installed
+add-on identity, reviewed provider availability, hash-bound external approval,
+fresh target revalidation, and operation-specific restart verification.
 
 ## Audit and health
 

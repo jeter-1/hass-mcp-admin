@@ -55,8 +55,14 @@ boundary without adding a second generic failure.
 
 The recovery-verification model now holds distinct backup, reload, add-on, and
 Home Assistant evidence. One background reconciler and startup recovery resume
-only readback after persisted dispatch. Engineering self-restart is supported
-because dispatch is durable before termination and a new process-instance ID
-proves recovery. Home Assistant restart success requires reviewed dispatch or
-expected disruption evidence plus the complete recovery contract; current
-connectivity alone is insufficient.
+only bounded readback after approved persisted dispatch. It excludes
+undispatched and terminal plans, isolates each plan, shares operation-target
+locks with caller reconciliation, and cannot invoke an action. Engineering
+self-restart is supported because dispatch is durable before termination and
+startup verifies a new process-instance ID, exact add-on identity, runtime
+identity, governance health, and audit continuity without another apply call.
+Successful add-on verification grades evidence as `process_identity`,
+`upstream_readmission`, or the weaker `provider_acknowledgement`; historical
+records without that additive field remain readable. Home Assistant restart
+success requires reviewed dispatch or expected disruption evidence plus the
+complete recovery contract; current connectivity alone is insufficient.

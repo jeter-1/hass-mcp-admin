@@ -47,6 +47,18 @@ Add-on acceptance covers exact installed identity, stale target refusal, fixed
 restart action, expected temporary unavailability, running-without-restart-
 evidence refusal, Engineering self-restart process identity, exact `ha_mcp`
 readmission, and no start/stop/install/update/configuration/proxy reachability.
+It also proves that an unapproved add-on or Home Assistant restart returns
+`external_approval_required` with zero apply, dispatch, approval-consumption,
+and reconciliation counters.
+
+Engineering self-restart acceptance must prove that startup automatically
+performs bounded readback-only verification, changed process identity plus
+runtime/storage/audit evidence yields `restart_proof=process_identity`, and
+`get_change_plan` returns the final result without another apply call. Exact
+upstream readmission yields `restart_proof=upstream_readmission`; acknowledged
+other-add-on restart yields `restart_proof=provider_acknowledgement`, which
+must not be described as independent process-cycle evidence. Missing historical
+proof fields remain readable without changing plan hashes.
 
 Home Assistant acceptance covers invalid-config refusal, durable intent before
 simulated disconnect, exact single dispatch, bounded pending response,
