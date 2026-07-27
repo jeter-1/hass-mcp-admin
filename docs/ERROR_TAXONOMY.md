@@ -1,5 +1,24 @@
 # Beta error taxonomy
 
+Beta 2 adds bounded operational lifecycle errors.
+`operational_validation_failed`, `operational_contract_mismatch`, and
+`operational_provider_unavailable` are pre-dispatch outcomes: no action
+occurred, fallback is none, and approval remains unconsumed.
+`operational_dispatch_indeterminate` and
+`operational_verification_pending` mean dispatch evidence is durable and only
+readback may continue. `operational_verification_failed` is post-dispatch and
+terminal for that approval. Public details contain only the safe failure stage,
+dispatch/action booleans, fallback status, bounded category, and required
+operator action.
+
+For the exact reviewed `ha_get_entity` single-entity-ID registry lookup, its
+reviewed missing-registry `SERVICE_CALL_FAILED` combination maps to
+non-retryable `entity_not_found`. The argument shape must be one syntactically
+valid entity ID with no resolver filters. Resolver, bulk, malformed, other-tool,
+and future argument forms remain untrusted and follow the generic
+provider-error path. The handled domain outcome retains upstream attribution
+but does not degrade provider health.
+
 RC2 adds no public error or failure category. Invalid or unbounded optional
 build provenance is safely represented by the established `unknown` value and
 does not become a new tool, provider, health, or audit error contract.

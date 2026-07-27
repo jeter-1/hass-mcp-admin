@@ -1,5 +1,25 @@
 # Beta automation change governance
 
+## 2.1A Beta 2 operational plans
+
+Four contract-v3 operational proposal types now share the same immutable
+hash-bound external approval and apply authority: full backup, controlled
+reload, exact add-on restart, and Home Assistant restart. Proposal creation
+performs reads and persists governance state but dispatches no action. Approval
+is granted only by the separate administrator Ingress principal.
+
+Each apply revalidates the exact target and reviewed provider, commits dispatch
+intent and approval consumption before the fixed action, and permits one
+dispatch. Provider response loss or server termination can resume readback
+only. Contract-v3 output names `operational.verification` as authoritative and
+does not publish the unrelated configuration verification field.
+
+The existing blanket prohibition on high-risk automation changes is unchanged.
+Only the exact add-on and Home Assistant restart operation types have reviewed
+high-risk infrastructure policy and external-approval authority. This does not
+authorize arbitrary services, add-on operations, restore, deletion, fallback,
+or 2.1B risk-delta behavior.
+
 ## RC2 governance freeze
 
 Version `2.0.0-rc.2` preserves the accepted Beta 26 lifecycle byte-for-byte at

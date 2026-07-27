@@ -1,5 +1,22 @@
 # Beta provider security boundaries
 
+## 2.1A Beta 2 operational authority
+
+Beta 2 does not reclassify or generically expose `ha_reload_core`,
+`ha_manage_addon`, or `ha_restart`. Exact Engineering wrappers construct only
+four reviewed reload targets, `action=restart` for the approved installed slug,
+or `confirm=true`. All arbitrary service data, provider arguments, other
+add-on actions, config-entry reload, and generic service execution are
+unreachable.
+
+Each operation requires immutable plan-hash binding, a distinct external
+administrator principal, fresh provider and target evidence, transactional
+dispatch intent before the action, one attempt, and independent readback.
+Ambiguous disruption cannot reopen approval or authorize redispatch. Unknown
+release, catalog drift, malformed result, unavailable verification, and
+incomplete restart evidence fail closed. No direct Home Assistant or alternate
+provider fallback is attempted.
+
 ## Dev15 contract-level upstream compatibility
 
 [ADR-006](architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md)

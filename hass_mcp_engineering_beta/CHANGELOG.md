@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.1.0-beta.2 - 2.1A governed operational lifecycle
+
+- Add proposal-only `create_reload_plan`, `create_addon_restart_plan`, and
+  `create_home_assistant_restart_plan` tools while retaining the shared
+  contract-v3 external approval, immutable hash, exact-once apply, persistence,
+  audit, and readback lifecycle.
+- Constrain exact reviewed `ha_reload_core`, `ha_manage_addon`, and `ha_restart`
+  contracts to four reload domains, one exact installed add-on restart, and
+  one confirmed Home Assistant restart. Generic mixed-tool exposure, arbitrary
+  service data, provider arguments, and fallback remain prohibited.
+- Reuse strict full configuration validation at reload and Home Assistant
+  restart planning and immediately before dispatch; record planning and
+  apply-time evidence without claiming a whole-configuration fingerprint.
+- Persist dispatch intent before every action and add bounded background and
+  startup reconciliation. Lost responses, server restarts, and expected
+  connection loss resume verification only and never blindly redispatch.
+- Verify reload state readability, exact add-on identity and restart evidence,
+  Engineering self-restart process identity, upstream `ha-mcp` readmission,
+  Home Assistant identity, tool restoration, governance and audit persistence,
+  dependency recovery, and zero fallback.
+- Normalize the reviewed valid single-entity-ID `ha_get_entity`
+  missing-registry outcome to bounded, non-retryable `entity_not_found`;
+  resolver, bulk, malformed, and unknown combinations remain fail closed.
+- Classify proposal audit records as `access=proposal` with
+  `operation_class=proposal`; approval and apply remain writes.
+- Increase the complete catalog to 45 Engineering tools plus 26 delegated
+  reads, for 71 total. The upstream catalog and all reviewed fingerprints,
+  classifications, automatic-read decisions, and dashboard attestations remain
+  unchanged.
+
 ## 2.1.0-beta.1 - 2.1A operational administration Dev1
 
 - Add the proposal-only `create_backup_plan` tool and contract-v3 operational

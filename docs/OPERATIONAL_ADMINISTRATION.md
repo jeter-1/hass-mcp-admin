@@ -1,8 +1,10 @@
 # Governed operational administration
 
-Version: `2.1.0-beta.1`
+Version: `2.1.0-beta.2`
 
-Dev1 adds one public proposal tool, `create_backup_plan`, and reuses
+Beta 2 completes 2.1A with four public proposal tools:
+`create_backup_plan`, `create_reload_plan`, `create_addon_restart_plan`, and
+`create_home_assistant_restart_plan`. All four reuse
 `get_change_plan`, `list_change_plans`, `approve_change_plan`, and
 `apply_change_plan`. Planning, approval, dispatch, and verification remain
 separate lifecycle steps.
@@ -40,7 +42,7 @@ The upstream implementation requires the existing Home Assistant default
 backup password but Engineering neither accepts nor handles encryption
 material.
 
-## Lifecycle and exact-once boundary
+## Shared lifecycle and exact-once boundary
 
 `create_backup_plan` checks the exact provider, reads a bounded baseline
 inventory, normalizes a safe name, records medium infrastructure risk,
@@ -86,6 +88,68 @@ Backup deletion is destructive and out of scope, so
 `rollback_available=false`. A global lock is intentional because Home
 Assistant backup creation is not safely concurrent.
 
+## Beta 2 reload and restart contracts
+
+The exact reviewed upstream tools remain classified as mixed or high-risk and
+are never registered generically. Engineering-owned wrappers construct only:
+
+- `ha_reload_core(target=<one reviewed plural target>)`, with no `entry_id`;
+- `ha_manage_addon(slug=<exact planned slug>, action="restart")`;
+- `ha_restart(confirm=true)`.
+
+Every wrapper requires exact server identity, reviewed 7.14.1 or 7.14.2
+release, protocol, complete catalog, and per-tool input, description,
+annotation, output, and runtime fingerprints. Start, stop, install, uninstall,
+update, configuration mutation, proxy calls, arbitrary provider arguments,
+`reload_all`, config-entry reload, and generic service calls remain
+unreachable. There is no fallback.
+
+`create_reload_plan` accepts only `automation`, `script`, `input_boolean`, or
+`input_number`. Planning checks the exact service, reads the selected domain,
+and runs the same strict full configuration validation used by `check_config`.
+Apply repeats validation and service discovery immediately before dispatch.
+Verification requires Home Assistant connectivity, valid configuration, the
+exact service, and a readable domain state inventory. An empty domain is valid
+when the inventory itself is readable.
+
+`create_addon_restart_plan` binds approval to one installed add-on slug, name,
+version, state, and exact provider contract. Apply rejects changed identity.
+Verification requires the exact slug, name, unchanged version, running state,
+and restart evidence beyond merely observing a running add-on. The Engineering
+add-on is recognized only by its exact technical slug; its self-restart is
+proved after startup by a changed persisted process-instance identity. The
+reviewed upstream add-on is recognized only by the exact `ha_mcp` slug and
+`Home Assistant MCP Server` name and must regain exact compatibility admission
+before success. Other add-ons require exact provider completion evidence.
+
+`create_home_assistant_restart_plan` captures Home Assistant identity,
+Engineering build and tool counts, upstream identity and admission, governance
+and audit storage, dependency-index state, and full validation. Apply repeats
+validation before the one permitted `ha_restart(confirm=true)` dispatch.
+Verification requires the durable dispatch record and observed expected
+connection-loss evidence,
+Home Assistant recovery and identity, the same Engineering build and catalog,
+governance and audit persistence, exact upstream readmission and catalog,
+dependency recovery state, post-restart valid configuration, and zero
+fallback. Current connectivity alone never proves a restart.
+
+## Durable reconciliation
+
+Before any action call, immutable dispatch intent, request ID, attempt count,
+and approval consumption are committed transactionally. Provider response loss
+after that boundary becomes `verification_pending`; it does not reopen write
+authority. `get_change_plan` exposes the durable state, a later
+`apply_change_plan` resumes readback only, and a bounded background supervisor
+reconciles eligible plans every 30 seconds. Startup recovery converts an
+interrupted dispatched plan to the same readback-only state. Concurrent apply
+and reconciliation share a per-plan lock.
+
+Success returns the persisted verified result. Pending evidence remains
+pending. A deterministic post-dispatch mismatch becomes verification failed.
+When neither failure nor successful dispatch can be established, the result
+remains indeterminate and requires manual review. Rollback is unavailable for
+all four operational actions.
+
 ## Persistence and downgrade behavior
 
 Existing contract-v1 and contract-v2 configuration plans remain in the legacy
@@ -114,9 +178,11 @@ bounded interpreter for the same structured `{result, errors}` evidence.
 Malformed, incomplete, invalid, error-bearing, or unavailable responses fail
 closed and untrusted text is sanitized.
 
-Backup creation does not require configuration validation. Future reload and
-restart plans must require a fresh successful check during planning and again
-immediately before apply; Dev1 does not expose either action.
+Backup creation does not require configuration validation. Controlled reload
+and Home Assistant restart require a fresh successful check during planning
+and again immediately before apply. Evidence distinguishes `valid`, `invalid`,
+`unavailable`, and `failed`; no immutable whole-config fingerprint is claimed.
+Add-on restart does not claim or require configuration validation.
 
 ## Audit and health
 
@@ -124,6 +190,11 @@ Operational audit records contain bounded plan, risk, approval, provider,
 dispatch, operation-ID, verification, outcome, fallback, and rollback fields.
 They exclude tokens, passwords, endpoints, raw provider content, and unbounded
 metadata.
+
+Proposal tools use audit `access=proposal` and
+`operation_class=proposal`; they are not pure reads even though planning
+performs no provider action. Approval and apply remain writes. This compatible
+string classification does not change the audit record shape.
 
 `get_server_health.operational_administration` labels its sources:
 
@@ -146,4 +217,12 @@ success and failure, provider state, zero fallback, and unavailable rollback.
   readback must continue. Do not create or approve a replacement merely to
   retry.
 - `backup_verification_failed` is terminal for that approval.
-- No result authorizes restore, deletion, reload, restart, or fallback.
+- `operational_validation_failed` means validation or exact service
+  availability blocked dispatch; approval is not consumed.
+- `operational_contract_mismatch` means reviewed provider evidence drifted
+  before dispatch; refresh evidence and create a new plan.
+- `operational_verification_pending` means the single dispatch is durable and
+  only reconciliation may continue.
+- `operational_verification_failed` is a post-dispatch readback failure and
+  cannot authorize redispatch.
+- No result authorizes restore, deletion, generic execution, or fallback.

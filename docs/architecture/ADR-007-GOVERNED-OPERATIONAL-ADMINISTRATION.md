@@ -1,6 +1,6 @@
 # ADR-007: Governed operational administration
 
-Status: accepted for 2.1A Dev1
+Status: accepted for 2.1A Beta 2
 
 ## Context
 
@@ -15,7 +15,7 @@ Use versioned, operation-specific governance plans with distinct proposal,
 external approval, preflight, exact provider dispatch, status, independent
 verification, persistent evidence, and recovery layers.
 
-Dev1 admits only full-backup creation through an Engineering-owned wrapper
+Beta 1 admitted only full-backup creation through an Engineering-owned wrapper
 around exact reviewed `ha_manage_backup` contracts for 7.14.1 and 7.14.2. The
 wrapper constructs `snapshot/create/name`; the upstream mixed tool is never
 registered. Verification uses independent `backup/info` evidence. Dispatch
@@ -23,14 +23,22 @@ intent and approval consumption are durable before invocation. Ambiguous
 outcomes can resume verification but cannot redispatch. Rollback is
 unavailable.
 
-The operation reuses the existing upstream MCP configuration and external
+Beta 2 extends the same contract-v3 family with exact wrappers for controlled
+reload, one installed add-on restart, and Home Assistant restart. The wrappers
+construct only reviewed arguments for `ha_reload_core`, `ha_manage_addon`, and
+`ha_restart`; none of those mixed or high-risk tools is registered generically.
+Full validation gates reload and Home Assistant restart. Independent readback,
+persisted process identity, exact upstream readmission, runtime catalog,
+storage, audit, and dependency evidence provide operation-specific recovery.
+
+All operations reuse the existing upstream MCP configuration and external
 Ingress approval authority. It adds no endpoint, option, credential, generic
-write, fallback, restore, delete, reload, or restart.
+write, fallback, restore, delete, arbitrary service, or provider argument.
 
 ## Consequences
 
-One new proposal tool makes the fully admitted catalog 42 Engineering tools
-plus 26 delegated reads, or 68 total. Existing contract-v1 and contract-v2
+Four proposal tools make the fully admitted catalog 45 Engineering tools plus
+26 delegated reads, or 71 total. Existing contract-v1 and contract-v2
 plans preserve their serialization and hashes; operational plans use contract
 version 3 and a separate `operational-administration-v3` persistence namespace.
 Exact 2.0.1 enumerates only the legacy namespace, so a retained-data downgrade
@@ -45,5 +53,10 @@ single precise health failure count, governance owns one lifecycle/audit event
 and public mapping, and the shared transport preserves the typed validator
 boundary without adding a second generic failure.
 
-The recovery-verification model can later hold reload or restart recovery
-evidence, but only backup fields are implemented in Dev1.
+The recovery-verification model now holds distinct backup, reload, add-on, and
+Home Assistant evidence. One background reconciler and startup recovery resume
+only readback after persisted dispatch. Engineering self-restart is supported
+because dispatch is durable before termination and a new process-instance ID
+proves recovery. Home Assistant restart success requires reviewed dispatch or
+expected disruption evidence plus the complete recovery contract; current
+connectivity alone is insufficient.

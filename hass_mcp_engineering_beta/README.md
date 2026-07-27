@@ -1,7 +1,7 @@
 # HA MCP Engineering Server Beta
 
 This directory contains the Engineering v2 add-on. Development version
-`2.1.0-beta.1` starts the bounded 2.1A operational-administration line from the
+`2.1.0-beta.2` completes the bounded 2.1A operational-administration line from the
 exact `v2.0.1` release. Its technical “Beta” display name, slug, image
 repository, and runtime
 identity remain unchanged to avoid a migration. Stable v1.1.2
@@ -12,7 +12,7 @@ rollback.
 ## Contract-level reviewed upstream reads
 
 After configuring the existing secret-bearing upstream MCP URL, Engineering
-starts with 42 statically registered tools (25 canonical plus 17
+starts with 45 statically registered tools (25 canonical plus 20
 Engineering-native). Fast bounded retries recover when `ha-mcp` is not yet
 reachable after host boot. While configured upstream reconciliation is
 initially pending, `/health` remains live but `/ready` and authenticated MCP
@@ -34,8 +34,8 @@ Each read also requires its exact pinned generic object output-schema
 fingerprint; the fixed Engineering adapter, not that generic schema, owns
 sanitization, bounds, fallback refusal, and partial-data behavior.
 
-A complete reviewed set adds 26 delegated reads for 68 registered tools. One
-missing or quarantined read leaves the other 25 available for 67 registered
+A complete reviewed set adds 26 delegated reads for 71 registered tools. One
+missing or quarantined read leaves the other 25 available for 70 registered
 tools. A client that cached an earlier list must re-list or reconnect; the
 stateless transport does not broadcast `tools/list_changed`.
 
@@ -107,13 +107,14 @@ reboot and completeness defects, RC2dev14 established practical configuration
 plans, and RC2dev16 corrected delegated structured-error normalization without
 changing upstream admission or adding search behavior. Version `2.0.1`
 promoted the accepted RC1-dev2 behavior without a functional change. Development
-version `2.1.0-beta.1` adds only governed full-backup creation and its
-operational-plan foundation. It retains
+version `2.1.0-beta.2` adds governed controlled reload, exact add-on restart,
+Home Assistant restart, and durable readback-only reconciliation to the Beta 1
+backup foundation. It retains
 exact reviewed 7.14.2 compatibility, reviewed 7.14.1 rollback compatibility,
 and the hardened MCP SDK boundary. Its changes, rollback, and acceptance
 requirements are recorded in
-[`../docs/V2_1_0_BETA1_RELEASE_NOTES.md`](../docs/V2_1_0_BETA1_RELEASE_NOTES.md),
-[`../docs/V2_1_0_BETA1_ACCEPTANCE.md`](../docs/V2_1_0_BETA1_ACCEPTANCE.md), and
+[`../docs/V2_1_0_BETA2_RELEASE_NOTES.md`](../docs/V2_1_0_BETA2_RELEASE_NOTES.md),
+[`../docs/V2_1_0_BETA2_ACCEPTANCE.md`](../docs/V2_1_0_BETA2_ACCEPTANCE.md), and
 [`../docs/OPERATIONAL_ADMINISTRATION.md`](../docs/OPERATIONAL_ADMINISTRATION.md).
 Determine
 exact advertised state from version metadata and `scripts/codex-context.py`.
@@ -126,8 +127,8 @@ even though `/health` is live.
 For any separately authorized deployment, call `server_info(check_ha=false)`
 and verify the expected version, complete release commit SHA, and UTC build
 time. Then call `list_capabilities` and verify the preserved 25-tool canonical
-catalog plus 17 beta-native tools. Without an admitted upstream, MCP
-`tools/list` exposes those 42 tools. With exact reviewed release/profile
+catalog plus 20 beta-native tools. Without an admitted upstream, MCP
+`tools/list` exposes those 45 tools. With exact reviewed release/profile
 authority and matching per-tool contracts, it also exposes the exact dynamic
 count reported by `upstream_read_gateway`.
 Require `version_status`, `compatibility_status`, missing/quarantine counts,
