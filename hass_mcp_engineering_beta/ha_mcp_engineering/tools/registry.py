@@ -23,9 +23,29 @@ if "get_server_health" not in _SDK_TOOLS.snapshot():
     _SERVER.tool()(compatibility.get_server_health)
 
 _registered = set(_SDK_TOOLS.snapshot())
+_PROPOSAL_ANNOTATIONS = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=False,
+    idempotentHint=False,
+    openWorldHint=False,
+)
+_PROPOSAL_TOOLS = {
+    "create_backup_plan",
+    "create_reload_plan",
+    "create_addon_restart_plan",
+    "create_home_assistant_restart_plan",
+    "create_change_plan",
+    "create_configuration_plan",
+}
 for governance_tool in GOVERNANCE_TOOLS:
     if governance_tool.__name__ not in _registered:
-        _SERVER.tool()(governance_tool)
+        _SERVER.tool(
+            annotations=(
+                _PROPOSAL_ANNOTATIONS
+                if governance_tool.__name__ in _PROPOSAL_TOOLS
+                else None
+            )
+        )(governance_tool)
 
 _registered = set(_SDK_TOOLS.snapshot())
 for analysis_tool in ANALYSIS_TOOLS:

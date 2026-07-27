@@ -114,6 +114,11 @@ DEV14_ADDITIVE_TOOL_NAMES = (
 V2_1A_ADDITIVE_TOOL_NAMES = (
     "create_backup_plan",
 )
+V2_1A_BETA2_ADDITIVE_TOOL_NAMES = (
+    "create_addon_restart_plan",
+    "create_home_assistant_restart_plan",
+    "create_reload_plan",
+)
 
 NOW = datetime(2026, 7, 14, 12, 0, tzinfo=timezone.utc)
 FUTURE = (NOW + timedelta(hours=4)).isoformat()
@@ -167,6 +172,7 @@ class RC1PublicContractTests(unittest.TestCase):
                         *RC3A_ADDITIVE_TOOL_NAMES,
                         *DEV14_ADDITIVE_TOOL_NAMES,
                         *V2_1A_ADDITIVE_TOOL_NAMES,
+                        *V2_1A_BETA2_ADDITIVE_TOOL_NAMES,
                     )
                 )
             ),
@@ -405,7 +411,7 @@ class RC1PublicContractTests(unittest.TestCase):
             BETA26_DIRECT_POLICY_SHA256,
         )
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(classifications), 42)
+        self.assertEqual(len(classifications), 45)
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

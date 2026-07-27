@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from typing import Any
+import uuid
 
 from ..clients.websocket import HomeAssistantWebSocketClient
 from ..errors import ErrorCode, GovernanceError
+from .operational_lifecycle import OperationalLifecycleGateway
 from .resources import ConfigurationResourceGateway
 from .operational import BackupAdministrationGateway
 from .service import AutomationGateway, ChangeGovernanceService
@@ -57,6 +59,8 @@ class GovernanceRuntime:
         rest_client,
         websocket_client=None,
         operational_provider=None,
+        lifecycle_provider=None,
+        runtime_snapshot=None,
     ) -> None:
         try:
             repository = ChangePlanRepository(
@@ -75,17 +79,45 @@ class GovernanceRuntime:
                 if operational_provider is not None
                 else None
             )
+            lifecycle_gateway = (
+                OperationalLifecycleGateway(
+                    lifecycle_provider,
+                    rest_client,
+                    websocket_client,
+                    configuration_validator=(
+                        self._configuration_validator(
+                            rest_client, websocket_client
+                        )
+                    ),
+                    runtime_snapshot=runtime_snapshot or (lambda: {}),
+                    process_instance_id=uuid.uuid4().hex,
+                    sensitive_values=(
+                        settings.access_secret,
+                        settings.ha_token,
+                    ),
+                )
+                if lifecycle_provider is not None
+                else None
+            )
             self.service = ChangeGovernanceService(
                 repository,
                 _RuntimeGovernanceGateway(rest_client, websocket_client),
                 audit,
                 sensitive_values=(settings.access_secret, settings.ha_token),
                 operational_gateway=operational_gateway,
+                lifecycle_gateway=lifecycle_gateway,
             )
             self.storage_error = None
         except ChangePlanStorageError:
             self.service = None
             self.storage_error = "change_plan_storage_error"
+
+    @staticmethod
+    def _configuration_validator(rest_client, websocket_client):
+        resources = ConfigurationResourceGateway(
+            rest_client, websocket_client
+        )
+        return resources.validate_all
 
     def require(self) -> ChangeGovernanceService:
         if not self.service:
@@ -94,6 +126,33 @@ class GovernanceRuntime:
 
     def health_summary(self) -> dict[str, Any]:
         if not self.service:
+            operation_names = (
+                "create_full_backup",
+                "controlled_reload",
+                "restart_addon",
+                "restart_home_assistant",
+            )
+            unavailable_operation = {
+                "plans_created": 0,
+                "apply_attempts": 0,
+                "dispatch_attempts": 0,
+                "dispatch_successes": 0,
+                "verified_successes": 0,
+                "pre_dispatch_failures": 0,
+                "post_dispatch_failures": 0,
+                "verification_failures": 0,
+                "verification_pending_plans": 0,
+                "indeterminate_outcomes": 0,
+                "active_reconciliations": 0,
+                "eligible_readback_reconciliations": 0,
+                "no_blind_redispatch_preventions": 0,
+                "last_successful_operation_timestamp": None,
+                "last_failure_category": self.storage_error,
+                "fallback_count": 0,
+                "provider_identity": None,
+                "provider_availability": "unavailable",
+                "provider_contract_status": "unavailable_or_unverified",
+            }
             return {
                 "enabled": True,
                 "storage": {"configured": False, "status": "error"},
@@ -119,7 +178,13 @@ class GovernanceRuntime:
                 "rollback_pending_count": 0,
                 "last_successful_change_at": None,
                 "operational_administration": {
-                    "plans_by_type": {"create_full_backup": 0},
+                    "plans_by_type": {
+                        operation: 0 for operation in operation_names
+                    },
+                    "operations": {
+                        operation: dict(unavailable_operation)
+                        for operation in operation_names
+                    },
                     "backup_plans_created": 0,
                     "backup_applies_attempted": 0,
                     "successful_backups": 0,
@@ -130,6 +195,12 @@ class GovernanceRuntime:
                     "last_successful_backup_at": None,
                     "last_operational_failure_category": None,
                     "provider": {
+                        "configured": False,
+                        "operational_status": "unavailable",
+                        "fallback_count": 0,
+                        "fallback_policy": "none",
+                    },
+                    "lifecycle_provider": {
                         "configured": False,
                         "operational_status": "unavailable",
                         "fallback_count": 0,

@@ -18,6 +18,14 @@ from .models import (
 
 PLAN_ID = re.compile(r"^[a-f0-9]{32}$")
 OPERATIONAL_NAMESPACE = "operational-administration-v3"
+OPERATIONAL_OPERATIONS = frozenset(
+    {
+        ChangeOperation.CREATE_FULL_BACKUP,
+        ChangeOperation.CONTROLLED_RELOAD,
+        ChangeOperation.RESTART_ADDON,
+        ChangeOperation.RESTART_HOME_ASSISTANT,
+    }
+)
 TERMINAL_STATUSES = {
     PlanStatus.VALIDATION_FAILED,
     PlanStatus.APPLIED,
@@ -92,7 +100,7 @@ class ChangePlanRepository:
         return (
             plan.contract_version == 3
             and plan.plan_family == "operational_administration"
-            and plan.operation == ChangeOperation.CREATE_FULL_BACKUP
+            and plan.operation in OPERATIONAL_OPERATIONS
             and plan.operational is not None
         )
 
@@ -235,7 +243,7 @@ class ChangePlanRepository:
                 continue
             if (
                 plan.contract_version == 3
-                and plan.operation.value == "create_full_backup"
+                and plan.operation in OPERATIONAL_OPERATIONS
                 and plan.operational is not None
             ):
                 dispatch = plan.operational.dispatch
@@ -251,9 +259,14 @@ class ChangePlanRepository:
                         "redispatch_performed": False,
                     }
                     plan.failure_information = {
-                        "error_code": "backup_dispatch_indeterminate",
+                        "error_code": (
+                            "backup_dispatch_indeterminate"
+                            if plan.operation
+                            == ChangeOperation.CREATE_FULL_BACKUP
+                            else "operational_dispatch_indeterminate"
+                        ),
                         "reason": (
-                            "A dispatched backup apply was recovered after "
+                            "A dispatched operational apply was recovered after "
                             "restart and requires read-only verification."
                         ),
                     }
@@ -261,7 +274,12 @@ class ChangePlanRepository:
                     plan.status = PlanStatus.FAILED
                     plan.execution_outcome = "not_applied"
                     plan.failure_information = {
-                        "error_code": "backup_creation_failed",
+                        "error_code": (
+                            "backup_creation_failed"
+                            if plan.operation
+                            == ChangeOperation.CREATE_FULL_BACKUP
+                            else "operational_provider_unavailable"
+                        ),
                         "reason": (
                             "An operational apply was interrupted before "
                             "provider dispatch."

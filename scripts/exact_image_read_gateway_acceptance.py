@@ -50,7 +50,7 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
 )
 
 
-EXPECTED_ENGINEERING_BASELINE_COUNT = 42
+EXPECTED_ENGINEERING_BASELINE_COUNT = 45
 ACCEPTANCE_TIMEOUT_SECONDS = 120
 MAX_DIAGNOSTIC_ITEMS = 32
 MAX_FAILURE_MESSAGE_CHARS = 512
@@ -123,7 +123,7 @@ UPSTREAM_ERROR_CALLS = {
             "/api/config/automation/config/{id}",
         ),
     },
-    "ambiguous_missing_registry_entity": {
+    "missing_registry_entity": {
         "tool": "ha_get_entity",
         "arguments": {
             "entity_id": (
@@ -131,9 +131,9 @@ UPSTREAM_ERROR_CALLS = {
             )
         },
         "upstream_code": "SERVICE_CALL_FAILED",
-        "public_code": "provider_error",
-        "failure_category": "upstream_error",
-        "retryable": True,
+        "public_code": "entity_not_found",
+        "failure_category": "entity_not_found",
+        "retryable": False,
         "fixture_counter": (
             "websocket_reads",
             "config/entity_registry/get",

@@ -98,10 +98,10 @@ class ExactImageDiagnosticTests(unittest.TestCase):
             + len(acceptance.UPSTREAM_ERROR_CALLS)
         )
 
-        self.assertEqual(acceptance.EXPECTED_OPERATIONAL_ERROR_CALLS, 2)
+        self.assertEqual(acceptance.EXPECTED_OPERATIONAL_ERROR_CALLS, 1)
         self.assertEqual(
             acceptance.expected_successful_delegated_calls(total_calls),
-            total_calls - 2,
+            total_calls - 1,
         )
 
     def test_catalog_failure_diagnostics_are_bounded_and_whitelisted(self):

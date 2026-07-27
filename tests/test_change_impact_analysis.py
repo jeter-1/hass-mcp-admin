@@ -1775,7 +1775,7 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
 class ToolCompatibilityTests(unittest.TestCase):
     def test_additive_dev14_tool_and_all_prior_schemas_unchanged(self):
         tools = registered_tools(get_registered_server()).values()
-        self.assertEqual(len(tools), 42)
+        self.assertEqual(len(tools), 45)
         current = {item.name: item for item in tools}
         self.assertEqual(
             set(current) - set(BETA14_SCHEMA_HASHES),
@@ -1788,6 +1788,9 @@ class ToolCompatibilityTests(unittest.TestCase):
                 "get_dashboard_config",
                 "create_configuration_plan",
                 "create_backup_plan",
+                "create_reload_plan",
+                "create_addon_restart_plan",
+                "create_home_assistant_restart_plan",
             },
         )
         for name, expected in BETA14_SCHEMA_HASHES.items():

@@ -842,7 +842,7 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("ha_set_entity", gateway._registered_names)
         self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
 
-    async def test_ambiguous_entity_lookup_error_remains_fail_closed(self):
+    async def test_reviewed_entity_lookup_missing_entry_is_domain_outcome(self):
         gateway, server, transport = await self.configured_gateway(
             "7.14.2"
         )
@@ -877,12 +877,34 @@ class DualVersionGatewayTests(unittest.IsolatedAsyncioTestCase):
                 }
             )
         )
-        self.assertEqual(value["error_code"], "provider_error")
+        self.assertEqual(value["error_code"], "entity_not_found")
         self.assertEqual(
-            value["details"]["failure_category"], "upstream_error"
+            value["details"]["failure_category"], "entity_not_found"
         )
-        self.assertTrue(value["retryable"])
+        self.assertFalse(value["retryable"])
         self.assertNotIn("credentials", value["message"])
         health = gateway.health_snapshot()
-        self.assertEqual(health["failure_counts"]["upstream_error"], 1)
+        self.assertEqual(health["failure_counts"]["entity_not_found"], 1)
+        self.assertEqual(
+            health["failure_counts"].get("upstream_error", 0), 0
+        )
+        self.assertEqual(health["fallback_count"], 0)
+
+        resolver_value = json.loads(
+            await tool.run({"unique_id": "missing-registry-unique-id"})
+        )
+        self.assertEqual(resolver_value["error_code"], "provider_error")
+        self.assertEqual(
+            resolver_value["details"]["failure_category"],
+            "upstream_error",
+        )
+        self.assertTrue(resolver_value["retryable"])
+
+        malformed_value = json.loads(
+            await tool.run({"entity_id": "not-an-entity-id"})
+        )
+        self.assertEqual(malformed_value["error_code"], "provider_error")
+        health = gateway.health_snapshot()
+        self.assertEqual(health["failure_counts"]["entity_not_found"], 1)
+        self.assertEqual(health["failure_counts"]["upstream_error"], 2)
         self.assertEqual(health["fallback_count"], 0)

@@ -537,7 +537,7 @@ class ToolParityTests(unittest.TestCase):
 
     def test_all_25_tools_are_registered(self):
         self.assertEqual(len(self.production_tools), 25)
-        self.assertEqual(len(self.beta_tools), 42)
+        self.assertEqual(len(self.beta_tools), 45)
         self.assertEqual(
             set(self.production_tools),
             set(self.beta_tools)
@@ -546,6 +546,9 @@ class ToolParityTests(unittest.TestCase):
                 "list_dashboards",
                 "get_dashboard_config",
                 "create_backup_plan",
+                "create_reload_plan",
+                "create_addon_restart_plan",
+                "create_home_assistant_restart_plan",
                 "create_change_plan",
                 "create_configuration_plan",
                 "get_change_plan",
@@ -616,7 +619,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(result["data"]["server"]["version"], SERVER_VERSION)
-        self.assertEqual(result["data"]["tool_count"], 42)
+        self.assertEqual(result["data"]["tool_count"], 45)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
     def test_list_capabilities_reports_expected_catalog(self):
@@ -624,12 +627,15 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         catalog = result["data"]
         self.assertEqual(catalog["count"], 25)
-        self.assertEqual(catalog["registered_count"], 42)
+        self.assertEqual(catalog["registered_count"], 45)
         self.assertEqual(len(catalog["planned"]), 0)
         self.assertEqual(
             [item["tool"] for item in catalog["beta_native"]],
             [
                 "create_backup_plan",
+                "create_reload_plan",
+                "create_addon_restart_plan",
+                "create_home_assistant_restart_plan",
                 "get_server_health",
                 "list_dashboards",
                 "get_dashboard_config",
@@ -747,7 +753,7 @@ class BetaApplicationTests(unittest.TestCase):
         )
         names = [tool["name"] for tool in listing["result"]["tools"]]
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(names), 42)
+        self.assertEqual(len(names), 45)
         dashboard_descriptors = {
             tool["name"]: tool
             for tool in listing["result"]["tools"]
@@ -821,6 +827,10 @@ class BetaApplicationTests(unittest.TestCase):
                 self.assertNotIn(prohibited, encoded)
         expected_beta_native = {
             "get_server_health",
+            "create_backup_plan",
+            "create_reload_plan",
+            "create_addon_restart_plan",
+            "create_home_assistant_restart_plan",
             "list_dashboards",
             "get_dashboard_config",
             "create_change_plan",
@@ -1324,6 +1334,11 @@ class BetaApplicationTests(unittest.TestCase):
             plan_id = created["data"]["plan_id"]
             plan_hash = created["data"]["plan_hash"]
             create_audit = self.audit_record("governance-create-123")
+            self.assertEqual(create_audit["access"], "proposal")
+            self.assertEqual(
+                create_audit["analysis_summary"]["operation_class"],
+                "proposal",
+            )
             self.assertEqual(
                 set(create_audit["parameters"]),
                 {"automation_id", "operation"},
@@ -1412,6 +1427,17 @@ class BetaApplicationTests(unittest.TestCase):
         tools = {tool.name: tool.parameters for tool in registered_tools(get_registered_server()).values()}
         expected_properties = {
             "create_backup_plan": {"backup_name", "expiration_minutes"},
+            "create_reload_plan": {
+                "reload_target",
+                "expiration_minutes",
+            },
+            "create_addon_restart_plan": {
+                "addon_slug",
+                "expiration_minutes",
+            },
+            "create_home_assistant_restart_plan": {
+                "expiration_minutes",
+            },
             "create_change_plan": {"title", "description", "operation", "automation_id", "proposed_config", "expiration_minutes", "caller_context"},
             "create_configuration_plan": {"title", "description", "operations", "expiration_minutes", "caller_context"},
             "get_change_plan": {"plan_id"},

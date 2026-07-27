@@ -55,6 +55,94 @@ async def create_backup_plan(
     )
 
 
+async def create_reload_plan(
+    reload_target: Literal[
+        "automation",
+        "script",
+        "input_boolean",
+        "input_number",
+    ],
+    expiration_minutes: Annotated[int, Field(ge=5, le=1440)] = 60,
+) -> str:
+    """Propose one exact controlled reload; planning never dispatches it.
+
+    Only the four declared Home Assistant domains are reachable. Arbitrary
+    services, service data, entity targets, integration entries, and reload-all
+    behavior are excluded. External administrator approval and the shared
+    apply_change_plan lifecycle are required.
+    """
+    return await run_structured(
+        "create_reload_plan",
+        "Created a governed controlled-reload proposal without dispatching it.",
+        lambda: GOVERNANCE.require().create_reload_plan(
+            reload_target=reload_target,
+            expiration_minutes=expiration_minutes,
+        ),
+        metadata={
+            "resource_type": "reload_domain",
+            "operation": "controlled_reload",
+        },
+        response_limit=SETTINGS.response_size_limit,
+    )
+
+
+async def create_addon_restart_plan(
+    addon_slug: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=128,
+            pattern=r"^[a-z0-9][a-z0-9_-]{0,127}$",
+        ),
+    ],
+    expiration_minutes: Annotated[int, Field(ge=5, le=1440)] = 60,
+) -> str:
+    """Propose restarting one exact installed add-on without dispatching it.
+
+    The provider argument is fixed to action=restart for the exact planned
+    slug. Start, stop, install, uninstall, update, options mutation, proxy
+    requests, and arbitrary arguments are unreachable.
+    """
+    return await run_structured(
+        "create_addon_restart_plan",
+        "Created a governed add-on restart proposal without dispatching it.",
+        lambda: GOVERNANCE.require().create_addon_restart_plan(
+            addon_slug=addon_slug,
+            expiration_minutes=expiration_minutes,
+        ),
+        metadata={
+            "resource_type": "addon",
+            "operation": "restart_addon",
+        },
+        response_limit=SETTINGS.response_size_limit,
+    )
+
+
+async def create_home_assistant_restart_plan(
+    expiration_minutes: Annotated[int, Field(ge=5, le=1440)] = 60,
+) -> str:
+    """Propose one Home Assistant restart without dispatching it.
+
+    Full configuration validation and exact runtime evidence are captured at
+    planning and rechecked before the shared externally approved apply path.
+    No restart variants or arbitrary service data are accepted.
+    """
+    return await run_structured(
+        "create_home_assistant_restart_plan",
+        "Created a governed Home Assistant restart proposal without dispatching it.",
+        lambda: (
+            GOVERNANCE.require().create_home_assistant_restart_plan(
+                expiration_minutes=expiration_minutes,
+            )
+        ),
+        metadata={
+            "resource_type": "home_assistant",
+            "operation": "restart_home_assistant",
+        },
+        response_limit=SETTINGS.response_size_limit,
+    )
+
+
 async def create_change_plan(
     title: str,
     description: str,
@@ -186,6 +274,9 @@ async def rollback_change(plan_id: str, expected_plan_hash: str = "") -> str:
 
 GOVERNANCE_TOOLS = (
     create_backup_plan,
+    create_reload_plan,
+    create_addon_restart_plan,
+    create_home_assistant_restart_plan,
     create_change_plan,
     create_configuration_plan,
     get_change_plan,

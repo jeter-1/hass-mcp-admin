@@ -1165,6 +1165,10 @@ class OperationalBackupLifecycleTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual(health["backup_plans_created"], 1)
         self.assertEqual(health["backup_applies_attempted"], 1)
+        self.assertEqual(
+            health["operations"]["create_full_backup"]["apply_attempts"],
+            1,
+        )
         self.assertEqual(health["successful_backups"], 1)
         self.assertEqual(health["fallback_count"], 0)
         self.assertEqual(

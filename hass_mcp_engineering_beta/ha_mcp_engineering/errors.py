@@ -55,6 +55,15 @@ class ErrorCode(str, Enum):
     BACKUP_VERIFICATION_TIMEOUT = "backup_verification_timeout"
     BACKUP_VERIFICATION_FAILED = "backup_verification_failed"
     BACKUP_DISPATCH_INDETERMINATE = "backup_dispatch_indeterminate"
+    OPERATIONAL_PROVIDER_UNAVAILABLE = "operational_provider_unavailable"
+    OPERATIONAL_CONTRACT_MISMATCH = "operational_contract_mismatch"
+    OPERATIONAL_VALIDATION_FAILED = "operational_validation_failed"
+    OPERATIONAL_ACTION_REJECTED = "operational_action_rejected"
+    OPERATIONAL_VERIFICATION_PENDING = "operational_verification_pending"
+    OPERATIONAL_VERIFICATION_FAILED = "operational_verification_failed"
+    OPERATIONAL_DISPATCH_INDETERMINATE = (
+        "operational_dispatch_indeterminate"
+    )
     DUPLICATE_APPLY_ATTEMPT = "duplicate_apply_attempt"
     INTERNAL_INVARIANT_VIOLATION = "internal_invariant_violation"
     INVALID_CURSOR = "invalid_cursor"
@@ -123,7 +132,24 @@ class ErrorDefinition:
 
 ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
     ErrorCode.AUTHENTICATION_FAILURE: ErrorDefinition("Authentication failed.", False, 404, "invalid_request"),
-    ErrorCode.AUTHORIZATION_FAILURE: ErrorDefinition("The operation is not authorized.", False, 403, "invalid_request"),
+    ErrorCode.AUTHORIZATION_FAILURE: ErrorDefinition(
+        "The operation is not authorized.",
+        False,
+        403,
+        "invalid_request",
+        safe_detail_fields=(
+            "endpoint_category",
+            "operation",
+            "resource_id",
+            "failure_category",
+            "failure_stage",
+            "provider_dispatch_occurred",
+            "action_attempted",
+            "fallback",
+            "fallback_occurred",
+            "required_action",
+        ),
+    ),
     ErrorCode.INVALID_REQUEST: ErrorDefinition("The request is invalid.", False, 400, "invalid_request"),
     ErrorCode.VALIDATION_FAILURE: ErrorDefinition("Request validation failed.", False, 422, "invalid_params"),
     ErrorCode.HA_UNAVAILABLE: ErrorDefinition("Home Assistant is unavailable.", True, 503, "internal_error"),
@@ -189,6 +215,134 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
     ErrorCode.BACKUP_VERIFICATION_TIMEOUT: ErrorDefinition("Backup verification is still required; creation will not be retried.", False, 504, "internal_error"),
     ErrorCode.BACKUP_VERIFICATION_FAILED: ErrorDefinition("Independent backup readback did not satisfy the approved verification contract.", False, 409, "internal_error"),
     ErrorCode.BACKUP_DISPATCH_INDETERMINATE: ErrorDefinition("Backup dispatch may have occurred; verification is required and creation will not be retried.", False, 409, "internal_error"),
+    ErrorCode.OPERATIONAL_PROVIDER_UNAVAILABLE: ErrorDefinition(
+        "The reviewed operational provider is unavailable.",
+        True,
+        503,
+        "internal_error",
+        safe_detail_fields=(
+            "exception_type",
+            "operation",
+            "resource_id",
+            "status",
+            "endpoint_category",
+            "failure_category",
+            "failure_stage",
+            "provider_dispatch_occurred",
+            "action_attempted",
+            "fallback",
+            "fallback_occurred",
+            "required_action",
+        ),
+    ),
+    ErrorCode.OPERATIONAL_CONTRACT_MISMATCH: ErrorDefinition(
+        "The operational provider no longer matches the reviewed contract.",
+        False,
+        409,
+        "internal_error",
+        safe_detail_fields=(
+            "operation",
+            "resource_id",
+            "endpoint_category",
+            "failure_category",
+            "failure_stage",
+            "provider_dispatch_occurred",
+            "action_attempted",
+            "fallback",
+            "fallback_occurred",
+            "required_action",
+        ),
+    ),
+    ErrorCode.OPERATIONAL_VALIDATION_FAILED: ErrorDefinition(
+        "Operational safety validation failed before dispatch.",
+        False,
+        422,
+        "invalid_params",
+        safe_detail_fields=(
+            "operation",
+            "resource_id",
+            "endpoint_category",
+            "failure_category",
+            "failure_stage",
+            "provider_dispatch_occurred",
+            "action_attempted",
+            "fallback",
+            "fallback_occurred",
+            "required_action",
+        ),
+    ),
+    ErrorCode.OPERATIONAL_ACTION_REJECTED: ErrorDefinition(
+        "The reviewed operational action was rejected.",
+        False,
+        409,
+        "invalid_request",
+        safe_detail_fields=(
+            "operation",
+            "resource_id",
+            "endpoint_category",
+            "failure_category",
+            "failure_stage",
+            "provider_dispatch_occurred",
+            "action_attempted",
+            "fallback",
+            "fallback_occurred",
+            "required_action",
+        ),
+    ),
+    ErrorCode.OPERATIONAL_VERIFICATION_PENDING: ErrorDefinition(
+        "The action was dispatched once and verification remains pending; it will not be redispatched.",
+        False,
+        409,
+        "internal_error",
+        safe_detail_fields=(
+            "operation",
+            "resource_id",
+            "endpoint_category",
+            "failure_category",
+            "failure_stage",
+            "provider_dispatch_occurred",
+            "action_attempted",
+            "fallback",
+            "fallback_occurred",
+            "required_action",
+        ),
+    ),
+    ErrorCode.OPERATIONAL_VERIFICATION_FAILED: ErrorDefinition(
+        "Post-operation readback did not satisfy the approved verification contract.",
+        False,
+        409,
+        "internal_error",
+        safe_detail_fields=(
+            "operation",
+            "resource_id",
+            "endpoint_category",
+            "failure_category",
+            "failure_stage",
+            "provider_dispatch_occurred",
+            "action_attempted",
+            "fallback",
+            "fallback_occurred",
+            "required_action",
+        ),
+    ),
+    ErrorCode.OPERATIONAL_DISPATCH_INDETERMINATE: ErrorDefinition(
+        "The action may have been dispatched; readback-only reconciliation is required and dispatch will not be repeated.",
+        False,
+        409,
+        "internal_error",
+        safe_detail_fields=(
+            "operation",
+            "resource_id",
+            "endpoint_category",
+            "failure_category",
+            "failure_stage",
+            "provider_dispatch_occurred",
+            "action_attempted",
+            "fallback",
+            "fallback_occurred",
+            "required_action",
+        ),
+    ),
     ErrorCode.DUPLICATE_APPLY_ATTEMPT: ErrorDefinition("The operational apply was already dispatched and will not be repeated.", False, 409, "invalid_request"),
     ErrorCode.INTERNAL_INVARIANT_VIOLATION: ErrorDefinition("An operational governance invariant failed closed.", False, 500, "internal_error"),
     ErrorCode.INVALID_CURSOR: ErrorDefinition("The pagination cursor is invalid.", False, 400, "invalid_params"),
