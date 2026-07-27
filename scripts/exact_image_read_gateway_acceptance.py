@@ -50,7 +50,7 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
 )
 
 
-EXPECTED_ENGINEERING_BASELINE_COUNT = 42
+EXPECTED_ENGINEERING_BASELINE_COUNT = 45
 ACCEPTANCE_TIMEOUT_SECONDS = 120
 MAX_DIAGNOSTIC_ITEMS = 32
 MAX_FAILURE_MESSAGE_CHARS = 512
@@ -123,7 +123,7 @@ UPSTREAM_ERROR_CALLS = {
             "/api/config/automation/config/{id}",
         ),
     },
-    "ambiguous_missing_registry_entity": {
+    "missing_registry_entity": {
         "tool": "ha_get_entity",
         "arguments": {
             "entity_id": (
@@ -131,9 +131,9 @@ UPSTREAM_ERROR_CALLS = {
             )
         },
         "upstream_code": "SERVICE_CALL_FAILED",
-        "public_code": "provider_error",
-        "failure_category": "upstream_error",
-        "retryable": True,
+        "public_code": "entity_not_found",
+        "failure_category": "entity_not_found",
+        "retryable": False,
         "fixture_counter": (
             "websocket_reads",
             "config/entity_registry/get",
@@ -144,6 +144,18 @@ EXPECTED_OPERATIONAL_ERROR_CALLS = sum(
     1
     for value in UPSTREAM_ERROR_CALLS.values()
     if value["failure_category"] == "upstream_error"
+)
+EXPECTED_OUTCOME_CATEGORY_COUNTS: dict[str, int] = {}
+for expected_error in UPSTREAM_ERROR_CALLS.values():
+    category = expected_error["failure_category"]
+    EXPECTED_OUTCOME_CATEGORY_COUNTS[category] = (
+        EXPECTED_OUTCOME_CATEGORY_COUNTS.get(category, 0) + 1
+    )
+_expected_last_outcome = next(reversed(UPSTREAM_ERROR_CALLS.values()))
+EXPECTED_LAST_CALL_FAILURE_CATEGORY = (
+    _expected_last_outcome["failure_category"]
+    if _expected_last_outcome["failure_category"] == "upstream_error"
+    else None
 )
 
 
@@ -1038,14 +1050,8 @@ async def inspect_engineering(
                 gateway_before_errors.get("failure_counts") or {}
             )
             gateway_failure_after = gateway_state.get("failure_counts") or {}
-            expected_category_deltas = {
-                "upstream_error": EXPECTED_OPERATIONAL_ERROR_CALLS,
-                "invalid_request": 1,
-                "entity_not_found": 1,
-                "automation_not_found": 1,
-            }
             for category, expected_delta in (
-                expected_category_deltas.items()
+                EXPECTED_OUTCOME_CATEGORY_COUNTS.items()
             ):
                 require(
                     gateway_failure_after.get(category, 0)
@@ -1055,8 +1061,8 @@ async def inspect_engineering(
                 )
             require(
                 gateway_state.get("last_call_failure_category")
-                == "upstream_error",
-                "ambiguous entity lookup was not kept fail closed",
+                == EXPECTED_LAST_CALL_FAILURE_CATEGORY,
+                "last operational gateway failure category mismatch",
             )
             require(fallback_before == fallback_after, "fallback counters changed")
             require(gateway_state.get("fallback_count") == 0, "gateway fallback occurred")

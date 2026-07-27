@@ -11,7 +11,7 @@ import logging
 import json
 import secrets
 import time
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 import uuid
 
 from ..audit import AuditLogger
@@ -70,6 +70,11 @@ from .operational import (
     OperationalGatewayError,
     normalize_backup_name,
 )
+from .operational_lifecycle import (
+    LifecycleGatewayError,
+    OperationalLifecycleGateway,
+    RELOAD_SERVICES,
+)
 from .validation import sanitize_context, validate_automation
 
 
@@ -79,6 +84,13 @@ APPROVAL_CHALLENGE_TTL = timedelta(minutes=15)
 DEFAULT_APPROVER_PRINCIPAL = "home_assistant_admin_ingress"
 CONFIGURATION_PLAN_CONTRACT_VERSION = 2
 OPERATIONAL_PLAN_CONTRACT_VERSION = 3
+LIFECYCLE_OPERATIONS = frozenset(
+    {
+        ChangeOperation.CONTROLLED_RELOAD,
+        ChangeOperation.RESTART_ADDON,
+        ChangeOperation.RESTART_HOME_ASSISTANT,
+    }
+)
 MAX_CONFIGURATION_OPERATIONS = 8
 SUPPORTED_CONFIGURATION_RESOURCES = frozenset({"automation", "script", "helper"})
 SUPPORTED_HELPER_TYPES = frozenset({"input_boolean", "input_number"})
@@ -91,6 +103,8 @@ MAX_APPROVAL_PROJECTION_DEPTH = 4
 MAX_APPROVAL_PROJECTION_CONTROLS = 16
 MAX_APPROVAL_PROJECTION_ACTIONS_PER_PLAN = 32
 MAX_APPROVAL_PROJECTION_DETAILS_PER_PLAN = 128
+MAX_OPERATIONAL_RECONCILIATIONS_PER_PASS = 20
+OPERATIONAL_RECONCILIATION_TIME_BUDGET_SECONDS = 10.0
 
 _APPROVAL_METADATA_FIELDS = {
     "automation": (
@@ -866,6 +880,7 @@ class ChangeGovernanceService:
         now: Callable[[], datetime] | None = None,
         sensitive_values: tuple[str, ...] = (),
         operational_gateway: BackupAdministrationGateway | Any | None = None,
+        lifecycle_gateway: OperationalLifecycleGateway | Any | None = None,
     ):
         self.repository = repository
         self.gateway = gateway
@@ -873,9 +888,11 @@ class ChangeGovernanceService:
         self.now = now or (lambda: datetime.now(timezone.utc))
         self.sensitive_values = tuple(value for value in sensitive_values if value)
         self.operational_gateway = operational_gateway
+        self.lifecycle_gateway = lifecycle_gateway
         self.logger = get_logger("governance")
         self._plan_locks: dict[str, asyncio.Lock] = {}
         self._target_locks: dict[object, asyncio.Lock] = {}
+        self._active_lifecycle_reconciliations = 0
         self.repository.cleanup(now=self.now())
         self.repository.recover_incomplete(self._timestamp())
 
@@ -1292,6 +1309,18 @@ class ChangeGovernanceService:
                 operation.pop("normalized_current_config", None)
                 operation.pop("snapshot", None)
         if plan.contract_version >= CONFIGURATION_PLAN_CONTRACT_VERSION:
+            if plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION:
+                # Contract-v3 operational plans use the durable operational
+                # verification record.  Removing the legacy configuration
+                # field avoids a contradictory "not_run" next to a verified
+                # restart, reload, or backup result.
+                value.pop("verification", None)
+                value["authoritative_verification_field"] = (
+                    "operational.verification"
+                )
+                value["generic_configuration_verification_applicable"] = (
+                    False
+                )
             sanitized = sanitize_untrusted_data(
                 value,
                 known_secrets=self.sensitive_values,
@@ -1402,7 +1431,14 @@ class ChangeGovernanceService:
     @classmethod
     def _plan_target_keys(cls, plan: ChangePlan) -> set[tuple[str, str]]:
         if plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION:
-            return {("operational_backup", "global")}
+            if plan.operation == ChangeOperation.CREATE_FULL_BACKUP:
+                return {("operational_backup", "global")}
+            return {
+                (
+                    f"operational_{plan.operation.value}",
+                    plan.target_id,
+                )
+            }
         if plan.contract_version == CONFIGURATION_PLAN_CONTRACT_VERSION:
             return {cls._operation_target_key(item) for item in plan.operations}
         return {(plan.target_type, plan.target_id)}
@@ -1711,6 +1747,280 @@ class ChangeGovernanceService:
         )
         self._supersede_prior(plan)
         self._record(plan, "operational_backup_plan_created", "success")
+        return {
+            "status": "awaiting_approval",
+            "proposal_only": True,
+            "provider_dispatch_occurred": False,
+            "plan": self._public(plan, include_configs=False),
+        }
+
+    async def create_reload_plan(
+        self,
+        *,
+        reload_target: str,
+        expiration_minutes: int = 60,
+        caller_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Propose one exact allowlisted reload without dispatching it."""
+
+        if reload_target not in RELOAD_SERVICES:
+            raise GovernanceError(
+                ErrorCode.INVALID_REQUEST,
+                details={"reason": "unsupported_reload_target"},
+            )
+        return await self._create_lifecycle_plan(
+            operation=ChangeOperation.CONTROLLED_RELOAD,
+            target_type="reload_domain",
+            target_id=reload_target,
+            title=f"Reload Home Assistant {reload_target} configuration",
+            description=(
+                "Run one exact reviewed domain reload after configuration "
+                "validation and external administrator approval."
+            ),
+            expiration_minutes=expiration_minutes,
+            caller_context=caller_context,
+        )
+
+    async def create_addon_restart_plan(
+        self,
+        *,
+        addon_slug: str,
+        expiration_minutes: int = 60,
+        caller_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Propose one exact installed add-on restart without dispatching it."""
+
+        return await self._create_lifecycle_plan(
+            operation=ChangeOperation.RESTART_ADDON,
+            target_type="addon",
+            target_id=addon_slug,
+            title=f"Restart installed add-on {addon_slug}"[:160],
+            description=(
+                "Restart one exact installed add-on through the reviewed "
+                "restart-only provider contract."
+            ),
+            expiration_minutes=expiration_minutes,
+            caller_context=caller_context,
+        )
+
+    async def create_home_assistant_restart_plan(
+        self,
+        *,
+        expiration_minutes: int = 60,
+        caller_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Propose one governed Home Assistant restart without dispatching it."""
+
+        return await self._create_lifecycle_plan(
+            operation=ChangeOperation.RESTART_HOME_ASSISTANT,
+            target_type="home_assistant",
+            target_id="core",
+            title="Restart Home Assistant",
+            description=(
+                "Restart Home Assistant once after full configuration "
+                "validation and external administrator approval."
+            ),
+            expiration_minutes=expiration_minutes,
+            caller_context=caller_context,
+        )
+
+    async def _create_lifecycle_plan(
+        self,
+        *,
+        operation: ChangeOperation,
+        target_type: str,
+        target_id: str,
+        title: str,
+        description: str,
+        expiration_minutes: int,
+        caller_context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Create a fail-closed plan from complete load-bearing evidence.
+
+        Normalization, hashing, approval, pre-dispatch revalidation, and
+        recovery bind the operation, exact target and target fingerprint,
+        reviewed provider capability, required planning validation, and the
+        operation-specific verification contract. Self-restart additionally
+        requires a process-instance baseline; Home Assistant restart requires
+        Home Assistant identity; and disruptive recovery binds runtime/build
+        and tool counts, upstream identity/catalog admission, governance and
+        audit persistence, and the expected verification contract. Incomplete
+        or synthetic evidence is intentionally rejected by those later
+        fail-closed checks rather than normalized into an applicable plan.
+        """
+
+        if self.lifecycle_gateway is None:
+            raise GovernanceError(
+                ErrorCode.OPERATIONAL_PROVIDER_UNAVAILABLE
+            )
+        expiration_minutes = max(5, min(int(expiration_minutes), 1440))
+        try:
+            evidence = await self.lifecycle_gateway.planning_evidence(
+                operation.value, target_id
+            )
+        except (LifecycleGatewayError, KeyError) as exc:
+            category = getattr(exc, "category", "invalid_request")
+            raise GovernanceError(
+                self._lifecycle_error_code(category, dispatched=False)
+            ) from None
+        provider_evidence = evidence.get("provider")
+        baseline = evidence.get("baseline")
+        if not isinstance(provider_evidence, dict) or not isinstance(
+            baseline, dict
+        ):
+            raise GovernanceError(ErrorCode.INTERNAL_INVARIANT_VIOLATION)
+        validation = baseline.get("configuration_validation")
+        if operation in {
+            ChangeOperation.CONTROLLED_RELOAD,
+            ChangeOperation.RESTART_HOME_ASSISTANT,
+        } and (
+            not isinstance(validation, dict)
+            or validation.get("status") != "valid"
+        ):
+            raise GovernanceError(
+                ErrorCode.OPERATIONAL_VALIDATION_FAILED,
+                details={
+                    "failure_stage": "planning",
+                    "provider_dispatch_occurred": False,
+                },
+            )
+        now = self.now()
+        is_high_risk = operation in {
+            ChangeOperation.RESTART_ADDON,
+            ChangeOperation.RESTART_HOME_ASSISTANT,
+        }
+        risk = ChangeRiskAssessment(
+            level=RiskLevel.HIGH if is_high_risk else RiskLevel.MEDIUM,
+            reasons=[
+                (
+                    "The exact add-on restart is a disruptive high-risk "
+                    "infrastructure action."
+                    if operation == ChangeOperation.RESTART_ADDON
+                    else "The Home Assistant restart is a disruptive high-risk infrastructure action."
+                    if operation == ChangeOperation.RESTART_HOME_ASSISTANT
+                    else "The controlled reload is an infrastructure write."
+                ),
+                "The action cannot be automatically rolled back.",
+            ],
+            apply_allowed=True,
+            evidence=[
+                {
+                    "field": "operation",
+                    "trigger": operation.value,
+                }
+            ],
+            warnings=[
+                "Temporary provider or Home Assistant unavailability may be expected.",
+                "A dispatched operation is never blindly repeated.",
+            ],
+        )
+        validation_required = operation in {
+            ChangeOperation.CONTROLLED_RELOAD,
+            ChangeOperation.RESTART_HOME_ASSISTANT,
+        }
+        operational = OperationalPlanDetails(
+            schema_version=1,
+            family="operational_administration",
+            operation=operation.value,
+            requested_name=target_id,
+            provider=str(provider_evidence.get("provider") or ""),
+            provider_capability_evidence=provider_evidence,
+            expected_effects=_lifecycle_expected_effects(
+                operation, target_id
+            ),
+            preconditions=[
+                "The exact reviewed upstream contract remains admitted.",
+                "One unexpired external administrator approval is bound to this plan hash.",
+                *(
+                    [
+                        "Full Home Assistant configuration validation remains valid immediately before dispatch."
+                    ]
+                    if validation_required
+                    else []
+                ),
+            ],
+            verification_contract={
+                "version": 1,
+                "operation": operation.value,
+                "required": _lifecycle_verification_requirements(operation),
+                "no_blind_redispatch": True,
+                "bounded_initial_response": True,
+                "startup_reconciliation": True,
+            },
+            baseline=baseline,
+            dispatch={
+                "attempt_count": 0,
+                "dispatched": False,
+                "request_id": None,
+                "attempted_at": None,
+                "provider_response_received": False,
+                "restart_dispatch_confirmed": False,
+                "expected_disruption_observed": False,
+            },
+            verification=RecoveryVerification(),
+            limitations=[
+                "Rollback is unavailable.",
+                "A lost provider response can require readback-only reconciliation or manual review.",
+            ],
+            rollback_available=False,
+        )
+        plan = ChangePlan(
+            plan_id=self._new_id(),
+            plan_version=1,
+            created_at=now.isoformat(),
+            updated_at=now.isoformat(),
+            expires_at=(
+                now + timedelta(minutes=expiration_minutes)
+            ).isoformat(),
+            status=PlanStatus.AWAITING_APPROVAL,
+            title=title[:160],
+            description=description[:1000],
+            requested_by=current_caller_id(),
+            target=ChangeTarget(target_type, target_id),
+            operation=operation,
+            proposed_config={},
+            current_config=None,
+            normalized_proposed_config={},
+            normalized_current_config=None,
+            current_state_fingerprint=stable_hash(baseline),
+            proposed_config_hash=stable_hash(
+                {
+                    "operation": operation.value,
+                    "target_type": target_type,
+                    "target_id": target_id,
+                }
+            ),
+            risk=risk,
+            normalization_version=1,
+            warnings=list(risk.warnings),
+            validation_results={
+                "valid": True,
+                "planning_write_performed": False,
+                "provider_available": True,
+                "configuration_validation_required": validation_required,
+                "configuration_validation": validation,
+            },
+            dry_run_results={
+                "operation": operation.value,
+                "provider_dispatch_occurred": False,
+                "rollback_available": False,
+            },
+            rollback=ChangeRollback(available=False, status="unavailable"),
+            caller_context=_sanitize_configuration_caller_context(
+                caller_context,
+                known_secrets=self.sensitive_values,
+            ),
+            contract_version=OPERATIONAL_PLAN_CONTRACT_VERSION,
+            plan_family="operational_administration",
+            operational=operational,
+            execution_outcome="not_applied",
+        )
+        self._supersede_prior(plan)
+        self._record(
+            plan,
+            f"{operation.value}_plan_created",
+            "success",
+        )
         return {
             "status": "awaiting_approval",
             "proposal_only": True,
@@ -2302,7 +2612,14 @@ class ChangeGovernanceService:
                 if plan.contract_version >= CONFIGURATION_PLAN_CONTRACT_VERSION
                 else ErrorCode.AUTOMATION_VALIDATION_FAILED
             )
-        if plan.risk.level == RiskLevel.HIGH:
+        if (
+            plan.risk.level == RiskLevel.HIGH
+            and not (
+                plan.contract_version
+                == OPERATIONAL_PLAN_CONTRACT_VERSION
+                and plan.operation in LIFECYCLE_OPERATIONS
+            )
+        ):
             self._record(plan, "change_apply_rejected", "rejected", error_code=ErrorCode.HIGH_RISK_CHANGE_REJECTED.value)
             raise GovernanceError(ErrorCode.HIGH_RISK_CHANGE_REJECTED)
         if self._active_challenge_matches(plan, calculated):
@@ -2516,11 +2833,26 @@ class ChangeGovernanceService:
                 "verification_contract": operational.verification_contract,
                 "limitations": operational.limitations[:10],
                 "rollback_available": False,
-                "provider_arguments": {
-                    "scope": "snapshot",
-                    "action": "create",
-                    "name": operational.requested_name,
-                },
+                "provider_arguments": (
+                    {
+                        "scope": "snapshot",
+                        "action": "create",
+                        "name": operational.requested_name,
+                    }
+                    if plan.operation
+                    == ChangeOperation.CREATE_FULL_BACKUP
+                    else {
+                        "target": plan.target_id
+                    }
+                    if plan.operation
+                    == ChangeOperation.CONTROLLED_RELOAD
+                    else {
+                        "slug": plan.target_id,
+                        "action": "restart",
+                    }
+                    if plan.operation == ChangeOperation.RESTART_ADDON
+                    else {"confirm": True}
+                ),
             }
         elif plan.contract_version == CONFIGURATION_PLAN_CONTRACT_VERSION:
             operation_summaries = []
@@ -2687,7 +3019,11 @@ class ChangeGovernanceService:
         async with plan_lock:
             plan = self._load(plan_id)
             if plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION:
-                return await self._apply_operational_backup(
+                if plan.operation == ChangeOperation.CREATE_FULL_BACKUP:
+                    return await self._apply_operational_backup(
+                        plan, expected_plan_hash
+                    )
+                return await self._apply_operational_lifecycle(
                     plan, expected_plan_hash
                 )
             if plan.contract_version == CONFIGURATION_PLAN_CONTRACT_VERSION:
@@ -2712,6 +3048,752 @@ class ChangeGovernanceService:
                 raise GovernanceError(ErrorCode.CHANGE_IN_PROGRESS)
             async with target_lock:
                 return await self._apply_locked(plan, expected_plan_hash)
+
+    async def _apply_operational_lifecycle(
+        self, plan: ChangePlan, expected_plan_hash: str
+    ) -> dict[str, Any]:
+        self._resolve_lifecycle(plan)
+        if plan.status == PlanStatus.EXPIRED:
+            raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
+        self._require_current_normalization(plan)
+        operational = plan.operational
+        if operational is None or self.lifecycle_gateway is None:
+            raise GovernanceError(ErrorCode.INTERNAL_INVARIANT_VIOLATION)
+        calculated = self.plan_hash(plan)
+        if not expected_plan_hash or expected_plan_hash != calculated:
+            self._reject_apply(
+                plan,
+                ErrorCode.APPROVAL_HASH_MISMATCH,
+                details={
+                    "hash_validation": {
+                        "performed": bool(expected_plan_hash),
+                        "result": (
+                            "mismatch"
+                            if expected_plan_hash
+                            else "not_supplied"
+                        ),
+                    }
+                },
+            )
+        if plan.status == PlanStatus.APPLIED:
+            self._record(
+                plan,
+                f"{plan.operation.value}_apply_attempted",
+                "success",
+            )
+            self._record(
+                plan,
+                f"{plan.operation.value}_no_redispatch_prevented",
+                "success",
+            )
+            return {
+                "status": "already_applied",
+                "provider_dispatch_occurred": True,
+                "redispatch_performed": False,
+                "plan": self._public(plan, include_configs=False),
+            }
+        if (
+            plan.status == PlanStatus.APPLYING
+            and operational.dispatch.get("attempt_count") == 1
+        ):
+            self._record(
+                plan,
+                f"{plan.operation.value}_apply_attempted",
+                "success",
+            )
+            self._record(
+                plan,
+                f"{plan.operation.value}_no_redispatch_prevented",
+                "success",
+            )
+            plan.status = PlanStatus.VERIFICATION_REQUIRED
+            plan.execution_outcome = "verification_pending"
+            operational.final_outcome = "verification_pending"
+            operational.verification.status = "verification_pending"
+            self._record(
+                plan,
+                f"{plan.operation.value}_dispatch_recovered",
+                "partial",
+                error_code=(
+                    ErrorCode.OPERATIONAL_DISPATCH_INDETERMINATE.value
+                ),
+            )
+            return await self._resume_lifecycle_verification(plan)
+        if plan.status == PlanStatus.VERIFICATION_REQUIRED:
+            self._record(
+                plan,
+                f"{plan.operation.value}_apply_attempted",
+                "success",
+            )
+            self._record(
+                plan,
+                f"{plan.operation.value}_no_redispatch_prevented",
+                "success",
+            )
+            return await self._resume_lifecycle_verification(plan)
+        if plan.status in {
+            PlanStatus.FAILED,
+            PlanStatus.VERIFICATION_FAILED,
+        } or plan.approval.state == ApprovalState.CONSUMED:
+            raise GovernanceError(ErrorCode.DUPLICATE_APPLY_ATTEMPT)
+        if plan.status == PlanStatus.REJECTED:
+            self._reject_apply(plan, ErrorCode.CHANGE_PLAN_REJECTED)
+        if not self._valid_external_approval(plan, "apply"):
+            self._reject_apply(plan, ErrorCode.EXTERNAL_APPROVAL_REQUIRED)
+        if plan.approval.bound_plan_hash != calculated:
+            self._reject_apply(plan, ErrorCode.APPROVAL_HASH_MISMATCH)
+        self._record(
+            plan,
+            f"{plan.operation.value}_apply_attempted",
+            "success",
+        )
+
+        target_lock = self._target_locks.setdefault(
+            (
+                f"operational_{plan.operation.value}",
+                plan.target_id,
+            ),
+            asyncio.Lock(),
+        )
+        if target_lock.locked():
+            self._reject_apply(plan, ErrorCode.CHANGE_IN_PROGRESS)
+        async with target_lock:
+            try:
+                fresh = await self.lifecycle_gateway.planning_evidence(
+                    plan.operation.value, plan.target_id
+                )
+            except LifecycleGatewayError as exc:
+                code = self._lifecycle_error_code(
+                    exc.category, dispatched=False
+                )
+                self._record(
+                    plan,
+                    f"{plan.operation.value}_preflight_failed",
+                    "failure",
+                    error_code=code.value,
+                    failure_category=exc.category,
+                    failure_stage="pre_dispatch",
+                )
+                raise GovernanceError(
+                    code,
+                    details=_operational_failure_details(
+                        exc.category, dispatched=False
+                    ),
+                ) from None
+            fresh_provider = fresh.get("provider")
+            fresh_baseline = fresh.get("baseline")
+            if (
+                not isinstance(fresh_provider, dict)
+                or not isinstance(fresh_baseline, dict)
+                or not self._lifecycle_preflight_matches(
+                    plan, fresh_provider, fresh_baseline
+                )
+            ):
+                self._record(
+                    plan,
+                    f"{plan.operation.value}_preflight_failed",
+                    "failure",
+                    error_code=ErrorCode.STALE_TARGET_STATE.value,
+                    failure_category="stale_target_state",
+                    failure_stage="pre_dispatch",
+                )
+                raise GovernanceError(
+                    ErrorCode.STALE_TARGET_STATE,
+                    details=_operational_failure_details(
+                        "stale_target_state", dispatched=False
+                    ),
+                )
+            apply_validation = fresh_baseline.get(
+                "configuration_validation"
+            )
+            if plan.operation in {
+                ChangeOperation.CONTROLLED_RELOAD,
+                ChangeOperation.RESTART_HOME_ASSISTANT,
+            }:
+                operational.dispatch["apply_validation"] = apply_validation
+                operational.dispatch["validation_changed_since_planning"] = (
+                    _configuration_validation_changed(
+                        operational.baseline.get(
+                            "configuration_validation"
+                        ),
+                        apply_validation,
+                    )
+                )
+                if (
+                    not isinstance(apply_validation, dict)
+                    or apply_validation.get("status") != "valid"
+                ):
+                    self._record(
+                        plan,
+                        f"{plan.operation.value}_validation_failed",
+                        "failure",
+                        error_code=(
+                            ErrorCode.OPERATIONAL_VALIDATION_FAILED.value
+                        ),
+                        failure_category="configuration_invalid",
+                        failure_stage="pre_dispatch",
+                    )
+                    raise GovernanceError(
+                        ErrorCode.OPERATIONAL_VALIDATION_FAILED,
+                        details=_operational_failure_details(
+                            "configuration_invalid", dispatched=False
+                        ),
+                    )
+
+            async def before_dispatch() -> None:
+                if operational.dispatch.get("attempt_count") not in {
+                    0,
+                    None,
+                }:
+                    raise GovernanceError(
+                        ErrorCode.DUPLICATE_APPLY_ATTEMPT
+                    )
+                plan.status = PlanStatus.APPLYING
+                plan.execution_outcome = "dispatching"
+                plan.apply_request_id = current_request_id()
+                plan.approval.state = ApprovalState.CONSUMED
+                plan.approval.consumed_at = self._timestamp()
+                operational.dispatch.update(
+                    {
+                        "attempt_count": 1,
+                        "dispatched": True,
+                        "request_id": plan.apply_request_id,
+                        "attempted_at": self._timestamp(),
+                    }
+                )
+                self._record(
+                    plan,
+                    f"{plan.operation.value}_dispatch_recorded",
+                    "success",
+                )
+
+            try:
+                dispatch = await self._dispatch_lifecycle(
+                    plan, before_dispatch=before_dispatch
+                )
+                operational.dispatch.update(
+                    {
+                        "provider_response_received": (
+                            dispatch.provider_response_received
+                        ),
+                        "provider_response_at": self._timestamp(),
+                        "provider_result": dispatch.response,
+                        "restart_dispatch_confirmed": (
+                            plan.operation
+                            == ChangeOperation.RESTART_HOME_ASSISTANT
+                            and dispatch.provider_response_received
+                        ),
+                    }
+                )
+                self._record(
+                    plan,
+                    f"{plan.operation.value}_provider_completed",
+                    "success",
+                )
+            except LifecycleGatewayError as exc:
+                if not exc.dispatched:
+                    code = self._lifecycle_error_code(
+                        exc.category, dispatched=False
+                    )
+                    plan.failure_information = {
+                        "error_code": code.value,
+                        **_operational_failure_details(
+                            exc.category, dispatched=False
+                        ),
+                    }
+                    self._record(
+                        plan,
+                        f"{plan.operation.value}_dispatch_rejected",
+                        "failure",
+                        error_code=code.value,
+                        failure_category=exc.category,
+                        failure_stage="pre_dispatch",
+                    )
+                    raise GovernanceError(
+                        code,
+                        details=_operational_failure_details(
+                            exc.category, dispatched=False
+                        ),
+                    ) from None
+                operational.dispatch["provider_response_received"] = False
+                operational.dispatch["failure_category"] = exc.category
+                if (
+                    plan.operation
+                    == ChangeOperation.RESTART_HOME_ASSISTANT
+                    and exc.category
+                    in {
+                        "indeterminate_dispatch",
+                        "provider_timeout",
+                        "provider_unavailable",
+                    }
+                ):
+                    operational.dispatch[
+                        "expected_disruption_observed"
+                    ] = True
+                plan.status = PlanStatus.VERIFICATION_REQUIRED
+                plan.execution_outcome = "verification_pending"
+                operational.final_outcome = "verification_pending"
+                self._record(
+                    plan,
+                    f"{plan.operation.value}_dispatch_indeterminate",
+                    "partial",
+                    error_code=(
+                        ErrorCode.OPERATIONAL_DISPATCH_INDETERMINATE.value
+                    ),
+                    failure_category=exc.category,
+                    failure_stage="post_dispatch",
+                )
+            return await self._resume_lifecycle_verification(plan)
+
+    async def _dispatch_lifecycle(
+        self,
+        plan: ChangePlan,
+        *,
+        before_dispatch: Callable[[], None | Awaitable[None]],
+    ):
+        if self.lifecycle_gateway is None:
+            raise LifecycleGatewayError("provider_unavailable")
+        if plan.operation == ChangeOperation.CONTROLLED_RELOAD:
+            return await self.lifecycle_gateway.dispatch_reload(
+                plan.target_id, before_dispatch=before_dispatch
+            )
+        if plan.operation == ChangeOperation.RESTART_ADDON:
+            return await self.lifecycle_gateway.dispatch_addon_restart(
+                plan.target_id, before_dispatch=before_dispatch
+            )
+        if plan.operation == ChangeOperation.RESTART_HOME_ASSISTANT:
+            return await self.lifecycle_gateway.dispatch_home_assistant_restart(
+                before_dispatch=before_dispatch
+            )
+        raise LifecycleGatewayError("invalid_request")
+
+    async def _resume_lifecycle_verification(
+        self, plan: ChangePlan
+    ) -> dict[str, Any]:
+        operational = plan.operational
+        if (
+            operational is None
+            or self.lifecycle_gateway is None
+            or operational.dispatch.get("attempt_count") != 1
+        ):
+            raise GovernanceError(ErrorCode.INTERNAL_INVARIANT_VIOLATION)
+        verification = operational.verification
+        verification.attempt_count += 1
+        verification.checked_at = self._timestamp()
+        self._record(
+            plan,
+            f"{plan.operation.value}_verification_started",
+            "success",
+        )
+        try:
+            if plan.operation == ChangeOperation.CONTROLLED_RELOAD:
+                result = await self.lifecycle_gateway.verify_reload(
+                    plan.target_id
+                )
+            elif plan.operation == ChangeOperation.RESTART_ADDON:
+                result = (
+                    await self.lifecycle_gateway.verify_addon_restart(
+                        plan.target_id,
+                        baseline=operational.baseline,
+                        provider_response_received=bool(
+                            operational.dispatch.get(
+                                "provider_response_received"
+                            )
+                        ),
+                        provider_evidence=(
+                            operational.provider_capability_evidence
+                        ),
+                    )
+                )
+            elif (
+                plan.operation
+                == ChangeOperation.RESTART_HOME_ASSISTANT
+            ):
+                result = (
+                    await self.lifecycle_gateway.verify_home_assistant_restart(
+                        baseline=operational.baseline,
+                        restart_dispatch_confirmed=bool(
+                            operational.dispatch.get(
+                                "restart_dispatch_confirmed"
+                            )
+                        ),
+                        expected_disruption_observed=bool(
+                            operational.dispatch.get(
+                                "expected_disruption_observed"
+                            )
+                        ),
+                    )
+                )
+            else:
+                raise LifecycleGatewayError("invalid_request")
+        except LifecycleGatewayError as exc:
+            result = {
+                "status": "pending",
+                "mismatch_fields": ["provider_unavailable"],
+                "evidence": {
+                    "failure_category": exc.category,
+                    "redispatch_performed": False,
+                },
+            }
+        verification.status = str(result.get("status") or "failed")
+        verification.operation_completed = (
+            verification.status == "verified"
+        )
+        verification.inventory_readable = (
+            verification.status in {"verified", "failed"}
+        )
+        evidence = dict(result.get("evidence") or {})
+        if evidence.get("expected_disruption_observed") is True:
+            operational.dispatch["expected_disruption_observed"] = True
+        verification.mismatch_fields = [
+            str(value)[:160]
+            for value in (result.get("mismatch_fields") or [])[:20]
+        ]
+        verification.evidence = evidence
+        if verification.status == "verified":
+            plan.status = PlanStatus.APPLIED
+            plan.applied_at = self._timestamp()
+            plan.execution_outcome = "applied_verified"
+            operational.final_outcome = (
+                f"{plan.operation.value}_and_verified"
+            )
+            self._record(
+                plan,
+                f"{plan.operation.value}_verified",
+                "success",
+            )
+            return {
+                "status": "applied",
+                "provider_dispatch_occurred": True,
+                "provider_response_received": bool(
+                    operational.dispatch.get(
+                        "provider_response_received"
+                    )
+                ),
+                "expected_disruption_observed": bool(
+                    operational.dispatch.get(
+                        "expected_disruption_observed"
+                    )
+                ),
+                "redispatch_performed": False,
+                "fallback": "none",
+                "fallback_occurred": False,
+                "verification": verification.__dict__,
+                "rollback_available": False,
+                "plan": self._public(plan, include_configs=False),
+            }
+        if verification.status == "pending":
+            plan.status = PlanStatus.VERIFICATION_REQUIRED
+            plan.execution_outcome = "verification_pending"
+            operational.final_outcome = "verification_pending"
+            self._record(
+                plan,
+                f"{plan.operation.value}_verification_deferred",
+                "partial",
+                error_code=(
+                    ErrorCode.OPERATIONAL_VERIFICATION_PENDING.value
+                ),
+            )
+            return {
+                "status": "verification_pending",
+                "provider_dispatch_occurred": True,
+                "redispatch_performed": False,
+                "fallback": "none",
+                "fallback_occurred": False,
+                "verification": verification.__dict__,
+                "plan": self._public(plan, include_configs=False),
+            }
+        plan.status = PlanStatus.VERIFICATION_FAILED
+        plan.execution_outcome = "verification_failed"
+        operational.final_outcome = "verification_failed"
+        plan.failure_information = {
+            "error_code": (
+                ErrorCode.OPERATIONAL_VERIFICATION_FAILED.value
+            ),
+            "mismatch_fields": verification.mismatch_fields,
+        }
+        self._record(
+            plan,
+            f"{plan.operation.value}_verification_failed",
+            "failure",
+            error_code=ErrorCode.OPERATIONAL_VERIFICATION_FAILED.value,
+        )
+        raise GovernanceError(
+            ErrorCode.OPERATIONAL_VERIFICATION_FAILED,
+            details={
+                "provider_dispatch_occurred": True,
+                "failure_stage": "verification",
+                "fallback": "none",
+                "fallback_occurred": False,
+            },
+        )
+
+    @staticmethod
+    def _eligible_lifecycle_reconciliation(plan: ChangePlan) -> bool:
+        operational = plan.operational
+        return (
+            plan.contract_version
+            == OPERATIONAL_PLAN_CONTRACT_VERSION
+            and plan.operation in LIFECYCLE_OPERATIONS
+            and plan.status
+            in {
+                PlanStatus.APPLYING,
+                PlanStatus.VERIFICATION_REQUIRED,
+            }
+            and operational is not None
+            and operational.dispatch.get("attempt_count") == 1
+            and operational.dispatch.get("dispatched") is True
+            and plan.approval.state == ApprovalState.CONSUMED
+        )
+
+    async def reconcile_operational_plans(
+        self,
+        *,
+        trigger: str = "periodic",
+        max_plans: int = MAX_OPERATIONAL_RECONCILIATIONS_PER_PASS,
+        time_budget_seconds: float = (
+            OPERATIONAL_RECONCILIATION_TIME_BUDGET_SECONDS
+        ),
+    ) -> dict[str, Any]:
+        """Boundedly resume eligible readback-only work without redispatch."""
+
+        if trigger not in {"startup", "periodic", "manual"}:
+            raise ValueError("unsupported operational reconciliation trigger")
+        max_plans = max(1, min(int(max_plans), 100))
+        time_budget_seconds = max(
+            0.01, min(float(time_budget_seconds), 60.0)
+        )
+        started = time.monotonic()
+        selected = checked = completed = pending = failed = 0
+        bounded = False
+        for candidate in self.resolved_plans():
+            if not self._eligible_lifecycle_reconciliation(candidate):
+                continue
+            if (
+                selected >= max_plans
+                or time.monotonic() - started >= time_budget_seconds
+            ):
+                bounded = True
+                break
+            selected += 1
+            plan_lock = self._plan_locks.setdefault(
+                candidate.plan_id, asyncio.Lock()
+            )
+            if plan_lock.locked():
+                pending += 1
+                continue
+            async with plan_lock:
+                plan = self._load(candidate.plan_id)
+                if not self._eligible_lifecycle_reconciliation(plan):
+                    continue
+                target_lock = self._target_locks.setdefault(
+                    (
+                        f"operational_{plan.operation.value}",
+                        plan.target_id,
+                    ),
+                    asyncio.Lock(),
+                )
+                if target_lock.locked():
+                    pending += 1
+                    continue
+                checked += 1
+                async with target_lock:
+                    if plan.status == PlanStatus.APPLYING:
+                        plan.status = PlanStatus.VERIFICATION_REQUIRED
+                        plan.execution_outcome = "verification_pending"
+                        plan.operational.final_outcome = (
+                            "verification_pending"
+                        )
+                        plan.operational.verification.status = (
+                            "verification_pending"
+                        )
+                    self._record(
+                        plan,
+                        (
+                            f"{plan.operation.value}_{trigger}_"
+                            "reconciliation_started"
+                        ),
+                        "success",
+                    )
+                    remaining = (
+                        time_budget_seconds
+                        - (time.monotonic() - started)
+                    )
+                    if remaining <= 0:
+                        pending += 1
+                        bounded = True
+                        break
+                    self._active_lifecycle_reconciliations += 1
+                    try:
+                        result = await asyncio.wait_for(
+                            self._resume_lifecycle_verification(plan),
+                            timeout=remaining,
+                        )
+                    except TimeoutError:
+                        pending += 1
+                        bounded = True
+                        self._record(
+                            plan,
+                            (
+                                f"{plan.operation.value}_{trigger}_"
+                                "reconciliation_deferred"
+                            ),
+                            "partial",
+                            error_code=(
+                                ErrorCode.OPERATIONAL_VERIFICATION_PENDING.value
+                            ),
+                        )
+                        continue
+                    except GovernanceError:
+                        failed += 1
+                        continue
+                    except Exception as exc:
+                        failed += 1
+                        log_event(
+                            self.logger,
+                            logging.WARNING,
+                            "operational_reconciliation_plan_failed",
+                            (
+                                "Operational readback reconciliation will "
+                                "retry without redispatch."
+                            ),
+                            context={
+                                "operation": plan.operation.value,
+                                "trigger": trigger,
+                                "error_type": type(exc).__name__,
+                            },
+                        )
+                        try:
+                            self._record(
+                                plan,
+                                (
+                                    f"{plan.operation.value}_{trigger}_"
+                                    "reconciliation_deferred"
+                                ),
+                                "partial",
+                                error_code=(
+                                    ErrorCode.OPERATIONAL_VERIFICATION_PENDING.value
+                                ),
+                            )
+                        except Exception:
+                            pass
+                        continue
+                    finally:
+                        self._active_lifecycle_reconciliations -= 1
+            if result.get("status") == "applied":
+                completed += 1
+            else:
+                pending += 1
+        return {
+            "checked": checked,
+            "completed": completed,
+            "pending": pending,
+            "failed": failed,
+            "bounded": bounded,
+        }
+
+    def _lifecycle_preflight_matches(
+        self,
+        plan: ChangePlan,
+        fresh_provider: dict[str, Any],
+        fresh_baseline: dict[str, Any],
+    ) -> bool:
+        operational = plan.operational
+        if operational is None:
+            return False
+        planned_provider = operational.provider_capability_evidence
+        provider_match = all(
+            fresh_provider.get(field) == planned_provider.get(field)
+            for field in (
+                "provider",
+                "server_name",
+                "server_version",
+                "protocol_version",
+                "compatibility_entry_id",
+                "catalog_fingerprint",
+                "tool_contract_fingerprints",
+                "argument_constraints",
+            )
+        )
+        if not provider_match:
+            return False
+        if plan.operation == ChangeOperation.RESTART_ADDON:
+            planned_addon = operational.baseline.get("addon")
+            fresh_addon = fresh_baseline.get("addon")
+            identity_matches = isinstance(
+                planned_addon, dict
+            ) and isinstance(
+                fresh_addon, dict
+            ) and all(
+                planned_addon.get(field) == fresh_addon.get(field)
+                for field in ("slug", "name", "version")
+            )
+            if not identity_matches:
+                return False
+            planned_class = operational.baseline.get("target_class")
+            if planned_class != fresh_baseline.get("target_class"):
+                return False
+            if planned_class == "engineering_addon":
+                planned_runtime = operational.baseline.get("runtime")
+                fresh_runtime = fresh_baseline.get("runtime")
+                return isinstance(planned_runtime, dict) and isinstance(
+                    fresh_runtime, dict
+                ) and all(
+                    planned_runtime.get(field)
+                    == fresh_runtime.get(field)
+                    for field in (
+                        "server_version",
+                        "build_sha",
+                        "registered_tool_count",
+                        "engineering_tool_count",
+                        "delegated_tool_count",
+                    )
+                )
+            if planned_class == "upstream_ha_mcp_addon":
+                planned_runtime = operational.baseline.get("runtime")
+                fresh_runtime = fresh_baseline.get("runtime")
+                return isinstance(planned_runtime, dict) and isinstance(
+                    fresh_runtime, dict
+                ) and all(
+                    planned_runtime.get(field)
+                    == fresh_runtime.get(field)
+                    for field in (
+                        "upstream_version",
+                        "upstream_protocol",
+                        "upstream_catalog_fingerprint",
+                        "upstream_admission_status",
+                    )
+                )
+            return planned_class == "other_addon"
+        if (
+            plan.operation
+            == ChangeOperation.RESTART_HOME_ASSISTANT
+        ):
+            planned_ha = operational.baseline.get("home_assistant")
+            fresh_ha = fresh_baseline.get("home_assistant")
+            planned_runtime = operational.baseline.get("runtime")
+            fresh_runtime = fresh_baseline.get("runtime")
+            return (
+                isinstance(planned_ha, dict)
+                and isinstance(fresh_ha, dict)
+                and all(
+                    planned_ha.get(field) == fresh_ha.get(field)
+                    for field in ("location_name", "version")
+                )
+                and isinstance(planned_runtime, dict)
+                and isinstance(fresh_runtime, dict)
+                and all(
+                    planned_runtime.get(field)
+                    == fresh_runtime.get(field)
+                    for field in (
+                        "server_version",
+                        "build_sha",
+                        "registered_tool_count",
+                        "upstream_version",
+                    )
+                )
+            )
+        return bool(fresh_baseline.get("service_available"))
 
     async def _apply_operational_backup(
         self, plan: ChangePlan, expected_plan_hash: str
@@ -3099,6 +4181,51 @@ class ChangeGovernanceService:
                 ErrorCode.INTERNAL_INVARIANT_VIOLATION
             ),
         }.get(category, ErrorCode.BACKUP_CREATION_FAILED)
+
+    @staticmethod
+    def _lifecycle_error_code(
+        category: str, *, dispatched: bool
+    ) -> ErrorCode:
+        if dispatched and category in {
+            "indeterminate_dispatch",
+            "provider_timeout",
+            "provider_unavailable",
+        }:
+            return ErrorCode.OPERATIONAL_DISPATCH_INDETERMINATE
+        if category in {
+            "catalog_mismatch",
+            "reviewed_contract_mismatch",
+            "server_identity_mismatch",
+            "upstream_version_mismatch",
+            "unsupported_protocol_version",
+            "required_tool_missing",
+        }:
+            return ErrorCode.OPERATIONAL_CONTRACT_MISMATCH
+        if category in {
+            "configuration_invalid",
+            "invalid_request",
+            "service_unavailable",
+        }:
+            return ErrorCode.OPERATIONAL_VALIDATION_FAILED
+        if category == "resource_not_found":
+            return ErrorCode.RESOURCE_NOT_FOUND
+        if category == "permission_failure":
+            return ErrorCode.AUTHORIZATION_FAILURE
+        if category in {
+            "provider_unavailable",
+            "provider_timeout",
+            "invalid_response",
+            "protocol_error",
+            "provider_error",
+        }:
+            return ErrorCode.OPERATIONAL_PROVIDER_UNAVAILABLE
+        if category in {"operation_rejected", "operation_failed"}:
+            return ErrorCode.OPERATIONAL_ACTION_REJECTED
+        if category == "verification_failed":
+            return ErrorCode.OPERATIONAL_VERIFICATION_FAILED
+        if category == "indeterminate_dispatch":
+            return ErrorCode.OPERATIONAL_DISPATCH_INDETERMINATE
+        return ErrorCode.OPERATIONAL_PROVIDER_UNAVAILABLE
 
     def _configuration_writer_available(
         self, operations: list[ConfigurationOperation]
@@ -4336,13 +5463,6 @@ class ChangeGovernanceService:
     def _require_current_normalization(self, plan: ChangePlan) -> None:
         if plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION:
             operational = plan.operational
-            try:
-                normalized_name = normalize_backup_name(
-                    operational.requested_name if operational else None,
-                    generated_at=self.now(),
-                )
-            except (TypeError, ValueError):
-                normalized_name = ""
             constraints = (
                 operational.provider_capability_evidence.get(
                     "argument_constraints"
@@ -4353,36 +5473,132 @@ class ChangeGovernanceService:
                 )
                 else None
             )
-            if (
+            invalid = (
                 operational is None
                 or operational.schema_version != 1
                 or operational.family != "operational_administration"
-                or operational.operation
-                != ChangeOperation.CREATE_FULL_BACKUP.value
                 or plan.plan_family != "operational_administration"
-                or plan.operation != ChangeOperation.CREATE_FULL_BACKUP
-                or plan.target_type != "backup"
-                or plan.target_id != "local_full_backup"
-                or normalized_name != operational.requested_name
-                or operational.provider != "upstream_operational_backup"
+                or operational.operation != plan.operation.value
                 or not isinstance(constraints, dict)
-                or constraints.get("scope") != "snapshot"
-                or constraints.get("action") != "create"
-                or constraints.get("restore_allowed") is not False
-                or constraints.get("delete_allowed") is not False
-                or constraints.get("arbitrary_arguments_allowed") is not False
                 or operational.rollback_available
                 or plan.rollback.available
                 or stable_hash(operational.baseline)
                 != plan.current_state_fingerprint
-                or stable_hash(
-                    {
-                        "operation": ChangeOperation.CREATE_FULL_BACKUP.value,
-                        "name": operational.requested_name,
-                    }
+            )
+            if plan.operation == ChangeOperation.CREATE_FULL_BACKUP:
+                try:
+                    normalized_name = normalize_backup_name(
+                        (
+                            operational.requested_name
+                            if operational
+                            else None
+                        ),
+                        generated_at=self.now(),
+                    )
+                except (TypeError, ValueError):
+                    normalized_name = ""
+                invalid = invalid or any(
+                    (
+                        plan.target_type != "backup",
+                        plan.target_id != "local_full_backup",
+                        normalized_name
+                        != (
+                            operational.requested_name
+                            if operational
+                            else None
+                        ),
+                        (
+                            operational.provider
+                            if operational
+                            else None
+                        )
+                        != "upstream_operational_backup",
+                        constraints.get("scope") != "snapshot",
+                        constraints.get("action") != "create",
+                        constraints.get("restore_allowed") is not False,
+                        constraints.get("delete_allowed") is not False,
+                        constraints.get("arbitrary_arguments_allowed")
+                        is not False,
+                        stable_hash(
+                            {
+                                "operation": (
+                                    ChangeOperation.CREATE_FULL_BACKUP.value
+                                ),
+                                "name": (
+                                    operational.requested_name
+                                    if operational
+                                    else None
+                                ),
+                            }
+                        )
+                        != plan.proposed_config_hash,
+                    )
                 )
-                != plan.proposed_config_hash
-            ):
+            elif plan.operation in LIFECYCLE_OPERATIONS:
+                expected_target_type = {
+                    ChangeOperation.CONTROLLED_RELOAD: "reload_domain",
+                    ChangeOperation.RESTART_ADDON: "addon",
+                    ChangeOperation.RESTART_HOME_ASSISTANT: (
+                        "home_assistant"
+                    ),
+                }[plan.operation]
+                invalid = invalid or any(
+                    (
+                        plan.target_type != expected_target_type,
+                        (
+                            operational.requested_name
+                            if operational
+                            else None
+                        )
+                        != plan.target_id,
+                        (
+                            operational.provider
+                            if operational
+                            else None
+                        )
+                        != "upstream_operational_lifecycle",
+                        constraints.get("arbitrary_arguments_allowed")
+                        is not False,
+                        (
+                            plan.operation
+                            == ChangeOperation.CONTROLLED_RELOAD
+                            and (
+                                plan.target_id not in RELOAD_SERVICES
+                                or constraints.get("entry_id_allowed")
+                                is not False
+                                or constraints.get("reload_all_allowed")
+                                is not False
+                            )
+                        ),
+                        (
+                            plan.operation
+                            == ChangeOperation.RESTART_ADDON
+                            and (
+                                constraints.get("action") != "restart"
+                                or constraints.get(
+                                    "other_actions_allowed"
+                                )
+                                is not False
+                            )
+                        ),
+                        (
+                            plan.operation
+                            == ChangeOperation.RESTART_HOME_ASSISTANT
+                            and constraints.get("confirm") is not True
+                        ),
+                        stable_hash(
+                            {
+                                "operation": plan.operation.value,
+                                "target_type": plan.target_type,
+                                "target_id": plan.target_id,
+                            }
+                        )
+                        != plan.proposed_config_hash,
+                    )
+                )
+            else:
+                invalid = True
+            if invalid:
                 raise GovernanceError(
                     ErrorCode.APPROVAL_HASH_MISMATCH,
                     details={
@@ -4648,7 +5864,11 @@ class ChangeGovernanceService:
             plan
             for plan in plans
             if plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION
-            and plan.operation == ChangeOperation.CREATE_FULL_BACKUP
+        ]
+        backup_plans = [
+            plan
+            for plan in operational_plans
+            if plan.operation == ChangeOperation.CREATE_FULL_BACKUP
         ]
         operational_failures = sorted(
             (
@@ -4725,9 +5945,216 @@ class ChangeGovernanceService:
                 None,
             ),
         }
-        summary["approval_consumption_count"] += events.count(
-            "operational_backup_dispatch_recorded"
+        summary["approval_consumption_count"] += sum(
+            event.event.endswith("_dispatch_recorded")
+            for event in (
+                event
+                for plan in operational_plans
+                for event in plan.events
+            )
         )
+        lifecycle_types = tuple(
+            operation.value
+            for operation in (
+                ChangeOperation.CREATE_FULL_BACKUP,
+                ChangeOperation.CONTROLLED_RELOAD,
+                ChangeOperation.RESTART_ADDON,
+                ChangeOperation.RESTART_HOME_ASSISTANT,
+            )
+        )
+        backup_provider_health = (
+            self.operational_gateway.health_snapshot()
+            if self.operational_gateway is not None
+            else {
+                "provider": "operational_backup_provider",
+                "configured": False,
+                "operational_status": "unavailable",
+                "fallback_count": 0,
+                "fallback_policy": "none",
+            }
+        )
+        lifecycle_provider_health = (
+            self.lifecycle_gateway.health_snapshot()
+            if self.lifecycle_gateway is not None
+            else {
+                "provider": "upstream_operational_lifecycle",
+                "configured": False,
+                "operational_status": "unavailable",
+                "fallback_count": 0,
+                "fallback_policy": "none",
+            }
+        )
+        by_type: dict[str, dict[str, Any]] = {}
+        for operation in lifecycle_types:
+            operation_plans = [
+                plan
+                for plan in operational_plans
+                if plan.operation.value == operation
+            ]
+            prefix = (
+                "operational_backup"
+                if operation == ChangeOperation.CREATE_FULL_BACKUP.value
+                else operation
+            )
+            provider_health = (
+                backup_provider_health
+                if operation
+                == ChangeOperation.CREATE_FULL_BACKUP.value
+                else lifecycle_provider_health
+            )
+            by_type[operation] = {
+                "plans_created": sum(
+                    event.event == f"{prefix}_plan_created"
+                    or (
+                        operation
+                        == ChangeOperation.CREATE_FULL_BACKUP.value
+                        and event.event
+                        == "operational_backup_plan_created"
+                    )
+                    for plan in operation_plans
+                    for event in plan.events
+                ),
+                "apply_attempts": sum(
+                    event.event.endswith("_apply_attempted")
+                    for plan in operation_plans
+                    for event in plan.events
+                )
+                + (
+                    sum(
+                        event.event
+                        == "operational_backup_dispatch_recorded"
+                        for plan in operation_plans
+                        for event in plan.events
+                    )
+                    if operation
+                    == ChangeOperation.CREATE_FULL_BACKUP.value
+                    else 0
+                ),
+                "dispatch_attempts": sum(
+                    int(
+                        (
+                            plan.operational.dispatch.get(
+                                "attempt_count"
+                            )
+                            if plan.operational
+                            else 0
+                        )
+                        or 0
+                    )
+                    for plan in operation_plans
+                ),
+                "dispatch_successes": sum(
+                    event.event.endswith("_provider_completed")
+                    for plan in operation_plans
+                    for event in plan.events
+                ),
+                "verified_successes": sum(
+                    plan.status == PlanStatus.APPLIED
+                    for plan in operation_plans
+                ),
+                "pre_dispatch_failures": sum(
+                    event.error_code is not None
+                    and (
+                        event.event.endswith("_preflight_failed")
+                        or event.event.endswith(
+                            "_validation_failed"
+                        )
+                        or event.event.endswith(
+                            "_dispatch_rejected"
+                        )
+                    )
+                    for plan in operation_plans
+                    for event in plan.events
+                ),
+                "post_dispatch_failures": sum(
+                    plan.status
+                    in {
+                        PlanStatus.FAILED,
+                        PlanStatus.VERIFICATION_FAILED,
+                    }
+                    and bool(
+                        plan.operational
+                        and plan.operational.dispatch.get(
+                            "dispatched"
+                        )
+                    )
+                    for plan in operation_plans
+                ),
+                "verification_failures": sum(
+                    plan.status == PlanStatus.VERIFICATION_FAILED
+                    for plan in operation_plans
+                ),
+                "verification_pending_plans": sum(
+                    plan.status == PlanStatus.VERIFICATION_REQUIRED
+                    for plan in operation_plans
+                ),
+                "indeterminate_outcomes": sum(
+                    plan.execution_outcome
+                    in {"indeterminate", "verification_pending"}
+                    for plan in operation_plans
+                ),
+                "active_reconciliations": (
+                    self._active_lifecycle_reconciliations
+                    if operation
+                    in {
+                        ChangeOperation.CONTROLLED_RELOAD.value,
+                        ChangeOperation.RESTART_ADDON.value,
+                        ChangeOperation.RESTART_HOME_ASSISTANT.value,
+                    }
+                    else 0
+                ),
+                "eligible_readback_reconciliations": sum(
+                    self._eligible_lifecycle_reconciliation(plan)
+                    for plan in operation_plans
+                ),
+                "no_blind_redispatch_preventions": sum(
+                    event.event.endswith(
+                        "_no_redispatch_prevented"
+                    )
+                    or event.event.endswith("_dispatch_recovered")
+                    for plan in operation_plans
+                    for event in plan.events
+                ),
+                "last_successful_operation_timestamp": next(
+                    (
+                        plan.applied_at
+                        for plan in sorted(
+                            operation_plans,
+                            key=lambda item: item.applied_at or "",
+                            reverse=True,
+                        )
+                        if plan.applied_at
+                    ),
+                    None,
+                ),
+                "last_failure_category": next(
+                    (
+                        event.error_code
+                        for event in sorted(
+                            (
+                                event
+                                for plan in operation_plans
+                                for event in plan.events
+                                if event.error_code
+                            ),
+                            key=lambda item: item.timestamp,
+                            reverse=True,
+                        )
+                    ),
+                    None,
+                ),
+                "fallback_count": 0,
+                "provider_identity": provider_health.get("provider"),
+                "provider_availability": provider_health.get(
+                    "operational_status"
+                ),
+                "provider_contract_status": (
+                    "exact"
+                    if provider_health.get("operational_status")
+                    == "available"
+                    else "unavailable_or_unverified"
+                ),
+            }
         summary["operational_administration"] = {
             "counter_sources": {
                 "plans_and_outcomes": "persistent_governance_state",
@@ -4735,8 +6162,13 @@ class ChangeGovernanceService:
                 "provider": "cumulative_process_state",
             },
             "plans_by_type": {
-                "create_full_backup": len(operational_plans),
+                operation: sum(
+                    plan.operation.value == operation
+                    for plan in operational_plans
+                )
+                for operation in lifecycle_types
             },
+            "operations": by_type,
             "backup_plans_created": events.count(
                 "operational_backup_plan_created"
             ),
@@ -4745,12 +6177,12 @@ class ChangeGovernanceService:
             ),
             "successful_backups": sum(
                 plan.status == PlanStatus.APPLIED
-                for plan in operational_plans
+                for plan in backup_plans
             ),
             "failed_backups": sum(
                 plan.status
                 in {PlanStatus.FAILED, PlanStatus.VERIFICATION_FAILED}
-                for plan in operational_plans
+                for plan in backup_plans
             ),
             "indeterminate_outcomes": sum(
                 plan.status == PlanStatus.VERIFICATION_REQUIRED
@@ -4760,21 +6192,23 @@ class ChangeGovernanceService:
                 plan.status == PlanStatus.VERIFICATION_FAILED
                 for plan in operational_plans
             ),
-            "active_operational_applies": int(
-                bool(
-                    self._target_locks.get(
-                        ("operational_backup", "global")
+            "active_operational_applies": sum(
+                lock.locked()
+                for key, lock in self._target_locks.items()
+                if (
+                    key == ("operational_backup", "global")
+                    or (
+                        isinstance(key, tuple)
+                        and isinstance(key[0], str)
+                        and key[0].startswith("operational_")
                     )
-                    and self._target_locks[
-                        ("operational_backup", "global")
-                    ].locked()
                 )
             ),
             "last_successful_backup_at": next(
                 (
                     plan.applied_at
                     for plan in sorted(
-                        operational_plans,
+                        backup_plans,
                         key=lambda item: item.applied_at or "",
                         reverse=True,
                     )
@@ -4787,16 +6221,8 @@ class ChangeGovernanceService:
                 if operational_failures
                 else None
             ),
-            "provider": (
-                self.operational_gateway.health_snapshot()
-                if self.operational_gateway is not None
-                else {
-                    "configured": False,
-                    "operational_status": "unavailable",
-                    "fallback_count": 0,
-                    "fallback_policy": "none",
-                }
-            ),
+            "provider": backup_provider_health,
+            "lifecycle_provider": lifecycle_provider_health,
             "fallback_count": 0,
             "rollback_available": False,
         }
@@ -4808,6 +6234,93 @@ def _mismatch_fields(expected: dict[str, Any], actual: dict[str, Any]) -> list[s
         item["field"]
         for item in structured_diff(expected, actual)["changed_fields"]
     ]
+
+
+def _configuration_validation_changed(
+    planned: Any, current: Any
+) -> bool:
+    """Compare validation meaning without treating check time as drift."""
+
+    if not isinstance(planned, dict) or not isinstance(current, dict):
+        return planned != current
+    fields = ("status", "failure_category", "evidence")
+    return any(planned.get(field) != current.get(field) for field in fields)
+
+
+def _lifecycle_expected_effects(
+    operation: ChangeOperation, target_id: str
+) -> list[str]:
+    if operation == ChangeOperation.CONTROLLED_RELOAD:
+        return [
+            f"Invoke exactly {target_id}.reload with no service data.",
+            "Keep Home Assistant available while the selected configuration domain reloads.",
+        ]
+    if operation == ChangeOperation.RESTART_ADDON:
+        return [
+            f"Restart exactly the installed add-on {target_id}.",
+            "Temporarily interrupt that add-on while preserving its installed version and configuration.",
+        ]
+    return [
+        "Restart Home Assistant exactly once.",
+        "Temporarily interrupt Home Assistant and dependent providers before full reconciliation.",
+    ]
+
+
+def _lifecycle_verification_requirements(
+    operation: ChangeOperation,
+) -> list[str]:
+    if operation == ChangeOperation.CONTROLLED_RELOAD:
+        return [
+            "provider_completion",
+            "home_assistant_connected",
+            "post_reload_configuration_valid",
+            "reload_service_available",
+            "domain_state_inventory_readable",
+        ]
+    if operation == ChangeOperation.RESTART_ADDON:
+        return [
+            "exact_slug",
+            "exact_name",
+            "installed_version_unchanged",
+            "running_state",
+            "restart_evidence_beyond_current_running_state",
+            "upstream_readmission_when_applicable",
+            "engineering_process_recovery_when_self_restart",
+        ]
+    return [
+        "restart_dispatch_evidence",
+        "home_assistant_reconnected",
+        "home_assistant_identity_unchanged",
+        "engineering_runtime_restored",
+        "tool_catalog_restored",
+        "governance_storage_healthy",
+        "audit_storage_healthy",
+        "upstream_exact_admission_restored",
+        "dependency_index_recovery_reported",
+        "post_restart_configuration_valid",
+        "zero_fallback",
+    ]
+
+
+def _operational_failure_details(
+    category: str, *, dispatched: bool
+) -> dict[str, Any]:
+    return {
+        "failure_category": category,
+        "failure_stage": (
+            "post_dispatch" if dispatched else "pre_dispatch"
+        ),
+        "provider_dispatch_occurred": dispatched,
+        "action_attempted": dispatched,
+        "fallback": "none",
+        "fallback_occurred": False,
+        "redispatch_performed": False,
+        "required_action": (
+            "resume_readback_only_verification"
+            if dispatched
+            else "refresh_provider_evidence_and_replan"
+        ),
+    }
 
 
 def _automation_id_mismatch(

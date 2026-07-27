@@ -548,3 +548,19 @@ Assistant Core `2026.7.2` container pinned by immutable manifest digest. It is a
 test environment, not the deployed instance. Version/digest updates must be
 reviewed together and must pass the actual client, id-less automation readback,
 configuration-check, registry/service/state/System Log and trace contracts.
+
+## 2.1A Beta 2 runtime acceptance
+
+Beta 2 adds three proposal tools, so clients that cache `tools/list` must
+reconnect or refresh after an authorized deployment. Complete exact admission
+reports 45 Engineering tools plus 26 delegated reads, or 71 total.
+
+The complete source and later operator-controlled runtime procedure is in
+[`V2_1_0_BETA2_ACCEPTANCE.md`](V2_1_0_BETA2_ACCEPTANCE.md). Do not run reload
+or restart acceptance from CI or ordinary source review. Each operation needs
+a separately approved exact plan hash. After a lost response, use
+`get_change_plan` to observe automatic startup or periodic readback
+reconciliation. A later `apply_change_plan` may resume readback while still
+pending, but is not required for a normally verified Engineering self-restart.
+Never create a replacement plan merely to repeat the action. Reconciliation is
+bounded and cannot redispatch.

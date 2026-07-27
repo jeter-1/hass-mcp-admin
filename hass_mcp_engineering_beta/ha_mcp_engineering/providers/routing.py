@@ -142,6 +142,13 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "create_change_plan": ProviderCapability.RISK_ASSESSMENT,
     "create_configuration_plan": ProviderCapability.RISK_ASSESSMENT,
     "create_backup_plan": ProviderCapability.OPERATIONAL_ADMINISTRATION,
+    "create_reload_plan": ProviderCapability.OPERATIONAL_ADMINISTRATION,
+    "create_addon_restart_plan": (
+        ProviderCapability.OPERATIONAL_ADMINISTRATION
+    ),
+    "create_home_assistant_restart_plan": (
+        ProviderCapability.OPERATIONAL_ADMINISTRATION
+    ),
     "get_change_plan": ProviderCapability.GOVERNANCE_PERSISTENCE,
     "list_change_plans": ProviderCapability.GOVERNANCE_PERSISTENCE,
     "approve_change_plan": ProviderCapability.GOVERNANCE_PERSISTENCE,

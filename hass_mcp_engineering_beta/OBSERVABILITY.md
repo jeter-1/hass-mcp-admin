@@ -830,3 +830,22 @@ Beta/RC prewarming is enabled by default after a 45-second delay, first checks
 Home Assistant connectivity, shares the index single-flight path, and retries no
 faster than 300 seconds. Attempt count, timestamps, next retry, and bounded
 failure category are exposed without blocking startup.
+
+## 2.1A Beta 2 operational lifecycle telemetry
+
+`get_server_health.operational_administration.operations` reports separate
+bounded groups for full backup, controlled reload, add-on restart, and Home
+Assistant restart. Persistent governance state owns plan, outcome, pending,
+verification-failure, no-redispatch, and last-success values. Current process
+state owns active apply and reconciliation values. Exact provider instances own
+probe, request, dispatch, success, precise failure, selected compatibility, and
+availability counters.
+
+Planning validation, stale target, or contract mismatch is a pre-dispatch
+failure and does not consume approval or increment dispatch. Expected restart
+connection loss is persisted as disruption evidence rather than an ordinary
+provider outage after the dispatch boundary. Verification-pending state is not
+success or failure and remains eligible for readback. Fallback count remains
+zero. Proposal tool audit records use `access=proposal`; provider and
+governance events retain the same request and plan correlation without logging
+raw results or credentials.

@@ -3,7 +3,7 @@
 > Stable v1.1.2 under `hass_mcp_admin` is retained as historical repository
 > source but is operationally retired. It is not covered by the Engineering
 > dependency audit and is not a supported rollback option. The Engineering v2
-> add-on is developed in place at `2.1.0-beta.1`, based on the exact
+> add-on is developed in place at `2.1.0-beta.2`, based on the exact
 > `v2.0.1` release, at
 > [`hass_mcp_engineering_beta/`](hass_mcp_engineering_beta/) on port `8100`.
 > Its existing technical “Beta” identity is retained to avoid a slug or runtime
@@ -42,10 +42,10 @@
 > Dev15 contract-level compatibility, partial quarantine, dashboard
 > independence, and retry-cadence separation are documented in
 > [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md).
-> The current Engineering development version is `2.1.0-beta.1`. Its bounded
+> The current Engineering development version is `2.1.0-beta.2`. Its bounded
 > operational-administration design and source acceptance are recorded in
 > [`docs/OPERATIONAL_ADMINISTRATION.md`](docs/OPERATIONAL_ADMINISTRATION.md) and
-> [`docs/V2_1_0_BETA1_ACCEPTANCE.md`](docs/V2_1_0_BETA1_ACCEPTANCE.md). The
+> [`docs/V2_1_0_BETA2_ACCEPTANCE.md`](docs/V2_1_0_BETA2_ACCEPTANCE.md). The
 > immutable 2.0.1 release documents remain historical release authority.
 > Repository-specific local and remote Codex development procedures are in
 > [`docs/CODEX_WORKFLOW.md`](docs/CODEX_WORKFLOW.md).
@@ -76,9 +76,9 @@ Current tools:
 | Blueprints | `list_blueprints`, `get_blueprint` |
 | State | `get_entity`, `search_entities` |
 | Registries | `list_areas`, `list_devices`, `list_entity_registry`, `search_services`, `list_services` |
-| Operations | `get_audit_log`, proposal-only `create_backup_plan` |
+| Operations | `get_audit_log`; proposal-only `create_backup_plan`, `create_reload_plan`, `create_addon_restart_plan`, `create_home_assistant_restart_plan` |
 | Beta analysis | `entity_dependency_analysis`, `automation_reliability_analysis`, `change_impact_analysis`, `configuration_integrity_analysis`, `incident_correlation`, `handoff_generation` |
-| Governance | `create_backup_plan`, `create_change_plan`, `get_change_plan`, `list_change_plans`, `approve_change_plan`, `apply_change_plan`, `rollback_change` |
+| Governance | four operational proposal tools plus `create_change_plan`, `create_configuration_plan`, `get_change_plan`, `list_change_plans`, `approve_change_plan`, `apply_change_plan`, `rollback_change` |
 | General execution | `call_service` is compatibility-visible but fails closed in v2; Phase 1 does not delegate service execution or any upstream write |
 | Reviewed upstream reads | Up to 26 exact semantic-contract-matching `ha-mcp` reads are admitted independently; one missing or quarantined read leaves the other matches available, and no new or write tool is inferred into policy. See [ADR-006](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md). |
 
@@ -214,16 +214,16 @@ outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 
 ## Engineering v2 milestones
 
-The current Engineering development version is `2.1.0-beta.1`, based on exact
-`v2.0.1`. It starts 2.1A with one governed full-backup proposal and the shared
-operational-plan, verification, indeterminate-recovery, audit, and health
-foundation. The roadmap and acceptance authority are
+The current Engineering development version is `2.1.0-beta.2`, based on exact
+`v2.0.1`. It completes 2.1A with governed backup creation, controlled reload,
+exact add-on restart, Home Assistant restart, and shared durable
+readback-only recovery. The roadmap and acceptance authority are
 [`docs/2_1_ROADMAP.md`](docs/2_1_ROADMAP.md) and
-[`docs/V2_1_0_BETA1_ACCEPTANCE.md`](docs/V2_1_0_BETA1_ACCEPTANCE.md). Determine advertised
+[`docs/V2_1_0_BETA2_ACCEPTANCE.md`](docs/V2_1_0_BETA2_ACCEPTANCE.md). Determine advertised
 release state from authoritative version metadata and
 `scripts/codex-context.py`, not from this milestone narrative. Engineering has
-42 statically registered
-tools: 25 canonical plus 17 Engineering-native. Audit
+45 statically registered
+tools: 25 canonical plus 20 Engineering-native. Audit
 filters parse each bounded JSONL
 record and compare only the exact top-level event, so the routed audit reader's
 own nested filter argument cannot create false security evidence.

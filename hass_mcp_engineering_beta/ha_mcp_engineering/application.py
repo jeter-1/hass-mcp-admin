@@ -33,6 +33,9 @@ from .routing import AuthenticatedMcpGateway
 from .providers.upstream_dashboard import UPSTREAM_DASHBOARD
 from .providers.upstream_read_gateway import UPSTREAM_READ_GATEWAY
 from .providers.operational_backup import UPSTREAM_OPERATIONAL_BACKUP
+from .providers.operational_lifecycle import (
+    UPSTREAM_OPERATIONAL_LIFECYCLE,
+)
 from .providers.upstream_registry import RegistryValidationError, UpstreamTrustRegistry
 from .tools import get_registered_server
 
@@ -135,12 +138,66 @@ def create_application(settings: Settings | None = None):
         ),
     )
     UPSTREAM_OPERATIONAL_BACKUP.configure(settings)
+    UPSTREAM_OPERATIONAL_LIFECYCLE.configure(settings)
+
+    def operational_runtime_snapshot():
+        from .capabilities import (
+            BETA_NATIVE_CAPABILITIES,
+            CAPABILITIES,
+            dynamic_upstream_capabilities,
+        )
+        from .version import BUILD_SHA, SERVER_VERSION
+
+        upstream = UPSTREAM_READ_GATEWAY.health_snapshot()
+        governance = GOVERNANCE.health_summary()
+        audit_state = audit.state()
+        dependency = DEPENDENCY_ANALYSIS.health()
+        return {
+            "server_version": SERVER_VERSION,
+            "build_sha": BUILD_SHA,
+            "registered_tool_count": (
+                len(CAPABILITIES)
+                + len(BETA_NATIVE_CAPABILITIES)
+                + len(dynamic_upstream_capabilities())
+            ),
+            "engineering_tool_count": (
+                len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES)
+            ),
+            "delegated_tool_count": len(dynamic_upstream_capabilities()),
+            "governance_storage_status": (
+                "healthy"
+                if governance.get("storage_status") == "healthy"
+                else str(governance.get("storage_status") or "unavailable")
+            ),
+            "governance_plan_count": governance.get("total_plans", 0),
+            "audit_storage_status": (
+                "healthy"
+                if audit_state.get("write_failures") == 0
+                and audit_state.get("target_configured")
+                else "unavailable"
+            ),
+            "audit_write_failures": audit_state.get("write_failures", 0),
+            "dependency_index_state": dependency.get("build_state"),
+            "dependency_prewarm_state": dependency.get("prewarm_state"),
+            "upstream_version": upstream.get(
+                "observed_upstream_server_version"
+            ),
+            "upstream_protocol": upstream.get("observed_protocol_version"),
+            "upstream_catalog_fingerprint": upstream.get(
+                "observed_catalog_fingerprint"
+            ),
+            "upstream_admission_status": upstream.get("admission_status"),
+            "fallback_count": upstream.get("fallback_count", 0),
+        }
+
     GOVERNANCE.configure(
         settings,
         audit,
         HomeAssistantRestClient(settings),
         HomeAssistantWebSocketClient(settings),
         UPSTREAM_OPERATIONAL_BACKUP,
+        UPSTREAM_OPERATIONAL_LIFECYCLE,
+        operational_runtime_snapshot,
     )
     DEPENDENCY_ANALYSIS.configure(
         HomeAssistantRestClient(settings),
@@ -238,6 +295,39 @@ async def _supervise_upstream_reconciliation(
     )
 
 
+async def _run_operational_reconciliation_pass(trigger: str) -> None:
+    """Run one isolated, bounded readback-only reconciliation pass."""
+
+    logger = get_logger("operational_reconciliation")
+    service = GOVERNANCE.service
+    if service is None:
+        return
+    try:
+        await service.reconcile_operational_plans(trigger=trigger)
+    except Exception as exc:
+        # A failed readback pass remains represented by the persisted
+        # verification-required plan and is retried on the next pass.
+        log_event(
+            logger,
+            logging.WARNING,
+            "operational_reconciliation_pass_failed",
+            "Operational readback reconciliation will retry.",
+            context={
+                "trigger": trigger,
+                "error_type": type(exc).__name__,
+            },
+        )
+
+
+async def _supervise_operational_reconciliation() -> None:
+    """Verify at startup, then retry pending readback every 30 seconds."""
+
+    await _run_operational_reconciliation_pass("startup")
+    while True:
+        await asyncio.sleep(30)
+        await _run_operational_reconciliation_pass("periodic")
+
+
 async def _serve(settings: Settings) -> None:
     """Run distinct MCP and Ingress listeners in one supervised process."""
 
@@ -271,6 +361,10 @@ async def _serve(settings: Settings) -> None:
         _supervise_upstream_reconciliation(gateway),
         name="upstream-read-gateway-reconciliation",
     )
+    operational_reconciliation_task = asyncio.create_task(
+        _supervise_operational_reconciliation(),
+        name="governed-operational-reconciliation",
+    )
     registry_refresh_task = (
         asyncio.create_task(UPSTREAM_DASHBOARD.refresh_registry_at_startup())
         if settings.upstream_trust_registry_enabled
@@ -286,7 +380,12 @@ async def _serve(settings: Settings) -> None:
     )
     try:
         done, _ = await asyncio.wait(
-            {mcp_task, approval_task, upstream_reconciliation_task},
+            {
+                mcp_task,
+                approval_task,
+                upstream_reconciliation_task,
+                operational_reconciliation_task,
+            },
             return_when=asyncio.FIRST_COMPLETED,
         )
         # Either listener ending is a process-level event. A failed private
@@ -300,8 +399,12 @@ async def _serve(settings: Settings) -> None:
         mcp_server.should_exit = True
         approval_server.should_exit = True
         upstream_reconciliation_task.cancel()
+        operational_reconciliation_task.cancel()
         await asyncio.gather(mcp_task, approval_task, return_exceptions=True)
         await asyncio.gather(upstream_reconciliation_task, return_exceptions=True)
+        await asyncio.gather(
+            operational_reconciliation_task, return_exceptions=True
+        )
         if registry_refresh_task is not None:
             await asyncio.gather(registry_refresh_task, return_exceptions=True)
         await DEPENDENCY_ANALYSIS.shutdown()

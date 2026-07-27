@@ -1,5 +1,21 @@
 # HA MCP Engineering Server Architecture
 
+## 2.1A Beta 2 governed operational lifecycle
+
+The current source has 45 static Engineering tools. Four proposal tools share
+one contract-v3 governance family and external administrator authority. Beta 2
+adds fixed reviewed wrappers for four domain reloads, one exact add-on restart,
+and one Home Assistant restart. The underlying mixed/high-risk upstream tools
+remain absent from generic registration.
+
+Dispatch intent and approval consumption persist before an action. One
+per-plan lock coordinates apply and reconciliation. Provider interruption,
+Engineering self-restart, and Home Assistant restart can leave a durable
+verification-pending plan; startup and a bounded background loop perform only
+operation-specific readback and never redispatch. See
+[`ADR-007`](docs/architecture/ADR-007-GOVERNED-OPERATIONAL-ADMINISTRATION.md)
+and [`OPERATIONAL_ADMINISTRATION.md`](docs/OPERATIONAL_ADMINISTRATION.md).
+
 ## Dev15 contract-level single-server read gateway
 
 The current architecture pivot supersedes the sidecar assumption for pure

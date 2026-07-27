@@ -31,6 +31,9 @@ class ChangeOperation(str, Enum):
     UPDATE_AUTOMATION = "update_automation"
     CONFIGURATION_PLAN = "configuration_plan"
     CREATE_FULL_BACKUP = "create_full_backup"
+    CONTROLLED_RELOAD = "controlled_reload"
+    RESTART_ADDON = "restart_addon"
+    RESTART_HOME_ASSISTANT = "restart_home_assistant"
 
 
 class RiskLevel(str, Enum):

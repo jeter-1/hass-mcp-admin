@@ -1838,6 +1838,7 @@ class UpstreamReadGateway:
                     _classify_upstream_tool_error(
                         policy_entry.upstream_name,
                         exchange.call_result,
+                        arguments,
                     ),
                     dispatched=True,
                 )
@@ -2817,6 +2818,7 @@ def _reject_non_finite_json_constant(_value: str) -> None:
 def _classify_upstream_tool_error(
     upstream_tool: str,
     call_result: dict[str, Any],
+    arguments: dict[str, Any] | None = None,
 ) -> str:
     """Classify only the reviewed 7.14.1 structured error discriminator."""
 
@@ -2850,6 +2852,16 @@ def _classify_upstream_tool_error(
     code = payload["error"].get("code")
     if not isinstance(code, str):
         return "upstream_error"
+    if (
+        upstream_tool == "ha_get_entity"
+        and code == "SERVICE_CALL_FAILED"
+        and _reviewed_single_entity_registry_lookup(arguments)
+    ):
+        # In both compiled releases this exact argument form reaches
+        # _get_single_entity(), whose caught registry ValueError is encoded as
+        # SERVICE_CALL_FAILED. Resolver, bulk, malformed, and future argument
+        # forms remain on the generic fail-closed path.
+        return "entity_not_found"
     domain_outcome = _UPSTREAM_DOMAIN_OUTCOMES.get(
         (upstream_tool, code)
     )
@@ -2868,6 +2880,23 @@ def _classify_upstream_tool_error(
     if code in _UPSTREAM_INTERNAL_CODES:
         return "upstream_error"
     return "upstream_error"
+
+
+def _reviewed_single_entity_registry_lookup(
+    arguments: dict[str, Any] | None,
+) -> bool:
+    if not isinstance(arguments, dict):
+        return False
+    entity_id = arguments.get("entity_id")
+    if (
+        not isinstance(entity_id, str)
+        or re.fullmatch(r"[a-z0-9_]+\.[a-z0-9_]+", entity_id) is None
+    ):
+        return False
+    return all(
+        arguments.get(field) is None
+        for field in ("unique_id", "domain", "platform")
+    )
 
 
 def _normalize_upstream_payload(call_result: dict[str, Any]) -> Any:

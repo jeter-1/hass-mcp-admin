@@ -52,3 +52,13 @@ They never include CSRF nonces, cookies, Ingress authentication material, raw
 headers, MCP access secrets, request notes, full configuration/diffs, or
 authenticated URLs. A preapproval apply/rollback refusal is not a provider
 failure because no provider write was dispatched.
+
+Beta 2 classifies every create-plan tool as `access=proposal` with
+`analysis_summary.operation_class=proposal`. Proposal creation persists
+governance state, so it is not a pure read, but it dispatches no operational
+action. Approval requests and governed apply remain `access=write`.
+Operational lifecycle events correlate proposal, approval, dispatch intent,
+provider completion or expected disruption, readback-only reconciliation,
+verification, and final outcome. They include bounded provider and fallback
+attribution but never raw provider responses, credentials, authenticated URLs,
+arbitrary service data, or unbounded Home Assistant payloads.

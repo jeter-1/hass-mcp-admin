@@ -159,6 +159,13 @@ class ErrorTaxonomyTests(unittest.TestCase):
             "backup_creation_rejected", "backup_creation_failed",
             "backup_operation_timeout", "backup_verification_timeout",
             "backup_verification_failed", "backup_dispatch_indeterminate",
+            "operational_provider_unavailable",
+            "operational_contract_mismatch",
+            "operational_validation_failed",
+            "operational_action_rejected",
+            "operational_verification_pending",
+            "operational_verification_failed",
+            "operational_dispatch_indeterminate",
             "duplicate_apply_attempt", "internal_invariant_violation",
             "invalid_cursor", "stale_cursor", "analysis_unavailable",
             "provider_unavailable", "provider_timeout", "provider_error",
@@ -537,7 +544,7 @@ class GatewayAndHealthTests(unittest.TestCase):
         self.assertTrue(payload["success"])
         health = payload["data"]
         self.assertEqual(health["server"]["version"], SERVER_VERSION)
-        self.assertEqual(health["registered_tool_count"], 42)
+        self.assertEqual(health["registered_tool_count"], 45)
         self.assertIn("handoff_generation", health)
         self.assertIn("automation_reliability_analysis", health)
         self.assertIn("governance", health)

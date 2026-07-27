@@ -1,5 +1,16 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## 2.1A Beta 2 exact action wrappers
+
+The static catalog contains 45 Engineering tools. Proposal-only operational
+tools do not expose their upstream provider tools. Engineering constructs exact
+arguments for reviewed `ha_reload_core`, `ha_manage_addon`, and `ha_restart`
+contracts only after external approval and call-time contract validation.
+Configuration validation, exact target evidence, durable dispatch intent,
+operation-specific readback, startup/background reconciliation, and
+no-blind-redispatch rules form one shared contract-v3 lifecycle. Direct and
+upstream fallback remain absent.
+
 ## Dev15 contract-level reviewed pure-read gateway
 
 Engineering is the single client-visible gateway for 41 static Engineering

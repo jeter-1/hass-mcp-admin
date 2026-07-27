@@ -580,7 +580,21 @@ class AuthenticatedMcpGateway:
                 METRICS.record_mcp_operation(operation_duration, rpc_method)
             if tool_name:
                 risk = capability.get("risk")
-                access = "write" if risk in {"behavioral_write", "physical_action", "destructive", "infrastructure"} else "read"
+                access = (
+                    "proposal"
+                    if capability.get("operation_class") == "proposal"
+                    else "write"
+                    if risk
+                    in {
+                        "behavioral_write",
+                        "physical_action",
+                        "destructive",
+                        "infrastructure",
+                        "infrastructure_write",
+                        "high_risk_infrastructure_action",
+                    }
+                    else "read"
+                )
                 resource_ids = {
                     key: str(value)[:128]
                     for key, value in parameters.items()
@@ -766,13 +780,32 @@ class AuthenticatedMcpGateway:
                     ha_endpoint_categories=sorted(telemetry.endpoint_categories),
                     resource_ids=resource_ids,
                     analysis_summary=(
-                        dict(telemetry.audit_context)
+                        {
+                            **dict(telemetry.audit_context),
+                            **(
+                                {
+                                    "operation_class": (
+                                        capability.get(
+                                            "operation_class"
+                                        )
+                                    )
+                                }
+                                if capability.get("operation_class")
+                                else {}
+                            ),
+                        }
                         if tool_name in {
                             "change_impact_analysis",
                             "configuration_integrity_analysis",
                             "incident_correlation",
                             "handoff_generation",
                         }
+                        else {
+                            "operation_class": (
+                                capability.get("operation_class")
+                            )
+                        }
+                        if capability.get("operation_class")
                         else {}
                     ),
                 ))
