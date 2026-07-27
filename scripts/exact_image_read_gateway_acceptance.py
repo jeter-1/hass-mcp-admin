@@ -145,6 +145,15 @@ EXPECTED_OPERATIONAL_ERROR_CALLS = sum(
     for value in UPSTREAM_ERROR_CALLS.values()
     if value["failure_category"] == "upstream_error"
 )
+EXPECTED_OUTCOME_CATEGORY_COUNTS: dict[str, int] = {}
+for expected_error in UPSTREAM_ERROR_CALLS.values():
+    category = expected_error["failure_category"]
+    EXPECTED_OUTCOME_CATEGORY_COUNTS[category] = (
+        EXPECTED_OUTCOME_CATEGORY_COUNTS.get(category, 0) + 1
+    )
+EXPECTED_LAST_OUTCOME_CATEGORY = next(
+    reversed(UPSTREAM_ERROR_CALLS.values())
+)["failure_category"]
 
 
 def expected_successful_delegated_calls(total_calls: int) -> int:
@@ -1038,14 +1047,8 @@ async def inspect_engineering(
                 gateway_before_errors.get("failure_counts") or {}
             )
             gateway_failure_after = gateway_state.get("failure_counts") or {}
-            expected_category_deltas = {
-                "upstream_error": EXPECTED_OPERATIONAL_ERROR_CALLS,
-                "invalid_request": 1,
-                "entity_not_found": 1,
-                "automation_not_found": 1,
-            }
             for category, expected_delta in (
-                expected_category_deltas.items()
+                EXPECTED_OUTCOME_CATEGORY_COUNTS.items()
             ):
                 require(
                     gateway_failure_after.get(category, 0)
@@ -1055,8 +1058,8 @@ async def inspect_engineering(
                 )
             require(
                 gateway_state.get("last_call_failure_category")
-                == "upstream_error",
-                "ambiguous entity lookup was not kept fail closed",
+                == EXPECTED_LAST_OUTCOME_CATEGORY,
+                "last gateway outcome category mismatch",
             )
             require(fallback_before == fallback_after, "fallback counters changed")
             require(gateway_state.get("fallback_count") == 0, "gateway fallback occurred")

@@ -103,6 +103,19 @@ class ExactImageDiagnosticTests(unittest.TestCase):
             acceptance.expected_successful_delegated_calls(total_calls),
             total_calls - 1,
         )
+        self.assertEqual(
+            acceptance.EXPECTED_OUTCOME_CATEGORY_COUNTS,
+            {
+                "upstream_error": 1,
+                "invalid_request": 1,
+                "entity_not_found": 2,
+                "automation_not_found": 1,
+            },
+        )
+        self.assertEqual(
+            acceptance.EXPECTED_LAST_OUTCOME_CATEGORY,
+            "entity_not_found",
+        )
 
     def test_catalog_failure_diagnostics_are_bounded_and_whitelisted(self):
         secret = "synthetic-secret-that-must-not-be-emitted"
