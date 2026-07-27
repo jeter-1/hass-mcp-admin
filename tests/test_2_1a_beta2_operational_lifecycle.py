@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import json
@@ -27,7 +28,11 @@ from ha_mcp_engineering.errors import (  # noqa: E402
     GovernanceError,
     HomeAssistantUnavailableError,
 )
-from ha_mcp_engineering.governance.models import PlanStatus  # noqa: E402
+from ha_mcp_engineering.governance.models import (  # noqa: E402
+    ChangePlan,
+    PlanStatus,
+)
+from ha_mcp_engineering.governance.normalize import stable_hash  # noqa: E402
 from ha_mcp_engineering.governance.operational_lifecycle import (  # noqa: E402
     ENGINEERING_ADDON_SLUG,
     LifecycleGatewayError,
@@ -147,6 +152,26 @@ class FakeLifecycleGateway:
             "state": "started",
         }
         self.process_instance_id = "process-one"
+        self.runtime = {
+            "server_version": "2.1.0-beta.2",
+            "build_sha": "a" * 40,
+            "registered_tool_count": 71,
+            "engineering_tool_count": 45,
+            "delegated_tool_count": 26,
+            "governance_storage_status": "healthy",
+            "governance_plan_count": 1,
+            "audit_storage_status": "healthy",
+            "audit_write_failures": 0,
+            "dependency_index_state": "valid",
+            "dependency_prewarm_state": "complete",
+            "upstream_version": "7.14.2",
+            "upstream_protocol": "2025-03-26",
+            "upstream_catalog_fingerprint": (
+                "c6bd074d9ee1e832bd90318398c00efd9a9ffd983d5444817bc830208cbfc47c"
+            ),
+            "upstream_admission_status": "admitted_exact",
+            "fallback_count": 0,
+        }
 
     async def planning_evidence(self, operation, target):
         self.planning_count += 1
@@ -185,6 +210,8 @@ class FakeLifecycleGateway:
                 ),
                 "process_instance_id": self.process_instance_id,
             }
+            if baseline["target_class"] == "engineering_addon":
+                baseline["runtime"] = deepcopy(self.runtime)
         else:
             baseline = {
                 "configuration_validation": {
@@ -250,7 +277,17 @@ class FakeLifecycleGateway:
         return self._verification()
 
     async def verify_addon_restart(self, _slug, **_kwargs):
-        return self._verification()
+        result = self._verification()
+        if result["status"] == "verified":
+            target_class = (
+                _kwargs.get("baseline", {}).get("target_class")
+            )
+            result["evidence"]["restart_proof"] = (
+                "process_identity"
+                if target_class == "engineering_addon"
+                else "provider_acknowledgement"
+            )
+        return result
 
     async def verify_home_assistant_restart(self, **_kwargs):
         return self._verification()
@@ -283,6 +320,84 @@ class FakeLifecycleGateway:
             },
             "fallback_count": 0,
             "fallback_policy": "none",
+        }
+
+
+class SelfRestartRecoveryGateway(FakeLifecycleGateway):
+    def __init__(self, process_instance_id: str) -> None:
+        super().__init__()
+        self.process_instance_id = process_instance_id
+        self.missing_readback = False
+        self.verification_entered: asyncio.Event | None = None
+        self.verification_release: asyncio.Event | None = None
+        self.fail_targets: set[str] = set()
+
+    async def verify_addon_restart(
+        self,
+        slug,
+        *,
+        baseline,
+        provider_response_received,
+        provider_evidence,
+    ):
+        self.verification_count += 1
+        if slug in self.fail_targets:
+            raise RuntimeError("synthetic readback failure")
+        if self.verification_entered is not None:
+            self.verification_entered.set()
+        if self.verification_release is not None:
+            await self.verification_release.wait()
+        if self.missing_readback:
+            return {
+                "status": "pending",
+                "mismatch_fields": ["addon_unavailable"],
+                "evidence": {
+                    "redispatch_performed": False,
+                    "fallback_occurred": False,
+                },
+            }
+        target_class = baseline.get("target_class")
+        process_changed = (
+            baseline.get("process_instance_id")
+            != self.process_instance_id
+        )
+        if target_class == "engineering_addon" and not process_changed:
+            return {
+                "status": "pending",
+                "mismatch_fields": ["restart_evidence"],
+                "evidence": {
+                    "process_instance_changed": False,
+                    "redispatch_performed": False,
+                    "fallback_occurred": False,
+                },
+            }
+        restart_proof = (
+            "process_identity"
+            if target_class == "engineering_addon"
+            else "provider_acknowledgement"
+            if provider_response_received
+            else None
+        )
+        if restart_proof is None:
+            return {
+                "status": "pending",
+                "mismatch_fields": ["restart_evidence"],
+                "evidence": {
+                    "provider_response_received": False,
+                    "redispatch_performed": False,
+                    "fallback_occurred": False,
+                },
+            }
+        return {
+            "status": "verified",
+            "mismatch_fields": [],
+            "evidence": {
+                "addon": deepcopy(baseline.get("addon")),
+                "restart_proof": restart_proof,
+                "process_instance_changed": process_changed,
+                "redispatch_performed": False,
+                "fallback_occurred": False,
+            },
         }
 
 
@@ -367,6 +482,62 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(
                     self.service.plan_hash(persisted),
                     plan["plan_hash"],
+                )
+
+    async def test_unapproved_restarts_never_attempt_apply_or_dispatch(self):
+        for operation, target in (
+            ("restart_addon", "local_test_addon"),
+            ("restart_home_assistant", "core"),
+        ):
+            with self.subTest(operation=operation):
+                created = await self.create_for(operation, target)
+                plan = created["plan"]
+
+                with self.assertRaises(GovernanceError) as raised:
+                    await self.service.apply(
+                        plan["plan_id"], plan["plan_hash"]
+                    )
+
+                self.assertEqual(
+                    raised.exception.code,
+                    ErrorCode.EXTERNAL_APPROVAL_REQUIRED,
+                )
+                persisted = self.repository.get(plan["plan_id"])
+                self.assertEqual(persisted.approval.state.value, "required")
+                self.assertEqual(
+                    persisted.operational.dispatch["attempt_count"], 0
+                )
+                self.assertEqual(
+                    persisted.operational.verification.status,
+                    "not_run",
+                )
+                self.assertEqual(self.lifecycle.dispatch_count, 0)
+                self.assertEqual(self.lifecycle.verification_count, 0)
+                metrics = self.service.health_summary()[
+                    "operational_administration"
+                ]["operations"][operation]
+                self.assertEqual(metrics["apply_attempts"], 0)
+                self.assertEqual(metrics["dispatch_attempts"], 0)
+                self.assertEqual(metrics["active_reconciliations"], 0)
+                self.assertFalse(
+                    any(
+                        event.event == f"{operation}_apply_attempted"
+                        for event in persisted.events
+                    )
+                )
+                audit_records = [
+                    json.loads(line)
+                    for line in self.audit_path.read_text(
+                        encoding="utf-8"
+                    ).splitlines()
+                ]
+                self.assertFalse(
+                    any(
+                        record.get("plan_id") == plan["plan_id"]
+                        and record.get("event")
+                        == f"{operation}_apply_attempted"
+                        for record in audit_records
+                    )
                 )
 
     async def test_reload_allowlist_dispatches_once_and_verifies(self):
@@ -587,9 +758,9 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(self.lifecycle.dispatch_count, 1)
 
-    async def test_startup_reconciliation_resumes_same_plan_readback_only(self):
-        created = (
-            await self.service.create_home_assistant_restart_plan()
+    async def test_startup_reconciliation_verifies_self_restart_readback_only(self):
+        created = await self.service.create_addon_restart_plan(
+            addon_slug=ENGINEERING_ADDON_SLUG
         )
         plan = await self.grant(created)
         self.lifecycle.mode = "ambiguous"
@@ -600,23 +771,245 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
         reloaded_repository = ChangePlanRepository(
             Path(self.temp.name) / "plans"
         )
-        recovered_lifecycle = FakeLifecycleGateway()
-        recovered_lifecycle.verification_status = "verified"
+        recovered_lifecycle = SelfRestartRecoveryGateway("process-two")
         recovered_service = ChangeGovernanceService(
             reloaded_repository,
             LegacyGateway(),
             now=self.clock,
             lifecycle_gateway=recovered_lifecycle,
         )
-        reconciliation = (
-            await recovered_service.reconcile_operational_plans()
+        from ha_mcp_engineering.application import (  # noqa: E402
+            GOVERNANCE,
+            _run_operational_reconciliation_pass,
         )
-        self.assertEqual(reconciliation["completed"], 1)
+
+        with patch.object(GOVERNANCE, "service", recovered_service):
+            await _run_operational_reconciliation_pass("startup")
         self.assertEqual(recovered_lifecycle.dispatch_count, 0)
+        self.assertEqual(recovered_lifecycle.verification_count, 1)
         recovered = reloaded_repository.get(plan["plan_id"])
         self.assertEqual(recovered.status, PlanStatus.APPLIED)
         self.assertEqual(
             recovered.operational.dispatch["attempt_count"], 1
+        )
+        self.assertEqual(
+            recovered.operational.verification.evidence[
+                "restart_proof"
+            ],
+            "process_identity",
+        )
+        self.assertTrue(
+            any(
+                event.event
+                == "restart_addon_startup_reconciliation_started"
+                for event in recovered.events
+            )
+        )
+        public = recovered_service.get_plan(plan["plan_id"])
+        self.assertEqual(public["status"], "applied")
+        self.assertEqual(
+            public["operational"]["verification"]["evidence"][
+                "restart_proof"
+            ],
+            "process_identity",
+        )
+        verification_count = recovered_lifecycle.verification_count
+        second = await recovered_service.reconcile_operational_plans(
+            trigger="periodic"
+        )
+        self.assertEqual(second["checked"], 0)
+        self.assertEqual(
+            recovered_lifecycle.verification_count,
+            verification_count,
+        )
+
+    async def test_self_restart_reconciliation_requires_changed_process_and_readback(self):
+        created = await self.service.create_addon_restart_plan(
+            addon_slug=ENGINEERING_ADDON_SLUG
+        )
+        plan = await self.grant(created)
+        self.lifecycle.mode = "ambiguous"
+        self.lifecycle.verification_status = "pending"
+        await self.service.apply(plan["plan_id"], plan["plan_hash"])
+
+        repository = ChangePlanRepository(Path(self.temp.name) / "plans")
+        unchanged = SelfRestartRecoveryGateway("process-one")
+        service = ChangeGovernanceService(
+            repository,
+            LegacyGateway(),
+            now=self.clock,
+            lifecycle_gateway=unchanged,
+        )
+        first = await service.reconcile_operational_plans(
+            trigger="startup"
+        )
+        self.assertEqual(first["pending"], 1)
+        self.assertEqual(
+            repository.get(plan["plan_id"]).status,
+            PlanStatus.VERIFICATION_REQUIRED,
+        )
+
+        unchanged.process_instance_id = "process-two"
+        unchanged.missing_readback = True
+        second = await service.reconcile_operational_plans(
+            trigger="periodic"
+        )
+        self.assertEqual(second["pending"], 1)
+        persisted = repository.get(plan["plan_id"])
+        self.assertEqual(
+            persisted.status, PlanStatus.VERIFICATION_REQUIRED
+        )
+        self.assertNotIn(
+            "restart_proof",
+            persisted.operational.verification.evidence,
+        )
+        self.assertEqual(unchanged.dispatch_count, 0)
+
+    async def test_apply_and_background_reconciliation_share_plan_lock(self):
+        created = await self.service.create_addon_restart_plan(
+            addon_slug=ENGINEERING_ADDON_SLUG
+        )
+        plan = await self.grant(created)
+        self.lifecycle.mode = "ambiguous"
+        self.lifecycle.verification_status = "pending"
+        await self.service.apply(plan["plan_id"], plan["plan_hash"])
+
+        repository = ChangePlanRepository(Path(self.temp.name) / "plans")
+        recovered = SelfRestartRecoveryGateway("process-two")
+        recovered.verification_entered = asyncio.Event()
+        recovered.verification_release = asyncio.Event()
+        service = ChangeGovernanceService(
+            repository,
+            LegacyGateway(),
+            now=self.clock,
+            lifecycle_gateway=recovered,
+        )
+        apply_task = asyncio.create_task(
+            service.apply(plan["plan_id"], plan["plan_hash"])
+        )
+        await recovered.verification_entered.wait()
+        reconciliation = await service.reconcile_operational_plans(
+            trigger="periodic"
+        )
+        self.assertEqual(reconciliation["checked"], 0)
+        self.assertEqual(reconciliation["pending"], 1)
+        recovered.verification_release.set()
+        applied = await apply_task
+        self.assertEqual(applied["status"], "applied")
+        self.assertEqual(recovered.dispatch_count, 0)
+        self.assertEqual(
+            repository.get(plan["plan_id"]).status,
+            PlanStatus.APPLIED,
+        )
+
+    async def test_reconciliation_is_bounded_and_isolates_plan_failure(self):
+        plan_ids = []
+        for slug in ("broken_addon", "healthy_addon"):
+            created = await self.service.create_addon_restart_plan(
+                addon_slug=slug
+            )
+            plan = await self.grant(created)
+            self.lifecycle.mode = "ambiguous"
+            self.lifecycle.verification_status = "pending"
+            await self.service.apply(plan["plan_id"], plan["plan_hash"])
+            persisted = self.repository.get(plan["plan_id"])
+            persisted.operational.dispatch[
+                "provider_response_received"
+            ] = True
+            self.repository.save(persisted)
+            plan_ids.append(plan["plan_id"])
+
+        repository = ChangePlanRepository(Path(self.temp.name) / "plans")
+        recovered = SelfRestartRecoveryGateway("process-two")
+        recovered.fail_targets.add("broken_addon")
+        service = ChangeGovernanceService(
+            repository,
+            LegacyGateway(),
+            now=self.clock,
+            lifecycle_gateway=recovered,
+        )
+        bounded = await service.reconcile_operational_plans(
+            trigger="startup", max_plans=1
+        )
+        self.assertEqual(bounded["checked"], 1)
+        self.assertTrue(bounded["bounded"])
+
+        result = await service.reconcile_operational_plans(
+            trigger="periodic"
+        )
+        self.assertGreaterEqual(
+            bounded["completed"] + result["completed"], 1
+        )
+        self.assertGreaterEqual(
+            bounded["failed"] + result["failed"], 1
+        )
+        self.assertEqual(recovered.dispatch_count, 0)
+        statuses = {
+            repository.get(plan_id).target_id: repository.get(
+                plan_id
+            ).status
+            for plan_id in plan_ids
+        }
+        self.assertEqual(
+            statuses["healthy_addon"], PlanStatus.APPLIED
+        )
+        self.assertEqual(
+            statuses["broken_addon"],
+            PlanStatus.VERIFICATION_REQUIRED,
+        )
+
+    async def test_historical_verification_without_restart_proof_is_readable(self):
+        created = await self.service.create_addon_restart_plan(
+            addon_slug="local_test_addon"
+        )
+        plan = await self.grant(created)
+        await self.service.apply(plan["plan_id"], plan["plan_hash"])
+        persisted = self.repository.get(plan["plan_id"])
+        original_hash = self.service.plan_hash(persisted)
+        historical = persisted.to_dict()
+        historical["operational"]["verification"]["evidence"].pop(
+            "restart_proof", None
+        )
+
+        restored = ChangePlan.from_dict(historical)
+        self.assertEqual(self.service.plan_hash(restored), original_hash)
+        self.assertNotIn(
+            "restart_proof",
+            restored.operational.verification.evidence,
+        )
+        self.repository.save(restored)
+        self.assertEqual(
+            self.repository.get(plan["plan_id"]).status,
+            PlanStatus.APPLIED,
+        )
+
+    async def test_incomplete_historical_self_restart_plan_fails_closed(self):
+        created = await self.service.create_addon_restart_plan(
+            addon_slug=ENGINEERING_ADDON_SLUG
+        )
+        persisted = self.repository.get(created["plan"]["plan_id"])
+        persisted.operational.baseline.pop("runtime")
+        persisted.current_state_fingerprint = stable_hash(
+            persisted.operational.baseline
+        )
+        self.repository.save(persisted)
+        historical_hash = self.service.plan_hash(persisted)
+        created["plan"]["plan_hash"] = historical_hash
+        plan = await self.grant(created)
+
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.apply(
+                plan["plan_id"], historical_hash
+            )
+
+        self.assertEqual(
+            raised.exception.code, ErrorCode.STALE_TARGET_STATE
+        )
+        self.assertEqual(self.lifecycle.dispatch_count, 0)
+        reloaded = self.repository.get(plan["plan_id"])
+        self.assertEqual(reloaded.approval.state.value, "approved")
+        self.assertEqual(
+            reloaded.operational.dispatch["attempt_count"], 0
         )
 
     async def test_pre_dispatch_contract_drift_preserves_approval(self):
@@ -807,6 +1200,47 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             provider_evidence={},
         )
         self.assertEqual(verified["status"], "verified")
+        self.assertEqual(
+            verified["evidence"]["restart_proof"],
+            "provider_acknowledgement",
+        )
+
+    async def test_missing_addon_readback_remains_verification_pending(self):
+        class AddonProvider:
+            async def get_addon(self, _slug):
+                raise OperationalLifecycleProviderError(
+                    "resource_not_found", dispatched=False
+                )
+
+        gateway = OperationalLifecycleGateway(
+            AddonProvider(),
+            None,
+            None,
+            configuration_validator=lambda: None,
+            runtime_snapshot=lambda: {},
+            process_instance_id="process",
+        )
+        pending = await gateway.verify_addon_restart(
+            "missing_after_dispatch",
+            baseline={
+                "addon": {
+                    "slug": "missing_after_dispatch",
+                    "name": "Fixture",
+                    "version": "1.0.0",
+                    "state": "started",
+                },
+                "target_class": "other_addon",
+            },
+            provider_response_received=True,
+            provider_evidence={},
+        )
+        self.assertEqual(pending["status"], "pending")
+        self.assertEqual(
+            pending["mismatch_fields"], ["addon_unavailable"]
+        )
+        self.assertNotIn(
+            "restart_proof", pending["evidence"]
+        )
 
     async def test_upstream_addon_requires_exact_readmission(self):
         class AddonProvider:
@@ -822,17 +1256,28 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
 
             async def probe(self, operation):
                 self.operation = operation
+                evidence = provider_evidence("restart_addon")
+                evidence["server_version"] = self.observed_version
                 return SimpleNamespace(
-                    server_version=self.observed_version
+                    as_dict=lambda: deepcopy(evidence)
                 )
 
         provider = AddonProvider()
+        runtime = {
+            "upstream_version": "7.14.2",
+            "upstream_protocol": "2025-03-26",
+            "upstream_catalog_fingerprint": (
+                "c6bd074d9ee1e832bd90318398c00efd9a9ffd983d5444817bc830208cbfc47c"
+            ),
+            "upstream_admission_status": "admitted_exact",
+            "fallback_count": 0,
+        }
         gateway = OperationalLifecycleGateway(
             provider,
             None,
             None,
             configuration_validator=lambda: None,
-            runtime_snapshot=lambda: {},
+            runtime_snapshot=lambda: deepcopy(runtime),
             process_instance_id="process",
         )
         baseline = {
@@ -843,12 +1288,14 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 "state": "started",
             },
             "target_class": "upstream_ha_mcp_addon",
+            "runtime": deepcopy(runtime),
         }
+        planned_provider = provider_evidence("restart_addon")
         pending = await gateway.verify_addon_restart(
             UPSTREAM_HA_MCP_ADDON_SLUG,
             baseline=baseline,
             provider_response_received=True,
-            provider_evidence={"server_version": "7.14.2"},
+            provider_evidence=planned_provider,
         )
         self.assertEqual(pending["status"], "pending")
         self.assertIn("restart_evidence", pending["mismatch_fields"])
@@ -857,9 +1304,13 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             UPSTREAM_HA_MCP_ADDON_SLUG,
             baseline=baseline,
             provider_response_received=True,
-            provider_evidence={"server_version": "7.14.2"},
+            provider_evidence=planned_provider,
         )
         self.assertEqual(verified["status"], "verified")
+        self.assertEqual(
+            verified["evidence"]["restart_proof"],
+            "upstream_readmission",
+        )
 
     async def test_engineering_self_restart_requires_new_process_instance(self):
         class AddonProvider:
@@ -871,12 +1322,24 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                     "state": "started",
                 }
 
+        runtime = {
+            "server_version": "2.1.0-beta.2",
+            "build_sha": "a" * 40,
+            "registered_tool_count": 71,
+            "engineering_tool_count": 45,
+            "delegated_tool_count": 26,
+            "governance_storage_status": "healthy",
+            "governance_plan_count": 1,
+            "audit_storage_status": "healthy",
+            "audit_write_failures": 0,
+            "fallback_count": 0,
+        }
         gateway = OperationalLifecycleGateway(
             AddonProvider(),
             None,
             None,
             configuration_validator=lambda: None,
-            runtime_snapshot=lambda: {},
+            runtime_snapshot=lambda: deepcopy(runtime),
             process_instance_id="original-process",
         )
         baseline = {
@@ -888,6 +1351,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             },
             "target_class": "engineering_addon",
             "process_instance_id": "original-process",
+            "runtime": deepcopy(runtime),
         }
         pending = await gateway.verify_addon_restart(
             ENGINEERING_ADDON_SLUG,
@@ -905,6 +1369,22 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             provider_evidence={},
         )
         self.assertEqual(verified["status"], "verified")
+        self.assertEqual(
+            verified["evidence"]["restart_proof"],
+            "process_identity",
+        )
+
+        runtime["audit_storage_status"] = "unhealthy"
+        pending = await gateway.verify_addon_restart(
+            ENGINEERING_ADDON_SLUG,
+            baseline=baseline,
+            provider_response_received=False,
+            provider_evidence={},
+        )
+        self.assertEqual(pending["status"], "pending")
+        self.assertIn(
+            "engineering_runtime", pending["mismatch_fields"]
+        )
 
     async def test_home_assistant_restart_records_observed_disruption(self):
         class Rest:

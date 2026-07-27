@@ -103,6 +103,8 @@ MAX_APPROVAL_PROJECTION_DEPTH = 4
 MAX_APPROVAL_PROJECTION_CONTROLS = 16
 MAX_APPROVAL_PROJECTION_ACTIONS_PER_PLAN = 32
 MAX_APPROVAL_PROJECTION_DETAILS_PER_PLAN = 128
+MAX_OPERATIONAL_RECONCILIATIONS_PER_PASS = 20
+OPERATIONAL_RECONCILIATION_TIME_BUDGET_SECONDS = 10.0
 
 _APPROVAL_METADATA_FIELDS = {
     "automation": (
@@ -1833,6 +1835,20 @@ class ChangeGovernanceService:
         expiration_minutes: int,
         caller_context: dict[str, Any] | None,
     ) -> dict[str, Any]:
+        """Create a fail-closed plan from complete load-bearing evidence.
+
+        Normalization, hashing, approval, pre-dispatch revalidation, and
+        recovery bind the operation, exact target and target fingerprint,
+        reviewed provider capability, required planning validation, and the
+        operation-specific verification contract. Self-restart additionally
+        requires a process-instance baseline; Home Assistant restart requires
+        Home Assistant identity; and disruptive recovery binds runtime/build
+        and tool counts, upstream identity/catalog admission, governance and
+        audit persistence, and the expected verification contract. Incomplete
+        or synthetic evidence is intentionally rejected by those later
+        fail-closed checks rather than normalized into an applicable plan.
+        """
+
         if self.lifecycle_gateway is None:
             raise GovernanceError(
                 ErrorCode.OPERATIONAL_PROVIDER_UNAVAILABLE
@@ -3059,12 +3075,12 @@ class ChangeGovernanceService:
                     }
                 },
             )
-        self._record(
-            plan,
-            f"{plan.operation.value}_apply_attempted",
-            "success",
-        )
         if plan.status == PlanStatus.APPLIED:
+            self._record(
+                plan,
+                f"{plan.operation.value}_apply_attempted",
+                "success",
+            )
             self._record(
                 plan,
                 f"{plan.operation.value}_no_redispatch_prevented",
@@ -3080,6 +3096,11 @@ class ChangeGovernanceService:
             plan.status == PlanStatus.APPLYING
             and operational.dispatch.get("attempt_count") == 1
         ):
+            self._record(
+                plan,
+                f"{plan.operation.value}_apply_attempted",
+                "success",
+            )
             self._record(
                 plan,
                 f"{plan.operation.value}_no_redispatch_prevented",
@@ -3101,6 +3122,11 @@ class ChangeGovernanceService:
         if plan.status == PlanStatus.VERIFICATION_REQUIRED:
             self._record(
                 plan,
+                f"{plan.operation.value}_apply_attempted",
+                "success",
+            )
+            self._record(
+                plan,
                 f"{plan.operation.value}_no_redispatch_prevented",
                 "success",
             )
@@ -3116,6 +3142,11 @@ class ChangeGovernanceService:
             self._reject_apply(plan, ErrorCode.EXTERNAL_APPROVAL_REQUIRED)
         if plan.approval.bound_plan_hash != calculated:
             self._reject_apply(plan, ErrorCode.APPROVAL_HASH_MISMATCH)
+        self._record(
+            plan,
+            f"{plan.operation.value}_apply_attempted",
+            "success",
+        )
 
         target_lock = self._target_locks.setdefault(
             (
@@ -3497,61 +3528,158 @@ class ChangeGovernanceService:
             },
         )
 
-    async def reconcile_operational_plans(self) -> dict[str, int]:
-        """Resume eligible readback-only verification without redispatch."""
+    @staticmethod
+    def _eligible_lifecycle_reconciliation(plan: ChangePlan) -> bool:
+        operational = plan.operational
+        return (
+            plan.contract_version
+            == OPERATIONAL_PLAN_CONTRACT_VERSION
+            and plan.operation in LIFECYCLE_OPERATIONS
+            and plan.status
+            in {
+                PlanStatus.APPLYING,
+                PlanStatus.VERIFICATION_REQUIRED,
+            }
+            and operational is not None
+            and operational.dispatch.get("attempt_count") == 1
+            and operational.dispatch.get("dispatched") is True
+            and plan.approval.state == ApprovalState.CONSUMED
+        )
 
-        checked = completed = pending = failed = 0
+    async def reconcile_operational_plans(
+        self,
+        *,
+        trigger: str = "periodic",
+        max_plans: int = MAX_OPERATIONAL_RECONCILIATIONS_PER_PASS,
+        time_budget_seconds: float = (
+            OPERATIONAL_RECONCILIATION_TIME_BUDGET_SECONDS
+        ),
+    ) -> dict[str, Any]:
+        """Boundedly resume eligible readback-only work without redispatch."""
+
+        if trigger not in {"startup", "periodic", "manual"}:
+            raise ValueError("unsupported operational reconciliation trigger")
+        max_plans = max(1, min(int(max_plans), 100))
+        time_budget_seconds = max(
+            0.01, min(float(time_budget_seconds), 60.0)
+        )
+        started = time.monotonic()
+        selected = checked = completed = pending = failed = 0
+        bounded = False
         for candidate in self.resolved_plans():
-            if (
-                candidate.contract_version
-                != OPERATIONAL_PLAN_CONTRACT_VERSION
-                or candidate.operation not in LIFECYCLE_OPERATIONS
-                or candidate.status
-                not in {
-                    PlanStatus.APPLYING,
-                    PlanStatus.VERIFICATION_REQUIRED,
-                }
-                or candidate.operational is None
-                or candidate.operational.dispatch.get(
-                    "attempt_count"
-                )
-                != 1
-            ):
+            if not self._eligible_lifecycle_reconciliation(candidate):
                 continue
+            if (
+                selected >= max_plans
+                or time.monotonic() - started >= time_budget_seconds
+            ):
+                bounded = True
+                break
+            selected += 1
             plan_lock = self._plan_locks.setdefault(
                 candidate.plan_id, asyncio.Lock()
             )
             if plan_lock.locked():
                 pending += 1
                 continue
-            checked += 1
             async with plan_lock:
                 plan = self._load(candidate.plan_id)
-                if (
-                    plan.status
-                    not in {
-                        PlanStatus.APPLYING,
-                        PlanStatus.VERIFICATION_REQUIRED,
-                    }
-                    or plan.operational is None
-                    or plan.operational.dispatch.get(
-                        "attempt_count"
-                    )
-                    != 1
-                ):
+                if not self._eligible_lifecycle_reconciliation(plan):
                     continue
-                self._active_lifecycle_reconciliations += 1
-                try:
-                    result = (
-                        await self._resume_lifecycle_verification(
-                            plan
+                target_lock = self._target_locks.setdefault(
+                    (
+                        f"operational_{plan.operation.value}",
+                        plan.target_id,
+                    ),
+                    asyncio.Lock(),
+                )
+                if target_lock.locked():
+                    pending += 1
+                    continue
+                checked += 1
+                async with target_lock:
+                    if plan.status == PlanStatus.APPLYING:
+                        plan.status = PlanStatus.VERIFICATION_REQUIRED
+                        plan.execution_outcome = "verification_pending"
+                        plan.operational.final_outcome = (
+                            "verification_pending"
                         )
+                        plan.operational.verification.status = (
+                            "verification_pending"
+                        )
+                    self._record(
+                        plan,
+                        (
+                            f"{plan.operation.value}_{trigger}_"
+                            "reconciliation_started"
+                        ),
+                        "success",
                     )
-                except GovernanceError:
-                    failed += 1
-                    continue
-                finally:
-                    self._active_lifecycle_reconciliations -= 1
+                    remaining = (
+                        time_budget_seconds
+                        - (time.monotonic() - started)
+                    )
+                    if remaining <= 0:
+                        pending += 1
+                        bounded = True
+                        break
+                    self._active_lifecycle_reconciliations += 1
+                    try:
+                        result = await asyncio.wait_for(
+                            self._resume_lifecycle_verification(plan),
+                            timeout=remaining,
+                        )
+                    except TimeoutError:
+                        pending += 1
+                        bounded = True
+                        self._record(
+                            plan,
+                            (
+                                f"{plan.operation.value}_{trigger}_"
+                                "reconciliation_deferred"
+                            ),
+                            "partial",
+                            error_code=(
+                                ErrorCode.OPERATIONAL_VERIFICATION_PENDING.value
+                            ),
+                        )
+                        continue
+                    except GovernanceError:
+                        failed += 1
+                        continue
+                    except Exception as exc:
+                        failed += 1
+                        log_event(
+                            self.logger,
+                            logging.WARNING,
+                            "operational_reconciliation_plan_failed",
+                            (
+                                "Operational readback reconciliation will "
+                                "retry without redispatch."
+                            ),
+                            context={
+                                "operation": plan.operation.value,
+                                "trigger": trigger,
+                                "error_type": type(exc).__name__,
+                            },
+                        )
+                        try:
+                            self._record(
+                                plan,
+                                (
+                                    f"{plan.operation.value}_{trigger}_"
+                                    "reconciliation_deferred"
+                                ),
+                                "partial",
+                                error_code=(
+                                    ErrorCode.OPERATIONAL_VERIFICATION_PENDING.value
+                                ),
+                            )
+                        except Exception:
+                            pass
+                        continue
+                    finally:
+                        self._active_lifecycle_reconciliations -= 1
             if result.get("status") == "applied":
                 completed += 1
             else:
@@ -3561,6 +3689,7 @@ class ChangeGovernanceService:
             "completed": completed,
             "pending": pending,
             "failed": failed,
+            "bounded": bounded,
         }
 
     def _lifecycle_preflight_matches(
@@ -3591,12 +3720,51 @@ class ChangeGovernanceService:
         if plan.operation == ChangeOperation.RESTART_ADDON:
             planned_addon = operational.baseline.get("addon")
             fresh_addon = fresh_baseline.get("addon")
-            return isinstance(planned_addon, dict) and isinstance(
+            identity_matches = isinstance(
+                planned_addon, dict
+            ) and isinstance(
                 fresh_addon, dict
             ) and all(
                 planned_addon.get(field) == fresh_addon.get(field)
                 for field in ("slug", "name", "version")
             )
+            if not identity_matches:
+                return False
+            planned_class = operational.baseline.get("target_class")
+            if planned_class != fresh_baseline.get("target_class"):
+                return False
+            if planned_class == "engineering_addon":
+                planned_runtime = operational.baseline.get("runtime")
+                fresh_runtime = fresh_baseline.get("runtime")
+                return isinstance(planned_runtime, dict) and isinstance(
+                    fresh_runtime, dict
+                ) and all(
+                    planned_runtime.get(field)
+                    == fresh_runtime.get(field)
+                    for field in (
+                        "server_version",
+                        "build_sha",
+                        "registered_tool_count",
+                        "engineering_tool_count",
+                        "delegated_tool_count",
+                    )
+                )
+            if planned_class == "upstream_ha_mcp_addon":
+                planned_runtime = operational.baseline.get("runtime")
+                fresh_runtime = fresh_baseline.get("runtime")
+                return isinstance(planned_runtime, dict) and isinstance(
+                    fresh_runtime, dict
+                ) and all(
+                    planned_runtime.get(field)
+                    == fresh_runtime.get(field)
+                    for field in (
+                        "upstream_version",
+                        "upstream_protocol",
+                        "upstream_catalog_fingerprint",
+                        "upstream_admission_status",
+                    )
+                )
+            return planned_class == "other_addon"
         if (
             plan.operation
             == ChangeOperation.RESTART_HOME_ASSISTANT
@@ -5936,11 +6104,7 @@ class ChangeGovernanceService:
                     else 0
                 ),
                 "eligible_readback_reconciliations": sum(
-                    plan.status
-                    in {
-                        PlanStatus.APPLYING,
-                        PlanStatus.VERIFICATION_REQUIRED,
-                    }
+                    self._eligible_lifecycle_reconciliation(plan)
                     for plan in operation_plans
                 ),
                 "no_blind_redispatch_preventions": sum(

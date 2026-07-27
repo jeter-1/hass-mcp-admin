@@ -89,11 +89,17 @@ class OperationalLifecycleGateway:
                 }
             elif operation == "restart_addon":
                 addon = await self.provider.get_addon(target)
+                target_class = _addon_target_class(target, addon)
                 baseline = {
                     "addon": _addon_identity(addon),
-                    "target_class": _addon_target_class(target, addon),
+                    "target_class": target_class,
                     "process_instance_id": self.process_instance_id,
                 }
+                if target_class in {
+                    "engineering_addon",
+                    "upstream_ha_mcp_addon",
+                }:
+                    baseline["runtime"] = self.runtime_snapshot()
             elif operation == "restart_home_assistant":
                 validation = await self.configuration_validation()
                 baseline = {
@@ -263,6 +269,7 @@ class OperationalLifecycleGateway:
                 "upstream_version_mismatch",
                 "catalog_mismatch",
                 "required_tool_missing",
+                "resource_not_found",
             }:
                 return {
                     "status": "pending",
@@ -304,11 +311,43 @@ class OperationalLifecycleGateway:
             and baseline.get("process_instance_id")
             != self.process_instance_id
         )
-        restart_proven = (
-            process_restarted
-            if target_class == "engineering_addon"
-            else bool(provider_response_received)
+        restart_proof: str | None = None
+        observed_runtime = self.runtime_snapshot()
+        runtime = (
+            observed_runtime
+            if isinstance(observed_runtime, dict)
+            else {}
         )
+        if target_class == "engineering_addon":
+            planned_runtime = baseline.get("runtime")
+            runtime_ready = _engineering_runtime_ready(
+                planned_runtime, runtime
+            )
+            if not runtime_ready:
+                return {
+                    "status": "pending",
+                    "mismatch_fields": ["engineering_runtime"],
+                    "evidence": {
+                        "addon": current,
+                        "target_class": target_class,
+                        "process_instance_changed": process_restarted,
+                        "runtime_identity_available": _runtime_identity_available(
+                            runtime
+                        ),
+                        "governance_storage_healthy": (
+                            runtime.get("governance_storage_status")
+                            == "healthy"
+                        ),
+                        "audit_continuity_available": (
+                            runtime.get("audit_storage_status")
+                            == "healthy"
+                            and runtime.get("audit_write_failures") == 0
+                        ),
+                        "redispatch_performed": False,
+                    },
+                }
+            if process_restarted:
+                restart_proof = "process_identity"
         if target_class == "upstream_ha_mcp_addon":
             try:
                 admitted = await self.provider.probe("restart_addon")
@@ -321,18 +360,28 @@ class OperationalLifecycleGateway:
                         "redispatch_performed": False,
                     },
                 }
-            planned_version = provider_evidence.get("server_version")
-            restart_proven = restart_proven and (
-                admitted.server_version == planned_version
-            )
-        if not restart_proven:
+            admitted_evidence = admitted.as_dict()
+            if _upstream_readmission_matches(
+                provider_evidence,
+                admitted_evidence,
+                runtime,
+            ):
+                restart_proof = "upstream_readmission"
+        elif (
+            target_class == "other_addon"
+            and provider_response_received
+        ):
+            restart_proof = "provider_acknowledgement"
+        if restart_proof is None:
             return {
                 "status": "pending",
                 "mismatch_fields": ["restart_evidence"],
                 "evidence": {
                     "addon": current,
                     "target_class": target_class,
-                    "provider_response_received": False,
+                    "provider_response_received": (
+                        provider_response_received
+                    ),
                     "process_instance_changed": process_restarted,
                     "redispatch_performed": False,
                 },
@@ -343,6 +392,7 @@ class OperationalLifecycleGateway:
             "evidence": {
                 "addon": current,
                 "target_class": target_class,
+                "restart_proof": restart_proof,
                 "provider_response_received": provider_response_received,
                 "process_instance_changed": process_restarted,
                 "version_unchanged": current.get("version")
@@ -586,6 +636,92 @@ class OperationalLifecycleGateway:
 
     def health_snapshot(self) -> dict[str, Any]:
         return self.provider.health_snapshot()
+
+
+def _runtime_identity_available(runtime: Any) -> bool:
+    if not isinstance(runtime, dict):
+        return False
+    return (
+        isinstance(runtime.get("server_version"), str)
+        and bool(runtime.get("server_version"))
+        and isinstance(runtime.get("build_sha"), str)
+        and bool(runtime.get("build_sha"))
+        and all(
+            isinstance(runtime.get(field), int)
+            for field in (
+                "registered_tool_count",
+                "engineering_tool_count",
+                "delegated_tool_count",
+            )
+        )
+    )
+
+
+def _engineering_runtime_ready(
+    planned: Any, current: Any
+) -> bool:
+    if not isinstance(planned, dict) or not _runtime_identity_available(
+        current
+    ):
+        return False
+    identity_fields = (
+        "server_version",
+        "build_sha",
+        "registered_tool_count",
+        "engineering_tool_count",
+        "delegated_tool_count",
+    )
+    if not all(
+        current.get(field) == planned.get(field)
+        for field in identity_fields
+    ):
+        return False
+    planned_count = planned.get("governance_plan_count")
+    current_count = current.get("governance_plan_count")
+    return (
+        isinstance(planned_count, int)
+        and isinstance(current_count, int)
+        and current_count >= planned_count
+        and current.get("governance_storage_status") == "healthy"
+        and current.get("audit_storage_status") == "healthy"
+        and current.get("audit_write_failures") == 0
+        and current.get("fallback_count") == 0
+    )
+
+
+def _upstream_readmission_matches(
+    planned_provider: dict[str, Any],
+    admitted_provider: dict[str, Any],
+    runtime: Any,
+) -> bool:
+    if not isinstance(runtime, dict):
+        return False
+    contract_fields = (
+        "provider",
+        "server_name",
+        "server_version",
+        "protocol_version",
+        "compatibility_entry_id",
+        "catalog_fingerprint",
+        "tool_contract_fingerprints",
+        "argument_constraints",
+    )
+    return (
+        all(
+            admitted_provider.get(field)
+            == planned_provider.get(field)
+            for field in contract_fields
+        )
+        and runtime.get("upstream_version")
+        == planned_provider.get("server_version")
+        and runtime.get("upstream_protocol")
+        == planned_provider.get("protocol_version")
+        and runtime.get("upstream_catalog_fingerprint")
+        == planned_provider.get("catalog_fingerprint")
+        and runtime.get("upstream_admission_status")
+        == "admitted_exact"
+        and runtime.get("fallback_count") == 0
+    )
 
 
 def _service_available(

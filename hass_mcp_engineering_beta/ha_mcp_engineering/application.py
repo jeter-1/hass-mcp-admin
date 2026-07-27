@@ -295,26 +295,37 @@ async def _supervise_upstream_reconciliation(
     )
 
 
-async def _supervise_operational_reconciliation() -> None:
-    """Resume durable readback-only work without ever redispatching."""
+async def _run_operational_reconciliation_pass(trigger: str) -> None:
+    """Run one isolated, bounded readback-only reconciliation pass."""
 
     logger = get_logger("operational_reconciliation")
+    service = GOVERNANCE.service
+    if service is None:
+        return
+    try:
+        await service.reconcile_operational_plans(trigger=trigger)
+    except Exception as exc:
+        # A failed readback pass remains represented by the persisted
+        # verification-required plan and is retried on the next pass.
+        log_event(
+            logger,
+            logging.WARNING,
+            "operational_reconciliation_pass_failed",
+            "Operational readback reconciliation will retry.",
+            context={
+                "trigger": trigger,
+                "error_type": type(exc).__name__,
+            },
+        )
+
+
+async def _supervise_operational_reconciliation() -> None:
+    """Verify at startup, then retry pending readback every 30 seconds."""
+
+    await _run_operational_reconciliation_pass("startup")
     while True:
-        service = GOVERNANCE.service
-        if service is not None:
-            try:
-                await service.reconcile_operational_plans()
-            except Exception as exc:
-                # A failed readback pass remains represented by the persisted
-                # verification-required plan and is retried on the next pass.
-                log_event(
-                    logger,
-                    logging.WARNING,
-                    "operational_reconciliation_pass_failed",
-                    "Operational readback reconciliation will retry.",
-                    context={"error_type": type(exc).__name__},
-                )
         await asyncio.sleep(30)
+        await _run_operational_reconciliation_pass("periodic")
 
 
 async def _serve(settings: Settings) -> None:
