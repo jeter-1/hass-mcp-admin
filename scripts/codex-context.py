@@ -21,6 +21,9 @@ DEV_RC_VERSION_RE = re.compile(
 FINAL_RC_VERSION_RE = re.compile(
     r"^(?P<core>\d+\.\d+\.\d+)-rc\.(?P<rc>[1-9]\d*)$"
 )
+BETA_VERSION_RE = re.compile(
+    r"^(?P<core>\d+\.\d+\.\d+)-beta\.(?P<beta>[1-9]\d*)$"
+)
 STABLE_VERSION_RE = re.compile(r"^(?P<core>\d+\.\d+\.\d+)$")
 
 
@@ -186,6 +189,15 @@ def parse_release_version(version: str) -> dict[str, Any] | None:
             "rc": int(match.group("rc")),
             "dev": None,
         }
+    match = BETA_VERSION_RE.fullmatch(version)
+    if match:
+        return {
+            "kind": "beta",
+            "core": match.group("core"),
+            "rc": None,
+            "dev": None,
+            "beta": int(match.group("beta")),
+        }
     match = STABLE_VERSION_RE.fullmatch(version)
     if match:
         return {
@@ -205,6 +217,8 @@ def release_stage(version: str) -> str:
         return f"RC{identity['rc']} development {identity['dev']}"
     if identity["kind"] == "final_rc":
         return f"RC{identity['rc']} final"
+    if identity["kind"] == "beta":
+        return f"beta {identity['beta']}"
     return "stable"
 
 
@@ -328,6 +342,11 @@ def resolve_documents(repo_root: Path, version: str) -> dict[str, Any]:
     else:
         if identity["kind"] == "stable":
             stem = f"V{identity['core'].replace('.', '_')}"
+        elif identity["kind"] == "beta":
+            stem = (
+                f"V{identity['core'].replace('.', '_')}_"
+                f"BETA{identity['beta']}"
+            )
         else:
             rc_number = identity["rc"]
             if identity["kind"] == "development_rc":

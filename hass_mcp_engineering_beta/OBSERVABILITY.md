@@ -87,10 +87,27 @@ upstream version evidence and accepted/rejected identity status alongside the
 reviewed route and argument field names. Raw catalogs, descriptions, schemas,
 endpoints, and credentials remain excluded.
 
-With 41 static tools, complete generic admission reports 26 delegated and 67
-registered tools. One missing or quarantined read reports 25 delegated and 66
+With 42 static tools, complete generic admission reports 26 delegated and 68
+registered tools. One missing or quarantined read reports 25 delegated and 67
 registered. The two dashboard wrappers are static tools; their registration
 does not claim that `upstream_dashboard` is currently compatible or reachable.
+
+## 2.1A operational-administration health
+
+`get_server_health.operational_administration` reports persistent plan and
+outcome counts, current-process active apply state, and cumulative-process
+provider counters separately. It includes backup proposals, dispatch attempts,
+verified successes, terminal failures, indeterminate outcomes, verification
+failures, the last verified timestamp and bounded failure category, provider
+status, `fallback_count=0`, and `rollback_available=false`.
+
+Operational audit events record the immutable plan lifecycle, approval
+consumption, exact provider identity, whether dispatch occurred, bounded
+operation identifiers, verification attempts, final outcome, zero fallback,
+and unavailable rollback. Passwords, tokens, provider endpoints, raw responses,
+and unbounded backup metadata are excluded. A
+`backup_dispatch_indeterminate` result is verification-required evidence, not
+permission to create another backup.
 
 `get_server_health.upstream_dashboard` remains independent. Admission requires
 an exact-version built-in or verified signed attestation before the compiled

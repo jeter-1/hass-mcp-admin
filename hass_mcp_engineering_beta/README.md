@@ -1,7 +1,9 @@
 # HA MCP Engineering Server Beta
 
-This directory contains the Engineering v2 add-on, promoted in place to
-`2.0.1`. Its technical “Beta” display name, slug, image repository, and runtime
+This directory contains the Engineering v2 add-on. Development version
+`2.1.0-beta.1` starts the bounded 2.1A operational-administration line from the
+exact `v2.0.1` release. Its technical “Beta” display name, slug, image
+repository, and runtime
 identity remain unchanged to avoid a migration. Stable v1.1.2
 `hass_mcp_admin` source remains in the repository as operationally retired
 history; it is not part of Engineering dependency assurance or supported
@@ -10,7 +12,7 @@ rollback.
 ## Contract-level reviewed upstream reads
 
 After configuring the existing secret-bearing upstream MCP URL, Engineering
-starts with 41 statically registered tools (25 canonical plus 16
+starts with 42 statically registered tools (25 canonical plus 17
 Engineering-native). Fast bounded retries recover when `ha-mcp` is not yet
 reachable after host boot. While configured upstream reconciliation is
 initially pending, `/health` remains live but `/ready` and authenticated MCP
@@ -32,8 +34,8 @@ Each read also requires its exact pinned generic object output-schema
 fingerprint; the fixed Engineering adapter, not that generic schema, owns
 sanitization, bounds, fallback refusal, and partial-data behavior.
 
-A complete reviewed set adds 26 delegated reads for 67 registered tools. One
-missing or quarantined read leaves the other 25 available for 66 registered
+A complete reviewed set adds 26 delegated reads for 68 registered tools. One
+missing or quarantined read leaves the other 25 available for 67 registered
 tools. A client that cached an earlier list must re-list or reconnect; the
 stateless transport does not broadcast `tools/list_changed`.
 
@@ -104,12 +106,16 @@ failed history and must not be treated as accepted. RC2dev13 corrected its
 reboot and completeness defects, RC2dev14 established practical configuration
 plans, and RC2dev16 corrected delegated structured-error normalization without
 changing upstream admission or adding search behavior. Version `2.0.1`
-promotes the accepted RC1-dev2 behavior without a functional change. It retains
+promoted the accepted RC1-dev2 behavior without a functional change. Development
+version `2.1.0-beta.1` adds only governed full-backup creation and its
+operational-plan foundation. It retains
 exact reviewed 7.14.2 compatibility, reviewed 7.14.1 rollback compatibility,
 and the hardened MCP SDK boundary. Its changes, rollback, and acceptance
 requirements are recorded in
-[`../docs/V2_0_1_RELEASE_NOTES.md`](../docs/V2_0_1_RELEASE_NOTES.md) and
-[`../docs/V2_0_1_ACCEPTANCE.md`](../docs/V2_0_1_ACCEPTANCE.md). Determine
+[`../docs/V2_1_0_BETA1_RELEASE_NOTES.md`](../docs/V2_1_0_BETA1_RELEASE_NOTES.md),
+[`../docs/V2_1_0_BETA1_ACCEPTANCE.md`](../docs/V2_1_0_BETA1_ACCEPTANCE.md), and
+[`../docs/OPERATIONAL_ADMINISTRATION.md`](../docs/OPERATIONAL_ADMINISTRATION.md).
+Determine
 exact advertised state from version metadata and `scripts/codex-context.py`.
 
 Before connecting an MCP client, require `/ready` HTTP 200 with `ready=true`,
@@ -120,8 +126,8 @@ even though `/health` is live.
 For any separately authorized deployment, call `server_info(check_ha=false)`
 and verify the expected version, complete release commit SHA, and UTC build
 time. Then call `list_capabilities` and verify the preserved 25-tool canonical
-catalog plus 16 beta-native tools. Without an admitted upstream, MCP
-`tools/list` exposes those 41 tools. With exact reviewed release/profile
+catalog plus 17 beta-native tools. Without an admitted upstream, MCP
+`tools/list` exposes those 42 tools. With exact reviewed release/profile
 authority and matching per-tool contracts, it also exposes the exact dynamic
 count reported by `upstream_read_gateway`.
 Require `version_status`, `compatibility_status`, missing/quarantine counts,
@@ -156,7 +162,7 @@ variant fallback. The mixed
 upstream tool is not described as globally read-only, and Engineering
 constructs only exact non-screenshot read forms. Screenshots, preference
 writes, dashboard writes, and arbitrary forwarding remain absent. The raw
-server-side MCP `tools/list` returns all 41 static tools even when the dashboard
+server-side MCP `tools/list` returns all 42 static tools even when the dashboard
 provider is unavailable. If a client shows an older list after a dynamic subset
 changes, re-list or reconnect; the server does not claim dynamic tool-list
 notifications.
@@ -216,18 +222,32 @@ docker build -t hass-mcp-engineering-beta:test .\hass_mcp_engineering_beta
 
 ## Removal and rollback
 
-For a 2.0.1 rollback, reinstall the exact published 2.0.0 Engineering image
-`ghcr.io/jeter-1/hass-mcp-engineering-beta@sha256:d91246deab5b50749430f5194b5a9fe1473171526fe4f8551c89b1b3259ff130`
+For a 2.1A candidate rollback, reinstall the exact published 2.0.1 Engineering
+image
+`ghcr.io/jeter-1/hass-mcp-engineering-beta@sha256:512dae9274fe5254acbfbfba55b62f3bc6a1ae37e12df479876bb8ca39c9e14d`
 under the same v2 add-on identity. Retain `/data`, options, secrets, and the
-connector endpoint. Verify version `2.0.0`, source SHA
-`496006b77039a42d7a8c8f23c0bbb292f5f0ddcd`, and health, then repeat
+connector endpoint. Verify version `2.0.1`, source SHA
+`4942770a2fd80fed613eb1f42ed84ba9fa1c134c`, and health, then repeat
 foundation, admission, governance-persistence, audit, and no-fallback checks.
+
+Retained `/data` keeps contract-v3 operational-administration records in the
+separate `operational-administration-v3` namespace. Version 2.0.1 does not
+display or process those records, but it does not enumerate, quarantine,
+modify, or delete them. Legacy configuration plans continue to operate under
+2.0.1. Reinstalling 2.1 restores access to the preserved operational plans and
+resumes any required readback-only verification.
+
+Operational plans cannot be approved, applied, or recovered while 2.0.1 is
+running. Do not manually move them into the legacy governance namespace, and
+do not recreate a pending or `verification_required` operation during the
+downgrade. Re-upgrade to 2.1 to resume operational-plan recovery.
 
 Stable v1.1.2 is historical source only. Do not re-enable, rehabilitate, or
 describe it as an equivalent recovery path for Engineering v2.
 
 The exact accepted image, source SHA, and complete procedures are in
-[`../docs/V2_0_0_RELEASE_NOTES.md`](../docs/V2_0_0_RELEASE_NOTES.md).
+[`../docs/V2_0_1_RELEASE_NOTES.md`](../docs/V2_0_1_RELEASE_NOTES.md) and
+[`../docs/V2_0_1_ACCEPTANCE.md`](../docs/V2_0_1_ACCEPTANCE.md).
 
 ## Architecture and migration
 
@@ -258,7 +278,10 @@ Windows release workflow, Supervisor cache troubleshooting, and rollback steps.
 
 See [`../docs/CHANGE_GOVERNANCE.md`](../docs/CHANGE_GOVERNANCE.md) for the
 external-approval automation change lifecycle, risk model, persistence, audit,
-verification, rollback, limitations, and MCP client examples.
+and compatibility boundaries. See
+[`../docs/OPERATIONAL_ADMINISTRATION.md`](../docs/OPERATIONAL_ADMINISTRATION.md)
+for the 2.1A operational plan, constrained backup provider, exact-once apply,
+verification, recovery, audit, health, and rollback-unavailable contracts.
 
 Beta 24 changes automation normalization and plan hashes. Re-create pending or
 approved pre-Beta-24 plans; they are not silently migrated. The

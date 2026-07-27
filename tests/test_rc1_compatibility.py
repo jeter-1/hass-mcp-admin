@@ -111,6 +111,9 @@ RC3A_ADDITIVE_TOOL_NAMES = (
 DEV14_ADDITIVE_TOOL_NAMES = (
     "create_configuration_plan",
 )
+V2_1A_ADDITIVE_TOOL_NAMES = (
+    "create_backup_plan",
+)
 
 NOW = datetime(2026, 7, 14, 12, 0, tzinfo=timezone.utc)
 FUTURE = (NOW + timedelta(hours=4)).isoformat()
@@ -163,6 +166,7 @@ class RC1PublicContractTests(unittest.TestCase):
                         *BETA26_TOOL_NAMES,
                         *RC3A_ADDITIVE_TOOL_NAMES,
                         *DEV14_ADDITIVE_TOOL_NAMES,
+                        *V2_1A_ADDITIVE_TOOL_NAMES,
                     )
                 )
             ),
@@ -298,6 +302,34 @@ class RC1PublicContractTests(unittest.TestCase):
                 "explicit_direct_fallback_allowed": False,
             },
         )
+        self.assertEqual(
+            classifications["create_backup_plan"],
+            {
+                "tool": "create_backup_plan",
+                "category": "operational_administration",
+                "status": "beta_native",
+                "risk": "infrastructure_write",
+                "additive": True,
+                "operation_class": "proposal",
+                "routing": "engineering_native",
+                "provider": "upstream_operational_backup",
+                "policy": "governed_full_backup_create_proposal",
+                "fallback": "none",
+                "external_approval_required": True,
+                "rollback_available": False,
+                "direct_write_allowed": False,
+            },
+        )
+        self.assertEqual(
+            routing["create_backup_plan"],
+            {
+                "capability": "operational_administration",
+                "route": "engineering_native",
+                "preferred_provider": "engineering",
+                "fallback_providers": [],
+                "explicit_direct_fallback_allowed": False,
+            },
+        )
 
         baseline_classifications = {
             name: dict(classifications[name]) for name in BETA26_TOOL_NAMES
@@ -373,7 +405,7 @@ class RC1PublicContractTests(unittest.TestCase):
             BETA26_DIRECT_POLICY_SHA256,
         )
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(classifications), 41)
+        self.assertEqual(len(classifications), 42)
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

@@ -7,6 +7,7 @@ from typing import Any
 from ..clients.websocket import HomeAssistantWebSocketClient
 from ..errors import ErrorCode, GovernanceError
 from .resources import ConfigurationResourceGateway
+from .operational import BackupAdministrationGateway
 from .service import AutomationGateway, ChangeGovernanceService
 from .storage import ChangePlanRepository, ChangePlanStorageError
 
@@ -55,6 +56,7 @@ class GovernanceRuntime:
         audit,
         rest_client,
         websocket_client=None,
+        operational_provider=None,
     ) -> None:
         try:
             repository = ChangePlanRepository(
@@ -66,11 +68,19 @@ class GovernanceRuntime:
                 if websocket_client is not None
                 else HomeAssistantWebSocketClient(settings)
             )
+            operational_gateway = (
+                BackupAdministrationGateway(
+                    operational_provider, websocket_client
+                )
+                if operational_provider is not None
+                else None
+            )
             self.service = ChangeGovernanceService(
                 repository,
                 _RuntimeGovernanceGateway(rest_client, websocket_client),
                 audit,
                 sensitive_values=(settings.access_secret, settings.ha_token),
+                operational_gateway=operational_gateway,
             )
             self.storage_error = None
         except ChangePlanStorageError:
@@ -108,6 +118,26 @@ class GovernanceRuntime:
                 "failed_apply_count": 0,
                 "rollback_pending_count": 0,
                 "last_successful_change_at": None,
+                "operational_administration": {
+                    "plans_by_type": {"create_full_backup": 0},
+                    "backup_plans_created": 0,
+                    "backup_applies_attempted": 0,
+                    "successful_backups": 0,
+                    "failed_backups": 0,
+                    "indeterminate_outcomes": 0,
+                    "verification_failures": 0,
+                    "active_operational_applies": 0,
+                    "last_successful_backup_at": None,
+                    "last_operational_failure_category": None,
+                    "provider": {
+                        "configured": False,
+                        "operational_status": "unavailable",
+                        "fallback_count": 0,
+                        "fallback_policy": "none",
+                    },
+                    "fallback_count": 0,
+                    "rollback_available": False,
+                },
             }
         return self.service.health_summary()
 

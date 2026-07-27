@@ -32,6 +32,7 @@ from .handoff import HANDOFF_GENERATION
 from .routing import AuthenticatedMcpGateway
 from .providers.upstream_dashboard import UPSTREAM_DASHBOARD
 from .providers.upstream_read_gateway import UPSTREAM_READ_GATEWAY
+from .providers.operational_backup import UPSTREAM_OPERATIONAL_BACKUP
 from .providers.upstream_registry import RegistryValidationError, UpstreamTrustRegistry
 from .tools import get_registered_server
 
@@ -133,7 +134,14 @@ def create_application(settings: Settings | None = None):
             )
         ),
     )
-    GOVERNANCE.configure(settings, audit, HomeAssistantRestClient(settings))
+    UPSTREAM_OPERATIONAL_BACKUP.configure(settings)
+    GOVERNANCE.configure(
+        settings,
+        audit,
+        HomeAssistantRestClient(settings),
+        HomeAssistantWebSocketClient(settings),
+        UPSTREAM_OPERATIONAL_BACKUP,
+    )
     DEPENDENCY_ANALYSIS.configure(
         HomeAssistantRestClient(settings),
         HomeAssistantWebSocketClient(settings),

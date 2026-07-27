@@ -177,6 +177,10 @@ class ExactImageDiagnosticTests(unittest.TestCase):
                 "http://127.0.0.1:18100/synthetic/mcp",
                 "--fixture-stats-url",
                 "http://127.0.0.1:18123/__fixture__/stats",
+                "--ha-url",
+                "http://127.0.0.1:18123",
+                "--ha-token",
+                "synthetic-read-gateway-token",
                 "--output",
                 str(output),
             ]
