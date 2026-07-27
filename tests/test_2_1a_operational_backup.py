@@ -1331,7 +1331,7 @@ class FakeTransport:
 def exact_catalog(version: str) -> McpReadCatalog:
     release = load_reviewed_upstream_release_registry().by_version[version]
     capture = json.loads(
-        (ROOT / release.capture_resource).read_text()
+        (ROOT / release.capture_resource).read_text(encoding="utf-8")
     )
     return McpReadCatalog(
         protocol_version="2025-03-26",
