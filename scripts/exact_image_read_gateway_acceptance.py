@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from dataclasses import replace
 from datetime import datetime, timezone
 import json
 import logging
 from pathlib import Path
 import sys
+import tempfile
 from typing import Any
 from urllib.error import HTTPError
 from urllib.parse import urlsplit, urlunsplit
@@ -34,12 +36,36 @@ from ha_mcp_engineering.tools import (  # noqa: E402
 from ha_mcp_engineering.clients.websocket import (  # noqa: E402
     HomeAssistantWebSocketClient,
 )
+from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
+    McpReadGatewayTransport,
+)
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
+from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
+from ha_mcp_engineering.governance.models import (  # noqa: E402
+    ApprovalState,
+    PlanStatus,
+)
 from ha_mcp_engineering.governance.operational import (  # noqa: E402
     BackupAdministrationGateway,
 )
+from ha_mcp_engineering.governance.operational_lifecycle import (  # noqa: E402
+    OperationalLifecycleGateway,
+    UPSTREAM_PROVIDER_CONTRACT_FIELDS,
+)
+from ha_mcp_engineering.governance.service import (  # noqa: E402
+    ChangeGovernanceService,
+)
+from ha_mcp_engineering.governance.storage import (  # noqa: E402
+    ChangePlanRepository,
+)
 from ha_mcp_engineering.providers.operational_backup import (  # noqa: E402
     ReviewedOperationalBackupProvider,
+)
+from ha_mcp_engineering.providers.operational_lifecycle import (  # noqa: E402
+    ReviewedOperationalLifecycleProvider,
+)
+from ha_mcp_engineering.providers.supervisor_self import (  # noqa: E402
+    SupervisorSelfAddonIdentity,
 )
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     catalog_fingerprint,
@@ -48,6 +74,7 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     runtime_description_fingerprint,
     schema_fingerprint,
 )
+from ha_mcp_engineering.version import SERVER_VERSION  # noqa: E402
 
 
 EXPECTED_ENGINEERING_BASELINE_COUNT = 45
@@ -543,9 +570,11 @@ async def inspect_upstream(
                 and any(
                     isinstance(addon, dict)
                     and addon.get("slug") == "abcdef12_ha_mcp"
+                    and addon.get("version")
+                    == expected_upstream_version
                     for addon in addons
                 ),
-                "pinned upstream add-on inventory read was incomplete",
+                "pinned upstream add-on inventory identity was incomplete",
             )
             for name, expected in UPSTREAM_ERROR_CALLS.items():
                 result = await session.call_tool(
@@ -1335,6 +1364,240 @@ async def inspect_operational_backup(
     }
 
 
+class _AcceptanceLegacyGateway:
+    """Unused configuration boundary required by the production service."""
+
+
+async def inspect_operational_lifecycle(
+    *,
+    upstream_endpoint: str,
+    configured_upstream_endpoint: str,
+    expected_upstream_version: str,
+    release: Any,
+) -> dict[str, Any]:
+    """Exercise production upstream planning and recovered verification."""
+
+    settings = Settings(
+        ha_url="http://synthetic-home-assistant.invalid",
+        ha_token="synthetic-ha-token",
+        access_secret="synthetic-exact-image-engineering-secret",
+        port=0,
+        audit_path="/tmp/synthetic-lifecycle-audit.jsonl",
+        rate_limit_per_minute=1,
+        rate_limit_burst=1,
+        destructive_services=frozenset(),
+        upstream_dashboard_mcp_url=configured_upstream_endpoint,
+    )
+    provider = ReviewedOperationalLifecycleProvider()
+    transport = McpReadGatewayTransport(
+        upstream_endpoint,
+        timeout_seconds=60.0,
+        client_version=SERVER_VERSION,
+    )
+    provider.configure(settings, transport=transport)
+    runtime = {
+        "upstream_version": expected_upstream_version,
+        "upstream_protocol": "2025-03-26",
+        "upstream_catalog_fingerprint": (
+            release.policy.reviewed_stock_catalog_fingerprint
+        ),
+        "upstream_admission_status": "admitted_exact",
+        "fallback_count": 0,
+    }
+
+    async def self_identity() -> SupervisorSelfAddonIdentity:
+        return SupervisorSelfAddonIdentity(
+            slug="df26dea6_hass_mcp_engineering_beta",
+            name="HA MCP Engineering Server Beta",
+            version=SERVER_VERSION,
+            repository="df26dea6",
+        )
+
+    def gateway(process_instance_id: str) -> OperationalLifecycleGateway:
+        return OperationalLifecycleGateway(
+            provider,
+            None,
+            None,
+            configuration_validator=lambda: None,
+            runtime_snapshot=lambda: dict(runtime),
+            process_instance_id=process_instance_id,
+            self_addon_identity_resolver=self_identity,
+        )
+
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        repository = ChangePlanRepository(root / "plans")
+        service = ChangeGovernanceService(
+            repository,
+            _AcceptanceLegacyGateway(),
+            AuditLogger(
+                str(root / "audit.jsonl"),
+                "synthetic-exact-image-engineering-secret",
+            ),
+            lifecycle_gateway=gateway("planning-process"),
+        )
+        proposal = await service.create_addon_restart_plan(
+            addon_slug="abcdef12_ha_mcp"
+        )
+        plan = repository.get(proposal["plan"]["plan_id"])
+        require(
+            plan is not None and plan.operational is not None,
+            "lifecycle plan was not persisted",
+        )
+        baseline = plan.operational.baseline
+        binding = baseline.get("upstream_addon_identity")
+        require(
+            baseline.get("target_class") == "upstream_ha_mcp_addon",
+            "exact-image lifecycle planning misclassified the upstream add-on",
+        )
+        require(
+            isinstance(binding, dict)
+            and binding.get("slug") == "abcdef12_ha_mcp"
+            and binding.get("endpoint_host") == "abcdef12-ha-mcp"
+            and binding.get("installed_version") == expected_upstream_version,
+            "exact-image lifecycle planning did not persist the authoritative binding",
+        )
+        provider_contract = binding.get("provider_contract") or {}
+        require(
+            all(
+                field in provider_contract
+                for field in UPSTREAM_PROVIDER_CONTRACT_FIELDS
+            ),
+            "exact-image lifecycle plan omitted provider readmission fields",
+        )
+        require(
+            "upstream_readmission_when_applicable"
+            in plan.operational.verification_contract.get("required", []),
+            "exact-image lifecycle plan omitted upstream readmission proof",
+        )
+        initial_hash = service.plan_hash(plan)
+        plan.approval.state = ApprovalState.CONSUMED
+        plan.status = PlanStatus.VERIFICATION_REQUIRED
+        plan.operational.dispatch.update(
+            {
+                "attempt_count": 1,
+                "dispatched": True,
+                "provider_response_received": True,
+            }
+        )
+        repository.save(plan)
+        recovered = ChangeGovernanceService(
+            ChangePlanRepository(root / "plans"),
+            _AcceptanceLegacyGateway(),
+            AuditLogger(
+                str(root / "audit-recovered.jsonl"),
+                "synthetic-exact-image-engineering-secret",
+            ),
+            lifecycle_gateway=gateway("recovered-process"),
+        )
+        positive = await recovered.reconcile_operational_plans(
+            trigger="startup"
+        )
+        verified = repository.get(plan.plan_id)
+        require(
+            positive.get("completed") == 1
+            and verified is not None
+            and verified.status == PlanStatus.APPLIED
+            and verified.operational is not None
+            and verified.operational.verification.evidence.get(
+                "restart_proof"
+            )
+            == "upstream_readmission",
+            "recovered exact-image lifecycle did not verify exact readmission",
+        )
+        require(
+            recovered.plan_hash(verified) == initial_hash,
+            "recovered verification changed the immutable plan hash",
+        )
+
+        provider.configure(settings, transport=transport)
+        drift_service = ChangeGovernanceService(
+            ChangePlanRepository(root / "drift-plans"),
+            _AcceptanceLegacyGateway(),
+            AuditLogger(
+                str(root / "audit-drift.jsonl"),
+                "synthetic-exact-image-engineering-secret",
+            ),
+            lifecycle_gateway=gateway("drift-planning-process"),
+        )
+        drift_proposal = await drift_service.create_addon_restart_plan(
+            addon_slug="abcdef12_ha_mcp"
+        )
+        drift_plan = drift_service.repository.get(
+            drift_proposal["plan"]["plan_id"]
+        )
+        require(
+            drift_plan is not None and drift_plan.operational is not None,
+            "binding-drift plan was not persisted",
+        )
+        drift_plan.approval.state = ApprovalState.CONSUMED
+        drift_plan.status = PlanStatus.VERIFICATION_REQUIRED
+        drift_plan.operational.dispatch.update(
+            {
+                "attempt_count": 1,
+                "dispatched": True,
+                "provider_response_received": True,
+            }
+        )
+        drift_service.repository.save(drift_plan)
+        alias_settings = replace(
+            settings,
+            upstream_dashboard_mcp_url=(
+                "http://upstream-alias:18086/"
+                "synthetic-upstream-secret/mcp"
+            ),
+        )
+        provider.configure(alias_settings, transport=transport)
+        drift_recovered = ChangeGovernanceService(
+            ChangePlanRepository(root / "drift-plans"),
+            _AcceptanceLegacyGateway(),
+            AuditLogger(
+                str(root / "audit-drift-recovered.jsonl"),
+                "synthetic-exact-image-engineering-secret",
+            ),
+            lifecycle_gateway=gateway("drift-recovered-process"),
+        )
+        drift_result = await drift_recovered.reconcile_operational_plans(
+            trigger="startup"
+        )
+        refused = drift_recovered.repository.get(drift_plan.plan_id)
+        require(
+            drift_result.get("failed") == 1
+            and refused is not None
+            and refused.status == PlanStatus.VERIFICATION_FAILED
+            and refused.operational is not None
+            and refused.operational.verification.evidence.get(
+                "restart_proof"
+            )
+            is None,
+            "recovered exact-image lifecycle accepted changed binding evidence",
+        )
+
+    health = provider.health_snapshot()
+    require(
+        sum((health.get("dispatch_counts") or {}).values()) == 0
+        and health.get("fallback_count") == 0,
+        "lifecycle acceptance dispatched a restart or used fallback",
+    )
+    return {
+        "proposal_only": True,
+        "target_class": baseline.get("target_class"),
+        "restart_proof_requirement": (
+            "upstream_readmission"
+        ),
+        "bound_slug": binding.get("slug"),
+        "endpoint_host": binding.get("endpoint_host"),
+        "installed_version": binding.get("installed_version"),
+        "provider_contract_fields": list(
+            UPSTREAM_PROVIDER_CONTRACT_FIELDS
+        ),
+        "startup_reconciliation_verified": True,
+        "binding_drift_refused": True,
+        "dispatch_count": 0,
+        "fallback_count": health.get("fallback_count"),
+    }
+
+
 async def run(args: argparse.Namespace) -> dict[str, Any]:
     registry = load_reviewed_upstream_release_registry()
     release = registry.by_version.get(args.expected_upstream_version)
@@ -1445,6 +1708,14 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         expected_upstream_version=args.expected_upstream_version,
         release=release,
     )
+    operational_lifecycle = await inspect_operational_lifecycle(
+        upstream_endpoint=args.upstream_endpoint,
+        configured_upstream_endpoint=(
+            args.configured_upstream_endpoint
+        ),
+        expected_upstream_version=args.expected_upstream_version,
+        release=release,
+    )
     return {
         "result": "PASS",
         "upstream_version": args.expected_upstream_version,
@@ -1462,6 +1733,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         "upstream_error_envelopes": upstream_error_envelopes,
         "classification_counts": policy.classification_counts,
         "operational_backup": operational_backup,
+        "operational_lifecycle": operational_lifecycle,
         **engineering,
     }
 
@@ -1473,6 +1745,9 @@ def main() -> None:
         logger.propagate = False
     parser = argparse.ArgumentParser()
     parser.add_argument("--upstream-endpoint", required=True)
+    parser.add_argument(
+        "--configured-upstream-endpoint", required=True
+    )
     parser.add_argument("--expected-upstream-version", required=True)
     parser.add_argument("--engineering-endpoint", required=True)
     parser.add_argument("--fixture-stats-url", required=True)

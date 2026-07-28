@@ -179,7 +179,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/fake_ha_read_gateway_contract_server.py --port 18123 \
+          python scripts/fake_ha_read_gateway_contract_server.py \
+            --port 18123 --upstream-version "$UPSTREAM_VERSION" \
             > "$RUNNER_TEMP/read-gateway-ha.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/read-gateway-ha.pid"
           for attempt in $(seq 1 30); do
@@ -276,12 +277,14 @@ jobs:
             '  "prewarm_enabled": false,' \
             '  "upstream_trust_registry_enabled": false' \
             '}' > "$RUNNER_TEMP/read-gateway-data/options.json"
-          docker run --detach --rm --network host --name engineering-read-gateway-acceptance \
+          docker run --detach --rm --network host \
+            --add-host abcdef12-ha-mcp:127.0.0.1 \
+            --name engineering-read-gateway-acceptance \
             -v "$RUNNER_TEMP/read-gateway-data:/data" \
             -e HA_URL=http://127.0.0.1:18123 \
             -e HA_TOKEN=synthetic-read-gateway-token \
             -e MCP_PORT=18100 -e APPROVAL_INGRESS_PORT=18110 \
-            -e UPSTREAM_DASHBOARD_MCP_URL=http://127.0.0.1:18086/synthetic-upstream-secret/mcp \
+            -e UPSTREAM_DASHBOARD_MCP_URL=http://abcdef12-ha-mcp:18086/synthetic-upstream-secret/mcp \
             engineering-read-gateway-acceptance:test
           for attempt in $(seq 1 90); do
             status="$(curl --max-time 1 --silent --output /dev/null \
@@ -296,6 +299,7 @@ jobs:
         run: |
           python scripts/exact_image_read_gateway_acceptance.py \
             --upstream-endpoint http://127.0.0.1:18086/synthetic-upstream-secret/mcp \
+            --configured-upstream-endpoint http://abcdef12-ha-mcp:18086/synthetic-upstream-secret/mcp \
             --expected-upstream-version "$UPSTREAM_VERSION" \
             --engineering-endpoint "http://127.0.0.1:18100/${ENGINEERING_ACCESS_SECRET}/mcp" \
             --fixture-stats-url http://127.0.0.1:18123/__fixture__/stats \
