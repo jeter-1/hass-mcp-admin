@@ -184,6 +184,8 @@ class ExactImageDiagnosticTests(unittest.TestCase):
                 "exact_image_read_gateway_acceptance.py",
                 "--upstream-endpoint",
                 "http://127.0.0.1:18086/synthetic/mcp",
+                "--configured-upstream-endpoint",
+                "http://abcdef12-ha-mcp:18086/synthetic/mcp",
                 "--expected-upstream-version",
                 "7.14.1",
                 "--engineering-endpoint",
