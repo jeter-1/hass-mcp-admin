@@ -1860,8 +1860,13 @@ class ChangeGovernanceService:
             )
         except (LifecycleGatewayError, KeyError) as exc:
             category = getattr(exc, "category", "invalid_request")
+            code = self._lifecycle_error_code(
+                category, dispatched=False
+            )
+            if code == ErrorCode.ADDON_NOT_FOUND:
+                METRICS.record_classified_outcome(category)
             raise GovernanceError(
-                self._lifecycle_error_code(category, dispatched=False)
+                code
             ) from None
         provider_evidence = evidence.get("provider")
         baseline = evidence.get("baseline")
@@ -3733,6 +3738,40 @@ class ChangeGovernanceService:
             planned_class = operational.baseline.get("target_class")
             if planned_class != fresh_baseline.get("target_class"):
                 return False
+            planned_target_identity = operational.baseline.get(
+                "target_identity"
+            )
+            fresh_target_identity = fresh_baseline.get("target_identity")
+            if isinstance(planned_target_identity, dict) and (
+                not isinstance(fresh_target_identity, dict)
+                or any(
+                    planned_target_identity.get(field)
+                    != fresh_target_identity.get(field)
+                    for field in (
+                        "requested_slug",
+                        "resolved_slug",
+                        "resolved_name",
+                        "resolved_version",
+                        "resolved_repository",
+                        "identity_source",
+                        "authoritative_self_match",
+                        "authoritative_upstream_match",
+                        "target_class",
+                    )
+                )
+            ):
+                return False
+            planned_upstream_identity = operational.baseline.get(
+                "upstream_addon_identity"
+            )
+            fresh_upstream_identity = fresh_baseline.get(
+                "upstream_addon_identity"
+            )
+            if isinstance(planned_upstream_identity, dict) and (
+                not isinstance(fresh_upstream_identity, dict)
+                or planned_upstream_identity != fresh_upstream_identity
+            ):
+                return False
             if planned_class == "engineering_addon":
                 planned_runtime = operational.baseline.get("runtime")
                 fresh_runtime = fresh_baseline.get("runtime")
@@ -4199,6 +4238,7 @@ class ChangeGovernanceService:
             "upstream_version_mismatch",
             "unsupported_protocol_version",
             "required_tool_missing",
+            "upstream_addon_identity_unavailable",
         }:
             return ErrorCode.OPERATIONAL_CONTRACT_MISMATCH
         if category in {
@@ -4209,6 +4249,10 @@ class ChangeGovernanceService:
             return ErrorCode.OPERATIONAL_VALIDATION_FAILED
         if category == "resource_not_found":
             return ErrorCode.RESOURCE_NOT_FOUND
+        if category == "addon_not_found":
+            return ErrorCode.ADDON_NOT_FOUND
+        if category == "self_addon_identity_unavailable":
+            return ErrorCode.SELF_ADDON_IDENTITY_UNAVAILABLE
         if category == "permission_failure":
             return ErrorCode.AUTHORIZATION_FAILURE
         if category in {

@@ -77,19 +77,38 @@ async def run_structured(
             "entity_not_found": "domain_outcome_entity_not_found",
             "automation_not_found": "domain_outcome_automation_not_found",
             "resource_not_found": "domain_outcome_resource_not_found",
+            "addon_not_found": "domain_outcome_addon_not_found",
             "dashboard_not_found": "domain_outcome_dashboard_not_found",
             "change_plan_not_found": "domain_outcome_change_plan_not_found",
         }.get(code.value)
         if domain_category:
             failure_metadata.setdefault("classification", "domain_outcome")
             failure_metadata.setdefault("completeness", "not_found")
-            failure_metadata.setdefault("source_coverage", [{
-                "provider": "engineering",
+            provider = (
+                "upstream_operational_lifecycle"
+                if code.value == "addon_not_found"
+                else "engineering"
+            )
+            source_type = (
+                "installed_addon_inventory"
+                if code.value == "addon_not_found"
+                else None
+            )
+            upstream_attempted = bool(
+                code.value == "addon_not_found"
+                and telemetry
+                and telemetry.upstream_request_count > 0
+            )
+            coverage = {
+                "provider": provider,
                 "completeness": "not_found",
                 "failure_category": domain_category,
-                "upstream_attempted": False,
+                "upstream_attempted": upstream_attempted,
                 "fallback_occurred": False,
-            }])
+            }
+            if source_type is not None:
+                coverage["source_type"] = source_type
+            failure_metadata.setdefault("source_coverage", [coverage])
         return FailureResponse(
             operation=operation,
             error=type(exc).__name__,

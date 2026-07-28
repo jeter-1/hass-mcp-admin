@@ -27,6 +27,7 @@ from ha_mcp_engineering.errors import (  # noqa: E402
     ERROR_CATALOG,
     ConfigurationError,
     ErrorCode,
+    GovernanceError,
     HomeAssistantTimeoutError,
     HomeAssistantUnavailableError,
     error_definition,
@@ -131,6 +132,55 @@ class ResponseContractTests(unittest.TestCase):
         self.assertGreater(payload["timing"]["tool_ms"], 0)
         self.assertGreaterEqual(payload["timing"]["total_ms"], payload["timing"]["tool_ms"])
 
+    def test_addon_not_found_uses_observed_domain_outcome_coverage(self):
+        telemetry, token = begin_request("addon-not-found-request-123")
+        started = time.perf_counter()
+        telemetry.begin_upstream_attempt(started)
+        telemetry.finish_upstream_attempt(
+            started + 0.001,
+            1.0,
+        )
+
+        def missing_addon():
+            raise GovernanceError(ErrorCode.ADDON_NOT_FOUND)
+
+        try:
+            payload = json.loads(
+                asyncio.run(
+                    run_structured(
+                        "create_addon_restart_plan",
+                        "Created the add-on restart plan.",
+                        missing_addon,
+                    )
+                )
+            )
+        finally:
+            end_request(token)
+
+        coverage = payload["metadata"]["source_coverage"][0]
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error_code"], "addon_not_found")
+        self.assertFalse(payload["retryable"])
+        self.assertEqual(
+            payload["metadata"]["classification"], "domain_outcome"
+        )
+        self.assertEqual(
+            payload["metadata"]["completeness"], "not_found"
+        )
+        self.assertEqual(
+            coverage,
+            {
+                "provider": "upstream_operational_lifecycle",
+                "completeness": "not_found",
+                "failure_category": (
+                    "domain_outcome_addon_not_found"
+                ),
+                "upstream_attempted": True,
+                "fallback_occurred": False,
+                "source_type": "installed_addon_inventory",
+            },
+        )
+
 
 class ErrorTaxonomyTests(unittest.TestCase):
     def test_stable_error_code_catalog_and_mappings(self):
@@ -138,7 +188,7 @@ class ErrorTaxonomyTests(unittest.TestCase):
             "authentication_failure", "authorization_failure", "invalid_request",
             "validation_failure", "home_assistant_unavailable",
             "home_assistant_api_error", "home_assistant_timeout", "entity_not_found",
-            "automation_not_found", "resource_not_found",
+            "automation_not_found", "resource_not_found", "addon_not_found",
             "unsupported_operation", "configuration_conflict",
             "rate_limit_exceeded", "internal_server_error",
             "change_plan_not_found", "change_plan_expired",
@@ -160,6 +210,7 @@ class ErrorTaxonomyTests(unittest.TestCase):
             "backup_operation_timeout", "backup_verification_timeout",
             "backup_verification_failed", "backup_dispatch_indeterminate",
             "operational_provider_unavailable",
+            "self_addon_identity_unavailable",
             "operational_contract_mismatch",
             "operational_validation_failed",
             "operational_action_rejected",
@@ -209,6 +260,7 @@ class ErrorTaxonomyTests(unittest.TestCase):
             ErrorCode.UPSTREAM_DASHBOARD_TIMEOUT,
             ErrorCode.UPSTREAM_DASHBOARD_UPSTREAM_ERROR,
             ErrorCode.BACKUP_PROVIDER_UNAVAILABLE,
+            ErrorCode.SELF_ADDON_IDENTITY_UNAVAILABLE,
         ):
             self.assertTrue(error_definition(code).retryable)
         for code in (
@@ -221,6 +273,7 @@ class ErrorTaxonomyTests(unittest.TestCase):
             ErrorCode.UPSTREAM_DASHBOARD_ENDPOINT_REJECTED,
             ErrorCode.UPSTREAM_DASHBOARD_REQUIRED_TOOL_MISSING,
             ErrorCode.UPSTREAM_DASHBOARD_SCHEMA_INCOMPATIBLE,
+            ErrorCode.ADDON_NOT_FOUND,
         ):
             self.assertFalse(error_definition(code).retryable)
 
@@ -434,6 +487,27 @@ class OperationLatencyMetricTests(unittest.TestCase):
         self.assertEqual(snapshot["mcp_operation_latency"]["average_ms"], 12.0)
         self.assertEqual(snapshot["tool_latency"]["average_ms"], 7.0)
         self.assertEqual(snapshot["home_assistant_latency"]["average_ms"], 3.0)
+
+    def test_addon_not_found_is_a_fresh_global_domain_outcome(self):
+        metrics = RuntimeMetrics()
+        self.assertNotIn(
+            "addon_not_found",
+            metrics.snapshot()["domain_outcome_counts"],
+        )
+        self.assertTrue(
+            metrics.record_classified_outcome("addon_not_found")
+        )
+        snapshot = metrics.snapshot()
+        self.assertEqual(
+            snapshot["domain_outcome_counts"]["addon_not_found"],
+            1,
+        )
+        self.assertEqual(
+            snapshot["provider_routing"][
+                "provider_operational_failures"
+            ],
+            {},
+        )
 
     def test_metric_reset_is_deterministic(self):
         metrics = RuntimeMetrics()

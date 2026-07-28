@@ -3,7 +3,7 @@
 > Stable v1.1.2 under `hass_mcp_admin` is retained as historical repository
 > source but is operationally retired. It is not covered by the Engineering
 > dependency audit and is not a supported rollback option. The Engineering v2
-> add-on is developed in place at `2.1.0-beta.2`, based on the exact
+> add-on is developed in place at `2.1.1-beta.2`, based on the exact
 > `v2.0.1` release, at
 > [`hass_mcp_engineering_beta/`](hass_mcp_engineering_beta/) on port `8100`.
 > Its existing technical “Beta” identity is retained to avoid a slug or runtime
@@ -42,10 +42,10 @@
 > Dev15 contract-level compatibility, partial quarantine, dashboard
 > independence, and retry-cadence separation are documented in
 > [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md).
-> The current Engineering development version is `2.1.0-beta.2`. Its bounded
+> The current Engineering development version is `2.1.1-beta.2`. Its bounded
 > operational-administration design and source acceptance are recorded in
 > [`docs/OPERATIONAL_ADMINISTRATION.md`](docs/OPERATIONAL_ADMINISTRATION.md) and
-> [`docs/V2_1_0_BETA2_ACCEPTANCE.md`](docs/V2_1_0_BETA2_ACCEPTANCE.md). The
+> [`docs/V2_1_1_BETA2_ACCEPTANCE.md`](docs/V2_1_1_BETA2_ACCEPTANCE.md). The
 > immutable 2.0.1 release documents remain historical release authority.
 > Repository-specific local and remote Codex development procedures are in
 > [`docs/CODEX_WORKFLOW.md`](docs/CODEX_WORKFLOW.md).
@@ -214,7 +214,7 @@ outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 
 ## Engineering v2 milestones
 
-The current Engineering development version is `2.1.0-beta.2`, based on exact
+The current Engineering development version is `2.1.1-beta.2`, based on exact
 `v2.0.1`. It completes 2.1A with governed backup creation, controlled reload,
 exact add-on restart, Home Assistant restart, and shared durable
 readback-only recovery. The roadmap and acceptance authority are

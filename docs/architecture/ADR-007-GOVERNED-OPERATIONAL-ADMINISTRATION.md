@@ -31,6 +31,33 @@ Full validation gates reload and Home Assistant restart. Independent readback,
 persisted process identity, exact upstream readmission, runtime catalog,
 storage, audit, and dependency evidence provide operation-specific recovery.
 
+Engineering self identity is established by one bounded, read-only call to
+Supervisor's caller-relative `/addons/self/info` endpoint with the existing
+injected add-on token. This supplies the exact installed slug even when
+Supervisor has applied a repository prefix; no source slug, MCP ID, display
+name, entity-ID transform, or repository-prefix heuristic is trusted.
+Planning cross-checks that identity against the exact reviewed installed
+add-on read and fails closed on unavailable or conflicting evidence. The
+caller-relative endpoint needs no generic Supervisor action proxy and this
+decision adds no broad `hassio_api` permission.
+
+The upstream add-on is bound separately. The configured reviewed MCP endpoint
+host must equal the documented Supervisor DNS form of exactly one complete
+slug in the installed-add-on inventory, and catalog discovery over that same
+endpoint must produce an exact reviewed admission. This supports
+repository-prefixed installations without parsing a prefix or trusting a bare
+source slug, display name, version, suffix, or lookalike. Missing, external,
+or colliding endpoint identity fails closed; a historical `other_addon` plan
+is not upgraded to upstream authority and must be replanned.
+
+That binding is not only a planning constraint. Add-on verification resolves
+it again after dispatch, including during startup and periodic reconciliation,
+and compares the complete fresh binding with the hashed plan baseline before
+the existing eight-field provider readmission contract can pass. Transient
+missing evidence is retryable readback work; deterministic endpoint, slug,
+ambiguity, or contract drift is a terminal verification mismatch. Neither path
+can call the action provider again.
+
 All operations reuse the existing upstream MCP configuration and external
 Ingress approval authority. It adds no endpoint, option, credential, generic
 write, fallback, restore, delete, arbitrary service, or provider argument.
@@ -66,3 +93,9 @@ Successful add-on verification grades evidence as `process_identity`,
 records without that additive field remain readable. Home Assistant restart
 success requires reviewed dispatch or expected disruption evidence plus the
 complete recovery contract; current connectivity alone is insufficient.
+
+A missing requested installed slug is a non-retryable `addon_not_found` domain
+outcome. It produces no plan or dispatch and does not degrade the last exact
+provider-contract state. New plans add bounded target-classification evidence;
+historical records and hashes remain unchanged, and a stale historical class
+cannot be silently changed during apply-time revalidation.

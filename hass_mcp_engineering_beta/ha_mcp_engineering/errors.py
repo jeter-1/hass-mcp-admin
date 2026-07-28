@@ -18,6 +18,7 @@ class ErrorCode(str, Enum):
     ENTITY_NOT_FOUND = "entity_not_found"
     AUTOMATION_NOT_FOUND = "automation_not_found"
     RESOURCE_NOT_FOUND = "resource_not_found"
+    ADDON_NOT_FOUND = "addon_not_found"
     UNSUPPORTED_OPERATION = "unsupported_operation"
     CONFIGURATION_CONFLICT = "configuration_conflict"
     RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
@@ -56,6 +57,9 @@ class ErrorCode(str, Enum):
     BACKUP_VERIFICATION_FAILED = "backup_verification_failed"
     BACKUP_DISPATCH_INDETERMINATE = "backup_dispatch_indeterminate"
     OPERATIONAL_PROVIDER_UNAVAILABLE = "operational_provider_unavailable"
+    SELF_ADDON_IDENTITY_UNAVAILABLE = (
+        "self_addon_identity_unavailable"
+    )
     OPERATIONAL_CONTRACT_MISMATCH = "operational_contract_mismatch"
     OPERATIONAL_VALIDATION_FAILED = "operational_validation_failed"
     OPERATIONAL_ACTION_REJECTED = "operational_action_rejected"
@@ -158,6 +162,12 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
     ErrorCode.ENTITY_NOT_FOUND: ErrorDefinition("The entity was not found.", False, 404, "invalid_params"),
     ErrorCode.AUTOMATION_NOT_FOUND: ErrorDefinition("The automation was not found.", False, 404, "invalid_params"),
     ErrorCode.RESOURCE_NOT_FOUND: ErrorDefinition("The requested resource was not found.", False, 404, "invalid_params"),
+    ErrorCode.ADDON_NOT_FOUND: ErrorDefinition(
+        "The requested installed add-on was not found.",
+        False,
+        404,
+        "invalid_params",
+    ),
     ErrorCode.UNSUPPORTED_OPERATION: ErrorDefinition("The operation is unsupported.", False, 405, "method_not_found"),
     ErrorCode.CONFIGURATION_CONFLICT: ErrorDefinition("The configuration conflicts with current state.", False, 409, "invalid_request"),
     ErrorCode.RATE_LIMIT_EXCEEDED: ErrorDefinition("The request rate limit was exceeded.", True, 429, "server_error"),
@@ -226,6 +236,24 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
             "resource_id",
             "status",
             "endpoint_category",
+            "failure_category",
+            "failure_stage",
+            "provider_dispatch_occurred",
+            "action_attempted",
+            "fallback",
+            "fallback_occurred",
+            "required_action",
+        ),
+    ),
+    ErrorCode.SELF_ADDON_IDENTITY_UNAVAILABLE: ErrorDefinition(
+        "The current Engineering add-on identity could not be verified.",
+        True,
+        503,
+        "internal_error",
+        safe_detail_fields=(
+            "endpoint_category",
+            "operation",
+            "resource_id",
             "failure_category",
             "failure_stage",
             "provider_dispatch_occurred",

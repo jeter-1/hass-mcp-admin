@@ -7,6 +7,9 @@ import uuid
 
 from ..clients.websocket import HomeAssistantWebSocketClient
 from ..errors import ErrorCode, GovernanceError
+from ..providers.supervisor_self import (
+    SupervisorSelfAddonIdentityResolver,
+)
 from .operational_lifecycle import OperationalLifecycleGateway
 from .resources import ConfigurationResourceGateway
 from .operational import BackupAdministrationGateway
@@ -91,6 +94,11 @@ class GovernanceRuntime:
                     ),
                     runtime_snapshot=runtime_snapshot or (lambda: {}),
                     process_instance_id=uuid.uuid4().hex,
+                    self_addon_identity_resolver=(
+                        SupervisorSelfAddonIdentityResolver.from_settings(
+                            settings
+                        ).resolve
+                    ),
                     sensitive_values=(
                         settings.access_secret,
                         settings.ha_token,

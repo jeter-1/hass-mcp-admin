@@ -9,7 +9,9 @@ import inspect
 import json
 import re
 import threading
+import time
 from typing import Any, Awaitable, Callable
+from urllib.parse import urlsplit
 
 from ..clients.mcp import DashboardTransportError
 from ..clients.upstream_read import (
@@ -19,6 +21,7 @@ from ..clients.upstream_read import (
     McpReadGatewayTransport,
 )
 from ..configuration import Settings, parse_upstream_dashboard_endpoint
+from ..request_context import current_telemetry
 from ..upstream_tool_policy import (
     catalog_fingerprint,
     load_reviewed_upstream_release_registry,
@@ -48,6 +51,9 @@ RELOAD_SERVICES = {
 }
 _SAFE_SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,127}$")
 _SAFE_TEXT = re.compile(r"^[^\x00-\x1f\x7f]{1,160}$")
+_SAFE_ENDPOINT_HOST = re.compile(
+    r"^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$"
+)
 _TOOL_POLICY = {
     RELOAD_TOOL: "physical_or_high_risk_action",
     ADDON_ACTION_TOOL: "mixed_or_requires_wrapper",
@@ -114,6 +120,7 @@ class OperationalProviderState:
     dispatch_counts: Counter[str] = field(default_factory=Counter)
     dispatch_success_counts: Counter[str] = field(default_factory=Counter)
     failure_counts: Counter[str] = field(default_factory=Counter)
+    domain_outcome_counts: Counter[str] = field(default_factory=Counter)
     last_failure_category: str | None = None
     last_success_at: str | None = None
     selected_compatibility_entry_id: str | None = None
@@ -131,6 +138,7 @@ class ReviewedOperationalLifecycleProvider:
         self._transport: McpReadGatewayTransport | Any | None = None
         self._state = OperationalProviderState()
         self._lock = threading.Lock()
+        self._configured_endpoint_host: str | None = None
 
     def configure(
         self,
@@ -140,6 +148,13 @@ class ReviewedOperationalLifecycleProvider:
     ) -> None:
         endpoint = parse_upstream_dashboard_endpoint(
             settings.upstream_dashboard_mcp_url
+        )
+        endpoint_host = urlsplit(endpoint.url).hostname if endpoint else None
+        self._configured_endpoint_host = (
+            endpoint_host
+            if isinstance(endpoint_host, str)
+            and _SAFE_ENDPOINT_HOST.fullmatch(endpoint_host)
+            else None
         )
         self._transport = (
             transport
@@ -242,13 +257,49 @@ class ReviewedOperationalLifecycleProvider:
             )
 
         try:
-            exchange = await self._transport.execute_read(
+            inventory_exchange = await self._execute_observed_read(
+                ADDON_READ_TOOL,
+                {"source": "installed", "include_stats": False},
+                timeout_seconds=60.0,
+                catalog_validator=validate,
+            )
+            inventory = self._decode(
+                inventory_exchange.call_result,
+                dispatched=False,
+            )
+            addons = inventory.get("addons")
+            if inventory.get("success") is not True or not isinstance(
+                addons, list
+            ):
+                self._fail("invalid_response", dispatched=False)
+            matches = [
+                item
+                for item in addons
+                if isinstance(item, dict) and item.get("slug") == slug
+            ]
+            if not matches:
+                assert evidence is not None
+                self._fail("addon_not_found", dispatched=False)
+            if len(matches) != 1:
+                self._fail("invalid_response", dispatched=False)
+            assert evidence is not None
+            upstream_identity = _bind_upstream_addon_identity(
+                addons,
+                endpoint_host=self._configured_endpoint_host,
+                evidence=evidence,
+            )
+
+            exchange = await self._execute_observed_read(
                 ADDON_READ_TOOL,
                 {"slug": slug},
                 timeout_seconds=60.0,
                 catalog_validator=validate,
             )
-            payload = self._decode(exchange.call_result, dispatched=False)
+            payload = self._decode(
+                exchange.call_result,
+                dispatched=False,
+                error_category=_addon_error_category,
+            )
             addon = payload.get("addon")
             if payload.get("success") is not True or not isinstance(addon, dict):
                 self._fail("invalid_response", dispatched=False)
@@ -258,7 +309,6 @@ class ReviewedOperationalLifecycleProvider:
             state = _safe_text(addon.get("state"))
             if observed_slug != slug or None in {name, version, state}:
                 self._fail("invalid_response", dispatched=False)
-            assert evidence is not None
             self._record_success(evidence)
             return {
                 "slug": observed_slug,
@@ -272,8 +322,11 @@ class ReviewedOperationalLifecycleProvider:
                     else None
                 ),
                 "provider": evidence.as_dict(),
+                "upstream_addon_identity": upstream_identity,
             }
-        except OperationalLifecycleProviderError:
+        except OperationalLifecycleProviderError as exc:
+            if exc.category == "addon_not_found" and evidence is not None:
+                self._record_success(evidence)
             raise
         except CatalogValidationFailure as exc:
             if isinstance(exc.cause, OperationalLifecycleProviderError):
@@ -283,6 +336,35 @@ class ReviewedOperationalLifecycleProvider:
             self._fail(_transport_category(exc.category), dispatched=False)
         except Exception:
             self._fail("provider_error", dispatched=False)
+
+    async def _execute_observed_read(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        timeout_seconds: float,
+        catalog_validator: Callable[[McpReadCatalog], None],
+    ) -> Any:
+        """Execute one reviewed read with truthful per-request attribution."""
+
+        telemetry = current_telemetry()
+        started = time.perf_counter()
+        if telemetry:
+            telemetry.begin_upstream_attempt(started)
+        try:
+            return await self._transport.execute_read(
+                tool_name,
+                arguments,
+                timeout_seconds=timeout_seconds,
+                catalog_validator=catalog_validator,
+            )
+        finally:
+            if telemetry:
+                finished = time.perf_counter()
+                telemetry.finish_upstream_attempt(
+                    finished,
+                    (finished - started) * 1000,
+                )
 
     async def _execute(
         self,
@@ -494,7 +576,11 @@ class ReviewedOperationalLifecycleProvider:
         }
 
     def _decode(
-        self, result: dict[str, Any], *, dispatched: bool
+        self,
+        result: dict[str, Any],
+        *,
+        dispatched: bool,
+        error_category: Callable[[Any], str] | None = None,
     ) -> dict[str, Any]:
         content = result.get("content")
         if not isinstance(content, list) or len(content) != 1:
@@ -526,7 +612,12 @@ class ReviewedOperationalLifecycleProvider:
                 else None
             )
             self._fail(
-                _upstream_error_category(code), dispatched=dispatched
+                (
+                    error_category(code)
+                    if error_category is not None
+                    else _upstream_error_category(code)
+                ),
+                dispatched=dispatched,
             )
         return payload
 
@@ -585,9 +676,13 @@ class ReviewedOperationalLifecycleProvider:
 
     def _fail(self, category: str, *, dispatched: bool) -> None:
         with self._lock:
-            self._state.failure_counts[category] += 1
-            self._state.last_failure_category = category
+            if category == "addon_not_found":
+                self._state.domain_outcome_counts[category] += 1
+            else:
+                self._state.failure_counts[category] += 1
+                self._state.last_failure_category = category
             if category not in {
+                "addon_not_found",
                 "invalid_request",
                 "resource_not_found",
                 "operation_rejected",
@@ -610,6 +705,9 @@ class ReviewedOperationalLifecycleProvider:
                     self._state.dispatch_success_counts
                 ),
                 "failure_counts": dict(self._state.failure_counts),
+                "domain_outcome_counts": dict(
+                    self._state.domain_outcome_counts
+                ),
                 "last_failure_category": (
                     self._state.last_failure_category
                 ),
@@ -646,6 +744,82 @@ def _safe_text(value: Any) -> str | None:
         if isinstance(value, str) and _SAFE_TEXT.fullmatch(value)
         else None
     )
+
+
+def _bind_upstream_addon_identity(
+    addons: list[Any],
+    *,
+    endpoint_host: str | None,
+    evidence: OperationalProviderEvidence,
+) -> dict[str, Any]:
+    """Bind one installed Supervisor slug to the admitted MCP endpoint.
+
+    Supervisor defines an add-on's internal DNS name as its complete installed
+    slug with every underscore replaced by a hyphen. Matching that documented
+    full-slug transform is not repository-prefix inference: the candidate slug
+    still comes from the exact installed inventory and the MCP identity comes
+    from catalog discovery over the configured endpoint.
+    """
+
+    unbound_evidence = {
+        "endpoint_host": endpoint_host,
+        "identity_source": (
+            "configured_endpoint_supervisor_dns_and_reviewed_admission"
+        ),
+        "inventory_arguments": {
+            "source": "installed",
+            "include_stats": False,
+        },
+    }
+    if endpoint_host is None:
+        return {"status": "unavailable", **unbound_evidence}
+    candidates = []
+    for item in addons:
+        if not isinstance(item, dict):
+            continue
+        slug = item.get("slug")
+        if (
+            isinstance(slug, str)
+            and _SAFE_SLUG.fullmatch(slug)
+            and slug.replace("_", "-") == endpoint_host
+        ):
+            candidates.append(item)
+    if len(candidates) != 1:
+        return {
+            "status": (
+                "ambiguous" if len(candidates) > 1 else "unavailable"
+            ),
+            **unbound_evidence,
+        }
+
+    candidate = candidates[0]
+    slug = candidate.get("slug")
+    name = _safe_text(candidate.get("name"))
+    installed_version = _safe_text(candidate.get("version"))
+    repository = _safe_text(candidate.get("repository"))
+    if (
+        not isinstance(slug, str)
+        or name is None
+        or installed_version is None
+        or installed_version != evidence.server_version
+    ):
+        return {"status": "conflicting", **unbound_evidence}
+    return {
+        "status": "bound",
+        "slug": slug,
+        "name": name,
+        "installed_version": installed_version,
+        "repository": repository,
+        "endpoint_host": endpoint_host,
+        "identity_source": (
+            "configured_endpoint_supervisor_dns_and_reviewed_admission"
+        ),
+        "inventory_arguments": {
+            "source": "installed",
+            "include_stats": False,
+        },
+        "admission_evidence": evidence.as_dict(),
+    }
 
 
 def _transport_category(category: str) -> str:
@@ -690,6 +864,12 @@ def _upstream_error_category(code: Any) -> str:
     if code == "SERVICE_CALL_FAILED":
         return "operation_failed"
     return "provider_error"
+
+
+def _addon_error_category(code: Any) -> str:
+    if code == "RESOURCE_NOT_FOUND":
+        return "addon_not_found"
+    return _upstream_error_category(code)
 
 
 UPSTREAM_OPERATIONAL_LIFECYCLE = ReviewedOperationalLifecycleProvider()

@@ -1392,6 +1392,25 @@ class PolicyInventoryTests(unittest.TestCase):
         self.assertIn("fake_ha_read_gateway_contract_server.py", workflow)
         self.assertIn("exact_image_read_gateway_acceptance.py", workflow)
         self.assertIn("--engineering-endpoint", workflow)
+        self.assertIn(
+            '--upstream-version "$UPSTREAM_VERSION"', workflow
+        )
+        self.assertIn(
+            "--add-host abcdef12-ha-mcp:127.0.0.1", workflow
+        )
+        self.assertIn(
+            "--configured-upstream-endpoint "
+            "http://abcdef12-ha-mcp:18086/",
+            workflow,
+        )
+        self.assertIn(
+            "inspect_operational_lifecycle", acceptance
+        )
+        self.assertIn(
+            '"startup_reconciliation_verified": True',
+            acceptance,
+        )
+        self.assertIn('"binding_drift_refused": True', acceptance)
         self.assertIn("runtime_description_fingerprint", acceptance)
         self.assertIn("runtime_annotation_fingerprint", acceptance)
         self.assertIn(
@@ -1469,6 +1488,13 @@ class PolicyInventoryTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("automation.gateway_fixture_unreadable", fixture)
         self.assertIn("issue_57_synthetic_provider_failure", fixture)
+        self.assertIn(
+            'choices=("7.14.1", "7.14.2")', fixture
+        )
+        self.assertIn(
+            'INSTALLED_ADDONS[0]["version"] = args.upstream_version',
+            fixture,
+        )
 
     def test_application_keeps_dashboard_and_generic_admission_independent(self):
         application = (
