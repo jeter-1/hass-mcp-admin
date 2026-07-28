@@ -1860,8 +1860,13 @@ class ChangeGovernanceService:
             )
         except (LifecycleGatewayError, KeyError) as exc:
             category = getattr(exc, "category", "invalid_request")
+            code = self._lifecycle_error_code(
+                category, dispatched=False
+            )
+            if code == ErrorCode.ADDON_NOT_FOUND:
+                METRICS.record_classified_outcome(category)
             raise GovernanceError(
-                self._lifecycle_error_code(category, dispatched=False)
+                code
             ) from None
         provider_evidence = evidence.get("provider")
         baseline = evidence.get("baseline")

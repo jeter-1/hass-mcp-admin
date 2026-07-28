@@ -59,10 +59,23 @@ from ha_mcp_engineering.clients.mcp import (  # noqa: E402
     McpDashboardRead,
     REQUIRED_DASHBOARD_TOOL,
 )
+from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
+    McpReadCatalog,
+    McpReadResult,
+)
 from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
     UPSTREAM_DASHBOARD,
     _engineering_config_hash,
     _upstream_config_hash,
+)
+from ha_mcp_engineering.governance.operational_lifecycle import (  # noqa: E402
+    OperationalLifecycleGateway,
+)
+from ha_mcp_engineering.providers.operational_lifecycle import (  # noqa: E402
+    ReviewedOperationalLifecycleProvider,
+)
+from ha_mcp_engineering.providers.supervisor_self import (  # noqa: E402
+    SupervisorSelfAddonIdentity,
 )
 from ha_mcp_engineering.tools import compatibility, registered_tools  # noqa: E402
 from ha_mcp_engineering.tools.registry import get_registered_server  # noqa: E402
@@ -1453,33 +1466,262 @@ class BetaApplicationTests(unittest.TestCase):
             self.assertEqual(set(tools[name]["properties"]), properties)
 
     def test_missing_addon_proposal_audit_is_bounded_domain_outcome(self):
-        class MissingAddonGateway:
-            async def planning_evidence(self, _operation, _target):
-                raise LifecycleGatewayError("addon_not_found")
+        class MissingAddonTransport:
+            def __init__(self):
+                capture = json.loads(
+                    (
+                        ROOT
+                        / "docs"
+                        / "evidence"
+                        / "upstream-read-compatibility"
+                        / "ha-mcp-7.14.2.json"
+                    ).read_text(encoding="utf-8")
+                )
+                self.catalog = McpReadCatalog(
+                    protocol_version=capture["protocol_version"],
+                    server_name=capture["server_name"],
+                    server_version=capture["server_version"],
+                    tools=tuple(capture["tools"]),
+                    connection_latency_ms=1.0,
+                )
+                self.calls = []
+
+            async def discover(self):
+                return self.catalog
+
+            async def execute_read(
+                self,
+                tool_name,
+                arguments,
+                *,
+                timeout_seconds,
+                catalog_validator,
+            ):
+                del timeout_seconds
+                catalog_validator(self.catalog)
+                self.calls.append((tool_name, copy.deepcopy(arguments)))
+                return McpReadResult(
+                    protocol_version=self.catalog.protocol_version,
+                    server_name=self.catalog.server_name,
+                    server_version=self.catalog.server_version,
+                    call_result={
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": json.dumps(
+                                    {
+                                        "success": True,
+                                        "addons": [],
+                                        "summary": {
+                                            "total_installed": 0
+                                        },
+                                    }
+                                ),
+                            }
+                        ],
+                        "isError": False,
+                    },
+                    connection_latency_ms=1.0,
+                    tool_call_latency_ms=1.0,
+                )
+
+        async def self_identity():
+            return SupervisorSelfAddonIdentity(
+                slug="df26dea6_hass_mcp_engineering_beta",
+                name="HA MCP Engineering Server Beta",
+                version="2.1.1-beta.2",
+                repository="df26dea6",
+            )
 
         service = GOVERNANCE.require()
         previous_gateway = service.lifecycle_gateway
-        plan_count = len(service.repository.list())
-        try:
-            service.lifecycle_gateway = MissingAddonGateway()
-            _, call = self.rpc(
-                "tools/call",
-                {
-                    "name": "create_addon_restart_plan",
-                    "arguments": {
-                        "addon_slug": "hass-mcp-engineering-beta"
-                    },
+        transport = MissingAddonTransport()
+        provider = ReviewedOperationalLifecycleProvider()
+        provider.configure(
+            replace(
+                beta_settings(
+                    str(Path(self.tempdir.name) / "audit.jsonl")
+                ),
+                upstream_dashboard_mcp_url=(
+                    "http://ha-mcp:9583/"
+                    "synthetic-fastmcp-dashboard-secret/mcp"
+                ),
+            ),
+            transport=transport,
+        )
+        asyncio.run(provider.probe("restart_addon"))
+        service.lifecycle_gateway = OperationalLifecycleGateway(
+            provider,
+            None,
+            None,
+            configuration_validator=AsyncMock(),
+            runtime_snapshot=lambda: {},
+            process_instance_id="missing-addon-process",
+            self_addon_identity_resolver=self_identity,
+        )
+        self.addCleanup(
+            setattr,
+            service,
+            "lifecycle_gateway",
+            previous_gateway,
+        )
+        governance_before = service.health_summary()
+        approval_keys = {
+            "pending_challenge_count",
+            "plans_with_pending_external_challenge",
+            "externally_approved_plans",
+            "granted_approval_count",
+            "rejected_approval_count",
+            "expired_challenge_count",
+            "invalidated_challenge_count",
+            "approval_consumption_count",
+        }
+        approvals_before = {
+            key: governance_before[key] for key in approval_keys
+        }
+        provider_before = copy.deepcopy(
+            governance_before["lifecycle_provider"]
+        )
+        restart_counters_before = copy.deepcopy(
+            governance_before["operational_administration"][
+                "operations"
+            ]["restart_addon"]
+        )
+        metrics_before = METRICS.snapshot()
+        domain_before = Counter(
+            metrics_before["domain_outcome_counts"]
+        )
+        routing_failures_before = Counter(
+            metrics_before["provider_routing"][
+                "provider_operational_failures"
+            ]
+        )
+        _, call = self.rpc(
+            "tools/call",
+            {
+                "name": "create_addon_restart_plan",
+                "arguments": {
+                    "addon_slug": "hass-mcp-engineering-beta"
                 },
-                request_id="missing-addon-proposal-123",
-            )
-        finally:
-            service.lifecycle_gateway = previous_gateway
+            },
+            request_id="missing-addon-proposal-123",
+        )
 
         payload = json.loads(call["result"]["content"][0]["text"])
         self.assertFalse(payload["success"])
         self.assertEqual(payload["error_code"], "addon_not_found")
         self.assertFalse(payload["retryable"])
-        self.assertEqual(len(service.repository.list()), plan_count)
+        self.assertEqual(
+            payload["metadata"]["classification"], "domain_outcome"
+        )
+        self.assertEqual(
+            payload["metadata"]["completeness"], "not_found"
+        )
+        coverage = payload["metadata"]["source_coverage"][0]
+        self.assertEqual(
+            coverage["provider"], "upstream_operational_lifecycle"
+        )
+        self.assertEqual(
+            coverage["source_type"], "installed_addon_inventory"
+        )
+        self.assertEqual(coverage["completeness"], "not_found")
+        self.assertEqual(
+            coverage["failure_category"],
+            "domain_outcome_addon_not_found",
+        )
+        self.assertTrue(coverage["upstream_attempted"])
+        self.assertFalse(coverage["fallback_occurred"])
+        self.assertTrue(payload["timing"]["upstream_attempted"])
+        self.assertEqual(payload["timing"]["upstream_request_count"], 1)
+        self.assertEqual(
+            transport.calls,
+            [
+                (
+                    "ha_get_addon",
+                    {"source": "installed", "include_stats": False},
+                )
+            ],
+        )
+
+        _, health_call = self.rpc(
+            "tools/call",
+            {
+                "name": "get_server_health",
+                "arguments": {"check_ha": False},
+            },
+            request_id="missing-addon-health-123",
+        )
+        health = json.loads(
+            health_call["result"]["content"][0]["text"]
+        )["data"]
+        governance_after = health["governance"]
+        provider_after = governance_after["lifecycle_provider"]
+        metrics_after = METRICS.snapshot()
+        self.assertEqual(
+            health["domain_outcome_counts"].get(
+                "addon_not_found", 0
+            )
+            - domain_before["addon_not_found"],
+            1,
+        )
+        self.assertEqual(
+            Counter(
+                metrics_after["provider_routing"][
+                    "provider_operational_failures"
+                ]
+            ),
+            routing_failures_before,
+        )
+        self.assertEqual(
+            provider_after["failure_counts"],
+            provider_before["failure_counts"],
+        )
+        self.assertEqual(
+            provider_after["operational_status"],
+            provider_before["operational_status"],
+        )
+        self.assertTrue(provider_after["configured"])
+        self.assertEqual(
+            provider_after["selected_compatibility_entry_id"],
+            provider_before["selected_compatibility_entry_id"],
+        )
+        self.assertEqual(
+            provider_after["observed_upstream_version"],
+            provider_before["observed_upstream_version"],
+        )
+        self.assertEqual(
+            provider_after["domain_outcome_counts"].get(
+                "addon_not_found", 0
+            )
+            - provider_before["domain_outcome_counts"].get(
+                "addon_not_found", 0
+            ),
+            1,
+        )
+        self.assertEqual(
+            governance_after["total_plans"],
+            governance_before["total_plans"],
+        )
+        self.assertEqual(
+            {
+                key: governance_after[key] for key in approval_keys
+            },
+            approvals_before,
+        )
+        self.assertEqual(
+            provider_after["dispatch_counts"],
+            provider_before["dispatch_counts"],
+        )
+        self.assertEqual(
+            provider_after["fallback_count"],
+            provider_before["fallback_count"],
+        )
+        self.assertEqual(
+            governance_after["operational_administration"][
+                "operations"
+            ]["restart_addon"],
+            restart_counters_before,
+        )
         record = self.audit_record("missing-addon-proposal-123")
         self.assertEqual(record["access"], "proposal")
         self.assertEqual(record["error_code"], "addon_not_found")
@@ -1495,6 +1737,7 @@ class BetaApplicationTests(unittest.TestCase):
             },
         )
         self.assertEqual(record["resource_ids"], {})
+        self.assertNotIn("plan_id", record["resource_ids"])
 
     def test_ambiguous_self_addon_proposal_audit_fails_closed(self):
         class AmbiguousSelfGateway:

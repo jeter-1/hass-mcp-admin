@@ -1472,14 +1472,22 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
         provider._transport = transport
         await provider.probe("restart_addon")
         before = provider.health_snapshot()
+        telemetry, token = begin_request("missing-addon-provider-123")
 
-        with self.assertRaises(
-            OperationalLifecycleProviderError
-        ) as raised:
-            await provider.get_addon("hass-mcp-engineering-beta")
+        try:
+            with self.assertRaises(
+                OperationalLifecycleProviderError
+            ) as raised:
+                await provider.get_addon(
+                    "hass-mcp-engineering-beta"
+                )
+        finally:
+            end_request(token)
 
         self.assertEqual(raised.exception.category, "addon_not_found")
         self.assertFalse(raised.exception.dispatched)
+        self.assertEqual(telemetry.upstream_request_count, 1)
+        self.assertGreaterEqual(telemetry.upstream_duration_ms, 0.0)
         after = provider.health_snapshot()
         self.assertEqual(after["operational_status"], "available")
         self.assertEqual(after["failure_counts"], before["failure_counts"])

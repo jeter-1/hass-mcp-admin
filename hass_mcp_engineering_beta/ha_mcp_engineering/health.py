@@ -93,6 +93,7 @@ class HealthRegistry:
                 "redaction_filter": True,
             },
             "recent_error_counts": metrics["recent_error_counts"],
+            "domain_outcome_counts": metrics["domain_outcome_counts"],
             "provider_routing": {
                 **metrics["provider_routing"],
                 "standard_ha_mcp_delegation": "unavailable",

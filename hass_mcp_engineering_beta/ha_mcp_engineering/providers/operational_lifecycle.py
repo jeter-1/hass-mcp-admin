@@ -9,6 +9,7 @@ import inspect
 import json
 import re
 import threading
+import time
 from typing import Any, Awaitable, Callable
 
 from ..clients.mcp import DashboardTransportError
@@ -19,6 +20,7 @@ from ..clients.upstream_read import (
     McpReadGatewayTransport,
 )
 from ..configuration import Settings, parse_upstream_dashboard_endpoint
+from ..request_context import current_telemetry
 from ..upstream_tool_policy import (
     catalog_fingerprint,
     load_reviewed_upstream_release_registry,
@@ -243,7 +245,7 @@ class ReviewedOperationalLifecycleProvider:
             )
 
         try:
-            inventory_exchange = await self._transport.execute_read(
+            inventory_exchange = await self._execute_observed_read(
                 ADDON_READ_TOOL,
                 {"source": "installed", "include_stats": False},
                 timeout_seconds=60.0,
@@ -269,7 +271,7 @@ class ReviewedOperationalLifecycleProvider:
             if len(matches) != 1:
                 self._fail("invalid_response", dispatched=False)
 
-            exchange = await self._transport.execute_read(
+            exchange = await self._execute_observed_read(
                 ADDON_READ_TOOL,
                 {"slug": slug},
                 timeout_seconds=60.0,
@@ -316,6 +318,35 @@ class ReviewedOperationalLifecycleProvider:
             self._fail(_transport_category(exc.category), dispatched=False)
         except Exception:
             self._fail("provider_error", dispatched=False)
+
+    async def _execute_observed_read(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        timeout_seconds: float,
+        catalog_validator: Callable[[McpReadCatalog], None],
+    ) -> Any:
+        """Execute one reviewed read with truthful per-request attribution."""
+
+        telemetry = current_telemetry()
+        started = time.perf_counter()
+        if telemetry:
+            telemetry.begin_upstream_attempt(started)
+        try:
+            return await self._transport.execute_read(
+                tool_name,
+                arguments,
+                timeout_seconds=timeout_seconds,
+                catalog_validator=catalog_validator,
+            )
+        finally:
+            if telemetry:
+                finished = time.perf_counter()
+                telemetry.finish_upstream_attempt(
+                    finished,
+                    (finished - started) * 1000,
+                )
 
     async def _execute(
         self,
