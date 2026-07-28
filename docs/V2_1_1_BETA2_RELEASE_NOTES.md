@@ -23,15 +23,20 @@ Supervisor proxy was added.
 Planning first requires this authoritative identity, then resolves the
 requested installed add-on through the exact reviewed `ha_get_addon` contract.
 An exact self match becomes `engineering_addon` and requires
-`restart_proof=process_identity`. Exact `ha_mcp` restart remains
-`upstream_ha_mcp_addon` with `upstream_readmission`; an unrelated installed
-add-on remains `other_addon` with the explicitly weaker
-`provider_acknowledgement`. Missing, malformed, or conflicting self evidence
-fails closed and cannot silently become `other_addon`.
+`restart_proof=process_identity`. The admitted upstream target is resolved by
+matching the configured MCP endpoint host to the documented Supervisor DNS
+form of exactly one complete installed slug, then binding that target to exact
+reviewed MCP admission. A bare `ha_mcp` source slug, repository-prefix guess,
+display name, version, suffix, or lookalike is not identity evidence. The
+bound target becomes `upstream_ha_mcp_addon` with `upstream_readmission`; an
+authoritatively unrelated installed add-on remains `other_addon` with the
+explicitly weaker `provider_acknowledgement`. Missing, malformed, ambiguous,
+or conflicting special-target evidence fails closed.
 
 New plans persist bounded target evidence: requested and resolved slug, name,
-version, repository identifier, identity source, authoritative-self decision,
-and target class. Apply-time revalidation must reproduce that evidence.
+version, repository identifier, identity source, authoritative self/upstream
+decisions, selected reviewed provider contract, and target class. Apply-time
+revalidation must reproduce that evidence.
 Historical plans remain readable and retain their existing hashes. A plan made
 under the earlier incorrect classification must not be reused; create a fresh
 plan after installing this correction.

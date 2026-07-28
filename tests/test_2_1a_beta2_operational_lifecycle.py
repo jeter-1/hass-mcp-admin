@@ -26,6 +26,7 @@ from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
     McpReadCatalog,
     McpReadResult,
 )
+from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.errors import (  # noqa: E402
     ErrorCode,
     GovernanceError,
@@ -41,9 +42,9 @@ from ha_mcp_engineering.governance.operational_lifecycle import (  # noqa: E402
     ENGINEERING_ADDON_SLUG,
     LifecycleGatewayError,
     OperationalLifecycleGateway,
-    UPSTREAM_HA_MCP_ADDON_NAME,
-    UPSTREAM_HA_MCP_ADDON_SLUG,
+    UPSTREAM_PROVIDER_CONTRACT_FIELDS,
     _addon_target_class,
+    _upstream_readmission_matches,
 )
 from ha_mcp_engineering.governance.service import (  # noqa: E402
     ChangeGovernanceService,
@@ -68,6 +69,10 @@ from ha_mcp_engineering.tools import get_registered_server  # noqa: E402
 from ha_mcp_engineering.mcp_sdk_compatibility import (  # noqa: E402
     registered_tools,
 )
+
+
+UPSTREAM_ADDON_SLUG = "abcdef12_ha_mcp"
+UPSTREAM_ADDON_NAME = "Home Assistant MCP Server"
 
 
 class Clock:
@@ -144,6 +149,46 @@ def provider_evidence(operation: str) -> dict:
         "fallback": "none",
         "fallback_occurred": False,
     }
+
+
+def upstream_addon_identity(
+    slug: str = UPSTREAM_ADDON_SLUG,
+    *,
+    status: str = "bound",
+) -> dict:
+    if status != "bound":
+        return {"status": status}
+    return {
+        "status": "bound",
+        "slug": slug,
+        "name": UPSTREAM_ADDON_NAME,
+        "installed_version": "7.14.2",
+        "repository": "abcdef12",
+        "endpoint_host": slug.replace("_", "-"),
+        "identity_source": (
+            "configured_endpoint_supervisor_dns_and_reviewed_admission"
+        ),
+        "inventory_arguments": {
+            "source": "installed",
+            "include_stats": False,
+        },
+        "admission_evidence": provider_evidence("restart_addon"),
+        "provider_contract": provider_evidence("restart_addon"),
+    }
+
+
+def lifecycle_settings(endpoint: str) -> Settings:
+    return Settings(
+        ha_url="http://supervisor/core",
+        ha_token="synthetic-ha-token",
+        access_secret="synthetic-engineering-access-secret",
+        port=8100,
+        audit_path="audit.jsonl",
+        rate_limit_per_minute=120,
+        rate_limit_burst=25,
+        destructive_services=frozenset(),
+        upstream_dashboard_mcp_url=endpoint,
+    )
 
 
 class FakeLifecycleGateway:
@@ -1057,6 +1102,124 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
             "target_identity", reloaded.operational.baseline
         )
 
+    async def test_historical_other_addon_upstream_plan_is_not_reclassified(
+        self,
+    ):
+        created = await self.service.create_addon_restart_plan(
+            addon_slug=UPSTREAM_ADDON_SLUG
+        )
+        persisted = self.repository.get(created["plan"]["plan_id"])
+        original_hash = self.service.plan_hash(persisted)
+        self.assertEqual(
+            persisted.operational.baseline["target_class"],
+            "other_addon",
+        )
+        restored = ChangePlan.from_dict(persisted.to_dict())
+        self.assertEqual(self.service.plan_hash(restored), original_hash)
+        plan = await self.grant(created)
+
+        async def corrected_planning_evidence(_operation, target):
+            binding = upstream_addon_identity(target)
+            return {
+                "provider": provider_evidence("restart_addon"),
+                "baseline": {
+                    "addon": {
+                        "slug": target,
+                        "name": UPSTREAM_ADDON_NAME,
+                        "version": "7.14.2",
+                        "state": "started",
+                    },
+                    "target_class": "upstream_ha_mcp_addon",
+                    "target_identity": {
+                        "requested_slug": target,
+                        "resolved_slug": target,
+                        "resolved_name": UPSTREAM_ADDON_NAME,
+                        "resolved_version": "7.14.2",
+                        "resolved_repository": "abcdef12",
+                        "identity_source": binding["identity_source"],
+                        "authoritative_self_match": False,
+                        "authoritative_upstream_match": True,
+                        "target_class": "upstream_ha_mcp_addon",
+                    },
+                    "upstream_addon_identity": binding,
+                    "process_instance_id": "process-one",
+                    "runtime": deepcopy(self.lifecycle.runtime),
+                },
+            }
+
+        self.lifecycle.planning_evidence = corrected_planning_evidence
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.apply(
+                plan["plan_id"], plan["plan_hash"]
+            )
+        self.assertEqual(
+            raised.exception.code, ErrorCode.STALE_TARGET_STATE
+        )
+        self.assertEqual(self.lifecycle.dispatch_count, 0)
+        reloaded = self.repository.get(plan["plan_id"])
+        self.assertEqual(self.service.plan_hash(reloaded), original_hash)
+        self.assertEqual(
+            reloaded.operational.baseline["target_class"],
+            "other_addon",
+        )
+
+    async def test_upstream_provider_binding_drift_blocks_apply_dispatch(
+        self,
+    ):
+        binding = upstream_addon_identity()
+
+        async def planning_evidence(_operation, target):
+            current = deepcopy(binding)
+            return {
+                "provider": provider_evidence("restart_addon"),
+                "baseline": {
+                    "addon": {
+                        "slug": target,
+                        "name": UPSTREAM_ADDON_NAME,
+                        "version": "7.14.2",
+                        "state": "started",
+                    },
+                    "target_class": "upstream_ha_mcp_addon",
+                    "target_identity": {
+                        "requested_slug": target,
+                        "resolved_slug": target,
+                        "resolved_name": UPSTREAM_ADDON_NAME,
+                        "resolved_version": "7.14.2",
+                        "resolved_repository": "abcdef12",
+                        "identity_source": current["identity_source"],
+                        "authoritative_self_match": False,
+                        "authoritative_upstream_match": True,
+                        "target_class": "upstream_ha_mcp_addon",
+                    },
+                    "upstream_addon_identity": current,
+                    "process_instance_id": "process-one",
+                    "runtime": deepcopy(self.lifecycle.runtime),
+                },
+            }
+
+        self.lifecycle.planning_evidence = planning_evidence
+        created = await self.service.create_addon_restart_plan(
+            addon_slug=UPSTREAM_ADDON_SLUG
+        )
+        plan = await self.grant(created)
+        binding["provider_contract"]["compatibility_entry_id"] = (
+            "ha-mcp-v7.14.2-conflicting"
+        )
+
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.apply(
+                plan["plan_id"], plan["plan_hash"]
+            )
+        self.assertEqual(
+            raised.exception.code, ErrorCode.STALE_TARGET_STATE
+        )
+        persisted = self.repository.get(plan["plan_id"])
+        self.assertEqual(persisted.approval.state.value, "approved")
+        self.assertEqual(
+            persisted.operational.dispatch["attempt_count"], 0
+        )
+        self.assertEqual(self.lifecycle.dispatch_count, 0)
+
     async def test_incomplete_historical_self_restart_plan_fails_closed(self):
         created = await self.service.create_addon_restart_plan(
             addon_slug=ENGINEERING_ADDON_SLUG
@@ -1179,6 +1342,13 @@ class FakeMcpTransport:
                 "version": "2.1.1-beta.2",
                 "state": "started",
                 "repository": "df26dea6",
+            },
+            {
+                "slug": UPSTREAM_ADDON_SLUG,
+                "name": UPSTREAM_ADDON_NAME,
+                "version": "7.14.2",
+                "state": "started",
+                "repository": "abcdef12",
             },
         ]
 
@@ -1397,6 +1567,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 "resolved_repository": "df26dea6",
                 "identity_source": "supervisor_self_info",
                 "authoritative_self_match": True,
+                "authoritative_upstream_match": False,
                 "target_class": "engineering_addon",
             },
         )
@@ -1429,6 +1600,146 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             verified["evidence"]["restart_proof"],
             "process_identity",
         )
+
+    async def test_prefixed_upstream_slug_is_bound_to_admitted_endpoint(
+        self,
+    ):
+        transport = FakeMcpTransport()
+        provider = ReviewedOperationalLifecycleProvider()
+        provider.configure(
+            lifecycle_settings(
+                "http://abcdef12-ha-mcp:9583/"
+                "synthetic-upstream-secret/mcp"
+            ),
+            transport=transport,
+        )
+
+        async def self_identity():
+            return SupervisorSelfAddonIdentity(
+                slug="df26dea6_hass_mcp_engineering_beta",
+                name="HA MCP Engineering Server Beta",
+                version="2.1.1-beta.2",
+                repository="df26dea6",
+            )
+
+        gateway = OperationalLifecycleGateway(
+            provider,
+            None,
+            None,
+            configuration_validator=lambda: None,
+            runtime_snapshot=lambda: {
+                "upstream_version": "7.14.2",
+                "upstream_protocol": "2025-03-26",
+                "upstream_catalog_fingerprint": (
+                    "c6bd074d9ee1e832bd90318398c00efd9a9ffd983d5444817bc830208cbfc47c"
+                ),
+                "upstream_admission_status": "admitted_exact",
+                "fallback_count": 0,
+            },
+            process_instance_id="process",
+            self_addon_identity_resolver=self_identity,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            service = ChangeGovernanceService(
+                ChangePlanRepository(Path(directory) / "plans"),
+                LegacyGateway(),
+                AuditLogger(
+                    str(Path(directory) / "audit.jsonl"),
+                    "synthetic-access-secret-value",
+                ),
+                lifecycle_gateway=gateway,
+            )
+            created = await service.create_addon_restart_plan(
+                addon_slug=UPSTREAM_ADDON_SLUG
+            )
+            persisted = service.repository.get(
+                created["plan"]["plan_id"]
+            )
+
+        baseline = persisted.operational.baseline
+        self.assertEqual(
+            baseline["target_class"], "upstream_ha_mcp_addon"
+        )
+        self.assertTrue(
+            baseline["target_identity"][
+                "authoritative_upstream_match"
+            ]
+        )
+        self.assertEqual(
+            baseline["upstream_addon_identity"]["slug"],
+            UPSTREAM_ADDON_SLUG,
+        )
+        self.assertEqual(
+            baseline["upstream_addon_identity"]["endpoint_host"],
+            "abcdef12-ha-mcp",
+        )
+        self.assertEqual(
+            baseline["upstream_addon_identity"][
+                "inventory_arguments"
+            ],
+            {"source": "installed", "include_stats": False},
+        )
+        self.assertEqual(
+            tuple(
+                baseline["upstream_addon_identity"][
+                    "provider_contract"
+                ][field]
+                for field in UPSTREAM_PROVIDER_CONTRACT_FIELDS
+            ),
+            tuple(
+                persisted.operational.provider_capability_evidence[
+                    field
+                ]
+                for field in UPSTREAM_PROVIDER_CONTRACT_FIELDS
+            ),
+        )
+        self.assertIn(
+            "upstream_readmission_when_applicable",
+            persisted.operational.verification_contract["required"],
+        )
+        self.assertNotIn(
+            "ha_manage_addon",
+            [tool_name for tool_name, _arguments in transport.calls],
+        )
+
+    async def test_inventory_arguments_match_both_reviewed_releases(self):
+        for version in ("7.14.1", "7.14.2"):
+            with self.subTest(version=version):
+                transport = FakeMcpTransport(version)
+                for addon in transport.addons:
+                    if addon["slug"] == UPSTREAM_ADDON_SLUG:
+                        addon["version"] = version
+                provider = ReviewedOperationalLifecycleProvider()
+                provider.configure(
+                    lifecycle_settings(
+                        "http://abcdef12-ha-mcp:9583/"
+                        "synthetic-upstream-secret/mcp"
+                    ),
+                    transport=transport,
+                )
+                addon = await provider.get_addon(
+                    UPSTREAM_ADDON_SLUG
+                )
+                self.assertEqual(
+                    addon["upstream_addon_identity"]["status"],
+                    "bound",
+                )
+                self.assertEqual(
+                    transport.calls[:2],
+                    [
+                        (
+                            "ha_get_addon",
+                            {
+                                "source": "installed",
+                                "include_stats": False,
+                            },
+                        ),
+                        (
+                            "ha_get_addon",
+                            {"slug": UPSTREAM_ADDON_SLUG},
+                        ),
+                    ],
+                )
 
     async def test_unavailable_self_identity_cannot_default_to_other_addon(self):
         class AddonProvider:
@@ -1478,9 +1789,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(
                 OperationalLifecycleProviderError
             ) as raised:
-                await provider.get_addon(
-                    "hass-mcp-engineering-beta"
-                )
+                await provider.get_addon("ha_mcp")
         finally:
             end_request(token)
 
@@ -1514,6 +1823,72 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                     {"source": "installed", "include_stats": False},
                 )
             ],
+        )
+
+    async def test_ambiguous_upstream_endpoint_binding_creates_no_plan(
+        self,
+    ):
+        transport = FakeMcpTransport()
+        transport.addons.append(
+            {
+                "slug": "abcdef12-ha-mcp",
+                "name": "Unrelated lookalike",
+                "version": "7.14.2",
+                "state": "started",
+                "repository": "unrelated",
+            }
+        )
+        provider = ReviewedOperationalLifecycleProvider()
+        provider.configure(
+            lifecycle_settings(
+                "http://abcdef12-ha-mcp:9583/"
+                "synthetic-upstream-secret/mcp"
+            ),
+            transport=transport,
+        )
+
+        async def self_identity():
+            return SupervisorSelfAddonIdentity(
+                slug="df26dea6_hass_mcp_engineering_beta",
+                name="HA MCP Engineering Server Beta",
+                version="2.1.1-beta.2",
+                repository="df26dea6",
+            )
+
+        gateway = OperationalLifecycleGateway(
+            provider,
+            None,
+            None,
+            configuration_validator=lambda: None,
+            runtime_snapshot=lambda: {},
+            process_instance_id="process",
+            self_addon_identity_resolver=self_identity,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            repository = ChangePlanRepository(
+                Path(directory) / "plans"
+            )
+            service = ChangeGovernanceService(
+                repository,
+                LegacyGateway(),
+                AuditLogger(
+                    str(Path(directory) / "audit.jsonl"),
+                    "synthetic-access-secret-value",
+                ),
+                lifecycle_gateway=gateway,
+            )
+            with self.assertRaises(GovernanceError) as raised:
+                await service.create_addon_restart_plan(
+                    addon_slug="local_test_addon"
+                )
+            self.assertEqual(
+                raised.exception.code,
+                ErrorCode.OPERATIONAL_CONTRACT_MISMATCH,
+            )
+            self.assertEqual(repository.list(), [])
+        self.assertNotIn(
+            "ha_manage_addon",
+            [tool_name for tool_name, _arguments in transport.calls],
         )
 
     async def test_real_addon_provider_failure_still_degrades_health(self):
@@ -1677,7 +2052,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             async def get_addon(self, slug):
                 return {
                     "slug": slug,
-                    "name": UPSTREAM_HA_MCP_ADDON_NAME,
+                    "name": UPSTREAM_ADDON_NAME,
                     "version": "7.14.2",
                     "state": "started",
                 }
@@ -1710,8 +2085,8 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
         )
         baseline = {
             "addon": {
-                "slug": UPSTREAM_HA_MCP_ADDON_SLUG,
-                "name": UPSTREAM_HA_MCP_ADDON_NAME,
+                "slug": UPSTREAM_ADDON_SLUG,
+                "name": UPSTREAM_ADDON_NAME,
                 "version": "7.14.2",
                 "state": "started",
             },
@@ -1720,7 +2095,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
         }
         planned_provider = provider_evidence("restart_addon")
         pending = await gateway.verify_addon_restart(
-            UPSTREAM_HA_MCP_ADDON_SLUG,
+            UPSTREAM_ADDON_SLUG,
             baseline=baseline,
             provider_response_received=True,
             provider_evidence=planned_provider,
@@ -1729,7 +2104,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("restart_evidence", pending["mismatch_fields"])
         provider.observed_version = "7.14.2"
         verified = await gateway.verify_addon_restart(
-            UPSTREAM_HA_MCP_ADDON_SLUG,
+            UPSTREAM_ADDON_SLUG,
             baseline=baseline,
             provider_response_received=True,
             provider_evidence=planned_provider,
@@ -1739,6 +2114,32 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             verified["evidence"]["restart_proof"],
             "upstream_readmission",
         )
+
+    def test_upstream_readmission_requires_all_eight_provider_fields(self):
+        planned = provider_evidence("restart_addon")
+        runtime = {
+            "upstream_version": "7.14.2",
+            "upstream_protocol": "2025-03-26",
+            "upstream_catalog_fingerprint": planned[
+                "catalog_fingerprint"
+            ],
+            "upstream_admission_status": "admitted_exact",
+            "fallback_count": 0,
+        }
+        self.assertTrue(
+            _upstream_readmission_matches(
+                planned, deepcopy(planned), runtime
+            )
+        )
+        for field in UPSTREAM_PROVIDER_CONTRACT_FIELDS:
+            with self.subTest(field=field):
+                mismatched = deepcopy(planned)
+                mismatched[field] = None
+                self.assertFalse(
+                    _upstream_readmission_matches(
+                        planned, mismatched, runtime
+                    )
+                )
 
     async def test_engineering_self_restart_requires_new_process_instance(self):
         class AddonProvider:
@@ -2045,28 +2446,35 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                     "repository": self_identity.repository,
                 },
                 self_identity,
+                upstream_addon_identity(),
             ),
             "engineering_addon",
         )
         self.assertEqual(
             _addon_target_class(
-                UPSTREAM_HA_MCP_ADDON_SLUG,
+                UPSTREAM_ADDON_SLUG,
                 {
-                    "slug": UPSTREAM_HA_MCP_ADDON_SLUG,
-                    "name": UPSTREAM_HA_MCP_ADDON_NAME,
+                    "slug": UPSTREAM_ADDON_SLUG,
+                    "name": UPSTREAM_ADDON_NAME,
+                    "version": "7.14.2",
+                    "repository": "abcdef12",
                 },
                 self_identity,
+                upstream_addon_identity(),
             ),
             "upstream_ha_mcp_addon",
         )
         self.assertEqual(
             _addon_target_class(
-                "unrelated",
+                "lookalike_ha_mcp",
                 {
-                    "slug": "unrelated",
-                    "name": "Looks like an MCP engineering server",
+                    "slug": "lookalike_ha_mcp",
+                    "name": UPSTREAM_ADDON_NAME,
+                    "version": "7.14.2",
+                    "repository": "lookalike",
                 },
                 self_identity,
+                upstream_addon_identity(),
             ),
             "other_addon",
         )
@@ -2080,11 +2488,30 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                     "repository": self_identity.repository,
                 },
                 self_identity,
+                upstream_addon_identity(),
             )
         self.assertEqual(
             raised.exception.category,
             "self_addon_identity_unavailable",
         )
+        for status in ("unavailable", "ambiguous", "conflicting"):
+            with self.subTest(status=status), self.assertRaises(
+                LifecycleGatewayError
+            ) as raised:
+                _addon_target_class(
+                    "unrelated",
+                    {
+                        "slug": "unrelated",
+                        "name": "Unrelated",
+                        "version": "1.0.0",
+                    },
+                    self_identity,
+                    upstream_addon_identity(status=status),
+                )
+            self.assertEqual(
+                raised.exception.category,
+                "upstream_addon_identity_unavailable",
+            )
 
     def test_public_tool_schemas_are_bounded_and_catalog_is_45(self):
         tools = registered_tools(get_registered_server())

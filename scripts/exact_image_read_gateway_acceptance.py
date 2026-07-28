@@ -75,6 +75,10 @@ REPRESENTATIVE_CALLS = {
     "ha_get_device": {"limit": 5},
     "ha_list_services": {"limit": 5},
 }
+UPSTREAM_ADDON_INVENTORY_ARGUMENTS = {
+    "source": "installed",
+    "include_stats": False,
+}
 UPSTREAM_ERROR_CALLS = {
     "provider_failure": {
         "tool": "ha_get_state",
@@ -523,6 +527,26 @@ async def inspect_upstream(
                 "upstream version mismatch",
             )
             tools = await list_all_tools(session)
+            addon_inventory = decode_tool_result(
+                await session.call_tool(
+                    "ha_get_addon",
+                    UPSTREAM_ADDON_INVENTORY_ARGUMENTS,
+                )
+            )
+            require(
+                addon_inventory.get("success") is True,
+                "pinned upstream rejected exact add-on inventory arguments",
+            )
+            addons = addon_inventory.get("addons")
+            require(
+                isinstance(addons, list)
+                and any(
+                    isinstance(addon, dict)
+                    and addon.get("slug") == "abcdef12_ha_mcp"
+                    for addon in addons
+                ),
+                "pinned upstream add-on inventory read was incomplete",
+            )
             for name, expected in UPSTREAM_ERROR_CALLS.items():
                 result = await session.call_tool(
                     expected["tool"],

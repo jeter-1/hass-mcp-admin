@@ -41,6 +41,15 @@ add-on read and fails closed on unavailable or conflicting evidence. The
 caller-relative endpoint needs no generic Supervisor action proxy and this
 decision adds no broad `hassio_api` permission.
 
+The upstream add-on is bound separately. The configured reviewed MCP endpoint
+host must equal the documented Supervisor DNS form of exactly one complete
+slug in the installed-add-on inventory, and catalog discovery over that same
+endpoint must produce an exact reviewed admission. This supports
+repository-prefixed installations without parsing a prefix or trusting a bare
+source slug, display name, version, suffix, or lookalike. Missing, external,
+or colliding endpoint identity fails closed; a historical `other_addon` plan
+is not upgraded to upstream authority and must be replanned.
+
 All operations reuse the existing upstream MCP configuration and external
 Ingress approval authority. It adds no endpoint, option, credential, generic
 write, fallback, restore, delete, arbitrary service, or provider argument.

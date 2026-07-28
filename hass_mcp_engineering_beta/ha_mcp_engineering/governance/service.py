@@ -3755,9 +3755,21 @@ class ChangeGovernanceService:
                         "resolved_repository",
                         "identity_source",
                         "authoritative_self_match",
+                        "authoritative_upstream_match",
                         "target_class",
                     )
                 )
+            ):
+                return False
+            planned_upstream_identity = operational.baseline.get(
+                "upstream_addon_identity"
+            )
+            fresh_upstream_identity = fresh_baseline.get(
+                "upstream_addon_identity"
+            )
+            if isinstance(planned_upstream_identity, dict) and (
+                not isinstance(fresh_upstream_identity, dict)
+                or planned_upstream_identity != fresh_upstream_identity
             ):
                 return False
             if planned_class == "engineering_addon":
@@ -4226,6 +4238,7 @@ class ChangeGovernanceService:
             "upstream_version_mismatch",
             "unsupported_protocol_version",
             "required_tool_missing",
+            "upstream_addon_identity_unavailable",
         }:
             return ErrorCode.OPERATIONAL_CONTRACT_MISMATCH
         if category in {

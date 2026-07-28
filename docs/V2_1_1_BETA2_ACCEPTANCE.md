@@ -42,12 +42,18 @@ must:
 5. make `provider_acknowledgement` unreachable, so only a changed process
    identity plus complete readiness can yield `restart_proof=process_identity`.
 
-An exact reviewed upstream add-on must retain
-`restart_proof=upstream_readmission`. A real unrelated add-on must retain the
-explicitly weaker `provider_acknowledgement` grade.
+An exact reviewed upstream add-on must be identified by a unique full installed
+slug whose documented Supervisor DNS form matches the configured MCP endpoint,
+with exact reviewed admission observed over that same endpoint. Bare source
+slug, prefix/suffix, display-name, version-only, and lookalike matches are
+rejected. The bound target must retain
+`restart_proof=upstream_readmission`; `provider_acknowledgement` is
+unreachable for it. A real unrelated add-on must retain the explicitly weaker
+`provider_acknowledgement` grade. Unavailable or conflicting upstream identity
+fails closed, and a historical target-class conflict requires a fresh plan.
 
-For a missing installed slug, including the formerly attempted unqualified
-`hass-mcp-engineering-beta` fixture, prove:
+For a missing installed slug, including bare `ha_mcp` when only a
+repository-prefixed upstream slug is installed, prove:
 
 - public non-retryable `addon_not_found`;
 - proposal/domain-outcome audit attribution with the requested slug;
@@ -99,7 +105,13 @@ Do not run these steps during source development.
 8. Only with separate authorization, apply once and verify startup
    reconciliation produces `restart_proof=process_identity`, no redispatch,
    complete runtime/storage/audit readiness, and zero fallback.
-9. Recheck ordinary and upstream add-on proof grades.
-10. Roll back to the preserved Beta 2 artifact if any boundary fails.
+9. Resolve the exact installed upstream slug, then create a separate plan-only
+   proposal and verify `target_class=upstream_ha_mcp_addon`, the exact
+   eight-field reviewed provider contract, required
+   `restart_proof=upstream_readmission`, and zero dispatch. Do not approve it
+   until that evidence is inspected.
+10. Recheck an ordinary add-on retains
+    `restart_proof=provider_acknowledgement`.
+11. Roll back to the preserved Beta 2 artifact if any boundary fails.
 
 A source-test pass is not a deployed-runtime acceptance claim.

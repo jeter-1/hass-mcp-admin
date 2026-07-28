@@ -31,8 +31,24 @@ from .config_validation import normalize_configuration_validation
 # This is the repository source slug, not an installed Supervisor identity.
 # Remote and local repositories prepend an installation-specific repository ID.
 ENGINEERING_ADDON_SLUG = "hass_mcp_engineering_beta"
-UPSTREAM_HA_MCP_ADDON_SLUG = "ha_mcp"
-UPSTREAM_HA_MCP_ADDON_NAME = "Home Assistant MCP Server"
+UPSTREAM_PROVIDER_CONTRACT_FIELDS = (
+    "provider",
+    "server_name",
+    "server_version",
+    "protocol_version",
+    "compatibility_entry_id",
+    "catalog_fingerprint",
+    "tool_contract_fingerprints",
+    "argument_constraints",
+)
+UPSTREAM_PROVIDER_IDENTITY_FIELDS = (
+    "provider",
+    "server_name",
+    "server_version",
+    "protocol_version",
+    "compatibility_entry_id",
+    "catalog_fingerprint",
+)
 RELOAD_SERVICES = {
     "automation": ("automation", "reload"),
     "script": ("script", "reload"),
@@ -87,6 +103,7 @@ class OperationalLifecycleGateway:
     ) -> dict[str, Any]:
         try:
             provider = await self.provider.probe(operation)
+            provider_evidence = provider.as_dict()
             if operation == "controlled_reload":
                 validation = await self.configuration_validation()
                 services = await self.read_services()
@@ -113,9 +130,34 @@ class OperationalLifecycleGateway:
                         "self_addon_identity_unavailable"
                     ) from None
                 addon = await self.provider.get_addon(target)
-                target_class = _addon_target_class(
-                    target, addon, self_identity
+                upstream_identity = addon.get(
+                    "upstream_addon_identity"
                 )
+                target_class = _addon_target_class(
+                    target,
+                    addon,
+                    self_identity,
+                    upstream_identity,
+                )
+                upstream_binding = (
+                    _upstream_addon_binding(upstream_identity)
+                    if target_class != "engineering_addon"
+                    else None
+                )
+                if (
+                    upstream_binding is not None
+                    and not _provider_identity_matches(
+                        upstream_binding["admission_evidence"],
+                        provider_evidence,
+                    )
+                ):
+                    raise LifecycleGatewayError(
+                        "upstream_addon_identity_unavailable"
+                    )
+                if upstream_binding is not None:
+                    upstream_binding["provider_contract"] = dict(
+                        provider_evidence
+                    )
                 baseline = {
                     "addon": _addon_identity(addon),
                     "target_class": target_class,
@@ -130,15 +172,24 @@ class OperationalLifecycleGateway:
                                 "identity_source"
                             )
                             if target_class == "engineering_addon"
-                            else "reviewed_upstream_addon_read"
+                            else upstream_binding.get(
+                                "identity_source"
+                            )
                         ),
                         "authoritative_self_match": (
                             target_class == "engineering_addon"
+                        ),
+                        "authoritative_upstream_match": (
+                            target_class == "upstream_ha_mcp_addon"
                         ),
                         "target_class": target_class,
                     },
                     "process_instance_id": self.process_instance_id,
                 }
+                if upstream_binding is not None:
+                    baseline["upstream_addon_identity"] = (
+                        upstream_binding
+                    )
                 if target_class in {
                     "engineering_addon",
                     "upstream_ha_mcp_addon",
@@ -158,7 +209,7 @@ class OperationalLifecycleGateway:
             raise LifecycleGatewayError(
                 exc.category, dispatched=exc.dispatched
             ) from None
-        return {"provider": provider.as_dict(), "baseline": baseline}
+        return {"provider": provider_evidence, "baseline": baseline}
 
     async def configuration_validation(self) -> dict[str, Any]:
         checked_at = datetime.now(timezone.utc).isoformat()
@@ -741,21 +792,9 @@ def _upstream_readmission_matches(
 ) -> bool:
     if not isinstance(runtime, dict):
         return False
-    contract_fields = (
-        "provider",
-        "server_name",
-        "server_version",
-        "protocol_version",
-        "compatibility_entry_id",
-        "catalog_fingerprint",
-        "tool_contract_fingerprints",
-        "argument_constraints",
-    )
     return (
-        all(
-            admitted_provider.get(field)
-            == planned_provider.get(field)
-            for field in contract_fields
+        _provider_contract_matches(
+            admitted_provider, planned_provider
         )
         and runtime.get("upstream_version")
         == planned_provider.get("server_version")
@@ -800,6 +839,7 @@ def _addon_target_class(
     slug: str,
     addon: dict[str, Any],
     self_identity: SupervisorSelfAddonIdentity,
+    upstream_identity: Any,
 ) -> str:
     if (
         not isinstance(self_identity, SupervisorSelfAddonIdentity)
@@ -830,9 +870,109 @@ def _addon_target_class(
         )
     ):
         raise LifecycleGatewayError("self_addon_identity_unavailable")
-    if (
-        slug == UPSTREAM_HA_MCP_ADDON_SLUG
-        and addon.get("name") == UPSTREAM_HA_MCP_ADDON_NAME
-    ):
+    upstream = _upstream_addon_binding(upstream_identity)
+    if slug == upstream["slug"]:
+        if (
+            addon.get("name") != upstream["name"]
+            or addon.get("version") != upstream["installed_version"]
+            or (
+                upstream.get("repository") is not None
+                and addon.get("repository") is not None
+                and addon.get("repository") != upstream["repository"]
+            )
+        ):
+            raise LifecycleGatewayError(
+                "upstream_addon_identity_unavailable"
+            )
         return "upstream_ha_mcp_addon"
     return "other_addon"
+
+
+def _provider_contract_matches(
+    left: dict[str, Any],
+    right: dict[str, Any],
+) -> bool:
+    return (
+        isinstance(left, dict)
+        and isinstance(right, dict)
+        and all(
+            left.get(field) == right.get(field)
+            for field in UPSTREAM_PROVIDER_CONTRACT_FIELDS
+        )
+    )
+
+
+def _provider_identity_matches(
+    left: dict[str, Any],
+    right: dict[str, Any],
+) -> bool:
+    return (
+        isinstance(left, dict)
+        and isinstance(right, dict)
+        and all(
+            left.get(field) == right.get(field)
+            for field in UPSTREAM_PROVIDER_IDENTITY_FIELDS
+        )
+    )
+
+
+def _upstream_addon_binding(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict) or value.get("status") != "bound":
+        raise LifecycleGatewayError(
+            "upstream_addon_identity_unavailable"
+        )
+    slug = value.get("slug")
+    name = _safe_identity(value.get("name"))
+    installed_version = _safe_identity(
+        value.get("installed_version")
+    )
+    repository = value.get("repository")
+    endpoint_host = value.get("endpoint_host")
+    identity_source = value.get("identity_source")
+    inventory_arguments = value.get("inventory_arguments")
+    admission_evidence = value.get("admission_evidence")
+    if (
+        not isinstance(slug, str)
+        or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,127}", slug)
+        or name is None
+        or installed_version is None
+        or (
+            repository is not None
+            and _safe_identity(repository) is None
+        )
+        or not isinstance(endpoint_host, str)
+        or endpoint_host != slug.replace("_", "-")
+        or identity_source
+        != "configured_endpoint_supervisor_dns_and_reviewed_admission"
+        or inventory_arguments
+        != {"source": "installed", "include_stats": False}
+        or not isinstance(admission_evidence, dict)
+        or any(
+            field not in admission_evidence
+            for field in UPSTREAM_PROVIDER_CONTRACT_FIELDS
+        )
+    ):
+        raise LifecycleGatewayError(
+            "upstream_addon_identity_unavailable"
+        )
+    return {
+        "status": "bound",
+        "slug": slug,
+        "name": name,
+        "installed_version": installed_version,
+        "repository": repository,
+        "endpoint_host": endpoint_host,
+        "identity_source": identity_source,
+        "inventory_arguments": dict(inventory_arguments),
+        "admission_evidence": {
+            key: admission_evidence.get(key)
+            for key in (
+                *UPSTREAM_PROVIDER_CONTRACT_FIELDS,
+                "reviewed_source_commit",
+                "reviewed_image_index_digest",
+                "runtime_artifact_observed",
+                "fallback",
+                "fallback_occurred",
+            )
+        },
+    }

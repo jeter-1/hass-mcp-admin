@@ -127,6 +127,17 @@ AUTOMATION = {
     "conditions": [],
     "actions": [],
 }
+INSTALLED_ADDONS = [
+    {
+        "slug": "abcdef12_ha_mcp",
+        "name": "Home Assistant MCP Server",
+        "description": "Synthetic exact-image add-on inventory fixture.",
+        "version": "7.14.2",
+        "state": "started",
+        "update_available": False,
+        "repository": "abcdef12",
+    }
+]
 
 
 class FixtureState:
@@ -241,6 +252,23 @@ async def fixture_stats(_request: web.Request) -> web.Response:
 
 
 def _result_for(message_type: str, request_data: dict[str, Any]) -> Any:
+    if message_type == "supervisor/api":
+        endpoint = request_data.get("endpoint")
+        if endpoint == "/addons":
+            return {"addons": INSTALLED_ADDONS}
+        if isinstance(endpoint, str) and endpoint.startswith("/addons/"):
+            slug = endpoint.removeprefix("/addons/").removesuffix(
+                "/info"
+            )
+            return next(
+                (
+                    addon
+                    for addon in INSTALLED_ADDONS
+                    if addon["slug"] == slug
+                ),
+                None,
+            )
+        return None
     if message_type == "get_states":
         return STATES
     if message_type == "config/entity_registry/list":

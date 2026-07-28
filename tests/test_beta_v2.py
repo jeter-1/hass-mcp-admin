@@ -1603,7 +1603,7 @@ class BetaApplicationTests(unittest.TestCase):
             {
                 "name": "create_addon_restart_plan",
                 "arguments": {
-                    "addon_slug": "hass-mcp-engineering-beta"
+                    "addon_slug": "ha_mcp"
                 },
             },
             request_id="missing-addon-proposal-123",
@@ -1731,7 +1731,7 @@ class BetaApplicationTests(unittest.TestCase):
         self.assertEqual(record["error_code"], "addon_not_found")
         self.assertEqual(
             record["parameters"]["addon_slug"],
-            "hass-mcp-engineering-beta",
+            "ha_mcp",
         )
         self.assertEqual(
             record["analysis_summary"],

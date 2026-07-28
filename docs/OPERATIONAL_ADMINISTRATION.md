@@ -133,10 +133,21 @@ target class. Apply-time revalidation must reproduce that evidence. A proven
 self-restart is verified after startup by a changed persisted
 process-instance identity, exact add-on readback, restored runtime identity,
 healthy governance storage, and available audit continuity. The reviewed
-upstream add-on is recognized only by the exact `ha_mcp` slug and
-`Home Assistant MCP Server` name and must regain exact identity, version,
-protocol, catalog, and compatibility admission before success. Other add-ons
-require exact provider completion evidence.
+upstream add-on is not recognized from the source slug `ha_mcp`, a repository
+prefix, display name, or version. The configured MCP endpoint host is compared
+with the documented Supervisor DNS form of every complete slug returned by the
+exact installed-add-on inventory. Exactly one full-slug match, plus MCP
+discovery and exact reviewed admission over that endpoint, binds the installed
+target to the admitted provider. An IP address, external alias, absent match,
+or colliding match cannot establish that identity and fails closed. The bound
+target must regain exact identity, version, protocol, catalog, compatibility
+admission, and zero fallback before success. Other add-ons require exact
+provider completion evidence.
+
+Repository-prefixed installations are supported without parsing or guessing
+the repository prefix. A historical plan is never reclassified; if its stored
+target class conflicts with the current authoritative binding, apply fails
+before dispatch and a fresh plan is required.
 
 Verified add-on restarts expose one additive
 `operational.verification.evidence.restart_proof` grade:
