@@ -1580,7 +1580,9 @@ class BetaApplicationTests(unittest.TestCase):
             key: governance_before[key] for key in approval_keys
         }
         provider_before = copy.deepcopy(
-            governance_before["lifecycle_provider"]
+            governance_before["operational_administration"][
+                "lifecycle_provider"
+            ]
         )
         restart_counters_before = copy.deepcopy(
             governance_before["operational_administration"][
@@ -1655,7 +1657,9 @@ class BetaApplicationTests(unittest.TestCase):
             health_call["result"]["content"][0]["text"]
         )["data"]
         governance_after = health["governance"]
-        provider_after = governance_after["lifecycle_provider"]
+        provider_after = governance_after[
+            "operational_administration"
+        ]["lifecycle_provider"]
         metrics_after = METRICS.snapshot()
         self.assertEqual(
             health["domain_outcome_counts"].get(
