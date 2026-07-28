@@ -36,7 +36,13 @@ or conflicting special-target evidence fails closed.
 New plans persist bounded target evidence: requested and resolved slug, name,
 version, repository identifier, identity source, authoritative self/upstream
 decisions, selected reviewed provider contract, and target class. Apply-time
-revalidation must reproduce that evidence.
+revalidation must reproduce that evidence. Post-dispatch and recovered-process
+verification now resolve the complete upstream binding again. The
+`upstream_readmission` proof is emitted only when the fresh binding exactly
+matches the immutable baseline and all eight reviewed provider-contract fields
+are readmitted. Transient missing evidence remains pending without redispatch;
+endpoint, bound-slug, ambiguous-identity, or conclusive contract drift fails
+verification and requires a fresh plan.
 Historical plans remain readable and retain their existing hashes. A plan made
 under the earlier incorrect classification must not be reused; create a fresh
 plan after installing this correction.
@@ -67,3 +73,9 @@ The source add-on slug, ports, options, `/data`, external approval,
 one-dispatch lifecycle, recovery, reload and restart providers, tool schemas,
 tool counts, reviewed 7.14.1/7.14.2 fingerprints, dashboard attestations,
 stable-v1 source, and zero-fallback policy are unchanged.
+
+Exact-image acceptance for both reviewed upstream releases now uses the
+Supervisor-compatible full-slug endpoint identity, reports the lane-specific
+installed version, creates the upstream restart proposal through the production
+lifecycle provider, and exercises successful and drifted recovered
+verification without performing a restart.

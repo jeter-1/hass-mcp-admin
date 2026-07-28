@@ -50,6 +50,14 @@ source slug, display name, version, suffix, or lookalike. Missing, external,
 or colliding endpoint identity fails closed; a historical `other_addon` plan
 is not upgraded to upstream authority and must be replanned.
 
+That binding is not only a planning constraint. Add-on verification resolves
+it again after dispatch, including during startup and periodic reconciliation,
+and compares the complete fresh binding with the hashed plan baseline before
+the existing eight-field provider readmission contract can pass. Transient
+missing evidence is retryable readback work; deterministic endpoint, slug,
+ambiguity, or contract drift is a terminal verification mismatch. Neither path
+can call the action provider again.
+
 All operations reuse the existing upstream MCP configuration and external
 Ingress approval authority. It adds no endpoint, option, credential, generic
 write, fallback, restore, delete, arbitrary service, or provider argument.

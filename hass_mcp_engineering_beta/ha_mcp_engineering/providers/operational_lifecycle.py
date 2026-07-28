@@ -761,8 +761,18 @@ def _bind_upstream_addon_identity(
     from catalog discovery over the configured endpoint.
     """
 
+    unbound_evidence = {
+        "endpoint_host": endpoint_host,
+        "identity_source": (
+            "configured_endpoint_supervisor_dns_and_reviewed_admission"
+        ),
+        "inventory_arguments": {
+            "source": "installed",
+            "include_stats": False,
+        },
+    }
     if endpoint_host is None:
-        return {"status": "unavailable"}
+        return {"status": "unavailable", **unbound_evidence}
     candidates = []
     for item in addons:
         if not isinstance(item, dict):
@@ -778,7 +788,8 @@ def _bind_upstream_addon_identity(
         return {
             "status": (
                 "ambiguous" if len(candidates) > 1 else "unavailable"
-            )
+            ),
+            **unbound_evidence,
         }
 
     candidate = candidates[0]
@@ -792,7 +803,7 @@ def _bind_upstream_addon_identity(
         or installed_version is None
         or installed_version != evidence.server_version
     ):
-        return {"status": "conflicting"}
+        return {"status": "conflicting", **unbound_evidence}
     return {
         "status": "bound",
         "slug": slug,

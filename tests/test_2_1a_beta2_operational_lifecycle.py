@@ -34,6 +34,7 @@ from ha_mcp_engineering.errors import (  # noqa: E402
     error_definition,
 )
 from ha_mcp_engineering.governance.models import (  # noqa: E402
+    ApprovalState,
     ChangePlan,
     PlanStatus,
 )
@@ -2048,6 +2049,8 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
     async def test_upstream_addon_requires_exact_readmission(self):
         class AddonProvider:
             observed_version = "7.14.1"
+            upstream_identity = None
+            restart_dispatch_count = 0
 
             async def get_addon(self, slug):
                 return {
@@ -2055,6 +2058,10 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                     "name": UPSTREAM_ADDON_NAME,
                     "version": "7.14.2",
                     "state": "started",
+                    "repository": "abcdef12",
+                    "upstream_addon_identity": deepcopy(
+                        self.upstream_identity
+                    ),
                 }
 
             async def probe(self, operation):
@@ -2092,6 +2099,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             },
             "target_class": "upstream_ha_mcp_addon",
             "runtime": deepcopy(runtime),
+            "upstream_addon_identity": upstream_addon_identity(),
         }
         planned_provider = provider_evidence("restart_addon")
         pending = await gateway.verify_addon_restart(
@@ -2101,8 +2109,14 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             provider_evidence=planned_provider,
         )
         self.assertEqual(pending["status"], "pending")
-        self.assertIn("restart_evidence", pending["mismatch_fields"])
+        self.assertEqual(
+            pending["mismatch_fields"],
+            ["upstream_addon_identity"],
+        )
+        self.assertNotIn("restart_proof", pending["evidence"])
         provider.observed_version = "7.14.2"
+        provider.upstream_identity = upstream_addon_identity()
+        provider.upstream_identity.pop("provider_contract")
         verified = await gateway.verify_addon_restart(
             UPSTREAM_ADDON_SLUG,
             baseline=baseline,
@@ -2114,6 +2128,304 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             verified["evidence"]["restart_proof"],
             "upstream_readmission",
         )
+        self.assertEqual(provider.restart_dispatch_count, 0)
+
+    async def test_upstream_restart_binding_drift_never_verifies(self):
+        class AddonProvider:
+            def __init__(self, identity):
+                self.identity = identity
+                self.probe_evidence = provider_evidence(
+                    "restart_addon"
+                )
+                self.restart_dispatch_count = 0
+
+            async def get_addon(self, slug):
+                return {
+                    "slug": slug,
+                    "name": UPSTREAM_ADDON_NAME,
+                    "version": "7.14.2",
+                    "state": "started",
+                    "repository": "abcdef12",
+                    "upstream_addon_identity": deepcopy(
+                        self.identity
+                    ),
+                }
+
+            async def probe(self, _operation):
+                return SimpleNamespace(
+                    as_dict=lambda: deepcopy(self.probe_evidence)
+                )
+
+        planned_provider = provider_evidence("restart_addon")
+        runtime = {
+            "upstream_version": "7.14.2",
+            "upstream_protocol": "2025-03-26",
+            "upstream_catalog_fingerprint": planned_provider[
+                "catalog_fingerprint"
+            ],
+            "upstream_admission_status": "admitted_exact",
+            "fallback_count": 0,
+        }
+        baseline = {
+            "addon": {
+                "slug": UPSTREAM_ADDON_SLUG,
+                "name": UPSTREAM_ADDON_NAME,
+                "version": "7.14.2",
+                "state": "started",
+            },
+            "target_class": "upstream_ha_mcp_addon",
+            "runtime": deepcopy(runtime),
+            "upstream_addon_identity": upstream_addon_identity(),
+        }
+        cases = {}
+        endpoint_drift = upstream_addon_identity()
+        endpoint_drift["endpoint_host"] = "different-ha-mcp"
+        endpoint_drift["slug"] = "different_ha_mcp"
+        cases["endpoint_and_slug_drift"] = endpoint_drift
+        cases["ambiguous"] = {
+            "status": "ambiguous",
+            "endpoint_host": "abcdef12-ha-mcp",
+        }
+        cases["alias"] = {
+            "status": "unavailable",
+            "endpoint_host": "ha-mcp-alias",
+        }
+        cases["ip"] = {
+            "status": "unavailable",
+            "endpoint_host": "127.0.0.1",
+        }
+        same_release_other_addon = upstream_addon_identity(
+            "fedcba98_ha_mcp"
+        )
+        cases["same_release_other_addon"] = (
+            same_release_other_addon
+        )
+        for name, identity in cases.items():
+            with self.subTest(name=name):
+                provider = AddonProvider(identity)
+                gateway = OperationalLifecycleGateway(
+                    provider,
+                    None,
+                    None,
+                    configuration_validator=lambda: None,
+                    runtime_snapshot=lambda: deepcopy(runtime),
+                    process_instance_id="recovered-process",
+                )
+                result = await gateway.verify_addon_restart(
+                    UPSTREAM_ADDON_SLUG,
+                    baseline=deepcopy(baseline),
+                    provider_response_received=True,
+                    provider_evidence=planned_provider,
+                )
+                self.assertEqual(result["status"], "failed")
+                self.assertEqual(
+                    result["mismatch_fields"],
+                    ["upstream_addon_identity"],
+                )
+                self.assertNotIn(
+                    "restart_proof", result["evidence"]
+                )
+                self.assertEqual(
+                    provider.restart_dispatch_count, 0
+                )
+
+        provider = AddonProvider(upstream_addon_identity())
+        provider.probe_evidence["argument_constraints"] = {
+            "drift": True
+        }
+        gateway = OperationalLifecycleGateway(
+            provider,
+            None,
+            None,
+            configuration_validator=lambda: None,
+            runtime_snapshot=lambda: deepcopy(runtime),
+            process_instance_id="recovered-process",
+        )
+        result = await gateway.verify_addon_restart(
+            UPSTREAM_ADDON_SLUG,
+            baseline=deepcopy(baseline),
+            provider_response_received=True,
+            provider_evidence=planned_provider,
+        )
+        self.assertEqual(result["status"], "failed")
+        self.assertNotIn("restart_proof", result["evidence"])
+
+    async def test_upstream_reconciliation_retries_binding_without_redispatch(
+        self,
+    ):
+        class AddonProvider:
+            def __init__(self):
+                self.identity = upstream_addon_identity()
+                self.identity.pop("provider_contract")
+                self.probe_evidence = provider_evidence(
+                    "restart_addon"
+                )
+                self.restart_dispatch_count = 0
+
+            async def get_addon(self, slug):
+                return {
+                    "slug": slug,
+                    "name": UPSTREAM_ADDON_NAME,
+                    "version": "7.14.2",
+                    "state": "started",
+                    "repository": "abcdef12",
+                    "upstream_addon_identity": deepcopy(
+                        self.identity
+                    ),
+                }
+
+            async def probe(self, _operation):
+                return SimpleNamespace(
+                    as_dict=lambda: deepcopy(self.probe_evidence)
+                )
+
+        provider = AddonProvider()
+        runtime = {
+            "upstream_version": "7.14.2",
+            "upstream_protocol": "2025-03-26",
+            "upstream_catalog_fingerprint": provider.probe_evidence[
+                "catalog_fingerprint"
+            ],
+            "upstream_admission_status": "admitted_exact",
+            "fallback_count": 0,
+        }
+        gateway = OperationalLifecycleGateway(
+            provider,
+            None,
+            None,
+            configuration_validator=lambda: None,
+            runtime_snapshot=lambda: deepcopy(runtime),
+            process_instance_id="recovered-process",
+            self_addon_identity_resolver=lambda: asyncio.sleep(
+                0,
+                result=SupervisorSelfAddonIdentity(
+                    slug="df26dea6_hass_mcp_engineering_beta",
+                    name="HA MCP Engineering Server Beta",
+                    version="2.1.1-beta.2",
+                    repository="df26dea6",
+                ),
+            ),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            repository = ChangePlanRepository(
+                Path(directory) / "plans"
+            )
+            service = ChangeGovernanceService(
+                repository,
+                LegacyGateway(),
+                AuditLogger(
+                    str(Path(directory) / "audit.jsonl"),
+                    "synthetic-access-secret-value",
+                ),
+                lifecycle_gateway=gateway,
+            )
+            created = await service.create_addon_restart_plan(
+                addon_slug=UPSTREAM_ADDON_SLUG
+            )
+            plan = repository.get(created["plan"]["plan_id"])
+            original_hash = service.plan_hash(plan)
+            plan.approval.state = ApprovalState.CONSUMED
+            plan.operational.dispatch.update(
+                {
+                    "attempt_count": 1,
+                    "dispatched": True,
+                    "provider_response_received": True,
+                }
+            )
+            plan.status = PlanStatus.VERIFICATION_REQUIRED
+            repository.save(plan)
+
+            provider.identity = None
+            recovered = ChangeGovernanceService(
+                ChangePlanRepository(Path(directory) / "plans"),
+                LegacyGateway(),
+                AuditLogger(
+                    str(Path(directory) / "audit-recovered.jsonl"),
+                    "synthetic-access-secret-value",
+                ),
+                lifecycle_gateway=gateway,
+            )
+            first = await recovered.reconcile_operational_plans(
+                trigger="startup"
+            )
+            self.assertEqual(first["pending"], 1)
+            self.assertEqual(provider.restart_dispatch_count, 0)
+            pending = repository.get(plan.plan_id)
+            self.assertEqual(
+                pending.status, PlanStatus.VERIFICATION_REQUIRED
+            )
+            self.assertEqual(
+                recovered.plan_hash(pending), original_hash
+            )
+
+            provider.identity = upstream_addon_identity()
+            provider.identity.pop("provider_contract")
+            second = await recovered.reconcile_operational_plans(
+                trigger="periodic"
+            )
+            self.assertEqual(second["completed"], 1)
+            verified = repository.get(plan.plan_id)
+            self.assertEqual(verified.status, PlanStatus.APPLIED)
+            self.assertEqual(
+                verified.operational.verification.evidence[
+                    "restart_proof"
+                ],
+                "upstream_readmission",
+            )
+            self.assertEqual(
+                verified.operational.dispatch["attempt_count"], 1
+            )
+            self.assertEqual(provider.restart_dispatch_count, 0)
+            self.assertEqual(
+                recovered.plan_hash(verified), original_hash
+            )
+
+    async def test_historical_upstream_restart_without_binding_fails_closed(
+        self,
+    ):
+        class AddonProvider:
+            async def get_addon(self, slug):
+                return {
+                    "slug": slug,
+                    "name": UPSTREAM_ADDON_NAME,
+                    "version": "7.14.2",
+                    "state": "started",
+                    "upstream_addon_identity": (
+                        upstream_addon_identity()
+                    ),
+                }
+
+        baseline = {
+            "addon": {
+                "slug": UPSTREAM_ADDON_SLUG,
+                "name": UPSTREAM_ADDON_NAME,
+                "version": "7.14.2",
+                "state": "started",
+            },
+            "target_class": "upstream_ha_mcp_addon",
+        }
+        original = stable_hash(baseline)
+        gateway = OperationalLifecycleGateway(
+            AddonProvider(),
+            None,
+            None,
+            configuration_validator=lambda: None,
+            runtime_snapshot=lambda: {},
+            process_instance_id="recovered-process",
+        )
+        result = await gateway.verify_addon_restart(
+            UPSTREAM_ADDON_SLUG,
+            baseline=baseline,
+            provider_response_received=True,
+            provider_evidence=provider_evidence("restart_addon"),
+        )
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(
+            result["evidence"]["identity_status"],
+            "baseline_incomplete",
+        )
+        self.assertNotIn("restart_proof", result["evidence"])
+        self.assertEqual(stable_hash(baseline), original)
 
     def test_upstream_readmission_requires_all_eight_provider_fields(self):
         planned = provider_evidence("restart_addon")

@@ -140,7 +140,11 @@ class OperationalLifecycleGateway:
                     upstream_identity,
                 )
                 upstream_binding = (
-                    _upstream_addon_binding(upstream_identity)
+                    _upstream_addon_binding(
+                        upstream_identity,
+                        provider_contract=provider_evidence,
+                        require_provider_contract=True,
+                    )
                     if target_class != "engineering_addon"
                     else None
                 )
@@ -153,10 +157,6 @@ class OperationalLifecycleGateway:
                 ):
                     raise LifecycleGatewayError(
                         "upstream_addon_identity_unavailable"
-                    )
-                if upstream_binding is not None:
-                    upstream_binding["provider_contract"] = dict(
-                        provider_evidence
                     )
                 baseline = {
                     "addon": _addon_identity(addon),
@@ -361,9 +361,6 @@ class OperationalLifecycleGateway:
             if exc.category in {
                 "provider_timeout",
                 "provider_unavailable",
-                "upstream_version_mismatch",
-                "catalog_mismatch",
-                "required_tool_missing",
                 "addon_not_found",
                 "resource_not_found",
             }:
@@ -375,6 +372,19 @@ class OperationalLifecycleGateway:
                         "redispatch_performed": False,
                     },
                 }
+            if exc.category in {
+                "catalog_mismatch",
+                "reviewed_contract_mismatch",
+                "server_identity_mismatch",
+                "upstream_version_mismatch",
+                "unsupported_protocol_version",
+                "required_tool_missing",
+            }:
+                return _upstream_binding_verification_result(
+                    "failed",
+                    identity_status="provider_contract_mismatch",
+                    failure_category=exc.category,
+                )
             raise LifecycleGatewayError(
                 exc.category, dispatched=True
             ) from None
@@ -445,9 +455,55 @@ class OperationalLifecycleGateway:
             if process_restarted:
                 restart_proof = "process_identity"
         if target_class == "upstream_ha_mcp_addon":
+            planned_identity = baseline.get(
+                "upstream_addon_identity"
+            )
+            try:
+                planned_binding = _upstream_addon_binding(
+                    planned_identity,
+                    require_provider_contract=True,
+                )
+            except LifecycleGatewayError:
+                return _upstream_binding_verification_result(
+                    "failed",
+                    identity_status="baseline_incomplete",
+                )
+            fresh_identity = addon.get("upstream_addon_identity")
+            if not isinstance(fresh_identity, dict):
+                return _upstream_binding_verification_result(
+                    "pending",
+                    identity_status="fresh_evidence_unavailable",
+                )
+            fresh_status = fresh_identity.get("status")
+            if fresh_status != "bound":
+                conclusive = _upstream_binding_failure_is_conclusive(
+                    planned_binding,
+                    fresh_identity,
+                )
+                return _upstream_binding_verification_result(
+                    "failed" if conclusive else "pending",
+                    identity_status=(
+                        fresh_status
+                        if isinstance(fresh_status, str)
+                        else "fresh_evidence_unavailable"
+                    ),
+                )
             try:
                 admitted = await self.provider.probe("restart_addon")
             except OperationalLifecycleProviderError as exc:
+                if exc.category in {
+                    "catalog_mismatch",
+                    "reviewed_contract_mismatch",
+                    "server_identity_mismatch",
+                    "upstream_version_mismatch",
+                    "unsupported_protocol_version",
+                    "required_tool_missing",
+                }:
+                    return _upstream_binding_verification_result(
+                        "failed",
+                        identity_status="provider_contract_mismatch",
+                        failure_category=exc.category,
+                    )
                 return {
                     "status": "pending",
                     "mismatch_fields": ["upstream_readmission"],
@@ -457,6 +513,22 @@ class OperationalLifecycleGateway:
                     },
                 }
             admitted_evidence = admitted.as_dict()
+            try:
+                fresh_binding = _upstream_addon_binding(
+                    fresh_identity,
+                    provider_contract=admitted_evidence,
+                    require_provider_contract=True,
+                )
+            except LifecycleGatewayError:
+                return _upstream_binding_verification_result(
+                    "failed",
+                    identity_status="fresh_evidence_conflicting",
+                )
+            if fresh_binding != planned_binding:
+                return _upstream_binding_verification_result(
+                    "failed",
+                    identity_status="binding_mismatch",
+                )
             if _upstream_readmission_matches(
                 provider_evidence,
                 admitted_evidence,
@@ -916,7 +988,12 @@ def _provider_identity_matches(
     )
 
 
-def _upstream_addon_binding(value: Any) -> dict[str, Any]:
+def _normalized_upstream_addon_binding(
+    value: Any,
+    *,
+    provider_contract: dict[str, Any] | None = None,
+    require_provider_contract: bool = False,
+) -> dict[str, Any]:
     if not isinstance(value, dict) or value.get("status") != "bound":
         raise LifecycleGatewayError(
             "upstream_addon_identity_unavailable"
@@ -931,6 +1008,11 @@ def _upstream_addon_binding(value: Any) -> dict[str, Any]:
     identity_source = value.get("identity_source")
     inventory_arguments = value.get("inventory_arguments")
     admission_evidence = value.get("admission_evidence")
+    observed_provider_contract = (
+        provider_contract
+        if provider_contract is not None
+        else value.get("provider_contract")
+    )
     if (
         not isinstance(slug, str)
         or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,127}", slug)
@@ -951,11 +1033,21 @@ def _upstream_addon_binding(value: Any) -> dict[str, Any]:
             field not in admission_evidence
             for field in UPSTREAM_PROVIDER_CONTRACT_FIELDS
         )
+        or (
+            require_provider_contract
+            and (
+                not isinstance(observed_provider_contract, dict)
+                or any(
+                    field not in observed_provider_contract
+                    for field in UPSTREAM_PROVIDER_CONTRACT_FIELDS
+                )
+            )
+        )
     ):
         raise LifecycleGatewayError(
             "upstream_addon_identity_unavailable"
         )
-    return {
+    normalized = {
         "status": "bound",
         "slug": slug,
         "name": name,
@@ -975,4 +1067,55 @@ def _upstream_addon_binding(value: Any) -> dict[str, Any]:
                 "fallback_occurred",
             )
         },
+    }
+    if isinstance(observed_provider_contract, dict):
+        normalized["provider_contract"] = dict(
+            observed_provider_contract
+        )
+    return normalized
+
+
+def _upstream_addon_binding(
+    value: Any,
+    *,
+    provider_contract: dict[str, Any] | None = None,
+    require_provider_contract: bool = False,
+) -> dict[str, Any]:
+    return _normalized_upstream_addon_binding(
+        value,
+        provider_contract=provider_contract,
+        require_provider_contract=require_provider_contract,
+    )
+
+
+def _upstream_binding_failure_is_conclusive(
+    planned: dict[str, Any],
+    fresh: dict[str, Any],
+) -> bool:
+    status = fresh.get("status")
+    if status in {"ambiguous", "conflicting"}:
+        return True
+    endpoint_host = fresh.get("endpoint_host")
+    return (
+        isinstance(endpoint_host, str)
+        and endpoint_host != planned.get("endpoint_host")
+    )
+
+
+def _upstream_binding_verification_result(
+    status: str,
+    *,
+    identity_status: str,
+    failure_category: str | None = None,
+) -> dict[str, Any]:
+    evidence: dict[str, Any] = {
+        "identity_status": identity_status,
+        "redispatch_performed": False,
+    }
+    if failure_category is not None:
+        evidence["failure_category"] = failure_category
+    return {
+        "status": status,
+        "mismatch_fields": ["upstream_addon_identity"],
+        "evidence": evidence,
     }

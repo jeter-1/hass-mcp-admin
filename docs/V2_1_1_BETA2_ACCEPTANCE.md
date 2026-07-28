@@ -51,6 +51,12 @@ rejected. The bound target must retain
 unreachable for it. A real unrelated add-on must retain the explicitly weaker
 `provider_acknowledgement` grade. Unavailable or conflicting upstream identity
 fails closed, and a historical target-class conflict requires a fresh plan.
+After dispatch, verification and recovered-process reconciliation must resolve
+the authoritative binding again and compare it exactly with the hashed
+baseline. `upstream_readmission` requires both an unchanged binding and all
+eight provider-contract fields. Missing transient evidence remains pending;
+endpoint, slug, ambiguity, or conclusive provider-contract drift cannot verify
+and cannot redispatch.
 
 For a missing installed slug, including bare `ha_mcp` when only a
 repository-prefixed upstream slug is installed, prove:
@@ -85,6 +91,14 @@ error-taxonomy tests; the complete Python suite; compilation; strict dependency
 audit; metadata/YAML/PowerShell/protected-path/whitespace/evidence gates;
 disposable Home Assistant contracts; exact-image 7.14.1 and 7.14.2 acceptance;
 stable and Engineering builds; and amd64, arm64, and arm/v7 no-push builds.
+
+Each exact-image lane must report its own installed upstream version, configure
+Engineering with the Supervisor-compatible full-slug hostname, create an
+upstream restart proposal through the production lifecycle provider, and
+exercise recovered readback verification without dispatch. Exact binding plus
+readmission must verify; changed binding must fail closed. The exact
+`ha_get_addon(source="installed", include_stats=false)` inventory contract
+remains required in both lanes.
 
 ## Later operator-controlled acceptance
 

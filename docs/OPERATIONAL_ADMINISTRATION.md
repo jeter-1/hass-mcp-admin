@@ -165,6 +165,16 @@ Historical records without `restart_proof` remain readable. Verification
 evidence is mutable lifecycle evidence and is excluded from the immutable plan
 hash.
 
+For an upstream add-on restart, planning, apply-time revalidation, startup
+reconciliation, and periodic reconciliation all resolve the same authoritative
+binding. Post-dispatch verification compares the fresh complete installed
+Supervisor slug, configured endpoint host, identity source, inventory
+arguments, reviewed admission, and provider contract with the immutable plan
+baseline before evaluating readmission. Temporary inventory or provider
+unavailability remains verification-pending. A changed endpoint, bound slug,
+ambiguous identity, or conclusive contract mismatch fails verification and
+requires a fresh plan. Neither outcome permits redispatch.
+
 `create_home_assistant_restart_plan` captures Home Assistant identity,
 Engineering build and tool counts, upstream identity and admission, governance
 and audit storage, dependency-index state, and full validation. Apply repeats
