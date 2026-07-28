@@ -648,7 +648,13 @@ class AuthenticatedMcpGateway:
                 elif capability.get("category") == "governance":
                     audit_parameters = {
                         key: parameters[key]
-                        for key in ("plan_id", "automation_id", "operation", "expiration_minutes")
+                        for key in (
+                            "plan_id",
+                            "automation_id",
+                            "addon_slug",
+                            "operation",
+                            "expiration_minutes",
+                        )
                         if key in parameters
                     }
                 elif tool_name == "change_impact_analysis":
@@ -803,7 +809,13 @@ class AuthenticatedMcpGateway:
                         else {
                             "operation_class": (
                                 capability.get("operation_class")
-                            )
+                            ),
+                            **(
+                                {"outcome_class": "domain_outcome"}
+                                if telemetry.error_code
+                                == ErrorCode.ADDON_NOT_FOUND.value
+                                else {}
+                            ),
                         }
                         if capability.get("operation_class")
                         else {}

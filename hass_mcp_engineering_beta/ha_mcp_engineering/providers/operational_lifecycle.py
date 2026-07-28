@@ -114,6 +114,7 @@ class OperationalProviderState:
     dispatch_counts: Counter[str] = field(default_factory=Counter)
     dispatch_success_counts: Counter[str] = field(default_factory=Counter)
     failure_counts: Counter[str] = field(default_factory=Counter)
+    domain_outcome_counts: Counter[str] = field(default_factory=Counter)
     last_failure_category: str | None = None
     last_success_at: str | None = None
     selected_compatibility_entry_id: str | None = None
@@ -242,13 +243,43 @@ class ReviewedOperationalLifecycleProvider:
             )
 
         try:
+            inventory_exchange = await self._transport.execute_read(
+                ADDON_READ_TOOL,
+                {"source": "installed", "include_stats": False},
+                timeout_seconds=60.0,
+                catalog_validator=validate,
+            )
+            inventory = self._decode(
+                inventory_exchange.call_result,
+                dispatched=False,
+            )
+            addons = inventory.get("addons")
+            if inventory.get("success") is not True or not isinstance(
+                addons, list
+            ):
+                self._fail("invalid_response", dispatched=False)
+            matches = [
+                item
+                for item in addons
+                if isinstance(item, dict) and item.get("slug") == slug
+            ]
+            if not matches:
+                assert evidence is not None
+                self._fail("addon_not_found", dispatched=False)
+            if len(matches) != 1:
+                self._fail("invalid_response", dispatched=False)
+
             exchange = await self._transport.execute_read(
                 ADDON_READ_TOOL,
                 {"slug": slug},
                 timeout_seconds=60.0,
                 catalog_validator=validate,
             )
-            payload = self._decode(exchange.call_result, dispatched=False)
+            payload = self._decode(
+                exchange.call_result,
+                dispatched=False,
+                error_category=_addon_error_category,
+            )
             addon = payload.get("addon")
             if payload.get("success") is not True or not isinstance(addon, dict):
                 self._fail("invalid_response", dispatched=False)
@@ -273,7 +304,9 @@ class ReviewedOperationalLifecycleProvider:
                 ),
                 "provider": evidence.as_dict(),
             }
-        except OperationalLifecycleProviderError:
+        except OperationalLifecycleProviderError as exc:
+            if exc.category == "addon_not_found" and evidence is not None:
+                self._record_success(evidence)
             raise
         except CatalogValidationFailure as exc:
             if isinstance(exc.cause, OperationalLifecycleProviderError):
@@ -494,7 +527,11 @@ class ReviewedOperationalLifecycleProvider:
         }
 
     def _decode(
-        self, result: dict[str, Any], *, dispatched: bool
+        self,
+        result: dict[str, Any],
+        *,
+        dispatched: bool,
+        error_category: Callable[[Any], str] | None = None,
     ) -> dict[str, Any]:
         content = result.get("content")
         if not isinstance(content, list) or len(content) != 1:
@@ -526,7 +563,12 @@ class ReviewedOperationalLifecycleProvider:
                 else None
             )
             self._fail(
-                _upstream_error_category(code), dispatched=dispatched
+                (
+                    error_category(code)
+                    if error_category is not None
+                    else _upstream_error_category(code)
+                ),
+                dispatched=dispatched,
             )
         return payload
 
@@ -585,9 +627,13 @@ class ReviewedOperationalLifecycleProvider:
 
     def _fail(self, category: str, *, dispatched: bool) -> None:
         with self._lock:
-            self._state.failure_counts[category] += 1
-            self._state.last_failure_category = category
+            if category == "addon_not_found":
+                self._state.domain_outcome_counts[category] += 1
+            else:
+                self._state.failure_counts[category] += 1
+                self._state.last_failure_category = category
             if category not in {
+                "addon_not_found",
                 "invalid_request",
                 "resource_not_found",
                 "operation_rejected",
@@ -610,6 +656,9 @@ class ReviewedOperationalLifecycleProvider:
                     self._state.dispatch_success_counts
                 ),
                 "failure_counts": dict(self._state.failure_counts),
+                "domain_outcome_counts": dict(
+                    self._state.domain_outcome_counts
+                ),
                 "last_failure_category": (
                     self._state.last_failure_category
                 ),
@@ -690,6 +739,12 @@ def _upstream_error_category(code: Any) -> str:
     if code == "SERVICE_CALL_FAILED":
         return "operation_failed"
     return "provider_error"
+
+
+def _addon_error_category(code: Any) -> str:
+    if code == "RESOURCE_NOT_FOUND":
+        return "addon_not_found"
+    return _upstream_error_category(code)
 
 
 UPSTREAM_OPERATIONAL_LIFECYCLE = ReviewedOperationalLifecycleProvider()

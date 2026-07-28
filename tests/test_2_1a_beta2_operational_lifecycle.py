@@ -19,6 +19,9 @@ BETA_DIR = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA_DIR))
 
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
+from ha_mcp_engineering.clients.mcp import (  # noqa: E402
+    DashboardTransportError,
+)
 from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
     McpReadCatalog,
     McpReadResult,
@@ -27,6 +30,7 @@ from ha_mcp_engineering.errors import (  # noqa: E402
     ErrorCode,
     GovernanceError,
     HomeAssistantUnavailableError,
+    error_definition,
 )
 from ha_mcp_engineering.governance.models import (  # noqa: E402
     ChangePlan,
@@ -50,6 +54,11 @@ from ha_mcp_engineering.governance.storage import (  # noqa: E402
 from ha_mcp_engineering.providers.operational_lifecycle import (  # noqa: E402
     OperationalLifecycleProviderError,
     ReviewedOperationalLifecycleProvider,
+)
+from ha_mcp_engineering.providers.supervisor_self import (  # noqa: E402
+    SelfAddonIdentityError,
+    SupervisorSelfAddonIdentity,
+    SupervisorSelfAddonIdentityResolver,
 )
 from ha_mcp_engineering.request_context import (  # noqa: E402
     begin_request,
@@ -153,7 +162,7 @@ class FakeLifecycleGateway:
         }
         self.process_instance_id = "process-one"
         self.runtime = {
-            "server_version": "2.1.0-beta.2",
+            "server_version": "2.1.1-beta.2",
             "build_sha": "a" * 40,
             "registered_tool_count": 71,
             "engineering_tool_count": 45,
@@ -198,7 +207,7 @@ class FakeLifecycleGateway:
             }
         elif operation == "restart_addon":
             if target == "missing_addon":
-                raise LifecycleGatewayError("resource_not_found")
+                raise LifecycleGatewayError("addon_not_found")
             addon = deepcopy(self.addon)
             addon["slug"] = target
             baseline = {
@@ -224,7 +233,7 @@ class FakeLifecycleGateway:
                     "connected": True,
                 },
                 "runtime": {
-                    "server_version": "2.1.0-beta.2",
+                    "server_version": "2.1.1-beta.2",
                     "build_sha": "a" * 40,
                     "registered_tool_count": 71,
                     "engineering_tool_count": 45,
@@ -641,10 +650,14 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.lifecycle.dispatch_count, 0)
 
     async def test_addon_target_drift_and_unknown_slug_fail_before_dispatch(self):
-        with self.assertRaises(GovernanceError):
+        with self.assertRaises(GovernanceError) as raised:
             await self.service.create_addon_restart_plan(
                 addon_slug="missing_addon"
             )
+        self.assertEqual(raised.exception.code, ErrorCode.ADDON_NOT_FOUND)
+        self.assertFalse(raised.exception.retryable)
+        self.assertEqual(len(self.repository.list()), 0)
+        self.assertEqual(self.lifecycle.dispatch_count, 0)
         created = await self.service.create_addon_restart_plan(
             addon_slug="local_test_addon"
         )
@@ -983,6 +996,67 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
             PlanStatus.APPLIED,
         )
 
+    async def test_historical_other_addon_self_plan_is_not_reclassified(self):
+        slug = "df26dea6_hass_mcp_engineering_beta"
+        created = await self.service.create_addon_restart_plan(
+            addon_slug=slug
+        )
+        persisted = self.repository.get(created["plan"]["plan_id"])
+        original_hash = self.service.plan_hash(persisted)
+        self.assertEqual(
+            persisted.operational.baseline["target_class"],
+            "other_addon",
+        )
+        self.assertNotIn(
+            "target_identity", persisted.operational.baseline
+        )
+        restored = ChangePlan.from_dict(persisted.to_dict())
+        self.assertEqual(self.service.plan_hash(restored), original_hash)
+        plan = await self.grant(created)
+
+        async def corrected_planning_evidence(_operation, target):
+            addon = deepcopy(self.lifecycle.addon)
+            addon["slug"] = target
+            return {
+                "provider": provider_evidence("restart_addon"),
+                "baseline": {
+                    "addon": addon,
+                    "target_class": "engineering_addon",
+                    "target_identity": {
+                        "requested_slug": target,
+                        "resolved_slug": target,
+                        "resolved_name": addon["name"],
+                        "resolved_version": addon["version"],
+                        "resolved_repository": "df26dea6",
+                        "identity_source": "supervisor_self_info",
+                        "authoritative_self_match": True,
+                        "target_class": "engineering_addon",
+                    },
+                    "process_instance_id": "process-one",
+                    "runtime": deepcopy(self.lifecycle.runtime),
+                },
+            }
+
+        self.lifecycle.planning_evidence = corrected_planning_evidence
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.apply(
+                plan["plan_id"], plan["plan_hash"]
+            )
+
+        self.assertEqual(
+            raised.exception.code, ErrorCode.STALE_TARGET_STATE
+        )
+        self.assertEqual(self.lifecycle.dispatch_count, 0)
+        reloaded = self.repository.get(plan["plan_id"])
+        self.assertEqual(self.service.plan_hash(reloaded), original_hash)
+        self.assertEqual(
+            reloaded.operational.baseline["target_class"],
+            "other_addon",
+        )
+        self.assertNotIn(
+            "target_identity", reloaded.operational.baseline
+        )
+
     async def test_incomplete_historical_self_restart_plan_fails_closed(self):
         created = await self.service.create_addon_restart_plan(
             addon_slug=ENGINEERING_ADDON_SLUG
@@ -1091,6 +1165,22 @@ class FakeMcpTransport:
         )
         self.calls = []
         self.raw_result = None
+        self.addons = [
+            {
+                "slug": "local_test_addon",
+                "name": "Fixture",
+                "version": "1.0.0",
+                "state": "started",
+                "repository": "local",
+            },
+            {
+                "slug": "df26dea6_hass_mcp_engineering_beta",
+                "name": "HA MCP Engineering Server Beta",
+                "version": "2.1.1-beta.2",
+                "state": "started",
+                "repository": "df26dea6",
+            },
+        ]
 
     async def discover(self):
         return self.catalog
@@ -1127,15 +1217,26 @@ class FakeMcpTransport:
                 "success": True,
                 "message": "Restart initiated.",
             }
-        else:
+        elif arguments.get("source") == "installed":
             payload = {
                 "success": True,
-                "addon": {
-                    "slug": arguments["slug"],
-                    "name": "Fixture",
-                    "version": "1.0.0",
-                    "state": "started",
+                "addons": deepcopy(self.addons),
+                "summary": {
+                    "total_installed": len(self.addons),
                 },
+            }
+        else:
+            addon = next(
+                (
+                    item
+                    for item in self.addons
+                    if item["slug"] == arguments["slug"]
+                ),
+                None,
+            )
+            payload = {
+                "success": True,
+                "addon": deepcopy(addon),
             }
         result = (
             self.raw_result
@@ -1157,7 +1258,326 @@ class FakeMcpTransport:
         )
 
 
+class SupervisorSelfIdentityTests(unittest.IsolatedAsyncioTestCase):
+    async def test_exact_self_info_is_authoritative_and_bounded(self):
+        payload = json.dumps(
+            {
+                "result": "ok",
+                "data": {
+                    "slug": "df26dea6_hass_mcp_engineering_beta",
+                    "name": "HA MCP Engineering Server Beta",
+                    "version": "2.1.1-beta.2",
+                    "repository": "df26dea6",
+                },
+            }
+        ).encode()
+
+        async def fetch():
+            return 200, payload
+
+        identity = await SupervisorSelfAddonIdentityResolver(
+            base_url="http://supervisor",
+            token="synthetic-supervisor-token",
+            timeout_seconds=5,
+            fetcher=fetch,
+        ).resolve()
+        self.assertEqual(
+            identity.slug,
+            "df26dea6_hass_mcp_engineering_beta",
+        )
+        self.assertEqual(identity.as_dict()["identity_source"], "supervisor_self_info")
+        self.assertTrue(identity.as_dict()["authoritative"])
+
+    async def test_malformed_or_conflicting_self_info_fails_closed(self):
+        payloads = (
+            b'{"result":"ok","data":{"slug":"one","slug":"two"}}',
+            b'{"result":"ok","data":{"slug":"self","version":NaN}}',
+            b'{"result":"ok","data":{"slug":"self"}}',
+        )
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                async def fetch(value=payload):
+                    return 200, value
+
+                with self.assertRaises(SelfAddonIdentityError):
+                    await SupervisorSelfAddonIdentityResolver(
+                        base_url="http://supervisor",
+                        token="synthetic-supervisor-token",
+                        timeout_seconds=5,
+                        fetcher=fetch,
+                    ).resolve()
+
+
 class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
+    async def test_prefixed_engineering_slug_is_exact_self_target(self):
+        slug = "df26dea6_hass_mcp_engineering_beta"
+        runtime = {
+            "server_version": "2.1.1-beta.2",
+            "build_sha": "a" * 40,
+            "registered_tool_count": 71,
+            "engineering_tool_count": 45,
+            "delegated_tool_count": 26,
+            "governance_storage_status": "healthy",
+            "governance_plan_count": 1,
+            "audit_storage_status": "healthy",
+            "audit_write_failures": 0,
+            "fallback_count": 0,
+        }
+
+        class AddonProvider:
+            async def probe(self, _operation):
+                return SimpleNamespace(
+                    as_dict=lambda: provider_evidence("restart_addon")
+                )
+
+            async def get_addon(self, requested_slug):
+                return {
+                    "slug": requested_slug,
+                    "name": "HA MCP Engineering Server Beta",
+                    "version": "2.1.1-beta.2",
+                    "state": "started",
+                    "repository": "df26dea6",
+                }
+
+        async def fetch_self():
+            return 200, json.dumps(
+                {
+                    "result": "ok",
+                    "data": {
+                        "slug": slug,
+                        "name": "HA MCP Engineering Server Beta",
+                        "version": "2.1.1-beta.2",
+                        "repository": "df26dea6",
+                    },
+                }
+            ).encode()
+
+        self_resolver = SupervisorSelfAddonIdentityResolver(
+            base_url="http://supervisor",
+            token="synthetic-supervisor-token",
+            timeout_seconds=5,
+            fetcher=fetch_self,
+        )
+
+        gateway = OperationalLifecycleGateway(
+            AddonProvider(),
+            None,
+            None,
+            configuration_validator=lambda: None,
+            runtime_snapshot=lambda: deepcopy(runtime),
+            process_instance_id="original-process",
+            self_addon_identity_resolver=self_resolver.resolve,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            service = ChangeGovernanceService(
+                ChangePlanRepository(Path(directory) / "plans"),
+                LegacyGateway(),
+                AuditLogger(
+                    str(Path(directory) / "audit.jsonl"),
+                    "synthetic-access-secret-value",
+                ),
+                lifecycle_gateway=gateway,
+            )
+            created = await service.create_addon_restart_plan(
+                addon_slug=slug
+            )
+            persisted = service.repository.get(
+                created["plan"]["plan_id"]
+            )
+
+        baseline = persisted.operational.baseline
+        self.assertEqual(baseline["target_class"], "engineering_addon")
+        self.assertEqual(
+            baseline["target_identity"],
+            {
+                "requested_slug": slug,
+                "resolved_slug": slug,
+                "resolved_name": "HA MCP Engineering Server Beta",
+                "resolved_version": "2.1.1-beta.2",
+                "resolved_repository": "df26dea6",
+                "identity_source": "supervisor_self_info",
+                "authoritative_self_match": True,
+                "target_class": "engineering_addon",
+            },
+        )
+        self.assertEqual(
+            baseline["process_instance_id"], "original-process"
+        )
+        self.assertEqual(baseline["runtime"], runtime)
+        self.assertIn(
+            "engineering_process_recovery_when_self_restart",
+            persisted.operational.verification_contract["required"],
+        )
+        pending = await gateway.verify_addon_restart(
+            slug,
+            baseline=baseline,
+            provider_response_received=True,
+            provider_evidence={},
+        )
+        self.assertEqual(pending["status"], "pending")
+        self.assertNotIn(
+            "restart_proof", pending["evidence"]
+        )
+        gateway.process_instance_id = "restarted-process"
+        verified = await gateway.verify_addon_restart(
+            slug,
+            baseline=baseline,
+            provider_response_received=False,
+            provider_evidence={},
+        )
+        self.assertEqual(
+            verified["evidence"]["restart_proof"],
+            "process_identity",
+        )
+
+    async def test_unavailable_self_identity_cannot_default_to_other_addon(self):
+        class AddonProvider:
+            get_addon_calls = 0
+
+            async def probe(self, _operation):
+                return SimpleNamespace(
+                    as_dict=lambda: provider_evidence("restart_addon")
+                )
+
+            async def get_addon(self, _slug):
+                self.get_addon_calls += 1
+                return {}
+
+        async def unavailable():
+            raise SelfAddonIdentityError()
+
+        provider = AddonProvider()
+        gateway = OperationalLifecycleGateway(
+            provider,
+            None,
+            None,
+            configuration_validator=lambda: None,
+            runtime_snapshot=lambda: {},
+            process_instance_id="process",
+            self_addon_identity_resolver=unavailable,
+        )
+        with self.assertRaises(LifecycleGatewayError) as raised:
+            await gateway.planning_evidence(
+                "restart_addon", "possible_self_addon"
+            )
+        self.assertEqual(
+            raised.exception.category,
+            "self_addon_identity_unavailable",
+        )
+        self.assertEqual(provider.get_addon_calls, 0)
+
+    async def test_missing_addon_is_domain_outcome_not_provider_failure(self):
+        provider = ReviewedOperationalLifecycleProvider()
+        transport = FakeMcpTransport()
+        provider._transport = transport
+        await provider.probe("restart_addon")
+        before = provider.health_snapshot()
+
+        with self.assertRaises(
+            OperationalLifecycleProviderError
+        ) as raised:
+            await provider.get_addon("hass-mcp-engineering-beta")
+
+        self.assertEqual(raised.exception.category, "addon_not_found")
+        self.assertFalse(raised.exception.dispatched)
+        after = provider.health_snapshot()
+        self.assertEqual(after["operational_status"], "available")
+        self.assertEqual(after["failure_counts"], before["failure_counts"])
+        self.assertEqual(after["last_failure_category"], None)
+        self.assertEqual(
+            after["selected_compatibility_entry_id"],
+            before["selected_compatibility_entry_id"],
+        )
+        self.assertEqual(
+            after["observed_upstream_version"], "7.14.2"
+        )
+        self.assertEqual(
+            after["domain_outcome_counts"], {"addon_not_found": 1}
+        )
+        self.assertEqual(after["fallback_count"], 0)
+        self.assertFalse(
+            error_definition(ErrorCode.ADDON_NOT_FOUND).retryable
+        )
+        self.assertEqual(
+            transport.calls,
+            [
+                (
+                    "ha_get_addon",
+                    {"source": "installed", "include_stats": False},
+                )
+            ],
+        )
+
+    async def test_real_addon_provider_failure_still_degrades_health(self):
+        provider = ReviewedOperationalLifecycleProvider()
+        transport = FakeMcpTransport()
+        transport.raw_result = {
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        {
+                            "success": False,
+                            "error": {
+                                "code": "SERVICE_CALL_FAILED",
+                                "message": "bounded fixture failure",
+                            },
+                        }
+                    ),
+                }
+            ],
+            "isError": True,
+        }
+        provider._transport = transport
+        with self.assertRaises(
+            OperationalLifecycleProviderError
+        ) as raised:
+            await provider.get_addon("local_test_addon")
+        self.assertEqual(raised.exception.category, "operation_failed")
+        health = provider.health_snapshot()
+        self.assertEqual(health["operational_status"], "unavailable")
+        self.assertEqual(
+            health["failure_counts"], {"operation_failed": 1}
+        )
+        self.assertEqual(health["domain_outcome_counts"], {})
+
+    async def test_addon_transport_failures_still_degrade_health(self):
+        class FailingTransport:
+            def __init__(self, category):
+                self.category = category
+
+            async def execute_read(self, *_args, **_kwargs):
+                raise DashboardTransportError(self.category)
+
+        cases = {
+            "authentication_failed": "permission_failure",
+            "connection_failed": "provider_unavailable",
+            "timeout": "provider_timeout",
+        }
+        for transport_category, expected in cases.items():
+            with self.subTest(category=transport_category):
+                provider = ReviewedOperationalLifecycleProvider()
+                provider._transport = FailingTransport(
+                    transport_category
+                )
+                with self.assertRaises(
+                    OperationalLifecycleProviderError
+                ) as raised:
+                    await provider.get_addon("local_test_addon")
+                self.assertEqual(
+                    raised.exception.category, expected
+                )
+                health = provider.health_snapshot()
+                self.assertEqual(
+                    health["operational_status"], "unavailable"
+                )
+                self.assertEqual(
+                    health["failure_counts"], {expected: 1}
+                )
+                self.assertEqual(
+                    health["domain_outcome_counts"], {}
+                )
+
     async def test_running_addon_requires_independent_restart_evidence(self):
         class AddonProvider:
             async def get_addon(self, slug):
@@ -1318,12 +1738,12 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 return {
                     "slug": slug,
                     "name": "Engineering",
-                    "version": "2.1.0-beta.2",
+                    "version": "2.1.1-beta.2",
                     "state": "started",
                 }
 
         runtime = {
-            "server_version": "2.1.0-beta.2",
+            "server_version": "2.1.1-beta.2",
             "build_sha": "a" * 40,
             "registered_tool_count": 71,
             "engineering_tool_count": 45,
@@ -1346,7 +1766,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             "addon": {
                 "slug": ENGINEERING_ADDON_SLUG,
                 "name": "Engineering",
-                "version": "2.1.0-beta.2",
+                "version": "2.1.1-beta.2",
                 "state": "started",
             },
             "target_class": "engineering_addon",
@@ -1447,7 +1867,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 }
 
         runtime = {
-            "server_version": "2.1.0-beta.2",
+            "server_version": "2.1.1-beta.2",
             "build_sha": "a" * 40,
             "registered_tool_count": 71,
             "engineering_tool_count": 45,
@@ -1601,26 +2021,61 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 )
 
     def test_addon_target_classification_is_exact_not_name_heuristic(self):
+        self_identity = SupervisorSelfAddonIdentity(
+            slug="df26dea6_hass_mcp_engineering_beta",
+            name="HA MCP Engineering Server Beta",
+            version="2.1.1-beta.2",
+            repository="df26dea6",
+        )
         self.assertEqual(
             _addon_target_class(
-                ENGINEERING_ADDON_SLUG,
-                {"name": "anything"},
+                self_identity.slug,
+                {
+                    "slug": self_identity.slug,
+                    "name": self_identity.name,
+                    "version": self_identity.version,
+                    "repository": self_identity.repository,
+                },
+                self_identity,
             ),
             "engineering_addon",
         )
         self.assertEqual(
             _addon_target_class(
                 UPSTREAM_HA_MCP_ADDON_SLUG,
-                {"name": UPSTREAM_HA_MCP_ADDON_NAME},
+                {
+                    "slug": UPSTREAM_HA_MCP_ADDON_SLUG,
+                    "name": UPSTREAM_HA_MCP_ADDON_NAME,
+                },
+                self_identity,
             ),
             "upstream_ha_mcp_addon",
         )
         self.assertEqual(
             _addon_target_class(
                 "unrelated",
-                {"name": "Looks like an MCP engineering server"},
+                {
+                    "slug": "unrelated",
+                    "name": "Looks like an MCP engineering server",
+                },
+                self_identity,
             ),
             "other_addon",
+        )
+        with self.assertRaises(LifecycleGatewayError) as raised:
+            _addon_target_class(
+                "conflicting_copy",
+                {
+                    "slug": "conflicting_copy",
+                    "name": self_identity.name,
+                    "version": self_identity.version,
+                    "repository": self_identity.repository,
+                },
+                self_identity,
+            )
+        self.assertEqual(
+            raised.exception.category,
+            "self_addon_identity_unavailable",
         )
 
     def test_public_tool_schemas_are_bounded_and_catalog_is_45(self):

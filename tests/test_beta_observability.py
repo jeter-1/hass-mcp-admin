@@ -138,7 +138,7 @@ class ErrorTaxonomyTests(unittest.TestCase):
             "authentication_failure", "authorization_failure", "invalid_request",
             "validation_failure", "home_assistant_unavailable",
             "home_assistant_api_error", "home_assistant_timeout", "entity_not_found",
-            "automation_not_found", "resource_not_found",
+            "automation_not_found", "resource_not_found", "addon_not_found",
             "unsupported_operation", "configuration_conflict",
             "rate_limit_exceeded", "internal_server_error",
             "change_plan_not_found", "change_plan_expired",
@@ -160,6 +160,7 @@ class ErrorTaxonomyTests(unittest.TestCase):
             "backup_operation_timeout", "backup_verification_timeout",
             "backup_verification_failed", "backup_dispatch_indeterminate",
             "operational_provider_unavailable",
+            "self_addon_identity_unavailable",
             "operational_contract_mismatch",
             "operational_validation_failed",
             "operational_action_rejected",
@@ -209,6 +210,7 @@ class ErrorTaxonomyTests(unittest.TestCase):
             ErrorCode.UPSTREAM_DASHBOARD_TIMEOUT,
             ErrorCode.UPSTREAM_DASHBOARD_UPSTREAM_ERROR,
             ErrorCode.BACKUP_PROVIDER_UNAVAILABLE,
+            ErrorCode.SELF_ADDON_IDENTITY_UNAVAILABLE,
         ):
             self.assertTrue(error_definition(code).retryable)
         for code in (
@@ -221,6 +223,7 @@ class ErrorTaxonomyTests(unittest.TestCase):
             ErrorCode.UPSTREAM_DASHBOARD_ENDPOINT_REJECTED,
             ErrorCode.UPSTREAM_DASHBOARD_REQUIRED_TOOL_MISSING,
             ErrorCode.UPSTREAM_DASHBOARD_SCHEMA_INCOMPATIBLE,
+            ErrorCode.ADDON_NOT_FOUND,
         ):
             self.assertFalse(error_definition(code).retryable)
 

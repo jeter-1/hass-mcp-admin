@@ -3733,6 +3733,28 @@ class ChangeGovernanceService:
             planned_class = operational.baseline.get("target_class")
             if planned_class != fresh_baseline.get("target_class"):
                 return False
+            planned_target_identity = operational.baseline.get(
+                "target_identity"
+            )
+            fresh_target_identity = fresh_baseline.get("target_identity")
+            if isinstance(planned_target_identity, dict) and (
+                not isinstance(fresh_target_identity, dict)
+                or any(
+                    planned_target_identity.get(field)
+                    != fresh_target_identity.get(field)
+                    for field in (
+                        "requested_slug",
+                        "resolved_slug",
+                        "resolved_name",
+                        "resolved_version",
+                        "resolved_repository",
+                        "identity_source",
+                        "authoritative_self_match",
+                        "target_class",
+                    )
+                )
+            ):
+                return False
             if planned_class == "engineering_addon":
                 planned_runtime = operational.baseline.get("runtime")
                 fresh_runtime = fresh_baseline.get("runtime")
@@ -4209,6 +4231,10 @@ class ChangeGovernanceService:
             return ErrorCode.OPERATIONAL_VALIDATION_FAILED
         if category == "resource_not_found":
             return ErrorCode.RESOURCE_NOT_FOUND
+        if category == "addon_not_found":
+            return ErrorCode.ADDON_NOT_FOUND
+        if category == "self_addon_identity_unavailable":
+            return ErrorCode.SELF_ADDON_IDENTITY_UNAVAILABLE
         if category == "permission_failure":
             return ErrorCode.AUTHORIZATION_FAILURE
         if category in {

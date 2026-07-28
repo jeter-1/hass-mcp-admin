@@ -1,6 +1,6 @@
 # Governed operational administration
 
-Version: `2.1.0-beta.2`
+Version: `2.1.1-beta.2`
 
 Beta 2 completes 2.1A with four public proposal tools:
 `create_backup_plan`, `create_reload_plan`, `create_addon_restart_plan`, and
@@ -115,14 +115,28 @@ when the inventory itself is readable.
 `create_addon_restart_plan` binds approval to one installed add-on slug, name,
 version, state, and exact provider contract. Apply rejects changed identity.
 Verification requires the exact slug, name, unchanged version, running state,
-and restart evidence beyond merely observing a running add-on. The Engineering
-add-on is recognized only by its exact technical slug; its self-restart is
-proved after startup by a changed persisted process-instance identity, exact
-add-on readback, restored runtime identity, healthy governance storage, and
-available audit continuity. The reviewed upstream add-on is recognized only by
-the exact `ha_mcp` slug and `Home Assistant MCP Server` name and must regain
-exact identity, version, protocol, catalog, and compatibility admission before
-success. Other add-ons require exact provider completion evidence.
+and restart evidence beyond merely observing a running add-on.
+
+The Engineering add-on resolves its own authoritative installed identity from
+Supervisor's caller-relative `/addons/self/info` endpoint with the existing
+injected add-on token. Supervisor may prefix an installed slug with its
+repository identifier, so the MCP server ID, source add-on slug, display name,
+entity ID, and prefix/suffix guesses are not self-identity evidence. Planning
+strictly decodes bounded self metadata, then requires the requested slug and
+the exact reviewed installed-add-on read to agree with that identity.
+Unavailable, malformed, incomplete, or conflicting self evidence fails closed;
+the possible self target cannot silently become an ordinary add-on.
+
+New plans persist the requested and resolved slug, name, version, repository
+identifier when present, identity source, authoritative-self decision, and
+target class. Apply-time revalidation must reproduce that evidence. A proven
+self-restart is verified after startup by a changed persisted
+process-instance identity, exact add-on readback, restored runtime identity,
+healthy governance storage, and available audit continuity. The reviewed
+upstream add-on is recognized only by the exact `ha_mcp` slug and
+`Home Assistant MCP Server` name and must regain exact identity, version,
+protocol, catalog, and compatibility admission before success. Other add-ons
+require exact provider completion evidence.
 
 Verified add-on restarts expose one additive
 `operational.verification.evidence.restart_proof` grade:
@@ -251,8 +265,19 @@ success and failure, provider state, zero fallback, and unavailable rollback.
   availability blocked dispatch; approval is not consumed.
 - `operational_contract_mismatch` means reviewed provider evidence drifted
   before dispatch; refresh evidence and create a new plan.
+- `addon_not_found` is a non-retryable expected domain outcome: the exact
+  requested slug is not installed. No plan, approval, dispatch, or fallback
+  occurred, and the last exact provider-health state remains available. Use the
+  exact installed Supervisor slug; do not transform an MCP ID or entity ID.
+- `self_addon_identity_unavailable` means Supervisor self metadata was
+  unavailable, malformed, or conflicted with installed-add-on evidence.
+  Planning failed closed before a plan or action; restore authoritative
+  Supervisor access and retry with a fresh proposal.
 - `operational_verification_pending` means the single dispatch is durable and
   only reconciliation may continue.
 - `operational_verification_failed` is a post-dispatch readback failure and
   cannot authorize redispatch.
 - No result authorizes restore, deletion, generic execution, or fallback.
+- Do not reuse an unapproved plan that was created under a previous
+  `other_addon` classification for the Engineering add-on. Install the
+  correction and create a fresh plan.

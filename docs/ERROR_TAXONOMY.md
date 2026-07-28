@@ -19,6 +19,18 @@ and future argument forms remain untrusted and follow the generic
 provider-error path. The handled domain outcome retains upstream attribution
 but does not degrade provider health.
 
+Beta 2 corrective `addon_not_found` is a non-retryable installed-add-on domain
+outcome. It creates no plan or approval, attempts no lifecycle action, leaves
+fallback at zero, and does not change the last available/exact operational
+provider contract state or increment provider operational failures. It is
+tracked separately as a domain outcome. `self_addon_identity_unavailable` is a
+bounded fail-closed pre-dispatch error used when Supervisor's caller-relative
+self metadata is unavailable, malformed, incomplete, or conflicts with the
+exact installed-add-on read. Neither category reflects raw Supervisor or
+upstream error prose. Authentication, connection, timeout, malformed response,
+protocol, catalog, reviewed-contract, and provider-internal failures remain
+operational failures.
+
 RC2 adds no public error or failure category. Invalid or unbounded optional
 build provenance is safely represented by the established `unknown` value and
 does not become a new tool, provider, health, or audit error contract.

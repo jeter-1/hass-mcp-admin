@@ -20,10 +20,16 @@ from ..providers.operational_lifecycle import (
     OperationalLifecycleProviderError,
     ReviewedOperationalLifecycleProvider,
 )
+from ..providers.supervisor_self import (
+    SelfAddonIdentityError,
+    SupervisorSelfAddonIdentity,
+)
 from ..sanitization import sanitize_untrusted_data
 from .config_validation import normalize_configuration_validation
 
 
+# This is the repository source slug, not an installed Supervisor identity.
+# Remote and local repositories prepend an installation-specific repository ID.
 ENGINEERING_ADDON_SLUG = "hass_mcp_engineering_beta"
 UPSTREAM_HA_MCP_ADDON_SLUG = "ha_mcp"
 UPSTREAM_HA_MCP_ADDON_NAME = "Home Assistant MCP Server"
@@ -60,6 +66,9 @@ class OperationalLifecycleGateway:
         configuration_validator: Callable[[], Awaitable[Any]],
         runtime_snapshot: Callable[[], dict[str, Any]],
         process_instance_id: str,
+        self_addon_identity_resolver: (
+            Callable[[], Awaitable[SupervisorSelfAddonIdentity]] | None
+        ) = None,
         sensitive_values: tuple[str, ...] = (),
     ) -> None:
         self.provider = provider
@@ -68,6 +77,9 @@ class OperationalLifecycleGateway:
         self.configuration_validator = configuration_validator
         self.runtime_snapshot = runtime_snapshot
         self.process_instance_id = process_instance_id
+        self.self_addon_identity_resolver = (
+            self_addon_identity_resolver
+        )
         self.sensitive_values = sensitive_values
 
     async def planning_evidence(
@@ -88,11 +100,43 @@ class OperationalLifecycleGateway:
                     "domain_evidence": await self.read_domain(target),
                 }
             elif operation == "restart_addon":
+                if self.self_addon_identity_resolver is None:
+                    raise LifecycleGatewayError(
+                        "self_addon_identity_unavailable"
+                    )
+                try:
+                    self_identity = (
+                        await self.self_addon_identity_resolver()
+                    )
+                except SelfAddonIdentityError:
+                    raise LifecycleGatewayError(
+                        "self_addon_identity_unavailable"
+                    ) from None
                 addon = await self.provider.get_addon(target)
-                target_class = _addon_target_class(target, addon)
+                target_class = _addon_target_class(
+                    target, addon, self_identity
+                )
                 baseline = {
                     "addon": _addon_identity(addon),
                     "target_class": target_class,
+                    "target_identity": {
+                        "requested_slug": target,
+                        "resolved_slug": addon.get("slug"),
+                        "resolved_name": addon.get("name"),
+                        "resolved_version": addon.get("version"),
+                        "resolved_repository": addon.get("repository"),
+                        "identity_source": (
+                            self_identity.as_dict().get(
+                                "identity_source"
+                            )
+                            if target_class == "engineering_addon"
+                            else "reviewed_upstream_addon_read"
+                        ),
+                        "authoritative_self_match": (
+                            target_class == "engineering_addon"
+                        ),
+                        "target_class": target_class,
+                    },
                     "process_instance_id": self.process_instance_id,
                 }
                 if target_class in {
@@ -269,6 +313,7 @@ class OperationalLifecycleGateway:
                 "upstream_version_mismatch",
                 "catalog_mismatch",
                 "required_tool_missing",
+                "addon_not_found",
                 "resource_not_found",
             }:
                 return {
@@ -751,9 +796,40 @@ def _addon_identity(value: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _addon_target_class(slug: str, addon: dict[str, Any]) -> str:
-    if slug == ENGINEERING_ADDON_SLUG:
+def _addon_target_class(
+    slug: str,
+    addon: dict[str, Any],
+    self_identity: SupervisorSelfAddonIdentity,
+) -> str:
+    if (
+        not isinstance(self_identity, SupervisorSelfAddonIdentity)
+        or addon.get("slug") != slug
+    ):
+        raise LifecycleGatewayError("self_addon_identity_unavailable")
+    if slug == self_identity.slug:
+        if (
+            addon.get("name") != self_identity.name
+            or addon.get("version") != self_identity.version
+            or (
+                self_identity.repository is not None
+                and addon.get("repository") is not None
+                and addon.get("repository") != self_identity.repository
+            )
+        ):
+            raise LifecycleGatewayError(
+                "self_addon_identity_unavailable"
+            )
         return "engineering_addon"
+    if (
+        addon.get("name") == self_identity.name
+        and addon.get("version") == self_identity.version
+        and (
+            self_identity.repository is None
+            or addon.get("repository") is None
+            or addon.get("repository") == self_identity.repository
+        )
+    ):
+        raise LifecycleGatewayError("self_addon_identity_unavailable")
     if (
         slug == UPSTREAM_HA_MCP_ADDON_SLUG
         and addon.get("name") == UPSTREAM_HA_MCP_ADDON_NAME

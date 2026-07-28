@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.1.1-beta.2 - Beta 2 self-restart identity correction
+
+- Resolve the running Engineering add-on through Supervisor's exact
+  caller-relative self metadata rather than comparing an installed,
+  repository-prefixed slug with the source add-on slug.
+- Bind new restart plans to the requested and resolved add-on identity.
+  Exact self-targets retain `process_identity`; reviewed upstream restarts
+  retain `upstream_readmission`; ordinary add-ons retain the weaker
+  `provider_acknowledgement` proof grade.
+- Normalize a missing installed add-on to non-retryable `addon_not_found`.
+  This expected domain outcome does not degrade an otherwise exact provider
+  contract or increment operational provider failures.
+- Retain the complete Beta 2 surface of 45 Engineering tools plus 26
+  delegated reads, 71 total, with no schema, reviewed fingerprint, provider
+  policy, write reachability, or fallback change.
+
 ## 2.1.0-beta.2 - 2.1A governed operational lifecycle
 
 - Add proposal-only `create_reload_plan`, `create_addon_restart_plan`, and

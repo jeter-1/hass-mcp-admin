@@ -40,6 +40,9 @@ from ha_mcp_engineering.capabilities import (  # noqa: E402
 )
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.governance import GOVERNANCE  # noqa: E402
+from ha_mcp_engineering.governance.operational_lifecycle import (  # noqa: E402
+    LifecycleGatewayError,
+)
 from ha_mcp_engineering.dependency import DEPENDENCY_ANALYSIS  # noqa: E402
 from ha_mcp_engineering.dependency.service import AnalysisOutput  # noqa: E402
 from ha_mcp_engineering.reliability import RELIABILITY_ANALYSIS  # noqa: E402
@@ -1448,6 +1451,101 @@ class BetaApplicationTests(unittest.TestCase):
         }
         for name, properties in expected_properties.items():
             self.assertEqual(set(tools[name]["properties"]), properties)
+
+    def test_missing_addon_proposal_audit_is_bounded_domain_outcome(self):
+        class MissingAddonGateway:
+            async def planning_evidence(self, _operation, _target):
+                raise LifecycleGatewayError("addon_not_found")
+
+        service = GOVERNANCE.require()
+        previous_gateway = service.lifecycle_gateway
+        plan_count = len(service.repository.list())
+        try:
+            service.lifecycle_gateway = MissingAddonGateway()
+            _, call = self.rpc(
+                "tools/call",
+                {
+                    "name": "create_addon_restart_plan",
+                    "arguments": {
+                        "addon_slug": "hass-mcp-engineering-beta"
+                    },
+                },
+                request_id="missing-addon-proposal-123",
+            )
+        finally:
+            service.lifecycle_gateway = previous_gateway
+
+        payload = json.loads(call["result"]["content"][0]["text"])
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["error_code"], "addon_not_found")
+        self.assertFalse(payload["retryable"])
+        self.assertEqual(len(service.repository.list()), plan_count)
+        record = self.audit_record("missing-addon-proposal-123")
+        self.assertEqual(record["access"], "proposal")
+        self.assertEqual(record["error_code"], "addon_not_found")
+        self.assertEqual(
+            record["parameters"]["addon_slug"],
+            "hass-mcp-engineering-beta",
+        )
+        self.assertEqual(
+            record["analysis_summary"],
+            {
+                "operation_class": "proposal",
+                "outcome_class": "domain_outcome",
+            },
+        )
+        self.assertEqual(record["resource_ids"], {})
+
+    def test_ambiguous_self_addon_proposal_audit_fails_closed(self):
+        class AmbiguousSelfGateway:
+            async def planning_evidence(self, _operation, _target):
+                raise LifecycleGatewayError(
+                    "self_addon_identity_unavailable"
+                )
+
+        service = GOVERNANCE.require()
+        previous_gateway = service.lifecycle_gateway
+        plan_count = len(service.repository.list())
+        try:
+            service.lifecycle_gateway = AmbiguousSelfGateway()
+            _, call = self.rpc(
+                "tools/call",
+                {
+                    "name": "create_addon_restart_plan",
+                    "arguments": {
+                        "addon_slug": (
+                            "df26dea6_hass_mcp_engineering_beta"
+                        )
+                    },
+                },
+                request_id="ambiguous-self-proposal-123",
+            )
+        finally:
+            service.lifecycle_gateway = previous_gateway
+
+        payload = json.loads(call["result"]["content"][0]["text"])
+        self.assertFalse(payload["success"])
+        self.assertEqual(
+            payload["error_code"],
+            "self_addon_identity_unavailable",
+        )
+        self.assertEqual(payload["details"], {})
+        self.assertEqual(len(service.repository.list()), plan_count)
+        record = self.audit_record("ambiguous-self-proposal-123")
+        self.assertEqual(record["access"], "proposal")
+        self.assertEqual(
+            record["error_code"],
+            "self_addon_identity_unavailable",
+        )
+        self.assertEqual(
+            record["parameters"]["addon_slug"],
+            "df26dea6_hass_mcp_engineering_beta",
+        )
+        self.assertEqual(
+            record["analysis_summary"],
+            {"operation_class": "proposal"},
+        )
+        self.assertEqual(record["resource_ids"], {})
 
     def test_unknown_plan_ids_map_to_not_found_across_governance_tools(self):
         plan_id = "0" * 32
