@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "source_id": "home-assistant.light",
+      "source_type": "home_assistant_documentation",
+      "title": "Light integration reference",
+      "publisher": "Home Assistant",
+      "canonical_origin": "https://www.home-assistant.io/integrations/light/",
+      "version_scope": {
+        "kind": "range",
+        "minimum": "2.1.0",
+        "maximum": "2.2.0",
+        "include_minimum": true,
+        "include_maximum": false
+      },
+      "home_assistant_version_scope": {
+        "kind": "exact",
+        "version": "2026.7.0"
+      },
+      "integration_scope": {
+        "kind": "integration",
+        "integration_id": "light",
+        "version_scope": {
+          "kind": "all"
+        }
+      },
+      "retrieved_at": "2026-07-01T00:00:00Z",
+      "valid_until": null,
+      "trust_class": "official_home_assistant",
+      "content_class": "documentation",
+      "redaction_class": "public",
+      "license_or_usage_note": "Synthetic fixture; project test use only.",
+      "content_sha256": "23668e23bd8d573c2a7a12c7cee79cd9be8a429c439dd4e5a2bfbb8ab24f699c",
+      "relative_path": "official-ha-light.md",
+      "citation_prefix": "knowledge:home-assistant.light"
+    }
+  ]
+}
