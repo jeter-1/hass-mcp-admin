@@ -564,3 +564,21 @@ reconciliation. A later `apply_change_plan` may resume readback while still
 pending, but is not required for a normally verified Engineering self-restart.
 Never create a replacement plan merely to repeat the action. Reconciliation is
 bounded and cannot redispatch.
+
+## 2.1.1-beta.3 Home Assistant restart recovery
+
+Beta 3 changes no MCP tool, schema, port, provider authority, or connector
+identity. It retains post-dispatch Home Assistant Core unavailability across
+later verification attempts and process restarts. A repeated
+`apply_change_plan` or automatic startup/periodic reconciliation performs
+readback only and cannot send a second restart.
+
+Inspect `get_change_plan` for confirmed dispatch, `outage_observed`, bounded
+unavailable timestamps and count, later reconnection, restored runtime and
+storage checks, valid configuration, exact upstream admission, dependency
+recovery, and zero fallback. A dispatch response followed only by successful
+availability reads remains pending because it does not prove a restart.
+`sensor.uptime` is not required. Historical plans lacking authoritative
+persisted Core-outage evidence remain pending rather than being inferred.
+The complete source contract is
+[`V2_1_1_BETA3_ACCEPTANCE.md`](V2_1_1_BETA3_ACCEPTANCE.md).

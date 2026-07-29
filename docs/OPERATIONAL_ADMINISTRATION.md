@@ -1,6 +1,6 @@
 # Governed operational administration
 
-Version: `2.1.1-beta.2`
+Version: `2.1.1-beta.3`
 
 Beta 2 completes 2.1A with four public proposal tools:
 `create_backup_plan`, `create_reload_plan`, `create_addon_restart_plan`, and
@@ -186,6 +186,17 @@ governance and audit persistence, exact upstream readmission and catalog,
 dependency recovery state, post-restart valid configuration, and zero
 fallback. Current connectivity alone never proves a restart.
 
+Beta 3 accumulates Home Assistant restart evidence across every bounded
+verification attempt. Only a direct Core timeout, connection failure, or
+Supervisor proxy 502/503/504 observed after consumed approval and persisted
+dispatch can set `outage_observed`. The plan preserves the earliest and latest
+unavailable timestamps, observation count, and bounded evidence sources.
+Later recovery adds reconnection, identity, validation, runtime, storage,
+upstream, dependency, and fallback evidence without replacing the outage.
+Dispatch confirmation plus outage plus reconnection are all required; a
+provider response or current availability alone remains pending. No optional
+entity such as `sensor.uptime` is part of this contract.
+
 ## Durable reconciliation
 
 Before any action call, immutable dispatch intent, request ID, attempt count,
@@ -204,6 +215,11 @@ result. A later `apply_change_plan` may request or resume readback when evidence
 is still pending, but it is not required after a successful automatic
 reconciliation. Neither startup, periodic, nor caller-requested reconciliation
 can invoke an operational provider action or redispatch.
+
+The same rule applies to Home Assistant restart recovery. Repeated apply and a
+recreated Engineering process load the cumulative evidence and perform only
+new reads. Older records without authoritative persisted Core-outage evidence
+are not upgraded from elapsed time or present connectivity.
 
 Success returns the persisted verified result. Pending evidence remains
 pending. A deterministic post-dispatch mismatch becomes verification failed.

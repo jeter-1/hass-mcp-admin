@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.1.1-beta.3 - Home Assistant restart evidence reconciliation
+
+- Accumulate authoritative post-dispatch Home Assistant Core outage and
+  reconnection evidence across bounded verification attempts, repeated apply
+  calls, process restarts, and startup or periodic reconciliation.
+- Require confirmed dispatch, a qualified Core-unavailable observation, and
+  later reconnection before a Home Assistant restart can reach
+  `applied_verified`; current availability or provider acknowledgement alone
+  remains insufficient.
+- Preserve the exact-once dispatch boundary: reconciliation is readback-only,
+  old plans without authoritative outage evidence remain pending, and no
+  optional uptime entity is required.
+- Retain 45 Engineering tools plus 26 delegated reads, 71 total, with no
+  public schema, reviewed fingerprint, provider policy, stable-v1, or fallback
+  change.
+
 ## 2.1.1-beta.2 - Beta 2 self-restart identity correction
 
 - Resolve the running Engineering add-on through Supervisor's exact

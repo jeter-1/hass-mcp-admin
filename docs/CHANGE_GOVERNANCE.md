@@ -14,6 +14,14 @@ dispatch. Provider response loss or server termination can resume readback
 only. Contract-v3 output names `operational.verification` as authoritative and
 does not publish the unrelated configuration verification field.
 
+For Home Assistant restart, `operational.verification.evidence` is cumulative:
+a qualified post-dispatch Core outage is retained through later successful
+reads and process restarts. The earliest outage timestamp never advances,
+the latest timestamp and bounded count may advance, and reconnection evidence
+is added without replacing outage evidence. Confirmed dispatch without a
+qualified outage remains verification-pending. Reconciliation never restores
+write authority or redispatches.
+
 The existing blanket prohibition on high-risk automation changes is unchanged.
 Only the exact add-on and Home Assistant restart operation types have reviewed
 high-risk infrastructure policy and external-approval authority. This does not

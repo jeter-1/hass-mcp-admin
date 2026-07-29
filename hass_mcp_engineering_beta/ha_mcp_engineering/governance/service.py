@@ -105,6 +105,16 @@ MAX_APPROVAL_PROJECTION_ACTIONS_PER_PLAN = 32
 MAX_APPROVAL_PROJECTION_DETAILS_PER_PLAN = 128
 MAX_OPERATIONAL_RECONCILIATIONS_PER_PASS = 20
 OPERATIONAL_RECONCILIATION_TIME_BUDGET_SECONDS = 10.0
+HOME_ASSISTANT_OUTAGE_CATEGORIES = frozenset(
+    {"provider_timeout", "provider_unavailable"}
+)
+HOME_ASSISTANT_RESTART_EVIDENCE_SOURCES = frozenset(
+    {
+        "home_assistant_core_connection_probe",
+        "home_assistant_core_reconnected",
+    }
+)
+MAX_RESTART_EVIDENCE_SOURCES = 8
 
 _APPROVAL_METADATA_FIELDS = {
     "automation": (
@@ -135,6 +145,56 @@ _APPROVAL_METADATA_FIELDS = {
         "unit_of_measurement",
     ),
 }
+
+
+def _parse_governance_timestamp(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed
+
+
+def _earliest_governance_timestamp(
+    left: Any, right: str
+) -> str:
+    left_parsed = _parse_governance_timestamp(left)
+    right_parsed = _parse_governance_timestamp(right)
+    if left_parsed is None:
+        return right
+    if right_parsed is None or left_parsed <= right_parsed:
+        return str(left)
+    return right
+
+
+def _latest_governance_timestamp(left: Any, right: str) -> str:
+    left_parsed = _parse_governance_timestamp(left)
+    right_parsed = _parse_governance_timestamp(right)
+    if left_parsed is None:
+        return right
+    if right_parsed is None or left_parsed >= right_parsed:
+        return str(left)
+    return right
+
+
+def _bounded_restart_evidence_sources(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    for item in value[:MAX_RESTART_EVIDENCE_SOURCES]:
+        if (
+            isinstance(item, str)
+            and item in HOME_ASSISTANT_RESTART_EVIDENCE_SOURCES
+            and item not in result
+        ):
+            result.append(item)
+    return result
+
+
 _APPROVAL_ACTION_ROOTS = ("sequence", "action", "actions")
 _APPROVAL_TRIGGER_ROOTS = ("trigger", "triggers")
 _APPROVAL_CONDITION_ROOTS = ("condition", "conditions")
@@ -3322,19 +3382,6 @@ class ChangeGovernanceService:
                     ) from None
                 operational.dispatch["provider_response_received"] = False
                 operational.dispatch["failure_category"] = exc.category
-                if (
-                    plan.operation
-                    == ChangeOperation.RESTART_HOME_ASSISTANT
-                    and exc.category
-                    in {
-                        "indeterminate_dispatch",
-                        "provider_timeout",
-                        "provider_unavailable",
-                    }
-                ):
-                    operational.dispatch[
-                        "expected_disruption_observed"
-                    ] = True
                 plan.status = PlanStatus.VERIFICATION_REQUIRED
                 plan.execution_outcome = "verification_pending"
                 operational.final_outcome = "verification_pending"
@@ -3422,9 +3469,9 @@ class ChangeGovernanceService:
                                 "restart_dispatch_confirmed"
                             )
                         ),
-                        expected_disruption_observed=bool(
-                            operational.dispatch.get(
-                                "expected_disruption_observed"
+                        outage_observed=bool(
+                            operational.verification.evidence.get(
+                                "outage_observed"
                             )
                         ),
                     )
@@ -3440,6 +3487,10 @@ class ChangeGovernanceService:
                     "redispatch_performed": False,
                 },
             }
+        if plan.operation == ChangeOperation.RESTART_HOME_ASSISTANT:
+            result = self._merge_home_assistant_restart_verification(
+                plan, result
+            )
         verification.status = str(result.get("status") or "failed")
         verification.operation_completed = (
             verification.status == "verified"
@@ -3532,6 +3583,192 @@ class ChangeGovernanceService:
                 "fallback_occurred": False,
             },
         )
+
+    def _merge_home_assistant_restart_verification(
+        self,
+        plan: ChangePlan,
+        result: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Merge authoritative Core restart evidence monotonically.
+
+        Only a consumed, persisted, post-dispatch Core connection probe can
+        establish an outage. Recovery attempts add to that evidence; they
+        never replace it or infer an outage from provider acknowledgement,
+        elapsed time, or current availability.
+        """
+
+        operational = plan.operational
+        if operational is None:
+            raise GovernanceError(ErrorCode.INTERNAL_INVARIANT_VIOLATION)
+        verification = operational.verification
+        persisted = dict(verification.evidence)
+        current = dict(result.get("evidence") or {})
+        observed_at = self._timestamp()
+        dispatch = operational.dispatch
+        attempted_at = _parse_governance_timestamp(
+            dispatch.get("attempted_at")
+        )
+        observed_datetime = _parse_governance_timestamp(observed_at)
+        attempt_count = dispatch.get("attempt_count")
+        qualifies_as_post_dispatch = (
+            plan.approval.state == ApprovalState.CONSUMED
+            and isinstance(attempt_count, int)
+            and not isinstance(attempt_count, bool)
+            and attempt_count >= 1
+            and dispatch.get("dispatched") is True
+            and attempted_at is not None
+            and observed_datetime is not None
+            and observed_datetime >= attempted_at
+        )
+        current_sources = _bounded_restart_evidence_sources(
+            current.get("restart_evidence_sources")
+        )
+        current_outage = (
+            qualifies_as_post_dispatch
+            and current.get("outage_observed") is True
+            and current.get("home_assistant_core_unavailable") is True
+            and current.get("failure_category")
+            in HOME_ASSISTANT_OUTAGE_CATEGORIES
+            and "home_assistant_core_connection_probe"
+            in current_sources
+        )
+        persisted_sources = _bounded_restart_evidence_sources(
+            persisted.get("restart_evidence_sources")
+        )
+        persisted_outage = (
+            persisted.get("outage_observed") is True
+            and "home_assistant_core_connection_probe"
+            in persisted_sources
+            and _parse_governance_timestamp(
+                persisted.get("first_unavailable_at")
+            )
+            is not None
+            and isinstance(
+                persisted.get("unavailable_observation_count"), int
+            )
+            and not isinstance(
+                persisted.get("unavailable_observation_count"), bool
+            )
+            and persisted["unavailable_observation_count"] >= 1
+        )
+
+        if not current_outage:
+            for field in (
+                "outage_observed",
+                "home_assistant_core_unavailable",
+                "expected_disruption_observed",
+            ):
+                current.pop(field, None)
+            current["restart_evidence_sources"] = [
+                source
+                for source in current_sources
+                if source != "home_assistant_core_connection_probe"
+            ]
+
+        merged = dict(persisted)
+        for field, value in current.items():
+            if field in {
+                "first_unavailable_at",
+                "last_unavailable_at",
+                "unavailable_observation_count",
+                "reconnected_at",
+                "restart_evidence_sources",
+            }:
+                continue
+            if isinstance(value, bool) and isinstance(
+                merged.get(field), bool
+            ):
+                merged[field] = bool(merged[field] or value)
+            else:
+                merged[field] = value
+
+        sources = list(persisted_sources)
+        for source in current_sources:
+            if source not in sources:
+                sources.append(source)
+        merged["restart_evidence_sources"] = sources[
+            :MAX_RESTART_EVIDENCE_SOURCES
+        ]
+
+        if current_outage:
+            first_unavailable = _earliest_governance_timestamp(
+                persisted.get("first_unavailable_at"), observed_at
+            )
+            last_unavailable = _latest_governance_timestamp(
+                persisted.get("last_unavailable_at"), observed_at
+            )
+            merged.update(
+                {
+                    "outage_observed": True,
+                    "expected_disruption_observed": True,
+                    "home_assistant_core_unavailable": True,
+                    "first_unavailable_at": first_unavailable,
+                    "last_unavailable_at": last_unavailable,
+                    "unavailable_observation_count": (
+                        persisted["unavailable_observation_count"]
+                        if isinstance(
+                            persisted.get(
+                                "unavailable_observation_count"
+                            ),
+                            int,
+                        )
+                        and not isinstance(
+                            persisted.get(
+                                "unavailable_observation_count"
+                            ),
+                            bool,
+                        )
+                        else 0
+                    )
+                    + 1,
+                    "last_unavailable_failure_category": current.get(
+                        "failure_category"
+                    ),
+                }
+            )
+            operational.dispatch["expected_disruption_observed"] = True
+        elif persisted_outage:
+            merged["outage_observed"] = True
+            merged["expected_disruption_observed"] = True
+
+        if (
+            qualifies_as_post_dispatch
+            and current.get("home_assistant_reconnected") is True
+        ):
+            merged["home_assistant_reconnected"] = True
+            merged["reconnected_at"] = (
+                persisted.get("reconnected_at") or observed_at
+            )
+            merged.pop("failure_category", None)
+
+        restart_dispatch_confirmed = bool(
+            dispatch.get("restart_dispatch_confirmed")
+        )
+        merged["restart_dispatch_confirmed"] = (
+            restart_dispatch_confirmed
+        )
+        merged["redispatch_performed"] = False
+        restart_evidence_complete = (
+            restart_dispatch_confirmed
+            and merged.get("outage_observed") is True
+            and merged.get("home_assistant_reconnected") is True
+        )
+        mismatch_fields = [
+            str(value)[:160]
+            for value in (result.get("mismatch_fields") or [])[:20]
+            if str(value) != "restart_evidence"
+        ]
+        if not restart_evidence_complete:
+            mismatch_fields.append("restart_evidence")
+        status = str(result.get("status") or "failed")
+        if status == "verified" and mismatch_fields:
+            status = "pending"
+        return {
+            **result,
+            "status": status,
+            "mismatch_fields": list(dict.fromkeys(mismatch_fields)),
+            "evidence": merged,
+        }
 
     @staticmethod
     def _eligible_lifecycle_reconciliation(plan: ChangePlan) -> bool:
