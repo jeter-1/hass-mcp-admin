@@ -1,5 +1,20 @@
 # HA MCP Engineering Server Architecture
 
+## 2.2.0-beta.3 signed compatibility registry foundation
+
+C1 adds a strict, data-only signed registry envelope and Ed25519 verifier for
+future distribution of reviewed compatibility evidence. Deterministic
+canonical serialization binds the content digest and signature. Validation
+fails closed for unknown keys, invalid signatures, mutation, expiry, rollback,
+replay conflicts, broken previous-digest chains, duplicate identities, and
+entry/revocation contradictions.
+
+The compiled reviewed-release registry remains authoritative. No production
+runtime imports the C1 package during startup or admission, and Beta 3 adds no
+retrieval, persistence, tool, health, provider, execution, write, or fallback
+path. See
+[`ADR-009`](docs/architecture/ADR-009-SIGNED-COMPATIBILITY-REGISTRY-FOUNDATION.md).
+
 ## 2.2.0-beta.2 F1 evidence correction
 
 Recovery verification and original provider-response receipt are independent
