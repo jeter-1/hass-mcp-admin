@@ -849,3 +849,19 @@ success or failure and remains eligible for readback. Fallback count remains
 zero. Proposal tool audit records use `access=proposal`; provider and
 governance events retain the same request and plan correlation without logging
 raw results or credentials.
+
+For Home Assistant restart, the persisted evidence includes bounded outage
+state, the original dispatch timestamp, immutable outage-observation deadline,
+window status, earliest/latest unavailable timestamps, observation count,
+qualified failure category, evidence sources, explicit successful
+identity-read `reconnected_at`, identity and configuration checks, and
+`redispatch_performed=false`. The active probe budget is approximately 15
+seconds, independently of the exactly validated 180-second outage-eligibility
+deadline. The raw outage flag is not authoritative unless the complete record
+validates against consumed approval, persisted dispatch, and that deadline.
+A verified reconciliation
+moves the plan out of
+both `verification_pending_plans` and `indeterminate_outcomes`, increments
+`verified_successes`, and sets `last_successful_operation_timestamp`.
+Expected post-dispatch Core unavailability does not remain a permanent
+operational provider failure after successful recovery.

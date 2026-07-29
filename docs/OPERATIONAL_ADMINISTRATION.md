@@ -1,6 +1,6 @@
 # Governed operational administration
 
-Version: `2.1.1-beta.2`
+Version: `2.1.1-beta.3`
 
 Beta 2 completes 2.1A with four public proposal tools:
 `create_backup_plan`, `create_reload_plan`, `create_addon_restart_plan`, and
@@ -186,6 +186,43 @@ governance and audit persistence, exact upstream readmission and catalog,
 dependency recovery state, post-restart valid configuration, and zero
 fallback. Current connectivity alone never proves a restart.
 
+Beta 3 accumulates Home Assistant restart evidence across every bounded
+verification attempt. Only a direct Core timeout, connection failure, or
+Supervisor proxy 502/503/504 observed after consumed approval and persisted
+dispatch and no later than the immutable outage-observation deadline can set
+authoritative `outage_observed`. The immediate active-probe budget remains 15
+attempts at one-second intervals, approximately 15 seconds. Independently, the
+eligibility deadline is calculated exactly once as 180 seconds after the
+original persisted dispatch timestamp; startup, periodic, caller-requested,
+and process-restart reconciliation cannot recalculate or extend it. Core may
+remain reachable during the initial loop and still produce qualified evidence
+during later reconciliation, including at `T+60s`. The plan preserves the
+earliest and latest unavailable timestamps, observation count, and bounded
+evidence sources. Later successful Core identity readback adds
+`home_assistant_reconnected=true` and its explicit `reconnected_at` timestamp,
+plus identity, validation, runtime, storage, upstream, dependency, and
+fallback evidence without replacing the outage.
+Dispatch confirmation plus outage plus reconnection are all required; a
+provider response or current availability alone remains pending. No optional
+entity such as `sensor.uptime` is part of this contract.
+
+Recovery may complete after the observation deadline or normal plan expiry
+when a qualified outage was already persisted before the deadline. Without
+that evidence, the window closes as `restart_evidence_window_expired`; a
+future unrelated outage cannot verify the old plan. Historical or malformed
+records are validated as a complete unit. A bare `outage_observed=true`
+without the required consumed approval, dispatch, immutable deadline,
+timestamps, count, direct-Core source, and qualified failure category is not
+authoritative and cannot satisfy or skip restart verification.
+The deadline itself is part of that contract and must exactly equal the
+original dispatch time plus 180 seconds. Missing, malformed, shortened, or
+widened values are rejected. Once outage evidence qualifies inside the window,
+recovery may occur indefinitely later, including after Engineering process
+recreation, without another outage or dispatch. `reconnected_at` is authority
+only when produced by a successful identity read after the qualified outage;
+it is never inferred from acknowledgement, current availability, or the
+reconnection boolean alone.
+
 ## Durable reconciliation
 
 Before any action call, immutable dispatch intent, request ID, attempt count,
@@ -204,6 +241,11 @@ result. A later `apply_change_plan` may request or resume readback when evidence
 is still pending, but it is not required after a successful automatic
 reconciliation. Neither startup, periodic, nor caller-requested reconciliation
 can invoke an operational provider action or redispatch.
+
+The same rule applies to Home Assistant restart recovery. Repeated apply and a
+recreated Engineering process load the cumulative evidence and perform only
+new reads. Older records without authoritative persisted Core-outage evidence
+are not upgraded from elapsed time or present connectivity.
 
 Success returns the persisted verified result. Pending evidence remains
 pending. A deterministic post-dispatch mismatch becomes verification failed.
@@ -296,6 +338,11 @@ success and failure, provider state, zero fallback, and unavailable rollback.
   Supervisor access and retry with a fresh proposal.
 - `operational_verification_pending` means the single dispatch is durable and
   only reconciliation may continue.
+- `restart_evidence_window_expired` means no qualified Core outage was acquired
+  within the immutable 180 seconds after the original dispatch. Reconciliation
+  cannot reopen that plan, and a later unrelated outage is ineligible. If an
+  outage was already qualified before the deadline, continue readback-only
+  recovery; recovery itself has no deadline.
 - `operational_verification_failed` is a post-dispatch readback failure and
   cannot authorize redispatch.
 - No result authorizes restore, deletion, generic execution, or fallback.

@@ -564,3 +564,33 @@ reconciliation. A later `apply_change_plan` may resume readback while still
 pending, but is not required for a normally verified Engineering self-restart.
 Never create a replacement plan merely to repeat the action. Reconciliation is
 bounded and cannot redispatch.
+
+## 2.1.1-beta.3 Home Assistant restart recovery
+
+Beta 3 changes no MCP tool, schema, port, provider authority, or connector
+identity. It retains post-dispatch Home Assistant Core unavailability across
+later verification attempts and process restarts. A repeated
+`apply_change_plan` or automatic startup/periodic reconciliation performs
+readback only and cannot send a second restart.
+
+Inspect `get_change_plan` for confirmed dispatch, `outage_observed`, bounded
+unavailable timestamps and count, `outage_observation_deadline`,
+`outage_window_status`, qualified source and category,
+`home_assistant_reconnected`, the successful identity-read `reconnected_at`,
+restored runtime and storage checks, valid configuration, exact upstream
+admission, dependency recovery, and zero fallback. The immediate probe loop is
+15 attempts at one-second intervals, approximately 15 seconds. New outage
+observations remain eligible for an independent immutable 180 seconds after
+the original persisted dispatch, so a late-onset outage at `T+60s` may be
+acquired by reconciliation. The deadline is exactly validated and
+reconciliation cannot replace or extend it. Recovery may complete indefinitely
+later if the outage was already qualified. A dispatch response followed only
+by successful availability reads remains pending because it does not prove a
+restart, and a future unrelated outage after the 180-second window cannot
+verify the old plan. Repeated apply, startup reconciliation, and process
+recreation remain readback-only and never redispatch.
+`sensor.uptime` is not required. Historical plans lacking authoritative
+persisted Core-outage evidence, including records with only a raw outage flag,
+remain pending rather than being inferred.
+The complete source contract is
+[`V2_1_1_BETA3_ACCEPTANCE.md`](V2_1_1_BETA3_ACCEPTANCE.md).

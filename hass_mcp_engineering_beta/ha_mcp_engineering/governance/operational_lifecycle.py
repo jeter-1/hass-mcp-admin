@@ -58,7 +58,20 @@ RELOAD_SERVICES = {
 MAX_STATES = 20_000
 RESTART_DISRUPTION_PROBE_ATTEMPTS = 15
 RESTART_DISRUPTION_PROBE_INTERVAL_SECONDS = 1.0
+RESTART_OUTAGE_ELIGIBILITY_WINDOW_SECONDS = 180.0
 _SAFE_IDENTITY = re.compile(r"^[^\x00-\x1f\x7f]{1,160}$")
+
+
+def _parse_aware_timestamp(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed
 
 
 class LifecycleGatewayError(RuntimeError):
@@ -575,12 +588,19 @@ class OperationalLifecycleGateway:
         *,
         baseline: dict[str, Any],
         restart_dispatch_confirmed: bool,
-        expected_disruption_observed: bool,
+        authoritative_outage_observed: bool,
+        outage_observation_window_open: bool,
+        outage_observation_deadline: str | None,
     ) -> dict[str, Any]:
-        if not expected_disruption_observed:
+        if (
+            not authoritative_outage_observed
+            and outage_observation_window_open
+        ):
             try:
-                disruption_observed = (
-                    await self._observe_home_assistant_disruption()
+                disruption = (
+                    await self._observe_home_assistant_disruption(
+                        outage_observation_deadline
+                    )
                 )
             except LifecycleGatewayError as exc:
                 return {
@@ -591,11 +611,19 @@ class OperationalLifecycleGateway:
                         "redispatch_performed": False,
                     },
                 }
-            if disruption_observed:
+            if disruption is not None:
+                disruption_category, observed_at = disruption
                 return {
                     "status": "pending",
                     "mismatch_fields": ["home_assistant_recovery"],
                     "evidence": {
+                        "outage_observed": True,
+                        "home_assistant_core_unavailable": True,
+                        "failure_category": disruption_category,
+                        "outage_observed_at": observed_at,
+                        "restart_evidence_sources": [
+                            "home_assistant_core_connection_probe"
+                        ],
                         "expected_disruption_observed": True,
                         "restart_dispatch_confirmed": (
                             restart_dispatch_confirmed
@@ -605,30 +633,81 @@ class OperationalLifecycleGateway:
                 }
         try:
             identity = await self.read_home_assistant_identity()
-            provider = await self.provider.probe("restart_home_assistant")
-        except (LifecycleGatewayError, OperationalLifecycleProviderError) as exc:
+        except LifecycleGatewayError as exc:
+            evidence: dict[str, Any] = {
+                "failure_category": exc.category,
+                "redispatch_performed": False,
+            }
+            observed_at = datetime.now(timezone.utc)
+            deadline = _parse_aware_timestamp(
+                outage_observation_deadline
+            )
+            if (
+                exc.category
+                in {"provider_timeout", "provider_unavailable"}
+                and deadline is not None
+                and observed_at <= deadline
+            ):
+                evidence.update(
+                    {
+                        "outage_observed": True,
+                        "home_assistant_core_unavailable": True,
+                        "outage_observed_at": observed_at.isoformat(),
+                        "restart_evidence_sources": [
+                            "home_assistant_core_connection_probe"
+                        ],
+                        "expected_disruption_observed": True,
+                    }
+                )
             return {
                 "status": "pending",
                 "mismatch_fields": ["home_assistant_recovery"],
-                "evidence": {
-                    "failure_category": getattr(
-                        exc, "category", "provider_unavailable"
-                    ),
-                    "redispatch_performed": False,
-                },
+                "evidence": evidence,
+            }
+        reconnected_at = (
+            datetime.now(timezone.utc).isoformat()
+            if authoritative_outage_observed
+            else None
+        )
+        try:
+            provider = await self.provider.probe("restart_home_assistant")
+        except OperationalLifecycleProviderError as exc:
+            evidence = {
+                "failure_category": exc.category,
+                "home_assistant_reconnected": (
+                    authoritative_outage_observed
+                ),
+                "restart_evidence_sources": (
+                    ["home_assistant_core_reconnected"]
+                    if authoritative_outage_observed
+                    else []
+                ),
+                "redispatch_performed": False,
+            }
+            if reconnected_at is not None:
+                evidence["reconnected_at"] = reconnected_at
+            return {
+                "status": "pending",
+                "mismatch_fields": ["upstream_admission"],
+                "evidence": evidence,
             }
         validation = await self.configuration_validation()
         runtime = self.runtime_snapshot()
         expected_identity = baseline.get("home_assistant")
         mismatch: list[str] = []
-        if not isinstance(expected_identity, dict) or any(
+        identity_unchanged = isinstance(expected_identity, dict) and not any(
             identity.get(field) != expected_identity.get(field)
             for field in ("location_name", "version")
-        ):
+        )
+        if not identity_unchanged:
             mismatch.append("home_assistant_identity")
-        if validation.get("status") != "valid":
+        configuration_valid = validation.get("status") == "valid"
+        if not configuration_valid:
             mismatch.append("configuration_validation")
-        if not expected_disruption_observed:
+        if not (
+            restart_dispatch_confirmed
+            and authoritative_outage_observed
+        ):
             mismatch.append("restart_evidence")
         expected_runtime = baseline.get("runtime")
         if not isinstance(expected_runtime, dict) or any(
@@ -712,30 +791,58 @@ class OperationalLifecycleGateway:
                 "restart_dispatch_confirmed": (
                     restart_dispatch_confirmed
                 ),
-                "expected_disruption_observed": expected_disruption_observed,
+                "outage_observed": authoritative_outage_observed,
+                "expected_disruption_observed": (
+                    authoritative_outage_observed
+                ),
+                "home_assistant_reconnected": (
+                    authoritative_outage_observed
+                ),
+                **(
+                    {"reconnected_at": reconnected_at}
+                    if reconnected_at is not None
+                    else {}
+                ),
+                "home_assistant_identity_unchanged": identity_unchanged,
+                "post_restart_configuration_valid": configuration_valid,
+                "restart_evidence_sources": (
+                    ["home_assistant_core_reconnected"]
+                    if authoritative_outage_observed
+                    else []
+                ),
                 "runtime_checks": runtime_checks,
                 "redispatch_performed": False,
             },
         }
 
-    async def _observe_home_assistant_disruption(self) -> bool:
+    async def _observe_home_assistant_disruption(
+        self, outage_observation_deadline: str | None
+    ) -> tuple[str, str] | None:
         """Boundedly require a real disconnect before restart verification."""
 
+        deadline = _parse_aware_timestamp(outage_observation_deadline)
+        if deadline is None:
+            return None
         for attempt in range(RESTART_DISRUPTION_PROBE_ATTEMPTS):
+            if datetime.now(timezone.utc) > deadline:
+                return None
             try:
                 await self.read_home_assistant_identity()
             except LifecycleGatewayError as exc:
+                observed_at = datetime.now(timezone.utc)
                 if exc.category in {
                     "provider_timeout",
                     "provider_unavailable",
-                }:
-                    return True
+                } and observed_at <= deadline:
+                    return exc.category, observed_at.isoformat()
                 raise
             if attempt + 1 < RESTART_DISRUPTION_PROBE_ATTEMPTS:
+                if datetime.now(timezone.utc) >= deadline:
+                    return None
                 await asyncio.sleep(
                     RESTART_DISRUPTION_PROBE_INTERVAL_SECONDS
                 )
-        return False
+        return None
 
     async def read_services(self) -> dict[str, Any]:
         try:
@@ -788,7 +895,11 @@ class OperationalLifecycleGateway:
             raise LifecycleGatewayError("provider_timeout") from None
         except HomeAssistantUnavailableError:
             raise LifecycleGatewayError("provider_unavailable") from None
-        except HomeAssistantApiError:
+        except HomeAssistantApiError as exc:
+            if exc.details.get("status") in {502, 503, 504}:
+                raise LifecycleGatewayError(
+                    "provider_unavailable"
+                ) from None
             raise LifecycleGatewayError("provider_error") from None
         if not isinstance(raw, dict):
             raise LifecycleGatewayError("invalid_response")
