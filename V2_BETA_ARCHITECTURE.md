@@ -1,8 +1,23 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## 2.2.0-beta.1 durable execution-task boundary
+
+The static catalog contains 48 Engineering tools. The three additive task tools
+read one task, list bounded task summaries, or cancel only a pre-dispatch task.
+They do not add a provider, action, compensation, rollback, fallback, or
+MCP-native Tasks capability.
+
+An immutable plan continues to authorize intent and bind external approval.
+One separate task schema records mutable execution and recovery facts under a
+versioned namespace. Its append-only event history and materialized state are
+written in one atomic envelope. Duplicate apply, lost responses, and process
+restart resolve the same task and cannot reopen dispatch. Operation-specific
+2.1A verification remains authoritative. See
+[`ADR-008`](docs/architecture/ADR-008-DURABLE-EXECUTION-TASKS.md).
+
 ## 2.1A Beta 2 exact action wrappers
 
-The static catalog contains 45 Engineering tools. Proposal-only operational
+The accepted Beta 2 catalog contained 45 Engineering tools. Proposal-only operational
 tools do not expose their upstream provider tools. Engineering constructs exact
 arguments for reviewed `ha_reload_core`, `ha_manage_addon`, and `ha_restart`
 contracts only after external approval and call-time contract validation.

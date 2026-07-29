@@ -594,3 +594,34 @@ persisted Core-outage evidence, including records with only a raw outage flag,
 remain pending rather than being inferred.
 The complete source contract is
 [`V2_1_1_BETA3_ACCEPTANCE.md`](V2_1_1_BETA3_ACCEPTANCE.md).
+
+## 2.2.0-beta.1 durable execution tasks
+
+F1 adds three Engineering-native task tools. Complete exact upstream admission
+therefore reports 48 Engineering tools plus 26 delegated reads, or 74 total.
+Reconnect or refresh any client that caches `tools/list`.
+
+For every new approved apply, use the additive `task_id` returned by
+`apply_change_plan`:
+
+1. Call `get_execution_task` to inspect bounded progress, provider-attempt,
+   verification, terminal, and plan-reference evidence.
+2. Use `list_execution_tasks` with exact state, outcome, or plan filters for
+   operational review.
+3. Use `cancel_execution_task` only when a recovered task is still
+   `created`/`preflight` and has no dispatch evidence.
+
+After `dispatch_attempted`, cancellation, reconnect, repeated apply, and
+startup recovery cannot send another provider action. Existing operation
+verification remains readback-only. An unresolved dispatched task becomes
+`manual_review_required` 24 hours after its immutable first dispatch.
+
+Task records live under `/data` in the separate `execution-tasks-v1`
+governance namespace. A rollback to 2.1.1-beta.3 preserves those files but
+cannot display or resume them. Do not move task files into a legacy plan
+namespace. Re-upgrade to the exact F1 artifact to restore visibility.
+
+Source and later runtime acceptance are bounded by
+[`V2_2_0_BETA1_ACCEPTANCE.md`](V2_2_0_BETA1_ACCEPTANCE.md). Ordinary source
+review and CI must not dispatch a live plan, restart Home Assistant or an
+add-on, publish, or deploy.

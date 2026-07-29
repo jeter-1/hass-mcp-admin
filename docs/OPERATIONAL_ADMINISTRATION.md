@@ -1,13 +1,56 @@
 # Governed operational administration
 
-Version: `2.1.1-beta.3`
+Version: `2.2.0-beta.1`
 
-Beta 2 completes 2.1A with four public proposal tools:
+The accepted 2.1A lifecycle retains four public proposal tools:
 `create_backup_plan`, `create_reload_plan`, `create_addon_restart_plan`, and
 `create_home_assistant_restart_plan`. All four reuse
 `get_change_plan`, `list_change_plans`, `approve_change_plan`, and
 `apply_change_plan`. Planning, approval, dispatch, and verification remain
 separate lifecycle steps.
+
+## Durable execution tasks
+
+Version `2.2.0-beta.1` keeps every change plan immutable and hash-stable while
+recording mutable apply and recovery facts in one separate execution task.
+External approval remains a separate exact-hash authority. It is neither copied
+into the task nor replaced by task state.
+
+For a newly executed plan, `apply_change_plan` creates or reuses one task before
+preflight and returns its `task_id`, state, and reuse status additively. The
+task repository enforces one owner for the exact plan and execution intent.
+Duplicate or reconnecting apply calls therefore return the same task or
+`already_applied`; they cannot create another provider dispatch opportunity.
+Historical plans without tasks remain readable as legacy records and receive
+no fabricated execution evidence.
+
+Operators can use:
+
+- `get_execution_task` for the bounded event history, verification summary,
+  plan reference, current state, and terminal outcome;
+- `list_execution_tasks` for bounded exact state, outcome, or plan filters; and
+- `cancel_execution_task` only while a task is still durably pre-dispatch.
+
+Cancellation is not rollback or compensation. After `dispatch_attempted`,
+cancellation returns `cancellation_not_permitted_after_dispatch` and existing
+operation-specific readback continues. An unresolved dispatched task retains
+its original immutable first-dispatch deadline. It becomes
+`manual_review_required` after 24 hours and is never redispatched.
+
+Tasks use `execution-tasks-v1`, outside the legacy plan namespaces. Each atomic
+JSON envelope contains the materialized task and its ordered append-only logical
+events. Startup validates that event history against the materialized record.
+Unreadable or contradictory authority fails closed; it is never silently
+repaired into another dispatch opportunity. Completed tasks follow the existing
+90-day governance retention.
+
+Startup first rehydrates task authority without provider actions, then invokes
+the existing bounded operational reconciler for eligible dispatched plans.
+That reconciler remains readback-only. Pre-dispatch tasks are not automatically
+dispatched; a later exact apply must revalidate plan and approval authority.
+Provider acknowledgement alone is not verified success: backup, reload,
+Engineering self-restart, reviewed upstream restart, other add-on restart, and
+Home Assistant restart retain their existing verification contracts.
 
 ## Backup contract
 

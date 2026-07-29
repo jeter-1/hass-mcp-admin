@@ -1,5 +1,37 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## 2.2.0-beta.1 durable execution-task health
+
+`get_server_health.operational_administration.execution_tasks` separates three
+counter families:
+
+- current materialized state: `active_tasks_by_state`,
+  `nonterminal_tasks`, `tasks_verifying`, and `tasks_manual_review`;
+- retained persistent history: `tasks_created`, `verified_successes`,
+  `failed_pre_dispatch`, `failed_post_dispatch`, `cancellations`,
+  `manual_review_outcomes`, and `no_blind_redispatch_preventions`; and
+- current-process storage/recovery activity: `rehydration_attempts`,
+  `reconciliation_runs`, `event_write_failures`, and
+  `materialization_failures`.
+
+Persistent history covers task records retained by the existing 90-day
+governance policy; it is not an all-time external telemetry store. Process
+counters reset with the Engineering process. Current-state counts are derived
+from validated materialized tasks at read time.
+
+The nested task storage summary reports configured/healthy state, namespace,
+record and bounded event counts, corruption and write counts, retention, and
+manual-review records. `last_task_failure_category` is bounded. It never
+contains credentials, raw provider responses, full endpoints, approval
+principals, or unredacted payloads.
+
+Task audit events cover creation, approval-consumption projection, dispatch
+boundary, provider response, verification, cancellation, duplicate-apply
+prevention, manual review, and terminal completion. They use
+`access=write`, `operation_class=execution_task_lifecycle`, bounded task/plan
+references, and zero-fallback attribution. Existing plan and operational audit
+events remain unchanged.
+
 ## Dev15 contract-level compatibility health
 
 Dev15 separates upstream version evidence, per-tool compatibility, dashboard

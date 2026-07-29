@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.2.0-beta.1 - Durable execution tasks
+
+- Separate the immutable hash-bound change plan and existing external approval
+  from one mutable, versioned execution task for each newly executed plan.
+- Persist a materialized task together with ordered append-only lifecycle
+  events in the isolated `execution-tasks-v1` namespace using atomic
+  flush/fsync/replace writes and fail-closed consistency validation.
+- Make `apply_change_plan` create or reuse one authoritative task before
+  preflight, project existing dispatch and operation-specific verification
+  evidence, and additively return the task identifier and state.
+- Preserve the exact-once boundary across duplicate callers, client timeout,
+  provider response loss, and Engineering process restart. Startup task
+  rehydration performs no provider action; existing operational reconciliation
+  remains readback-only.
+- Add bounded `get_execution_task`, `list_execution_tasks`, and
+  pre-dispatch-only `cancel_execution_task`. Cancellation after dispatch is
+  refused and is never represented as rollback or compensation.
+- Set the immutable maximum recovery deadline to 24 hours after first dispatch.
+  Unresolved tasks then enter `manual_review_required` without redispatch.
+- Keep historical taskless plans readable as legacy records without fabricating
+  execution evidence or changing any plan hash.
+- Increase the complete catalog to 48 Engineering tools plus 26 reviewed
+  delegated reads, 74 total. Upstream admission, provider routes, public
+  schemas outside the three additive tools, stable v1, and zero fallback remain
+  unchanged.
+
 ## 2.1.1-beta.3 - Home Assistant restart evidence reconciliation
 
 - Accumulate authoritative post-dispatch Home Assistant Core outage and

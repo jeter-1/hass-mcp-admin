@@ -1,8 +1,29 @@
 # HA MCP Engineering Server Architecture
 
+## 2.2.0-beta.1 durable execution tasks
+
+The current source has 48 static Engineering tools. F1 separates each immutable
+hash-bound change plan, its existing external approval, and one mutable durable
+execution task. The task contains bounded execution, provider-attempt,
+verification, error, terminal, and legacy-projection evidence; none of it is an
+input to the plan hash.
+
+The `execution-tasks-v1` repository atomically stores a task's materialized
+record with its append-only logical event history. It enforces one task owner
+per exact plan and execution intent. Apply, duplicate callers, process
+recovery, and existing operational reconciliation therefore converge on the
+same task. No recovery path may create another provider dispatch.
+
+Startup rehydrates task authority without provider actions, then retains the
+accepted operation-specific readback reconciler for dispatched operational
+plans. The first dispatch creates an immutable 24-hour maximum recovery
+deadline; unresolved tasks become `manual_review_required` without retry.
+Pre-dispatch cancellation is the only cancellation. See
+[`ADR-008`](docs/architecture/ADR-008-DURABLE-EXECUTION-TASKS.md).
+
 ## 2.1A Beta 2 governed operational lifecycle
 
-The current source has 45 static Engineering tools. Four proposal tools share
+The accepted 2.1A source introduced 45 static Engineering tools. Four proposal tools share
 one contract-v3 governance family and external administrator authority. Beta 2
 adds fixed reviewed wrappers for four domain reloads, one exact add-on restart,
 and one Home Assistant restart. The underlying mixed/high-risk upstream tools
