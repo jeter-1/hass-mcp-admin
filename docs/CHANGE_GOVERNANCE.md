@@ -22,6 +22,13 @@ is added without replacing outage evidence. Confirmed dispatch without a
 qualified outage remains verification-pending. Reconciliation never restores
 write authority or redispatches.
 
+New outage evidence must fall within the immutable interval derived from the
+original persisted dispatch timestamp. Reconciliation cannot extend it, while
+recovery may finish later if a qualifying outage was already recorded. A late
+unrelated outage cannot verify an old plan. The same complete-evidence
+predicate validates current and historical records; an incomplete raw outage
+flag is never authority.
+
 The existing blanket prohibition on high-risk automation changes is unchanged.
 Only the exact add-on and Home Assistant restart operation types have reviewed
 high-risk infrastructure policy and external-approval authority. This does not

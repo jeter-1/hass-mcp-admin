@@ -44,6 +44,7 @@ from ha_mcp_engineering.governance.operational_lifecycle import (  # noqa: E402
     ENGINEERING_ADDON_SLUG,
     LifecycleGatewayError,
     OperationalLifecycleGateway,
+    RESTART_DISRUPTION_OBSERVATION_WINDOW_SECONDS,
     UPSTREAM_PROVIDER_CONTRACT_FIELDS,
     _addon_target_class,
     _upstream_readmission_matches,
@@ -201,6 +202,10 @@ class FakeLifecycleGateway:
         self.validation_status = "valid"
         self.verification_status = "verified"
         self.home_assistant_verification_results = []
+        self.home_assistant_verification_calls = []
+        self.now = lambda: datetime(
+            2026, 7, 27, 12, 0, tzinfo=timezone.utc
+        )
         self.mode = "success"
         self.addon = {
             "slug": "local_test_addon",
@@ -347,11 +352,20 @@ class FakeLifecycleGateway:
         return result
 
     async def verify_home_assistant_restart(self, **_kwargs):
+        self.home_assistant_verification_calls.append(deepcopy(_kwargs))
         if self.home_assistant_verification_results:
             self.verification_count += 1
-            return deepcopy(
+            result = deepcopy(
                 self.home_assistant_verification_results.pop(0)
             )
+            evidence = result.get("evidence")
+            if (
+                isinstance(evidence, dict)
+                and evidence.get("outage_observed") is True
+                and "outage_observed_at" not in evidence
+            ):
+                evidence["outage_observed_at"] = self.now().isoformat()
+            return result
         self.verification_count += 1
         if self.mode == "disruption":
             return {
@@ -361,6 +375,7 @@ class FakeLifecycleGateway:
                     "outage_observed": True,
                     "home_assistant_core_unavailable": True,
                     "failure_category": "provider_unavailable",
+                    "outage_observed_at": self.now().isoformat(),
                     "restart_evidence_sources": [
                         "home_assistant_core_connection_probe"
                     ],
@@ -375,6 +390,7 @@ class FakeLifecycleGateway:
                     "outage_observed": True,
                     "home_assistant_core_unavailable": True,
                     "failure_category": "provider_unavailable",
+                    "outage_observed_at": self.now().isoformat(),
                     "restart_dispatch_confirmed": True,
                     "home_assistant_reconnected": True,
                     "home_assistant_identity_unchanged": True,
@@ -509,6 +525,7 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.clock = Clock()
         self.lifecycle = FakeLifecycleGateway()
+        self.lifecycle.now = self.clock
         self.repository = ChangePlanRepository(
             Path(self.temp.name) / "plans"
         )
@@ -899,6 +916,9 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(first_evidence["outage_observed"])
         self.assertEqual(first_evidence["unavailable_observation_count"], 1)
         first_unavailable_at = first_evidence["first_unavailable_at"]
+        observation_deadline = first_plan.operational.dispatch[
+            "outage_observation_deadline"
+        ]
 
         self.clock.advance(seconds=5)
         second = await self.service.apply(
@@ -955,10 +975,18 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             persisted.operational.dispatch["attempt_count"], 1
         )
+        self.assertEqual(
+            persisted.operational.dispatch[
+                "outage_observation_deadline"
+            ],
+            observation_deadline,
+        )
         self.assertEqual(self.lifecycle.dispatch_count, 1)
         metrics = self.service.health_summary()[
             "operational_administration"
         ]["operations"]["restart_home_assistant"]
+        self.assertEqual(metrics["dispatch_attempts"], 1)
+        self.assertEqual(metrics["dispatch_successes"], 1)
         self.assertEqual(metrics["verified_successes"], 1)
         self.assertEqual(metrics["verification_pending_plans"], 0)
         self.assertEqual(metrics["indeterminate_outcomes"], 0)
@@ -1011,6 +1039,361 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(self.lifecycle.dispatch_count, 1)
 
+    async def test_late_unrelated_outage_cannot_verify_old_restart(self):
+        created = await self.service.create_home_assistant_restart_plan()
+        plan = await self.grant(created)
+        self.lifecycle.home_assistant_verification_results = [
+            {
+                "status": "verified",
+                "mismatch_fields": [],
+                "evidence": {
+                    "restart_dispatch_confirmed": True,
+                    "home_assistant_reconnected": True,
+                    "home_assistant_identity_unchanged": True,
+                    "post_restart_configuration_valid": True,
+                    "redispatch_performed": False,
+                },
+            }
+        ]
+        pending = await self.service.apply(
+            plan["plan_id"], plan["plan_hash"]
+        )
+        self.assertEqual(pending["status"], "verification_pending")
+        dispatched = self.repository.get(plan["plan_id"])
+        deadline = datetime.fromisoformat(
+            dispatched.operational.dispatch[
+                "outage_observation_deadline"
+            ]
+        )
+        self.clock.value = deadline + timedelta(seconds=1)
+
+        recovered_gateway = FakeLifecycleGateway()
+        recovered_gateway.now = self.clock
+        recovered_gateway.home_assistant_verification_results = [
+            {
+                "status": "pending",
+                "mismatch_fields": ["home_assistant_recovery"],
+                "evidence": {
+                    "outage_observed": True,
+                    "home_assistant_core_unavailable": True,
+                    "failure_category": "provider_unavailable",
+                    "restart_evidence_sources": [
+                        "home_assistant_core_connection_probe"
+                    ],
+                    "redispatch_performed": False,
+                },
+            },
+            {
+                "status": "verified",
+                "mismatch_fields": [],
+                "evidence": {
+                    "restart_dispatch_confirmed": True,
+                    "home_assistant_reconnected": True,
+                    "home_assistant_identity_unchanged": True,
+                    "post_restart_configuration_valid": True,
+                    "redispatch_performed": False,
+                },
+            },
+        ]
+        recovered_service = ChangeGovernanceService(
+            ChangePlanRepository(Path(self.temp.name) / "plans"),
+            LegacyGateway(),
+            AuditLogger(
+                str(Path(self.temp.name) / "late-outage-audit.jsonl"),
+                "beta2-test-access-secret",
+            ),
+            now=self.clock,
+            lifecycle_gateway=recovered_gateway,
+        )
+
+        first = await recovered_service.reconcile_operational_plans(
+            trigger="startup"
+        )
+        second = await recovered_service.reconcile_operational_plans(
+            trigger="periodic"
+        )
+
+        self.assertEqual(first["completed"], 0)
+        self.assertEqual(second["completed"], 0)
+        persisted = recovered_service.repository.get(plan["plan_id"])
+        evidence = persisted.operational.verification.evidence
+        self.assertFalse(evidence["outage_observed"])
+        self.assertEqual(
+            evidence["outage_window_status"], "expired"
+        )
+        self.assertIn(
+            "restart_evidence_window_expired",
+            persisted.operational.verification.mismatch_fields,
+        )
+        self.assertEqual(
+            persisted.operational.dispatch["attempt_count"], 1
+        )
+        self.assertEqual(self.lifecycle.dispatch_count, 1)
+        self.assertEqual(recovered_gateway.dispatch_count, 0)
+        self.assertFalse(evidence["redispatch_performed"])
+
+    async def test_qualified_outage_allows_recovery_after_deadline(self):
+        created = await self.service.create_home_assistant_restart_plan()
+        plan = await self.grant(created)
+        self.lifecycle.home_assistant_verification_results = [
+            {
+                "status": "pending",
+                "mismatch_fields": ["home_assistant_recovery"],
+                "evidence": {
+                    "outage_observed": True,
+                    "home_assistant_core_unavailable": True,
+                    "failure_category": "provider_unavailable",
+                    "restart_evidence_sources": [
+                        "home_assistant_core_connection_probe"
+                    ],
+                    "redispatch_performed": False,
+                },
+            }
+        ]
+        pending = await self.service.apply(
+            plan["plan_id"], plan["plan_hash"]
+        )
+        self.assertEqual(pending["status"], "verification_pending")
+        dispatched = self.repository.get(plan["plan_id"])
+        evidence_before = deepcopy(
+            dispatched.operational.verification.evidence
+        )
+        deadline = datetime.fromisoformat(
+            dispatched.operational.dispatch[
+                "outage_observation_deadline"
+            ]
+        )
+        self.clock.value = deadline + timedelta(hours=1)
+
+        recovered_gateway = FakeLifecycleGateway()
+        recovered_gateway.now = self.clock
+        recovered_gateway.home_assistant_verification_results = [
+            {
+                "status": "verified",
+                "mismatch_fields": [],
+                "evidence": {
+                    "restart_dispatch_confirmed": True,
+                    "home_assistant_reconnected": True,
+                    "home_assistant_identity_unchanged": True,
+                    "post_restart_configuration_valid": True,
+                    "restart_evidence_sources": [
+                        "home_assistant_core_reconnected"
+                    ],
+                    "redispatch_performed": False,
+                },
+            }
+        ]
+        recovered_service = ChangeGovernanceService(
+            ChangePlanRepository(Path(self.temp.name) / "plans"),
+            LegacyGateway(),
+            AuditLogger(
+                str(Path(self.temp.name) / "late-recovery-audit.jsonl"),
+                "beta2-test-access-secret",
+            ),
+            now=self.clock,
+            lifecycle_gateway=recovered_gateway,
+        )
+
+        reconciled = await recovered_service.reconcile_operational_plans(
+            trigger="startup"
+        )
+
+        self.assertEqual(reconciled["completed"], 1)
+        persisted = recovered_service.repository.get(plan["plan_id"])
+        self.assertEqual(persisted.status, PlanStatus.APPLIED)
+        self.assertTrue(
+            persisted.operational.verification.evidence[
+                "outage_observed"
+            ]
+        )
+        self.assertEqual(
+            persisted.operational.verification.evidence[
+                "first_unavailable_at"
+            ],
+            evidence_before["first_unavailable_at"],
+        )
+        self.assertEqual(self.lifecycle.dispatch_count, 1)
+        self.assertEqual(recovered_gateway.dispatch_count, 0)
+
+    async def test_outage_evidence_boundaries_are_inclusive(self):
+        created = await self.service.create_home_assistant_restart_plan()
+        plan_public = await self.grant(created)
+        plan = self.repository.get(plan_public["plan_id"])
+        plan.approval.state = ApprovalState.CONSUMED
+        attempted_at = self.clock()
+        self.assertEqual(
+            RESTART_DISRUPTION_OBSERVATION_WINDOW_SECONDS, 15
+        )
+        deadline = attempted_at + timedelta(
+            seconds=RESTART_DISRUPTION_OBSERVATION_WINDOW_SECONDS
+        )
+        plan.operational.dispatch.update(
+            {
+                "attempt_count": 1,
+                "dispatched": True,
+                "attempted_at": attempted_at.isoformat(),
+                "outage_observation_deadline": deadline.isoformat(),
+            }
+        )
+
+        for label, observed_at, expected in (
+            (
+                "before_dispatch",
+                attempted_at - timedelta(microseconds=1),
+                False,
+            ),
+            ("at_dispatch", attempted_at, True),
+            ("at_deadline", deadline, True),
+            (
+                "after_deadline",
+                deadline + timedelta(microseconds=1),
+                False,
+            ),
+        ):
+            with self.subTest(label=label):
+                evidence = {
+                    "outage_observed": True,
+                    "home_assistant_core_unavailable": True,
+                    "first_unavailable_at": observed_at.isoformat(),
+                    "last_unavailable_at": observed_at.isoformat(),
+                    "unavailable_observation_count": 1,
+                    "outage_failure_category": (
+                        "provider_unavailable"
+                    ),
+                    "restart_evidence_sources": [
+                        "home_assistant_core_connection_probe"
+                    ],
+                }
+                state = (
+                    self.service._home_assistant_outage_evidence_state(
+                        plan,
+                        evidence,
+                        now=observed_at.isoformat(),
+                    )
+                )
+                self.assertEqual(state["authoritative"], expected)
+
+    async def test_malformed_outage_evidence_matrix_fails_closed(self):
+        created = await self.service.create_home_assistant_restart_plan()
+        plan_public = await self.grant(created)
+        plan = self.repository.get(plan_public["plan_id"])
+        plan.approval.state = ApprovalState.CONSUMED
+        attempted_at = self.clock()
+        deadline = attempted_at + timedelta(
+            seconds=RESTART_DISRUPTION_OBSERVATION_WINDOW_SECONDS
+        )
+        plan.operational.dispatch.update(
+            {
+                "attempt_count": 1,
+                "dispatched": True,
+                "attempted_at": attempted_at.isoformat(),
+                "outage_observation_deadline": deadline.isoformat(),
+            }
+        )
+        complete = {
+            "outage_observed": True,
+            "home_assistant_core_unavailable": True,
+            "first_unavailable_at": attempted_at.isoformat(),
+            "last_unavailable_at": attempted_at.isoformat(),
+            "unavailable_observation_count": 1,
+            "outage_failure_category": "provider_unavailable",
+            "restart_evidence_sources": [
+                "home_assistant_core_connection_probe"
+            ],
+        }
+        raw_state = (
+            self.service._home_assistant_outage_evidence_state(
+                plan,
+                {"outage_observed": True},
+                now=attempted_at.isoformat(),
+            )
+        )
+        self.assertFalse(raw_state["authoritative"])
+        cases = {
+            "missing_first": {"first_unavailable_at": None},
+            "invalid_first": {"first_unavailable_at": "invalid"},
+            "first_before_dispatch": {
+                "first_unavailable_at": (
+                    attempted_at - timedelta(microseconds=1)
+                ).isoformat()
+            },
+            "first_after_deadline": {
+                "first_unavailable_at": (
+                    deadline + timedelta(microseconds=1)
+                ).isoformat()
+            },
+            "missing_last": {"last_unavailable_at": None},
+            "last_before_first": {
+                "last_unavailable_at": (
+                    attempted_at - timedelta(microseconds=1)
+                ).isoformat()
+            },
+            "last_after_deadline": {
+                "last_unavailable_at": (
+                    deadline + timedelta(microseconds=1)
+                ).isoformat()
+            },
+            "missing_source": {"restart_evidence_sources": []},
+            "unapproved_source": {
+                "restart_evidence_sources": [
+                    "home_assistant_core_reconnected"
+                ]
+            },
+            "missing_category": {"outage_failure_category": None},
+            "disallowed_category": {
+                "outage_failure_category": "provider_error"
+            },
+            "missing_count": {"unavailable_observation_count": None},
+            "zero_count": {"unavailable_observation_count": 0},
+            "negative_count": {"unavailable_observation_count": -1},
+        }
+        for label, replacement in cases.items():
+            with self.subTest(label=label):
+                evidence = {**complete, **replacement}
+                state = (
+                    self.service._home_assistant_outage_evidence_state(
+                        plan,
+                        evidence,
+                        now=attempted_at.isoformat(),
+                    )
+                )
+                self.assertFalse(state["authoritative"])
+
+        plan_cases = {
+            "dispatch_not_persisted": {"dispatched": False},
+            "attempt_count_zero": {"attempt_count": 0},
+            "missing_deadline": {"outage_observation_deadline": None},
+            "invalid_deadline": {
+                "outage_observation_deadline": "invalid"
+            },
+            "extended_deadline": {
+                "outage_observation_deadline": (
+                    deadline + timedelta(seconds=1)
+                ).isoformat()
+            },
+        }
+        for label, replacement in plan_cases.items():
+            with self.subTest(label=label):
+                changed = deepcopy(plan)
+                changed.operational.dispatch.update(replacement)
+                state = (
+                    self.service._home_assistant_outage_evidence_state(
+                        changed,
+                        complete,
+                        now=attempted_at.isoformat(),
+                    )
+                )
+                self.assertFalse(state["authoritative"])
+
+        unconsumed = deepcopy(plan)
+        unconsumed.approval.state = ApprovalState.APPROVED
+        state = self.service._home_assistant_outage_evidence_state(
+            unconsumed,
+            complete,
+            now=attempted_at.isoformat(),
+        )
+        self.assertFalse(state["authoritative"])
+
     async def test_legacy_disruption_flag_is_not_authoritative_outage(self):
         created = await self.service.create_home_assistant_restart_plan()
         plan = await self.grant(created)
@@ -1030,6 +1413,7 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first["status"], "verification_pending")
         persisted = self.repository.get(plan["plan_id"])
         persisted.operational.verification.evidence = {
+            "outage_observed": True,
             "expected_disruption_observed": True,
             "restart_dispatch_confirmed": True,
             "redispatch_performed": False,
@@ -1054,6 +1438,16 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(resumed["status"], "verification_pending")
+        self.assertFalse(
+            self.lifecycle.home_assistant_verification_calls[-1][
+                "authoritative_outage_observed"
+            ]
+        )
+        self.assertTrue(
+            self.lifecycle.home_assistant_verification_calls[-1][
+                "outage_observation_window_open"
+            ]
+        )
         restored = self.repository.get(plan["plan_id"])
         self.assertEqual(self.service.plan_hash(restored), original_hash)
         self.assertFalse(
@@ -2950,7 +3344,11 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             result = await gateway.verify_home_assistant_restart(
                 baseline={},
                 restart_dispatch_confirmed=True,
-                outage_observed=False,
+                authoritative_outage_observed=False,
+                outage_observation_window_open=True,
+                outage_observation_deadline=(
+                    datetime.now(timezone.utc) + timedelta(minutes=1)
+                ).isoformat(),
             )
         self.assertEqual(result["status"], "pending")
         self.assertTrue(
@@ -2973,7 +3371,11 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
         result = await gateway.verify_home_assistant_restart(
             baseline={},
             restart_dispatch_confirmed=True,
-            outage_observed=False,
+            authoritative_outage_observed=False,
+            outage_observation_window_open=True,
+            outage_observation_deadline=(
+                datetime.now(timezone.utc) + timedelta(minutes=1)
+            ).isoformat(),
         )
 
         self.assertEqual(result["status"], "pending")
@@ -3003,7 +3405,11 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
         result = await gateway.verify_home_assistant_restart(
             baseline={},
             restart_dispatch_confirmed=True,
-            outage_observed=False,
+            authoritative_outage_observed=False,
+            outage_observation_window_open=True,
+            outage_observation_deadline=(
+                datetime.now(timezone.utc) + timedelta(minutes=1)
+            ).isoformat(),
         )
 
         self.assertEqual(result["status"], "pending")
@@ -3071,7 +3477,9 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
         verified = await gateway.verify_home_assistant_restart(
             baseline=baseline,
             restart_dispatch_confirmed=True,
-            outage_observed=True,
+            authoritative_outage_observed=True,
+            outage_observation_window_open=False,
+            outage_observation_deadline=None,
         )
         self.assertEqual(verified["status"], "verified")
 
@@ -3079,7 +3487,9 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
         pending = await gateway.verify_home_assistant_restart(
             baseline=baseline,
             restart_dispatch_confirmed=True,
-            outage_observed=True,
+            authoritative_outage_observed=True,
+            outage_observation_window_open=False,
+            outage_observation_deadline=None,
         )
         self.assertEqual(pending["status"], "pending")
         self.assertIn(
@@ -3091,7 +3501,9 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
         pending = await gateway.verify_home_assistant_restart(
             baseline=baseline,
             restart_dispatch_confirmed=True,
-            outage_observed=True,
+            authoritative_outage_observed=True,
+            outage_observation_window_open=False,
+            outage_observation_deadline=None,
         )
         self.assertEqual(pending["status"], "pending")
         self.assertIn("engineering_runtime", pending["mismatch_fields"])
@@ -3128,7 +3540,11 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             result = await gateway.verify_home_assistant_restart(
                 baseline={},
                 restart_dispatch_confirmed=True,
-                outage_observed=False,
+                authoritative_outage_observed=False,
+                outage_observation_window_open=True,
+                outage_observation_deadline=(
+                    datetime.now(timezone.utc) + timedelta(minutes=1)
+                ).isoformat(),
             )
 
         self.assertEqual(result["status"], "pending")

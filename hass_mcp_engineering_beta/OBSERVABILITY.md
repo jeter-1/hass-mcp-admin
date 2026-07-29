@@ -851,9 +851,13 @@ governance events retain the same request and plan correlation without logging
 raw results or credentials.
 
 For Home Assistant restart, the persisted evidence includes bounded outage
-state, earliest/latest unavailable timestamps, observation count, evidence
-sources, reconnection time, identity and configuration checks, and
-`redispatch_performed=false`. A verified reconciliation moves the plan out of
+state, the original dispatch timestamp, immutable outage-observation deadline,
+window status, earliest/latest unavailable timestamps, observation count,
+qualified failure category, evidence sources, reconnection time, identity and
+configuration checks, and `redispatch_performed=false`. The raw outage flag is
+not authoritative unless the complete record validates against consumed
+approval, persisted dispatch, and that deadline. A verified reconciliation
+moves the plan out of
 both `verification_pending_plans` and `indeterminate_outcomes`, increments
 `verified_successes`, and sets `last_successful_operation_timestamp`.
 Expected post-dispatch Core unavailability does not remain a permanent

@@ -10,9 +10,12 @@ instead of replacing it on each readback attempt. After an approved dispatch
 has been persisted, a direct Home Assistant Core connection timeout,
 unavailability, or Supervisor proxy 502/503/504 response records a bounded
 outage observation with its earliest and latest timestamps, observation count,
-and evidence source. Planning failures, approval failures, pre-dispatch
-validation, and unrelated upstream-provider failures do not establish restart
-evidence.
+failure category, and evidence source. New outage evidence is accepted only
+from the immutable observation interval calculated from the original persisted
+dispatch timestamp. Reconciliation cannot extend that interval, so a later
+unrelated Core outage cannot verify an old restart plan. Planning failures,
+approval failures, pre-dispatch validation, and unrelated upstream-provider
+failures do not establish restart evidence.
 
 Later readback adds reconnection, unchanged Home Assistant identity,
 post-restart configuration validation, Engineering runtime and tool-catalog
@@ -27,6 +30,9 @@ plus:
 
 Provider acknowledgement or current availability alone is not restart proof.
 No optional entity such as `sensor.uptime` is queried or required.
+An incomplete historical `outage_observed` flag is not authoritative: the
+complete timestamps, count, source, category, consumed approval, dispatch
+record, and observation deadline must validate as one unit.
 
 ## Recovery and safety
 
@@ -35,6 +41,10 @@ storage-backed merge. Every recovery pass is readback-only. Once dispatch is
 persisted, no pass can send another restart, recreate approval, or change the
 approved target. Multiple unavailable observations advance only the latest
 timestamp and count while preserving the earliest observation.
+When a qualified outage was recorded before the deadline, readback-only
+recovery may complete after that deadline or normal plan expiry. When no
+qualified outage was recorded, the plan reports
+`restart_evidence_window_expired` and future outages remain ineligible.
 
 Historical records remain readable and retain their plan hashes. An older plan
 without authoritative persisted Core-outage evidence is not inferred to have

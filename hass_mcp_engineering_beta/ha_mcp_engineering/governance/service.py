@@ -73,6 +73,7 @@ from .operational import (
 from .operational_lifecycle import (
     LifecycleGatewayError,
     OperationalLifecycleGateway,
+    RESTART_DISRUPTION_OBSERVATION_WINDOW_SECONDS,
     RELOAD_SERVICES,
 )
 from .validation import sanitize_context, validate_automation
@@ -115,6 +116,7 @@ HOME_ASSISTANT_RESTART_EVIDENCE_SOURCES = frozenset(
     }
 )
 MAX_RESTART_EVIDENCE_SOURCES = 8
+MAX_RESTART_OUTAGE_OBSERVATIONS = 10_000
 
 _APPROVAL_METADATA_FIELDS = {
     "automation": (
@@ -2021,6 +2023,12 @@ class ChangeGovernanceService:
                 "provider_response_received": False,
                 "restart_dispatch_confirmed": False,
                 "expected_disruption_observed": False,
+                **(
+                    {"outage_observation_deadline": None}
+                    if operation
+                    == ChangeOperation.RESTART_HOME_ASSISTANT
+                    else {}
+                ),
             },
             verification=RecoveryVerification(),
             limitations=[
@@ -3318,14 +3326,35 @@ class ChangeGovernanceService:
                 plan.apply_request_id = current_request_id()
                 plan.approval.state = ApprovalState.CONSUMED
                 plan.approval.consumed_at = self._timestamp()
-                operational.dispatch.update(
-                    {
-                        "attempt_count": 1,
-                        "dispatched": True,
-                        "request_id": plan.apply_request_id,
-                        "attempted_at": self._timestamp(),
-                    }
-                )
+                attempted_at = self._timestamp()
+                dispatch_record = {
+                    "attempt_count": 1,
+                    "dispatched": True,
+                    "request_id": plan.apply_request_id,
+                    "attempted_at": attempted_at,
+                }
+                if (
+                    plan.operation
+                    == ChangeOperation.RESTART_HOME_ASSISTANT
+                ):
+                    parsed_attempted_at = (
+                        _parse_governance_timestamp(attempted_at)
+                    )
+                    if parsed_attempted_at is None:
+                        raise GovernanceError(
+                            ErrorCode.INTERNAL_INVARIANT_VIOLATION
+                        )
+                    dispatch_record[
+                        "outage_observation_deadline"
+                    ] = (
+                        parsed_attempted_at
+                        + timedelta(
+                            seconds=(
+                                RESTART_DISRUPTION_OBSERVATION_WINDOW_SECONDS
+                            )
+                        )
+                    ).isoformat()
+                operational.dispatch.update(dispatch_record)
                 self._record(
                     plan,
                     f"{plan.operation.value}_dispatch_recorded",
@@ -3461,6 +3490,12 @@ class ChangeGovernanceService:
                 plan.operation
                 == ChangeOperation.RESTART_HOME_ASSISTANT
             ):
+                outage_state = (
+                    self._home_assistant_outage_evidence_state(
+                        plan,
+                        operational.verification.evidence,
+                    )
+                )
                 result = (
                     await self.lifecycle_gateway.verify_home_assistant_restart(
                         baseline=operational.baseline,
@@ -3469,9 +3504,15 @@ class ChangeGovernanceService:
                                 "restart_dispatch_confirmed"
                             )
                         ),
-                        outage_observed=bool(
-                            operational.verification.evidence.get(
-                                "outage_observed"
+                        authoritative_outage_observed=bool(
+                            outage_state["authoritative"]
+                        ),
+                        outage_observation_window_open=(
+                            outage_state["window_status"] == "open"
+                        ),
+                        outage_observation_deadline=(
+                            operational.dispatch.get(
+                                "outage_observation_deadline"
                             )
                         ),
                     )
@@ -3584,18 +3625,139 @@ class ChangeGovernanceService:
             },
         )
 
+    def _home_assistant_outage_evidence_state(
+        self,
+        plan: ChangePlan,
+        evidence: dict[str, Any],
+        *,
+        now: str | None = None,
+    ) -> dict[str, Any]:
+        """Validate one complete persisted Core-outage evidence record."""
+
+        operational = plan.operational
+        if operational is None:
+            raise GovernanceError(ErrorCode.INTERNAL_INVARIANT_VIOLATION)
+        dispatch = operational.dispatch
+        attempted_at = _parse_governance_timestamp(
+            dispatch.get("attempted_at")
+        )
+        deadline_value = dispatch.get("outage_observation_deadline")
+        deadline = _parse_governance_timestamp(deadline_value)
+        checked_at = _parse_governance_timestamp(
+            now if now is not None else self._timestamp()
+        )
+        expected_deadline = (
+            attempted_at
+            + timedelta(
+                seconds=(
+                    RESTART_DISRUPTION_OBSERVATION_WINDOW_SECONDS
+                )
+            )
+            if attempted_at is not None
+            else None
+        )
+        deadline_valid = (
+            isinstance(deadline_value, str)
+            and deadline is not None
+            and expected_deadline is not None
+            and deadline == expected_deadline
+            and deadline_value == expected_deadline.isoformat()
+        )
+        attempt_count = dispatch.get("attempt_count")
+        first_unavailable = _parse_governance_timestamp(
+            evidence.get("first_unavailable_at")
+        )
+        last_unavailable = _parse_governance_timestamp(
+            evidence.get("last_unavailable_at")
+        )
+        unavailable_count = evidence.get(
+            "unavailable_observation_count"
+        )
+        sources = _bounded_restart_evidence_sources(
+            evidence.get("restart_evidence_sources")
+        )
+        authoritative = (
+            evidence.get("outage_observed") is True
+            and evidence.get("home_assistant_core_unavailable") is True
+            and plan.approval.state == ApprovalState.CONSUMED
+            and dispatch.get("dispatched") is True
+            and isinstance(attempt_count, int)
+            and not isinstance(attempt_count, bool)
+            and attempt_count >= 1
+            and attempted_at is not None
+            and deadline_valid
+            and first_unavailable is not None
+            and last_unavailable is not None
+            and isinstance(unavailable_count, int)
+            and not isinstance(unavailable_count, bool)
+            and 1
+            <= unavailable_count
+            <= MAX_RESTART_OUTAGE_OBSERVATIONS
+            and (
+                "home_assistant_core_connection_probe"
+                in sources
+            )
+            and evidence.get("outage_failure_category")
+            in HOME_ASSISTANT_OUTAGE_CATEGORIES
+            and attempted_at <= first_unavailable
+            and first_unavailable <= last_unavailable
+            and last_unavailable <= deadline
+            and (
+                checked_at is None
+                or last_unavailable <= checked_at
+            )
+        )
+        if authoritative:
+            window_status = "qualified"
+            reason = None
+        elif not deadline_valid:
+            window_status = "invalid"
+            reason = "restart_evidence_contract_invalid"
+        elif checked_at is not None and checked_at > deadline:
+            window_status = "expired"
+            reason = "restart_evidence_window_expired"
+        else:
+            window_status = "open"
+            reason = "restart_evidence"
+        return {
+            "authoritative": authoritative,
+            "window_status": window_status,
+            "reason": reason,
+            "attempted_at": (
+                attempted_at.isoformat()
+                if attempted_at is not None
+                else None
+            ),
+            "deadline": (
+                deadline.isoformat() if deadline is not None else None
+            ),
+            "sources": sources,
+            "first_unavailable_at": (
+                first_unavailable.isoformat()
+                if first_unavailable is not None
+                else None
+            ),
+            "last_unavailable_at": (
+                last_unavailable.isoformat()
+                if last_unavailable is not None
+                else None
+            ),
+            "unavailable_observation_count": (
+                unavailable_count if authoritative else 0
+            ),
+            "outage_failure_category": (
+                evidence.get("outage_failure_category")
+                if authoritative
+                else None
+            ),
+        }
+
     def _merge_home_assistant_restart_verification(
         self,
         plan: ChangePlan,
         result: dict[str, Any],
     ) -> dict[str, Any]:
-        """Merge authoritative Core restart evidence monotonically.
-
-        Only a consumed, persisted, post-dispatch Core connection probe can
-        establish an outage. Recovery attempts add to that evidence; they
-        never replace it or infer an outage from provider acknowledgement,
-        elapsed time, or current availability.
-        """
+        """Normalize and monotonically merge authoritative Core evidence."""
 
         operational = plan.operational
         if operational is None:
@@ -3604,76 +3766,77 @@ class ChangeGovernanceService:
         persisted = dict(verification.evidence)
         current = dict(result.get("evidence") or {})
         observed_at = self._timestamp()
-        dispatch = operational.dispatch
-        attempted_at = _parse_governance_timestamp(
-            dispatch.get("attempted_at")
-        )
-        observed_datetime = _parse_governance_timestamp(observed_at)
-        attempt_count = dispatch.get("attempt_count")
-        qualifies_as_post_dispatch = (
-            plan.approval.state == ApprovalState.CONSUMED
-            and isinstance(attempt_count, int)
-            and not isinstance(attempt_count, bool)
-            and attempt_count >= 1
-            and dispatch.get("dispatched") is True
-            and attempted_at is not None
-            and observed_datetime is not None
-            and observed_datetime >= attempted_at
+        persisted_state = self._home_assistant_outage_evidence_state(
+            plan, persisted, now=observed_at
         )
         current_sources = _bounded_restart_evidence_sources(
             current.get("restart_evidence_sources")
         )
-        current_outage = (
-            qualifies_as_post_dispatch
-            and current.get("outage_observed") is True
-            and current.get("home_assistant_core_unavailable") is True
-            and current.get("failure_category")
-            in HOME_ASSISTANT_OUTAGE_CATEGORIES
-            and "home_assistant_core_connection_probe"
-            in current_sources
-        )
-        persisted_sources = _bounded_restart_evidence_sources(
-            persisted.get("restart_evidence_sources")
-        )
-        persisted_outage = (
-            persisted.get("outage_observed") is True
-            and "home_assistant_core_connection_probe"
-            in persisted_sources
-            and _parse_governance_timestamp(
-                persisted.get("first_unavailable_at")
-            )
-            is not None
-            and isinstance(
-                persisted.get("unavailable_observation_count"), int
-            )
-            and not isinstance(
-                persisted.get("unavailable_observation_count"), bool
-            )
-            and persisted["unavailable_observation_count"] >= 1
+        current_observed_at = current.get("outage_observed_at")
+        current_candidate = {
+            "outage_observed": current.get("outage_observed"),
+            "home_assistant_core_unavailable": current.get(
+                "home_assistant_core_unavailable"
+            ),
+            "first_unavailable_at": current_observed_at,
+            "last_unavailable_at": current_observed_at,
+            "unavailable_observation_count": 1,
+            "outage_failure_category": current.get(
+                "failure_category"
+            ),
+            "restart_evidence_sources": current_sources,
+        }
+        current_state = self._home_assistant_outage_evidence_state(
+            plan,
+            current_candidate,
+            now=observed_at,
         )
 
-        if not current_outage:
-            for field in (
-                "outage_observed",
-                "home_assistant_core_unavailable",
-                "expected_disruption_observed",
-            ):
-                current.pop(field, None)
-            current["restart_evidence_sources"] = [
-                source
-                for source in current_sources
-                if source != "home_assistant_core_connection_probe"
-            ]
-
+        outage_fields = {
+            "outage_observed",
+            "expected_disruption_observed",
+            "home_assistant_core_unavailable",
+            "outage_observed_at",
+            "first_unavailable_at",
+            "last_unavailable_at",
+            "unavailable_observation_count",
+            "outage_failure_category",
+            "last_unavailable_failure_category",
+            "outage_window_status",
+            "dispatch_attempted_at",
+            "outage_observation_deadline",
+        }
+        recovery_fields = {
+            "home_assistant_reconnected",
+            "reconnected_at",
+        }
         merged = dict(persisted)
+        if not persisted_state["authoritative"]:
+            for field in outage_fields | recovery_fields:
+                merged.pop(field, None)
+            merged["restart_evidence_sources"] = [
+                source
+                for source in persisted_state["sources"]
+                if source
+                not in {
+                    "home_assistant_core_connection_probe",
+                    "home_assistant_core_reconnected",
+                }
+            ]
+            if persisted.get("outage_observed") is True:
+                merged["outage_evidence_rejected_reason"] = (
+                    persisted_state["reason"]
+                )
         for field, value in current.items():
-            if field in {
-                "first_unavailable_at",
-                "last_unavailable_at",
-                "unavailable_observation_count",
-                "reconnected_at",
-                "restart_evidence_sources",
-            }:
+            if (
+                field in outage_fields
+                or field in recovery_fields
+                or field == "restart_evidence_sources"
+                or (
+                    field == "failure_category"
+                    and current.get("outage_observed") is True
+                )
+            ):
                 continue
             if isinstance(value, bool) and isinstance(
                 merged.get(field), bool
@@ -3682,67 +3845,142 @@ class ChangeGovernanceService:
             else:
                 merged[field] = value
 
-        sources = list(persisted_sources)
-        for source in current_sources:
-            if source not in sources:
-                sources.append(source)
-        merged["restart_evidence_sources"] = sources[
-            :MAX_RESTART_EVIDENCE_SOURCES
-        ]
-
-        if current_outage:
-            first_unavailable = _earliest_governance_timestamp(
-                persisted.get("first_unavailable_at"), observed_at
-            )
-            last_unavailable = _latest_governance_timestamp(
-                persisted.get("last_unavailable_at"), observed_at
-            )
+        if persisted_state["authoritative"]:
             merged.update(
                 {
                     "outage_observed": True,
                     "expected_disruption_observed": True,
                     "home_assistant_core_unavailable": True,
-                    "first_unavailable_at": first_unavailable,
-                    "last_unavailable_at": last_unavailable,
-                    "unavailable_observation_count": (
-                        persisted["unavailable_observation_count"]
-                        if isinstance(
-                            persisted.get(
-                                "unavailable_observation_count"
-                            ),
-                            int,
-                        )
-                        and not isinstance(
-                            persisted.get(
-                                "unavailable_observation_count"
-                            ),
-                            bool,
-                        )
-                        else 0
-                    )
-                    + 1,
-                    "last_unavailable_failure_category": current.get(
-                        "failure_category"
-                    ),
+                    "first_unavailable_at": persisted_state[
+                        "first_unavailable_at"
+                    ],
+                    "last_unavailable_at": persisted_state[
+                        "last_unavailable_at"
+                    ],
+                    "unavailable_observation_count": persisted_state[
+                        "unavailable_observation_count"
+                    ],
+                    "outage_failure_category": persisted_state[
+                        "outage_failure_category"
+                    ],
                 }
             )
-            operational.dispatch["expected_disruption_observed"] = True
-        elif persisted_outage:
-            merged["outage_observed"] = True
-            merged["expected_disruption_observed"] = True
+            sources = list(persisted_state["sources"])
+        else:
+            sources = [
+                source
+                for source in _bounded_restart_evidence_sources(
+                    merged.get("restart_evidence_sources")
+                )
+                if source
+                not in {
+                    "home_assistant_core_connection_probe",
+                    "home_assistant_core_reconnected",
+                }
+            ]
 
-        if (
-            qualifies_as_post_dispatch
-            and current.get("home_assistant_reconnected") is True
-        ):
+        if current_state["authoritative"]:
+            merged.update(
+                {
+                    "outage_observed": True,
+                    "expected_disruption_observed": True,
+                    "home_assistant_core_unavailable": True,
+                    "first_unavailable_at": (
+                        _earliest_governance_timestamp(
+                            merged.get("first_unavailable_at"),
+                            str(
+                                current_state[
+                                    "first_unavailable_at"
+                                ]
+                            ),
+                        )
+                    ),
+                    "last_unavailable_at": (
+                        _latest_governance_timestamp(
+                            merged.get("last_unavailable_at"),
+                            str(
+                                current_state[
+                                    "last_unavailable_at"
+                                ]
+                            ),
+                        )
+                    ),
+                    "unavailable_observation_count": min(
+                        MAX_RESTART_OUTAGE_OBSERVATIONS,
+                        int(
+                            merged.get(
+                                "unavailable_observation_count"
+                            )
+                            or 0
+                        )
+                        + 1,
+                    ),
+                    "outage_failure_category": current_state[
+                        "outage_failure_category"
+                    ],
+                }
+            )
+            for source in current_state["sources"]:
+                if source not in sources:
+                    sources.append(source)
+
+        merged["restart_evidence_sources"] = sources[
+            :MAX_RESTART_EVIDENCE_SOURCES
+        ]
+        normalized_state = self._home_assistant_outage_evidence_state(
+            plan, merged, now=observed_at
+        )
+        merged["dispatch_attempted_at"] = operational.dispatch.get(
+            "attempted_at"
+        )
+        merged["outage_observation_deadline"] = (
+            operational.dispatch.get("outage_observation_deadline")
+        )
+        merged["outage_window_status"] = normalized_state[
+            "window_status"
+        ]
+        merged["outage_observed"] = bool(
+            normalized_state["authoritative"]
+        )
+        merged["expected_disruption_observed"] = bool(
+            normalized_state["authoritative"]
+        )
+        if not normalized_state["authoritative"]:
+            for field in (
+                "home_assistant_core_unavailable",
+                "first_unavailable_at",
+                "last_unavailable_at",
+                "unavailable_observation_count",
+                "outage_failure_category",
+            ):
+                merged.pop(field, None)
+            sources = [
+                source
+                for source in sources
+                if source
+                not in {
+                    "home_assistant_core_connection_probe",
+                    "home_assistant_core_reconnected",
+                }
+            ]
+        elif current.get("home_assistant_reconnected") is True:
             merged["home_assistant_reconnected"] = True
             merged["reconnected_at"] = (
                 persisted.get("reconnected_at") or observed_at
             )
+            for source in current_sources:
+                if source not in sources:
+                    sources.append(source)
             merged.pop("failure_category", None)
+        merged["restart_evidence_sources"] = sources[
+            :MAX_RESTART_EVIDENCE_SOURCES
+        ]
 
+        operational.dispatch["expected_disruption_observed"] = bool(
+            normalized_state["authoritative"]
+        )
         restart_dispatch_confirmed = bool(
-            dispatch.get("restart_dispatch_confirmed")
+            operational.dispatch.get("restart_dispatch_confirmed")
         )
         merged["restart_dispatch_confirmed"] = (
             restart_dispatch_confirmed
@@ -3750,16 +3988,23 @@ class ChangeGovernanceService:
         merged["redispatch_performed"] = False
         restart_evidence_complete = (
             restart_dispatch_confirmed
-            and merged.get("outage_observed") is True
+            and normalized_state["authoritative"]
             and merged.get("home_assistant_reconnected") is True
         )
         mismatch_fields = [
             str(value)[:160]
             for value in (result.get("mismatch_fields") or [])[:20]
-            if str(value) != "restart_evidence"
+            if str(value)
+            not in {
+                "restart_evidence",
+                "restart_evidence_contract_invalid",
+                "restart_evidence_window_expired",
+            }
         ]
         if not restart_evidence_complete:
-            mismatch_fields.append("restart_evidence")
+            mismatch_fields.append(
+                str(normalized_state["reason"] or "restart_evidence")
+            )
         status = str(result.get("status") or "failed")
         if status == "verified" and mismatch_fields:
             status = "pending"

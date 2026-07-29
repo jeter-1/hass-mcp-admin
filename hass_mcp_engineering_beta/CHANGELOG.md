@@ -5,6 +5,12 @@
 - Accumulate authoritative post-dispatch Home Assistant Core outage and
   reconnection evidence across bounded verification attempts, repeated apply
   calls, process restarts, and startup or periodic reconciliation.
+- Bind new outage observations to one immutable interval derived from the
+  original persisted dispatch timestamp. Recovery may finish later after a
+  qualified outage, but a future unrelated outage cannot verify an old plan.
+- Validate persisted outage evidence as one complete record; incomplete or
+  malformed raw outage flags fail closed and cannot skip the Core probe or
+  satisfy terminal verification.
 - Require confirmed dispatch, a qualified Core-unavailable observation, and
   later reconnection before a Home Assistant restart can reach
   `applied_verified`; current availability or provider acknowledgement alone

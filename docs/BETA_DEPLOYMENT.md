@@ -574,11 +574,17 @@ later verification attempts and process restarts. A repeated
 readback only and cannot send a second restart.
 
 Inspect `get_change_plan` for confirmed dispatch, `outage_observed`, bounded
-unavailable timestamps and count, later reconnection, restored runtime and
-storage checks, valid configuration, exact upstream admission, dependency
-recovery, and zero fallback. A dispatch response followed only by successful
-availability reads remains pending because it does not prove a restart.
+unavailable timestamps and count, `outage_observation_deadline`,
+`outage_window_status`, qualified source and category, later reconnection,
+restored runtime and storage checks, valid configuration, exact upstream
+admission, dependency recovery, and zero fallback. New outage observations
+must occur during the immutable interval following the original dispatch;
+reconciliation cannot extend it. Recovery may complete later if the outage was
+already qualified. A dispatch response followed only by successful availability
+reads remains pending because it does not prove a restart, and a future
+unrelated outage cannot verify the old plan.
 `sensor.uptime` is not required. Historical plans lacking authoritative
-persisted Core-outage evidence remain pending rather than being inferred.
+persisted Core-outage evidence, including records with only a raw outage flag,
+remain pending rather than being inferred.
 The complete source contract is
 [`V2_1_1_BETA3_ACCEPTANCE.md`](V2_1_1_BETA3_ACCEPTANCE.md).

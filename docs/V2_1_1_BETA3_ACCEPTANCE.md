@@ -27,7 +27,8 @@ Use a storage-backed governed Home Assistant restart fixture to prove:
    one provider call;
 3. a direct post-dispatch Home Assistant Core timeout or unavailability is
    recorded with `outage_observed=true`, the earliest and latest timestamps,
-   an observation count, and a bounded evidence source;
+   an observation count, a bounded evidence source and failure category, and
+   the immutable observation deadline derived from the original dispatch;
 4. repeated unavailable probes merge without losing earlier evidence;
 5. later Core recovery adds reconnection, unchanged identity, valid
    configuration, runtime/catalog/storage/audit/upstream/dependency readiness,
@@ -41,6 +42,15 @@ availability probes remains pending. Pre-dispatch failures and unrelated
 upstream-provider failures must not create outage evidence. A Supervisor proxy
 502, 503, or 504 on the direct Core identity read is availability evidence;
 other API errors are not.
+
+Use deterministic boundary clocks to prove observations exactly at dispatch
+and exactly at the deadline qualify, while observations before dispatch or
+after the deadline do not. Recreate the service after the deadline and prove a
+future unrelated Core outage cannot verify the old plan. Also prove that an
+outage qualified before the deadline survives service recreation and permits
+later recovery. A raw or malformed `outage_observed=true` record must fail the
+same complete-evidence predicate used for newly observed outages and must not
+skip a required probe while the interval remains open.
 
 Recreate the governance service against retained storage after an outage has
 been persisted. Startup reconciliation must complete the same plan using

@@ -189,13 +189,26 @@ fallback. Current connectivity alone never proves a restart.
 Beta 3 accumulates Home Assistant restart evidence across every bounded
 verification attempt. Only a direct Core timeout, connection failure, or
 Supervisor proxy 502/503/504 observed after consumed approval and persisted
-dispatch can set `outage_observed`. The plan preserves the earliest and latest
+dispatch and no later than the immutable outage-observation deadline can set
+authoritative `outage_observed`. The deadline is calculated once from the
+original dispatch timestamp; startup, periodic, and caller-requested
+reconciliation cannot recalculate or extend it. The plan preserves the
+earliest and latest
 unavailable timestamps, observation count, and bounded evidence sources.
 Later recovery adds reconnection, identity, validation, runtime, storage,
 upstream, dependency, and fallback evidence without replacing the outage.
 Dispatch confirmation plus outage plus reconnection are all required; a
 provider response or current availability alone remains pending. No optional
 entity such as `sensor.uptime` is part of this contract.
+
+Recovery may complete after the observation deadline or normal plan expiry
+when a qualified outage was already persisted before the deadline. Without
+that evidence, the window closes as `restart_evidence_window_expired`; a
+future unrelated outage cannot verify the old plan. Historical or malformed
+records are validated as a complete unit. A bare `outage_observed=true`
+without the required consumed approval, dispatch, immutable deadline,
+timestamps, count, direct-Core source, and qualified failure category is not
+authoritative and cannot satisfy or skip restart verification.
 
 ## Durable reconciliation
 
