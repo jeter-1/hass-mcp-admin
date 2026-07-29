@@ -80,6 +80,9 @@ async def run_structured(
             "addon_not_found": "domain_outcome_addon_not_found",
             "dashboard_not_found": "domain_outcome_dashboard_not_found",
             "change_plan_not_found": "domain_outcome_change_plan_not_found",
+            "execution_task_not_found": (
+                "domain_outcome_execution_task_not_found"
+            ),
         }.get(code.value)
         if domain_category:
             failure_metadata.setdefault("classification", "domain_outcome")

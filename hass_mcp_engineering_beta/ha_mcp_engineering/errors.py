@@ -48,6 +48,12 @@ class ErrorCode(str, Enum):
     ROLLBACK_APPROVAL_REQUIRED = "rollback_approval_required"
     ROLLBACK_FAILED = "rollback_failed"
     CHANGE_PLAN_STORAGE_ERROR = "change_plan_storage_error"
+    EXECUTION_TASK_NOT_FOUND = "execution_task_not_found"
+    EXECUTION_TASK_STORAGE_ERROR = "execution_task_storage_error"
+    EXECUTION_TASK_INVALID_STATE = "execution_task_invalid_state"
+    CANCELLATION_NOT_PERMITTED_AFTER_DISPATCH = (
+        "cancellation_not_permitted_after_dispatch"
+    )
     BACKUP_PROVIDER_UNAVAILABLE = "backup_provider_unavailable"
     BACKUP_PERMISSION_FAILURE = "backup_permission_failure"
     BACKUP_CREATION_REJECTED = "backup_creation_rejected"
@@ -198,6 +204,38 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
     ErrorCode.ROLLBACK_APPROVAL_REQUIRED: ErrorDefinition("Rollback requires a separate approval.", False, 409, "invalid_request"),
     ErrorCode.ROLLBACK_FAILED: ErrorDefinition("The governed rollback failed.", False, 502, "internal_error"),
     ErrorCode.CHANGE_PLAN_STORAGE_ERROR: ErrorDefinition("Governance storage is unavailable.", True, 503, "internal_error"),
+    ErrorCode.EXECUTION_TASK_NOT_FOUND: ErrorDefinition(
+        "The execution task was not found.",
+        False,
+        404,
+        "invalid_params",
+    ),
+    ErrorCode.EXECUTION_TASK_STORAGE_ERROR: ErrorDefinition(
+        "Execution-task storage is unavailable.",
+        True,
+        503,
+        "internal_error",
+    ),
+    ErrorCode.EXECUTION_TASK_INVALID_STATE: ErrorDefinition(
+        "The execution task cannot perform that lifecycle transition.",
+        False,
+        409,
+        "invalid_request",
+    ),
+    ErrorCode.CANCELLATION_NOT_PERMITTED_AFTER_DISPATCH: ErrorDefinition(
+        "An execution task cannot be cancelled after dispatch.",
+        False,
+        409,
+        "invalid_request",
+        safe_detail_fields=(
+            "endpoint_category",
+            "operation",
+            "resource_id",
+            "task_id",
+            "task_state",
+            "provider_dispatch_occurred",
+        ),
+    ),
     ErrorCode.BACKUP_PROVIDER_UNAVAILABLE: ErrorDefinition(
         "The reviewed backup provider is unavailable.",
         True,

@@ -119,6 +119,11 @@ V2_1A_BETA2_ADDITIVE_TOOL_NAMES = (
     "create_home_assistant_restart_plan",
     "create_reload_plan",
 )
+F1_ADDITIVE_TOOL_NAMES = (
+    "cancel_execution_task",
+    "get_execution_task",
+    "list_execution_tasks",
+)
 
 NOW = datetime(2026, 7, 14, 12, 0, tzinfo=timezone.utc)
 FUTURE = (NOW + timedelta(hours=4)).isoformat()
@@ -173,6 +178,7 @@ class RC1PublicContractTests(unittest.TestCase):
                         *DEV14_ADDITIVE_TOOL_NAMES,
                         *V2_1A_ADDITIVE_TOOL_NAMES,
                         *V2_1A_BETA2_ADDITIVE_TOOL_NAMES,
+                        *F1_ADDITIVE_TOOL_NAMES,
                     )
                 )
             ),
@@ -411,7 +417,7 @@ class RC1PublicContractTests(unittest.TestCase):
             BETA26_DIRECT_POLICY_SHA256,
         )
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(classifications), 45)
+        self.assertEqual(len(classifications), 48)
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

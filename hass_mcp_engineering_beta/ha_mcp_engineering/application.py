@@ -303,6 +303,10 @@ async def _run_operational_reconciliation_pass(trigger: str) -> None:
     if service is None:
         return
     try:
+        # Task rehydration validates durable authority and deadlines first.
+        # It performs no provider action. Existing operational reconciliation
+        # then uses the same readback-only plan verifier as an apply reconnect.
+        await service.reconcile_execution_tasks(trigger=trigger)
         await service.reconcile_operational_plans(trigger=trigger)
     except Exception as exc:
         # A failed readback pass remains represented by the persisted

@@ -57,6 +57,9 @@ from ha_mcp_engineering.governance.service import (  # noqa: E402
 from ha_mcp_engineering.governance.storage import (  # noqa: E402
     ChangePlanRepository,
 )
+from ha_mcp_engineering.governance.task_models import (  # noqa: E402
+    RESERVED_TASK_STATES,
+)
 from ha_mcp_engineering.providers.operational_lifecycle import (  # noqa: E402
     OperationalLifecycleProviderError,
     ReviewedOperationalLifecycleProvider,
@@ -217,10 +220,10 @@ class FakeLifecycleGateway:
         }
         self.process_instance_id = "process-one"
         self.runtime = {
-            "server_version": "2.1.1-beta.3",
+            "server_version": "2.2.0-beta.1",
             "build_sha": "a" * 40,
-            "registered_tool_count": 71,
-            "engineering_tool_count": 45,
+            "registered_tool_count": 74,
+            "engineering_tool_count": 48,
             "delegated_tool_count": 26,
             "governance_storage_status": "healthy",
             "governance_plan_count": 1,
@@ -288,10 +291,10 @@ class FakeLifecycleGateway:
                     "connected": True,
                 },
                 "runtime": {
-                    "server_version": "2.1.1-beta.3",
+                    "server_version": "2.2.0-beta.1",
                     "build_sha": "a" * 40,
-                    "registered_tool_count": 71,
-                    "engineering_tool_count": 45,
+                    "registered_tool_count": 74,
+                    "engineering_tool_count": 48,
                     "delegated_tool_count": 26,
                     "governance_storage_status": "healthy",
                     "governance_plan_count": 1,
@@ -2621,10 +2624,10 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
     async def test_prefixed_engineering_slug_is_exact_self_target(self):
         slug = "df26dea6_hass_mcp_engineering_beta"
         runtime = {
-            "server_version": "2.1.1-beta.3",
+            "server_version": "2.2.0-beta.1",
             "build_sha": "a" * 40,
-            "registered_tool_count": 71,
-            "engineering_tool_count": 45,
+            "registered_tool_count": 74,
+            "engineering_tool_count": 48,
             "delegated_tool_count": 26,
             "governance_storage_status": "healthy",
             "governance_plan_count": 1,
@@ -2643,7 +2646,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 return {
                     "slug": requested_slug,
                     "name": "HA MCP Engineering Server Beta",
-                    "version": "2.1.1-beta.3",
+                    "version": "2.2.0-beta.1",
                     "state": "started",
                     "repository": "df26dea6",
                 }
@@ -2655,7 +2658,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                     "data": {
                         "slug": slug,
                         "name": "HA MCP Engineering Server Beta",
-                        "version": "2.1.1-beta.3",
+                        "version": "2.2.0-beta.1",
                         "repository": "df26dea6",
                     },
                 }
@@ -2702,7 +2705,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 "requested_slug": slug,
                 "resolved_slug": slug,
                 "resolved_name": "HA MCP Engineering Server Beta",
-                "resolved_version": "2.1.1-beta.3",
+                "resolved_version": "2.2.0-beta.1",
                 "resolved_repository": "df26dea6",
                 "identity_source": "supervisor_self_info",
                 "authoritative_self_match": True,
@@ -3597,15 +3600,15 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 return {
                     "slug": slug,
                     "name": "Engineering",
-                    "version": "2.1.1-beta.3",
+                    "version": "2.2.0-beta.1",
                     "state": "started",
                 }
 
         runtime = {
-            "server_version": "2.1.1-beta.3",
+            "server_version": "2.2.0-beta.1",
             "build_sha": "a" * 40,
-            "registered_tool_count": 71,
-            "engineering_tool_count": 45,
+            "registered_tool_count": 74,
+            "engineering_tool_count": 48,
             "delegated_tool_count": 26,
             "governance_storage_status": "healthy",
             "governance_plan_count": 1,
@@ -3625,7 +3628,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             "addon": {
                 "slug": ENGINEERING_ADDON_SLUG,
                 "name": "Engineering",
-                "version": "2.1.1-beta.3",
+                "version": "2.2.0-beta.1",
                 "state": "started",
             },
             "target_class": "engineering_addon",
@@ -3751,10 +3754,10 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 return ProviderEvidence()
 
         runtime = {
-            "server_version": "2.1.1-beta.3",
+            "server_version": "2.2.0-beta.1",
             "build_sha": "a" * 40,
-            "registered_tool_count": 71,
-            "engineering_tool_count": 45,
+            "registered_tool_count": 74,
+            "engineering_tool_count": 48,
             "delegated_tool_count": 26,
             "governance_storage_status": "healthy",
             "governance_plan_count": 1,
@@ -3946,10 +3949,10 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 }
 
         runtime = {
-            "server_version": "2.1.1-beta.3",
+            "server_version": "2.2.0-beta.1",
             "build_sha": "a" * 40,
-            "registered_tool_count": 71,
-            "engineering_tool_count": 45,
+            "registered_tool_count": 74,
+            "engineering_tool_count": 48,
             "delegated_tool_count": 26,
             "governance_storage_status": "healthy",
             "governance_plan_count": 1,
@@ -4254,9 +4257,9 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 "upstream_addon_identity_unavailable",
             )
 
-    def test_public_tool_schemas_are_bounded_and_catalog_is_45(self):
+    def test_public_tool_schemas_are_bounded_and_catalog_is_48(self):
         tools = registered_tools(get_registered_server())
-        self.assertEqual(len(tools), 45)
+        self.assertEqual(len(tools), 48)
         reload_schema = tools["create_reload_plan"].parameters
         self.assertEqual(
             reload_schema["properties"]["reload_target"]["enum"],
@@ -4278,6 +4281,27 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             set(restart_schema["properties"]),
             {"expiration_minutes"},
+        )
+        self.assertEqual(
+            set(tools["get_execution_task"].parameters["properties"]),
+            {"task_id"},
+        )
+        self.assertEqual(
+            set(tools["list_execution_tasks"].parameters["properties"]),
+            {"state", "terminal_outcome", "plan_id", "limit"},
+        )
+        public_state_filters = set(
+            tools["list_execution_tasks"]
+            .parameters["properties"]["state"]["enum"]
+        )
+        self.assertTrue(
+            public_state_filters.isdisjoint(
+                {state.value for state in RESERVED_TASK_STATES}
+            )
+        )
+        self.assertEqual(
+            set(tools["cancel_execution_task"].parameters["properties"]),
+            {"task_id"},
         )
         for name in (
             "ha_reload_core",

@@ -217,6 +217,10 @@ class ErrorTaxonomyTests(unittest.TestCase):
             "operational_verification_pending",
             "operational_verification_failed",
             "operational_dispatch_indeterminate",
+            "execution_task_not_found",
+            "execution_task_storage_error",
+            "execution_task_invalid_state",
+            "cancellation_not_permitted_after_dispatch",
             "duplicate_apply_attempt", "internal_invariant_violation",
             "invalid_cursor", "stale_cursor", "analysis_unavailable",
             "provider_unavailable", "provider_timeout", "provider_error",
@@ -618,7 +622,7 @@ class GatewayAndHealthTests(unittest.TestCase):
         self.assertTrue(payload["success"])
         health = payload["data"]
         self.assertEqual(health["server"]["version"], SERVER_VERSION)
-        self.assertEqual(health["registered_tool_count"], 45)
+        self.assertEqual(health["registered_tool_count"], 48)
         self.assertIn("handoff_generation", health)
         self.assertIn("automation_reliability_analysis", health)
         self.assertIn("governance", health)

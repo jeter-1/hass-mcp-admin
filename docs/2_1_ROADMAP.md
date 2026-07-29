@@ -1,6 +1,6 @@
-# Engineering 2.1 roadmap
+# Engineering 2.1 and 2.2 foundation roadmap
 
-Status: development ordering for `2.1.0`
+Status: 2.1A accepted; first 2.1B foundation increment in `2.2.0-beta.1`
 
 The required milestone order is:
 
@@ -24,8 +24,22 @@ release churn becomes the higher operational risk.
    operation-specific verification, expected-disruption handling, and durable
    background/startup reconciliation without blind redispatch.
 
-2.1A is complete only after Beta 2 source and separately authorized deployed
-acceptance. 2.1B and 2.1C remain out of scope for this milestone.
+2.1A completed its source and separately authorized deployed acceptance.
+
+## 2.2.0-beta.1 F1 foundation
+
+F1 separates immutable plans, existing exact-hash approvals, and mutable
+durable execution tasks. It provides task lookup, bounded listing,
+pre-dispatch cancellation, exact task idempotency, append-only lifecycle
+events, startup rehydration, a 24-hour post-dispatch manual-review deadline,
+and legacy plan projections. Existing operation-specific verification remains
+authoritative.
+
+F1 does not implement elevated/risk-aware approval UX (F2), shared locks (F3),
+compensation (F4), generalized verification (F5), comprehensive historical
+terminal migration (F6), later protocol/lifecycle work (F7), or MCP-native
+Tasks. Those remain future milestones and receive no implied authority from
+the task record.
 
 Each operation must remain operation-specific. This roadmap does not authorize
 a generic administrator, arbitrary Supervisor command, service-call shortcut,

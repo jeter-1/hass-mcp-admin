@@ -224,6 +224,81 @@ async def list_change_plans(status: str = "", limit: int = 20) -> str:
     )
 
 
+async def get_execution_task(
+    task_id: Annotated[
+        str, Field(pattern=r"^[a-f0-9]{32}$")
+    ],
+) -> str:
+    """Return one durable execution task by its exact opaque identifier."""
+    return await run_structured(
+        "get_execution_task",
+        "Returned the requested durable execution task.",
+        lambda: GOVERNANCE.require().get_execution_task(task_id),
+        metadata={
+            "resource_type": "execution_task",
+            "resource_id": task_id,
+        },
+        response_limit=SETTINGS.response_size_limit,
+    )
+
+
+async def list_execution_tasks(
+    state: Literal[
+        "",
+        "created",
+        "preflight",
+        "dispatching",
+        "observing",
+        "verifying",
+        "succeeded_verified",
+        "failed_pre_dispatch",
+        "failed_post_dispatch",
+        "manual_review_required",
+        "cancelled_pre_dispatch",
+    ] = "",
+    terminal_outcome: Annotated[str, Field(max_length=96)] = "",
+    plan_id: Annotated[
+        str, Field(pattern=r"^$|^[a-f0-9]{32}$")
+    ] = "",
+    limit: Annotated[int, Field(ge=1, le=100)] = 20,
+) -> str:
+    """List bounded execution-task summaries with exact optional filters."""
+    return await run_structured(
+        "list_execution_tasks",
+        "Returned bounded durable execution-task summaries.",
+        lambda: GOVERNANCE.require().list_execution_tasks(
+            state=state,
+            terminal_outcome=terminal_outcome,
+            plan_id=plan_id,
+            limit=limit,
+        ),
+        metadata={"resource_type": "execution_task"},
+        response_limit=SETTINGS.response_size_limit,
+    )
+
+
+async def cancel_execution_task(
+    task_id: Annotated[
+        str, Field(pattern=r"^[a-f0-9]{32}$")
+    ],
+) -> str:
+    """Cancel one task only while it is durably pre-dispatch.
+
+    Cancellation is not rollback or compensation. Once dispatch was attempted,
+    the task continues through readback-only verification or manual review.
+    """
+    return await run_structured(
+        "cancel_execution_task",
+        "Processed the bounded pre-dispatch task cancellation request.",
+        lambda: GOVERNANCE.require().cancel_execution_task(task_id),
+        metadata={
+            "resource_type": "execution_task",
+            "resource_id": task_id,
+        },
+        response_limit=SETTINGS.response_size_limit,
+    )
+
+
 async def approve_change_plan(
     plan_id: str, expected_plan_hash: str, approval_note: str = ""
 ) -> str:
@@ -281,6 +356,9 @@ GOVERNANCE_TOOLS = (
     create_configuration_plan,
     get_change_plan,
     list_change_plans,
+    get_execution_task,
+    list_execution_tasks,
+    cancel_execution_task,
     approve_change_plan,
     apply_change_plan,
     rollback_change,

@@ -1385,6 +1385,34 @@ class ApplyTests(ConfigurationPlanTestCase):
             events.count("configuration_operation_verified"), 3
         )
 
+        write_count = len(
+            [call for call in self.gateway.calls if call[0] == "write"]
+        )
+        repeated = await self.service.apply(
+            created["plan_id"], created["plan_hash"]
+        )
+
+        self.assertEqual(repeated["status"], "already_applied")
+        self.assertEqual(repeated["execution_outcome"], "applied")
+        self.assertEqual(
+            repeated["hash_validation"],
+            {"performed": True, "result": "matched"},
+        )
+        self.assertTrue(repeated["task_reused"])
+        self.assertEqual(
+            repeated["task_id"], result["task_id"]
+        )
+        self.assertEqual(
+            len(
+                [
+                    call
+                    for call in self.gateway.calls
+                    if call[0] == "write"
+                ]
+            ),
+            write_count,
+        )
+
     async def test_stale_preflight_stops_before_consumption_or_any_write(self):
         created = await self.create_hvac_plan()
         await self.approve(created)
