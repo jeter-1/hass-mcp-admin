@@ -1,5 +1,21 @@
 # HA MCP Engineering Server Architecture
 
+## 2.2.0-beta.5 update and recovery preflight foundation
+
+E1 adds a runtime-inert, provider-free evaluator for already-collected update
+and recovery evidence. It recognizes explicit target classes, candidate and
+installed versions, compatibility evidence, repairs and errors, backup and
+storage readiness, power stability, recovery availability, expected
+disruption, and post-update verification profiles.
+
+The evaluator deterministically returns `ready_for_governed_planning`,
+`blocked`, `manual_review_required`, or `unsupported`, with separate ordered
+blockers, warnings, and unknowns. Planning readiness is advisory only. E1 adds
+no evidence collection, startup loading, Home Assistant or network access,
+tool, health field, provider route, plan, approval, task, update, backup,
+restart, restore, downgrade, safe-mode action, write, or fallback. See
+[`ADR-011`](docs/architecture/ADR-011-GOVERNED-UPDATE-RECOVERY-PREFLIGHT.md).
+
 ## 2.2.0-beta.4 knowledge provenance foundation
 
 K1 adds an inert repository-level contract for strict local knowledge

@@ -1,6 +1,6 @@
 # Governed operational administration
 
-Version: `2.2.0-beta.4`
+Version: `2.2.0-beta.5`
 
 The accepted 2.1A lifecycle retains four public proposal tools:
 `create_backup_plan`, `create_reload_plan`, `create_addon_restart_plan`, and
@@ -11,7 +11,7 @@ separate lifecycle steps.
 
 ## Durable execution tasks
 
-Version `2.2.0-beta.4` keeps every change plan immutable and hash-stable while
+Version `2.2.0-beta.5` keeps every change plan immutable and hash-stable while
 recording mutable apply and recovery facts in one separate execution task.
 External approval remains a separate exact-hash authority. It is neither copied
 into the task nor replaced by task state.
@@ -65,6 +65,11 @@ dispatched; a later exact apply must revalidate plan and approval authority.
 Provider acknowledgement alone is not verified success: backup, reload,
 Engineering self-restart, reviewed upstream restart, other add-on restart, and
 Home Assistant restart retain their existing verification contracts.
+
+The E1 update/recovery preflight package is not part of this operational
+lifecycle. Its `ready_for_governed_planning` result is advisory only and cannot
+create a plan, consume approval, create an execution task, select a provider,
+dispatch an operation, or alter reconciliation.
 
 ## Backup contract
 
