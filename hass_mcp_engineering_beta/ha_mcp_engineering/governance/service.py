@@ -3957,7 +3957,12 @@ class ChangeGovernanceService:
             task, reused = self._resolve_task_for_apply(
                 plan, expected_plan_hash
             )
-            if task is not None and task.state in TERMINAL_TASK_STATES:
+            if (
+                task is not None
+                and task.state in TERMINAL_TASK_STATES
+                and task.state
+                != ExecutionTaskState.SUCCEEDED_VERIFIED
+            ):
                 return self._terminal_task_apply_result(task, plan)
             if task is not None and plan.status in {
                 PlanStatus.APPLIED,
@@ -3970,9 +3975,17 @@ class ChangeGovernanceService:
                 # unresolved-evidence deadline.
                 self._project_task_after_apply(task, plan)
                 task = self._load_task(task.task_id)
-                if task.state in TERMINAL_TASK_STATES:
+                if (
+                    task.state in TERMINAL_TASK_STATES
+                    and task.state
+                    != ExecutionTaskState.SUCCEEDED_VERIFIED
+                ):
                     return self._terminal_task_apply_result(task, plan)
-            if task is not None and self._task_deadline_expired(task):
+            if (
+                task is not None
+                and task.state not in TERMINAL_TASK_STATES
+                and self._task_deadline_expired(task)
+            ):
                 self._manual_review_task(
                     task, "maximum_post_dispatch_deadline_exceeded", plan
                 )
