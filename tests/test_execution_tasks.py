@@ -15,7 +15,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.governance.task_models import (
+    ALLOWED_TASK_TRANSITIONS,
     ExecutionTaskState,
+    RESERVED_TASK_STATES,
+    SINGLE_DISPATCH_OPERATIONS,
     TASK_SCHEMA_VERSION,
     new_execution_task,
 )
@@ -57,13 +60,17 @@ def timestamp(offset: int = 0) -> str:
     return (BASE_TIME + timedelta(seconds=offset)).isoformat()
 
 
-def make_task(*, plan_id: str | None = None):
+def make_task(
+    *,
+    plan_id: str | None = None,
+    operation: str = "controlled_reload",
+):
     plan_id = plan_id or uuid.uuid4().hex
     return new_execution_task(
         task_id=uuid.uuid4().hex,
         plan_id=plan_id,
         plan_hash="a" * 64,
-        operation="controlled_reload",
+        operation=operation,
         target={"target_type": "reload_domain", "target_id": "automation"},
         timestamp=timestamp(),
         execution_request_id=uuid.uuid4().hex,
@@ -147,12 +154,26 @@ class ExecutionTaskModelTests(unittest.TestCase):
                 timestamp(1),
                 new_state=ExecutionTaskState.SUCCEEDED_VERIFIED,
             )
-        with self.assertRaisesRegex(ValueError, "illegal"):
-            task.append_event(
-                "waiting_for_lock",
-                timestamp(1),
-                new_state=ExecutionTaskState.WAITING_FOR_LOCK,
-            )
+        transition_targets = set().union(
+            *ALLOWED_TASK_TRANSITIONS.values()
+        )
+        self.assertTrue(transition_targets.isdisjoint(RESERVED_TASK_STATES))
+        for reserved_state in RESERVED_TASK_STATES:
+            with self.subTest(state=reserved_state.value):
+                with self.assertRaisesRegex(ValueError, "illegal"):
+                    task.append_event(
+                        reserved_state.value,
+                        timestamp(1),
+                        new_state=reserved_state,
+                    )
+                forged = task.to_dict()
+                forged["state"] = reserved_state.value
+                forged["events"][0]["state_after"] = reserved_state.value
+                forged["events"][0]["changes"]["state"] = (
+                    reserved_state.value
+                )
+                with self.assertRaisesRegex(ValueError, "reserved"):
+                    type(task).from_dict(forged)
 
     def test_terminal_task_cannot_reopen(self):
         task = make_task()
@@ -198,6 +219,100 @@ class ExecutionTaskModelTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "contradictory"):
             task.validate()
+
+    def test_second_irreversible_dispatch_event_is_rejected(self):
+        task = make_task()
+        self.assertIn(task.operation, SINGLE_DISPATCH_OPERATIONS)
+        task.append_event(
+            "preflight_started",
+            timestamp(1),
+            new_state=ExecutionTaskState.PREFLIGHT,
+            changes={"started_at": timestamp(1)},
+        )
+        consume_task_approval(task, timestamp(2))
+        first_attempt = {
+            "attempt": 1,
+            "attempted_at": timestamp(2),
+            "provider": "upstream_operational_lifecycle",
+            "response_received": False,
+        }
+        task.append_event(
+            "dispatch_attempted",
+            timestamp(2),
+            new_state=ExecutionTaskState.DISPATCHING,
+            changes={
+                "dispatched_at": timestamp(2),
+                "maximum_post_dispatch_deadline": timestamp(
+                    24 * 60 * 60 + 2
+                ),
+                "provider_attempts": [first_attempt],
+            },
+        )
+
+        with self.assertRaisesRegex(ValueError, "single-dispatch"):
+            task.append_event(
+                "dispatch_attempted",
+                timestamp(3),
+            )
+
+        self.assertEqual(len(task.events), 4)
+        self.assertEqual(len(task.provider_attempts), 1)
+
+    def test_configuration_task_retains_multiple_provider_attempts(self):
+        task = make_task(operation="configuration_plan")
+        self.assertNotIn(task.operation, SINGLE_DISPATCH_OPERATIONS)
+        task.append_event(
+            "preflight_started",
+            timestamp(1),
+            new_state=ExecutionTaskState.PREFLIGHT,
+            changes={"started_at": timestamp(1)},
+        )
+        consume_task_approval(task, timestamp(2))
+        attempts = [
+            {
+                "attempt": 1,
+                "attempted_at": timestamp(2),
+                "provider": "engineering_configuration_provider",
+                "response_received": True,
+            }
+        ]
+        task.append_event(
+            "dispatch_attempted",
+            timestamp(2),
+            new_state=ExecutionTaskState.DISPATCHING,
+            changes={
+                "dispatched_at": timestamp(2),
+                "maximum_post_dispatch_deadline": timestamp(
+                    24 * 60 * 60 + 2
+                ),
+                "provider_attempts": attempts,
+            },
+        )
+        attempts.append(
+            {
+                "attempt": 2,
+                "attempted_at": timestamp(3),
+                "provider": "engineering_configuration_provider",
+                "response_received": False,
+            }
+        )
+        task.append_event(
+            "dispatch_attempted",
+            timestamp(3),
+            changes={"provider_attempts": attempts},
+        )
+
+        task.validate()
+        restored = type(task).from_dict(task.to_dict())
+        self.assertEqual(len(restored.provider_attempts), 2)
+        self.assertEqual(
+            [
+                event.event_type
+                for event in restored.events
+                if event.event_type == "dispatch_attempted"
+            ],
+            ["dispatch_attempted", "dispatch_attempted"],
+        )
 
 
 class ExecutionTaskStorageTests(unittest.TestCase):
@@ -358,6 +473,68 @@ class ExecutionTaskStorageTests(unittest.TestCase):
             with self.assertRaises(ExecutionTaskStorageError):
                 repository.save(replacement)
 
+    def test_forged_duplicate_dispatch_is_quarantined_and_reserves_plan(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = ExecutionTaskRepository(directory)
+            task = make_task(operation="configuration_plan")
+            task.append_event(
+                "preflight_started",
+                timestamp(1),
+                new_state=ExecutionTaskState.PREFLIGHT,
+                changes={"started_at": timestamp(1)},
+            )
+            consume_task_approval(task, timestamp(2))
+            attempts = [
+                {
+                    "attempt": 1,
+                    "attempted_at": timestamp(2),
+                    "provider": "engineering_configuration_provider",
+                    "response_received": True,
+                },
+                {
+                    "attempt": 2,
+                    "attempted_at": timestamp(3),
+                    "provider": "engineering_configuration_provider",
+                    "response_received": False,
+                },
+            ]
+            task.append_event(
+                "dispatch_attempted",
+                timestamp(2),
+                new_state=ExecutionTaskState.DISPATCHING,
+                changes={
+                    "dispatched_at": timestamp(2),
+                    "maximum_post_dispatch_deadline": timestamp(
+                        24 * 60 * 60 + 2
+                    ),
+                    "provider_attempts": attempts,
+                },
+            )
+            forged = task.to_dict()
+            forged["operation"] = "controlled_reload"
+            forged["events"][0]["changes"]["operation"] = (
+                "controlled_reload"
+            )
+            path = repository._path(
+                task.task_id, plan_id=task.plan_id
+            )
+            path.write_text(
+                json.dumps(forged, sort_keys=True), encoding="utf-8"
+            )
+
+            with self.assertRaises(ExecutionTaskStorageError):
+                repository.get(task.task_id)
+
+            self.assertEqual(repository.corruption_count, 1)
+            self.assertFalse(path.exists())
+            replacement = make_task(plan_id=task.plan_id)
+            with self.assertRaisesRegex(
+                ExecutionTaskStorageError, "ownership"
+            ):
+                repository.save(replacement)
+
 
 class DurableTaskApplyTests(ExternalApprovalTestCase):
     async def test_apply_returns_one_authoritative_task_and_preserves_plan_hash(
@@ -502,6 +679,75 @@ class DurableTaskApplyTests(ExternalApprovalTestCase):
                 == "execution_task_lifecycle"
                 for entry in task_events
             )
+        )
+        cancellation_audit = next(
+            entry
+            for entry in reversed(task_events)
+            if entry.get("event") == "task_cancelled_pre_dispatch"
+        )
+        self.assertFalse(cancellation_audit["approval_consumed"])
+
+    async def test_consumed_undispatched_cancellation_reports_authority_truthfully(
+        self,
+    ):
+        created = await self.create()
+        await self.grant(created)
+        plan = self.repository.get(created["plan_id"])
+        task = self.service._create_task_for_plan(
+            plan, created["plan_hash"]
+        )
+        self.service._record_task_event(
+            task,
+            "preflight_started",
+            new_state=ExecutionTaskState.PREFLIGHT,
+            changes={"started_at": self.service._timestamp()},
+        )
+        plan.approval.state = ApprovalState.CONSUMED
+        plan.approval.consumed_at = self.service._timestamp()
+        self.repository.save(plan)
+        self.service._record_task_event(
+            task,
+            "approval_consumed",
+            changes={
+                "approval_reference": (
+                    self.service._task_approval_reference(plan)
+                )
+            },
+        )
+
+        cancelled = await self.service.cancel_execution_task(task.task_id)
+        persisted = self.service.get_execution_task(task.task_id)
+
+        self.assertEqual(cancelled["status"], "cancelled_pre_dispatch")
+        self.assertTrue(cancelled["approval_consumed"])
+        self.assertEqual(persisted["state"], "cancelled_pre_dispatch")
+        self.assertEqual(
+            persisted["approval_reference"]["approval_state"], "consumed"
+        )
+        self.assertEqual(persisted["provider_attempt_count"], 0)
+        self.assertFalse(cancelled["provider_dispatch_occurred"])
+        self.assertFalse(
+            any(
+                event["event_type"] == "dispatch_attempted"
+                for event in persisted["lifecycle_events"]
+            )
+        )
+        self.assertEqual(self.gateway.writes, 0)
+        audit = [
+            json.loads(line)
+            for line in self.audit_path.read_text(
+                encoding="utf-8"
+            ).splitlines()
+        ]
+        cancellation_audit = next(
+            entry
+            for entry in reversed(audit)
+            if entry.get("task_id") == task.task_id
+            and entry.get("event") == "task_cancelled_pre_dispatch"
+        )
+        self.assertTrue(cancellation_audit["approval_consumed"])
+        self.assertFalse(
+            cancellation_audit["provider_dispatch_occurred"]
         )
 
     async def test_task_rehydrates_after_service_recreation(self):

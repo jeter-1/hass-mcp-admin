@@ -57,6 +57,9 @@ from ha_mcp_engineering.governance.service import (  # noqa: E402
 from ha_mcp_engineering.governance.storage import (  # noqa: E402
     ChangePlanRepository,
 )
+from ha_mcp_engineering.governance.task_models import (  # noqa: E402
+    RESERVED_TASK_STATES,
+)
 from ha_mcp_engineering.providers.operational_lifecycle import (  # noqa: E402
     OperationalLifecycleProviderError,
     ReviewedOperationalLifecycleProvider,
@@ -4286,6 +4289,15 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             set(tools["list_execution_tasks"].parameters["properties"]),
             {"state", "terminal_outcome", "plan_id", "limit"},
+        )
+        public_state_filters = set(
+            tools["list_execution_tasks"]
+            .parameters["properties"]["state"]["enum"]
+        )
+        self.assertTrue(
+            public_state_filters.isdisjoint(
+                {state.value for state in RESERVED_TASK_STATES}
+            )
         )
         self.assertEqual(
             set(tools["cancel_execution_task"].parameters["properties"]),

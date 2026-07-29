@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any
 
+from .models import ChangeOperation
+
 
 TASK_SCHEMA_VERSION = 1
 MAX_TASK_EVENTS = 512
@@ -51,6 +53,14 @@ RESERVED_TASK_STATES = frozenset(
         ExecutionTaskState.PARTIAL_APPLICATION,
         ExecutionTaskState.COMPENSATED,
         ExecutionTaskState.SUPERSEDED,
+    }
+)
+SINGLE_DISPATCH_OPERATIONS = frozenset(
+    {
+        ChangeOperation.CREATE_FULL_BACKUP.value,
+        ChangeOperation.CONTROLLED_RELOAD.value,
+        ChangeOperation.RESTART_ADDON.value,
+        ChangeOperation.RESTART_HOME_ASSISTANT.value,
     }
 )
 TERMINAL_OBSERVATION_EVENTS = frozenset(
@@ -127,6 +137,25 @@ def _bounded(value: Any, *, depth: int = 0) -> Any:
             for key, item in list(value.items())[:64]
         }
     return str(type(value).__name__)[:MAX_TASK_TEXT]
+
+
+def _require_single_dispatch_history(
+    *,
+    operation: str,
+    events: list["ExecutionTaskEvent"],
+    provider_attempts: list[dict[str, Any]],
+) -> None:
+    """Keep irreversible operational tasks to one durable dispatch lineage."""
+
+    if operation not in SINGLE_DISPATCH_OPERATIONS:
+        return
+    dispatch_lineages = sum(
+        event.event_type == "dispatch_attempted" for event in events
+    )
+    if dispatch_lineages > 1 or len(provider_attempts) > 1:
+        raise ValueError(
+            "single-dispatch execution task has multiple provider attempts"
+        )
 
 
 @dataclass
@@ -309,6 +338,11 @@ class ExecutionTask:
             raise ValueError("execution-task event limit exceeded")
         if len(self.provider_attempts) > MAX_PROVIDER_ATTEMPTS:
             raise ValueError("execution-task provider-attempt limit exceeded")
+        _require_single_dispatch_history(
+            operation=self.operation,
+            events=self.events,
+            provider_attempts=self.provider_attempts,
+        )
         for timestamp in (
             self.created_at,
             self.updated_at,
@@ -420,6 +454,19 @@ class ExecutionTask:
             changes=safe_changes,
             request_id=request_id,
         )
+        _require_single_dispatch_history(
+            operation=self.operation,
+            events=[*self.events, event],
+            provider_attempts=[
+                dict(item)
+                for item in list(
+                    safe_changes.get(
+                        "provider_attempts", self.provider_attempts
+                    )
+                    or []
+                )
+            ],
+        )
         self.events.append(event)
         _apply_event_changes(self, safe_changes)
 
@@ -479,6 +526,14 @@ def materialize_execution_task(
         record.update(deepcopy(event.changes))
         record["state"] = state_after.value
         prior_state = state_after.value
+    _require_single_dispatch_history(
+        operation=str(record.get("operation") or ""),
+        events=events,
+        provider_attempts=[
+            dict(item)
+            for item in list(record.get("provider_attempts") or [])
+        ],
+    )
     return record
 
 

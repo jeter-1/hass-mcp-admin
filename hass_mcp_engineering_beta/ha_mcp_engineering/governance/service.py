@@ -1186,6 +1186,7 @@ class ChangeGovernanceService:
             "result_status": result_status,
             "error_code": error_code,
             "provider_dispatch_occurred": bool(task.dispatched_at),
+            "approval_consumed": self._task_approval_consumed(task),
             "fallback_occurred": False,
             "fallback": "none",
         }
@@ -1304,6 +1305,12 @@ class ChangeGovernanceService:
     def _task_is_dispatched(task: ExecutionTask) -> bool:
         return bool(task.dispatched_at or task.provider_attempts)
 
+    @staticmethod
+    def _task_approval_consumed(task: ExecutionTask) -> bool:
+        return task.approval_reference.get("approval_state") == (
+            ApprovalState.CONSUMED.value
+        )
+
     def _task_plan_projection(
         self, task: ExecutionTask
     ) -> dict[str, Any]:
@@ -1413,7 +1420,7 @@ class ChangeGovernanceService:
             return {
                 "status": "cancelled_pre_dispatch",
                 "provider_dispatch_occurred": False,
-                "approval_consumed": False,
+                "approval_consumed": self._task_approval_consumed(task),
                 "task": self._public_task(task),
             }
 
