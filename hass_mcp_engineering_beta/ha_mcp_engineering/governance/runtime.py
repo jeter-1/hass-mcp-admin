@@ -15,6 +15,10 @@ from .resources import ConfigurationResourceGateway
 from .operational import BackupAdministrationGateway
 from .service import AutomationGateway, ChangeGovernanceService
 from .storage import ChangePlanRepository, ChangePlanStorageError
+from .task_storage import (
+    ExecutionTaskRepository,
+    ExecutionTaskStorageError,
+)
 
 
 class _RuntimeGovernanceGateway:
@@ -70,6 +74,10 @@ class GovernanceRuntime:
                 settings.governance_path,
                 retention_days=settings.governance_retention_days,
             )
+            task_repository = ExecutionTaskRepository(
+                settings.governance_path,
+                retention_days=settings.governance_retention_days,
+            )
             websocket_client = (
                 websocket_client
                 if websocket_client is not None
@@ -114,11 +122,15 @@ class GovernanceRuntime:
                 sensitive_values=(settings.access_secret, settings.ha_token),
                 operational_gateway=operational_gateway,
                 lifecycle_gateway=lifecycle_gateway,
+                task_repository=task_repository,
             )
             self.storage_error = None
         except ChangePlanStorageError:
             self.service = None
             self.storage_error = "change_plan_storage_error"
+        except ExecutionTaskStorageError:
+            self.service = None
+            self.storage_error = "execution_task_storage_error"
 
     @staticmethod
     def _configuration_validator(rest_client, websocket_client):
@@ -129,7 +141,11 @@ class GovernanceRuntime:
 
     def require(self) -> ChangeGovernanceService:
         if not self.service:
-            raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR)
+            raise GovernanceError(
+                ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+                if self.storage_error == "execution_task_storage_error"
+                else ErrorCode.CHANGE_PLAN_STORAGE_ERROR
+            )
         return self.service
 
     def health_summary(self) -> dict[str, Any]:
@@ -185,6 +201,39 @@ class GovernanceRuntime:
                 "failed_apply_count": 0,
                 "rollback_pending_count": 0,
                 "last_successful_change_at": None,
+                "execution_tasks": {
+                    "storage": {
+                        "configured": False,
+                        "status": "error",
+                        "record_count": 0,
+                        "event_count": 0,
+                        "corruption_count": 0,
+                        "write_failures": 0,
+                        "event_write_failures": 0,
+                        "materialization_failures": 0,
+                        "rehydration_attempts": 0,
+                    },
+                    "storage_configured": False,
+                    "storage_status": "error",
+                    "record_count": 0,
+                    "event_count": 0,
+                    "active_tasks_by_state": {},
+                    "nonterminal_tasks": 0,
+                    "tasks_verifying": 0,
+                    "tasks_manual_review": 0,
+                    "tasks_created": 0,
+                    "verified_successes": 0,
+                    "failed_pre_dispatch": 0,
+                    "failed_post_dispatch": 0,
+                    "cancellations": 0,
+                    "manual_review_outcomes": 0,
+                    "no_blind_redispatch_preventions": 0,
+                    "rehydration_attempts": 0,
+                    "reconciliation_runs": 0,
+                    "event_write_failures": 0,
+                    "materialization_failures": 0,
+                    "last_task_failure_category": self.storage_error,
+                },
                 "operational_administration": {
                     "plans_by_type": {
                         operation: 0 for operation in operation_names

@@ -423,13 +423,16 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
                 "create_reload_plan",
                 "create_addon_restart_plan",
                 "create_home_assistant_restart_plan",
+                "get_execution_task",
+                "list_execution_tasks",
+                "cancel_execution_task",
             }
         }
         encoded = json.dumps(schemas, sort_keys=True, separators=(",", ":")).encode()
         self.assertEqual(hashlib.sha256(encoded).hexdigest(), BETA25_PUBLIC_SCHEMA_SHA256)
-        self.assertEqual(len(tools), 45)
+        self.assertEqual(len(tools), 48)
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES), 45)
+        self.assertEqual(len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES), 48)
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

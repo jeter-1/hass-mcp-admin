@@ -409,7 +409,7 @@ class ToolListSerializationTests(unittest.TestCase):
     def test_all_45_registered_tools_have_serializable_json_schemas(self):
         tools = registered_tools(get_registered_server()).values()
         names = [tool.name for tool in tools]
-        self.assertEqual(len(names), 45)
+        self.assertEqual(len(names), 48)
         self.assertEqual(len(names), len(set(names)))
         self.assertIn("entity_dependency_analysis", names)
         self.assertIn("automation_reliability_analysis", names)

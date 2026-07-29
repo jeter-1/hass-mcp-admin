@@ -65,6 +65,17 @@ from .storage import (
     ChangePlanStorageError,
     is_terminal_plan,
 )
+from .task_models import (
+    ExecutionTask,
+    ExecutionTaskState,
+    TERMINAL_TASK_STATES,
+    new_execution_task,
+    parse_task_timestamp,
+)
+from .task_storage import (
+    ExecutionTaskRepository,
+    ExecutionTaskStorageError,
+)
 from .operational import (
     BackupAdministrationGateway,
     OperationalGatewayError,
@@ -106,6 +117,7 @@ MAX_APPROVAL_PROJECTION_ACTIONS_PER_PLAN = 32
 MAX_APPROVAL_PROJECTION_DETAILS_PER_PLAN = 128
 MAX_OPERATIONAL_RECONCILIATIONS_PER_PASS = 20
 OPERATIONAL_RECONCILIATION_TIME_BUDGET_SECONDS = 10.0
+EXECUTION_TASK_POST_DISPATCH_DEADLINE = timedelta(hours=24)
 HOME_ASSISTANT_OUTAGE_CATEGORIES = frozenset(
     {"provider_timeout", "provider_unavailable"}
 )
@@ -945,6 +957,7 @@ class ChangeGovernanceService:
         sensitive_values: tuple[str, ...] = (),
         operational_gateway: BackupAdministrationGateway | Any | None = None,
         lifecycle_gateway: OperationalLifecycleGateway | Any | None = None,
+        task_repository: ExecutionTaskRepository | None = None,
     ):
         self.repository = repository
         self.gateway = gateway
@@ -953,12 +966,19 @@ class ChangeGovernanceService:
         self.sensitive_values = tuple(value for value in sensitive_values if value)
         self.operational_gateway = operational_gateway
         self.lifecycle_gateway = lifecycle_gateway
+        self.task_repository = task_repository or ExecutionTaskRepository(
+            repository.root,
+            retention_days=repository.retention_days,
+        )
         self.logger = get_logger("governance")
         self._plan_locks: dict[str, asyncio.Lock] = {}
         self._target_locks: dict[object, asyncio.Lock] = {}
         self._active_lifecycle_reconciliations = 0
+        self._active_task_ids_by_plan: dict[str, str] = {}
+        self._task_reconciliation_runs = 0
         self.repository.cleanup(now=self.now())
         self.repository.recover_incomplete(self._timestamp())
+        self.task_repository.cleanup(now=self.now())
 
     def _timestamp(self) -> str:
         return self.now().isoformat()
@@ -1080,6 +1100,323 @@ class ChangeGovernanceService:
         self._require_v2_persisted_plan_safe(plan)
         return plan
 
+    def _load_task(self, task_id: str) -> ExecutionTask:
+        try:
+            task = self.task_repository.get(task_id)
+        except ExecutionTaskStorageError as exc:
+            raise GovernanceError(
+                ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+            ) from exc
+        if task is None:
+            METRICS.record_classified_outcome("execution_task_not_found")
+            raise GovernanceError(
+                ErrorCode.EXECUTION_TASK_NOT_FOUND,
+                details={"resource_id": task_id},
+            )
+        return task
+
+    def _save_task(self, task: ExecutionTask) -> None:
+        try:
+            self.task_repository.save(task)
+        except ExecutionTaskStorageError as exc:
+            raise GovernanceError(
+                ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+            ) from exc
+
+    @staticmethod
+    def _task_target(plan: ChangePlan) -> dict[str, Any]:
+        return {
+            "target_type": plan.target_type,
+            "target_id": plan.target_id,
+        }
+
+    @staticmethod
+    def _task_approval_reference(plan: ChangePlan) -> dict[str, Any]:
+        """Persist bounded authority references without approval principals."""
+
+        return {
+            "approval_kind": plan.approval.approval_kind,
+            "authority_version": plan.approval.authority_version,
+            "bound_plan_hash": plan.approval.bound_plan_hash,
+            "approval_state": plan.approval.state.value,
+            "challenge_id": plan.approval.challenge_id,
+            "approval_expires_at": plan.approval.approval_expires_at,
+        }
+
+    def _task_idempotency_key(
+        self, plan: ChangePlan, plan_hash: str
+    ) -> str:
+        return stable_hash(
+            {
+                "task_schema_version": 1,
+                "plan_id": plan.plan_id,
+                "plan_hash": plan_hash,
+                "operation": plan.operation.value,
+                "target": self._task_target(plan),
+                "execution_intent": "apply_change_plan",
+            }
+        )
+
+    def _new_task_id(self) -> str:
+        while True:
+            candidate = uuid.uuid4().hex
+            if self.task_repository.get(candidate) is None:
+                return candidate
+
+    def _task_audit(
+        self,
+        task: ExecutionTask,
+        event_type: str,
+        result_status: str,
+        *,
+        error_code: str | None = None,
+    ) -> None:
+        safe = {
+            "event": event_type,
+            "request_id": current_request_id(),
+            "access": "write",
+            "operation_class": "execution_task_lifecycle",
+            "task_id": task.task_id,
+            "plan_id": task.plan_id,
+            "operation": task.operation,
+            "target_type": task.target.get("target_type"),
+            "target_id": task.target.get("target_id"),
+            "task_state": task.state.value,
+            "terminal_outcome": task.terminal_outcome,
+            "result_status": result_status,
+            "error_code": error_code,
+            "provider_dispatch_occurred": bool(task.dispatched_at),
+            "fallback_occurred": False,
+            "fallback": "none",
+        }
+        if self.audit:
+            self.audit.write(safe)
+        log_event(
+            self.logger,
+            (
+                logging.INFO
+                if result_status == "success"
+                else logging.WARNING
+            ),
+            event_type,
+            "Durable governed execution-task lifecycle event.",
+            context=safe,
+        )
+
+    def _record_task_event(
+        self,
+        task: ExecutionTask,
+        event_type: str,
+        *,
+        new_state: ExecutionTaskState | None = None,
+        changes: dict[str, Any] | None = None,
+        result_status: str = "success",
+        error_code: str | None = None,
+    ) -> None:
+        try:
+            task.append_event(
+                event_type,
+                self._timestamp(),
+                new_state=new_state,
+                changes=changes,
+                request_id=current_request_id(),
+            )
+        except ValueError as exc:
+            raise GovernanceError(
+                ErrorCode.EXECUTION_TASK_INVALID_STATE,
+                details={
+                    "task_id": task.task_id,
+                    "task_state": task.state.value,
+                },
+            ) from exc
+        self._save_task(task)
+        self._task_audit(
+            task,
+            event_type,
+            result_status,
+            error_code=error_code,
+        )
+
+    def _create_task_for_plan(
+        self, plan: ChangePlan, plan_hash: str
+    ) -> ExecutionTask:
+        timestamp = self._timestamp()
+        task = new_execution_task(
+            task_id=self._new_task_id(),
+            plan_id=plan.plan_id,
+            plan_hash=plan_hash,
+            operation=plan.operation.value,
+            target=self._task_target(plan),
+            timestamp=timestamp,
+            execution_request_id=current_request_id(),
+            idempotency_key=self._task_idempotency_key(plan, plan_hash),
+            approval_reference=self._task_approval_reference(plan),
+            legacy_projection={
+                "record_kind": "f1_execution_task",
+                "plan_status": plan.status.value,
+                "execution_outcome": plan.execution_outcome,
+            },
+        )
+        self._save_task(task)
+        self._task_audit(task, "task_created", "success")
+        return task
+
+    def _resolve_task_for_apply(
+        self, plan: ChangePlan, expected_plan_hash: str
+    ) -> tuple[ExecutionTask | None, bool]:
+        calculated = self.plan_hash(plan)
+        try:
+            existing = self.task_repository.get_for_plan(plan.plan_id)
+        except ExecutionTaskStorageError as exc:
+            raise GovernanceError(
+                ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+            ) from exc
+        if existing is not None:
+            if (
+                existing.plan_hash != calculated
+                or existing.idempotency_key
+                != self._task_idempotency_key(plan, calculated)
+            ):
+                raise GovernanceError(
+                    ErrorCode.EXECUTION_TASK_STORAGE_ERROR,
+                    details={
+                        "task_id": existing.task_id,
+                        "reason": "task_plan_authority_mismatch",
+                    },
+                )
+            return existing, True
+
+        # Historical completed plans remain taskless legacy records. Invalid or
+        # unapproved apply requests are rejected by the existing plan path
+        # before they can acquire an execution opportunity.
+        self._resolve_lifecycle(plan)
+        if plan.status == PlanStatus.APPLIED:
+            return None, False
+        if (
+            not expected_plan_hash
+            or expected_plan_hash != calculated
+            or not self._valid_external_approval(plan, "apply")
+        ):
+            return None, False
+        return self._create_task_for_plan(plan, calculated), False
+
+    @staticmethod
+    def _task_is_dispatched(task: ExecutionTask) -> bool:
+        return bool(task.dispatched_at or task.provider_attempts)
+
+    def _task_plan_projection(
+        self, task: ExecutionTask
+    ) -> dict[str, Any]:
+        return {
+            "record_kind": "f1_execution_task",
+            "task_id": task.task_id,
+            "task_state": task.state.value,
+            "terminal_outcome": task.terminal_outcome,
+            "updated_at": task.updated_at,
+            "provider_dispatch_occurred": self._task_is_dispatched(task),
+        }
+
+    def _public_task(
+        self, task: ExecutionTask, *, include_events: bool = True
+    ) -> dict[str, Any]:
+        value = task.to_dict()
+        events = list(value.pop("events", []))
+        value["provider_attempt_count"] = len(task.provider_attempts)
+        value["event_count"] = len(events)
+        if include_events:
+            value["lifecycle_events"] = events[-100:]
+            value["events_truncated"] = len(events) > 100
+        return value
+
+    def get_execution_task(self, task_id: str) -> dict[str, Any]:
+        return self._public_task(self._load_task(task_id))
+
+    def list_execution_tasks(
+        self,
+        *,
+        state: str = "",
+        terminal_outcome: str = "",
+        plan_id: str = "",
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        if state:
+            try:
+                ExecutionTaskState(state)
+            except ValueError as exc:
+                raise GovernanceError(ErrorCode.INVALID_REQUEST) from exc
+        try:
+            tasks = self.task_repository.list()
+        except ExecutionTaskStorageError as exc:
+            raise GovernanceError(
+                ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+            ) from exc
+        summaries = []
+        for task in tasks:
+            if state and task.state.value != state:
+                continue
+            if (
+                terminal_outcome
+                and task.terminal_outcome != terminal_outcome
+            ):
+                continue
+            if plan_id and task.plan_id != plan_id:
+                continue
+            summaries.append(self._public_task(task, include_events=False))
+            if len(summaries) >= max(1, min(int(limit), 100)):
+                break
+        return {"count": len(summaries), "tasks": summaries}
+
+    async def cancel_execution_task(
+        self, task_id: str
+    ) -> dict[str, Any]:
+        task = self._load_task(task_id)
+        plan_lock = self._plan_locks.setdefault(
+            task.plan_id, asyncio.Lock()
+        )
+        async with plan_lock:
+            task = self._load_task(task_id)
+            if self._task_is_dispatched(task) or task.state not in {
+                ExecutionTaskState.CREATED,
+                ExecutionTaskState.PREFLIGHT,
+            }:
+                self._record_task_event(
+                    task,
+                    "task_cancellation_rejected",
+                    result_status="rejected",
+                    error_code=(
+                        ErrorCode.CANCELLATION_NOT_PERMITTED_AFTER_DISPATCH.value
+                    ),
+                )
+                raise GovernanceError(
+                    ErrorCode.CANCELLATION_NOT_PERMITTED_AFTER_DISPATCH,
+                    details={
+                        "task_id": task.task_id,
+                        "task_state": task.state.value,
+                        "provider_dispatch_occurred": (
+                            self._task_is_dispatched(task)
+                        ),
+                    },
+                )
+            self._record_task_event(
+                task,
+                "task_cancelled_pre_dispatch",
+                new_state=ExecutionTaskState.CANCELLED_PRE_DISPATCH,
+                changes={
+                    "completed_at": self._timestamp(),
+                    "terminal_outcome": "cancelled_pre_dispatch",
+                    "legacy_projection": {
+                        **task.legacy_projection,
+                        "task_state": "cancelled_pre_dispatch",
+                    },
+                },
+            )
+            return {
+                "status": "cancelled_pre_dispatch",
+                "provider_dispatch_occurred": False,
+                "approval_consumed": False,
+                "task": self._public_task(task),
+            }
+
     def _save(self, plan: ChangePlan) -> None:
         plan.updated_at = self._timestamp()
         self._require_v2_persisted_plan_safe(plan)
@@ -1113,6 +1450,178 @@ class ChangeGovernanceService:
                 ErrorCode.CHANGE_PLAN_STORAGE_ERROR,
                 details={
                     "reason": "unsafe_persisted_configuration_plan",
+                },
+            )
+
+    def _project_plan_event_to_task(
+        self,
+        plan: ChangePlan,
+        event: str,
+        *,
+        operation_step: ConfigurationOperation | None = None,
+    ) -> None:
+        """Project only irreversible/progress facts into the active F1 task."""
+
+        task_id = self._active_task_ids_by_plan.get(plan.plan_id)
+        if task_id is None:
+            return
+        task = self._load_task(task_id)
+        if task.state in TERMINAL_TASK_STATES:
+            return
+
+        if event == "external_approval_consumed":
+            self._record_task_event(
+                task,
+                "approval_consumed",
+                changes={
+                    "approval_reference": self._task_approval_reference(
+                        plan
+                    ),
+                },
+            )
+            return
+
+        dispatch_event = (
+            (
+                plan.contract_version
+                == OPERATIONAL_PLAN_CONTRACT_VERSION
+                and event.endswith("_dispatch_recorded")
+            )
+            or (
+                plan.contract_version
+                == CONFIGURATION_PLAN_CONTRACT_VERSION
+                and event == "configuration_operation_started"
+            )
+            or (
+                plan.contract_version
+                < CONFIGURATION_PLAN_CONTRACT_VERSION
+                and event == "change_apply_started"
+            )
+        )
+        if dispatch_event:
+            if task.approval_reference.get("approval_state") != (
+                ApprovalState.CONSUMED.value
+            ):
+                self._record_task_event(
+                    task,
+                    "approval_consumed",
+                    changes={
+                        "approval_reference": (
+                            self._task_approval_reference(plan)
+                        ),
+                    },
+                )
+            attempted_at = self._timestamp()
+            provider = "engineering_configuration_provider"
+            if (
+                plan.contract_version
+                == OPERATIONAL_PLAN_CONTRACT_VERSION
+                and plan.operational is not None
+            ):
+                attempted_at = str(
+                    plan.operational.dispatch.get("attempted_at")
+                    or attempted_at
+                )
+                provider = plan.operational.provider
+            elif plan.contract_version < CONFIGURATION_PLAN_CONTRACT_VERSION:
+                attempted_at = (
+                    plan.approval.consumed_at or attempted_at
+                )
+                provider = "direct_home_assistant_automation"
+            parsed = parse_task_timestamp(attempted_at)
+            attempts = list(task.provider_attempts)
+            attempts.append(
+                {
+                    "attempt": len(attempts) + 1,
+                    "attempted_at": attempted_at,
+                    "provider": provider,
+                    "operation_id": (
+                        operation_step.operation_id
+                        if operation_step is not None
+                        else None
+                    ),
+                    "response_received": False,
+                }
+            )
+            first_dispatch = task.dispatched_at is None
+            deadline = task.maximum_post_dispatch_deadline
+            if first_dispatch:
+                deadline = (
+                    parsed + EXECUTION_TASK_POST_DISPATCH_DEADLINE
+                ).isoformat()
+            self._record_task_event(
+                task,
+                "dispatch_attempted",
+                new_state=(
+                    ExecutionTaskState.DISPATCHING
+                    if first_dispatch
+                    else None
+                ),
+                changes={
+                    "started_at": task.started_at or attempted_at,
+                    "dispatched_at": task.dispatched_at or attempted_at,
+                    "maximum_post_dispatch_deadline": deadline,
+                    "provider_attempts": attempts,
+                    "legacy_projection": {
+                        **task.legacy_projection,
+                        "plan_status": plan.status.value,
+                        "execution_outcome": plan.execution_outcome,
+                    },
+                },
+            )
+            return
+
+        if event.endswith("_provider_completed") or event.endswith(
+            "_dispatch_indeterminate"
+        ):
+            attempts = list(task.provider_attempts)
+            if attempts:
+                attempts[-1] = {
+                    **attempts[-1],
+                    "response_received": event.endswith(
+                        "_provider_completed"
+                    ),
+                    "response_recorded_at": self._timestamp(),
+                }
+            self._record_task_event(
+                task,
+                "provider_response_recorded",
+                new_state=(
+                    ExecutionTaskState.OBSERVING
+                    if task.state == ExecutionTaskState.DISPATCHING
+                    else None
+                ),
+                changes={
+                    "provider_attempts": attempts,
+                    "verification_summary": {
+                        **task.verification_summary,
+                        "status": "pending",
+                        "provider_response_received": event.endswith(
+                            "_provider_completed"
+                        ),
+                    },
+                },
+                result_status=(
+                    "success"
+                    if event.endswith("_provider_completed")
+                    else "partial"
+                ),
+            )
+            return
+
+        if event.endswith("_verification_started") and task.state in {
+            ExecutionTaskState.DISPATCHING,
+            ExecutionTaskState.OBSERVING,
+        }:
+            self._record_task_event(
+                task,
+                "verification_started",
+                new_state=ExecutionTaskState.VERIFYING,
+                changes={
+                    "verification_summary": {
+                        **task.verification_summary,
+                        "status": "verifying",
+                    },
                 },
             )
 
@@ -1219,6 +1728,11 @@ class ChangeGovernanceService:
         # If storage fails, the caller returns change_plan_storage_error and no
         # misleading success record is produced.
         self._save(plan)
+        self._project_plan_event_to_task(
+            plan,
+            event,
+            operation_step=operation_step,
+        )
         if self.audit:
             self.audit.write(safe)
         log_event(
@@ -1350,6 +1864,23 @@ class ChangeGovernanceService:
             and plan.approval.principal_separation_enforced
             and plan.risk.apply_allowed
         )
+        try:
+            task = self.task_repository.get_for_plan(plan.plan_id)
+        except ExecutionTaskStorageError as exc:
+            raise GovernanceError(
+                ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+            ) from exc
+        value["execution_task"] = (
+            self._task_plan_projection(task)
+            if task is not None
+            else {
+                "record_kind": "legacy_plan",
+                "task_id": None,
+                "task_state": None,
+                "terminal_outcome": None,
+                "provider_dispatch_occurred": False,
+            }
+        )
         # Contract-v2 callers receive ordered operation metadata, execution
         # receipts, and verification state, but never raw or normalized
         # configuration/snapshot bodies. Contract-v1 output remains unchanged
@@ -1453,6 +1984,8 @@ class ChangeGovernanceService:
                     "configuration_check_status": plan.configuration_check_status,
                 }
             )
+        public = self._public(plan, include_configs=False)
+        value["execution_task"] = public["execution_task"]
         return value
 
     @staticmethod
@@ -3089,40 +3622,451 @@ class ChangeGovernanceService:
         )
         raise GovernanceError(code)
 
+    def _terminal_task_apply_result(
+        self, task: ExecutionTask, plan: ChangePlan
+    ) -> dict[str, Any]:
+        self._record_task_event(
+            task,
+            "duplicate_apply_prevented",
+            changes={},
+        )
+        if task.state != ExecutionTaskState.SUCCEEDED_VERIFIED:
+            raise GovernanceError(
+                (
+                    ErrorCode.EXECUTION_TASK_INVALID_STATE
+                    if task.state
+                    == ExecutionTaskState.CANCELLED_PRE_DISPATCH
+                    else ErrorCode.DUPLICATE_APPLY_ATTEMPT
+                ),
+                details={
+                    "task_id": task.task_id,
+                    "task_state": task.state.value,
+                    "provider_dispatch_occurred": (
+                        self._task_is_dispatched(task)
+                    ),
+                },
+            )
+        return {
+            "status": "already_applied",
+            "task_id": task.task_id,
+            "task_state": task.state.value,
+            "task_reused": True,
+            "redispatch_performed": False,
+            "provider_dispatch_occurred": self._task_is_dispatched(task),
+            "terminal_outcome": task.terminal_outcome,
+            "task": self._public_task(task),
+            "plan": self._public(plan, include_configs=False),
+        }
+
+    def _task_deadline_expired(self, task: ExecutionTask) -> bool:
+        if (
+            not self._task_is_dispatched(task)
+            or task.maximum_post_dispatch_deadline is None
+        ):
+            return False
+        try:
+            return self.now() >= parse_task_timestamp(
+                task.maximum_post_dispatch_deadline
+            )
+        except ValueError:
+            return True
+
+    def _manual_review_task(
+        self,
+        task: ExecutionTask,
+        reason: str,
+        plan: ChangePlan | None,
+    ) -> None:
+        if task.state in TERMINAL_TASK_STATES:
+            return
+        if task.state not in {
+            ExecutionTaskState.DISPATCHING,
+            ExecutionTaskState.OBSERVING,
+            ExecutionTaskState.VERIFYING,
+        }:
+            # A contradictory pre-dispatch task cannot be promoted into a
+            # dispatched history. Fail it before dispatch instead.
+            self._record_task_event(
+                task,
+                "preflight_failed",
+                new_state=ExecutionTaskState.FAILED_PRE_DISPATCH,
+                changes={
+                    "completed_at": self._timestamp(),
+                    "terminal_outcome": "failed_pre_dispatch",
+                    "last_error": {"failure_category": reason},
+                    "legacy_projection": {
+                        **task.legacy_projection,
+                        "plan_status": (
+                            plan.status.value if plan is not None else "missing"
+                        ),
+                        "execution_outcome": (
+                            plan.execution_outcome
+                            if plan is not None
+                            else "unavailable"
+                        ),
+                    },
+                },
+                result_status="failure",
+                error_code=reason,
+            )
+            return
+        self._record_task_event(
+            task,
+            "manual_review_required",
+            new_state=ExecutionTaskState.MANUAL_REVIEW_REQUIRED,
+            changes={
+                "completed_at": self._timestamp(),
+                "terminal_outcome": "manual_review_required",
+                "manual_review_reason": reason,
+                "last_error": {"failure_category": reason},
+                "legacy_projection": {
+                    **task.legacy_projection,
+                    "plan_status": (
+                        plan.status.value if plan is not None else "missing"
+                    ),
+                    "execution_outcome": (
+                        plan.execution_outcome
+                        if plan is not None
+                        else "unavailable"
+                    ),
+                },
+            },
+            result_status="partial",
+            error_code=reason,
+        )
+
+    def _project_task_after_apply(
+        self,
+        task: ExecutionTask,
+        plan: ChangePlan,
+        *,
+        error_code: str | None = None,
+    ) -> None:
+        if task.state in TERMINAL_TASK_STATES:
+            return
+        dispatched = self._task_is_dispatched(task)
+        legacy = {
+            **task.legacy_projection,
+            "plan_status": plan.status.value,
+            "execution_outcome": plan.execution_outcome,
+        }
+        if plan.status == PlanStatus.APPLIED:
+            if not dispatched:
+                self._record_task_event(
+                    task,
+                    "task_completed",
+                    new_state=ExecutionTaskState.SUCCEEDED_VERIFIED,
+                    changes={
+                        "completed_at": self._timestamp(),
+                        "terminal_outcome": (
+                            plan.execution_outcome
+                            or "already_desired_verified"
+                        ),
+                        "verification_summary": {
+                            **task.verification_summary,
+                            "status": "verified",
+                            "plan_status": plan.status.value,
+                            "provider_dispatch_occurred": False,
+                        },
+                        "legacy_projection": legacy,
+                    },
+                )
+                return
+            if any(
+                attempt.get("response_received") is not True
+                for attempt in task.provider_attempts
+            ):
+                self._record_task_event(
+                    task,
+                    "provider_response_recorded",
+                    new_state=(
+                        ExecutionTaskState.OBSERVING
+                        if task.state
+                        == ExecutionTaskState.DISPATCHING
+                        else None
+                    ),
+                    changes={
+                        "provider_attempts": [
+                            {
+                                **attempt,
+                                "response_received": True,
+                                "response_recorded_at": self._timestamp(),
+                            }
+                            for attempt in task.provider_attempts
+                        ],
+                    },
+                )
+            if task.state in {
+                ExecutionTaskState.DISPATCHING,
+                ExecutionTaskState.OBSERVING,
+            }:
+                self._record_task_event(
+                    task,
+                    "verification_started",
+                    new_state=ExecutionTaskState.VERIFYING,
+                    changes={
+                        "verification_summary": {
+                            **task.verification_summary,
+                            "status": "verifying",
+                        }
+                    },
+                )
+            self._record_task_event(
+                task,
+                "task_completed",
+                new_state=ExecutionTaskState.SUCCEEDED_VERIFIED,
+                changes={
+                    "completed_at": self._timestamp(),
+                    "terminal_outcome": (
+                        plan.operational.final_outcome
+                        if plan.operational is not None
+                        else plan.execution_outcome or "applied_verified"
+                    ),
+                    "verification_summary": {
+                        **task.verification_summary,
+                        "status": "verified",
+                        "plan_status": plan.status.value,
+                    },
+                    "legacy_projection": legacy,
+                },
+            )
+            return
+        if not dispatched:
+            if error_code is None:
+                return
+            self._record_task_event(
+                task,
+                "preflight_failed",
+                new_state=ExecutionTaskState.FAILED_PRE_DISPATCH,
+                changes={
+                    "completed_at": self._timestamp(),
+                    "terminal_outcome": "failed_pre_dispatch",
+                    "last_error": {"error_code": error_code},
+                    "legacy_projection": legacy,
+                },
+                result_status="failure",
+                error_code=error_code,
+            )
+            return
+        if plan.status in {
+            PlanStatus.FAILED,
+            PlanStatus.VERIFICATION_FAILED,
+        }:
+            if task.state == ExecutionTaskState.DISPATCHING:
+                self._record_task_event(
+                    task,
+                    "verification_started",
+                    new_state=ExecutionTaskState.VERIFYING,
+                    changes={},
+                )
+            self._record_task_event(
+                task,
+                "task_completed",
+                new_state=ExecutionTaskState.FAILED_POST_DISPATCH,
+                changes={
+                    "completed_at": self._timestamp(),
+                    "terminal_outcome": "failed_post_dispatch",
+                    "last_error": {
+                        "error_code": (
+                            error_code
+                            or (plan.failure_information or {}).get(
+                                "error_code"
+                            )
+                            or "verification_failed"
+                        )
+                    },
+                    "verification_summary": {
+                        **task.verification_summary,
+                        "status": "failed",
+                    },
+                    "legacy_projection": legacy,
+                },
+                result_status="failure",
+                error_code=error_code,
+            )
+            return
+        if task.state == ExecutionTaskState.DISPATCHING:
+            self._record_task_event(
+                task,
+                "provider_response_recorded",
+                new_state=ExecutionTaskState.OBSERVING,
+                changes={
+                    "verification_summary": {
+                        **task.verification_summary,
+                        "status": "pending",
+                    },
+                    "last_error": (
+                        {"error_code": error_code}
+                        if error_code
+                        else task.last_error
+                    ),
+                    "legacy_projection": legacy,
+                },
+                result_status="partial",
+                error_code=error_code,
+            )
+        elif task.state == ExecutionTaskState.VERIFYING:
+            self._record_task_event(
+                task,
+                "verification_evidence_updated",
+                new_state=ExecutionTaskState.OBSERVING,
+                changes={
+                    "verification_summary": {
+                        **task.verification_summary,
+                        "status": "pending",
+                    },
+                    "last_error": (
+                        {"error_code": error_code}
+                        if error_code
+                        else task.last_error
+                    ),
+                    "legacy_projection": legacy,
+                },
+                result_status="partial",
+                error_code=error_code,
+            )
+
+    @staticmethod
+    def _decorate_task_result(
+        result: dict[str, Any],
+        task: ExecutionTask | None,
+        *,
+        reused: bool,
+    ) -> dict[str, Any]:
+        if task is None:
+            return result
+        return {
+            **result,
+            "task_id": task.task_id,
+            "task_state": task.state.value,
+            "task_reused": reused,
+            "execution_task": {
+                "task_id": task.task_id,
+                "state": task.state.value,
+                "terminal_outcome": task.terminal_outcome,
+                "provider_dispatch_occurred": bool(
+                    task.dispatched_at or task.provider_attempts
+                ),
+            },
+        }
+
     async def apply(self, plan_id: str, expected_plan_hash: str = "") -> dict[str, Any]:
         plan_lock = self._plan_locks.setdefault(plan_id, asyncio.Lock())
         async with plan_lock:
             plan = self._load(plan_id)
-            if plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION:
-                if plan.operation == ChangeOperation.CREATE_FULL_BACKUP:
-                    return await self._apply_operational_backup(
+            task, reused = self._resolve_task_for_apply(
+                plan, expected_plan_hash
+            )
+            if task is not None and task.state in TERMINAL_TASK_STATES:
+                return self._terminal_task_apply_result(task, plan)
+            if task is not None and plan.status in {
+                PlanStatus.APPLIED,
+                PlanStatus.FAILED,
+                PlanStatus.VERIFICATION_FAILED,
+            }:
+                # A crash may persist the operation-specific terminal plan
+                # evidence before its task projection. Recover that
+                # authoritative terminal result before applying the 24-hour
+                # unresolved-evidence deadline.
+                self._project_task_after_apply(task, plan)
+                task = self._load_task(task.task_id)
+                if task.state in TERMINAL_TASK_STATES:
+                    return self._terminal_task_apply_result(task, plan)
+            if task is not None and self._task_deadline_expired(task):
+                self._manual_review_task(
+                    task, "maximum_post_dispatch_deadline_exceeded", plan
+                )
+                return self._terminal_task_apply_result(task, plan)
+            if (
+                task is not None
+                and task.state == ExecutionTaskState.CREATED
+            ):
+                self._record_task_event(
+                    task,
+                    "preflight_started",
+                    new_state=ExecutionTaskState.PREFLIGHT,
+                    changes={"started_at": self._timestamp()},
+                )
+            elif (
+                task is not None
+                and reused
+                and self._task_is_dispatched(task)
+            ):
+                self._record_task_event(
+                    task,
+                    "duplicate_apply_prevented",
+                    changes={},
+                )
+            if task is not None:
+                self._active_task_ids_by_plan[plan.plan_id] = task.task_id
+            try:
+                if (
+                    plan.contract_version
+                    == OPERATIONAL_PLAN_CONTRACT_VERSION
+                ):
+                    if (
+                        plan.operation
+                        == ChangeOperation.CREATE_FULL_BACKUP
+                    ):
+                        result = await self._apply_operational_backup(
+                            plan, expected_plan_hash
+                        )
+                    else:
+                        result = await self._apply_operational_lifecycle(
+                            plan, expected_plan_hash
+                        )
+                elif (
+                    plan.contract_version
+                    == CONFIGURATION_PLAN_CONTRACT_VERSION
+                ):
+                    result = await self._apply_configuration_plan(
                         plan, expected_plan_hash
                     )
-                return await self._apply_operational_lifecycle(
-                    plan, expected_plan_hash
-                )
-            if plan.contract_version == CONFIGURATION_PLAN_CONTRACT_VERSION:
-                return await self._apply_configuration_plan(
-                    plan, expected_plan_hash
-                )
-            # Reuse an already-present legacy bare-ID lock for compatibility
-            # with existing in-process callers, then publish the typed key used
-            # by both contract versions.
-            legacy_target_lock = self._target_locks.get(plan.target_id)
-            target_lock = self._target_locks.setdefault(
-                ("automation", plan.target_id),
-                legacy_target_lock or asyncio.Lock(),
+                else:
+                    # Reuse an already-present legacy bare-ID lock for
+                    # compatibility with existing in-process callers, then
+                    # publish the typed key used by both contract versions.
+                    legacy_target_lock = self._target_locks.get(
+                        plan.target_id
+                    )
+                    target_lock = self._target_locks.setdefault(
+                        ("automation", plan.target_id),
+                        legacy_target_lock or asyncio.Lock(),
+                    )
+                    if target_lock.locked():
+                        self._record(
+                            plan,
+                            "change_apply_rejected",
+                            "rejected",
+                            error_code=ErrorCode.CHANGE_IN_PROGRESS.value,
+                        )
+                        raise GovernanceError(
+                            ErrorCode.CHANGE_IN_PROGRESS
+                        )
+                    async with target_lock:
+                        result = await self._apply_locked(
+                            plan, expected_plan_hash
+                        )
+            except GovernanceError as exc:
+                if task is not None:
+                    persisted_plan = self._load(plan.plan_id)
+                    task = self._load_task(task.task_id)
+                    self._project_task_after_apply(
+                        task,
+                        persisted_plan,
+                        error_code=exc.code.value,
+                    )
+                raise
+            finally:
+                self._active_task_ids_by_plan.pop(plan.plan_id, None)
+            if task is not None:
+                persisted_plan = self._load(plan.plan_id)
+                task = self._load_task(task.task_id)
+                self._project_task_after_apply(task, persisted_plan)
+                task = self._load_task(task.task_id)
+            return self._decorate_task_result(
+                result, task, reused=reused
             )
-            if target_lock.locked():
-                self._record(
-                    plan,
-                    "change_apply_rejected",
-                    "rejected",
-                    error_code=ErrorCode.CHANGE_IN_PROGRESS.value,
-                )
-                raise GovernanceError(ErrorCode.CHANGE_IN_PROGRESS)
-            async with target_lock:
-                return await self._apply_locked(plan, expected_plan_hash)
 
     async def _apply_operational_lifecycle(
         self, plan: ChangePlan, expected_plan_hash: str
@@ -4117,6 +5061,133 @@ class ChangeGovernanceService:
             and plan.approval.state == ApprovalState.CONSUMED
         )
 
+    async def reconcile_execution_tasks(
+        self,
+        *,
+        trigger: str = "periodic",
+        max_tasks: int = MAX_OPERATIONAL_RECONCILIATIONS_PER_PASS,
+    ) -> dict[str, Any]:
+        """Rehydrate task authority without invoking any provider action."""
+
+        if trigger not in {"startup", "periodic", "manual"}:
+            raise ValueError("unsupported execution-task trigger")
+        self._task_reconciliation_runs += 1
+        try:
+            tasks = self.task_repository.list()
+        except ExecutionTaskStorageError as exc:
+            raise GovernanceError(
+                ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+            ) from exc
+        checked = completed = pending = manual_review = failed = 0
+        for task in tasks:
+            if checked >= max(1, min(int(max_tasks), 100)):
+                break
+            if task.state in TERMINAL_TASK_STATES:
+                continue
+            checked += 1
+            plan_lock = self._plan_locks.setdefault(
+                task.plan_id, asyncio.Lock()
+            )
+            if plan_lock.locked():
+                pending += 1
+                continue
+            async with plan_lock:
+                task = self._load_task(task.task_id)
+                try:
+                    plan = self._load(task.plan_id)
+                except GovernanceError as exc:
+                    if exc.code == ErrorCode.CHANGE_PLAN_NOT_FOUND:
+                        # A missing immutable authority can never be recovered
+                        # by creating or dispatching something new.
+                        self._manual_review_task(
+                            task,
+                            "immutable_plan_unavailable",
+                            None,
+                        )
+                        manual_review += 1
+                        continue
+                    raise
+                if (
+                    task.plan_hash != self.plan_hash(plan)
+                    or task.operation != plan.operation.value
+                    or task.target != self._task_target(plan)
+                ):
+                    self._manual_review_task(
+                        task, "task_plan_authority_mismatch", plan
+                    )
+                    manual_review += 1
+                    continue
+                if plan.status in {
+                    PlanStatus.APPLIED,
+                    PlanStatus.FAILED,
+                    PlanStatus.VERIFICATION_FAILED,
+                }:
+                    self._project_task_after_apply(task, plan)
+                    task = self._load_task(task.task_id)
+                    if (
+                        task.state
+                        == ExecutionTaskState.SUCCEEDED_VERIFIED
+                    ):
+                        completed += 1
+                    else:
+                        failed += 1
+                    continue
+                if self._task_deadline_expired(task):
+                    self._manual_review_task(
+                        task,
+                        "maximum_post_dispatch_deadline_exceeded",
+                        plan,
+                    )
+                    manual_review += 1
+                    continue
+                if not self._task_is_dispatched(task):
+                    if (
+                        task.state
+                        in {
+                            ExecutionTaskState.CREATED,
+                            ExecutionTaskState.PREFLIGHT,
+                        }
+                        and self._valid_external_approval(plan, "apply")
+                    ):
+                        pending += 1
+                        continue
+                    self._project_task_after_apply(
+                        task,
+                        plan,
+                        error_code="pre_dispatch_authority_invalid",
+                    )
+                    failed += 1
+                    continue
+                if (
+                    plan.contract_version
+                    == OPERATIONAL_PLAN_CONTRACT_VERSION
+                    and self._eligible_lifecycle_reconciliation(plan)
+                ):
+                    pending += 1
+                    continue
+                self._project_task_after_apply(task, plan)
+                task = self._load_task(task.task_id)
+                if task.state == ExecutionTaskState.SUCCEEDED_VERIFIED:
+                    completed += 1
+                elif task.state in TERMINAL_TASK_STATES:
+                    failed += 1
+                else:
+                    self._manual_review_task(
+                        task,
+                        "dispatched_task_has_no_readback_reconciler",
+                        plan,
+                    )
+                    manual_review += 1
+        return {
+            "checked": checked,
+            "completed": completed,
+            "pending": pending,
+            "manual_review_required": manual_review,
+            "failed": failed,
+            "provider_dispatches": 0,
+            "trigger": trigger,
+        }
+
     async def reconcile_operational_plans(
         self,
         *,
@@ -4157,6 +5228,34 @@ class ChangeGovernanceService:
                 plan = self._load(candidate.plan_id)
                 if not self._eligible_lifecycle_reconciliation(plan):
                     continue
+                try:
+                    task = self.task_repository.get_for_plan(plan.plan_id)
+                except ExecutionTaskStorageError as exc:
+                    raise GovernanceError(
+                        ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+                    ) from exc
+                if task is not None:
+                    if task.state in TERMINAL_TASK_STATES:
+                        continue
+                    if not self._task_is_dispatched(task):
+                        self._manual_review_task(
+                            task,
+                            "plan_dispatch_without_task_dispatch_event",
+                            plan,
+                        )
+                        failed += 1
+                        continue
+                    if self._task_deadline_expired(task):
+                        self._manual_review_task(
+                            task,
+                            "maximum_post_dispatch_deadline_exceeded",
+                            plan,
+                        )
+                        failed += 1
+                        continue
+                    self._active_task_ids_by_plan[
+                        plan.plan_id
+                    ] = task.task_id
                 target_lock = self._target_locks.setdefault(
                     (
                         f"operational_{plan.operation.value}",
@@ -4165,6 +5264,9 @@ class ChangeGovernanceService:
                     asyncio.Lock(),
                 )
                 if target_lock.locked():
+                    self._active_task_ids_by_plan.pop(
+                        plan.plan_id, None
+                    )
                     pending += 1
                     continue
                 checked += 1
@@ -4214,9 +5316,25 @@ class ChangeGovernanceService:
                                 ErrorCode.OPERATIONAL_VERIFICATION_PENDING.value
                             ),
                         )
+                        if task is not None:
+                            task = self._load_task(task.task_id)
+                            self._project_task_after_apply(
+                                task,
+                                self._load(plan.plan_id),
+                                error_code=(
+                                    ErrorCode.OPERATIONAL_VERIFICATION_PENDING.value
+                                ),
+                            )
                         continue
-                    except GovernanceError:
+                    except GovernanceError as exc:
                         failed += 1
+                        if task is not None:
+                            task = self._load_task(task.task_id)
+                            self._project_task_after_apply(
+                                task,
+                                self._load(plan.plan_id),
+                                error_code=exc.code.value,
+                            )
                         continue
                     except Exception as exc:
                         failed += 1
@@ -4248,9 +5366,26 @@ class ChangeGovernanceService:
                             )
                         except Exception:
                             pass
+                        if task is not None:
+                            task = self._load_task(task.task_id)
+                            self._project_task_after_apply(
+                                task,
+                                self._load(plan.plan_id),
+                                error_code=(
+                                    ErrorCode.OPERATIONAL_VERIFICATION_PENDING.value
+                                ),
+                            )
                         continue
                     finally:
                         self._active_lifecycle_reconciliations -= 1
+                        self._active_task_ids_by_plan.pop(
+                            plan.plan_id, None
+                        )
+                    if task is not None:
+                        task = self._load_task(task.task_id)
+                        self._project_task_after_apply(
+                            task, self._load(plan.plan_id)
+                        )
             if result.get("status") == "applied":
                 completed += 1
             else:
@@ -6469,7 +7604,32 @@ class ChangeGovernanceService:
     def health_summary(self) -> dict[str, Any]:
         plans = self.resolved_plans()
         storage = self.repository.health()
+        try:
+            tasks = self.task_repository.list()
+            task_storage = self.task_repository.health()
+        except ExecutionTaskStorageError:
+            tasks = []
+            task_storage = {
+                "configured": True,
+                "status": "error",
+                "record_count": 0,
+                "event_count": 0,
+                "corruption_count": self.task_repository.corruption_count,
+                "write_failures": self.task_repository.write_failures,
+                "event_write_failures": (
+                    self.task_repository.event_write_failures
+                ),
+                "materialization_failures": (
+                    self.task_repository.materialization_failures
+                ),
+                "rehydration_attempts": (
+                    self.task_repository.rehydration_attempts
+                ),
+            }
         events = [event.event for plan in plans for event in plan.events]
+        task_events = [
+            event.event_type for task in tasks for event in task.events
+        ]
         operational_plans = [
             plan
             for plan in plans
@@ -6554,6 +7714,101 @@ class ChangeGovernanceService:
                 (plan.applied_at for plan in sorted(plans, key=lambda item: item.applied_at or "", reverse=True) if plan.applied_at),
                 None,
             ),
+            "execution_tasks": {
+                "storage": task_storage,
+                "storage_configured": bool(
+                    task_storage.get("configured")
+                ),
+                "storage_status": task_storage.get("status"),
+                "record_count": len(tasks),
+                "event_count": sum(
+                    len(task.events) for task in tasks
+                ),
+                "active_tasks_by_state": {
+                    state.value: sum(
+                        task.state == state for task in tasks
+                    )
+                    for state in ExecutionTaskState
+                    if state not in TERMINAL_TASK_STATES
+                    and state.value
+                    not in {
+                        "waiting_for_lock",
+                        "compensating",
+                        "partial_application",
+                        "compensated",
+                        "superseded",
+                    }
+                },
+                "nonterminal_tasks": sum(
+                    task.state not in TERMINAL_TASK_STATES
+                    for task in tasks
+                ),
+                "tasks_verifying": sum(
+                    task.state == ExecutionTaskState.VERIFYING
+                    for task in tasks
+                ),
+                "tasks_manual_review": sum(
+                    task.state
+                    == ExecutionTaskState.MANUAL_REVIEW_REQUIRED
+                    for task in tasks
+                ),
+                "tasks_created": task_events.count("task_created"),
+                "verified_successes": sum(
+                    task.state
+                    == ExecutionTaskState.SUCCEEDED_VERIFIED
+                    for task in tasks
+                ),
+                "failed_pre_dispatch": sum(
+                    task.state
+                    == ExecutionTaskState.FAILED_PRE_DISPATCH
+                    for task in tasks
+                ),
+                "failed_post_dispatch": sum(
+                    task.state
+                    == ExecutionTaskState.FAILED_POST_DISPATCH
+                    for task in tasks
+                ),
+                "cancellations": sum(
+                    task.state
+                    == ExecutionTaskState.CANCELLED_PRE_DISPATCH
+                    for task in tasks
+                ),
+                "manual_review_outcomes": sum(
+                    task.state
+                    == ExecutionTaskState.MANUAL_REVIEW_REQUIRED
+                    for task in tasks
+                ),
+                "no_blind_redispatch_preventions": (
+                    task_events.count("duplicate_apply_prevented")
+                ),
+                "rehydration_attempts": task_storage.get(
+                    "rehydration_attempts", 0
+                ),
+                "reconciliation_runs": self._task_reconciliation_runs,
+                "event_write_failures": task_storage.get(
+                    "event_write_failures", 0
+                ),
+                "materialization_failures": task_storage.get(
+                    "materialization_failures", 0
+                ),
+                "last_task_failure_category": next(
+                    (
+                        str(task.last_error.get("error_code")
+                            or task.last_error.get("failure_category"))
+                        for task in sorted(
+                            tasks,
+                            key=lambda item: item.updated_at,
+                            reverse=True,
+                        )
+                        if isinstance(task.last_error, dict)
+                        and (
+                            task.last_error.get("error_code")
+                            or task.last_error.get("failure_category")
+                        )
+                    ),
+                    None,
+                ),
+            },
         }
         summary["approval_consumption_count"] += sum(
             event.event.endswith("_dispatch_recorded")

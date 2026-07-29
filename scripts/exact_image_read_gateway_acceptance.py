@@ -77,7 +77,7 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
 from ha_mcp_engineering.version import SERVER_VERSION  # noqa: E402
 
 
-EXPECTED_ENGINEERING_BASELINE_COUNT = 45
+EXPECTED_ENGINEERING_BASELINE_COUNT = 48
 ACCEPTANCE_TIMEOUT_SECONDS = 120
 MAX_DIAGNOSTIC_ITEMS = 32
 MAX_FAILURE_MESSAGE_CHARS = 512

@@ -37,12 +37,29 @@ _PROPOSAL_TOOLS = {
     "create_change_plan",
     "create_configuration_plan",
 }
+_TASK_READ_TOOLS = {"get_execution_task", "list_execution_tasks"}
+_TASK_READ_ANNOTATIONS = ToolAnnotations(
+    readOnlyHint=True,
+    destructiveHint=False,
+    idempotentHint=True,
+    openWorldHint=False,
+)
+_TASK_CANCEL_ANNOTATIONS = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=False,
+    idempotentHint=True,
+    openWorldHint=False,
+)
 for governance_tool in GOVERNANCE_TOOLS:
     if governance_tool.__name__ not in _registered:
         _SERVER.tool(
             annotations=(
                 _PROPOSAL_ANNOTATIONS
                 if governance_tool.__name__ in _PROPOSAL_TOOLS
+                else _TASK_READ_ANNOTATIONS
+                if governance_tool.__name__ in _TASK_READ_TOOLS
+                else _TASK_CANCEL_ANNOTATIONS
+                if governance_tool.__name__ == "cancel_execution_task"
                 else None
             )
         )(governance_tool)
