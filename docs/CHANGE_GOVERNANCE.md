@@ -22,12 +22,15 @@ is added without replacing outage evidence. Confirmed dispatch without a
 qualified outage remains verification-pending. Reconciliation never restores
 write authority or redispatches.
 
-New outage evidence must fall within the immutable interval derived from the
+The initial active-probe budget is approximately 15 seconds, while new outage
+evidence has an independent immutable 180-second interval derived from the
 original persisted dispatch timestamp. Reconciliation cannot extend it, while
-recovery may finish later if a qualifying outage was already recorded. A late
-unrelated outage cannot verify an old plan. The same complete-evidence
-predicate validates current and historical records; an incomplete raw outage
-flag is never authority.
+recovery may finish indefinitely later if a qualifying outage was already
+recorded. A Core outage at `T+60s` can therefore qualify during later
+readback, but an outage after `T+180s` cannot verify the old plan. The same
+complete-evidence predicate validates current and historical records; an
+incomplete raw outage flag is never authority. Reconnection is retained only
+with the explicit timestamp from a successful post-outage Core identity read.
 
 The existing blanket prohibition on high-risk automation changes is unchanged.
 Only the exact add-on and Home Assistant restart operation types have reviewed

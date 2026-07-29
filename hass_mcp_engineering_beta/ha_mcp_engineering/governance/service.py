@@ -73,7 +73,7 @@ from .operational import (
 from .operational_lifecycle import (
     LifecycleGatewayError,
     OperationalLifecycleGateway,
-    RESTART_DISRUPTION_OBSERVATION_WINDOW_SECONDS,
+    RESTART_OUTAGE_ELIGIBILITY_WINDOW_SECONDS,
     RELOAD_SERVICES,
 )
 from .validation import sanitize_context, validate_automation
@@ -115,7 +115,9 @@ HOME_ASSISTANT_RESTART_EVIDENCE_SOURCES = frozenset(
         "home_assistant_core_reconnected",
     }
 )
+# Eight is the practical cardinality limit for the closed evidence-source set.
 MAX_RESTART_EVIDENCE_SOURCES = 8
+# The larger count bound is defensive against malformed persisted records.
 MAX_RESTART_OUTAGE_OBSERVATIONS = 10_000
 
 _APPROVAL_METADATA_FIELDS = {
@@ -3350,7 +3352,7 @@ class ChangeGovernanceService:
                         parsed_attempted_at
                         + timedelta(
                             seconds=(
-                                RESTART_DISRUPTION_OBSERVATION_WINDOW_SECONDS
+                                RESTART_OUTAGE_ELIGIBILITY_WINDOW_SECONDS
                             )
                         )
                     ).isoformat()
@@ -3650,7 +3652,7 @@ class ChangeGovernanceService:
             attempted_at
             + timedelta(
                 seconds=(
-                    RESTART_DISRUPTION_OBSERVATION_WINDOW_SECONDS
+                    RESTART_OUTAGE_ELIGIBILITY_WINDOW_SECONDS
                 )
             )
             if attempted_at is not None
@@ -3752,6 +3754,46 @@ class ChangeGovernanceService:
             ),
         }
 
+    def _home_assistant_reconnection_evidence_state(
+        self,
+        evidence: dict[str, Any],
+        *,
+        outage_state: dict[str, Any],
+        now: str,
+    ) -> dict[str, Any]:
+        """Validate an explicit successful identity read after the outage."""
+
+        reconnected_at = _parse_governance_timestamp(
+            evidence.get("reconnected_at")
+        )
+        first_unavailable = _parse_governance_timestamp(
+            outage_state.get("first_unavailable_at")
+        )
+        checked_at = _parse_governance_timestamp(now)
+        sources = _bounded_restart_evidence_sources(
+            evidence.get("restart_evidence_sources")
+        )
+        authoritative = (
+            outage_state.get("authoritative") is True
+            and evidence.get("home_assistant_reconnected") is True
+            and reconnected_at is not None
+            and first_unavailable is not None
+            and reconnected_at > first_unavailable
+            and (
+                checked_at is None
+                or reconnected_at <= checked_at
+            )
+            and "home_assistant_core_reconnected" in sources
+        )
+        return {
+            "authoritative": authoritative,
+            "reconnected_at": (
+                reconnected_at.isoformat()
+                if authoritative and reconnected_at is not None
+                else None
+            ),
+        }
+
     def _merge_home_assistant_restart_verification(
         self,
         plan: ChangePlan,
@@ -3768,6 +3810,13 @@ class ChangeGovernanceService:
         observed_at = self._timestamp()
         persisted_state = self._home_assistant_outage_evidence_state(
             plan, persisted, now=observed_at
+        )
+        persisted_reconnection_state = (
+            self._home_assistant_reconnection_evidence_state(
+                persisted,
+                outage_state=persisted_state,
+                now=observed_at,
+            )
         )
         current_sources = _bounded_restart_evidence_sources(
             current.get("restart_evidence_sources")
@@ -3963,18 +4012,53 @@ class ChangeGovernanceService:
                     "home_assistant_core_reconnected",
                 }
             ]
-        elif current.get("home_assistant_reconnected") is True:
-            merged["home_assistant_reconnected"] = True
-            merged["reconnected_at"] = (
-                persisted.get("reconnected_at") or observed_at
+        current_reconnection_state = (
+            self._home_assistant_reconnection_evidence_state(
+                current,
+                outage_state=normalized_state,
+                now=observed_at,
             )
+        )
+        if (
+            normalized_state["authoritative"]
+            and persisted_reconnection_state["authoritative"]
+        ):
+            merged["home_assistant_reconnected"] = True
+            merged["reconnected_at"] = persisted_reconnection_state[
+                "reconnected_at"
+            ]
+            if "home_assistant_core_reconnected" not in sources:
+                sources.append("home_assistant_core_reconnected")
+        elif (
+            normalized_state["authoritative"]
+            and current_reconnection_state["authoritative"]
+        ):
+            merged["home_assistant_reconnected"] = True
+            merged["reconnected_at"] = current_reconnection_state[
+                "reconnected_at"
+            ]
             for source in current_sources:
                 if source not in sources:
                     sources.append(source)
             merged.pop("failure_category", None)
+        else:
+            merged.pop("home_assistant_reconnected", None)
+            merged.pop("reconnected_at", None)
+            sources = [
+                source
+                for source in sources
+                if source != "home_assistant_core_reconnected"
+            ]
         merged["restart_evidence_sources"] = sources[
             :MAX_RESTART_EVIDENCE_SOURCES
         ]
+        merged_reconnection_state = (
+            self._home_assistant_reconnection_evidence_state(
+                merged,
+                outage_state=normalized_state,
+                now=observed_at,
+            )
+        )
 
         operational.dispatch["expected_disruption_observed"] = bool(
             normalized_state["authoritative"]
@@ -3989,7 +4073,7 @@ class ChangeGovernanceService:
         restart_evidence_complete = (
             restart_dispatch_confirmed
             and normalized_state["authoritative"]
-            and merged.get("home_assistant_reconnected") is True
+            and merged_reconnection_state["authoritative"]
         )
         mismatch_fields = [
             str(value)[:160]

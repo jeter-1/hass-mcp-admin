@@ -28,11 +28,14 @@ Use a storage-backed governed Home Assistant restart fixture to prove:
 3. a direct post-dispatch Home Assistant Core timeout or unavailability is
    recorded with `outage_observed=true`, the earliest and latest timestamps,
    an observation count, a bounded evidence source and failure category, and
-   the immutable observation deadline derived from the original dispatch;
+   the immutable observation deadline exactly 180 seconds after the original
+   persisted dispatch;
 4. repeated unavailable probes merge without losing earlier evidence;
-5. later Core recovery adds reconnection, unchanged identity, valid
-   configuration, runtime/catalog/storage/audit/upstream/dependency readiness,
-   and zero-fallback evidence;
+5. a later successful Core identity read adds
+   `home_assistant_reconnected=true`, its explicit `reconnected_at` timestamp,
+   unchanged identity, valid configuration,
+   runtime/catalog/storage/audit/upstream/dependency readiness, and
+   zero-fallback evidence;
 6. the same plan reaches `applied_verified` and
    `restart_home_assistant_and_verified`; and
 7. dispatch attempt and provider action counts remain one.
@@ -43,14 +46,30 @@ upstream-provider failures must not create outage evidence. A Supervisor proxy
 502, 503, or 504 on the direct Core identity read is availability evidence;
 other API errors are not.
 
-Use deterministic boundary clocks to prove observations exactly at dispatch
-and exactly at the deadline qualify, while observations before dispatch or
-after the deadline do not. Recreate the service after the deadline and prove a
-future unrelated Core outage cannot verify the old plan. Also prove that an
-outage qualified before the deadline survives service recreation and permits
-later recovery. A raw or malformed `outage_observed=true` record must fail the
-same complete-evidence predicate used for newly observed outages and must not
-skip a required probe while the interval remains open.
+The initial active probe budget remains 15 attempts at one-second intervals,
+approximately 15 seconds. The independently persisted outage-evidence
+eligibility interval is 180 seconds from the original dispatch time. Use
+deterministic boundary clocks to prove observations at `T`, `T+14s`, `T+60s`,
+and exactly `T+180s` qualify, while observations before `T` or after `T+180s`
+do not. Prove the deadline is exactly recomputed and that missing, malformed,
+shortened, or widened deadlines fail closed. Reconciliation and process
+recreation must preserve and never extend the deadline.
+
+Include an explicit late-onset scenario: Core remains reachable throughout the
+initial 15-second probe loop, becomes unavailable at `T+60s`, and later
+recovers successfully without redispatch. Recreate the service after the
+deadline and prove a future unrelated Core outage cannot verify the old plan.
+Also prove that an outage qualified at `T+179s` survives service recreation and
+permits later recovery after `T+180s`. Recovery has no eligibility deadline
+once qualified outage evidence exists. A raw or malformed
+`outage_observed=true` record must fail the same complete-evidence predicate
+used for newly observed outages and must not skip a required probe while the
+interval remains open.
+
+Prove `reconnected_at` is absent before a successful post-outage Core identity
+read, is not inferred from dispatch acknowledgement or the reconnection
+boolean, survives serialization and process recreation, and never regresses to
+null or a later replacement timestamp.
 
 Recreate the governance service against retained storage after an outage has
 been persisted. Startup reconciliation must complete the same plan using

@@ -58,10 +58,7 @@ RELOAD_SERVICES = {
 MAX_STATES = 20_000
 RESTART_DISRUPTION_PROBE_ATTEMPTS = 15
 RESTART_DISRUPTION_PROBE_INTERVAL_SECONDS = 1.0
-RESTART_DISRUPTION_OBSERVATION_WINDOW_SECONDS = (
-    RESTART_DISRUPTION_PROBE_ATTEMPTS
-    * RESTART_DISRUPTION_PROBE_INTERVAL_SECONDS
-)
+RESTART_OUTAGE_ELIGIBILITY_WINDOW_SECONDS = 180.0
 _SAFE_IDENTITY = re.compile(r"^[^\x00-\x1f\x7f]{1,160}$")
 
 
@@ -667,24 +664,32 @@ class OperationalLifecycleGateway:
                 "mismatch_fields": ["home_assistant_recovery"],
                 "evidence": evidence,
             }
+        reconnected_at = (
+            datetime.now(timezone.utc).isoformat()
+            if authoritative_outage_observed
+            else None
+        )
         try:
             provider = await self.provider.probe("restart_home_assistant")
         except OperationalLifecycleProviderError as exc:
+            evidence = {
+                "failure_category": exc.category,
+                "home_assistant_reconnected": (
+                    authoritative_outage_observed
+                ),
+                "restart_evidence_sources": (
+                    ["home_assistant_core_reconnected"]
+                    if authoritative_outage_observed
+                    else []
+                ),
+                "redispatch_performed": False,
+            }
+            if reconnected_at is not None:
+                evidence["reconnected_at"] = reconnected_at
             return {
                 "status": "pending",
                 "mismatch_fields": ["upstream_admission"],
-                "evidence": {
-                    "failure_category": exc.category,
-                    "home_assistant_reconnected": (
-                        authoritative_outage_observed
-                    ),
-                    "restart_evidence_sources": (
-                        ["home_assistant_core_reconnected"]
-                        if authoritative_outage_observed
-                        else []
-                    ),
-                    "redispatch_performed": False,
-                },
+                "evidence": evidence,
             }
         validation = await self.configuration_validation()
         runtime = self.runtime_snapshot()
@@ -792,6 +797,11 @@ class OperationalLifecycleGateway:
                 ),
                 "home_assistant_reconnected": (
                     authoritative_outage_observed
+                ),
+                **(
+                    {"reconnected_at": reconnected_at}
+                    if reconnected_at is not None
+                    else {}
                 ),
                 "home_assistant_identity_unchanged": identity_unchanged,
                 "post_restart_configuration_valid": configuration_valid,
