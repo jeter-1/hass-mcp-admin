@@ -1,6 +1,6 @@
 # Engineering 2.1 and 2.2 foundation roadmap
 
-Status: 2.1A accepted; C1 foundation release `2.2.0-beta.3`
+Status: 2.1A accepted; K1 foundation release `2.2.0-beta.4`
 
 The required milestone order is:
 
@@ -56,6 +56,17 @@ sequence and replay rules, expiry, previous-digest chaining, revocations, and
 typed fail-closed validation. It does not load or retrieve a registry and does
 not alter compiled admission, tools, health, providers, execution authority,
 writes, or fallback behavior.
+
+## 2.2.0-beta.4 K1 foundation
+
+Beta 4 defines strict local knowledge manifests, provenance-only trust classes,
+independent version relevance, bounded path/format/hash validation, expiration,
+duplicate and version-conflict handling, deterministic ordering, and exact
+citation identity. Knowledge content remains instruction-inert data.
+
+K1 does not load at startup, retrieve remote content, register an MCP tool,
+authorize recommendations or plans, access Home Assistant, integrate with the
+signed compatibility registry, execute a write, or add fallback behavior.
 
 Each operation must remain operation-specific. This roadmap does not authorize
 a generic administrator, arbitrary Supervisor command, service-call shortcut,

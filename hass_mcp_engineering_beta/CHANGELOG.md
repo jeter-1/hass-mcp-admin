@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.2.0-beta.4 - Knowledge provenance foundation
+
+- Add strict, deterministic local knowledge-manifest parsing with closed fields,
+  bounded values, exact classifications, duplicate rejection, and explicit
+  malformed-manifest failures.
+- Add provenance-only trust classes, independent Engineering, Home Assistant,
+  and integration version scopes, explicit expiry handling, and
+  `unknown` relevance that never implies compatibility or recommendation.
+- Restrict content to canonical child paths and bounded UTF-8 text formats;
+  reject traversal, absolute paths, escaping symlinks, oversized content, and
+  SHA-256 mismatches.
+- Preserve exact source, document, version, path, digest, and bounded citation
+  provenance while treating all embedded text as instruction-inert data.
+- Keep K1 runtime-inert: no startup loading, remote retrieval, MCP tools,
+  recommendation or plan authority, Home Assistant access, provider or signed
+  registry integration, write path, or fallback is added.
+- Preserve task schema v1, 48 local Engineering tools, the configured 26
+  exact-admitted delegated reads, stable v1.1.2, and zero fallback.
+
 ## 2.2.0-beta.3 - Signed compatibility registry foundation
 
 - Add strict, closed signed-registry envelope, reviewed-release, and

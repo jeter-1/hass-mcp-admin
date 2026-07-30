@@ -3,7 +3,7 @@
 > Stable v1.1.2 under `hass_mcp_admin` is retained as historical repository
 > source but is operationally retired. It is not covered by the Engineering
 > dependency audit and is not a supported rollback option. The Engineering v2
-> add-on is developed in place at `2.2.0-beta.3`, based on the exact
+> add-on is developed in place at `2.2.0-beta.4`, based on the exact
 > `v2.0.1` release, at
 > [`hass_mcp_engineering_beta/`](hass_mcp_engineering_beta/) on port `8100`.
 > Its existing technical “Beta” identity is retained to avoid a slug or runtime
@@ -42,8 +42,12 @@
 > Dev15 contract-level compatibility, partial quarantine, dashboard
 > independence, and retry-cadence separation are documented in
 > [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md).
-> The current Engineering development version is `2.2.0-beta.3`. Its inert
-> signed compatibility-registry foundation is recorded in
+> The current Engineering development version is `2.2.0-beta.4`. Its inert
+> knowledge-provenance foundation is recorded in
+> [`ADR-010`](docs/architecture/ADR-010-KNOWLEDGE-SOURCE-PROVENANCE.md),
+> [`docs/V2_2_0_BETA4_RELEASE_NOTES.md`](docs/V2_2_0_BETA4_RELEASE_NOTES.md),
+> and [`docs/V2_2_0_BETA4_ACCEPTANCE.md`](docs/V2_2_0_BETA4_ACCEPTANCE.md).
+> The inert signed compatibility-registry foundation remains recorded in
 > [`ADR-009`](docs/architecture/ADR-009-SIGNED-COMPATIBILITY-REGISTRY-FOUNDATION.md),
 > [`docs/V2_2_0_BETA3_RELEASE_NOTES.md`](docs/V2_2_0_BETA3_RELEASE_NOTES.md),
 > and [`docs/V2_2_0_BETA3_ACCEPTANCE.md`](docs/V2_2_0_BETA3_ACCEPTANCE.md).
@@ -225,12 +229,12 @@ outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 
 ## Engineering v2 milestones
 
-The current Engineering development version is `2.2.0-beta.3`, based on the
-accepted `2.2.0-beta.2` F1 correction. It adds an inert signed compatibility
-registry format and verifier without loading that data or changing runtime
-admission. The roadmap and acceptance authority are
+The current Engineering development version is `2.2.0-beta.4`, based on the
+accepted `2.2.0-beta.3` C1 foundation. It adds an inert knowledge-provenance
+manifest and validation foundation without loading that data or changing
+runtime behavior. The roadmap and acceptance authority are
 [`docs/2_1_ROADMAP.md`](docs/2_1_ROADMAP.md) and
-[`docs/V2_2_0_BETA3_ACCEPTANCE.md`](docs/V2_2_0_BETA3_ACCEPTANCE.md). Determine advertised
+[`docs/V2_2_0_BETA4_ACCEPTANCE.md`](docs/V2_2_0_BETA4_ACCEPTANCE.md). Determine advertised
 release state from authoritative version metadata and
 `scripts/codex-context.py`, not from this milestone narrative. Engineering has
 48 statically registered
