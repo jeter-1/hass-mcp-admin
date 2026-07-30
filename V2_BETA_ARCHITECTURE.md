@@ -1,5 +1,18 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## 2.2.0-beta.3 signed compatibility registry foundation
+
+The C1 package defines closed reviewed-release, revocation, and registry
+envelope models, deterministic canonical JSON and content digests, configured
+Ed25519 trust-anchor verification, and monotonic sequence, replay, expiry, and
+previous-digest-chain validation. Its typed failures expose no rejected
+registry content.
+
+This foundation is runtime-inert. The compiled release registry still owns
+admission, and no loader, remote client, startup task, tool registration,
+health projection, provider route, execution authority, write path, or
+fallback consumes the new package.
+
 ## 2.2.0-beta.2 recovery evidence and counters
 
 The F1 task remains authoritative for durable execution. A recovered operation

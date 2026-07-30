@@ -1,6 +1,6 @@
 # Engineering 2.1 and 2.2 foundation roadmap
 
-Status: 2.1A accepted; F1 corrective release `2.2.0-beta.2`
+Status: 2.1A accepted; C1 foundation release `2.2.0-beta.3`
 
 The required milestone order is:
 
@@ -47,6 +47,15 @@ Beta 2 keeps the F1 architecture and public tool surface unchanged. It
 separates original provider-response receipt from later readback verification
 and reconciles operation counters with durable duplicate-apply task events.
 It does not begin F2 or integrate C1, E1, K1, or another development lane.
+
+## 2.2.0-beta.3 C1 foundation
+
+Beta 3 defines the strict signed compatibility-registry format, canonical
+serialization, content digest, Ed25519 verification, trust-anchor selection,
+sequence and replay rules, expiry, previous-digest chaining, revocations, and
+typed fail-closed validation. It does not load or retrieve a registry and does
+not alter compiled admission, tools, health, providers, execution authority,
+writes, or fallback behavior.
 
 Each operation must remain operation-specific. This roadmap does not authorize
 a generic administrator, arbitrary Supervisor command, service-call shortcut,

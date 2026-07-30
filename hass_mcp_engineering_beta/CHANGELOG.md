@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.2.0-beta.3 - Signed compatibility registry foundation
+
+- Add strict, closed signed-registry envelope, reviewed-release, and
+  revocation models that preserve the compiled registry's exact contract
+  evidence.
+- Add deterministic canonical serialization and content digests, Ed25519
+  verification through configured public trust anchors, and typed fail-closed
+  validation results.
+- Reject unknown keys, invalid signatures, payload mutation, rollback, replay
+  conflicts, broken digest chains, expiration, future generation timestamps,
+  duplicate identities, and entry/revocation contradictions.
+- Keep the compiled reviewed-release registry authoritative. This release adds
+  no runtime loading, retrieval, admission, tool, health, provider, execution,
+  write, fallback, or production signing-key behavior.
+- Preserve task schema v1, 48 local Engineering tools, the configured 26
+  exact-admitted delegated reads, stable v1.1.2, and zero fallback.
+
 ## 2.2.0-beta.2 - F1 recovery evidence and counters
 
 - Preserve a lost original provider response as

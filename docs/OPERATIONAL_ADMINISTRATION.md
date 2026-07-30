@@ -1,6 +1,6 @@
 # Governed operational administration
 
-Version: `2.2.0-beta.2`
+Version: `2.2.0-beta.3`
 
 The accepted 2.1A lifecycle retains four public proposal tools:
 `create_backup_plan`, `create_reload_plan`, `create_addon_restart_plan`, and
@@ -11,7 +11,7 @@ separate lifecycle steps.
 
 ## Durable execution tasks
 
-Version `2.2.0-beta.2` keeps every change plan immutable and hash-stable while
+Version `2.2.0-beta.3` keeps every change plan immutable and hash-stable while
 recording mutable apply and recovery facts in one separate execution task.
 External approval remains a separate exact-hash authority. It is neither copied
 into the task nor replaced by task state.
