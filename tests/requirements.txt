@@ -1,2 +1,5 @@
 awesomeversion==25.8.0
+# Explicit test-only pin within MCP's supported httpx range. Runtime httpx
+# remains transitively resolved through MCP; review this when that range changes.
+httpx==0.28.1
 pip-audit==2.10.1

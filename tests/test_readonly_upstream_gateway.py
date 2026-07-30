@@ -11,7 +11,6 @@ from unittest.mock import patch
 
 from mcp import types
 from mcp.server.fastmcp import FastMCP
-from starlette.testclient import TestClient
 
 
 ROOT = Path(__file__).resolve().parents[1]
