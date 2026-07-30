@@ -1,5 +1,18 @@
 # HA MCP Engineering Server Architecture
 
+## 2.2.0-beta.2 F1 evidence correction
+
+Recovery verification and original provider-response receipt are independent
+facts. A task records `provider_response_recorded` only when the original
+provider invocation returns to the execution path. Readback, process-identity,
+startup reconciliation, and terminal verification can prove success without
+changing a lost response into a received response.
+
+Operation health reconciles overlapping legacy plan events and F1 task events
+without double counting. Durable `preflight_started` and
+`duplicate_apply_prevented` events fill gaps where the legacy projection has no
+equivalent event; provider dispatch counters remain unchanged.
+
 ## 2.2.0-beta.1 durable execution tasks
 
 The current source has 48 static Engineering tools. F1 separates each immutable

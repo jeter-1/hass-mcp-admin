@@ -595,6 +595,19 @@ remain pending rather than being inferred.
 The complete source contract is
 [`V2_1_1_BETA3_ACCEPTANCE.md`](V2_1_1_BETA3_ACCEPTANCE.md).
 
+## 2.2.0-beta.2 F1 recovery evidence correction
+
+This corrective release preserves the Beta 1 task schema and public tools. A
+recovered self-restart may be verified by process identity and exact readback
+while its original provider attempt remains truthfully unacknowledged. Inspect
+the task and plan together: successful recovery must not add
+`provider_response_recorded` or fabricate `response_recorded_at`.
+
+After one successful apply and one exact duplicate apply, verify that the
+operation reports two apply attempts, one dispatch, one verified success, and
+one no-blind-redispatch prevention. Re-reading health or restarting Engineering
+must not increment those persistent event-derived counts.
+
 ## 2.2.0-beta.1 durable execution tasks
 
 F1 adds three Engineering-native task tools. Complete exact upstream admission

@@ -603,6 +603,21 @@ class OperationalBackupLifecycleTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(replay["status"], "already_applied")
         self.assertEqual(self.gateway.dispatch_count, 1)
+        task = self.service.task_repository.get_for_plan(plan["plan_id"])
+        self.assertIsNotNone(task)
+        assert task is not None
+        self.assertEqual(len(task.provider_attempts), 1)
+        self.assertTrue(task.provider_attempts[0]["response_received"])
+        self.assertIn(
+            "response_recorded_at", task.provider_attempts[0]
+        )
+        self.assertEqual(
+            sum(
+                event.event_type == "provider_response_recorded"
+                for event in task.events
+            ),
+            1,
+        )
 
     async def test_ambiguous_dispatch_resolves_without_redispatch(self):
         created = await self.create()
@@ -1160,6 +1175,10 @@ class OperationalBackupLifecycleTests(unittest.IsolatedAsyncioTestCase):
         created = await self.create()
         plan = await self.grant(created)
         await self.service.apply(plan["plan_id"], plan["plan_hash"])
+        duplicate = await self.service.apply(
+            plan["plan_id"], plan["plan_hash"]
+        )
+        self.assertEqual(duplicate["status"], "already_applied")
         health = self.service.health_summary()[
             "operational_administration"
         ]
@@ -1167,6 +1186,36 @@ class OperationalBackupLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["backup_applies_attempted"], 1)
         self.assertEqual(
             health["operations"]["create_full_backup"]["apply_attempts"],
+            2,
+        )
+        self.assertEqual(
+            health["operations"]["create_full_backup"][
+                "dispatch_attempts"
+            ],
+            1,
+        )
+        self.assertEqual(
+            health["operations"]["create_full_backup"][
+                "dispatch_successes"
+            ],
+            1,
+        )
+        self.assertEqual(
+            health["operations"]["create_full_backup"][
+                "verified_successes"
+            ],
+            1,
+        )
+        self.assertEqual(
+            health["operations"]["create_full_backup"][
+                "no_blind_redispatch_preventions"
+            ],
+            1,
+        )
+        self.assertEqual(
+            self.service.health_summary()["execution_tasks"][
+                "no_blind_redispatch_preventions"
+            ],
             1,
         )
         self.assertEqual(health["successful_backups"], 1)
@@ -1188,6 +1237,50 @@ class OperationalBackupLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(dispatched["fallback"], "none")
         self.assertFalse(dispatched["rollback_available"])
         self.assertNotIn("supervisor-test-token", json.dumps(records))
+        task = self.service.task_repository.get_for_plan(plan["plan_id"])
+        self.assertIsNotNone(task)
+        assert task is not None
+        with self.assertRaises(GovernanceError) as rejected:
+            await self.service.cancel_execution_task(task.task_id)
+        self.assertEqual(
+            rejected.exception.code,
+            ErrorCode.CANCELLATION_NOT_PERMITTED_AFTER_DISPATCH,
+        )
+        after_rejection = self.service.health_summary()
+        self.assertEqual(
+            after_rejection["operational_administration"][
+                "operations"
+            ]["create_full_backup"]["apply_attempts"],
+            2,
+        )
+
+        recovered = ChangeGovernanceService(
+            ChangePlanRepository(Path(self.temp.name) / "plans"),
+            LegacyGateway(),
+            now=self.clock,
+            operational_gateway=self.gateway,
+        )
+        recovered_health = recovered.health_summary()
+        self.assertEqual(
+            recovered_health["operational_administration"][
+                "operations"
+            ]["create_full_backup"]["apply_attempts"],
+            2,
+        )
+        self.assertEqual(
+            recovered_health["operational_administration"][
+                "operations"
+            ]["create_full_backup"][
+                "no_blind_redispatch_preventions"
+            ],
+            1,
+        )
+        self.assertEqual(
+            recovered_health["execution_tasks"][
+                "no_blind_redispatch_preventions"
+            ],
+            1,
+        )
 
 
 class BackupNameTests(unittest.TestCase):

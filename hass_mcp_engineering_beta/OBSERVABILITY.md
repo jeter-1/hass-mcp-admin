@@ -1,5 +1,25 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## 2.2.0-beta.2 provider-response and duplicate-counter truth
+
+`provider_response_recorded` means the original provider invocation returned a
+response to the execution path and that response receipt was durably recorded.
+Successful readback, process-identity change, startup reconciliation, or a
+terminal verified outcome does not imply provider response receipt.
+
+For each operational plan, `apply_attempts` and
+`no_blind_redispatch_preventions` reconcile two persistent projections:
+governance plan events retained for compatibility and schema-v1 execution-task
+events. Health uses the larger compatible per-plan count rather than summing
+overlapping projections. This includes a durable backup
+`duplicate_apply_prevented` event that has no legacy plan event, avoids double
+counting lifecycle projections, and remains stable across health reads and
+process rehydration.
+
+Rejected calls that do not reach eligible task preflight remain excluded.
+Provider dispatch, request, success, and verification counters are not
+incremented by terminal-task reuse.
+
 ## 2.2.0-beta.1 durable execution-task health
 
 `get_server_health.operational_administration.execution_tasks` separates three

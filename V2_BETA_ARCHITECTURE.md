@@ -1,5 +1,17 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## 2.2.0-beta.2 recovery evidence and counters
+
+The F1 task remains authoritative for durable execution. A recovered operation
+may reach `succeeded_verified` from operation-specific readback while its sole
+provider attempt truthfully retains `response_received=false`. Only an actual
+provider return appends `provider_response_recorded`.
+
+Operation-specific apply and no-blind-redispatch counters reconcile the legacy
+plan projection with durable task events per plan. The larger compatible count
+is used instead of summing overlapping projections, so one invocation is never
+counted twice and backup terminal reuse is no longer omitted.
+
 ## 2.2.0-beta.1 durable execution-task boundary
 
 The static catalog contains 48 Engineering tools. The three additive task tools

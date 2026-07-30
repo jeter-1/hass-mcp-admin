@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.2.0-beta.2 - F1 recovery evidence and counters
+
+- Preserve a lost original provider response as
+  `response_received=false` when startup/readback verification later proves
+  successful completion.
+- Emit `provider_response_recorded` only for an actual provider return; recovery
+  and process-identity verification remain separate durable evidence.
+- Include terminal-task duplicate applies exactly once in operation-specific
+  apply and no-blind-redispatch counters without increasing provider dispatch.
+- Preserve task schema v1, immutable plans, external approval, 48 Engineering
+  tools, 26 reviewed delegated reads, and zero fallback.
+
 ## 2.2.0-beta.1 - Durable execution tasks
 
 - Separate the immutable hash-bound change plan and existing external approval

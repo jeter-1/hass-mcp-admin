@@ -220,7 +220,7 @@ class FakeLifecycleGateway:
         }
         self.process_instance_id = "process-one"
         self.runtime = {
-            "server_version": "2.2.0-beta.1",
+            "server_version": "2.2.0-beta.2",
             "build_sha": "a" * 40,
             "registered_tool_count": 74,
             "engineering_tool_count": 48,
@@ -291,7 +291,7 @@ class FakeLifecycleGateway:
                     "connected": True,
                 },
                 "runtime": {
-                    "server_version": "2.2.0-beta.1",
+                    "server_version": "2.2.0-beta.2",
                     "build_sha": "a" * 40,
                     "registered_tool_count": 74,
                     "engineering_tool_count": 48,
@@ -1967,6 +1967,31 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.lifecycle.verification_status = "pending"
         await self.service.apply(plan["plan_id"], plan["plan_hash"])
         self.assertEqual(self.lifecycle.dispatch_count, 1)
+        task = self.service.task_repository.get_for_plan(plan["plan_id"])
+        self.assertIsNotNone(task)
+        assert task is not None
+        initial_events = [event.event_type for event in task.events]
+        self.assertLess(
+            initial_events.index("task_created"),
+            initial_events.index("preflight_started"),
+        )
+        self.assertLess(
+            initial_events.index("approval_consumed"),
+            initial_events.index("dispatch_attempted"),
+        )
+        self.assertEqual(len(task.provider_attempts), 1)
+        self.assertFalse(task.provider_attempts[0]["response_received"])
+        self.assertNotIn(
+            "response_recorded_at", task.provider_attempts[0]
+        )
+        self.assertNotIn("provider_response_recorded", initial_events)
+        dispatched_at = datetime.fromisoformat(task.dispatched_at)
+        self.assertEqual(
+            datetime.fromisoformat(
+                task.maximum_post_dispatch_deadline
+            ),
+            dispatched_at + timedelta(hours=24),
+        )
 
         reloaded_repository = ChangePlanRepository(
             Path(self.temp.name) / "plans"
@@ -1988,7 +2013,39 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(recovered_lifecycle.dispatch_count, 0)
         self.assertEqual(recovered_lifecycle.verification_count, 1)
         recovered = reloaded_repository.get(plan["plan_id"])
+        recovered_task = (
+            recovered_service.task_repository.get_for_plan(plan["plan_id"])
+        )
+        self.assertIsNotNone(recovered_task)
+        assert recovered_task is not None
         self.assertEqual(recovered.status, PlanStatus.APPLIED)
+        self.assertEqual(
+            recovered_task.state.value, "succeeded_verified"
+        )
+        self.assertEqual(
+            recovered_task.terminal_outcome,
+            "restart_addon_and_verified",
+        )
+        self.assertEqual(len(recovered_task.provider_attempts), 1)
+        self.assertFalse(
+            recovered_task.provider_attempts[0]["response_received"]
+        )
+        self.assertNotIn(
+            "response_recorded_at",
+            recovered_task.provider_attempts[0],
+        )
+        self.assertNotIn(
+            "provider_response_recorded",
+            [
+                event.event_type
+                for event in recovered_task.events
+            ],
+        )
+        self.assertFalse(
+            recovered.operational.dispatch[
+                "provider_response_received"
+            ]
+        )
         self.assertEqual(
             recovered.operational.dispatch["attempt_count"], 1
         )
@@ -2022,6 +2079,66 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
             recovered_lifecycle.verification_count,
             verification_count,
         )
+        duplicate = await recovered_service.apply(
+            plan["plan_id"], plan["plan_hash"]
+        )
+        duplicate_task = (
+            recovered_service.task_repository.get_for_plan(plan["plan_id"])
+        )
+        self.assertEqual(duplicate["status"], "already_applied")
+        self.assertEqual(duplicate["task_id"], task.task_id)
+        self.assertIsNotNone(duplicate_task)
+        assert duplicate_task is not None
+        self.assertEqual(len(duplicate_task.provider_attempts), 1)
+        self.assertFalse(
+            duplicate_task.provider_attempts[0]["response_received"]
+        )
+        self.assertEqual(
+            sum(
+                event.event_type == "duplicate_apply_prevented"
+                for event in duplicate_task.events
+            ),
+            1,
+        )
+        self.assertEqual(recovered_lifecycle.dispatch_count, 0)
+
+    async def test_duplicate_apply_counters_are_operation_specific_and_durable(
+        self,
+    ):
+        cases = (
+            ("controlled_reload", "automation"),
+            ("restart_addon", "local_test_addon"),
+            ("restart_home_assistant", "core"),
+        )
+        for operation, target in cases:
+            with self.subTest(operation=operation):
+                created = await self.create_for(operation, target)
+                plan = await self.grant(created)
+                before_dispatches = self.lifecycle.dispatch_count
+
+                applied = await self.service.apply(
+                    plan["plan_id"], plan["plan_hash"]
+                )
+                duplicate = await self.service.apply(
+                    plan["plan_id"], plan["plan_hash"]
+                )
+                metrics = self.service.health_summary()[
+                    "operational_administration"
+                ]["operations"][operation]
+
+                self.assertEqual(applied["status"], "applied")
+                self.assertEqual(duplicate["status"], "already_applied")
+                self.assertEqual(metrics["apply_attempts"], 2)
+                self.assertEqual(metrics["dispatch_attempts"], 1)
+                self.assertEqual(metrics["dispatch_successes"], 1)
+                self.assertEqual(metrics["verified_successes"], 1)
+                self.assertEqual(
+                    metrics["no_blind_redispatch_preventions"], 1
+                )
+                self.assertEqual(
+                    self.lifecycle.dispatch_count,
+                    before_dispatches + 1,
+                )
 
     async def test_self_restart_reconciliation_requires_changed_process_and_readback(self):
         created = await self.service.create_addon_restart_plan(
@@ -2624,7 +2741,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
     async def test_prefixed_engineering_slug_is_exact_self_target(self):
         slug = "df26dea6_hass_mcp_engineering_beta"
         runtime = {
-            "server_version": "2.2.0-beta.1",
+            "server_version": "2.2.0-beta.2",
             "build_sha": "a" * 40,
             "registered_tool_count": 74,
             "engineering_tool_count": 48,
@@ -2646,7 +2763,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 return {
                     "slug": requested_slug,
                     "name": "HA MCP Engineering Server Beta",
-                    "version": "2.2.0-beta.1",
+                    "version": "2.2.0-beta.2",
                     "state": "started",
                     "repository": "df26dea6",
                 }
@@ -2658,7 +2775,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                     "data": {
                         "slug": slug,
                         "name": "HA MCP Engineering Server Beta",
-                        "version": "2.2.0-beta.1",
+                        "version": "2.2.0-beta.2",
                         "repository": "df26dea6",
                     },
                 }
@@ -2705,7 +2822,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 "requested_slug": slug,
                 "resolved_slug": slug,
                 "resolved_name": "HA MCP Engineering Server Beta",
-                "resolved_version": "2.2.0-beta.1",
+                "resolved_version": "2.2.0-beta.2",
                 "resolved_repository": "df26dea6",
                 "identity_source": "supervisor_self_info",
                 "authoritative_self_match": True,
@@ -3600,12 +3717,12 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 return {
                     "slug": slug,
                     "name": "Engineering",
-                    "version": "2.2.0-beta.1",
+                    "version": "2.2.0-beta.2",
                     "state": "started",
                 }
 
         runtime = {
-            "server_version": "2.2.0-beta.1",
+            "server_version": "2.2.0-beta.2",
             "build_sha": "a" * 40,
             "registered_tool_count": 74,
             "engineering_tool_count": 48,
@@ -3628,7 +3745,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             "addon": {
                 "slug": ENGINEERING_ADDON_SLUG,
                 "name": "Engineering",
-                "version": "2.2.0-beta.1",
+                "version": "2.2.0-beta.2",
                 "state": "started",
             },
             "target_class": "engineering_addon",
@@ -3754,7 +3871,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 return ProviderEvidence()
 
         runtime = {
-            "server_version": "2.2.0-beta.1",
+            "server_version": "2.2.0-beta.2",
             "build_sha": "a" * 40,
             "registered_tool_count": 74,
             "engineering_tool_count": 48,
@@ -3949,7 +4066,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 }
 
         runtime = {
-            "server_version": "2.2.0-beta.1",
+            "server_version": "2.2.0-beta.2",
             "build_sha": "a" * 40,
             "registered_tool_count": 74,
             "engineering_tool_count": 48,
