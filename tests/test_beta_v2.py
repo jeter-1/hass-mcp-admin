@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from starlette.testclient import TestClient
+from tests.same_thread_asgi_client import SameThreadAsgiTestClient
 import yaml
 
 
@@ -692,8 +692,11 @@ class BetaApplicationTests(unittest.TestCase):
     def setUpClass(cls):
         cls.tempdir = tempfile.TemporaryDirectory()
         settings = beta_settings(str(Path(cls.tempdir.name) / "audit.jsonl"))
-        cls.client_context = TestClient(
-            create_application(settings), follow_redirects=False
+        gateway = create_application(settings)
+        cls.client_context = SameThreadAsgiTestClient(
+            gateway,
+            lifespan_app=gateway.app,
+            follow_redirects=False,
         )
         cls.client = cls.client_context.__enter__()
 
