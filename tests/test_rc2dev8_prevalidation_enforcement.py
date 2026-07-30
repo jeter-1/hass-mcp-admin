@@ -7,8 +7,8 @@ import time
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from starlette.testclient import TestClient
 from mcp.server.fastmcp import FastMCP
+from tests.same_thread_asgi_client import SameThreadAsgiTestClient
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
@@ -103,8 +103,9 @@ class Rc2dev8RawPrevalidationTests(unittest.TestCase):
             _settings(cls.audit_path),
             AuditLogger(str(cls.audit_path), SECRET),
         )
-        cls.client_context = TestClient(
+        cls.client_context = SameThreadAsgiTestClient(
             gateway,
+            lifespan_app=gateway.app,
             base_url="http://127.0.0.1:8100",
         )
         cls.client = cls.client_context.__enter__()
