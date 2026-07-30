@@ -1,5 +1,21 @@
 # HA MCP Engineering Server Architecture
 
+## 2.2.0-beta.4 knowledge provenance foundation
+
+K1 adds an inert repository-level contract for strict local knowledge
+manifests. It validates closed provenance and trust classifications, independent
+version scopes, expiry, canonical child paths, bounded UTF-8 text formats,
+content size and SHA-256 identity, duplicate/version conflicts, deterministic
+ordering, and exact citation provenance.
+
+Knowledge text remains untrusted data: trust classification grants no
+instruction, recommendation, plan, approval, compatibility-admission, or
+execution authority. No production runtime imports the K1 package during
+startup, and Beta 4 adds no loader, remote retrieval, tool, health field,
+provider route, Home Assistant access, write, fallback, or signed-registry
+integration. See
+[`ADR-010`](docs/architecture/ADR-010-KNOWLEDGE-SOURCE-PROVENANCE.md).
+
 ## 2.2.0-beta.3 signed compatibility registry foundation
 
 C1 adds a strict, data-only signed registry envelope and Ed25519 verifier for

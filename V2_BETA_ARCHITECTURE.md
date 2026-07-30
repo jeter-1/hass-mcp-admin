@@ -1,5 +1,18 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## 2.2.0-beta.4 knowledge provenance foundation
+
+K1 defines a strict local manifest, provenance/trust classes, independent
+version relevance, bounded path/format/hash validation, deterministic
+duplicate and version-conflict handling, expiration, and exact citation
+identity. Explicit or missing version relevance remains `unknown`; it never
+becomes implicitly current, compatible, trusted, or recommended.
+
+The package remains repository-level and runtime-inert. It adds no startup
+loading, remote client, filesystem watcher, MCP tool, capability, health
+projection, provider route, recommendation or plan authority, Home Assistant
+access, write path, fallback, or signed-registry integration.
+
 ## 2.2.0-beta.3 signed compatibility registry foundation
 
 The C1 package defines closed reviewed-release, revocation, and registry
