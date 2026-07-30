@@ -19,7 +19,11 @@ from ..clients.rest import ExpectedHttpStatus, HomeAssistantRestClient
 from ..errors import ErrorCode, GovernanceError, HomeAssistantApiError
 from ..logging_config import get_logger, log_event
 from ..observability import METRICS
-from ..request_context import current_caller_id, current_request_id
+from ..request_context import (
+    REQUEST_ID_PATTERN,
+    current_caller_id,
+    current_request_id,
+)
 from ..sanitization import sanitize_untrusted_data
 from .models import (
     ApprovalState,
@@ -113,6 +117,67 @@ MAX_APPROVAL_PROJECTION_TARGETS = 8
 MAX_APPROVAL_PROJECTION_DATA = 8
 MAX_APPROVAL_PROJECTION_DEPTH = 4
 MAX_APPROVAL_PROJECTION_CONTROLS = 16
+
+
+def _usable_invocation_request_id(value: object) -> str | None:
+    if not isinstance(value, str) or not REQUEST_ID_PATTERN.fullmatch(value):
+        return None
+    return value
+
+
+def _reconciled_persisted_invocation_count(
+    plan: ChangePlan,
+    task: ExecutionTask | None,
+    *,
+    plan_event_matches: Callable[[ChangeEvent], bool],
+    task_event_types: frozenset[str],
+) -> int:
+    """Count distinct persisted invocations across legacy and task eras."""
+
+    plan_events = [
+        event for event in plan.events if plan_event_matches(event)
+    ]
+    if task is None:
+        return len(plan_events)
+
+    request_ids: set[str] = set()
+    anonymous_task_events: set[tuple[int, str]] = set()
+    for event in task.events:
+        if event.event_type not in task_event_types:
+            continue
+        request_id = _usable_invocation_request_id(event.request_id)
+        if request_id is not None:
+            request_ids.add(request_id)
+        else:
+            anonymous_task_events.add((event.sequence, event.event_type))
+
+    try:
+        task_created_at = parse_task_timestamp(task.created_at)
+    except (TypeError, ValueError):
+        task_created_at = None
+
+    anonymous_legacy_events = 0
+    for event in plan_events:
+        request_id = _usable_invocation_request_id(event.request_id)
+        if request_id is not None:
+            request_ids.add(request_id)
+            continue
+        if task_created_at is None:
+            continue
+        try:
+            event_timestamp = parse_task_timestamp(event.timestamp)
+        except (TypeError, ValueError):
+            continue
+        if event_timestamp < task_created_at:
+            anonymous_legacy_events += 1
+
+    return (
+        len(request_ids)
+        + len(anonymous_task_events)
+        + anonymous_legacy_events
+    )
+
+
 MAX_APPROVAL_PROJECTION_ACTIONS_PER_PLAN = 32
 MAX_APPROVAL_PROJECTION_DETAILS_PER_PLAN = 128
 MAX_OPERATIONAL_RECONCILIATIONS_PER_PASS = 20
@@ -1578,17 +1643,43 @@ class ChangeGovernanceService:
             )
             return
 
-        if event.endswith("_provider_completed") or event.endswith(
-            "_dispatch_indeterminate"
-        ):
+        if event.endswith(("_provider_completed", "_provider_failed")):
+            response_received = bool(
+                plan.operational
+                and plan.operational.dispatch.get(
+                    "provider_response_received"
+                )
+            )
+            if not response_received:
+                self._record_task_event(
+                    task,
+                    "verification_evidence_updated",
+                    new_state=(
+                        ExecutionTaskState.OBSERVING
+                        if task.state == ExecutionTaskState.DISPATCHING
+                        else None
+                    ),
+                    changes={
+                        "verification_summary": {
+                            **task.verification_summary,
+                            "status": "pending",
+                            "provider_response_received": False,
+                        },
+                    },
+                    result_status="partial",
+                )
+                return
             attempts = list(task.provider_attempts)
             if attempts:
                 attempts[-1] = {
                     **attempts[-1],
-                    "response_received": event.endswith(
-                        "_provider_completed"
+                    "response_received": True,
+                    "response_recorded_at": str(
+                        plan.operational.dispatch.get(
+                            "provider_response_at"
+                        )
+                        or self._timestamp()
                     ),
-                    "response_recorded_at": self._timestamp(),
                 }
             self._record_task_event(
                 task,
@@ -1603,16 +1694,37 @@ class ChangeGovernanceService:
                     "verification_summary": {
                         **task.verification_summary,
                         "status": "pending",
-                        "provider_response_received": event.endswith(
-                            "_provider_completed"
-                        ),
+                        "provider_response_received": True,
                     },
                 },
                 result_status=(
-                    "success"
-                    if event.endswith("_provider_completed")
-                    else "partial"
+                    "failure"
+                    if event.endswith("_provider_failed")
+                    else "success"
                 ),
+            )
+            return
+
+        if event.endswith("_dispatch_indeterminate"):
+            # A lost provider response is dispatch evidence, not a response.
+            # Preserve the original attempt unchanged and move into
+            # readback-only observation without manufacturing response timing.
+            self._record_task_event(
+                task,
+                "verification_evidence_updated",
+                new_state=(
+                    ExecutionTaskState.OBSERVING
+                    if task.state == ExecutionTaskState.DISPATCHING
+                    else None
+                ),
+                changes={
+                    "verification_summary": {
+                        **task.verification_summary,
+                        "status": "pending",
+                        "provider_response_received": False,
+                    },
+                },
+                result_status="partial",
             )
             return
 
@@ -3779,30 +3891,6 @@ class ChangeGovernanceService:
                     },
                 )
                 return
-            if any(
-                attempt.get("response_received") is not True
-                for attempt in task.provider_attempts
-            ):
-                self._record_task_event(
-                    task,
-                    "provider_response_recorded",
-                    new_state=(
-                        ExecutionTaskState.OBSERVING
-                        if task.state
-                        == ExecutionTaskState.DISPATCHING
-                        else None
-                    ),
-                    changes={
-                        "provider_attempts": [
-                            {
-                                **attempt,
-                                "response_received": True,
-                                "response_recorded_at": self._timestamp(),
-                            }
-                            for attempt in task.provider_attempts
-                        ],
-                    },
-                )
             if task.state in {
                 ExecutionTaskState.DISPATCHING,
                 ExecutionTaskState.OBSERVING,
@@ -3833,6 +3921,13 @@ class ChangeGovernanceService:
                         **task.verification_summary,
                         "status": "verified",
                         "plan_status": plan.status.value,
+                        "provider_response_received": bool(
+                            task.provider_attempts
+                            and task.provider_attempts[-1].get(
+                                "response_received"
+                            )
+                            is True
+                        ),
                     },
                     "legacy_projection": legacy,
                 },
@@ -3895,12 +3990,19 @@ class ChangeGovernanceService:
         if task.state == ExecutionTaskState.DISPATCHING:
             self._record_task_event(
                 task,
-                "provider_response_recorded",
+                "verification_started",
                 new_state=ExecutionTaskState.OBSERVING,
                 changes={
                     "verification_summary": {
                         **task.verification_summary,
                         "status": "pending",
+                        "provider_response_received": bool(
+                            task.provider_attempts
+                            and task.provider_attempts[-1].get(
+                                "response_received"
+                            )
+                            is True
+                        ),
                     },
                     "last_error": (
                         {"error_code": error_code}
@@ -7847,6 +7949,40 @@ class ChangeGovernanceService:
                 ChangeOperation.RESTART_HOME_ASSISTANT,
             )
         )
+        tasks_by_plan = {task.plan_id: task for task in tasks}
+
+        def apply_attempt_count(plan: ChangePlan) -> int:
+            def plan_event_matches(event: ChangeEvent) -> bool:
+                if event.event.endswith("_apply_attempted"):
+                    return True
+                return (
+                    plan.operation == ChangeOperation.CREATE_FULL_BACKUP
+                    and event.event
+                    == "operational_backup_dispatch_recorded"
+                )
+
+            return _reconciled_persisted_invocation_count(
+                plan,
+                tasks_by_plan.get(plan.plan_id),
+                plan_event_matches=plan_event_matches,
+                task_event_types=frozenset(
+                    {"preflight_started", "duplicate_apply_prevented"}
+                ),
+            )
+
+        def no_redispatch_prevention_count(plan: ChangePlan) -> int:
+            return _reconciled_persisted_invocation_count(
+                plan,
+                tasks_by_plan.get(plan.plan_id),
+                plan_event_matches=lambda event: (
+                    event.event.endswith("_no_redispatch_prevented")
+                    or event.event.endswith("_dispatch_recovered")
+                ),
+                task_event_types=frozenset(
+                    {"duplicate_apply_prevented"}
+                ),
+            )
+
         backup_provider_health = (
             self.operational_gateway.health_snapshot()
             if self.operational_gateway is not None
@@ -7900,20 +8036,8 @@ class ChangeGovernanceService:
                     for event in plan.events
                 ),
                 "apply_attempts": sum(
-                    event.event.endswith("_apply_attempted")
+                    apply_attempt_count(plan)
                     for plan in operation_plans
-                    for event in plan.events
-                )
-                + (
-                    sum(
-                        event.event
-                        == "operational_backup_dispatch_recorded"
-                        for plan in operation_plans
-                        for event in plan.events
-                    )
-                    if operation
-                    == ChangeOperation.CREATE_FULL_BACKUP.value
-                    else 0
                 ),
                 "dispatch_attempts": sum(
                     int(
@@ -7993,12 +8117,8 @@ class ChangeGovernanceService:
                     for plan in operation_plans
                 ),
                 "no_blind_redispatch_preventions": sum(
-                    event.event.endswith(
-                        "_no_redispatch_prevented"
-                    )
-                    or event.event.endswith("_dispatch_recovered")
+                    no_redispatch_prevention_count(plan)
                     for plan in operation_plans
-                    for event in plan.events
                 ),
                 "last_successful_operation_timestamp": next(
                     (
@@ -8042,7 +8162,9 @@ class ChangeGovernanceService:
             }
         summary["operational_administration"] = {
             "counter_sources": {
-                "plans_and_outcomes": "persistent_governance_state",
+                "plans_and_outcomes": (
+                    "persistent_governance_and_execution_task_state"
+                ),
                 "active_applies": "current_process_state",
                 "provider": "cumulative_process_state",
             },

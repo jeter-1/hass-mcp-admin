@@ -1,6 +1,6 @@
 # Governed operational administration
 
-Version: `2.2.0-beta.1`
+Version: `2.2.0-beta.2`
 
 The accepted 2.1A lifecycle retains four public proposal tools:
 `create_backup_plan`, `create_reload_plan`, `create_addon_restart_plan`, and
@@ -11,7 +11,7 @@ separate lifecycle steps.
 
 ## Durable execution tasks
 
-Version `2.2.0-beta.1` keeps every change plan immutable and hash-stable while
+Version `2.2.0-beta.2` keeps every change plan immutable and hash-stable while
 recording mutable apply and recovery facts in one separate execution task.
 External approval remains a separate exact-hash authority. It is neither copied
 into the task nor replaced by task state.
@@ -43,6 +43,20 @@ events. Startup validates that event history against the materialized record.
 Unreadable or contradictory authority fails closed; it is never silently
 repaired into another dispatch opportunity. Completed tasks follow the existing
 90-day governance retention.
+
+A provider response and a later verified outcome are separate evidence. If the
+original provider invocation is interrupted by Engineering self-restart,
+startup readback may verify the operation while the task retains
+`response_received=false` and no `provider_response_recorded` event. Readback,
+process-identity change, and reconciliation never manufacture response timing.
+
+Operation-specific `apply_attempts` includes eligible initial applies and
+durable duplicate applies. `no_blind_redispatch_preventions` includes the
+durable duplicate-prevention evidence. Both counters reconcile distinct
+persisted invocations across legacy plan events and durable task events:
+matching request IDs count once, different request IDs count separately, and
+anonymous legacy evidence counts separately only before task creation.
+Rehydrating health does not increment either counter.
 
 Startup first rehydrates task authority without provider actions, then invokes
 the existing bounded operational reconciler for eligible dispatched plans.

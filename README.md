@@ -3,7 +3,7 @@
 > Stable v1.1.2 under `hass_mcp_admin` is retained as historical repository
 > source but is operationally retired. It is not covered by the Engineering
 > dependency audit and is not a supported rollback option. The Engineering v2
-> add-on is developed in place at `2.2.0-beta.1`, based on the exact
+> add-on is developed in place at `2.2.0-beta.2`, based on the exact
 > `v2.0.1` release, at
 > [`hass_mcp_engineering_beta/`](hass_mcp_engineering_beta/) on port `8100`.
 > Its existing technical “Beta” identity is retained to avoid a slug or runtime
@@ -42,8 +42,11 @@
 > Dev15 contract-level compatibility, partial quarantine, dashboard
 > independence, and retry-cadence separation are documented in
 > [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md).
-> The current Engineering development version is `2.2.0-beta.1`. Its durable
-> execution-task foundation is recorded in
+> The current Engineering development version is `2.2.0-beta.2`. Its F1
+> recovery-evidence and counter correction is recorded in
+> [`docs/V2_2_0_BETA2_RELEASE_NOTES.md`](docs/V2_2_0_BETA2_RELEASE_NOTES.md)
+> and [`docs/V2_2_0_BETA2_ACCEPTANCE.md`](docs/V2_2_0_BETA2_ACCEPTANCE.md).
+> The durable execution-task foundation remains recorded in
 > [`ADR-008`](docs/architecture/ADR-008-DURABLE-EXECUTION-TASKS.md),
 > [`docs/V2_2_0_BETA1_RELEASE_NOTES.md`](docs/V2_2_0_BETA1_RELEASE_NOTES.md),
 > and [`docs/V2_2_0_BETA1_ACCEPTANCE.md`](docs/V2_2_0_BETA1_ACCEPTANCE.md).
@@ -218,13 +221,13 @@ outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 
 ## Engineering v2 milestones
 
-The current Engineering development version is `2.2.0-beta.1`, based on the
-accepted `2.1.1-beta.3` line. It adds the first 2.1B foundation increment:
-one durable execution task records each new approved plan's mutable execution
-and recovery facts without changing the immutable plan hash or external
-approval authority. The roadmap and acceptance authority are
+The current Engineering development version is `2.2.0-beta.2`, based on the
+accepted `2.2.0-beta.1` F1 foundation. It preserves one durable execution task
+for each new approved plan while correcting provider-response provenance and
+operation-specific duplicate-apply counters. The roadmap and acceptance
+authority are
 [`docs/2_1_ROADMAP.md`](docs/2_1_ROADMAP.md) and
-[`docs/V2_2_0_BETA1_ACCEPTANCE.md`](docs/V2_2_0_BETA1_ACCEPTANCE.md). Determine advertised
+[`docs/V2_2_0_BETA2_ACCEPTANCE.md`](docs/V2_2_0_BETA2_ACCEPTANCE.md). Determine advertised
 release state from authoritative version metadata and
 `scripts/codex-context.py`, not from this milestone narrative. Engineering has
 48 statically registered

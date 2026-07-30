@@ -1,6 +1,6 @@
 # Engineering 2.1 and 2.2 foundation roadmap
 
-Status: 2.1A accepted; first 2.1B foundation increment in `2.2.0-beta.1`
+Status: 2.1A accepted; F1 corrective release `2.2.0-beta.2`
 
 The required milestone order is:
 
@@ -40,6 +40,13 @@ compensation (F4), generalized verification (F5), comprehensive historical
 terminal migration (F6), later protocol/lifecycle work (F7), or MCP-native
 Tasks. Those remain future milestones and receive no implied authority from
 the task record.
+
+## 2.2.0-beta.2 F1 corrective release
+
+Beta 2 keeps the F1 architecture and public tool surface unchanged. It
+separates original provider-response receipt from later readback verification
+and reconciles operation counters with durable duplicate-apply task events.
+It does not begin F2 or integrate C1, E1, K1, or another development lane.
 
 Each operation must remain operation-specific. This roadmap does not authorize
 a generic administrator, arbitrary Supervisor command, service-call shortcut,

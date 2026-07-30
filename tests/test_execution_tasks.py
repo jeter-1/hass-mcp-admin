@@ -1036,6 +1036,50 @@ class DurableOperationalTaskRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(restored["state"], "succeeded_verified")
         self.assertEqual(self.lifecycle.dispatch_count, 1)
 
+    async def test_completed_reload_records_only_the_real_provider_response(
+        self,
+    ):
+        plan = await self._approved_reload()
+
+        applied = await self.service.apply(
+            plan["plan_id"], plan["plan_hash"]
+        )
+        task = self.service.task_repository.get_for_plan(plan["plan_id"])
+
+        self.assertEqual(applied["status"], "applied")
+        self.assertIsNotNone(task)
+        assert task is not None
+        self.assertEqual(len(task.provider_attempts), 1)
+        self.assertTrue(task.provider_attempts[0]["response_received"])
+        self.assertIn(
+            "response_recorded_at", task.provider_attempts[0]
+        )
+        self.assertEqual(
+            sum(
+                event.event_type == "provider_response_recorded"
+                for event in task.events
+            ),
+            1,
+        )
+
+        duplicate = await self.service.apply(
+            plan["plan_id"], plan["plan_hash"]
+        )
+        restored = self.service.task_repository.get(task.task_id)
+
+        self.assertEqual(duplicate["status"], "already_applied")
+        self.assertIsNotNone(restored)
+        assert restored is not None
+        self.assertEqual(len(restored.provider_attempts), 1)
+        self.assertEqual(
+            sum(
+                event.event_type == "provider_response_recorded"
+                for event in restored.events
+            ),
+            1,
+        )
+        self.assertEqual(self.lifecycle.dispatch_count, 1)
+
     async def test_post_dispatch_cancel_is_rejected_and_verification_continues(
         self,
     ):
