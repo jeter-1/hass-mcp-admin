@@ -36,6 +36,7 @@ from ha_mcp_engineering.errors import (  # noqa: E402
 )
 from ha_mcp_engineering.governance.models import (  # noqa: E402
     ApprovalState,
+    ChangeEvent,
     ChangePlan,
     PlanStatus,
 )
@@ -597,6 +598,16 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
             )
         return await self.service.create_home_assistant_restart_plan()
 
+    async def apply_as(self, request_id, plan):
+        telemetry, token = begin_request(request_id)
+        telemetry.caller_id = "mcp-requester"
+        try:
+            return await self.service.apply(
+                plan["plan_id"], plan["plan_hash"]
+            )
+        finally:
+            end_request(token)
+
     async def test_all_three_plans_are_proposal_only_and_hash_bound(self):
         for operation, target, risk in (
             ("controlled_reload", "automation", "medium"),
@@ -926,8 +937,8 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
             },
         ]
 
-        first = await self.service.apply(
-            plan["plan_id"], plan["plan_hash"]
+        first = await self.apply_as(
+            "ha-restart-initial-request-a", plan
         )
         self.assertEqual(first["status"], "verification_pending")
         first_plan = self.repository.get(plan["plan_id"])
@@ -940,8 +951,8 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
         ]
 
         self.clock.advance(seconds=5)
-        second = await self.service.apply(
-            plan["plan_id"], plan["plan_hash"]
+        second = await self.apply_as(
+            "ha-restart-recovery-request-b", plan
         )
         self.assertEqual(second["status"], "verification_pending")
         second_plan = self.repository.get(plan["plan_id"])
@@ -957,8 +968,8 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second_evidence["unavailable_observation_count"], 2)
 
         self.clock.advance(seconds=30)
-        recovered = await self.service.apply(
-            plan["plan_id"], plan["plan_hash"]
+        recovered = await self.apply_as(
+            "ha-restart-recovery-request-c", plan
         )
         self.assertEqual(recovered["status"], "applied")
         persisted = self.repository.get(plan["plan_id"])
@@ -1027,8 +1038,8 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             metrics["no_blind_redispatch_preventions"], 2
         )
-        repeated = await self.service.apply(
-            plan["plan_id"], plan["plan_hash"]
+        repeated = await self.apply_as(
+            "ha-restart-terminal-request-d", plan
         )
         self.assertEqual(repeated["status"], "already_applied")
         self.assertFalse(repeated["redispatch_performed"])
@@ -2116,11 +2127,11 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 plan = await self.grant(created)
                 before_dispatches = self.lifecycle.dispatch_count
 
-                applied = await self.service.apply(
-                    plan["plan_id"], plan["plan_hash"]
+                applied = await self.apply_as(
+                    f"{operation}-initial-request", plan
                 )
-                duplicate = await self.service.apply(
-                    plan["plan_id"], plan["plan_hash"]
+                duplicate = await self.apply_as(
+                    f"{operation}-duplicate-request", plan
                 )
                 metrics = self.service.health_summary()[
                     "operational_administration"
@@ -2139,6 +2150,218 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
                     self.lifecycle.dispatch_count,
                     before_dispatches + 1,
                 )
+
+    async def test_cross_era_apply_attempts_reconcile_distinct_requests(
+        self,
+    ):
+        cases = (
+            ("controlled_reload", "automation"),
+            ("restart_addon", "local_test_addon"),
+            ("restart_home_assistant", "core"),
+        )
+        for operation, target in cases:
+            with self.subTest(operation=operation):
+                created = await self.create_for(operation, target)
+                plan = await self.grant(created)
+                persisted = self.repository.get(plan["plan_id"])
+                persisted.events.append(
+                    ChangeEvent(
+                        event=f"{operation}_apply_attempted",
+                        timestamp=self.clock().isoformat(),
+                        request_id=f"{operation}-legacy-request-a",
+                        caller_id="mcp-requester",
+                        result_status="failed",
+                        error_code="operational_validation_failed",
+                    )
+                )
+                self.repository.save(persisted)
+                self.clock.advance(seconds=1)
+
+                before_dispatches = self.lifecycle.dispatch_count
+                applied = await self.apply_as(
+                    f"{operation}-f1-request-b", plan
+                )
+                metrics = self.service.health_summary()[
+                    "operational_administration"
+                ]["operations"][operation]
+                self.assertEqual(applied["status"], "applied")
+                self.assertEqual(metrics["apply_attempts"], 2)
+                self.assertEqual(metrics["dispatch_attempts"], 1)
+                self.assertEqual(metrics["dispatch_successes"], 1)
+                self.assertEqual(metrics["verified_successes"], 1)
+                self.assertEqual(
+                    metrics["no_blind_redispatch_preventions"], 0
+                )
+
+                duplicate = await self.apply_as(
+                    f"{operation}-duplicate-request-c", plan
+                )
+                metrics = self.service.health_summary()[
+                    "operational_administration"
+                ]["operations"][operation]
+                self.assertEqual(duplicate["status"], "already_applied")
+                self.assertEqual(metrics["apply_attempts"], 3)
+                self.assertEqual(metrics["dispatch_attempts"], 1)
+                self.assertEqual(metrics["dispatch_successes"], 1)
+                self.assertEqual(metrics["verified_successes"], 1)
+                self.assertEqual(
+                    metrics["no_blind_redispatch_preventions"], 1
+                )
+                self.assertEqual(
+                    self.lifecycle.dispatch_count,
+                    before_dispatches + 1,
+                )
+
+                recovered = ChangeGovernanceService(
+                    ChangePlanRepository(Path(self.temp.name) / "plans"),
+                    LegacyGateway(),
+                    now=self.clock,
+                    lifecycle_gateway=self.lifecycle,
+                )
+                self.assertEqual(
+                    recovered.health_summary()[
+                        "operational_administration"
+                    ]["operations"][operation],
+                    metrics,
+                )
+
+    async def test_mirrored_f1_apply_request_counts_once(self):
+        created = await self.service.create_reload_plan(
+            reload_target="automation"
+        )
+        plan = await self.grant(created)
+        await self.apply_as("mirrored-f1-request-b", plan)
+
+        persisted = self.repository.get(plan["plan_id"])
+        task = self.service.task_repository.get_for_plan(plan["plan_id"])
+        self.assertIsNotNone(task)
+        assert task is not None
+        self.assertTrue(
+            any(
+                event.event == "controlled_reload_apply_attempted"
+                and event.request_id == "mirrored-f1-request-b"
+                for event in persisted.events
+            )
+        )
+        self.assertTrue(
+            any(
+                event.event_type == "preflight_started"
+                and event.request_id == "mirrored-f1-request-b"
+                for event in task.events
+            )
+        )
+        metrics = self.service.health_summary()[
+            "operational_administration"
+        ]["operations"]["controlled_reload"]
+        self.assertEqual(metrics["apply_attempts"], 1)
+
+        await self.apply_as("mirrored-duplicate-request-c", plan)
+        metrics = self.service.health_summary()[
+            "operational_administration"
+        ]["operations"]["controlled_reload"]
+        self.assertEqual(metrics["apply_attempts"], 2)
+        self.assertEqual(metrics["no_blind_redispatch_preventions"], 1)
+
+    async def test_anonymous_apply_evidence_respects_task_creation_boundary(
+        self,
+    ):
+        created = await self.service.create_reload_plan(
+            reload_target="automation"
+        )
+        plan = await self.grant(created)
+        persisted = self.repository.get(plan["plan_id"])
+        persisted.events.append(
+            ChangeEvent(
+                event="controlled_reload_apply_attempted",
+                timestamp=self.clock().isoformat(),
+                request_id="",
+                caller_id="mcp-requester",
+                result_status="failed",
+            )
+        )
+        self.repository.save(persisted)
+        self.clock.advance(seconds=1)
+        await self.apply_as("anonymous-f1-request-b", plan)
+
+        task = self.service.task_repository.get_for_plan(plan["plan_id"])
+        self.assertIsNotNone(task)
+        assert task is not None
+        self.clock.advance(seconds=1)
+        task.append_event(
+            "duplicate_apply_prevented",
+            self.clock().isoformat(),
+            changes={},
+            request_id=None,
+        )
+        self.service.task_repository.save(task)
+        persisted = self.repository.get(plan["plan_id"])
+        persisted.events.extend(
+            (
+                ChangeEvent(
+                    event="controlled_reload_apply_attempted",
+                    timestamp=self.clock().isoformat(),
+                    request_id="",
+                    caller_id="mcp-requester",
+                    result_status="already_applied",
+                ),
+                ChangeEvent(
+                    event="controlled_reload_no_redispatch_prevented",
+                    timestamp=self.clock().isoformat(),
+                    request_id="",
+                    caller_id="mcp-requester",
+                    result_status="already_applied",
+                ),
+                ChangeEvent(
+                    event="controlled_reload_apply_attempted",
+                    timestamp="malformed-historical-timestamp",
+                    request_id="malformed request id",
+                    caller_id="mcp-requester",
+                    result_status="failed",
+                ),
+            )
+        )
+        self.repository.save(persisted)
+
+        metrics = self.service.health_summary()[
+            "operational_administration"
+        ]["operations"]["controlled_reload"]
+        self.assertEqual(metrics["apply_attempts"], 3)
+        self.assertEqual(metrics["no_blind_redispatch_preventions"], 1)
+
+        taskless_repository = ChangePlanRepository(
+            Path(self.temp.name) / "taskless-plans"
+        )
+        taskless_service = ChangeGovernanceService(
+            taskless_repository,
+            LegacyGateway(),
+            now=self.clock,
+            lifecycle_gateway=FakeLifecycleGateway(),
+        )
+        taskless_created = await taskless_service.create_reload_plan(
+            reload_target="automation"
+        )
+        taskless_plan = taskless_repository.get(
+            taskless_created["plan"]["plan_id"]
+        )
+        for offset in (1, 2):
+            taskless_plan.events.append(
+                ChangeEvent(
+                    event="controlled_reload_apply_attempted",
+                    timestamp=(
+                        self.clock() + timedelta(seconds=offset)
+                    ).isoformat(),
+                    request_id="",
+                    caller_id="mcp-requester",
+                    result_status="failed",
+                )
+            )
+        taskless_repository.save(taskless_plan)
+        self.assertEqual(
+            taskless_service.health_summary()[
+                "operational_administration"
+            ]["operations"]["controlled_reload"]["apply_attempts"],
+            2,
+        )
 
     async def test_self_restart_reconciliation_requires_changed_process_and_readback(self):
         created = await self.service.create_addon_restart_plan(

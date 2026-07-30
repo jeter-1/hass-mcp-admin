@@ -19,7 +19,11 @@ from ..clients.rest import ExpectedHttpStatus, HomeAssistantRestClient
 from ..errors import ErrorCode, GovernanceError, HomeAssistantApiError
 from ..logging_config import get_logger, log_event
 from ..observability import METRICS
-from ..request_context import current_caller_id, current_request_id
+from ..request_context import (
+    REQUEST_ID_PATTERN,
+    current_caller_id,
+    current_request_id,
+)
 from ..sanitization import sanitize_untrusted_data
 from .models import (
     ApprovalState,
@@ -113,6 +117,67 @@ MAX_APPROVAL_PROJECTION_TARGETS = 8
 MAX_APPROVAL_PROJECTION_DATA = 8
 MAX_APPROVAL_PROJECTION_DEPTH = 4
 MAX_APPROVAL_PROJECTION_CONTROLS = 16
+
+
+def _usable_invocation_request_id(value: object) -> str | None:
+    if not isinstance(value, str) or not REQUEST_ID_PATTERN.fullmatch(value):
+        return None
+    return value
+
+
+def _reconciled_persisted_invocation_count(
+    plan: ChangePlan,
+    task: ExecutionTask | None,
+    *,
+    plan_event_matches: Callable[[ChangeEvent], bool],
+    task_event_types: frozenset[str],
+) -> int:
+    """Count distinct persisted invocations across legacy and task eras."""
+
+    plan_events = [
+        event for event in plan.events if plan_event_matches(event)
+    ]
+    if task is None:
+        return len(plan_events)
+
+    request_ids: set[str] = set()
+    anonymous_task_events: set[tuple[int, str]] = set()
+    for event in task.events:
+        if event.event_type not in task_event_types:
+            continue
+        request_id = _usable_invocation_request_id(event.request_id)
+        if request_id is not None:
+            request_ids.add(request_id)
+        else:
+            anonymous_task_events.add((event.sequence, event.event_type))
+
+    try:
+        task_created_at = parse_task_timestamp(task.created_at)
+    except (TypeError, ValueError):
+        task_created_at = None
+
+    anonymous_legacy_events = 0
+    for event in plan_events:
+        request_id = _usable_invocation_request_id(event.request_id)
+        if request_id is not None:
+            request_ids.add(request_id)
+            continue
+        if task_created_at is None:
+            continue
+        try:
+            event_timestamp = parse_task_timestamp(event.timestamp)
+        except (TypeError, ValueError):
+            continue
+        if event_timestamp < task_created_at:
+            anonymous_legacy_events += 1
+
+    return (
+        len(request_ids)
+        + len(anonymous_task_events)
+        + anonymous_legacy_events
+    )
+
+
 MAX_APPROVAL_PROJECTION_ACTIONS_PER_PLAN = 32
 MAX_APPROVAL_PROJECTION_DETAILS_PER_PLAN = 128
 MAX_OPERATIONAL_RECONCILIATIONS_PER_PASS = 20
@@ -7887,43 +7952,36 @@ class ChangeGovernanceService:
         tasks_by_plan = {task.plan_id: task for task in tasks}
 
         def apply_attempt_count(plan: ChangePlan) -> int:
-            plan_count = sum(
-                event.event.endswith("_apply_attempted")
-                for event in plan.events
-            )
-            if plan.operation == ChangeOperation.CREATE_FULL_BACKUP:
-                plan_count += sum(
-                    event.event
+            def plan_event_matches(event: ChangeEvent) -> bool:
+                if event.event.endswith("_apply_attempted"):
+                    return True
+                return (
+                    plan.operation == ChangeOperation.CREATE_FULL_BACKUP
+                    and event.event
                     == "operational_backup_dispatch_recorded"
-                    for event in plan.events
                 )
-            task = tasks_by_plan.get(plan.plan_id)
-            if task is None:
-                return plan_count
-            task_count = sum(
-                event.event_type
-                in {"preflight_started", "duplicate_apply_prevented"}
-                for event in task.events
+
+            return _reconciled_persisted_invocation_count(
+                plan,
+                tasks_by_plan.get(plan.plan_id),
+                plan_event_matches=plan_event_matches,
+                task_event_types=frozenset(
+                    {"preflight_started", "duplicate_apply_prevented"}
+                ),
             )
-            # Plan events are the legacy projection. Task events are the F1
-            # authority. The maximum preserves taskless history while avoiding
-            # double-counting the same invocation on both surfaces.
-            return max(plan_count, task_count)
 
         def no_redispatch_prevention_count(plan: ChangePlan) -> int:
-            plan_count = sum(
-                event.event.endswith("_no_redispatch_prevented")
-                or event.event.endswith("_dispatch_recovered")
-                for event in plan.events
+            return _reconciled_persisted_invocation_count(
+                plan,
+                tasks_by_plan.get(plan.plan_id),
+                plan_event_matches=lambda event: (
+                    event.event.endswith("_no_redispatch_prevented")
+                    or event.event.endswith("_dispatch_recovered")
+                ),
+                task_event_types=frozenset(
+                    {"duplicate_apply_prevented"}
+                ),
             )
-            task = tasks_by_plan.get(plan.plan_id)
-            if task is None:
-                return plan_count
-            task_count = sum(
-                event.event_type == "duplicate_apply_prevented"
-                for event in task.events
-            )
-            return max(plan_count, task_count)
 
         backup_provider_health = (
             self.operational_gateway.health_snapshot()

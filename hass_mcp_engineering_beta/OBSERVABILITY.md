@@ -10,11 +10,14 @@ terminal verified outcome does not imply provider response receipt.
 For each operational plan, `apply_attempts` and
 `no_blind_redispatch_preventions` reconcile two persistent projections:
 governance plan events retained for compatibility and schema-v1 execution-task
-events. Health uses the larger compatible per-plan count rather than summing
-overlapping projections. This includes a durable backup
-`duplicate_apply_prevented` event that has no legacy plan event, avoids double
-counting lifecycle projections, and remains stable across health reads and
-process rehydration.
+events. Health counts distinct persisted invocations: matching request IDs
+across plan and task projections count once, different request IDs count
+separately, and anonymous legacy plan events count separately only when their
+timestamp precedes task creation. Anonymous durable task events retain their
+event-sequence identity. Taskless historical plans keep their legacy event
+count. This includes a durable backup `duplicate_apply_prevented` event that
+has no legacy plan event, avoids double counting task-era projections, and
+remains stable across health reads and process rehydration.
 
 Rejected calls that do not reach eligible task preflight remain excluded.
 Provider dispatch, request, success, and verification counters are not

@@ -36,6 +36,7 @@ from ha_mcp_engineering.governance.config_validation import (  # noqa: E402
 )
 from ha_mcp_engineering.governance.models import (  # noqa: E402
     ApprovalState,
+    ChangeEvent,
     ChangePlan,
     PlanStatus,
 )
@@ -380,6 +381,16 @@ class OperationalBackupLifecycleTests(unittest.IsolatedAsyncioTestCase):
             approver_principal="home_assistant_admin_ingress:fixture",
         )
         return plan
+
+    async def apply_as(self, request_id, plan):
+        telemetry, token = begin_request(request_id)
+        telemetry.caller_id = "mcp-requester"
+        try:
+            return await self.service.apply(
+                plan["plan_id"], plan["plan_hash"]
+            )
+        finally:
+            end_request(token)
 
     async def test_planning_is_proposal_only_and_hash_is_deterministic(self):
         created = await self.create()
@@ -1174,9 +1185,9 @@ class OperationalBackupLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_health_and_audit_are_bounded_and_truthful(self):
         created = await self.create()
         plan = await self.grant(created)
-        await self.service.apply(plan["plan_id"], plan["plan_hash"])
-        duplicate = await self.service.apply(
-            plan["plan_id"], plan["plan_hash"]
+        await self.apply_as("backup-initial-request-b", plan)
+        duplicate = await self.apply_as(
+            "backup-duplicate-request-c", plan
         )
         self.assertEqual(duplicate["status"], "already_applied")
         health = self.service.health_summary()[
@@ -1280,6 +1291,63 @@ class OperationalBackupLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 "no_blind_redispatch_preventions"
             ],
             1,
+        )
+
+    async def test_cross_era_backup_apply_attempts_reconcile_distinct_requests(
+        self,
+    ):
+        created = await self.create()
+        plan = await self.grant(created)
+        persisted = self.repository.get(plan["plan_id"])
+        persisted.events.append(
+            ChangeEvent(
+                event="operational_backup_dispatch_recorded",
+                timestamp=self.clock().isoformat(),
+                request_id="backup-legacy-request-a",
+                caller_id="mcp-requester",
+                result_status="failed",
+                error_code="operational_validation_failed",
+            )
+        )
+        self.repository.save(persisted)
+        self.clock.advance(seconds=1)
+
+        applied = await self.apply_as("backup-f1-request-b", plan)
+        metrics = self.service.health_summary()[
+            "operational_administration"
+        ]["operations"]["create_full_backup"]
+        self.assertEqual(applied["status"], "applied")
+        self.assertEqual(metrics["apply_attempts"], 2)
+        self.assertEqual(metrics["dispatch_attempts"], 1)
+        self.assertEqual(metrics["dispatch_successes"], 1)
+        self.assertEqual(metrics["verified_successes"], 1)
+        self.assertEqual(metrics["no_blind_redispatch_preventions"], 0)
+
+        duplicate = await self.apply_as(
+            "backup-duplicate-request-c", plan
+        )
+        metrics = self.service.health_summary()[
+            "operational_administration"
+        ]["operations"]["create_full_backup"]
+        self.assertEqual(duplicate["status"], "already_applied")
+        self.assertEqual(metrics["apply_attempts"], 3)
+        self.assertEqual(metrics["dispatch_attempts"], 1)
+        self.assertEqual(metrics["dispatch_successes"], 1)
+        self.assertEqual(metrics["verified_successes"], 1)
+        self.assertEqual(metrics["no_blind_redispatch_preventions"], 1)
+        self.assertEqual(self.gateway.dispatch_count, 1)
+
+        recovered = ChangeGovernanceService(
+            ChangePlanRepository(Path(self.temp.name) / "plans"),
+            LegacyGateway(),
+            now=self.clock,
+            operational_gateway=self.gateway,
+        )
+        self.assertEqual(
+            recovered.health_summary()["operational_administration"][
+                "operations"
+            ]["create_full_backup"],
+            metrics,
         )
 
 

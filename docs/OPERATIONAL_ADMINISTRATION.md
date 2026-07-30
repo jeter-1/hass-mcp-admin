@@ -52,8 +52,11 @@ process-identity change, and reconciliation never manufacture response timing.
 
 Operation-specific `apply_attempts` includes eligible initial applies and
 durable duplicate applies. `no_blind_redispatch_preventions` includes the
-durable duplicate-prevention evidence without summing the same plan/task
-projection twice. Rehydrating health does not increment either counter.
+durable duplicate-prevention evidence. Both counters reconcile distinct
+persisted invocations across legacy plan events and durable task events:
+matching request IDs count once, different request IDs count separately, and
+anonymous legacy evidence counts separately only before task creation.
+Rehydrating health does not increment either counter.
 
 Startup first rehydrates task authority without provider actions, then invokes
 the existing bounded operational reconciler for eligible dispatched plans.
