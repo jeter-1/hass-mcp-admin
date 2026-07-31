@@ -80,7 +80,9 @@ BETA14_SCHEMA_HASHES = {
     "automation_reliability_analysis": "b7a10e83753ea5998dcc5186d7565ed7514f95e33e5b5aabb251a8b1d1dc2a87",
     "call_service": "32484bbc1c2f4abdd6eef7f6294ce03bde9b26235d49ed66ac680716ee07d079",
     "check_config": "cf684d5988938e70e04417b0a999280cc946204d0263d159fd8b6666403c52b1",
-    "create_change_plan": "eda938c2cc71052e8912bd20be269bd645c9844892cdf8cdfae72688742708d1",
+    # F2 intentionally advances the existing plan lifetime default from 60
+    # to 120 minutes without changing the accepted field surface.
+    "create_change_plan": "4fadc5615f9741722e4fe7fa19f1712db9ff6b2fed2cebf6a5c9f2cc68f52a39",
     "delete_automation": "1e3a45e13dca40114ecffe59a28763f09adec6097e73eeffefed119291a0840d",
     "entity_dependency_analysis": "584ef3f232baa63c36b25618a8d984bc9be36a74a7d893edc2ae47a425520da2",
     "get_audit_log": "1151fe6f073a908529eb7fe86ecd533978008f79acf44b79026789105278e07a",
@@ -1773,7 +1775,7 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ToolCompatibilityTests(unittest.TestCase):
-    def test_additive_dev14_tool_and_all_prior_schemas_unchanged(self):
+    def test_additive_dev14_tools_preserve_the_f2_compatible_schema_set(self):
         tools = registered_tools(get_registered_server()).values()
         self.assertEqual(len(tools), 48)
         current = {item.name: item for item in tools}
