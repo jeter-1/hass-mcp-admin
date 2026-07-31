@@ -348,13 +348,30 @@ class ConfigurationPlanTestCase(unittest.IsolatedAsyncioTestCase):
             plan_id=created["plan_id"],
             challenge_id=pending["challenge_id"],
             expected_plan_hash=created["plan_hash"],
-            approval_kind="apply",
+            approval_kind=pending["approval_kind"],
+            approval_action=pending["approval_action"],
             csrf_nonce=csrf,
             decision="approve",
             approver_principal=(
                 "home_assistant_admin_ingress:dev14-reviewer"
             ),
         )
+        if granted["status"] == "approval_pending":
+            _, second_csrf = await self.service.issue_external_csrf(
+                created["plan_id"], granted["challenge_id"]
+            )
+            granted = await self.service.decide_external_approval(
+                plan_id=created["plan_id"],
+                challenge_id=granted["challenge_id"],
+                expected_plan_hash=created["plan_hash"],
+                approval_kind=granted["approval_kind"],
+                approval_action=granted["approval_action"],
+                csrf_nonce=second_csrf,
+                decision="approve",
+                approver_principal=(
+                    "home_assistant_admin_ingress:dev14-reviewer"
+                ),
+            )
         return pending, review, granted
 
 
@@ -2112,8 +2129,8 @@ class RestartRecoveryTests(ConfigurationPlanTestCase):
         created = await self.create_hvac_plan()
         await self.approve(created)
         plan = self.repository.get(created["plan_id"])
+        self.service._consume_approval_bundle(plan)
         plan.status = PlanStatus.APPLYING
-        plan.approval.state = ApprovalState.CONSUMED
         plan.operations[0].execution_status = StepExecutionStatus.FAILED
         plan.operations[0].execution_receipt = {
             "write_attempted": False,
@@ -2165,8 +2182,8 @@ class RestartRecoveryTests(ConfigurationPlanTestCase):
         created = await self.create_hvac_plan()
         await self.approve(created)
         plan = self.repository.get(created["plan_id"])
+        self.service._consume_approval_bundle(plan)
         plan.status = PlanStatus.APPLYING
-        plan.approval.state = ApprovalState.CONSUMED
         plan.operations[0].execution_status = (
             StepExecutionStatus.APPLIED_VERIFIED
         )
@@ -2217,8 +2234,8 @@ class RestartRecoveryTests(ConfigurationPlanTestCase):
         created = await self.create_hvac_plan()
         await self.approve(created)
         plan = self.repository.get(created["plan_id"])
+        self.service._consume_approval_bundle(plan)
         plan.status = PlanStatus.APPLYING
-        plan.approval.state = ApprovalState.CONSUMED
         plan.operations[0].execution_status = StepExecutionStatus.APPLYING
         plan.operations[0].execution_receipt = {
             "write_attempted": True,
@@ -2269,8 +2286,8 @@ class RestartRecoveryTests(ConfigurationPlanTestCase):
         created = await self.create_hvac_plan()
         await self.approve(created)
         plan = self.repository.get(created["plan_id"])
+        self.service._consume_approval_bundle(plan)
         plan.status = PlanStatus.APPLYING
-        plan.approval.state = ApprovalState.CONSUMED
         plan.operations[0].execution_status = (
             StepExecutionStatus.APPLIED_VERIFIED
         )
@@ -2315,8 +2332,8 @@ class RestartRecoveryTests(ConfigurationPlanTestCase):
         created = await self.create_hvac_plan()
         await self.approve(created)
         plan = self.repository.get(created["plan_id"])
+        self.service._consume_approval_bundle(plan)
         plan.status = PlanStatus.APPLYING
-        plan.approval.state = ApprovalState.CONSUMED
         plan.operations[0].execution_status = StepExecutionStatus.FAILED
         plan.operations[0].execution_receipt = {
             "write_attempted": True,
@@ -2351,8 +2368,8 @@ class RestartRecoveryTests(ConfigurationPlanTestCase):
         created = await self.create_hvac_plan()
         await self.approve(created)
         plan = self.repository.get(created["plan_id"])
+        self.service._consume_approval_bundle(plan)
         plan.status = PlanStatus.APPLYING
-        plan.approval.state = ApprovalState.CONSUMED
         for operation in plan.operations:
             operation.execution_status = (
                 StepExecutionStatus.APPLIED_VERIFIED

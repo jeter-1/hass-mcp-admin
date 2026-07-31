@@ -181,7 +181,13 @@ class ApprovalActionRecord:
     """One separately actionable, hash-bound administrator decision."""
 
     kind: ApprovalActionKind
+    authority_version: int = 3
     state: ApprovalState = ApprovalState.REQUIRED
+    bound_plan_hash: str | None = None
+    policy_decision_hash: str | None = None
+    policy_class: str | None = None
+    risk_delta: str | None = None
+    physical_consequence: str | None = None
     challenge_id: str | None = None
     challenge_requested_at: str | None = None
     challenge_expires_at: str | None = None

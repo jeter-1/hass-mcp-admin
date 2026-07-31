@@ -37,6 +37,14 @@ class ErrorCode(str, Enum):
     CHANGE_IN_PROGRESS = "change_in_progress"
     UNSUPPORTED_CHANGE_OPERATION = "unsupported_change_operation"
     HIGH_RISK_CHANGE_REJECTED = "high_risk_change_rejected"
+    PROHIBITED_CHANGE = "prohibited_change"
+    POLICY_SNAPSHOT_REQUIRED = "policy_snapshot_required"
+    POLICY_SNAPSHOT_MISMATCH = "policy_snapshot_mismatch"
+    ELEVATED_RISK_ACKNOWLEDGEMENT_REQUIRED = (
+        "elevated_risk_acknowledgement_required"
+    )
+    APPROVAL_PRINCIPAL_MISMATCH = "approval_principal_mismatch"
+    APPROVAL_SEQUENCE_FAILURE = "approval_sequence_failure"
     AUTOMATION_VALIDATION_FAILED = "automation_validation_failed"
     AUTOMATION_APPLY_FAILED = "automation_apply_failed"
     AUTOMATION_VERIFICATION_FAILED = "automation_verification_failed"
@@ -193,6 +201,39 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
     ErrorCode.CHANGE_IN_PROGRESS: ErrorDefinition("Another governed change is in progress for this target.", True, 409, "server_error"),
     ErrorCode.UNSUPPORTED_CHANGE_OPERATION: ErrorDefinition("The requested change operation is unsupported.", False, 405, "method_not_found"),
     ErrorCode.HIGH_RISK_CHANGE_REJECTED: ErrorDefinition("High-risk changes cannot be approved or applied in this milestone.", False, 403, "invalid_request"),
+    ErrorCode.PROHIBITED_CHANGE: ErrorDefinition(
+        "Policy prohibits this change.", False, 403, "invalid_request"
+    ),
+    ErrorCode.POLICY_SNAPSHOT_REQUIRED: ErrorDefinition(
+        "The plan predates the required policy snapshot and must be recreated.",
+        False,
+        409,
+        "invalid_request",
+    ),
+    ErrorCode.POLICY_SNAPSHOT_MISMATCH: ErrorDefinition(
+        "The persisted policy snapshot does not match the immutable plan.",
+        False,
+        409,
+        "invalid_request",
+    ),
+    ErrorCode.ELEVATED_RISK_ACKNOWLEDGEMENT_REQUIRED: ErrorDefinition(
+        "A separate elevated-risk acknowledgement is required.",
+        False,
+        409,
+        "invalid_request",
+    ),
+    ErrorCode.APPROVAL_PRINCIPAL_MISMATCH: ErrorDefinition(
+        "The elevated-risk acknowledgement must use the same administrator.",
+        False,
+        409,
+        "invalid_request",
+    ),
+    ErrorCode.APPROVAL_SEQUENCE_FAILURE: ErrorDefinition(
+        "The administrator approval actions were attempted out of sequence.",
+        False,
+        409,
+        "invalid_request",
+    ),
     ErrorCode.AUTOMATION_VALIDATION_FAILED: ErrorDefinition("The proposed automation failed validation.", False, 422, "invalid_params"),
     ErrorCode.AUTOMATION_APPLY_FAILED: ErrorDefinition("Home Assistant could not apply the automation change.", False, 502, "internal_error"),
     ErrorCode.AUTOMATION_VERIFICATION_FAILED: ErrorDefinition("The stored automation did not match the approved configuration.", False, 409, "internal_error"),

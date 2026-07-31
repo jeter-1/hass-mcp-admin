@@ -446,6 +446,16 @@ class ApprovalAndApplyTests(GovernanceTestCase):
         path = self.repository._path(created["plan_id"])
         legacy = json.loads(path.read_text(encoding="utf-8"))
         legacy.pop("normalization_version", None)
+        legacy.pop("policy_decision", None)
+        legacy["approval"]["authority_version"] = 2
+        for field in (
+            "policy_decision_hash",
+            "policy_class",
+            "bundle_state",
+            "same_principal_confirmed",
+            "elevated_risk_acknowledgement",
+        ):
+            legacy["approval"].pop(field, None)
         legacy_proposed = normalize_automation(legacy["proposed_config"])
         legacy_proposed["id"] = "porch"
         legacy_current = normalize_automation(legacy["current_config"])
@@ -460,9 +470,8 @@ class ApprovalAndApplyTests(GovernanceTestCase):
         self.assertEqual(readable["normalization_version"], 1)
         with self.assertRaises(GovernanceError) as raised:
             self.service.approve(created["plan_id"], readable["plan_hash"])
-        self.assertEqual(raised.exception.code, ErrorCode.APPROVAL_HASH_MISMATCH)
         self.assertEqual(
-            raised.exception.details["reason"], "normalization_version_mismatch"
+            raised.exception.code, ErrorCode.POLICY_SNAPSHOT_REQUIRED
         )
         self.assertNotIn(
             "normalization_version", json.loads(path.read_text(encoding="utf-8"))
@@ -506,13 +515,13 @@ class ApprovalAndApplyTests(GovernanceTestCase):
             self.service.approve(plan_id, self.service.plan_hash(self.repository.get(plan_id)))
         self.assertEqual(approval.exception.code, ErrorCode.CHANGE_PLAN_NOT_APPROVED)
 
-    async def test_high_risk_plan_cannot_be_approved(self):
+    async def test_safety_critical_plan_cannot_be_approved(self):
         proposed = copy.deepcopy(CURRENT)
         proposed["action"] = [{"service": "lock.unlock", "target": {"entity_id": "lock.example"}}]
         created = await self.update_plan(proposed)
         with self.assertRaises(GovernanceError) as raised:
             self.service.approve(created["plan_id"], created["plan_hash"])
-        self.assertEqual(raised.exception.code, ErrorCode.HIGH_RISK_CHANGE_REJECTED)
+        self.assertEqual(raised.exception.code, ErrorCode.PROHIBITED_CHANGE)
 
     async def test_repeated_approval_request_is_idempotent(self):
         created = await self.update_plan()
@@ -529,7 +538,9 @@ class ApprovalAndApplyTests(GovernanceTestCase):
         self.repository.save(plan)
         with self.assertRaises(GovernanceError) as raised:
             await self.service.apply(created["plan_id"])
-        self.assertEqual(raised.exception.code, ErrorCode.APPROVAL_HASH_MISMATCH)
+        self.assertEqual(
+            raised.exception.code, ErrorCode.POLICY_SNAPSHOT_MISMATCH
+        )
 
     async def test_approved_update_applies_and_verifies(self):
         created, _ = await self.approved_plan()

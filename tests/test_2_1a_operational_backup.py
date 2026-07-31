@@ -548,7 +548,8 @@ class OperationalBackupLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 ),
             )
         self.assertEqual(
-            raised.exception.code, ErrorCode.EXTERNAL_APPROVAL_INVALID
+            raised.exception.code,
+            ErrorCode.POLICY_SNAPSHOT_MISMATCH,
         )
         self.assertEqual(self.gateway.dispatch_count, 0)
 
@@ -796,8 +797,8 @@ class OperationalBackupLifecycleTests(unittest.IsolatedAsyncioTestCase):
         created = await self.create()
         plan = await self.grant(created)
         persisted = self.repository.get(plan["plan_id"])
+        self.service._consume_approval_bundle(persisted)
         persisted.status = PlanStatus.APPLYING
-        persisted.approval.state = ApprovalState.CONSUMED
         persisted.operational.dispatch.update(
             {
                 "attempt_count": 1,
@@ -972,14 +973,20 @@ class OperationalBackupLifecycleTests(unittest.IsolatedAsyncioTestCase):
         )
         legacy_plans = repository_2_0_1.list()
 
-        self.assertEqual(repository_2_0_1.corruption_count, 0)
-        self.assertEqual(len(legacy_plans), 1)
+        # The F2 policy snapshot is intentionally not understood by the exact
+        # pre-F2 legacy-plan reader. Its fail-closed quarantine must not touch
+        # the separately namespaced operational records under review here.
+        self.assertEqual(repository_2_0_1.corruption_count, 1)
+        self.assertEqual(legacy_plans, [])
         self.assertEqual(
-            legacy_plans[0].plan_id, records["legacy"]["plan_id"]
-        )
-        self.assertEqual(
-            list((self.repository.root / "quarantine").glob("*.corrupt")),
-            [],
+            len(
+                list(
+                    (self.repository.root / "quarantine").glob(
+                        "*.corrupt"
+                    )
+                )
+            ),
+            1,
         )
         self.assertEqual(
             list(
