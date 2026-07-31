@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 import json
+import re
 from typing import Any
 
 
@@ -52,6 +53,154 @@ class ApprovalState(str, Enum):
     INVALIDATED = "invalidated"
 
 
+class ApprovalPolicyClass(str, Enum):
+    STANDARD_ADMIN = "standard_admin"
+    ELEVATED_ADMIN = "elevated_admin"
+    PROHIBITED = "prohibited"
+
+
+class RiskDelta(str, Enum):
+    NONE = "none"
+    LOW = "low"
+    MODERATE = "moderate"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class PhysicalConsequence(str, Enum):
+    NONE = "none"
+    INDIRECT = "indirect"
+    DIRECT = "direct"
+    SAFETY_CRITICAL = "safety_critical"
+
+
+class ApprovalActionKind(str, Enum):
+    PLAN_APPROVAL = "plan_approval"
+    ELEVATED_RISK_ACKNOWLEDGEMENT = (
+        "elevated_risk_acknowledgement"
+    )
+
+
+_POLICY_REASON_CODE = re.compile(r"^[a-z][a-z0-9_]{0,95}$")
+_SHA256 = re.compile(r"^[a-f0-9]{64}$")
+
+
+@dataclass(frozen=True)
+class ChangePolicyDecision:
+    """Immutable, canonical policy authority bound to one plan snapshot."""
+
+    policy_version: str
+    policy_class: ApprovalPolicyClass
+    risk_delta: RiskDelta
+    physical_consequence: PhysicalConsequence
+    reason_codes: tuple[str, ...]
+    required_acknowledgements: tuple[ApprovalActionKind, ...]
+    policy_subject_hash: str
+    policy_decision_hash: str
+
+    def __post_init__(self) -> None:
+        if self.policy_version != "f2-v1":
+            raise ValueError("unsupported policy version")
+        if (
+            not self.reason_codes
+            or tuple(sorted(set(self.reason_codes))) != self.reason_codes
+            or any(
+                not _POLICY_REASON_CODE.fullmatch(code)
+                for code in self.reason_codes
+            )
+        ):
+            raise ValueError("invalid policy reason codes")
+        if len(self.reason_codes) > 32:
+            raise ValueError("policy reason-code limit exceeded")
+        acknowledgement_values = tuple(
+            value.value for value in self.required_acknowledgements
+        )
+        if len(set(acknowledgement_values)) != len(
+            acknowledgement_values
+        ):
+            raise ValueError("duplicate policy acknowledgement")
+        if not _SHA256.fullmatch(self.policy_subject_hash):
+            raise ValueError("invalid policy subject hash")
+        if not _SHA256.fullmatch(self.policy_decision_hash):
+            raise ValueError("invalid policy decision hash")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "policy_version": self.policy_version,
+            "policy_class": self.policy_class.value,
+            "risk_delta": self.risk_delta.value,
+            "physical_consequence": self.physical_consequence.value,
+            "reason_codes": list(self.reason_codes),
+            "required_acknowledgements": [
+                value.value for value in self.required_acknowledgements
+            ],
+            "policy_subject_hash": self.policy_subject_hash,
+            "policy_decision_hash": self.policy_decision_hash,
+        }
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "ChangePolicyDecision":
+        if not isinstance(value, dict):
+            raise ValueError("invalid policy decision")
+        expected = {
+            "policy_version",
+            "policy_class",
+            "risk_delta",
+            "physical_consequence",
+            "reason_codes",
+            "required_acknowledgements",
+            "policy_subject_hash",
+            "policy_decision_hash",
+        }
+        if set(value) != expected:
+            raise ValueError("invalid policy decision fields")
+        reasons = value["reason_codes"]
+        acknowledgements = value["required_acknowledgements"]
+        if not isinstance(reasons, list) or not isinstance(
+            acknowledgements, list
+        ):
+            raise ValueError("invalid policy decision collections")
+        return cls(
+            policy_version=str(value["policy_version"]),
+            policy_class=ApprovalPolicyClass(value["policy_class"]),
+            risk_delta=RiskDelta(value["risk_delta"]),
+            physical_consequence=PhysicalConsequence(
+                value["physical_consequence"]
+            ),
+            reason_codes=tuple(str(item) for item in reasons),
+            required_acknowledgements=tuple(
+                ApprovalActionKind(item) for item in acknowledgements
+            ),
+            policy_subject_hash=str(value["policy_subject_hash"]),
+            policy_decision_hash=str(value["policy_decision_hash"]),
+        )
+
+
+@dataclass
+class ApprovalActionRecord:
+    """One separately actionable, hash-bound administrator decision."""
+
+    kind: ApprovalActionKind
+    state: ApprovalState = ApprovalState.REQUIRED
+    challenge_id: str | None = None
+    challenge_requested_at: str | None = None
+    challenge_expires_at: str | None = None
+    granted_at: str | None = None
+    approver_principal: str | None = None
+    consumed_at: str | None = None
+    csrf_digest: str | None = None
+    csrf_issued_at: str | None = None
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "ApprovalActionRecord":
+        data = dict(value)
+        data["kind"] = ApprovalActionKind(data["kind"])
+        data["state"] = ApprovalState(
+            data.get("state", ApprovalState.REQUIRED.value)
+        )
+        return cls(**data)
+
+
 class StepExecutionStatus(str, Enum):
     PENDING = "pending"
     APPLYING = "applying"
@@ -79,7 +228,7 @@ class ChangeRiskAssessment:
 @dataclass
 class ChangeApproval:
     state: ApprovalState = ApprovalState.REQUIRED
-    authority_version: int = 2
+    authority_version: int = 3
     channel: str | None = None
     approver_principal: str | None = None
     # None means no external approver exists yet, so separation has not been
@@ -103,6 +252,11 @@ class ChangeApproval:
     request_note: str | None = None
     csrf_digest: str | None = None
     csrf_issued_at: str | None = None
+    policy_decision_hash: str | None = None
+    policy_class: str | None = None
+    bundle_state: str | None = None
+    same_principal_confirmed: bool | None = None
+    elevated_risk_acknowledgement: ApprovalActionRecord | None = None
 
 
 @dataclass
@@ -266,6 +420,7 @@ class ChangePlan:
     current_state_fingerprint: str
     proposed_config_hash: str
     risk: ChangeRiskAssessment
+    policy_decision: ChangePolicyDecision | None = None
     normalization_version: int = 2
     warnings: list[str] = field(default_factory=list)
     validation_results: dict[str, Any] = field(default_factory=dict)
@@ -313,6 +468,19 @@ class ChangePlan:
             ):
                 if event.get(key) is None:
                     event.pop(key, None)
+        if self.policy_decision is None:
+            value.pop("policy_decision", None)
+        approval = value.get("approval")
+        if isinstance(approval, dict):
+            for key in (
+                "policy_decision_hash",
+                "policy_class",
+                "bundle_state",
+                "same_principal_confirmed",
+                "elevated_risk_acknowledgement",
+            ):
+                if approval.get(key) is None:
+                    approval.pop(key, None)
         # Contract-v1 records predate ordered configuration operations. Keep
         # their persisted and public representation byte-for-byte compatible:
         # the additive fields exist only on contract-v2 records.
@@ -341,6 +509,11 @@ class ChangePlan:
         data.setdefault("execution_outcome", None)
         data.setdefault("configuration_check_status", None)
         data.setdefault("plan_family", "configuration_change")
+        data["policy_decision"] = (
+            ChangePolicyDecision.from_dict(data["policy_decision"])
+            if isinstance(data.get("policy_decision"), dict)
+            else None
+        )
         data["operational"] = (
             OperationalPlanDetails.from_dict(data["operational"])
             if isinstance(data.get("operational"), dict)
@@ -367,6 +540,15 @@ class ChangePlan:
         # omission or deserialization.
         approval.setdefault("authority_version", 1)
         approval["state"] = ApprovalState(approval.get("state", "required"))
+        approval["elevated_risk_acknowledgement"] = (
+            ApprovalActionRecord.from_dict(
+                approval["elevated_risk_acknowledgement"]
+            )
+            if isinstance(
+                approval.get("elevated_risk_acknowledgement"), dict
+            )
+            else None
+        )
         if (
             approval.get("principal_separation_enforced") is False
             and not approval.get("approver_principal")
