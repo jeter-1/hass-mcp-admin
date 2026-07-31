@@ -15,7 +15,7 @@ only after the durable F1 task owns the plan. Task schema remains 1; startup
 recovery remains readback-only and duplicate apply cannot redispatch. F2 adds
 no resource type, provider, arbitrary service call, update/recovery execution,
 transaction graph, compensation, generalized verification, or fallback. See
-[`ADR-012`](docs/architecture/ADR-012-POLICY-RISK-AND-ELEVATED-APPROVAL.md).
+ADR-012 in the architecture decision records.
 
 ## 2.2.0-beta.5 update and recovery preflight foundation
 

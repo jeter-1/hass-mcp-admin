@@ -19,7 +19,7 @@ recomputed before approval and dispatch. Approval consumption occurs only
 after the durable F1 task owns the exact plan. Task schema version 1,
 no-blind-redispatch, readback-only reconciliation, operation-specific
 verification, provider routing, and zero fallback remain unchanged. See
-[`ADR-012`](architecture/ADR-012-POLICY-RISK-AND-ELEVATED-APPROVAL.md).
+ADR-012 in the architecture decision records.
 
 ## 2.1A Beta 2 operational plans
 

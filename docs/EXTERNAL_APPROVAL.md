@@ -12,8 +12,7 @@ F2 authority version 3 derives policy from the immutable plan. A
 requires plan approval followed by a distinct
 `elevated_risk_acknowledgement` from the same authenticated administrator.
 This is not two-person control. A `prohibited` plan creates no actionable
-challenge. See
-[`ADR-012`](architecture/ADR-012-POLICY-RISK-AND-ELEVATED-APPROVAL.md) and the
+challenge. See ADR-012 in the architecture decision records and the
 active [`V2_2_0_BETA6_ACCEPTANCE.md`](V2_2_0_BETA6_ACCEPTANCE.md).
 
 This boundary does not prove that an automation will behave correctly. Apply

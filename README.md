@@ -43,8 +43,7 @@
 > independence, and retry-cadence separation are documented in
 > [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md).
 > The current Engineering development version is `2.2.0-beta.6`. Its F2
-> policy, risk, and elevated-approval semantics are recorded in
-> [`ADR-012`](docs/architecture/ADR-012-POLICY-RISK-AND-ELEVATED-APPROVAL.md),
+> policy, risk, and elevated-approval semantics are recorded in ADR-012 and
 > [`docs/V2_2_0_BETA6_RELEASE_NOTES.md`](docs/V2_2_0_BETA6_RELEASE_NOTES.md),
 > and [`docs/V2_2_0_BETA6_ACCEPTANCE.md`](docs/V2_2_0_BETA6_ACCEPTANCE.md).
 > The inert update-and-recovery preflight foundation remains recorded in
