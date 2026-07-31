@@ -1,8 +1,13 @@
 import ast
+import copy
+from contextlib import redirect_stderr
 import importlib.util
+import io
 from pathlib import Path
 import re
+from types import SimpleNamespace
 import unittest
+from unittest.mock import AsyncMock, patch
 
 import yaml
 
@@ -72,6 +77,52 @@ def literal_keyword(call, name):
             except (ValueError, TypeError):
                 return None
     return None
+
+
+class _F2AcceptanceGateway:
+    """Offline resource fixture matching the disposable HA readback shape."""
+
+    def __init__(self, contract):
+        helper = copy.deepcopy(contract.CREATE_CONFIGS["input_boolean"])
+        helper["id"] = contract.RESOURCE_IDS["input_boolean"].split(
+            ".", 1
+        )[1]
+        automation = copy.deepcopy(contract.LEGACY_AUTOMATION_CONFIG)
+        automation["id"] = contract.RESOURCE_IDS["automation"]
+        self.configs = {
+            (
+                "input_boolean",
+                contract.RESOURCE_IDS["input_boolean"],
+            ): helper,
+            (
+                "automation",
+                contract.RESOURCE_IDS["automation"],
+            ): automation,
+        }
+        self.write_count = 0
+        self.websocket_client = SimpleNamespace(command=self.command)
+
+    async def command(self, _payload):
+        return []
+
+    async def read(self, resource_type, resource_id):
+        return copy.deepcopy(self.configs.get((resource_type, resource_id)))
+
+    async def write(
+        self, action, resource_type, resource_id, approved_config
+    ):
+        self.write_count += 1
+        stored = copy.deepcopy(approved_config)
+        stored["id"] = (
+            resource_id.split(".", 1)[1]
+            if resource_type in {"input_boolean", "input_number"}
+            else resource_id
+        )
+        self.configs[(resource_type, resource_id)] = stored
+        return {"result": "ok", "action": action}
+
+    async def validate_all(self):
+        return {"result": "valid", "errors": None, "warnings": None}
 
 
 class RealHomeAssistantDev14GateTests(unittest.TestCase):
@@ -423,7 +474,7 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
             "PROHIBITED_CHANGE",
             "same_principal_confirmed",
             "duplicate_apply_prevented",
-            "redispatch_performed",
+            "task_reused",
             "trace_ids_before",
         ):
             with self.subTest(required=required):
@@ -519,6 +570,78 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
             cleanup.name,
             {call_name(call) for call in awaited_final_calls},
         )
+
+
+class RealHomeAssistantF2RunnerTests(unittest.IsolatedAsyncioTestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location(
+            "_real_ha_f2_runner_subject",
+            CONTRACT_PATH,
+        )
+        if spec is None or spec.loader is None:
+            raise AssertionError("could not load F2 disposable contract runner")
+        cls.contract = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.contract)
+
+    async def test_all_f2_scenarios_complete_without_redispatch_or_actuation(self):
+        gateway = _F2AcceptanceGateway(self.contract)
+        no_traces = SimpleNamespace(headers=[])
+        with patch.object(
+            self.contract,
+            "fetch_normalized_trace_list",
+            new=AsyncMock(return_value=no_traces),
+        ):
+            result = await self.contract._run_f2_policy_acceptance_contract(
+                gateway,
+                "synthetic-f2-runner-token",
+            )
+
+        self.assertEqual(
+            result["completed_scenarios"],
+            ["standard_admin", "elevated_admin", "prohibited"],
+        )
+        self.assertEqual(result["configuration_mutation_count"], 2)
+        self.assertEqual(result["fallback_count"], 0)
+        self.assertFalse(result["physical_actuation_observed"])
+        self.assertEqual(gateway.write_count, 2)
+
+    def test_missing_fixture_key_is_reported_with_bounded_context(self):
+        failure = KeyError("approval_reference")
+        failure.contract_phase = "f2_policy_acceptance"
+        failure.contract_scenario = "elevated_admin"
+        failure.contract_missing_key = "approval_reference"
+        stderr = io.StringIO()
+        with patch.object(
+            self.contract,
+            "run_contracts",
+            new=AsyncMock(side_effect=failure),
+        ), redirect_stderr(stderr):
+            result = self.contract.main()
+
+        self.assertEqual(result, 1)
+        diagnostic = stderr.getvalue()
+        self.assertIn("phase=f2_policy_acceptance", diagnostic)
+        self.assertIn("scenario=elevated_admin", diagnostic)
+        self.assertIn("type=KeyError", diagnostic)
+        self.assertIn("missing_key=approval_reference", diagnostic)
+
+    def test_unbounded_missing_key_is_not_reported(self):
+        failure = KeyError("<unsafe-fixture-key>")
+        failure.contract_phase = "f2_policy_acceptance"
+        failure.contract_scenario = "standard_admin"
+        failure.contract_missing_key = "<unsafe-fixture-key>"
+        stderr = io.StringIO()
+        with patch.object(
+            self.contract,
+            "run_contracts",
+            new=AsyncMock(side_effect=failure),
+        ), redirect_stderr(stderr):
+            result = self.contract.main()
+
+        self.assertEqual(result, 1)
+        self.assertIn("missing_key=none", stderr.getvalue())
+        self.assertNotIn("<unsafe-fixture-key>", stderr.getvalue())
 
 
 class RealHomeAssistantWorkflowGateTests(unittest.TestCase):

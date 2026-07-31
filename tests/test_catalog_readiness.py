@@ -17,6 +17,25 @@ sys.path.insert(0, str(BETA))
 from ha_mcp_engineering.application import (  # noqa: E402
     _supervise_upstream_reconciliation,
 )
+from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
+from ha_mcp_engineering.governance.models import (  # noqa: E402
+    ApprovalState,
+    PlanStatus,
+)
+from ha_mcp_engineering.governance.service import (  # noqa: E402
+    ChangeGovernanceService,
+)
+from ha_mcp_engineering.governance.storage import (  # noqa: E402
+    ChangePlanRepository,
+)
+from ha_mcp_engineering.request_context import (  # noqa: E402
+    begin_request,
+    end_request,
+)
+from tests.test_2_1a_beta2_operational_lifecycle import (  # noqa: E402
+    FakeLifecycleGateway,
+    LegacyGateway,
+)
 
 
 ACCEPTANCE_PATH = ROOT / "scripts" / "exact_image_read_gateway_acceptance.py"
@@ -226,6 +245,26 @@ class ExactImageDiagnosticTests(unittest.TestCase):
             json.dumps(result, sort_keys=True),
         )
 
+    def test_governance_failure_artifact_includes_only_bounded_error_code(self):
+        result = acceptance._bounded_failure_result(
+            GovernanceError(
+                ErrorCode.APPROVAL_SEQUENCE_FAILURE,
+                details={"resource_id": "must-not-be-exported"},
+            )
+        )
+
+        self.assertEqual(result["result"], "FAIL")
+        self.assertEqual(
+            result["failure"]["category"],
+            "acceptance_execution_failure",
+        )
+        self.assertEqual(
+            result["failure"]["error_code"],
+            "approval_sequence_failure",
+        )
+        self.assertEqual(result["diagnostics"], {})
+        self.assertNotIn("must-not-be-exported", json.dumps(result))
+
     def test_ci_waits_for_ready_200_and_always_uploads_result(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
             encoding="utf-8"
@@ -259,6 +298,123 @@ class ExactImageDiagnosticTests(unittest.TestCase):
         self.assertIn("if: always()", acceptance_step)
         self.assertIn("if: always()", upload_step)
         self.assertIn("if-no-files-found: error", upload_step)
+
+
+class ExactImageAuthorityFixtureTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.repository = ChangePlanRepository(
+            Path(self.temp.name) / "plans"
+        )
+        self.lifecycle = FakeLifecycleGateway()
+        self.service = ChangeGovernanceService(
+            self.repository,
+            LegacyGateway(),
+            lifecycle_gateway=self.lifecycle,
+            now=self.lifecycle.now,
+        )
+        self.telemetry, self.context = begin_request(
+            "exact-image-authority-fixture"
+        )
+        self.telemetry.caller_id = "exact-image-acceptance-caller"
+
+    async def asyncTearDown(self):
+        end_request(self.context)
+        self.temp.cleanup()
+
+    async def test_canonical_standard_authority_v3_bundle_validates(self):
+        proposal = await self.service.create_reload_plan(
+            reload_target="automation"
+        )
+        granted = await acceptance._grant_authority_v3_bundle(
+            self.service,
+            proposal["plan"],
+        )
+        plan = self.repository.get(proposal["plan"]["plan_id"])
+
+        self.assertEqual(granted["status"], "approved")
+        self.assertIsNotNone(plan)
+        assert plan is not None
+        self.service._require_policy_snapshot(plan)
+        self.assertEqual(plan.approval.authority_version, 3)
+        self.assertEqual(plan.approval.bundle_state, "fully_approved")
+        self.assertEqual(plan.approval.state, ApprovalState.APPROVED)
+        self.assertIsNone(
+            plan.approval.elevated_risk_acknowledgement
+        )
+        self.assertEqual(self.lifecycle.dispatch_count, 0)
+        self.assertIsNone(
+            self.service.task_repository.get_for_plan(plan.plan_id)
+        )
+
+    async def test_canonical_authority_v3_seed_is_valid_and_dispatch_free(self):
+        proposal = await self.service.create_addon_restart_plan(
+            addon_slug="local_test_addon"
+        )
+        seeded = await acceptance._seed_dispatched_lifecycle_recovery(
+            self.service,
+            proposal["plan"],
+        )
+        plan = self.repository.get(seeded["plan_id"])
+        task = self.service.task_repository.get_for_plan(seeded["plan_id"])
+
+        self.assertIsNotNone(plan)
+        self.assertIsNotNone(task)
+        assert plan is not None and task is not None
+        self.service._require_policy_snapshot(plan)
+        self.assertEqual(plan.approval.authority_version, 3)
+        self.assertEqual(plan.approval.state, ApprovalState.CONSUMED)
+        self.assertEqual(plan.approval.bundle_state, "consumed")
+        self.assertTrue(plan.approval.same_principal_confirmed)
+        self.assertEqual(plan.status, PlanStatus.VERIFICATION_REQUIRED)
+        acknowledgement = plan.approval.elevated_risk_acknowledgement
+        self.assertIsNotNone(acknowledgement)
+        assert acknowledgement is not None
+        self.assertEqual(acknowledgement.state, ApprovalState.CONSUMED)
+        self.assertEqual(
+            acknowledgement.approver_principal,
+            plan.approval.approver_principal,
+        )
+        self.assertEqual(task.task_schema_version, 1)
+        self.assertEqual(task.state.value, "observing")
+        self.assertEqual(len(task.provider_attempts), 1)
+        self.assertEqual(
+            [event.event_type for event in task.events],
+            [
+                "task_created",
+                "preflight_started",
+                "approval_consumed",
+                "dispatch_attempted",
+                "provider_response_recorded",
+            ],
+        )
+        self.assertEqual(self.lifecycle.dispatch_count, 0)
+
+    async def test_incomplete_consumed_authority_v3_seed_fails_closed(self):
+        proposal = await self.service.create_addon_restart_plan(
+            addon_slug="local_test_addon"
+        )
+        plan = self.repository.get(proposal["plan"]["plan_id"])
+        self.assertIsNotNone(plan)
+        assert plan is not None and plan.operational is not None
+        plan.approval.state = ApprovalState.CONSUMED
+        plan.status = PlanStatus.VERIFICATION_REQUIRED
+        plan.operational.dispatch.update(
+            {
+                "attempt_count": 1,
+                "dispatched": True,
+                "provider_response_received": True,
+            }
+        )
+        self.repository.save(plan)
+
+        with self.assertRaises(GovernanceError) as error:
+            self.service.resolved_plans()
+        self.assertEqual(
+            error.exception.code,
+            ErrorCode.APPROVAL_SEQUENCE_FAILURE,
+        )
+        self.assertEqual(self.lifecycle.dispatch_count, 0)
 
 
 if __name__ == "__main__":

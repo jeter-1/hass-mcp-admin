@@ -41,8 +41,8 @@ from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
 )
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
+from ha_mcp_engineering.errors import GovernanceError  # noqa: E402
 from ha_mcp_engineering.governance.models import (  # noqa: E402
-    ApprovalState,
     PlanStatus,
 )
 from ha_mcp_engineering.governance.operational import (  # noqa: E402
@@ -57,6 +57,9 @@ from ha_mcp_engineering.governance.service import (  # noqa: E402
 )
 from ha_mcp_engineering.governance.storage import (  # noqa: E402
     ChangePlanRepository,
+)
+from ha_mcp_engineering.governance.task_models import (  # noqa: E402
+    ExecutionTaskState,
 )
 from ha_mcp_engineering.providers.operational_backup import (  # noqa: E402
     ReviewedOperationalBackupProvider,
@@ -75,6 +78,7 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     schema_fingerprint,
 )
 from ha_mcp_engineering.version import SERVER_VERSION  # noqa: E402
+from ha_mcp_engineering.request_context import current_request_id  # noqa: E402
 
 
 EXPECTED_ENGINEERING_BASELINE_COUNT = 48
@@ -227,27 +231,193 @@ def _bounded_failure_result(exc: BaseException) -> dict[str, Any]:
         (item for item in leaves if isinstance(item, AcceptanceFailure)),
         None,
     )
+    governance = next(
+        (item for item in leaves if isinstance(item, GovernanceError)),
+        None,
+    )
+    failure = {
+        "category": (
+            "acceptance_failure"
+            if acceptance is not None
+            else "acceptance_execution_failure"
+        ),
+        "message": (
+            str(acceptance)[:MAX_FAILURE_MESSAGE_CHARS]
+            if acceptance is not None
+            else "The bounded exact-image acceptance did not complete."
+        ),
+        "exception_types": sorted(
+            {type(item).__name__[:128] for item in leaves}
+        )[:MAX_DIAGNOSTIC_ITEMS],
+    }
+    if governance is not None:
+        failure["error_code"] = governance.code.value
     return {
         "result": "FAIL",
-        "failure": {
-            "category": (
-                "acceptance_failure"
-                if acceptance is not None
-                else "acceptance_execution_failure"
-            ),
-            "message": (
-                str(acceptance)[:MAX_FAILURE_MESSAGE_CHARS]
-                if acceptance is not None
-                else "The bounded exact-image acceptance did not complete."
-            ),
-            "exception_types": sorted(
-                {type(item).__name__[:128] for item in leaves}
-            )[:MAX_DIAGNOSTIC_ITEMS],
-        },
+        "failure": failure,
         "diagnostics": (
             acceptance.diagnostics
             if isinstance(acceptance, AcceptanceFailure)
             else {}
+        ),
+    }
+
+
+async def _grant_authority_v3_bundle(
+    service: ChangeGovernanceService,
+    plan_snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    """Grant every server-required action through the production authority."""
+
+    plan_id = str(plan_snapshot["plan_id"])
+    plan_hash = str(plan_snapshot["plan_hash"])
+    pending = service.approve(plan_id, plan_hash)
+    for _ in range(2):
+        _review, csrf = await service.issue_external_csrf(
+            plan_id, pending["challenge_id"]
+        )
+        result = await service.decide_external_approval(
+            plan_id=plan_id,
+            challenge_id=pending["challenge_id"],
+            expected_plan_hash=plan_hash,
+            approval_kind="apply",
+            approval_action=pending["approval_action"],
+            csrf_nonce=csrf,
+            decision="approve",
+            approver_principal=(
+                "home_assistant_admin_ingress:"
+                "synthetic-exact-image-acceptance-admin"
+            ),
+        )
+        if result.get("status") == "approved":
+            return result
+        require(
+            result.get("status") == "approval_pending",
+            "authority-v3 approval did not advance deterministically",
+        )
+        pending = result
+    raise AcceptanceFailure(
+        "authority-v3 approval did not reach a terminal grant"
+    )
+
+
+async def _seed_dispatched_lifecycle_recovery(
+    service: ChangeGovernanceService,
+    plan_snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    """Seed one crash-recovery boundary without invoking the provider."""
+
+    require(
+        plan_snapshot.get("policy_decision", {}).get("policy_class")
+        == "elevated_admin",
+        "lifecycle recovery fixture was not elevated",
+    )
+    require(
+        plan_snapshot.get("policy_decision", {}).get(
+            "required_acknowledgements"
+        )
+        == ["plan_approval", "elevated_risk_acknowledgement"],
+        "lifecycle recovery fixture omitted required acknowledgements",
+    )
+    await _grant_authority_v3_bundle(service, plan_snapshot)
+    plan_id = str(plan_snapshot["plan_id"])
+    plan_hash = str(plan_snapshot["plan_hash"])
+    plan = service.repository.get(plan_id)
+    require(
+        plan is not None and plan.operational is not None,
+        "approved lifecycle plan was not persisted",
+    )
+    assert plan is not None and plan.operational is not None
+    task, reused = service._resolve_task_for_apply(plan, plan_hash)
+    require(
+        task is not None and reused is False,
+        "lifecycle recovery fixture did not reserve one durable task",
+    )
+    assert task is not None
+    service._record_task_event(
+        task,
+        "preflight_started",
+        new_state=ExecutionTaskState.PREFLIGHT,
+        changes={"started_at": service._timestamp()},
+    )
+    service._active_task_ids_by_plan[plan.plan_id] = task.task_id
+    try:
+        service._consume_approval_bundle(plan)
+        attempted_at = service._timestamp()
+        plan.status = PlanStatus.APPLYING
+        plan.execution_outcome = "dispatching"
+        plan.apply_request_id = current_request_id()
+        plan.operational.dispatch.update(
+            {
+                "attempt_count": 1,
+                "dispatched": True,
+                "request_id": plan.apply_request_id,
+                "attempted_at": attempted_at,
+                "provider_response_received": True,
+                "provider_response_at": attempted_at,
+                "provider_result": {"result": "accepted"},
+            }
+        )
+        service._record(
+            plan,
+            f"{plan.operation.value}_dispatch_recorded",
+            "success",
+        )
+        service._record(
+            plan,
+            f"{plan.operation.value}_provider_completed",
+            "success",
+        )
+        plan.status = PlanStatus.VERIFICATION_REQUIRED
+        plan.execution_outcome = "verification_pending"
+        plan.operational.final_outcome = "verification_pending"
+        plan.operational.verification.status = "verification_pending"
+        service.repository.save(plan)
+    finally:
+        service._active_task_ids_by_plan.pop(plan.plan_id, None)
+
+    persisted = service.repository.get(plan.plan_id)
+    reserved = service.task_repository.get_for_plan(plan.plan_id)
+    require(
+        persisted is not None
+        and reserved is not None
+        and reserved.task_id == task.task_id,
+        "lifecycle recovery authority was not durably materialized",
+    )
+    assert persisted is not None and reserved is not None
+    service._require_policy_snapshot(persisted)
+    event_types = [event.event_type for event in reserved.events]
+    require(
+        {
+            "task_created",
+            "approval_consumed",
+            "dispatch_attempted",
+        }.issubset(event_types),
+        "lifecycle recovery task omitted transaction events",
+    )
+    require(
+        event_types.index("task_created")
+        < event_types.index("approval_consumed")
+        < event_types.index("dispatch_attempted"),
+        "lifecycle recovery task ordering was not durable",
+    )
+    require(
+        reserved.approval_reference.get("authority_version") == 3
+        and reserved.approval_reference.get("approval_bundle_state")
+        == "consumed"
+        and reserved.approval_reference.get("same_principal_confirmed")
+        is True
+        and len(reserved.provider_attempts) == 1,
+        "lifecycle recovery task omitted authority-v3 evidence",
+    )
+    return {
+        "plan_id": plan.plan_id,
+        "task_id": reserved.task_id,
+        "plan_hash": plan_hash,
+        "policy_decision_hash": (
+            persisted.policy_decision.policy_decision_hash
+            if persisted.policy_decision is not None
+            else None
         ),
     }
 
@@ -1471,16 +1641,9 @@ async def inspect_operational_lifecycle(
             "exact-image lifecycle plan omitted upstream readmission proof",
         )
         initial_hash = service.plan_hash(plan)
-        plan.approval.state = ApprovalState.CONSUMED
-        plan.status = PlanStatus.VERIFICATION_REQUIRED
-        plan.operational.dispatch.update(
-            {
-                "attempt_count": 1,
-                "dispatched": True,
-                "provider_response_received": True,
-            }
+        recovery_seed = await _seed_dispatched_lifecycle_recovery(
+            service, proposal["plan"]
         )
-        repository.save(plan)
         recovered = ChangeGovernanceService(
             ChangePlanRepository(root / "plans"),
             _AcceptanceLegacyGateway(),
@@ -1494,11 +1657,19 @@ async def inspect_operational_lifecycle(
             trigger="startup"
         )
         verified = repository.get(plan.plan_id)
+        verified_task = recovered.task_repository.get_for_plan(
+            plan.plan_id
+        )
         require(
             positive.get("completed") == 1
             and verified is not None
             and verified.status == PlanStatus.APPLIED
             and verified.operational is not None
+            and verified_task is not None
+            and verified_task.task_id == recovery_seed["task_id"]
+            and verified_task.state
+            == ExecutionTaskState.SUCCEEDED_VERIFIED
+            and len(verified_task.provider_attempts) == 1
             and verified.operational.verification.evidence.get(
                 "restart_proof"
             )
@@ -1530,16 +1701,9 @@ async def inspect_operational_lifecycle(
             drift_plan is not None and drift_plan.operational is not None,
             "binding-drift plan was not persisted",
         )
-        drift_plan.approval.state = ApprovalState.CONSUMED
-        drift_plan.status = PlanStatus.VERIFICATION_REQUIRED
-        drift_plan.operational.dispatch.update(
-            {
-                "attempt_count": 1,
-                "dispatched": True,
-                "provider_response_received": True,
-            }
+        await _seed_dispatched_lifecycle_recovery(
+            drift_service, drift_proposal["plan"]
         )
-        drift_service.repository.save(drift_plan)
         alias_settings = replace(
             settings,
             upstream_dashboard_mcp_url=(

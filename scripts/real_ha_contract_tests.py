@@ -644,10 +644,11 @@ def _assert_single_task_dispatch(
 async def _run_f2_policy_acceptance_contract(
     gateway: ConfigurationResourceGateway,
     token: str,
-) -> None:
+) -> dict[str, object]:
     """Exercise standard, elevated, and prohibited F2 policy in disposable HA."""
 
     observed = _ObservedConfigurationGateway(gateway)
+    scenario = "setup"
     with tempfile.TemporaryDirectory(
         prefix="f2-real-ha-contract-"
     ) as directory:
@@ -661,6 +662,7 @@ async def _run_f2_policy_acceptance_contract(
         )
         telemetry.caller_id = "f2-real-ha-contract-caller"
         try:
+            scenario = "standard_admin"
             standard = await service.create_configuration_plan(
                 title="F2 disposable standard plan",
                 description="Update one harmless helper configuration.",
@@ -681,6 +683,9 @@ async def _run_f2_policy_acceptance_contract(
             assert standard["policy_decision"]["policy_class"] == (
                 "standard_admin"
             )
+            assert standard["policy_decision"][
+                "required_acknowledgements"
+            ] == ["plan_approval"]
             assert len(observed.mutations) == 0
             standard_pending = service.approve(
                 standard["plan_id"], standard["plan_hash"]
@@ -716,7 +721,7 @@ async def _run_f2_policy_acceptance_contract(
             )
             assert standard_duplicate["status"] == "already_applied"
             assert standard_duplicate["task_id"] == standard_applied["task_id"]
-            assert standard_duplicate["redispatch_performed"] is False
+            assert standard_duplicate["task_reused"] is True
             assert len(observed.mutations) == 1
             standard_task = _assert_single_task_dispatch(
                 service,
@@ -727,7 +732,18 @@ async def _run_f2_policy_acceptance_contract(
                 event["event_type"] == "duplicate_apply_prevented"
                 for event in standard_task["lifecycle_events"]
             ) == 1
+            standard_events = [
+                event["event_type"]
+                for event in standard_task["lifecycle_events"]
+            ]
+            assert standard_events.index("task_created") < (
+                standard_events.index("approval_consumed")
+            ) < standard_events.index("dispatch_attempted")
+            assert standard_task["approval_reference"][
+                "approval_bundle_state"
+            ] == "consumed"
 
+            scenario = "elevated_admin"
             traces_before = await fetch_normalized_trace_list(
                 gateway.websocket_client.command,
                 RESOURCE_IDS["automation"],
@@ -757,10 +773,45 @@ async def _run_f2_policy_acceptance_contract(
             assert elevated["policy_decision"]["policy_class"] == (
                 "elevated_admin"
             )
+            assert elevated["policy_decision"]["risk_delta"] == "moderate"
+            assert elevated["policy_decision"][
+                "physical_consequence"
+            ] == "direct"
+            assert elevated["policy_decision"][
+                "required_acknowledgements"
+            ] == [
+                "plan_approval",
+                "elevated_risk_acknowledgement",
+            ]
             mutation_count = len(observed.mutations)
             elevated_pending = service.approve(
                 elevated["plan_id"], elevated["plan_hash"]
             )
+            _review, out_of_sequence_csrf = (
+                await service.issue_external_csrf(
+                    elevated["plan_id"],
+                    elevated_pending["challenge_id"],
+                )
+            )
+            try:
+                await service.decide_external_approval(
+                    plan_id=elevated["plan_id"],
+                    challenge_id=elevated_pending["challenge_id"],
+                    expected_plan_hash=elevated["plan_hash"],
+                    approval_kind="apply",
+                    approval_action=(
+                        "elevated_risk_acknowledgement"
+                    ),
+                    csrf_nonce=out_of_sequence_csrf,
+                    decision="approve",
+                    approver_principal=F2_ADMIN_A,
+                )
+            except GovernanceError as exc:
+                assert exc.code == ErrorCode.APPROVAL_SEQUENCE_FAILURE
+            else:
+                raise AssertionError(
+                    "elevated risk was acknowledged before plan approval"
+                )
             elevated_ack_pending = await _decide_f2_action(
                 service,
                 elevated,
@@ -839,6 +890,28 @@ async def _run_f2_policy_acceptance_contract(
             assert elevated_task["approval_reference"][
                 "same_principal_confirmed"
             ] is True
+            assert elevated_task["approval_reference"][
+                "bound_plan_hash"
+            ] == elevated["plan_hash"]
+            assert elevated_task["approval_reference"][
+                "policy_decision_hash"
+            ] == elevated["policy_decision"]["policy_decision_hash"]
+            acknowledgement = elevated_task["approval_reference"][
+                "elevated_risk_acknowledgement"
+            ]
+            assert acknowledgement["bound_plan_hash"] == elevated[
+                "plan_hash"
+            ]
+            assert acknowledgement["policy_decision_hash"] == elevated[
+                "policy_decision"
+            ]["policy_decision_hash"]
+            elevated_events = [
+                event["event_type"]
+                for event in elevated_task["lifecycle_events"]
+            ]
+            assert elevated_events.index("task_created") < (
+                elevated_events.index("approval_consumed")
+            ) < elevated_events.index("dispatch_attempted")
             traces_after = await fetch_normalized_trace_list(
                 gateway.websocket_client.command,
                 RESOURCE_IDS["automation"],
@@ -852,14 +925,19 @@ async def _run_f2_policy_acceptance_contract(
             )
             assert elevated_duplicate["status"] == "already_applied"
             assert elevated_duplicate["task_id"] == elevated_applied["task_id"]
-            assert elevated_duplicate["redispatch_performed"] is False
+            assert elevated_duplicate["task_reused"] is True
             assert len(observed.mutations) == mutation_count + 1
-            _assert_single_task_dispatch(
+            elevated_task = _assert_single_task_dispatch(
                 service,
                 elevated["plan_id"],
                 elevated_applied["task_id"],
             )
+            assert sum(
+                event["event_type"] == "duplicate_apply_prevented"
+                for event in elevated_task["lifecycle_events"]
+            ) == 1
 
+            scenario = "prohibited"
             prohibited = await service.create_configuration_plan(
                 title="F2 disposable prohibited plan",
                 description="Attempt to configure a safety-critical action.",
@@ -900,7 +978,46 @@ async def _run_f2_policy_acceptance_contract(
             assert service.list_execution_tasks(
                 plan_id=prohibited["plan_id"]
             )["count"] == 0
+            prohibited_plan = service.repository.get(
+                prohibited["plan_id"]
+            )
+            assert prohibited_plan is not None
+            assert prohibited_plan.approval.bundle_state == "prohibited"
+            assert prohibited_plan.approval.challenge_id is None
+            assert prohibited_plan.approval.state.value == "required"
             assert len(observed.mutations) == mutation_count + 1
+            return {
+                "completed_scenarios": [
+                    "standard_admin",
+                    "elevated_admin",
+                    "prohibited",
+                ],
+                "standard_task_id": standard_applied["task_id"],
+                "elevated_task_id": elevated_applied["task_id"],
+                "configuration_mutation_count": len(observed.mutations),
+                "fallback_count": 0,
+                "physical_actuation_observed": False,
+            }
+        except Exception as exc:
+            if scenario in {
+                "setup",
+                "standard_admin",
+                "elevated_admin",
+                "prohibited",
+            }:
+                setattr(exc, "contract_scenario", scenario)
+            if isinstance(exc, KeyError) and exc.args:
+                missing_key = exc.args[0]
+                if (
+                    isinstance(missing_key, str)
+                    and 0 < len(missing_key) <= 64
+                    and all(
+                        character.isalnum() or character in "_-"
+                        for character in missing_key
+                    )
+                ):
+                    setattr(exc, "contract_missing_key", missing_key)
+            raise
         finally:
             end_request(context)
 
@@ -1103,11 +1220,30 @@ def main() -> int:
             if details.get(key) is not None
         }
         error_code = getattr(getattr(exc, "code", None), "value", None)
+        scenario = getattr(exc, "contract_scenario", "unknown")
+        if scenario not in {
+            "setup",
+            "standard_admin",
+            "elevated_admin",
+            "prohibited",
+        }:
+            scenario = "unknown"
+        missing_key = getattr(exc, "contract_missing_key", None)
+        if (
+            not isinstance(missing_key, str)
+            or not (0 < len(missing_key) <= 64)
+            or any(
+                not (character.isalnum() or character in "_-")
+                for character in missing_key
+            )
+        ):
+            missing_key = None
         print(
             "Real Home Assistant contract failure: "
             f"phase={getattr(exc, 'contract_phase', 'unknown')} "
+            f"scenario={scenario} "
             f"type={type(exc).__name__} code={error_code or 'unclassified'} "
-            f"details={safe_details}",
+            f"missing_key={missing_key or 'none'} details={safe_details}",
             file=sys.stderr,
         )
         return 1
