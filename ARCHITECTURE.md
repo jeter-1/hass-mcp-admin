@@ -1,5 +1,22 @@
 # HA MCP Engineering Server Architecture
 
+## 2.2.0-beta.6 policy and elevated-approval semantics
+
+F2 adds a deterministic runtime policy decision to every new governed plan.
+Risk delta, physical consequence, and approval policy remain independent,
+server-derived dimensions bound into the immutable plan hash. Standard plans
+require one Home Assistant administrator approval. Elevated plans require a
+separate plan approval and elevated-risk acknowledgement from the same
+authenticated administrator. Prohibited plans cannot create actionable
+approval or execution authority.
+
+Authority version 3 is revalidated immediately before dispatch and is consumed
+only after the durable F1 task owns the plan. Task schema remains 1; startup
+recovery remains readback-only and duplicate apply cannot redispatch. F2 adds
+no resource type, provider, arbitrary service call, update/recovery execution,
+transaction graph, compensation, generalized verification, or fallback. See
+[`ADR-012`](docs/architecture/ADR-012-POLICY-RISK-AND-ELEVATED-APPROVAL.md).
+
 ## 2.2.0-beta.5 update and recovery preflight foundation
 
 E1 adds a runtime-inert, provider-free evaluator for already-collected update

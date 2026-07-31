@@ -3,7 +3,7 @@
 > Stable v1.1.2 under `hass_mcp_admin` is retained as historical repository
 > source but is operationally retired. It is not covered by the Engineering
 > dependency audit and is not a supported rollback option. The Engineering v2
-> add-on is developed in place at `2.2.0-beta.5`, based on the exact
+> add-on is developed in place at `2.2.0-beta.6`, based on the exact
 > `v2.0.1` release, at
 > [`hass_mcp_engineering_beta/`](hass_mcp_engineering_beta/) on port `8100`.
 > Its existing technical “Beta” identity is retained to avoid a slug or runtime
@@ -42,8 +42,12 @@
 > Dev15 contract-level compatibility, partial quarantine, dashboard
 > independence, and retry-cadence separation are documented in
 > [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md).
-> The current Engineering development version is `2.2.0-beta.5`. Its inert
-> update-and-recovery preflight foundation is recorded in
+> The current Engineering development version is `2.2.0-beta.6`. Its F2
+> policy, risk, and elevated-approval semantics are recorded in
+> [`ADR-012`](docs/architecture/ADR-012-POLICY-RISK-AND-ELEVATED-APPROVAL.md),
+> [`docs/V2_2_0_BETA6_RELEASE_NOTES.md`](docs/V2_2_0_BETA6_RELEASE_NOTES.md),
+> and [`docs/V2_2_0_BETA6_ACCEPTANCE.md`](docs/V2_2_0_BETA6_ACCEPTANCE.md).
+> The inert update-and-recovery preflight foundation remains recorded in
 > [`ADR-011`](docs/architecture/ADR-011-GOVERNED-UPDATE-RECOVERY-PREFLIGHT.md),
 > [`docs/V2_2_0_BETA5_RELEASE_NOTES.md`](docs/V2_2_0_BETA5_RELEASE_NOTES.md),
 > and [`docs/V2_2_0_BETA5_ACCEPTANCE.md`](docs/V2_2_0_BETA5_ACCEPTANCE.md).
@@ -233,12 +237,13 @@ outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 
 ## Engineering v2 milestones
 
-The current Engineering development version is `2.2.0-beta.5`, based on the
-accepted `2.2.0-beta.4` K1 foundation. It adds an inert update-and-recovery
-preflight evaluator without collecting evidence or changing runtime behavior.
+The current Engineering development version is `2.2.0-beta.6`, based on the
+accepted `2.2.0-beta.5` E1 foundation. It adds server-derived F2 policy and
+same-administrator elevated acknowledgement without adding a resource type,
+provider, tool, arbitrary service call, or fallback.
 The roadmap and acceptance authority are
 [`docs/2_1_ROADMAP.md`](docs/2_1_ROADMAP.md) and
-[`docs/V2_2_0_BETA5_ACCEPTANCE.md`](docs/V2_2_0_BETA5_ACCEPTANCE.md). Determine advertised
+[`docs/V2_2_0_BETA6_ACCEPTANCE.md`](docs/V2_2_0_BETA6_ACCEPTANCE.md). Determine advertised
 release state from authoritative version metadata and
 `scripts/codex-context.py`, not from this milestone narrative. Engineering has
 48 statically registered

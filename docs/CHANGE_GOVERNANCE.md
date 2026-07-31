@@ -1,5 +1,26 @@
 # Beta automation change governance
 
+## 2.2.0-beta.6 F2 policy and approval authority
+
+Every new governed plan contains one deterministic server-derived `f2-v1`
+policy snapshot. Risk delta (`none` through `critical`) and physical
+consequence (`none`, `indirect`, `direct`, or `safety_critical`) remain
+independent. The resulting class is `standard_admin`, `elevated_admin`, or
+`prohibited`; callers cannot select or lower it.
+
+Authority version 3 requires one `plan_approval` for standard plans. Elevated
+plans require plan approval followed by a separate
+`elevated_risk_acknowledgement` from the same authenticated Home Assistant
+administrator. This is not two-person control. Prohibited plans cannot create
+actionable approval, an execution task, or provider dispatch.
+
+The complete policy snapshot is bound into the immutable plan hash and is
+recomputed before approval and dispatch. Approval consumption occurs only
+after the durable F1 task owns the exact plan. Task schema version 1,
+no-blind-redispatch, readback-only reconciliation, operation-specific
+verification, provider routing, and zero fallback remain unchanged. See
+[`ADR-012`](architecture/ADR-012-POLICY-RISK-AND-ELEVATED-APPROVAL.md).
+
 ## 2.1A Beta 2 operational plans
 
 Four contract-v3 operational proposal types now share the same immutable
@@ -32,11 +53,12 @@ complete-evidence predicate validates current and historical records; an
 incomplete raw outage flag is never authority. Reconnection is retained only
 with the explicit timestamp from a successful post-outage Core identity read.
 
-The existing blanket prohibition on high-risk automation changes is unchanged.
-Only the exact add-on and Home Assistant restart operation types have reviewed
-high-risk infrastructure policy and external-approval authority. This does not
-authorize arbitrary services, add-on operations, restore, deletion, fallback,
-or 2.1B risk-delta behavior.
+Beta 6 supersedes the earlier blanket high-risk rejection only for an already
+supported, normalized configuration operation that policy can classify as
+`elevated_admin`. Critical, safety-critical, unsupported, destructive,
+arbitrary, or unclassifiable operations remain prohibited. This does not add a
+resource type, arbitrary service, add-on operation, restore, deletion, or
+fallback.
 
 ## RC2 governance freeze
 
@@ -84,9 +106,11 @@ complete ordered operation list, dependencies, typed targets, current-state
 fingerprints, proposed hashes, normalization versions, risk, expiry, and
 approval authority into one immutable plan hash.
 
-Planning performs reads, validation, normalization, diffs, and risk assessment
-only. `approve_change_plan` still requests one exact-hash external review and
-never grants authority through MCP. The Home Assistant administrator sees the
+Planning performs reads, validation, normalization, diffs, risk assessment,
+and F2 policy only. `approve_change_plan` requests the first exact-hash
+external action and never grants authority through MCP. Standard plans require
+one action; elevated plans require the ordered same-administrator action pair.
+The Home Assistant administrator sees the
 complete bounded, configuration-free operation projection in the Approval tab.
 For scripts and automations, that projection includes ordered trigger,
 condition, service/action, explicit target, and key primitive-data semantics.
@@ -96,7 +120,8 @@ failure, and has no automatic or batch rollback.
 
 Before the first write, apply locks and re-reads every typed target. Any stale
 target or unavailable resource provider stops before approval consumption and
-with zero writes. After those checks, the single approval is consumed once and
+with zero writes. After those checks, the complete authority-v3 bundle is
+consumed once and
 operations execute in order. Because Home Assistant and its UI do not share the
 Engineering process locks, each target is re-read again immediately before its
 own operation; a later stale target stops without overwriting it and preserves
@@ -253,10 +278,13 @@ Unresolved dynamic service or target construction is conservatively medium with 
 warning and structured evidence. Evidence identifies the triggering field and category
 without echoing complete target identifiers or secrets.
 
-Low and medium plans require approval and may execute. High-risk plans remain
-visible with deterministic reasons, but `approve_change_plan` and
-`apply_change_plan` reject them with `high_risk_change_rejected`. Caller text or
-an approval note cannot lower calculated risk.
+Low and moderate configuration changes without direct physical consequence use
+`standard_admin`. An already-supported high-risk or direct-consequence
+configuration change uses `elevated_admin`. Critical, safety-critical,
+unsupported, destructive, unknown, or policy-evasive changes are
+`prohibited`. Caller text or an approval note cannot lower calculated policy.
+Planning and configuration apply store a future automation action; they do not
+trigger it.
 
 Governed configuration reads, writes, verification, and rollback are
 `direct_ha_required` facilitator capabilities. They do not route through ordinary
@@ -264,9 +292,9 @@ service execution or fall back to an unverified write. See ADR-002 for provider 
 
 ## External approval and expiration
 
-Approval authority version 2 is external to MCP. The client must pass the exact
+Approval authority version 3 is external to MCP. The client must pass the exact
 `plan_hash` returned by planning or rollback request to
-`approve_change_plan`, but that call only creates or returns a 15-minute bounded
+`approve_change_plan`, but that call only creates or returns a 60-minute bounded
 external review challenge and reports `approval_pending`. It never marks the
 plan approved. Repeated requests are idempotent and do not extend an active
 challenge. `approval_note` is untrusted request context, not human approval.
@@ -274,9 +302,12 @@ challenge. `approval_note` is untrusted request context, not human approval.
 An authenticated Home Assistant administrator reviews the bounded escaped plan
 through the admin-only Ingress panel on internal port `8110`. Approval or
 rejection is POST-only, protected by a one-time CSRF nonce, and revalidates the
-exact persisted plan/version/hash/kind/target/operation/risk. Approval records
-the honest Ingress principal and principal-separation flag. It is single-use.
-Rejection is terminal. A plan defaults to a 60-minute expiry; clients may
+exact persisted plan/version/hash/policy/action/kind/target/operation/risk.
+Approval records the honest Ingress principal and principal-separation flag. A
+standard plan becomes fully approved after that action. An elevated plan then
+creates a separate acknowledgement challenge that only the same administrator
+may complete. It is single-use.
+Rejection is terminal. A plan defaults to a 120-minute expiry; clients may
 request 5 to 1,440 minutes. Neither a plan nor a challenge can be approved after
 expiry.
 
@@ -295,11 +326,13 @@ routes are absent from port `8100`. See
 
 ## Apply, verification, and concurrency
 
-`apply_change_plan` rechecks expiry, approval authority version, external
-channel/principal and separation flag, approval use, kind, hash, risk, and the
-live current-state fingerprint. It then obtains a per-automation lock, captures
-the pre-change snapshot, consumes approval, writes through Home Assistant's
-automation configuration endpoint, and reads the stored automation back.
+`apply_change_plan` rechecks expiry, immutable plan and policy hashes, current
+policy recomputation, authority version, external channel/principal and
+separation flag, required action sequence, same-administrator evidence,
+approval use and kind, and the live current-state fingerprint. It reserves the
+single durable F1 task before consumption, obtains the target lock, captures
+the pre-change evidence, consumes the complete bundle, writes through Home
+Assistant's configuration endpoint, and reads the stored resource back.
 
 Verification requires target existence, an explicitly matching automation ID
 when Home Assistant returns one, normalized desired-versus-read-back behavioral
@@ -361,7 +394,9 @@ Lifecycle events include `change_plan_created`,
 `external_approval_consumed`.
 
 Events contain only request ID, plan ID, target type/ID, operation, risk,
-result status, stable error code, duration, caller ID, and approval state. The
+result status, stable error code, duration, caller ID, approval state, bounded
+policy class, risk delta, physical consequence, policy version, approval
+action, and same-principal requirement/result. The
 gateway excludes proposed configs, caller context, approval notes, and hashes
 from generic audit parameters. `get_server_health` returns bounded governance
 counts and storage status without plan content.
@@ -379,6 +414,12 @@ external_approval_required
 approval_authority_mismatch
 external_approval_invalid
 external_approval_expired
+policy_snapshot_required
+policy_snapshot_mismatch
+prohibited_change
+elevated_risk_acknowledgement_required
+approval_principal_mismatch
+approval_sequence_failure
 stale_target_state
 change_in_progress
 unsupported_change_operation
@@ -440,7 +481,15 @@ Clients should always present diff, risk reasons, expiry, and exact hash before
 external review. Create a new plan after rejection, expiry, stale-state rejection, ambiguous apply
 failure, or external target changes.
 
-## Beta 25 migration
+## Beta 6 authority migration
+
+New plans use approval authority version 3 and carry a validated F2 policy
+snapshot. Authority-version-1 and authority-version-2 plans remain readable,
+but active legacy plans cannot receive new approval, create a task, or apply.
+They are not silently upgraded or rehashed; recreate active plans. Terminal
+historical plans and tasks remain readable without fabricated F2 evidence.
+
+## Historical Beta 25 migration
 
 New plans use approval authority version 2. Beta 24 pending or MCP-approved
 records use legacy authority version 1 (including a missing field) and cannot be

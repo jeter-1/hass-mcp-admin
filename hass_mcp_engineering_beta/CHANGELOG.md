@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.2.0-beta.6 - Policy, risk, and elevated approval semantics
+
+- Add deterministic, server-derived `risk_delta`, independent
+  `physical_consequence`, and `standard_admin`, `elevated_admin`, or
+  `prohibited` policy decisions to every new immutable governed plan.
+- Bind the complete F2 policy snapshot and policy-decision hash into the plan
+  hash; validation, approval, apply, and startup recovery fail closed on
+  missing or mismatched authority.
+- Advance new approvals to authority version 3. Standard plans require one
+  Home Assistant administrator approval. Elevated plans require a separate
+  plan approval followed by an elevated-risk acknowledgement from the same
+  authenticated administrator; this is not two-person control.
+- Recheck policy and the complete approval bundle immediately before dispatch,
+  create or reserve the durable F1 task before consumption, and retain bounded
+  approval evidence without changing task schema version 1.
+- Keep historical authority-v2 records readable but non-actionable, prohibit
+  unknown, unsupported, destructive, critical, safety-critical, or evasive
+  plans, and preserve one-task ownership, no blind redispatch, provider-response
+  truthfulness, exact provider routing, and zero fallback.
+- Add disposable pinned-Core contracts for standard, elevated, and prohibited
+  configuration policies. Planning never triggers the configured future
+  physical action, and duplicate apply performs no second write.
+- Preserve 48 local Engineering tools, the configured 26 exact-admitted
+  delegated reads, stable v1.1.2, and the existing upstream fingerprints.
+
 ## 2.2.0-beta.5 - Update and recovery preflight foundation
 
 - Add immutable, deterministic models for explicit update targets, installed

@@ -1,6 +1,6 @@
 # Governed operational administration
 
-Version: `2.2.0-beta.5`
+Version: `2.2.0-beta.6`
 
 The accepted 2.1A lifecycle retains four public proposal tools:
 `create_backup_plan`, `create_reload_plan`, `create_addon_restart_plan`, and
@@ -9,12 +9,28 @@ The accepted 2.1A lifecycle retains four public proposal tools:
 `apply_change_plan`. Planning, approval, dispatch, and verification remain
 separate lifecycle steps.
 
+## F2 policy and approval boundary
+
+Version `2.2.0-beta.6` binds one deterministic `f2-v1` policy decision to every
+new operational plan. Full backup and controlled approved-domain reload are
+`standard_admin`. Exact add-on restart and Home Assistant restart are
+`elevated_admin`; they require plan approval followed by a separate
+elevated-risk acknowledgement from the same Home Assistant administrator.
+This is not two-person control.
+
+The policy snapshot independently records risk delta and physical consequence.
+It is recomputed before approval and immediately before dispatch. Missing,
+mismatched, authority-v2, prohibited, expired, rejected, or incomplete approval
+evidence cannot create a task or reach a provider. F2 does not add another
+operational action, provider, fallback, or verification contract.
+
 ## Durable execution tasks
 
-Version `2.2.0-beta.5` keeps every change plan immutable and hash-stable while
+Version `2.2.0-beta.6` keeps every change plan immutable and hash-stable while
 recording mutable apply and recovery facts in one separate execution task.
-External approval remains a separate exact-hash authority. It is neither copied
-into the task nor replaced by task state.
+External approval remains a separate exact-hash authority. The task retains a
+bounded non-principal reference to the consumed authority-v3 bundle for audit
+and recovery, but task state never replaces or grants approval.
 
 For a newly executed plan, `apply_change_plan` creates or reuses one task before
 preflight and returns its `task_id`, state, and reuse status additively. The
@@ -110,15 +126,19 @@ material.
 inventory, normalizes a safe name, records medium infrastructure risk,
 persists a contract-v3 immutable plan, and performs no write.
 
-An external Home Assistant administrator must approve the exact plan hash
-through the existing Ingress authority. Immediately before dispatch,
-`apply_change_plan` checks the hash, one-time approval, expiration, provider
-contract, Home Assistant inventory, and global one-backup lock. A changed
-baseline is stale and requires a new plan.
+An external Home Assistant administrator must approve the exact plan and policy
+hashes through the existing Ingress authority. Full backup is
+`standard_admin`; one plan approval is required. Immediately before dispatch,
+`apply_change_plan` checks the hashes, complete one-time bundle, expiration,
+provider contract, Home Assistant inventory, durable task ownership, and
+global one-backup lock. A changed baseline is stale and requires a new plan.
 
-Dispatch evidence, approval consumption, request identity, and attempt number
-are persisted together in one atomic lifecycle record before the provider
-call. Exactly one dispatch is permitted. A definitive permission, rejection,
+The durable task is created or reused before approval consumption. Dispatch
+evidence, approval consumption, request identity, and attempt number are then
+persisted in the plan lifecycle before the provider call and projected to that
+same task. An interruption can leave an incomplete projection but cannot leave
+consumed approval without a reserved task owner. Exactly one dispatch is
+permitted. A definitive permission, rejection,
 or operation-failure response is terminal.
 When transport loss or timeout means dispatch may have occurred, the plan
 becomes `verification_required`; later calls resume readback only and never
@@ -287,8 +307,9 @@ reconnection boolean alone.
 
 ## Durable reconciliation
 
-Before any action call, immutable dispatch intent, request ID, attempt count,
-and approval consumption are committed transactionally. Provider response loss
+Before any action call, one durable task owner exists and immutable dispatch
+intent, request ID, attempt count, and approval consumption are committed.
+Provider response loss
 after that boundary becomes `verification_pending`; it does not reopen write
 authority. Startup recovery immediately attempts bounded readback-only
 verification, and the background supervisor retries plans that remain pending
