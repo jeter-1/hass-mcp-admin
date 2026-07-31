@@ -125,6 +125,92 @@ class _F2AcceptanceGateway:
         return {"result": "valid", "errors": None, "warnings": None}
 
 
+class _RejectingF2AcceptanceGateway(_F2AcceptanceGateway):
+    """Return one explicit bounded HTTP rejection for the elevated write."""
+
+    async def write(
+        self, action, resource_type, resource_id, approved_config
+    ):
+        if resource_type == "automation":
+            from ha_mcp_engineering.errors import HomeAssistantApiError
+
+            raise HomeAssistantApiError(
+                "SECRET_RESPONSE_BODY",
+                details={
+                    "status": 400,
+                    "method": "POST",
+                    "endpoint_category": "config/automation",
+                    "response_body": "SECRET_RESPONSE_BODY",
+                    "authorization": "Bearer SECRET_TOKEN",
+                    "administrator_identity": "SECRET_ADMIN",
+                    "approval_token": "SECRET_APPROVAL",
+                    "full_plan_id": "SECRET_FULL_PLAN_IDENTIFIER",
+                },
+            )
+        return await super().write(
+            action, resource_type, resource_id, approved_config
+        )
+
+
+class _CanonicalizingF2AcceptanceGateway(_F2AcceptanceGateway):
+    """Accept the write but return a different bounded canonical form."""
+
+    async def write(
+        self, action, resource_type, resource_id, approved_config
+    ):
+        stored = copy.deepcopy(approved_config)
+        if resource_type == "automation":
+            for step in stored.get("action", []):
+                if isinstance(step, dict) and "service" in step:
+                    step["action"] = step.pop("service")
+        return await super().write(
+            action, resource_type, resource_id, stored
+        )
+
+
+class _IndeterminateF2AcceptanceGateway(_F2AcceptanceGateway):
+    """Lose the elevated write result and make exact readback unavailable."""
+
+    def __init__(self, contract):
+        super().__init__(contract)
+        self.elevated_write_attempted = False
+
+    async def read(self, resource_type, resource_id):
+        if resource_type == "automation" and self.elevated_write_attempted:
+            from ha_mcp_engineering.errors import (
+                HomeAssistantUnavailableError,
+            )
+
+            raise HomeAssistantUnavailableError(
+                "SECRET_READBACK_FAILURE",
+                details={
+                    "method": "GET",
+                    "endpoint_category": "config/automation",
+                },
+            )
+        return await super().read(resource_type, resource_id)
+
+    async def write(
+        self, action, resource_type, resource_id, approved_config
+    ):
+        if resource_type == "automation":
+            from ha_mcp_engineering.errors import (
+                HomeAssistantUnavailableError,
+            )
+
+            self.elevated_write_attempted = True
+            raise HomeAssistantUnavailableError(
+                "SECRET_WRITE_FAILURE",
+                details={
+                    "method": "POST",
+                    "endpoint_category": "config/automation",
+                },
+            )
+        return await super().write(
+            action, resource_type, resource_id, approved_config
+        )
+
+
 class RealHomeAssistantDev14GateTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -584,6 +670,27 @@ class RealHomeAssistantF2RunnerTests(unittest.IsolatedAsyncioTestCase):
         cls.contract = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.contract)
 
+    async def _capture_f2_failure(self, gateway):
+        no_traces = SimpleNamespace(headers=[])
+        with patch.object(
+            self.contract,
+            "fetch_normalized_trace_list",
+            new=AsyncMock(return_value=no_traces),
+        ):
+            with self.assertRaises(self.contract.GovernanceError) as raised:
+                await self.contract._run_f2_policy_acceptance_contract(
+                    gateway,
+                    "synthetic-f2-runner-token",
+                )
+        failure = raised.exception
+        self.assertEqual(
+            failure.code,
+            self.contract.ErrorCode.CONFIGURATION_PARTIAL_FAILURE,
+        )
+        diagnostic = getattr(failure, "contract_diagnostic", None)
+        self.assertIsInstance(diagnostic, dict)
+        return failure, diagnostic
+
     async def test_all_f2_scenarios_complete_without_redispatch_or_actuation(self):
         gateway = _F2AcceptanceGateway(self.contract)
         no_traces = SimpleNamespace(headers=[])
@@ -605,6 +712,227 @@ class RealHomeAssistantF2RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["fallback_count"], 0)
         self.assertFalse(result["physical_actuation_observed"])
         self.assertEqual(gateway.write_count, 2)
+
+    async def test_http_rejection_has_bounded_transport_diagnostic(self):
+        failure, diagnostic = await self._capture_f2_failure(
+            _RejectingF2AcceptanceGateway(self.contract)
+        )
+
+        self.assertEqual(
+            diagnostic["diagnostic_classification"],
+            "transport_rejected",
+        )
+        self.assertEqual(diagnostic["scenario"], "elevated_admin")
+        self.assertEqual(
+            diagnostic["operation_id"], "elevated_automation_update"
+        )
+        self.assertTrue(diagnostic["write_attempted"])
+        self.assertFalse(diagnostic["write_completed"])
+        self.assertTrue(diagnostic["readback_attempted"])
+        self.assertTrue(diagnostic["readback_completed"])
+        self.assertFalse(diagnostic["desired_state_proven"])
+        self.assertEqual(diagnostic["attempted_write_count"], 1)
+        self.assertEqual(diagnostic["successful_write_count"], 0)
+        self.assertEqual(diagnostic["verified_write_count"], 0)
+        self.assertEqual(diagnostic["ambiguous_write_count"], 1)
+        self.assertEqual(diagnostic["task_state"], "failed_post_dispatch")
+        self.assertEqual(
+            diagnostic["task_terminal_outcome"], "failed_post_dispatch"
+        )
+        self.assertTrue(diagnostic["approval_consumed"])
+        self.assertEqual(diagnostic["provider_attempt_count"], 1)
+        self.assertFalse(diagnostic["provider_response_received"])
+        self.assertEqual(diagnostic["observed_mutation"], "not_recorded")
+        self.assertEqual(
+            diagnostic["cause_chain"][-1],
+            {
+                "exception_type": "HomeAssistantApiError",
+                "error_code": "home_assistant_api_error",
+                "http_status": 400,
+                "http_method": "POST",
+                "endpoint_category": "config/automation",
+            },
+        )
+        rendered = repr(diagnostic)
+        for unsafe in (
+            "SECRET_RESPONSE_BODY",
+            "SECRET_TOKEN",
+            "SECRET_ADMIN",
+            "SECRET_APPROVAL",
+            "SECRET_FULL_PLAN_IDENTIFIER",
+            "synthetic-f2-runner-token",
+            "light.turn_on",
+            "dev14_real_contract_trigger",
+            '"condition"',
+        ):
+            self.assertNotIn(unsafe, rendered)
+        self.assertEqual(
+            failure.code,
+            self.contract.ErrorCode.CONFIGURATION_PARTIAL_FAILURE,
+        )
+
+    async def test_successful_write_readback_mismatch_is_distinguished(self):
+        _failure, diagnostic = await self._capture_f2_failure(
+            _CanonicalizingF2AcceptanceGateway(self.contract)
+        )
+
+        self.assertEqual(
+            diagnostic["diagnostic_classification"],
+            "write_completed_readback_mismatch",
+        )
+        self.assertTrue(diagnostic["write_attempted"])
+        self.assertTrue(diagnostic["write_completed"])
+        self.assertTrue(diagnostic["readback_attempted"])
+        self.assertTrue(diagnostic["readback_completed"])
+        self.assertFalse(diagnostic["desired_state_proven"])
+        self.assertEqual(diagnostic["attempted_write_count"], 1)
+        self.assertEqual(diagnostic["successful_write_count"], 1)
+        self.assertEqual(diagnostic["verified_write_count"], 0)
+        self.assertEqual(diagnostic["ambiguous_write_count"], 0)
+        self.assertEqual(diagnostic["mismatch_categories"], ["actions"])
+        self.assertEqual(diagnostic["observed_mutation"], "recorded")
+        self.assertEqual(diagnostic["cause_chain"], [
+            {
+                "exception_type": "GovernanceError",
+                "error_code": "configuration_partial_failure",
+            }
+        ])
+
+    async def test_indeterminate_write_and_failed_readback_remain_unknown(self):
+        _failure, diagnostic = await self._capture_f2_failure(
+            _IndeterminateF2AcceptanceGateway(self.contract)
+        )
+
+        self.assertEqual(
+            diagnostic["diagnostic_classification"],
+            "write_outcome_indeterminate",
+        )
+        self.assertTrue(diagnostic["write_attempted"])
+        self.assertFalse(diagnostic["write_completed"])
+        self.assertTrue(diagnostic["readback_attempted"])
+        self.assertFalse(diagnostic["readback_completed"])
+        self.assertFalse(diagnostic["desired_state_proven"])
+        self.assertEqual(diagnostic["ambiguous_write_count"], 1)
+        self.assertEqual(diagnostic["observed_mutation"], "not_recorded")
+        self.assertNotIn(
+            "http_status",
+            diagnostic["cause_chain"][-1],
+        )
+
+    def test_cleanup_failure_is_bounded_without_masking_primary_failure(self):
+        failure = self.contract.GovernanceError(
+            self.contract.ErrorCode.CONFIGURATION_PARTIAL_FAILURE
+        )
+        failure.contract_diagnostic = {
+            "diagnostic_classification": "write_outcome_indeterminate"
+        }
+        cleanup_failure = RuntimeError("SECRET_CLEANUP_FAILURE")
+
+        self.contract._attach_cleanup_evidence(
+            failure,
+            attempted=True,
+            succeeded=False,
+            failure=cleanup_failure,
+        )
+
+        self.assertEqual(
+            failure.code,
+            self.contract.ErrorCode.CONFIGURATION_PARTIAL_FAILURE,
+        )
+        self.assertTrue(failure.contract_diagnostic["cleanup_attempted"])
+        self.assertFalse(failure.contract_diagnostic["cleanup_succeeded"])
+        self.assertEqual(
+            failure.contract_diagnostic["cleanup_failure_category"],
+            "RuntimeError",
+        )
+        self.assertNotIn(
+            "SECRET_CLEANUP_FAILURE", repr(failure.contract_diagnostic)
+        )
+
+    def test_exception_chain_is_capped_redacted_and_cycle_safe(self):
+        errors = [RuntimeError(f"SECRET_CHAIN_{index}") for index in range(7)]
+        for current, cause in zip(errors, errors[1:]):
+            current.__cause__ = cause
+        errors[-1].__cause__ = errors[-2]
+        errors[1].details = {
+            "status": 503,
+            "method": "POST",
+            "endpoint_category": "config/automation",
+            "response_body": "SECRET_RESPONSE_BODY",
+            "authorization": "Bearer SECRET_TOKEN",
+        }
+
+        chain = self.contract._bounded_exception_chain(errors[0])
+        rendered = repr(chain)
+
+        self.assertEqual(len(chain), 5)
+        self.assertEqual(chain[1]["http_status"], 503)
+        self.assertEqual(chain[1]["http_method"], "POST")
+        self.assertEqual(
+            chain[1]["endpoint_category"], "config/automation"
+        )
+        for unsafe in (
+            "SECRET_CHAIN",
+            "SECRET_RESPONSE_BODY",
+            "SECRET_TOKEN",
+        ):
+            self.assertNotIn(unsafe, rendered)
+
+    def test_diagnostic_identifiers_are_shortened(self):
+        plan_id = "planidentifier0123456789"
+        task_id = "taskidentifier0123456789"
+
+        self.assertEqual(
+            self.contract._short_diagnostic_identifier(plan_id),
+            plan_id[:12],
+        )
+        self.assertEqual(
+            self.contract._short_diagnostic_identifier(task_id),
+            task_id[:12],
+        )
+        rendered = repr(
+            {
+                "plan_id_short": (
+                    self.contract._short_diagnostic_identifier(plan_id)
+                ),
+                "task_id_short": (
+                    self.contract._short_diagnostic_identifier(task_id)
+                ),
+            }
+        )
+        self.assertNotIn(plan_id, rendered)
+        self.assertNotIn(task_id, rendered)
+
+    def test_main_emits_deterministic_bounded_diagnostic_json(self):
+        failure = self.contract.GovernanceError(
+            self.contract.ErrorCode.CONFIGURATION_PARTIAL_FAILURE
+        )
+        failure.contract_phase = "f2_policy_acceptance"
+        failure.contract_scenario = "elevated_admin"
+        failure.contract_diagnostic = {
+            "scenario": "elevated_admin",
+            "operation_id": "elevated_automation_update",
+            "diagnostic_classification": "transport_rejected",
+        }
+        stderr = io.StringIO()
+
+        with patch.object(
+            self.contract,
+            "run_contracts",
+            new=AsyncMock(side_effect=failure),
+        ), redirect_stderr(stderr):
+            result = self.contract.main()
+
+        self.assertEqual(result, 1)
+        diagnostic = stderr.getvalue()
+        self.assertIn("code=configuration_partial_failure", diagnostic)
+        self.assertIn(
+            'diagnostic={"diagnostic_classification":'
+            '"transport_rejected","operation_id":'
+            '"elevated_automation_update","scenario":'
+            '"elevated_admin"}',
+            diagnostic,
+        )
 
     def test_missing_fixture_key_is_reported_with_bounded_context(self):
         failure = KeyError("approval_reference")

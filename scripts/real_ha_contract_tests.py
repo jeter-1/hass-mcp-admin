@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import json
 import os
 from pathlib import Path
 import secrets
 import sys
 import tempfile
+from typing import Any
 
 import aiohttp
 
@@ -164,6 +166,408 @@ F2_PROHIBITED_AUTOMATION_CONFIG = {
 
 F2_ADMIN_A = "home_assistant_admin_ingress:disposable-f2-admin-a"
 F2_ADMIN_B = "home_assistant_admin_ingress:disposable-f2-admin-b"
+
+_DIAGNOSTIC_ID_PREFIX_LENGTH = 12
+_DIAGNOSTIC_MAX_CAUSE_DEPTH = 5
+_DIAGNOSTIC_MAX_MISMATCHES = 10
+_DIAGNOSTIC_MAX_TEXT_LENGTH = 128
+_SAFE_HTTP_METHODS = frozenset(
+    {"DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"}
+)
+_SAFE_PROVIDER_CATEGORIES = frozenset(
+    {
+        "configuration_invalid",
+        "indeterminate_dispatch",
+        "invalid_request",
+        "invalid_response",
+        "operation_failed",
+        "operation_rejected",
+        "permission_failure",
+        "protocol_error",
+        "provider_error",
+        "provider_timeout",
+        "provider_unavailable",
+        "service_unavailable",
+    }
+)
+
+
+def _bounded_diagnostic_token(
+    value: object,
+    *,
+    maximum: int = _DIAGNOSTIC_MAX_TEXT_LENGTH,
+    punctuation: str = "_-/.:",
+) -> str | None:
+    """Project one bounded machine-owned token, never arbitrary text."""
+
+    if not isinstance(value, str) or not (0 < len(value) <= maximum):
+        return None
+    if any(
+        not (character.isalnum() or character in punctuation)
+        for character in value
+    ):
+        return None
+    return value
+
+
+def _short_diagnostic_identifier(value: object) -> str | None:
+    """Return only the bounded prefix of one opaque repository identifier."""
+
+    token = _bounded_diagnostic_token(value, punctuation="_-")
+    return (
+        token[:_DIAGNOSTIC_ID_PREFIX_LENGTH]
+        if token is not None
+        else None
+    )
+
+
+def _bounded_error_code(value: object) -> str | None:
+    candidate = getattr(value, "value", value)
+    return _bounded_diagnostic_token(
+        candidate,
+        maximum=64,
+        punctuation="_-",
+    )
+
+
+def _bounded_exception_chain(error: BaseException) -> list[dict[str, object]]:
+    """Return a fixed, redacted projection of a bounded exception chain."""
+
+    chain: list[dict[str, object]] = []
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while (
+        current is not None
+        and len(chain) < _DIAGNOSTIC_MAX_CAUSE_DEPTH
+        and id(current) not in seen
+    ):
+        seen.add(id(current))
+        item: dict[str, object] = {
+            "exception_type": (
+                _bounded_diagnostic_token(
+                    type(current).__name__, punctuation="_"
+                )
+                or "unknown"
+            )
+        }
+        code = _bounded_error_code(getattr(current, "code", None))
+        if code is not None:
+            item["error_code"] = code
+        details = getattr(current, "details", None)
+        if isinstance(details, dict):
+            status = details.get("status")
+            if isinstance(status, int) and 100 <= status <= 599:
+                item["http_status"] = status
+            method = details.get("method")
+            if method in _SAFE_HTTP_METHODS:
+                item["http_method"] = method
+            endpoint_category = _bounded_diagnostic_token(
+                details.get("endpoint_category"),
+                punctuation="_-/",
+            )
+            if endpoint_category is not None:
+                item["endpoint_category"] = endpoint_category
+            for category_key in (
+                "provider_category",
+                "failure_category",
+            ):
+                provider_category = details.get(category_key)
+                if provider_category in _SAFE_PROVIDER_CATEGORIES:
+                    item["provider_category"] = provider_category
+                    break
+        chain.append(item)
+        if current.__cause__ is not None:
+            current = current.__cause__
+        elif not current.__suppress_context__:
+            current = current.__context__
+        else:
+            current = None
+    return chain
+
+
+def _bounded_nonnegative_integer(value: object) -> int | None:
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
+
+
+def _diagnostic_classification(
+    *,
+    write_attempted: bool | None,
+    write_completed: bool | None,
+    readback_completed: bool | None,
+    desired_state_proven: bool | None,
+    successful_write_count: int | None,
+    mismatch_categories: list[str],
+    cause_chain: list[dict[str, object]],
+) -> str:
+    explicit_rejection = any(
+        isinstance(item.get("http_status"), int)
+        and int(item["http_status"]) >= 400
+        or item.get("provider_category") == "operation_rejected"
+        for item in cause_chain
+    )
+    if (
+        write_attempted is True
+        and explicit_rejection
+        and successful_write_count == 0
+        and write_completed is not True
+    ):
+        return "transport_rejected"
+    if (
+        write_attempted is True
+        and write_completed is True
+        and readback_completed is True
+        and desired_state_proven is False
+        and bool(mismatch_categories)
+    ):
+        return "write_completed_readback_mismatch"
+    return "write_outcome_indeterminate"
+
+
+def _bounded_f2_failure_evidence(
+    *,
+    scenario: str,
+    operation_id: str | None,
+    plan: object | None,
+    task: dict[str, Any] | None,
+    observed_mutation_baseline: int,
+    observed_mutation_count: int,
+    error: BaseException,
+) -> dict[str, object]:
+    """Project persisted F2 failure evidence without payload or identity data."""
+
+    details = getattr(error, "details", None)
+    if not isinstance(details, dict):
+        details = {}
+    plan_failure = getattr(plan, "failure_information", None)
+    if not isinstance(plan_failure, dict):
+        plan_failure = {}
+
+    active_operation = None
+    operations = getattr(plan, "operations", None)
+    if isinstance(operations, list):
+        active_operation = next(
+            (
+                item
+                for item in operations
+                if getattr(item, "operation_id", None) == operation_id
+            ),
+            None,
+        )
+    receipt = getattr(active_operation, "execution_receipt", None)
+    if not isinstance(receipt, dict):
+        receipt = {}
+    operation_failure = getattr(
+        active_operation, "failure_information", None
+    )
+    if not isinstance(operation_failure, dict):
+        operation_failure = {}
+    verification = getattr(active_operation, "verification", None)
+
+    def count(name: str) -> int | None:
+        value = details.get(name, plan_failure.get(name))
+        return _bounded_nonnegative_integer(value)
+
+    attempted_write_count = count("attempted_write_count")
+    successful_write_count = count("successful_write_count")
+    verified_write_count = count("verified_write_count")
+    ambiguous_write_count = count("ambiguous_write_count")
+
+    write_attempted = (
+        receipt.get("write_attempted")
+        if isinstance(receipt.get("write_attempted"), bool)
+        else None
+    )
+    write_completed = (
+        receipt.get("write_completed")
+        if isinstance(receipt.get("write_completed"), bool)
+        else None
+    )
+    readback_completed = (
+        receipt.get("readback_completed")
+        if isinstance(receipt.get("readback_completed"), bool)
+        else None
+    )
+    readback_attempted: bool | None = None
+    if (
+        readback_completed is True
+        or successful_write_count not in {None, 0}
+        or receipt.get("write_result") == "ambiguous"
+        or operation_failure.get("readback_failure_category") is not None
+    ):
+        readback_attempted = True
+
+    mismatch_values: list[object] = []
+    for source in (
+        details.get("mismatch_fields"),
+        getattr(verification, "mismatch_fields", None),
+    ):
+        if isinstance(source, list):
+            mismatch_values.extend(source)
+    mismatch_categories = sorted(
+        {
+            token
+            for item in mismatch_values
+            if (
+                token := _bounded_diagnostic_token(
+                    item, punctuation="_-:"
+                )
+            )
+            is not None
+        }
+    )[:_DIAGNOSTIC_MAX_MISMATCHES]
+
+    desired_state_proven = details.get("desired_state_proven")
+    if not isinstance(desired_state_proven, bool):
+        desired_state_proven = operation_failure.get(
+            "desired_state_proven"
+        )
+    if not isinstance(desired_state_proven, bool):
+        desired_state_proven = (
+            False
+            if write_completed is True
+            and readback_completed is True
+            and bool(mismatch_categories)
+            else None
+        )
+
+    operation_status = _bounded_error_code(
+        getattr(active_operation, "execution_status", None)
+    )
+    completed_operation_count = (
+        sum(
+            _bounded_error_code(getattr(item, "execution_status", None))
+            == "applied_verified"
+            for item in operations
+        )
+        if isinstance(operations, list)
+        else None
+    )
+    failed_operation_id = _bounded_diagnostic_token(
+        plan_failure.get("failed_operation_id")
+        or details.get("operation_id")
+        or operation_id,
+        punctuation="_-",
+    )
+    cause_chain = _bounded_exception_chain(error)
+
+    provider_attempts = task.get("provider_attempts") if task else None
+    provider_attempt_count = (
+        len(provider_attempts)
+        if isinstance(provider_attempts, list)
+        else None
+    )
+    provider_response_received: bool | None = None
+    if isinstance(provider_attempts, list) and provider_attempts:
+        candidate = provider_attempts[-1].get("response_received")
+        if isinstance(candidate, bool):
+            provider_response_received = candidate
+
+    approval = getattr(plan, "approval", None)
+    approval_state = _bounded_error_code(
+        getattr(approval, "state", None)
+    )
+    mutation_delta = max(
+        0, observed_mutation_count - observed_mutation_baseline
+    )
+    evidence: dict[str, object] = {
+        "phase": "f2_policy_acceptance",
+        "scenario": scenario,
+        "operation_id": _bounded_diagnostic_token(
+            operation_id, punctuation="_-"
+        ),
+        "plan_id_short": _short_diagnostic_identifier(
+            getattr(plan, "plan_id", None)
+        ),
+        "task_id_short": _short_diagnostic_identifier(
+            task.get("task_id") if task else None
+        ),
+        "plan_status": _bounded_error_code(
+            getattr(plan, "status", None)
+        ),
+        "execution_outcome": _bounded_diagnostic_token(
+            getattr(plan, "execution_outcome", None), punctuation="_-"
+        ),
+        "task_state": _bounded_diagnostic_token(
+            task.get("state") if task else None, punctuation="_-"
+        ),
+        "task_terminal_outcome": _bounded_diagnostic_token(
+            task.get("terminal_outcome") if task else None,
+            punctuation="_-",
+        ),
+        "approval_authority_version": (
+            getattr(approval, "authority_version", None)
+            if isinstance(getattr(approval, "authority_version", None), int)
+            else None
+        ),
+        "approval_bundle_state": _bounded_diagnostic_token(
+            getattr(approval, "bundle_state", None), punctuation="_-"
+        ),
+        "approval_consumed": (
+            approval_state == "consumed"
+            if approval_state is not None
+            else None
+        ),
+        "provider_attempt_count": provider_attempt_count,
+        "provider_response_received": provider_response_received,
+        "operation_execution_status": operation_status,
+        "write_attempted": write_attempted,
+        "write_completed": write_completed,
+        "write_verified": (
+            operation_status == "applied_verified"
+            if operation_status is not None
+            else None
+        ),
+        "readback_attempted": readback_attempted,
+        "readback_completed": readback_completed,
+        "desired_state_proven": desired_state_proven,
+        "attempted_write_count": attempted_write_count,
+        "successful_write_count": successful_write_count,
+        "verified_write_count": verified_write_count,
+        "ambiguous_write_count": ambiguous_write_count,
+        "completed_operation_count": completed_operation_count,
+        "failed_operation_id": failed_operation_id,
+        "mismatch_categories": mismatch_categories,
+        "observed_mutation": (
+            "recorded" if mutation_delta > 0 else "not_recorded"
+        ),
+        "diagnostic_classification": _diagnostic_classification(
+            write_attempted=write_attempted,
+            write_completed=write_completed,
+            readback_completed=readback_completed,
+            desired_state_proven=desired_state_proven,
+            successful_write_count=successful_write_count,
+            mismatch_categories=mismatch_categories,
+            cause_chain=cause_chain,
+        ),
+        "cause_chain": cause_chain,
+        "cleanup_attempted": None,
+        "cleanup_succeeded": None,
+        "cleanup_failure_category": None,
+    }
+    return evidence
+
+
+def _attach_cleanup_evidence(
+    error: BaseException,
+    *,
+    attempted: bool,
+    succeeded: bool | None,
+    failure: BaseException | None,
+) -> None:
+    diagnostic = getattr(error, "contract_diagnostic", None)
+    if not isinstance(diagnostic, dict):
+        return
+    updated = dict(diagnostic)
+    updated["cleanup_attempted"] = attempted
+    updated["cleanup_succeeded"] = succeeded
+    updated["cleanup_failure_category"] = (
+        _bounded_diagnostic_token(type(failure).__name__, punctuation="_")
+        if failure is not None
+        else None
+    )
+    setattr(error, "contract_diagnostic", updated)
 
 
 async def _json_request(session, method, path, *, json_body=None, data=None, token=""):
@@ -649,6 +1053,9 @@ async def _run_f2_policy_acceptance_contract(
 
     observed = _ObservedConfigurationGateway(gateway)
     scenario = "setup"
+    active_plan_id: str | None = None
+    active_operation_id: str | None = None
+    observed_mutation_baseline = 0
     with tempfile.TemporaryDirectory(
         prefix="f2-real-ha-contract-"
     ) as directory:
@@ -663,6 +1070,8 @@ async def _run_f2_policy_acceptance_contract(
         telemetry.caller_id = "f2-real-ha-contract-caller"
         try:
             scenario = "standard_admin"
+            active_operation_id = "standard_helper_update"
+            observed_mutation_baseline = len(observed.mutations)
             standard = await service.create_configuration_plan(
                 title="F2 disposable standard plan",
                 description="Update one harmless helper configuration.",
@@ -680,6 +1089,7 @@ async def _run_f2_policy_acceptance_contract(
                     }
                 ],
             )
+            active_plan_id = standard["plan_id"]
             assert standard["policy_decision"]["policy_class"] == (
                 "standard_admin"
             )
@@ -744,6 +1154,8 @@ async def _run_f2_policy_acceptance_contract(
             ] == "consumed"
 
             scenario = "elevated_admin"
+            active_operation_id = "elevated_automation_update"
+            observed_mutation_baseline = len(observed.mutations)
             traces_before = await fetch_normalized_trace_list(
                 gateway.websocket_client.command,
                 RESOURCE_IDS["automation"],
@@ -770,6 +1182,7 @@ async def _run_f2_policy_acceptance_contract(
                     }
                 ],
             )
+            active_plan_id = elevated["plan_id"]
             assert elevated["policy_decision"]["policy_class"] == (
                 "elevated_admin"
             )
@@ -938,6 +1351,8 @@ async def _run_f2_policy_acceptance_contract(
             ) == 1
 
             scenario = "prohibited"
+            active_operation_id = "prohibited_automation_update"
+            observed_mutation_baseline = len(observed.mutations)
             prohibited = await service.create_configuration_plan(
                 title="F2 disposable prohibited plan",
                 description="Attempt to configure a safety-critical action.",
@@ -954,6 +1369,7 @@ async def _run_f2_policy_acceptance_contract(
                     }
                 ],
             )
+            active_plan_id = prohibited["plan_id"]
             assert prohibited["policy_decision"]["policy_class"] == (
                 "prohibited"
             )
@@ -999,6 +1415,43 @@ async def _run_f2_policy_acceptance_contract(
                 "physical_actuation_observed": False,
             }
         except Exception as exc:
+            # Capture persisted failure evidence before TemporaryDirectory
+            # removes the plan and task repositories. Diagnostics are
+            # best-effort and must never replace the primary exception.
+            try:
+                persisted_plan = (
+                    service.repository.get(active_plan_id)
+                    if active_plan_id is not None
+                    else None
+                )
+                task = None
+                if active_plan_id is not None:
+                    task_list = service.list_execution_tasks(
+                        plan_id=active_plan_id
+                    )
+                    if task_list["count"] == 1:
+                        task = service.get_execution_task(
+                            task_list["tasks"][0]["task_id"]
+                        )
+                setattr(
+                    exc,
+                    "contract_diagnostic",
+                    _bounded_f2_failure_evidence(
+                        scenario=scenario,
+                        operation_id=active_operation_id,
+                        plan=persisted_plan,
+                        task=task,
+                        observed_mutation_baseline=(
+                            observed_mutation_baseline
+                        ),
+                        observed_mutation_count=len(observed.mutations),
+                        error=exc,
+                    ),
+                )
+            except Exception:
+                # Preserve the original contract failure even if diagnostic
+                # materialization itself cannot complete.
+                pass
             if scenario in {
                 "setup",
                 "standard_admin",
@@ -1082,6 +1535,9 @@ async def run_contracts() -> None:
     phase = "bootstrap"
     gateway = None
     failure = None
+    cleanup_attempted = False
+    cleanup_succeeded: bool | None = None
+    cleanup_failure: BaseException | None = None
     try:
         token = await bootstrap_disposable_admin()
         configured = settings(token)
@@ -1196,13 +1652,23 @@ async def run_contracts() -> None:
         failure = exc
     finally:
         if gateway is not None:
+            cleanup_attempted = True
             try:
                 await _cleanup_configuration_resources(gateway)
+                cleanup_succeeded = True
             except Exception as cleanup_error:
+                cleanup_succeeded = False
+                cleanup_failure = cleanup_error
                 if failure is None:
                     phase = "configuration_fixture_cleanup"
                     failure = cleanup_error
     if failure is not None:
+        _attach_cleanup_evidence(
+            failure,
+            attempted=cleanup_attempted,
+            succeeded=cleanup_succeeded,
+            failure=cleanup_failure,
+        )
         setattr(failure, "contract_phase", phase)
         raise failure
 
@@ -1238,12 +1704,23 @@ def main() -> int:
             )
         ):
             missing_key = None
+        diagnostic = getattr(exc, "contract_diagnostic", None)
+        diagnostic_json = (
+            json.dumps(
+                diagnostic,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            if isinstance(diagnostic, dict)
+            else "null"
+        )
         print(
             "Real Home Assistant contract failure: "
             f"phase={getattr(exc, 'contract_phase', 'unknown')} "
             f"scenario={scenario} "
             f"type={type(exc).__name__} code={error_code or 'unclassified'} "
-            f"missing_key={missing_key or 'none'} details={safe_details}",
+            f"missing_key={missing_key or 'none'} details={safe_details} "
+            f"diagnostic={diagnostic_json}",
             file=sys.stderr,
         )
         return 1
