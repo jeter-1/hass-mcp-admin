@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.2.0-beta.5 - Update and recovery preflight foundation
+
+- Add immutable, deterministic models for explicit update targets, installed
+  and candidate versions, explicit caller-supplied version direction,
+  compatibility, current repairs and errors, backup, storage, power, recovery,
+  disruption, and post-update verification evidence.
+- Preserve separate ordered blockers, warnings, and unknowns with exact
+  `ready_for_governed_planning`, `blocked`, `manual_review_required`, and
+  `unsupported` advisory verdicts.
+- Fail closed when authoritative candidate or compatibility evidence, required
+  backup evidence, storage, power, recovery, disruption, or verification facts
+  are missing or conflict with the selected target policy.
+- Permit readiness only for confirmed upgrades; require manual review for
+  downgrades, unknown direction, direction contradictions, and HIGH unresolved
+  repairs or errors; block same-version candidates and CRITICAL issues.
+- Keep E1 pure and runtime-inert: no evidence collection, startup loading,
+  network or Home Assistant access, tool, health, provider, plan, approval,
+  task, update, backup, restart, restore, downgrade, safe-mode action, write, or
+  fallback is added.
+- Preserve task schema v1, 48 local Engineering tools, the configured 26
+  exact-admitted delegated reads, stable v1.1.2, and zero fallback.
+
 ## 2.2.0-beta.4 - Knowledge provenance foundation
 
 - Add strict, deterministic local knowledge-manifest parsing with closed fields,

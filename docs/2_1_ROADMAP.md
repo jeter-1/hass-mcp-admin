@@ -1,6 +1,6 @@
 # Engineering 2.1 and 2.2 foundation roadmap
 
-Status: 2.1A accepted; K1 foundation release `2.2.0-beta.4`
+Status: 2.1A accepted; E1 foundation release `2.2.0-beta.5`
 
 The required milestone order is:
 
@@ -67,6 +67,19 @@ citation identity. Knowledge content remains instruction-inert data.
 K1 does not load at startup, retrieve remote content, register an MCP tool,
 authorize recommendations or plans, access Home Assistant, integrate with the
 signed compatibility registry, execute a write, or add fallback behavior.
+
+## 2.2.0-beta.5 E1 foundation
+
+Beta 5 defines immutable update and recovery evidence, explicit per-target
+policy, deterministic findings, and the exact
+`ready_for_governed_planning`, `blocked`, `manual_review_required`, and
+`unsupported` advisory verdicts. Blockers, warnings, and unknowns remain
+separate, and absent decision-critical evidence never becomes ready.
+
+E1 is a pure evaluator. It does not collect evidence, load at startup, access
+Home Assistant or the network, register a tool, create a plan, approval, or
+task, call a provider, perform an update, backup, restart, restore, downgrade,
+or safe-mode action, integrate C1 or K1 at runtime, or add fallback behavior.
 
 Each operation must remain operation-specific. This roadmap does not authorize
 a generic administrator, arbitrary Supervisor command, service-call shortcut,

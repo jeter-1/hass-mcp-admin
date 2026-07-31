@@ -1,9 +1,9 @@
 # HA MCP Engineering Server Beta
 
 This directory contains the Engineering v2 add-on. Development version
-`2.2.0-beta.4` adds an inert knowledge-provenance manifest and validation
-foundation while preserving the C1 signed-registry and durable execution-task
-boundaries.
+`2.2.0-beta.5` adds an inert update-and-recovery preflight evaluator while
+preserving the K1 knowledge-provenance, C1 signed-registry, and durable
+execution-task boundaries.
 Its technical “Beta” display name, slug, image repository, and runtime
 identity remain unchanged to avoid a migration. Stable v1.1.2
 `hass_mcp_admin` source remains in the repository as operationally retired
@@ -108,19 +108,19 @@ reboot and completeness defects, RC2dev14 established practical configuration
 plans, and RC2dev16 corrected delegated structured-error normalization without
 changing upstream admission or adding search behavior. Version `2.0.1`
 promoted the accepted RC1-dev2 behavior without a functional change. Development
-version `2.2.0-beta.4` retains governed controlled reload, exact add-on restart,
+version `2.2.0-beta.5` retains governed controlled reload, exact add-on restart,
 Home Assistant restart, readback-only reconciliation, and one durable execution
-task for each newly executed plan. Its knowledge-provenance and signed
-compatibility-registry packages are not loaded during startup and do not change
-compatibility admission.
+task for each newly executed plan. Its update/recovery preflight,
+knowledge-provenance, and signed compatibility-registry packages are not loaded
+during startup and do not change compatibility admission.
 Recovery verification does not manufacture an original provider response, and
 durable duplicate-task events contribute exactly once to operation health. It
 retains
 exact reviewed 7.14.2 compatibility, reviewed 7.14.1 rollback compatibility,
 and the hardened MCP SDK boundary. Its changes, rollback, and acceptance
 requirements are recorded in
-[`../docs/V2_2_0_BETA4_RELEASE_NOTES.md`](../docs/V2_2_0_BETA4_RELEASE_NOTES.md),
-[`../docs/V2_2_0_BETA4_ACCEPTANCE.md`](../docs/V2_2_0_BETA4_ACCEPTANCE.md), and
+[`../docs/V2_2_0_BETA5_RELEASE_NOTES.md`](../docs/V2_2_0_BETA5_RELEASE_NOTES.md),
+[`../docs/V2_2_0_BETA5_ACCEPTANCE.md`](../docs/V2_2_0_BETA5_ACCEPTANCE.md), and
 [`../docs/OPERATIONAL_ADMINISTRATION.md`](../docs/OPERATIONAL_ADMINISTRATION.md).
 Determine
 exact advertised state from version metadata and `scripts/codex-context.py`.

@@ -1,5 +1,18 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## 2.2.0-beta.5 update and recovery preflight foundation
+
+E1 defines immutable input and output contracts for a pure evaluation of
+already-collected update evidence. Explicit target policy, authoritative
+candidate and compatibility evidence, repairs and errors, backup, storage,
+power, recovery, disruption, and verification-profile facts produce one
+deterministic advisory verdict with separate blockers, warnings, and unknowns.
+
+The package remains repository-level and runtime-inert. It cannot collect
+evidence, access Home Assistant or a network, create a plan or task, request
+approval, select a provider, perform an update or recovery action, or add a
+tool, capability, health projection, write path, or fallback.
+
 ## 2.2.0-beta.4 knowledge provenance foundation
 
 K1 defines a strict local manifest, provenance/trust classes, independent
