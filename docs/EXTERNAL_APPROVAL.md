@@ -232,10 +232,12 @@ command, and actual trace list/detail shape after a harmless event in the
 disposable instance. The job waits for Core to report `RUNNING` and for every
 required integration to finish setup before testing integration-owned commands.
 It also exercises one standard helper update, one elevated automation
-configuration whose future physical action is never triggered, and one
-prohibited safety-critical fixture. It proves separate same-administrator
+configuration whose future physical action is never triggered, and
+entity-target plus device-target prohibited safety-critical fixtures. The
+reviewed safety-critical service name is authoritative; changing the target
+shape cannot make it approvable. The job proves separate same-administrator
 actions, one task and provider attempt per applied plan, exact readback,
-duplicate-apply refusal, and zero provider mutation for the prohibited plan;
+duplicate-apply refusal, and zero provider mutation for either prohibited plan;
 its startup and execution are bounded, and it never contacts the deployed Home
 Assistant environment. To
 update the baseline, review the new Home Assistant release, resolve its immutable

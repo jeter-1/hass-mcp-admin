@@ -286,6 +286,15 @@ unsupported, destructive, unknown, or policy-evasive changes are
 Planning and configuration apply store a future automation action; they do not
 trigger it.
 
+The fixed reviewed service set `lock.unlock` and
+`alarm_control_panel.alarm_disarm` is safety-critical from the service name
+alone. Entity, device, area, data-based, broad, templated, unresolved, mixed,
+or omitted targets cannot downgrade those services. Target analysis never
+resolves a device or area identifier into an assumption of safety. Traversal
+is limited to reviewed automation action positions; conditions are not scanned
+as executable actions, and unsupported action nesting fails closed. Other
+high-risk service names retain their existing policy mapping.
+
 Governed configuration reads, writes, verification, and rollback are
 `direct_ha_required` facilitator capabilities. They do not route through ordinary
 service execution or fall back to an unverified write. See ADR-002 for provider rules.

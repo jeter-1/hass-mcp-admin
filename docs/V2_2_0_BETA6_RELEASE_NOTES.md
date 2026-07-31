@@ -26,6 +26,15 @@ standard; supported high-risk or direct-consequence configuration changes are
 elevated. Critical, safety-critical, unsupported, destructive, arbitrary,
 policy-evasive, or unknown operations are prohibited.
 
+The reviewed safety-critical service set is exactly `lock.unlock` and
+`alarm_control_panel.alarm_disarm`. Those service names are prohibited
+independently of whether the target is expressed as an entity, device, area,
+data selector, broad list, template, unresolved selector, or omitted target.
+Target representation can add bounded evidence but cannot lower the
+service-level consequence. Other high-risk services retain their reviewed
+elevated or prohibited mapping; F2 does not promote every high-risk service to
+safety-critical.
+
 The normalized operations, target evidence, policy version, risk delta,
 physical consequence, policy class, bounded reason codes, required
 acknowledgements, and policy-decision hash are bound into the immutable plan

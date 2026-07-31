@@ -46,6 +46,15 @@ Multi-operation order must not affect the aggregate result. Strictest risk and
 physical consequence win independently. A prohibited operation makes the
 whole plan prohibited.
 
+Require `lock.unlock` and `alarm_control_panel.alarm_disarm` to classify as
+`prohibited` with `safety_critical` physical consequence based on the reviewed
+service name itself. Entity, device, area, `data.entity_id`, broad, templated,
+unresolved, mixed, and omitted target forms must not lower that result.
+Reviewed choose, default, repeat, parallel, and if/then/else action positions
+must produce the same result; conditions are not executable action positions.
+A high-risk service outside the reviewed safety-critical set must retain its
+existing mapping.
+
 Changing a normalized operation or policy field must change the corresponding
 hash. Stored/recomputed policy mismatch must fail with
 `policy_snapshot_mismatch`. Missing F2 policy on an active legacy plan must
@@ -113,9 +122,11 @@ the throwaway pinned Home Assistant container:
    targets, data, action order, triggers, or conditions must remain mismatches
    under the established optional-empty rules, and unsupported or ambiguous
    structures must fail closed.
-3. Prohibited safety-critical fixture: approval returns
-   `prohibited_change`, apply returns `prohibited_change`, no task exists, and
-   the configuration gateway records no provider mutation.
+3. Prohibited safety-critical fixtures: both an entity-target fixture and a
+   non-entity device-target fixture return `prohibited_change` from approval
+   and apply. Each reports `safety_critical`, creates no task, and records no
+   provider mutation or fallback. Neither fixture performs a lock or other
+   physical action.
 
 All disposable configuration and credentials must be removed in the existing
 `always()` cleanup. No step may contact deployed Home Assistant.

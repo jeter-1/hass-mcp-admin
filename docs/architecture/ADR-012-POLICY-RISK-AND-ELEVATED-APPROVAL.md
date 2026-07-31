@@ -37,6 +37,15 @@ or downgrade them. Unknown, incomplete, unsupported, destructive,
 policy-evasive, critical, or unreviewed safety-critical classifications fail
 closed as `prohibited`.
 
+The first reviewed safety-critical service set is immutable and contains
+`lock.unlock` and `alarm_control_panel.alarm_disarm`. Classification follows
+the service name independently of entity, device, area, data-based, broad,
+templated, unresolved, mixed, or omitted targets. Device and area identifiers
+are evidence, not proof of safety. Reviewed nested action positions are
+traversed without scanning conditions or arbitrary mappings; unsupported
+nesting fails closed. High-risk services outside this exact set keep their
+separately reviewed mapping.
+
 The plan hash binds the complete policy snapshot. The policy-decision hash binds
 the normalized plan subject and the complete decision. Loading, requesting
 approval, and applying revalidate both bindings. A mismatch is never silently

@@ -162,6 +162,18 @@ F2_PROHIBITED_AUTOMATION_CONFIG = {
         }
     ],
 }
+F2_PROHIBITED_DEVICE_TARGET_AUTOMATION_CONFIG = {
+    **F2_ELEVATED_AUTOMATION_CONFIG,
+    "description": (
+        "Safety-critical action with a device target prohibited by F2 policy"
+    ),
+    "action": [
+        {
+            "service": "lock.unlock",
+            "target": {"device_id": "disposable_nonexistent_lock_device"},
+        }
+    ],
+}
 
 F2_ADMIN_A = "home_assistant_admin_ingress:disposable-f2-admin-a"
 F2_ADMIN_B = "home_assistant_admin_ingress:disposable-f2-admin-b"
@@ -1390,6 +1402,12 @@ async def _run_f2_policy_acceptance_contract(
             assert prohibited["policy_decision"]["policy_class"] == (
                 "prohibited"
             )
+            assert prohibited["policy_decision"][
+                "physical_consequence"
+            ] == "safety_critical"
+            assert prohibited["policy_decision"][
+                "required_acknowledgements"
+            ] == []
             try:
                 service.approve(
                     prohibited["plan_id"], prohibited["plan_hash"]
@@ -1419,11 +1437,79 @@ async def _run_f2_policy_acceptance_contract(
             assert prohibited_plan.approval.challenge_id is None
             assert prohibited_plan.approval.state.value == "required"
             assert len(observed.mutations) == mutation_count + 1
+
+            scenario = "prohibited_non_entity_target"
+            active_operation_id = "prohibited_device_target_update"
+            observed_mutation_baseline = len(observed.mutations)
+            prohibited_device_target = (
+                await service.create_configuration_plan(
+                    title="F2 disposable device-target prohibited plan",
+                    description=(
+                        "Reject a safety-critical service before dispatch."
+                    ),
+                    operations=[
+                        {
+                            "operation_id": (
+                                "prohibited_device_target_update"
+                            ),
+                            "resource_type": "automation",
+                            "action": "update",
+                            "target_id": RESOURCE_IDS["automation"],
+                            "depends_on": [],
+                            "proposed_config": copy.deepcopy(
+                                F2_PROHIBITED_DEVICE_TARGET_AUTOMATION_CONFIG
+                            ),
+                        }
+                    ],
+                )
+            )
+            active_plan_id = prohibited_device_target["plan_id"]
+            device_policy = prohibited_device_target["policy_decision"]
+            assert device_policy["policy_class"] == "prohibited"
+            assert device_policy["physical_consequence"] == (
+                "safety_critical"
+            )
+            assert device_policy["required_acknowledgements"] == []
+            try:
+                service.approve(
+                    prohibited_device_target["plan_id"],
+                    prohibited_device_target["plan_hash"],
+                )
+            except GovernanceError as exc:
+                assert exc.code == ErrorCode.PROHIBITED_CHANGE
+            else:
+                raise AssertionError(
+                    "a device-target prohibited plan created an approval"
+                )
+            try:
+                await service.apply(
+                    prohibited_device_target["plan_id"],
+                    prohibited_device_target["plan_hash"],
+                )
+            except GovernanceError as exc:
+                assert exc.code == ErrorCode.PROHIBITED_CHANGE
+            else:
+                raise AssertionError(
+                    "a device-target prohibited plan reached apply"
+                )
+            assert service.list_execution_tasks(
+                plan_id=prohibited_device_target["plan_id"]
+            )["count"] == 0
+            prohibited_device_plan = service.repository.get(
+                prohibited_device_target["plan_id"]
+            )
+            assert prohibited_device_plan is not None
+            assert prohibited_device_plan.approval.bundle_state == (
+                "prohibited"
+            )
+            assert prohibited_device_plan.approval.challenge_id is None
+            assert len(observed.mutations) == mutation_count + 1
             return {
                 "completed_scenarios": [
                     "standard_admin",
                     "elevated_admin",
                     "prohibited",
+                    "prohibited_non_entity_target",
                 ],
                 "standard_task_id": standard_applied["task_id"],
                 "elevated_task_id": elevated_applied["task_id"],

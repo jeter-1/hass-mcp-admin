@@ -590,9 +590,9 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
                 self.assertIn(required, contract_text)
 
         self.assertEqual(
-            len(calls_under(contract, "create_configuration_plan")), 3
+            len(calls_under(contract, "create_configuration_plan")), 4
         )
-        self.assertEqual(len(calls_under(contract, "apply")), 6)
+        self.assertEqual(len(calls_under(contract, "apply")), 7)
         self.assertEqual(
             len(calls_under(contract, "fetch_normalized_trace_list")), 2
         )
@@ -624,11 +624,21 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
         )
         elevated = self.contract.F2_ELEVATED_AUTOMATION_CONFIG
         prohibited = self.contract.F2_PROHIBITED_AUTOMATION_CONFIG
+        prohibited_device = (
+            self.contract.F2_PROHIBITED_DEVICE_TARGET_AUTOMATION_CONFIG
+        )
         self.assertEqual(
             elevated["action"][0]["service"], "light.turn_on"
         )
         self.assertEqual(
             prohibited["action"][0]["service"], "lock.unlock"
+        )
+        self.assertEqual(
+            prohibited_device["action"][0]["service"], "lock.unlock"
+        )
+        self.assertEqual(
+            prohibited_device["action"][0]["target"],
+            {"device_id": "disposable_nonexistent_lock_device"},
         )
         self.assertNotEqual(
             self.contract.F2_ADMIN_A, self.contract.F2_ADMIN_B
@@ -729,7 +739,12 @@ class RealHomeAssistantF2RunnerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             result["completed_scenarios"],
-            ["standard_admin", "elevated_admin", "prohibited"],
+            [
+                "standard_admin",
+                "elevated_admin",
+                "prohibited",
+                "prohibited_non_entity_target",
+            ],
         )
         self.assertEqual(result["configuration_mutation_count"], 2)
         self.assertEqual(result["fallback_count"], 0)
@@ -809,7 +824,12 @@ class RealHomeAssistantF2RunnerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             result["completed_scenarios"],
-            ["standard_admin", "elevated_admin", "prohibited"],
+            [
+                "standard_admin",
+                "elevated_admin",
+                "prohibited",
+                "prohibited_non_entity_target",
+            ],
         )
         self.assertEqual(result["configuration_mutation_count"], 2)
         self.assertEqual(result["fallback_count"], 0)

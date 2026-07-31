@@ -17,6 +17,7 @@ from .models import (
     RiskLevel,
 )
 from .normalize import stable_hash
+from .risk import SAFETY_CRITICAL_SERVICES
 
 
 POLICY_VERSION = "f2-v1"
@@ -45,6 +46,7 @@ _SAFETY_CRITICAL_TRIGGERS = frozenset(
         "sensitive_entity_domain",
         "sensitive_blueprint_input",
         "garage_cover_target",
+        "safety_critical_service",
         "water_control_target",
     }
 )
@@ -59,6 +61,7 @@ _UNCLASSIFIABLE_TRIGGERS = frozenset(
     {
         "unresolved_dynamic_service",
         "unresolved_dynamic_target",
+        "unresolved_action_structure",
     }
 )
 
@@ -87,10 +90,25 @@ def _risk_triggers(operation: ConfigurationOperation) -> set[str]:
     }
 
 
+def _risk_services(operation: ConfigurationOperation) -> set[str]:
+    return {
+        str(item.get("service"))
+        for item in operation.risk.evidence
+        if isinstance(item, dict)
+        and item.get("trigger") in {
+            "high_risk_service",
+            "safety_critical_service",
+        }
+        and isinstance(item.get("service"), str)
+        and item.get("service") in SAFETY_CRITICAL_SERVICES
+    }
+
+
 def _configuration_operation_policy(
     operation: ConfigurationOperation,
 ) -> OperationPolicyClassification:
     triggers = _risk_triggers(operation)
+    safety_critical_services = _risk_services(operation)
     risk_delta = _risk_delta(operation.risk.level)
     reasons = {"supported_configuration_change"}
     consequence = PhysicalConsequence.NONE
@@ -98,9 +116,14 @@ def _configuration_operation_policy(
     if operation.resource_type == "helper":
         consequence = PhysicalConsequence.INDIRECT
         reasons.add("helper_change_indirect_consequence")
-    if triggers & _SAFETY_CRITICAL_TRIGGERS:
+    if (
+        triggers & _SAFETY_CRITICAL_TRIGGERS
+        or safety_critical_services
+    ):
         consequence = PhysicalConsequence.SAFETY_CRITICAL
         reasons.add("safety_critical_effect_not_reviewed")
+        if safety_critical_services:
+            reasons.add("safety_critical_service_prohibited")
     elif triggers & _DIRECT_CONSEQUENCE_TRIGGERS or any(
         "Physical-device action detected" in reason
         for reason in operation.risk.reasons

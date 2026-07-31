@@ -19,6 +19,11 @@
   unknown, unsupported, destructive, critical, safety-critical, or evasive
   plans, and preserve one-task ownership, no blind redispatch, provider-response
   truthfulness, exact provider routing, and zero fallback.
+- Prohibit the reviewed `lock.unlock` and
+  `alarm_control_panel.alarm_disarm` service names independently of entity,
+  device, area, data-based, broad, templated, unresolved, mixed, or omitted
+  target representation while retaining existing mappings for other high-risk
+  services.
 - Add disposable pinned-Core contracts for standard, elevated, and prohibited
   configuration policies. Planning never triggers the configured future
   physical action, and duplicate apply performs no second write.

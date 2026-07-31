@@ -33,6 +33,9 @@ from ha_mcp_engineering.governance.policy import (  # noqa: E402
     aggregate_policy_classifications,
     evaluate_change_policy,
 )
+from ha_mcp_engineering.governance.risk import (  # noqa: E402
+    SAFETY_CRITICAL_SERVICES,
+)
 from ha_mcp_engineering.governance.service import (  # noqa: E402
     APPROVAL_AUTHORITY_VERSION,
     ChangeGovernanceService,
@@ -212,6 +215,46 @@ class F2ApprovalTestCase(unittest.IsolatedAsyncioTestCase):
             proposed_config=proposed,
         )
 
+    async def create_with_action_step(self, step, *, suffix="fixture"):
+        proposed = copy.deepcopy(CURRENT)
+        proposed["action"] = [copy.deepcopy(step)]
+        return await self.service.create_plan(
+            title=f"F2 policy fixture {suffix}",
+            description="A bounded policy-classification fixture",
+            operation="update_automation",
+            automation_id="fixture",
+            proposed_config=proposed,
+        )
+
+    async def assert_prohibited_without_reachability(self, created):
+        decision = created["policy_decision"]
+        self.assertEqual(decision["policy_class"], "prohibited")
+        self.assertEqual(
+            decision["physical_consequence"], "safety_critical"
+        )
+        self.assertEqual(decision["required_acknowledgements"], [])
+        self.assertEqual(
+            decision["reason_codes"], sorted(decision["reason_codes"])
+        )
+        with self.assertRaises(GovernanceError) as approval_error:
+            self.service.approve(
+                created["plan_id"], created["plan_hash"]
+            )
+        self.assertEqual(
+            approval_error.exception.code, ErrorCode.PROHIBITED_CHANGE
+        )
+        with self.assertRaises(GovernanceError) as apply_error:
+            await self.service.apply(
+                created["plan_id"], created["plan_hash"]
+            )
+        self.assertEqual(
+            apply_error.exception.code, ErrorCode.PROHIBITED_CHANGE
+        )
+        self.assertIsNone(
+            self.service.task_repository.get_for_plan(created["plan_id"])
+        )
+        self.assertEqual(self.gateway.writes, 0)
+
     async def decide(
         self,
         created,
@@ -249,6 +292,212 @@ class F2ApprovalTestCase(unittest.IsolatedAsyncioTestCase):
 
 
 class F2ApprovalWorkflowTests(F2ApprovalTestCase):
+    async def test_safety_critical_service_names_ignore_target_shape(self):
+        self.assertEqual(
+            SAFETY_CRITICAL_SERVICES,
+            frozenset(
+                {
+                    "alarm_control_panel.alarm_disarm",
+                    "lock.unlock",
+                }
+            ),
+        )
+        cases = (
+            (
+                "entity",
+                {
+                    "service": "lock.unlock",
+                    "target": {"entity_id": "lock.front_door"},
+                },
+            ),
+            (
+                "device",
+                {
+                    "service": "lock.unlock",
+                    "target": {"device_id": "lock-device"},
+                },
+            ),
+            (
+                "area_action_alias",
+                {
+                    "action": "lock.unlock",
+                    "target": {"area_id": "entry-area"},
+                },
+            ),
+            (
+                "data_all",
+                {
+                    "service": "lock.unlock",
+                    "data": {"entity_id": "all"},
+                },
+            ),
+            ("omitted", {"service": "lock.unlock"}),
+            (
+                "templated",
+                {
+                    "service": "lock.unlock",
+                    "target": {"entity_id": "{{ target_lock }}"},
+                },
+            ),
+            (
+                "unresolved",
+                {
+                    "service": "lock.unlock",
+                    "target": {"device_id": {"future": "shape"}},
+                },
+            ),
+            (
+                "list",
+                {
+                    "service": "lock.unlock",
+                    "target": {"entity_id": ["lock.one", "lock.two"]},
+                },
+            ),
+            (
+                "broad",
+                {
+                    "service": "lock.unlock",
+                    "target": {
+                        "device_id": [f"device-{index}" for index in range(11)]
+                    },
+                },
+            ),
+            (
+                "mixed",
+                {
+                    "service": "lock.unlock",
+                    "target": {
+                        "device_id": "lock-device",
+                        "area_id": "entry-area",
+                    },
+                },
+            ),
+            (
+                "alarm_device",
+                {
+                    "service": "alarm_control_panel.alarm_disarm",
+                    "target": {"device_id": "alarm-device"},
+                },
+            ),
+            (
+                "alarm_area",
+                {
+                    "service": "alarm_control_panel.alarm_disarm",
+                    "target": {"area_id": "alarm-area"},
+                },
+            ),
+        )
+        for suffix, step in cases:
+            created = await self.create_with_action_step(
+                step, suffix=suffix
+            )
+            with self.subTest(suffix=suffix):
+                await self.assert_prohibited_without_reachability(created)
+
+    async def test_safety_critical_services_are_found_in_reviewed_nesting(self):
+        lock_step = {
+            "service": "lock.unlock",
+            "target": {"device_id": "nested-lock-device"},
+        }
+        cases = (
+            (
+                "choose_sequence",
+                {
+                    "choose": [
+                        {"conditions": [], "sequence": [lock_step]}
+                    ]
+                },
+            ),
+            (
+                "choose_default",
+                {"choose": [], "default": [lock_step]},
+            ),
+            (
+                "repeat_sequence",
+                {"repeat": {"count": 1, "sequence": [lock_step]}},
+            ),
+            ("parallel", {"parallel": [lock_step]}),
+            (
+                "parallel_sequence",
+                {"parallel": [{"sequence": [lock_step]}]},
+            ),
+            (
+                "if_then",
+                {
+                    "if": [{"condition": "template", "value_template": True}],
+                    "then": [lock_step],
+                    "else": [{"service": "light.turn_on"}],
+                },
+            ),
+            (
+                "if_else",
+                {
+                    "if": [{"condition": "template", "value_template": False}],
+                    "then": [{"service": "light.turn_on"}],
+                    "else": [lock_step],
+                },
+            ),
+        )
+        for suffix, step in cases:
+            created = await self.create_with_action_step(
+                step, suffix=suffix
+            )
+            with self.subTest(suffix=suffix):
+                await self.assert_prohibited_without_reachability(created)
+
+    async def test_safety_policy_is_deterministic_and_cannot_be_downgraded(self):
+        step = {
+            "service": "light.turn_on",
+            "action": "lock.unlock",
+            "target": {"device_id": "lock-device"},
+        }
+        first = await self.create_with_action_step(step, suffix="first")
+        second = await self.create_with_action_step(step, suffix="second")
+        self.assertEqual(
+            first["policy_decision"]["reason_codes"],
+            second["policy_decision"]["reason_codes"],
+        )
+        await self.assert_prohibited_without_reachability(second)
+
+        plan = self.repository.get(second["plan_id"])
+        assert plan is not None
+        repeated_first = evaluate_change_policy(plan)
+        repeated_second = evaluate_change_policy(plan)
+        self.assertEqual(repeated_first, repeated_second)
+        self.assertEqual(
+            repeated_first.policy_decision_hash,
+            second["policy_decision"]["policy_decision_hash"],
+        )
+        plan.risk.evidence = [
+            {
+                "field": "action[0].service",
+                "trigger": "high_risk_service",
+                "service": "lock.unlock",
+            }
+        ]
+        recomputed = evaluate_change_policy(plan)
+        self.assertEqual(
+            recomputed.policy_class, ApprovalPolicyClass.PROHIBITED
+        )
+        self.assertEqual(
+            recomputed.physical_consequence,
+            PhysicalConsequence.SAFETY_CRITICAL,
+        )
+
+    async def test_non_safety_high_risk_service_remains_elevated(self):
+        created = await self.create_with_action_step(
+            {"service": "homeassistant.reload_all"},
+            suffix="high-non-safety",
+        )
+        self.assertEqual(
+            created["policy_decision"]["policy_class"],
+            "elevated_admin",
+        )
+        self.assertEqual(
+            created["policy_decision"]["physical_consequence"],
+            "direct",
+        )
+
     async def test_every_existing_writable_operation_has_explicit_policy(self):
         created = await self.create_standard()
         source = self.repository.get(created["plan_id"])
