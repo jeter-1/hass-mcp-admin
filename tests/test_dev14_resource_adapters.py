@@ -465,6 +465,34 @@ class AutomationVerificationNormalizationTests(unittest.TestCase):
                 self.assertFalse(result.semantic_match)
                 self.assertIn("actions", result.mismatch_categories)
 
+    def test_top_level_trigger_condition_and_mode_changes_remain_mismatches(
+        self,
+    ):
+        approved = copy.deepcopy(AUTOMATION)
+        approved["condition"] = [
+            {
+                "condition": "state",
+                "entity_id": "input_boolean.guard",
+                "state": "on",
+            }
+        ]
+        cases = []
+        changed_trigger = copy.deepcopy(approved)
+        changed_trigger["trigger"][0]["entity_id"] = "sensor.other"
+        cases.append(("triggers", changed_trigger))
+        changed_condition = copy.deepcopy(approved)
+        changed_condition["condition"][0]["state"] = "off"
+        cases.append(("conditions", changed_condition))
+        changed_mode = copy.deepcopy(approved)
+        changed_mode["mode"] = "queued"
+        cases.append(("mode", changed_mode))
+
+        for category, observed in cases:
+            with self.subTest(category=category):
+                result = self.comparison(approved, observed)
+                self.assertFalse(result.semantic_match)
+                self.assertIn(category, result.mismatch_categories)
+
     def test_ambiguous_or_malformed_action_aliases_fail_closed(self):
         for step in (
             {"service": "light.turn_on", "action": "light.turn_on"},
@@ -522,6 +550,7 @@ class AutomationVerificationNormalizationTests(unittest.TestCase):
             "device_id": "device-test",
             "domain": "light",
             "entity_id": "light.test",
+            "subtype": "turn_on",
             "type": "turn_on",
         }
         approved = copy.deepcopy(AUTOMATION)
@@ -543,6 +572,22 @@ class AutomationVerificationNormalizationTests(unittest.TestCase):
             with self.subTest(step=step):
                 self.assertFalse(result.semantic_match)
                 self.assertFalse(result.normalization_valid)
+
+        for field, replacement in (
+            ("device_id", "device-other"),
+            ("domain", "switch"),
+            ("entity_id", "light.other"),
+            ("subtype", "turn_off"),
+            ("type", "turn_off"),
+        ):
+            changed = copy.deepcopy(valid)
+            changed[field] = replacement
+            observed = copy.deepcopy(AUTOMATION)
+            observed["action"] = [changed]
+            with self.subTest(changed_field=field):
+                result = self.comparison(approved, observed)
+                self.assertFalse(result.semantic_match)
+                self.assertIn("actions", result.mismatch_categories)
 
     def test_reviewed_simple_action_families_validate_exact_fields(self):
         valid_steps = (
@@ -798,11 +843,27 @@ class AutomationVerificationNormalizationTests(unittest.TestCase):
                 ]
             },
             {
+                "choose": [
+                    {
+                        "conditions": [],
+                        "sequence": [],
+                        "unreviewed_future_directive": True,
+                    }
+                ]
+            },
+            {
                 "choose": [{"conditions": [], "sequence": []}],
                 "unreviewed_future_directive": True,
             },
             {
                 "repeat": {"count": 0, "sequence": []},
+            },
+            {
+                "repeat": {
+                    "count": 1,
+                    "sequence": [],
+                    "unreviewed_future_directive": True,
+                },
             },
             {
                 "parallel": [],
