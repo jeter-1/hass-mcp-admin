@@ -27,6 +27,10 @@ from ha_mcp_engineering.clients import (  # noqa: E402
 )
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
+from ha_mcp_engineering.errors import (  # noqa: E402
+    ErrorCode,
+    GovernanceError,
+)
 from ha_mcp_engineering.governance.resources import (  # noqa: E402
     ConfigurationResourceGateway,
     normalize_resource_config,
@@ -133,6 +137,33 @@ LEGACY_AUTOMATION_CONFIG = {
         "Intermediate event-only legacy automation compatibility fixture"
     ),
 }
+F2_STANDARD_HELPER_CONFIG = {
+    **CREATE_CONFIGS["input_boolean"],
+    "icon": "mdi:shield-check",
+}
+F2_ELEVATED_AUTOMATION_CONFIG = {
+    **LEGACY_AUTOMATION_CONFIG,
+    "description": "Future physical action accepted through elevated policy",
+    "action": [
+        {
+            "service": "light.turn_on",
+            "target": {"entity_id": "light.disposable_f2_fixture"},
+        }
+    ],
+}
+F2_PROHIBITED_AUTOMATION_CONFIG = {
+    **F2_ELEVATED_AUTOMATION_CONFIG,
+    "description": "Safety-critical action prohibited by F2 policy",
+    "action": [
+        {
+            "service": "lock.unlock",
+            "target": {"entity_id": "lock.disposable_f2_fixture"},
+        }
+    ],
+}
+
+F2_ADMIN_A = "home_assistant_admin_ingress:disposable-f2-admin-a"
+F2_ADMIN_B = "home_assistant_admin_ingress:disposable-f2-admin-b"
 
 
 async def _json_request(session, method, path, *, json_body=None, data=None, token=""):
@@ -566,6 +597,314 @@ async def _run_legacy_automation_compatibility_contract(
     _assert_strict_configuration_check(await gateway.validate())
 
 
+async def _decide_f2_action(
+    service: ChangeGovernanceService,
+    created: dict,
+    pending: dict,
+    *,
+    principal: str,
+) -> dict:
+    """Complete exactly the active bounded administrator action."""
+
+    review, csrf = await service.issue_external_csrf(
+        created["plan_id"], pending["challenge_id"]
+    )
+    assert review["plan_hash"] == created["plan_hash"]
+    assert review["approval_action"] == pending["approval_action"]
+    return await service.decide_external_approval(
+        plan_id=created["plan_id"],
+        challenge_id=pending["challenge_id"],
+        expected_plan_hash=created["plan_hash"],
+        approval_kind="apply",
+        approval_action=pending["approval_action"],
+        csrf_nonce=csrf,
+        decision="approve",
+        approver_principal=principal,
+    )
+
+
+def _assert_single_task_dispatch(
+    service: ChangeGovernanceService,
+    plan_id: str,
+    task_id: str,
+) -> dict:
+    tasks = service.list_execution_tasks(plan_id=plan_id)
+    assert tasks["count"] == 1
+    task = service.get_execution_task(task_id)
+    assert task["task_id"] == task_id
+    assert task["state"] == "succeeded_verified"
+    assert task["provider_attempt_count"] == 1
+    assert sum(
+        event["event_type"] == "dispatch_attempted"
+        for event in task["lifecycle_events"]
+    ) == 1
+    return task
+
+
+async def _run_f2_policy_acceptance_contract(
+    gateway: ConfigurationResourceGateway,
+    token: str,
+) -> None:
+    """Exercise standard, elevated, and prohibited F2 policy in disposable HA."""
+
+    observed = _ObservedConfigurationGateway(gateway)
+    with tempfile.TemporaryDirectory(
+        prefix="f2-real-ha-contract-"
+    ) as directory:
+        service = ChangeGovernanceService(
+            ChangePlanRepository(Path(directory) / "plans"),
+            observed,
+            sensitive_values=(token,),
+        )
+        telemetry, context = begin_request(
+            "f2-real-ha-policy-contract"
+        )
+        telemetry.caller_id = "f2-real-ha-contract-caller"
+        try:
+            standard = await service.create_configuration_plan(
+                title="F2 disposable standard plan",
+                description="Update one harmless helper configuration.",
+                operations=[
+                    {
+                        "operation_id": "standard_helper_update",
+                        "resource_type": "helper",
+                        "helper_type": "input_boolean",
+                        "action": "update",
+                        "target_id": RESOURCE_IDS["input_boolean"],
+                        "depends_on": [],
+                        "proposed_config": copy.deepcopy(
+                            F2_STANDARD_HELPER_CONFIG
+                        ),
+                    }
+                ],
+            )
+            assert standard["policy_decision"]["policy_class"] == (
+                "standard_admin"
+            )
+            assert len(observed.mutations) == 0
+            standard_pending = service.approve(
+                standard["plan_id"], standard["plan_hash"]
+            )
+            standard_approved = await _decide_f2_action(
+                service,
+                standard,
+                standard_pending,
+                principal=F2_ADMIN_A,
+            )
+            assert standard_approved["status"] == "approved"
+            assert len(observed.mutations) == 0
+            standard_applied = await service.apply(
+                standard["plan_id"], standard["plan_hash"]
+            )
+            assert standard_applied["status"] == "applied"
+            assert len(observed.mutations) == 1
+            _assert_exact_resource(
+                "input_boolean",
+                RESOURCE_IDS["input_boolean"],
+                F2_STANDARD_HELPER_CONFIG,
+                await gateway.read(
+                    "input_boolean", RESOURCE_IDS["input_boolean"]
+                ),
+            )
+            _assert_single_task_dispatch(
+                service,
+                standard["plan_id"],
+                standard_applied["task_id"],
+            )
+            standard_duplicate = await service.apply(
+                standard["plan_id"], standard["plan_hash"]
+            )
+            assert standard_duplicate["status"] == "already_applied"
+            assert standard_duplicate["task_id"] == standard_applied["task_id"]
+            assert standard_duplicate["redispatch_performed"] is False
+            assert len(observed.mutations) == 1
+            standard_task = _assert_single_task_dispatch(
+                service,
+                standard["plan_id"],
+                standard_applied["task_id"],
+            )
+            assert sum(
+                event["event_type"] == "duplicate_apply_prevented"
+                for event in standard_task["lifecycle_events"]
+            ) == 1
+
+            traces_before = await fetch_normalized_trace_list(
+                gateway.websocket_client.command,
+                RESOURCE_IDS["automation"],
+                known_secrets=(token,),
+            )
+            trace_ids_before = tuple(
+                trace.run_id for trace in traces_before.headers
+            )
+            elevated = await service.create_configuration_plan(
+                title="F2 disposable elevated plan",
+                description=(
+                    "Configure, but do not trigger, one future physical action."
+                ),
+                operations=[
+                    {
+                        "operation_id": "elevated_automation_update",
+                        "resource_type": "automation",
+                        "action": "update",
+                        "target_id": RESOURCE_IDS["automation"],
+                        "depends_on": [],
+                        "proposed_config": copy.deepcopy(
+                            F2_ELEVATED_AUTOMATION_CONFIG
+                        ),
+                    }
+                ],
+            )
+            assert elevated["policy_decision"]["policy_class"] == (
+                "elevated_admin"
+            )
+            mutation_count = len(observed.mutations)
+            elevated_pending = service.approve(
+                elevated["plan_id"], elevated["plan_hash"]
+            )
+            elevated_ack_pending = await _decide_f2_action(
+                service,
+                elevated,
+                elevated_pending,
+                principal=F2_ADMIN_A,
+            )
+            assert elevated_ack_pending["status"] == "approval_pending"
+            assert elevated_ack_pending["approval_action"] == (
+                "elevated_risk_acknowledgement"
+            )
+            assert len(observed.mutations) == mutation_count
+            try:
+                await service.apply(
+                    elevated["plan_id"], elevated["plan_hash"]
+                )
+            except GovernanceError as exc:
+                assert exc.code == (
+                    ErrorCode.ELEVATED_RISK_ACKNOWLEDGEMENT_REQUIRED
+                )
+            else:
+                raise AssertionError(
+                    "one elevated approval unexpectedly authorized apply"
+                )
+            assert service.list_execution_tasks(
+                plan_id=elevated["plan_id"]
+            )["count"] == 0
+
+            _review, wrong_admin_csrf = await service.issue_external_csrf(
+                elevated["plan_id"],
+                elevated_ack_pending["challenge_id"],
+            )
+            try:
+                await service.decide_external_approval(
+                    plan_id=elevated["plan_id"],
+                    challenge_id=elevated_ack_pending["challenge_id"],
+                    expected_plan_hash=elevated["plan_hash"],
+                    approval_kind="apply",
+                    approval_action="elevated_risk_acknowledgement",
+                    csrf_nonce=wrong_admin_csrf,
+                    decision="approve",
+                    approver_principal=F2_ADMIN_B,
+                )
+            except GovernanceError as exc:
+                assert exc.code == ErrorCode.APPROVAL_PRINCIPAL_MISMATCH
+            else:
+                raise AssertionError(
+                    "a different administrator acknowledged elevated risk"
+                )
+            assert len(observed.mutations) == mutation_count
+
+            elevated_approved = await _decide_f2_action(
+                service,
+                elevated,
+                elevated_ack_pending,
+                principal=F2_ADMIN_A,
+            )
+            assert elevated_approved["status"] == "approved"
+            elevated_applied = await service.apply(
+                elevated["plan_id"], elevated["plan_hash"]
+            )
+            assert elevated_applied["status"] == "applied"
+            assert len(observed.mutations) == mutation_count + 1
+            _assert_exact_resource(
+                "automation",
+                RESOURCE_IDS["automation"],
+                F2_ELEVATED_AUTOMATION_CONFIG,
+                await gateway.read(
+                    "automation", RESOURCE_IDS["automation"]
+                ),
+            )
+            elevated_task = _assert_single_task_dispatch(
+                service,
+                elevated["plan_id"],
+                elevated_applied["task_id"],
+            )
+            assert elevated_task["approval_reference"][
+                "same_principal_confirmed"
+            ] is True
+            traces_after = await fetch_normalized_trace_list(
+                gateway.websocket_client.command,
+                RESOURCE_IDS["automation"],
+                known_secrets=(token,),
+            )
+            assert tuple(
+                trace.run_id for trace in traces_after.headers
+            ) == trace_ids_before
+            elevated_duplicate = await service.apply(
+                elevated["plan_id"], elevated["plan_hash"]
+            )
+            assert elevated_duplicate["status"] == "already_applied"
+            assert elevated_duplicate["task_id"] == elevated_applied["task_id"]
+            assert elevated_duplicate["redispatch_performed"] is False
+            assert len(observed.mutations) == mutation_count + 1
+            _assert_single_task_dispatch(
+                service,
+                elevated["plan_id"],
+                elevated_applied["task_id"],
+            )
+
+            prohibited = await service.create_configuration_plan(
+                title="F2 disposable prohibited plan",
+                description="Attempt to configure a safety-critical action.",
+                operations=[
+                    {
+                        "operation_id": "prohibited_automation_update",
+                        "resource_type": "automation",
+                        "action": "update",
+                        "target_id": RESOURCE_IDS["automation"],
+                        "depends_on": [],
+                        "proposed_config": copy.deepcopy(
+                            F2_PROHIBITED_AUTOMATION_CONFIG
+                        ),
+                    }
+                ],
+            )
+            assert prohibited["policy_decision"]["policy_class"] == (
+                "prohibited"
+            )
+            try:
+                service.approve(
+                    prohibited["plan_id"], prohibited["plan_hash"]
+                )
+            except GovernanceError as exc:
+                assert exc.code == ErrorCode.PROHIBITED_CHANGE
+            else:
+                raise AssertionError(
+                    "a prohibited plan created an approval challenge"
+                )
+            try:
+                await service.apply(
+                    prohibited["plan_id"], prohibited["plan_hash"]
+                )
+            except GovernanceError as exc:
+                assert exc.code == ErrorCode.PROHIBITED_CHANGE
+            else:
+                raise AssertionError("a prohibited plan reached apply")
+            assert service.list_execution_tasks(
+                plan_id=prohibited["plan_id"]
+            )["count"] == 0
+            assert len(observed.mutations) == mutation_count + 1
+        finally:
+            end_request(context)
+
+
 async def _run_direct_update_contract(
     gateway: ConfigurationResourceGateway,
 ) -> None:
@@ -652,6 +991,9 @@ async def run_contracts() -> None:
         await _run_legacy_automation_compatibility_contract(
             legacy_automation_gateway
         )
+
+        phase = "f2_policy_acceptance"
+        await _run_f2_policy_acceptance_contract(gateway, token)
 
         phase = "direct_resource_updates"
         await _run_direct_update_contract(gateway)

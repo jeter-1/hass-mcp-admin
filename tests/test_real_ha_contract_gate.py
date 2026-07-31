@@ -124,20 +124,21 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
         self.assertIn("HomeAssistantWebSocketClient", constructors)
 
         service_calls = calls_under(self.tree, "ChangeGovernanceService")
-        self.assertEqual(len(service_calls), 1)
-        service_argument_names = {
-            argument.id
-            for argument in service_calls[0].args
-            if isinstance(argument, ast.Name)
-        } | {
-            keyword.value.id
-            for keyword in service_calls[0].keywords
-            if isinstance(keyword.value, ast.Name)
-        }
-        self.assertIn(
-            "_ObservedConfigurationGateway",
-            {assignments.get(name) for name in service_argument_names},
-        )
+        self.assertEqual(len(service_calls), 2)
+        for service_call in service_calls:
+            service_argument_names = {
+                argument.id
+                for argument in service_call.args
+                if isinstance(argument, ast.Name)
+            } | {
+                keyword.value.id
+                for keyword in service_call.keywords
+                if isinstance(keyword.value, ast.Name)
+            }
+            self.assertIn(
+                "_ObservedConfigurationGateway",
+                {assignments.get(name) for name in service_argument_names},
+            )
         observed = next(
             node
             for node in ast.walk(self.tree)
@@ -236,6 +237,9 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
         self.assertIn("read", governed_calls)
         self.assertIn("_assert_exact_resource", governed_calls)
         self.assertIn(governed.name, runner_calls)
+        self.assertIn(
+            "_run_f2_policy_acceptance_contract", runner_calls
+        )
         self.assertIn(direct_update.name, runner_calls)
 
     def test_exact_identity_and_normalized_fingerprints_are_required(self):
@@ -405,6 +409,69 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
                 ]
             ),
             5,
+        )
+
+    def test_f2_disposable_contract_covers_all_policy_classes(self):
+        contract = self.functions["_run_f2_policy_acceptance_contract"]
+        contract_text = ast.unparse(contract)
+        for required in (
+            "standard_admin",
+            "elevated_admin",
+            "prohibited",
+            "ELEVATED_RISK_ACKNOWLEDGEMENT_REQUIRED",
+            "APPROVAL_PRINCIPAL_MISMATCH",
+            "PROHIBITED_CHANGE",
+            "same_principal_confirmed",
+            "duplicate_apply_prevented",
+            "redispatch_performed",
+            "trace_ids_before",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, contract_text)
+
+        self.assertEqual(
+            len(calls_under(contract, "create_configuration_plan")), 3
+        )
+        self.assertEqual(len(calls_under(contract, "apply")), 6)
+        self.assertEqual(
+            len(calls_under(contract, "fetch_normalized_trace_list")), 2
+        )
+        self.assertGreaterEqual(
+            len(calls_under(contract, "_assert_single_task_dispatch")),
+            4,
+        )
+        self.assertIn("observed.mutations", contract_text)
+        self.assertNotIn("/services/", contract_text)
+        self.assertNotIn("/events/", contract_text)
+
+        action_helper = self.functions["_decide_f2_action"]
+        decision_calls = calls_under(
+            action_helper, "decide_external_approval"
+        )
+        self.assertEqual(len(decision_calls), 1)
+        self.assertIn("approval_action", ast.unparse(decision_calls[0]))
+
+        task_helper = self.functions["_assert_single_task_dispatch"]
+        task_text = ast.unparse(task_helper)
+        self.assertIn("provider_attempt_count", task_text)
+        self.assertIn("dispatch_attempted", task_text)
+        self.assertIn("succeeded_verified", task_text)
+
+    def test_f2_disposable_fixtures_bound_future_actions_without_triggering(self):
+        self.assertEqual(
+            self.contract.F2_STANDARD_HELPER_CONFIG["icon"],
+            "mdi:shield-check",
+        )
+        elevated = self.contract.F2_ELEVATED_AUTOMATION_CONFIG
+        prohibited = self.contract.F2_PROHIBITED_AUTOMATION_CONFIG
+        self.assertEqual(
+            elevated["action"][0]["service"], "light.turn_on"
+        )
+        self.assertEqual(
+            prohibited["action"][0]["service"], "lock.unlock"
+        )
+        self.assertNotEqual(
+            self.contract.F2_ADMIN_A, self.contract.F2_ADMIN_B
         )
 
     def test_contract_cleanup_is_awaited_from_finally(self):
