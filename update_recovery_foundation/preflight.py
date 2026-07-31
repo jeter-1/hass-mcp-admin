@@ -20,6 +20,7 @@ from .models import (
     UpdatePreflightAssessment,
     UpdatePreflightEvidence,
     UpdateRecoveryPolicy,
+    VersionDirection,
 )
 from .policy import DEFAULT_UPDATE_RECOVERY_POLICY
 
@@ -130,16 +131,81 @@ def _evaluate_identity_and_versions(
                 evidence_ids=_evidence_ids(evidence.candidate_version_evidence),
             )
         )
-    if (
-        evidence.installed_version is not None
-        and evidence.candidate_version is not None
-        and evidence.installed_version == evidence.candidate_version
-    ):
+    _evaluate_version_direction(evidence, blockers, warnings, unknowns)
+
+
+def _evaluate_version_direction(
+    evidence: UpdatePreflightEvidence,
+    blockers: list[PreflightFinding],
+    warnings: list[PreflightFinding],
+    unknowns: list[PreflightFinding],
+) -> None:
+    direction = evidence.version_direction
+    installed = evidence.installed_version
+    candidate = evidence.candidate_version
+
+    if direction == VersionDirection.UNKNOWN:
+        unknowns.append(
+            _finding(
+                "candidate_version_direction_unknown",
+                "version_direction",
+                "The candidate version direction is unknown.",
+                manual_review=True,
+            )
+        )
+    elif direction == VersionDirection.DOWNGRADE:
         warnings.append(
+            _finding(
+                "candidate_version_is_downgrade",
+                "version_direction",
+                "The candidate is a caller-identified downgrade and requires review under "
+                "docs/runbooks/DOWNGRADE-VERSUS-BACKUP-RESTORE.md.",
+                manual_review=True,
+            )
+        )
+
+    if candidate is None:
+        if direction != VersionDirection.UNKNOWN:
+            warnings.append(
+                _direction_inconsistency(
+                    "A version direction cannot be confirmed without a candidate version."
+                )
+            )
+        return
+
+    if installed is None:
+        if direction != VersionDirection.UNKNOWN:
+            warnings.append(
+                _direction_inconsistency(
+                    "A known version direction cannot be confirmed without an installed version."
+                )
+            )
+        return
+
+    versions_match = installed == candidate
+    if versions_match:
+        blockers.append(
             _finding(
                 "candidate_matches_installed_version",
                 "candidate_version",
-                "The candidate and installed version strings are identical.",
+                "The candidate and installed version strings are identical; no update is required.",
+            )
+        )
+        if direction in {
+            VersionDirection.UPGRADE,
+            VersionDirection.DOWNGRADE,
+        }:
+            warnings.append(
+                _direction_inconsistency(
+                    "Equal installed and candidate versions conflict with the claimed direction."
+                )
+            )
+        return
+
+    if direction == VersionDirection.SAME:
+        warnings.append(
+            _direction_inconsistency(
+                "Different installed and candidate versions conflict with a same-version direction."
             )
         )
 
@@ -213,12 +279,13 @@ def _evaluate_current_issues(
                         f"Critical {singular} {issue.issue_id!r} is unresolved.",
                     )
                 )
-            elif issue.severity in {IssueSeverity.HIGH, IssueSeverity.MEDIUM}:
+            else:
                 warnings.append(
                     _finding(
                         f"{issue.severity.value}_{singular}_present",
                         field_name,
                         f"{issue.severity.value.title()} {singular} {issue.issue_id!r} is present.",
+                        manual_review=issue.severity == IssueSeverity.HIGH,
                     )
                 )
 
@@ -508,6 +575,7 @@ def _assessment(
         "target_id": evidence.target_id,
         "installed_version": evidence.installed_version,
         "candidate_version": evidence.candidate_version,
+        "version_direction": evidence.version_direction.value,
         "verdict": verdict.value,
         "blockers": [item.as_dict() for item in blockers],
         "warnings": [item.as_dict() for item in warnings],
@@ -526,6 +594,7 @@ def _assessment(
         target_id=evidence.target_id,
         installed_version=evidence.installed_version,
         candidate_version=evidence.candidate_version,
+        version_direction=evidence.version_direction,
         verdict=verdict,
         blockers=blockers,
         warnings=warnings,
@@ -548,6 +617,15 @@ def _finding(
         summary=summary,
         evidence_references=evidence_ids,
         requires_manual_review=manual_review,
+    )
+
+
+def _direction_inconsistency(summary: str) -> PreflightFinding:
+    return _finding(
+        "candidate_version_direction_inconsistent",
+        "version_direction",
+        summary,
+        manual_review=True,
     )
 
 

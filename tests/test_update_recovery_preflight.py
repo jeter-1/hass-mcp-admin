@@ -24,6 +24,7 @@ from update_recovery_foundation import (  # noqa: E402
     TargetType,
     UpdatePreflightEvidence,
     UpdateRiskIssue,
+    VersionDirection,
     evaluate_update_preflight,
 )
 from update_recovery_foundation import preflight as preflight_module  # noqa: E402
@@ -60,6 +61,7 @@ def complete_evidence(
         "target_id": "synthetic-target",
         "installed_version": "2026.7.0",
         "candidate_version": "2026.7.1",
+        "version_direction": VersionDirection.UPGRADE,
         "candidate_version_evidence": reference("candidate-version"),
         "compatibility_status": CompatibilityStatus.COMPATIBLE,
         "compatibility_evidence": (reference("compatibility"),),
@@ -115,6 +117,132 @@ class UpdateRecoveryPreflightTests(unittest.TestCase):
         self.assertEqual(result.blockers, ())
         self.assertEqual(result.unknowns, ())
         self.assertIn("rollback_unavailable", codes(result.warnings))
+        self.assertEqual(result.version_direction, VersionDirection.UPGRADE)
+        self.assertEqual(result.as_dict()["version_direction"], "upgrade")
+
+    def test_version_direction_is_required(self):
+        values = {
+            key: value
+            for key, value in complete_evidence().__dict__.items()
+            if key != "version_direction"
+        }
+        with self.assertRaisesRegex(TypeError, "version_direction"):
+            UpdatePreflightEvidence(**values)
+
+    def test_downgrade_requires_manual_review_and_fixed_procedure(self):
+        result = evaluate_update_preflight(
+            complete_evidence(version_direction=VersionDirection.DOWNGRADE)
+        )
+        finding = next(
+            item
+            for item in result.warnings
+            if item.code == "candidate_version_is_downgrade"
+        )
+        self.assertEqual(
+            result.verdict,
+            PreflightVerdict.MANUAL_REVIEW_REQUIRED,
+        )
+        self.assertTrue(finding.requires_manual_review)
+        self.assertIn(
+            "docs/runbooks/DOWNGRADE-VERSUS-BACKUP-RESTORE.md",
+            finding.summary,
+        )
+        self.assertEqual(result.blockers, ())
+
+    def test_same_version_candidate_is_blocked(self):
+        result = evaluate_update_preflight(
+            complete_evidence(
+                candidate_version="2026.7.0",
+                version_direction=VersionDirection.SAME,
+            )
+        )
+        self.assertEqual(result.verdict, PreflightVerdict.BLOCKED)
+        self.assertIn(
+            "candidate_matches_installed_version",
+            codes(result.blockers),
+        )
+
+    def test_unknown_version_direction_requires_manual_review(self):
+        result = evaluate_update_preflight(
+            complete_evidence(version_direction=VersionDirection.UNKNOWN)
+        )
+        self.assertEqual(
+            result.verdict,
+            PreflightVerdict.MANUAL_REVIEW_REQUIRED,
+        )
+        self.assertIn(
+            "candidate_version_direction_unknown",
+            codes(result.unknowns),
+        )
+
+    def test_version_direction_contradictions_never_reach_readiness(self):
+        cases = (
+            complete_evidence(
+                candidate_version="2026.7.0",
+                version_direction=VersionDirection.UPGRADE,
+            ),
+            complete_evidence(
+                candidate_version="2026.7.0",
+                version_direction=VersionDirection.DOWNGRADE,
+            ),
+            complete_evidence(version_direction=VersionDirection.SAME),
+            complete_evidence(
+                installed_version=None,
+                version_direction=VersionDirection.UPGRADE,
+            ),
+            complete_evidence(
+                installed_version=None,
+                version_direction=VersionDirection.DOWNGRADE,
+            ),
+            complete_evidence(
+                installed_version=None,
+                version_direction=VersionDirection.SAME,
+            ),
+        )
+        for evidence in cases:
+            with self.subTest(evidence=evidence):
+                result = evaluate_update_preflight(evidence)
+                self.assertNotEqual(
+                    result.verdict,
+                    PreflightVerdict.READY_FOR_GOVERNED_PLANNING,
+                )
+                self.assertIn(
+                    "candidate_version_direction_inconsistent",
+                    codes(result.warnings),
+                )
+
+    def test_missing_candidate_remains_blocked_for_every_direction(self):
+        for direction in VersionDirection:
+            with self.subTest(direction=direction):
+                result = evaluate_update_preflight(
+                    complete_evidence(
+                        candidate_version=None,
+                        candidate_version_evidence=None,
+                        version_direction=direction,
+                    )
+                )
+                self.assertEqual(result.verdict, PreflightVerdict.BLOCKED)
+                self.assertIn(
+                    "candidate_version_missing",
+                    codes(result.blockers),
+                )
+
+    def test_missing_installed_version_requires_manual_review(self):
+        result = evaluate_update_preflight(
+            complete_evidence(
+                installed_version=None,
+                version_direction=VersionDirection.UNKNOWN,
+            )
+        )
+        self.assertEqual(
+            result.verdict,
+            PreflightVerdict.MANUAL_REVIEW_REQUIRED,
+        )
+        self.assertIn("installed_version_unknown", codes(result.unknowns))
+        self.assertIn(
+            "candidate_version_direction_unknown",
+            codes(result.unknowns),
+        )
 
     def test_missing_required_backup_blocks(self):
         result = evaluate_update_preflight(
@@ -267,6 +395,69 @@ class UpdateRecoveryPreflightTests(unittest.TestCase):
                 "critical_error_unresolved",
             },
         )
+
+    def test_high_repairs_and_errors_require_manual_review_not_blocking(self):
+        for field_name, singular in (
+            ("current_repairs", "repair"),
+            ("current_errors", "error"),
+        ):
+            with self.subTest(field_name=field_name):
+                result = evaluate_update_preflight(
+                    complete_evidence(
+                        **{
+                            field_name: (
+                                UpdateRiskIssue(
+                                    f"{singular}-high",
+                                    IssueSeverity.HIGH,
+                                    f"Synthetic high {singular}.",
+                                ),
+                            )
+                        }
+                    )
+                )
+                finding = next(
+                    item
+                    for item in result.warnings
+                    if item.code == f"high_{singular}_present"
+                )
+                self.assertEqual(
+                    result.verdict,
+                    PreflightVerdict.MANUAL_REVIEW_REQUIRED,
+                )
+                self.assertTrue(finding.requires_manual_review)
+                self.assertNotIn(
+                    f"critical_{singular}_unresolved",
+                    codes(result.blockers),
+                )
+
+    def test_medium_and_lower_issues_remain_informational_warnings(self):
+        for severity in (
+            IssueSeverity.MEDIUM,
+            IssueSeverity.LOW,
+            IssueSeverity.INFO,
+        ):
+            with self.subTest(severity=severity):
+                result = evaluate_update_preflight(
+                    complete_evidence(
+                        current_repairs=(
+                            UpdateRiskIssue(
+                                f"repair-{severity.value}",
+                                severity,
+                                f"Synthetic {severity.value} repair.",
+                            ),
+                        )
+                    )
+                )
+                finding = next(
+                    item
+                    for item in result.warnings
+                    if item.code == f"{severity.value}_repair_present"
+                )
+                self.assertEqual(
+                    result.verdict,
+                    PreflightVerdict.READY_FOR_GOVERNED_PLANNING,
+                )
+                self.assertFalse(finding.requires_manual_review)
 
     def test_unavailable_rollback_and_restore_are_surfaced(self):
         result = evaluate_update_preflight(

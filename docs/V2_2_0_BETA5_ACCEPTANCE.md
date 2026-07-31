@@ -32,10 +32,28 @@ merge, deploy, or perform an update or recovery action.
 ## Evaluation acceptance
 
 Require explicit target identity, installed and candidate versions,
-authoritative candidate evidence, compatibility status and evidence, active
-repairs and errors, backup status and location where policy requires them,
-storage evidence, target-specific power evidence, recovery availability,
-expected disruption, and an allowed post-update verification profile.
+caller-supplied version direction, authoritative candidate evidence,
+compatibility status and evidence, active repairs and errors, backup status and
+location where policy requires them, storage evidence, target-specific power
+evidence, recovery availability, expected disruption, and an allowed
+post-update verification profile.
+
+Require `upgrade` as the only direction eligible for
+`ready_for_governed_planning`. A `downgrade` or `unknown` direction requires
+manual review; a `same` direction with matching bounded version strings is
+blocked as a no-op. Direction/string contradictions require manual review and
+must never become ready. E1 must consume direction as supplied evidence and
+must not parse strings or retrieve version data. Downgrade findings must cite
+`docs/runbooks/DOWNGRADE-VERSUS-BACKUP-RESTORE.md`.
+
+Require CRITICAL repairs and errors to block. Require HIGH repairs and errors
+to remain warnings that force `manual_review_required`. MEDIUM and lower
+severities remain informational warnings.
+
+A missing candidate version remains a blocker because it is required to define
+the proposed destination. A missing installed version remains an unknown that
+requires manual review: it prevents confirmed direction and compatibility
+reasoning but does not, by itself, prove that no candidate exists.
 
 Require deterministic `ready_for_governed_planning`, `blocked`,
 `manual_review_required`, and `unsupported` verdicts. Blockers, warnings, and

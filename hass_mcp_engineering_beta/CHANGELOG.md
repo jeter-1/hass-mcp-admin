@@ -3,14 +3,18 @@
 ## 2.2.0-beta.5 - Update and recovery preflight foundation
 
 - Add immutable, deterministic models for explicit update targets, installed
-  and candidate versions, compatibility, current repairs and errors, backup,
-  storage, power, recovery, disruption, and post-update verification evidence.
+  and candidate versions, explicit caller-supplied version direction,
+  compatibility, current repairs and errors, backup, storage, power, recovery,
+  disruption, and post-update verification evidence.
 - Preserve separate ordered blockers, warnings, and unknowns with exact
   `ready_for_governed_planning`, `blocked`, `manual_review_required`, and
   `unsupported` advisory verdicts.
 - Fail closed when authoritative candidate or compatibility evidence, required
   backup evidence, storage, power, recovery, disruption, or verification facts
   are missing or conflict with the selected target policy.
+- Permit readiness only for confirmed upgrades; require manual review for
+  downgrades, unknown direction, direction contradictions, and HIGH unresolved
+  repairs or errors; block same-version candidates and CRITICAL issues.
 - Keep E1 pure and runtime-inert: no evidence collection, startup loading,
   network or Home Assistant access, tool, health, provider, plan, approval,
   task, update, backup, restart, restore, downgrade, safe-mode action, write, or

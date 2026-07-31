@@ -32,6 +32,15 @@ class CompatibilityStatus(str, Enum):
     UNAVAILABLE = "unavailable"
 
 
+class VersionDirection(str, Enum):
+    """Caller-supplied relationship between installed and candidate versions."""
+
+    UPGRADE = "upgrade"
+    DOWNGRADE = "downgrade"
+    SAME = "same"
+    UNKNOWN = "unknown"
+
+
 class BackupStatus(str, Enum):
     CURRENT = "current"
     STALE = "stale"
@@ -256,6 +265,7 @@ class UpdatePreflightEvidence:
     target_id: str
     installed_version: str | None
     candidate_version: str | None
+    version_direction: VersionDirection
     compatibility_status: CompatibilityStatus
     candidate_version_evidence: EvidenceReference | None = None
     compatibility_evidence: tuple[EvidenceReference, ...] = ()
@@ -295,6 +305,15 @@ class UpdatePreflightEvidence:
             self,
             "candidate_version",
             _optional_text(self.candidate_version, 128),
+        )
+        object.__setattr__(
+            self,
+            "version_direction",
+            _coerce_enum(
+                VersionDirection,
+                self.version_direction,
+                field_name="version_direction",
+            ),
         )
         object.__setattr__(
             self,
@@ -472,6 +491,7 @@ class UpdatePreflightAssessment:
     target_id: str
     installed_version: str | None
     candidate_version: str | None
+    version_direction: VersionDirection
     verdict: PreflightVerdict
     blockers: tuple[PreflightFinding, ...]
     warnings: tuple[PreflightFinding, ...]
@@ -485,6 +505,7 @@ class UpdatePreflightAssessment:
             "target_id": self.target_id,
             "installed_version": self.installed_version,
             "candidate_version": self.candidate_version,
+            "version_direction": self.version_direction.value,
             "verdict": self.verdict.value,
             "blockers": [item.as_dict() for item in self.blockers],
             "warnings": [item.as_dict() for item in self.warnings],

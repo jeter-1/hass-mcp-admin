@@ -19,6 +19,7 @@ from .models import (
     UpdatePreflightEvidence,
     UpdateRecoveryPolicy,
     UpdateRiskIssue,
+    VersionDirection,
 )
 from .policy import DEFAULT_UPDATE_RECOVERY_POLICY
 from .preflight import evaluate_update_preflight
@@ -43,5 +44,6 @@ __all__ = [
     "UpdatePreflightEvidence",
     "UpdateRecoveryPolicy",
     "UpdateRiskIssue",
+    "VersionDirection",
     "evaluate_update_preflight",
 ]

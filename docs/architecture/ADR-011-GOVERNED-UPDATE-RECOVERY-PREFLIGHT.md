@@ -58,6 +58,27 @@ when the explicit target policy says so. The output includes a SHA-256
 fingerprint of the canonical decision payload. It is not a signature,
 authorization, plan ID, approval, or execution token.
 
+Version direction is explicit caller-supplied evidence with the closed values
+`upgrade`, `downgrade`, `same`, and `unknown`. E1 does not parse version
+strings, retrieve versions, or infer direction. Only a confirmed `upgrade` is
+eligible for `ready_for_governed_planning`. A `downgrade` requires manual
+review under
+`docs/runbooks/DOWNGRADE-VERSUS-BACKUP-RESTORE.md`, a `same` candidate is
+blocked as a no-op, and `unknown` requires manual review. Contradictions
+between supplied direction and the bounded installed/candidate strings fail
+closed rather than being repaired or inferred.
+
+An authoritative candidate is required to define the proposed destination, so
+a missing candidate version remains a blocker. An unknown installed version
+prevents confirmed direction and compatibility reasoning but does not, by
+itself, prove that no candidate exists; it therefore remains an unknown that
+requires manual review. A claimed known direction cannot override that
+asymmetry.
+
+Unresolved current issues retain their severity distinction: CRITICAL repairs
+and errors are blockers, HIGH repairs and errors remain warnings but require
+manual review, and MEDIUM-or-lower issues are informational warnings.
+
 The proposed default policy is:
 
 | Target | Backup prerequisite | Maximum age | Stale disposition | Recovery path | Known stable power |
@@ -111,7 +132,9 @@ This foundation does not:
 Unsupported target strings return `unsupported`. Incompatible targets, absent
 authoritative candidate versions, unavailable compatibility evidence, required
 backup failures, insufficient storage, critical repairs or errors, and a known
-absence of policy-required recovery paths return `blocked`.
+absence of policy-required recovery paths return `blocked`. HIGH repairs or
+errors, downgrades, unknown version direction, and inconsistent direction
+evidence cannot reach readiness and require manual review.
 
 ## Consequences
 

@@ -12,6 +12,8 @@ E1 provides:
   OS, add-ons, HACS integrations and frontend components, the Engineering MCP
   server, upstream `ha-mcp`, and firmware update entities;
 - immutable installed and candidate version evidence;
+- caller-supplied `upgrade`, `downgrade`, `same`, or `unknown` version
+  direction without parsing or retrieval;
 - authoritative candidate and compatibility references;
 - separate current repair and error evidence;
 - explicit backup status, age, and location evidence;
@@ -27,6 +29,20 @@ E1 provides:
 Missing decision-critical evidence never becomes ready. Planning readiness
 means only that a future governed plan may be considered; it is not approval,
 authorization, scheduling, execution, or provider admission.
+
+Only a confirmed `upgrade` may reach planning readiness. Downgrades and
+unknown direction require manual review, same-version candidates are blocked
+as no-op updates, and contradictory direction evidence fails closed.
+Downgrade review follows
+`docs/runbooks/DOWNGRADE-VERSUS-BACKUP-RESTORE.md`.
+
+CRITICAL unresolved repairs and errors remain blockers. HIGH unresolved
+repairs and errors remain warnings but now require manual review; MEDIUM and
+lower severities remain informational warnings. A candidate version is
+required to identify the proposed destination. A missing installed version
+instead remains an unknown/manual-review condition because it prevents
+confirmed direction and compatibility reasoning without proving that no
+candidate exists.
 
 ## Runtime and authority boundary
 
