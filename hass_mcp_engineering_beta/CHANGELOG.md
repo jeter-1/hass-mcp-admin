@@ -22,6 +22,10 @@
 - Add disposable pinned-Core contracts for standard, elevated, and prohibited
   configuration policies. Planning never triggers the configured future
   physical action, and duplicate apply performs no second write.
+- Verify accepted automation readback through a narrow schema-aware
+  `service`/`action` alias normalization while retaining raw fingerprints,
+  meaningful-field mismatches, unchanged plan/policy hashes, and truthful
+  provider-response evidence.
 - Preserve 48 local Engineering tools, the configured 26 exact-admitted
   delegated reads, stable v1.1.2, and the existing upstream fingerprints.
 

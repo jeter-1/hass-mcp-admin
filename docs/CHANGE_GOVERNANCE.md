@@ -336,11 +336,19 @@ Assistant's configuration endpoint, and reads the stored resource back.
 
 Verification requires target existence, an explicitly matching automation ID
 when Home Assistant returns one, normalized desired-versus-read-back behavioral
-equivalence, a matching actual fingerprint, Home Assistant configuration
-validation, and recorded duration and mismatch fields. A successful HTTP write
-with failed verification produces `automation_verification_failed`, preserves
-the snapshot, and makes update rollback available. It never reports a successful
-governed change.
+equivalence, Home Assistant configuration validation, and recorded duration and
+mismatch fields. Home Assistant may canonicalize a reviewed automation action
+step from `service` to `action`; the post-write verifier treats only that
+schema-positioned alias as equivalent. Raw, binding, and verification-normalized
+fingerprints remain distinct bounded evidence. Targets, data, ordering,
+triggers, conditions, and other behaviorally meaningful differences remain
+mismatches under the established optional-empty rules; unsupported or
+ambiguous structures fail closed.
+This verifier does not change plan or policy hashes, stale-state fingerprints,
+or the configuration dispatched to Home Assistant, and it is not a general
+YAML-equivalence engine. A successful HTTP write with a real behavioral
+verification mismatch preserves the provider response, produces a post-dispatch
+verification failure, and never reports a successful governed change.
 
 Home Assistant commonly injects the correct top-level `id` into stored readback;
 that does not create an `other:id` behavioral mismatch. A different ID produces

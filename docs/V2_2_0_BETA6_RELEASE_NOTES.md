@@ -72,6 +72,14 @@ is readback-only. Operation-specific verification, the 24-hour post-dispatch
 deadline, pre-dispatch-only cancellation, and truthful provider-response
 evidence remain unchanged.
 
+For automation configuration readback only, Home Assistant's accepted
+`service`-to-`action` step canonicalization is compared through a reviewed,
+schema-aware semantic normalizer. Raw and normalized fingerprints remain
+separate evidence; meaningful target, data, ordering, and control differences
+remain mismatches, while unsupported or ambiguous structures fail closed. The
+normalizer does not affect plan or policy hashes,
+stale-state protection, dispatch payloads, or other YAML structures.
+
 ## Ingress, audit, and health
 
 The Ingress review page displays bounded server-owned plan identity, shortened

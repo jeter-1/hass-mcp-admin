@@ -138,6 +138,51 @@ class Beta10WebSocketTransportTests(unittest.IsolatedAsyncioTestCase):
                 await self.client.command({"type": "system_log/list"})
         self.assertNotIn("raw unsafe text", str(raised.exception))
         self.assertEqual(self.telemetry.error_code, "authorization_failure")
+        self.assertIs(
+            raised.exception.details.get("provider_response_received"),
+            True,
+        )
+
+    async def test_in_band_error_is_a_received_provider_response(self):
+        websocket = FakeWebSocket(
+            [
+                {"type": "auth_required"},
+                {"type": "auth_ok"},
+                {
+                    "id": 1,
+                    "type": "result",
+                    "success": False,
+                    "error": {"code": "invalid_format", "message": "unsafe"},
+                },
+            ]
+        )
+        with patch(
+            "ha_mcp_engineering.clients.websocket.aiohttp.ClientSession",
+            return_value=FakeWebSocketSession(websocket),
+        ):
+            with self.assertRaises(HomeAssistantApiError) as raised:
+                await self.client.command({"type": "input_boolean/update"})
+        self.assertIs(
+            raised.exception.details.get("provider_response_received"),
+            True,
+        )
+        self.assertNotIn("unsafe", str(raised.exception.details))
+
+    async def test_pre_command_protocol_error_does_not_claim_response(self):
+        websocket = FakeWebSocket([{"type": "unexpected"}])
+        with patch(
+            "ha_mcp_engineering.clients.websocket.aiohttp.ClientSession",
+            return_value=FakeWebSocketSession(websocket),
+        ):
+            with self.assertRaises(HomeAssistantApiError) as raised:
+                await self.client.command({"type": "input_boolean/update"})
+        self.assertNotIn(
+            "provider_response_received", raised.exception.details
+        )
+        self.assertNotIn(
+            "provider_response_received",
+            self.client._error_details("input_boolean/update", status=500),
+        )
 
     async def test_system_log_timeout_and_unavailable_are_measured_once(self):
         websocket = FakeWebSocket([asyncio.TimeoutError()])

@@ -85,6 +85,7 @@ class HomeAssistantRestClient:
                             "status": response.status,
                             "method": method,
                             "endpoint_category": category,
+                            "provider_response_received": True,
                         }
                         if response.status == 404 and path.startswith("/states/"):
                             error = EntityNotFoundError(details=details)

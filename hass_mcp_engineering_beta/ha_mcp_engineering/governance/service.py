@@ -16,7 +16,12 @@ import uuid
 
 from ..audit import AuditLogger
 from ..clients.rest import ExpectedHttpStatus, HomeAssistantRestClient
-from ..errors import ErrorCode, GovernanceError, HomeAssistantApiError
+from ..errors import (
+    EngineeringServerError,
+    ErrorCode,
+    GovernanceError,
+    HomeAssistantApiError,
+)
 from ..logging_config import get_logger, log_event
 from ..observability import METRICS
 from ..request_context import (
@@ -60,6 +65,8 @@ from .resources import (
     ConfigurationMutationCompletedUnexpectedlyError,
     ConfigurationMutationNotDispatchedError,
     RESOURCE_NORMALIZATION_VERSION,
+    ResourceVerificationComparison,
+    compare_resource_verification,
     normalize_resource_config,
     resource_fingerprint,
     resource_identity_matches,
@@ -1968,12 +1975,36 @@ class ChangeGovernanceService:
             return
 
         if event.endswith(("_provider_completed", "_provider_failed")):
-            response_received = bool(
-                plan.operational
-                and plan.operational.dispatch.get(
-                    "provider_response_received"
+            response_received = False
+            response_recorded_at: str | None = None
+            if (
+                plan.contract_version
+                == CONFIGURATION_PLAN_CONTRACT_VERSION
+                and operation_step is not None
+                and isinstance(operation_step.execution_receipt, dict)
+            ):
+                response_received = (
+                    operation_step.execution_receipt.get(
+                        "provider_response_received"
+                    )
+                    is True
                 )
-            )
+                recorded = operation_step.execution_receipt.get(
+                    "provider_response_recorded_at"
+                )
+                if isinstance(recorded, str):
+                    response_recorded_at = recorded
+            elif plan.operational is not None:
+                response_received = bool(
+                    plan.operational.dispatch.get(
+                        "provider_response_received"
+                    )
+                )
+                recorded = plan.operational.dispatch.get(
+                    "provider_response_at"
+                )
+                if isinstance(recorded, str):
+                    response_recorded_at = recorded
             if not response_received:
                 self._record_task_event(
                     task,
@@ -1999,10 +2030,7 @@ class ChangeGovernanceService:
                     **attempts[-1],
                     "response_received": True,
                     "response_recorded_at": str(
-                        plan.operational.dispatch.get(
-                            "provider_response_at"
-                        )
-                        or self._timestamp()
+                        response_recorded_at or self._timestamp()
                     ),
                 }
             self._record_task_event(
@@ -4646,6 +4674,10 @@ class ChangeGovernanceService:
         *,
         error_code: str | None = None,
     ) -> None:
+        if task.state not in TERMINAL_TASK_STATES:
+            self._reconcile_configuration_task_response_evidence(
+                task, plan
+            )
         if task.state in TERMINAL_TASK_STATES:
             return
         dispatched = self._task_is_dispatched(task)
@@ -4671,6 +4703,9 @@ class ChangeGovernanceService:
                             "status": "verified",
                             "plan_status": plan.status.value,
                             "provider_dispatch_occurred": False,
+                            **self._configuration_task_verification_evidence(
+                                plan
+                            ),
                         },
                         "legacy_projection": legacy,
                     },
@@ -4713,6 +4748,9 @@ class ChangeGovernanceService:
                             )
                             is True
                         ),
+                        **self._configuration_task_verification_evidence(
+                            plan
+                        ),
                     },
                     "legacy_projection": legacy,
                 },
@@ -4739,7 +4777,10 @@ class ChangeGovernanceService:
             PlanStatus.FAILED,
             PlanStatus.VERIFICATION_FAILED,
         }:
-            if task.state == ExecutionTaskState.DISPATCHING:
+            if task.state in {
+                ExecutionTaskState.DISPATCHING,
+                ExecutionTaskState.OBSERVING,
+            }:
                 self._record_task_event(
                     task,
                     "verification_started",
@@ -4765,6 +4806,9 @@ class ChangeGovernanceService:
                     "verification_summary": {
                         **task.verification_summary,
                         "status": "failed",
+                        **self._configuration_task_verification_evidence(
+                            plan
+                        ),
                     },
                     "legacy_projection": legacy,
                 },
@@ -6932,6 +6976,172 @@ class ChangeGovernanceService:
             for operation in sorted(plan.operations, key=lambda item: item.order)
         ]
 
+    @staticmethod
+    def _verification_receipt_evidence(
+        comparison: ResourceVerificationComparison,
+    ) -> dict[str, Any]:
+        return {
+            "raw_approved_fingerprint": (
+                comparison.raw_approved_fingerprint
+            ),
+            "raw_observed_fingerprint": (
+                comparison.raw_observed_fingerprint
+            ),
+            "binding_approved_fingerprint": (
+                comparison.binding_approved_fingerprint
+            ),
+            "binding_observed_fingerprint": (
+                comparison.binding_observed_fingerprint
+            ),
+            "normalized_approved_fingerprint": (
+                comparison.normalized_approved_fingerprint
+            ),
+            "normalized_observed_fingerprint": (
+                comparison.normalized_observed_fingerprint
+            ),
+            "canonicalization_categories": list(
+                comparison.canonicalization_categories
+            ),
+            "verification_normalization_version": (
+                comparison.verification_normalization_version
+            ),
+            "observed_available": comparison.observed_available,
+            "semantic_verification_result": (
+                "matched"
+                if comparison.semantic_match
+                else "unavailable"
+                if not comparison.observed_available
+                else "mismatch"
+                if comparison.normalization_valid
+                else "invalid"
+            ),
+        }
+
+    def _reconcile_configuration_task_response_evidence(
+        self,
+        task: ExecutionTask,
+        plan: ChangePlan,
+    ) -> None:
+        """Recover task response truth from a persisted operation receipt.
+
+        Plan storage is committed before task projection. If task storage is
+        briefly unavailable after Home Assistant has responded, the immutable
+        operation receipt and its matching plan event may safely restore only
+        the missing response flag. This path never creates an attempt, reads
+        Home Assistant, or dispatches a provider.
+        """
+
+        if plan.contract_version != CONFIGURATION_PLAN_CONTRACT_VERSION:
+            return
+        response_events = {
+            event.operation_id
+            for event in plan.events
+            if event.event
+            in {
+                "configuration_operation_provider_completed",
+                "configuration_operation_provider_failed",
+            }
+            and isinstance(event.operation_id, str)
+        }
+        operations = {
+            operation.operation_id: operation
+            for operation in plan.operations
+        }
+        attempts = [dict(item) for item in task.provider_attempts]
+        changed = False
+        for index, attempt in enumerate(attempts):
+            if attempt.get("response_received") is True:
+                continue
+            operation_id = attempt.get("operation_id")
+            operation = operations.get(operation_id)
+            if operation is None or operation_id not in response_events:
+                continue
+            receipt = operation.execution_receipt
+            if (
+                not isinstance(receipt, dict)
+                or receipt.get("provider_response_received") is not True
+            ):
+                continue
+            recorded_at = receipt.get("provider_response_recorded_at")
+            try:
+                parse_task_timestamp(recorded_at)
+            except (TypeError, ValueError):
+                continue
+            attempts[index] = {
+                **attempt,
+                "response_received": True,
+                "response_recorded_at": recorded_at,
+            }
+            changed = True
+        if not changed:
+            return
+        self._record_task_event(
+            task,
+            "provider_response_recorded",
+            new_state=(
+                ExecutionTaskState.OBSERVING
+                if task.state == ExecutionTaskState.DISPATCHING
+                else None
+            ),
+            changes={
+                "provider_attempts": attempts,
+                "verification_summary": {
+                    **task.verification_summary,
+                    "status": "pending",
+                    "provider_response_received": bool(
+                        attempts
+                        and attempts[-1].get("response_received") is True
+                    ),
+                    "response_evidence_source": (
+                        "persisted_configuration_operation"
+                    ),
+                },
+            },
+        )
+
+    @staticmethod
+    def _configuration_response_was_received(
+        error: BaseException,
+    ) -> bool:
+        return (
+            isinstance(error, EngineeringServerError)
+            and error.details.get("provider_response_received") is True
+        )
+
+    @staticmethod
+    def _configuration_task_verification_evidence(
+        plan: ChangePlan,
+    ) -> dict[str, Any]:
+        if plan.contract_version != CONFIGURATION_PLAN_CONTRACT_VERSION:
+            return {}
+        projected: list[dict[str, Any]] = []
+        allowed_receipt_fields = (
+            "raw_approved_fingerprint",
+            "raw_observed_fingerprint",
+            "binding_approved_fingerprint",
+            "binding_observed_fingerprint",
+            "normalized_approved_fingerprint",
+            "normalized_observed_fingerprint",
+            "canonicalization_categories",
+            "verification_normalization_version",
+            "observed_available",
+            "semantic_verification_result",
+        )
+        for operation in sorted(
+            plan.operations, key=lambda item: item.order
+        )[:MAX_CONFIGURATION_OPERATIONS]:
+            receipt = (
+                operation.execution_receipt
+                if isinstance(operation.execution_receipt, dict)
+                else {}
+            )
+            evidence = {
+                key: receipt.get(key) for key in allowed_receipt_fields
+            }
+            evidence["operation_id"] = operation.operation_id
+            projected.append(evidence)
+        return {"configuration_operations": projected}
+
     def _mark_unattempted_operations(
         self,
         plan: ChangePlan,
@@ -7004,12 +7214,16 @@ class ChangeGovernanceService:
                 current = await self._read_configuration_resource(
                     resource_type, operation.target_id
                 )
+                comparison = compare_resource_verification(
+                    resource_type,
+                    operation.proposed_config,
+                    current,
+                )
                 if (
                     not resource_identity_matches(
                         resource_type, operation.target_id, current
                     )
-                    or resource_fingerprint(resource_type, current)
-                    != operation.proposed_config_hash
+                    or not comparison.semantic_match
                 ):
                     raise GovernanceError(
                         ErrorCode.APPROVAL_ALREADY_CONSUMED,
@@ -7362,8 +7576,6 @@ class ChangeGovernanceService:
                         operation.target_id,
                         operation.proposed_config,
                     )
-                    successful_writes += 1
-                    operation.execution_receipt["write_completed"] = True
                 except ConfigurationMutationNotDispatchedError as exc:
                     attempted_writes = max(0, attempted_writes - 1)
                     reason = exc.details.get("reason")
@@ -7501,6 +7713,10 @@ class ChangeGovernanceService:
                         {
                             "write_completed": True,
                             "readback_completed": False,
+                            "provider_response_received": True,
+                            "provider_response_recorded_at": (
+                                self._timestamp()
+                            ),
                             "write_result": "completed_unexpectedly",
                             "outcome": "unexpected_resource_created",
                             "unexpected_resource_id": (
@@ -7508,6 +7724,12 @@ class ChangeGovernanceService:
                             ),
                             "orphan_risk": True,
                         }
+                    )
+                    self._record(
+                        plan,
+                        "configuration_operation_provider_completed",
+                        "success",
+                        operation_step=operation,
                     )
                     operation.failure_information = {
                         "error_code": ErrorCode.CONFIGURATION_APPLY_FAILED.value,
@@ -7601,6 +7823,21 @@ class ChangeGovernanceService:
                                 )
                             ):
                                 unexpected_resource_id = candidate
+                    if self._configuration_response_was_received(exc):
+                        operation.execution_receipt.update(
+                            {
+                                "provider_response_received": True,
+                                "provider_response_recorded_at": (
+                                    self._timestamp()
+                                ),
+                            }
+                        )
+                        self._record(
+                            plan,
+                            "configuration_operation_provider_failed",
+                            "failure",
+                            operation_step=operation,
+                        )
                     # A transport failure does not prove that Home Assistant
                     # rejected the write. Perform one bounded exact readback,
                     # persist what is known, and stop. Never continue an
@@ -7619,8 +7856,18 @@ class ChangeGovernanceService:
                     except Exception as readback_exc:
                         readback_error_category = type(readback_exc).__name__
 
-                    actual_after_error_fingerprint = resource_fingerprint(
-                        resource_type, actual_after_error
+                    comparison = compare_resource_verification(
+                        resource_type,
+                        operation.proposed_config,
+                        actual_after_error,
+                        observed_available=bool(
+                            operation.execution_receipt[
+                                "readback_completed"
+                            ]
+                        ),
+                    )
+                    actual_after_error_fingerprint = (
+                        comparison.binding_observed_fingerprint
                     )
                     desired_state_proven = (
                         resource_identity_matches(
@@ -7628,8 +7875,7 @@ class ChangeGovernanceService:
                             operation.target_id,
                             actual_after_error,
                         )
-                        and actual_after_error_fingerprint
-                        == operation.proposed_config_hash
+                        and comparison.semantic_match
                     )
                     operation.post_apply_fingerprint = (
                         actual_after_error_fingerprint
@@ -7651,8 +7897,20 @@ class ChangeGovernanceService:
                                 ]
                                 else None
                             ),
+                            **self._verification_receipt_evidence(
+                                comparison
+                            ),
                         }
                     )
+                    ambiguous_mismatches = list(
+                        comparison.mismatch_categories
+                    )
+                    if not resource_identity_matches(
+                        resource_type,
+                        operation.target_id,
+                        actual_after_error,
+                    ):
+                        ambiguous_mismatches.append("resource_identity")
                     operation.failure_information = {
                         "error_code": ErrorCode.CONFIGURATION_APPLY_FAILED.value,
                         "failure_category": type(exc).__name__,
@@ -7660,6 +7918,9 @@ class ChangeGovernanceService:
                             readback_error_category
                         ),
                         "desired_state_proven": desired_state_proven,
+                        "mismatch_fields": sorted(
+                            set(ambiguous_mismatches)
+                        ),
                     }
                     if unexpected_resource_id is not None:
                         operation.execution_receipt.update(
@@ -7772,6 +8033,23 @@ class ChangeGovernanceService:
                         code,
                         details=failure_details,
                     ) from exc
+                else:
+                    successful_writes += 1
+                    operation.execution_receipt.update(
+                        {
+                            "write_completed": True,
+                            "provider_response_received": True,
+                            "provider_response_recorded_at": (
+                                self._timestamp()
+                            ),
+                        }
+                    )
+                    self._record(
+                        plan,
+                        "configuration_operation_provider_completed",
+                        "success",
+                        operation_step=operation,
+                    )
 
                 try:
                     actual = await self._read_configuration_resource(
@@ -7785,24 +8063,22 @@ class ChangeGovernanceService:
                         "failure_category": type(exc).__name__,
                     }
 
-                actual_fingerprint = resource_fingerprint(
-                    resource_type, actual
+                comparison = compare_resource_verification(
+                    resource_type,
+                    operation.proposed_config,
+                    actual,
+                    observed_available=bool(
+                        operation.execution_receipt["readback_completed"]
+                    ),
                 )
-                mismatch = []
+                actual_fingerprint = (
+                    comparison.binding_observed_fingerprint
+                )
+                mismatch = list(comparison.mismatch_categories)
                 if not resource_identity_matches(
                     resource_type, operation.target_id, actual
                 ):
                     mismatch.append("resource_identity")
-                if actual_fingerprint != operation.proposed_config_hash:
-                    mismatch.extend(
-                        item["field"]
-                        for item in structured_resource_diff(
-                            resource_type,
-                            operation.proposed_config,
-                            actual or {},
-                        ).get("changed_fields", [])
-                        if isinstance(item, dict) and item.get("field")
-                    )
                 operation.post_apply_fingerprint = actual_fingerprint
                 operation.verification = ChangeVerification(
                     status="failed" if mismatch else "passed",
@@ -7812,9 +8088,13 @@ class ChangeGovernanceService:
                     config_check_status="deferred",
                     mismatch_fields=sorted(set(mismatch)),
                 )
-                operation.execution_receipt[
-                    "resulting_fingerprint"
-                ] = actual_fingerprint
+                operation.execution_receipt.update(
+                    {
+                        "resulting_fingerprint": actual_fingerprint,
+                        "desired_state_proven": not mismatch,
+                        **self._verification_receipt_evidence(comparison),
+                    }
+                )
                 if mismatch:
                     operation.execution_status = (
                         StepExecutionStatus.VERIFICATION_FAILED

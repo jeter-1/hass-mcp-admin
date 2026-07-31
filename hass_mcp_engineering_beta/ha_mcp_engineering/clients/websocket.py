@@ -28,10 +28,17 @@ class HomeAssistantWebSocketClient:
         return str(command_type)[:128] if command_type else "websocket"
 
     @staticmethod
-    def _error_details(category: str, *, status: int | None = None) -> dict:
+    def _error_details(
+        category: str,
+        *,
+        status: int | None = None,
+        provider_response_received: bool = False,
+    ) -> dict:
         details = {"method": "WEBSOCKET", "endpoint_category": category}
         if status is not None:
             details["status"] = status
+        if provider_response_received:
+            details["provider_response_received"] = True
         return details
 
     def _record(self, started: float, category: str, *, timeout: bool = False) -> None:
@@ -91,12 +98,19 @@ class HomeAssistantWebSocketClient:
                         if error_code in {"unauthorized", "forbidden"}:
                             self._set_error(ErrorCode.AUTHORIZATION_FAILURE)
                             raise AuthorizationError(
-                                details=self._error_details(category)
+                                details=self._error_details(
+                                    category,
+                                    provider_response_received=True,
+                                )
                             )
                         status = 404 if error_code in {"404", "not_found"} else None
                         self._set_error(ErrorCode.HA_API_ERROR)
                         raise HomeAssistantApiError(
-                            details=self._error_details(category, status=status)
+                            details=self._error_details(
+                                category,
+                                status=status,
+                                provider_response_received=True,
+                            )
                         )
         except (asyncio.TimeoutError, TimeoutError) as exc:
             self._record(started, category, timeout=True)

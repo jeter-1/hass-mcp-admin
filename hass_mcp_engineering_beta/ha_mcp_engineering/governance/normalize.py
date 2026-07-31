@@ -10,6 +10,39 @@ from typing import Any
 ALIASES = {"triggers": "trigger", "conditions": "condition", "actions": "action"}
 OPTIONAL_EMPTY = {"condition": [], "variables": {}, "trace": {}}
 AUTOMATION_NORMALIZATION_VERSION = 2
+AUTOMATION_VERIFICATION_NORMALIZATION_VERSION = 1
+AUTOMATION_ACTION_SERVICE_ALIAS = "automation_action_service_alias"
+MAX_AUTOMATION_ACTION_NAME_LENGTH = 200
+MAX_AUTOMATION_ACTION_DEPTH = 4
+AUTOMATION_ACTION_STEP_MODIFIERS = frozenset(
+    {"alias", "continue_on_error", "enabled"}
+)
+AUTOMATION_SERVICE_ACTION_FIELDS = frozenset(
+    {
+        *AUTOMATION_ACTION_STEP_MODIFIERS,
+        "action",
+        "data",
+        "data_template",
+        "metadata",
+        "response_variable",
+        "service",
+        "target",
+    }
+)
+AUTOMATION_SIMPLE_ACTION_DIRECTIVES = frozenset(
+    {
+        "condition",
+        "delay",
+        "event",
+        "scene",
+        "set_conversation_response",
+        "stop",
+        "variables",
+        "wait_for_trigger",
+        "wait_template",
+    }
+)
+AUTOMATION_DEVICE_ACTION_FIELDS = frozenset({"device_id", "domain", "type"})
 DIFF_LABELS = {
     "alias": "alias",
     "description": "description",
@@ -53,6 +86,286 @@ def normalize_automation(config: dict[str, Any] | None) -> dict[str, Any] | None
         if normalized.get(key) == empty:
             normalized.pop(key)
     return _canonical(normalized)
+
+
+class AutomationVerificationNormalizationError(ValueError):
+    """The automation readback cannot be compared under reviewed semantics."""
+
+
+def _verification_action_sequence(
+    value: Any,
+    *,
+    categories: set[str],
+    depth: int,
+    allow_sequence_wrapper: bool = False,
+) -> list[dict[str, Any]]:
+    if depth > MAX_AUTOMATION_ACTION_DEPTH or not isinstance(value, list):
+        raise AutomationVerificationNormalizationError(
+            "unsupported automation action sequence"
+        )
+    result: list[dict[str, Any]] = []
+    for step in value:
+        if not isinstance(step, dict):
+            raise AutomationVerificationNormalizationError(
+                "unsupported automation action step"
+            )
+        result.append(
+            _verification_action_step(
+                step,
+                categories=categories,
+                depth=depth,
+                allow_sequence_wrapper=allow_sequence_wrapper,
+            )
+        )
+    return result
+
+
+def _verification_action_step(
+    step: dict[str, Any],
+    *,
+    categories: set[str],
+    depth: int,
+    allow_sequence_wrapper: bool,
+) -> dict[str, Any]:
+    normalized = {key: _canonical(value) for key, value in step.items()}
+    has_service = "service" in normalized
+    has_action = "action" in normalized
+    if has_service and has_action:
+        raise AutomationVerificationNormalizationError(
+            "ambiguous automation action alias"
+        )
+    action_families = [
+        name
+        for name, present in (
+            ("call", has_service or has_action),
+            ("choose", "choose" in normalized),
+            ("if", "if" in normalized),
+            ("repeat", "repeat" in normalized),
+            ("parallel", "parallel" in normalized),
+            ("sequence", "sequence" in normalized),
+        )
+        if present
+    ]
+    action_families.extend(
+        sorted(
+            key
+            for key in AUTOMATION_SIMPLE_ACTION_DIRECTIVES
+            if key in normalized
+        )
+    )
+    if AUTOMATION_DEVICE_ACTION_FIELDS.intersection(normalized):
+        action_families.append("device")
+    if len(action_families) > 1:
+        raise AutomationVerificationNormalizationError(
+            "ambiguous automation action family"
+        )
+
+    action_family = action_families[0] if action_families else None
+    if has_service or has_action:
+        if not set(normalized).issubset(AUTOMATION_SERVICE_ACTION_FIELDS):
+            raise AutomationVerificationNormalizationError(
+                "unsupported automation service action fields"
+            )
+        alias_key = "service" if has_service else "action"
+        action_name = normalized[alias_key]
+        if (
+            not isinstance(action_name, str)
+            or not action_name.strip()
+            or action_name != action_name.strip()
+            or len(action_name) > MAX_AUTOMATION_ACTION_NAME_LENGTH
+        ):
+            raise AutomationVerificationNormalizationError(
+                "invalid automation action alias"
+            )
+        if has_service:
+            normalized.pop("service")
+            normalized["action"] = action_name
+            categories.add(AUTOMATION_ACTION_SERVICE_ALIAS)
+
+    if "default" in normalized and action_family != "choose":
+        raise AutomationVerificationNormalizationError(
+            "orphan automation default action"
+        )
+    if (
+        "then" in normalized or "else" in normalized
+    ) and action_family != "if":
+        raise AutomationVerificationNormalizationError(
+            "orphan automation conditional action"
+        )
+
+    choose = normalized.get("choose")
+    if action_family == "choose":
+        if (
+            not isinstance(choose, list)
+            or not set(normalized).issubset(
+                AUTOMATION_ACTION_STEP_MODIFIERS | {"choose", "default"}
+            )
+        ):
+            raise AutomationVerificationNormalizationError(
+                "unsupported automation choose action"
+            )
+        normalized_choices: list[dict[str, Any]] = []
+        for choice in choose:
+            if (
+                not isinstance(choice, dict)
+                or set(choice) - {"alias", "conditions", "sequence"}
+                or "conditions" not in choice
+                or not isinstance(choice["conditions"], list)
+                or "sequence" not in choice
+            ):
+                raise AutomationVerificationNormalizationError(
+                    "unsupported automation choose branch"
+                )
+            normalized_choice = {
+                key: _canonical(value) for key, value in choice.items()
+            }
+            normalized_choice["sequence"] = _verification_action_sequence(
+                normalized_choice["sequence"],
+                categories=categories,
+                depth=depth + 1,
+            )
+            normalized_choices.append(_canonical(normalized_choice))
+        normalized["choose"] = normalized_choices
+        if "default" in normalized:
+            normalized["default"] = _verification_action_sequence(
+                normalized["default"],
+                categories=categories,
+                depth=depth + 1,
+            )
+
+    if action_family == "if":
+        if (
+            not set(normalized).issubset(
+                AUTOMATION_ACTION_STEP_MODIFIERS
+                | {"if", "then", "else"}
+            )
+            or not isinstance(normalized.get("if"), list)
+            or "then" not in normalized
+        ):
+            raise AutomationVerificationNormalizationError(
+                "unsupported automation conditional action"
+            )
+        normalized["then"] = _verification_action_sequence(
+            normalized["then"],
+            categories=categories,
+            depth=depth + 1,
+        )
+        if "else" in normalized:
+            normalized["else"] = _verification_action_sequence(
+                normalized["else"],
+                categories=categories,
+                depth=depth + 1,
+            )
+
+    repeat = normalized.get("repeat")
+    if action_family == "repeat":
+        if (
+            not set(normalized).issubset(
+                AUTOMATION_ACTION_STEP_MODIFIERS | {"repeat"}
+            )
+            or not isinstance(repeat, dict)
+            or set(repeat)
+            - {"count", "for_each", "sequence", "until", "while"}
+            or "sequence" not in repeat
+            or len(
+                {"count", "for_each", "until", "while"}.intersection(
+                    repeat
+                )
+            )
+            != 1
+            or (
+                ("until" in repeat or "while" in repeat)
+                and not isinstance(
+                    repeat.get("until", repeat.get("while")), list
+                )
+            )
+        ):
+            raise AutomationVerificationNormalizationError(
+                "unsupported automation repeat action"
+            )
+        normalized_repeat = {
+            key: _canonical(value) for key, value in repeat.items()
+        }
+        normalized_repeat["sequence"] = _verification_action_sequence(
+            normalized_repeat["sequence"],
+            categories=categories,
+            depth=depth + 1,
+        )
+        normalized["repeat"] = _canonical(normalized_repeat)
+
+    if action_family == "parallel":
+        if not set(normalized).issubset(
+            AUTOMATION_ACTION_STEP_MODIFIERS | {"parallel"}
+        ):
+            raise AutomationVerificationNormalizationError(
+                "unsupported automation parallel action"
+            )
+        normalized["parallel"] = _verification_action_sequence(
+            normalized["parallel"],
+            categories=categories,
+            depth=depth + 1,
+            allow_sequence_wrapper=True,
+        )
+    if action_family == "sequence":
+        if (
+            not allow_sequence_wrapper
+            or set(normalized) - {"alias", "sequence"}
+        ):
+            raise AutomationVerificationNormalizationError(
+                "unsupported automation sequence action"
+            )
+        normalized["sequence"] = _verification_action_sequence(
+            normalized["sequence"],
+            categories=categories,
+            depth=depth + 1,
+        )
+    return _canonical(normalized)
+
+
+def _verification_keys_are_strings(value: Any) -> bool:
+    if isinstance(value, dict):
+        return all(
+            isinstance(key, str)
+            and _verification_keys_are_strings(item)
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return all(_verification_keys_are_strings(item) for item in value)
+    return True
+
+
+def normalize_automation_for_verification(
+    config: dict[str, Any] | None,
+) -> tuple[dict[str, Any] | None, tuple[str, ...]]:
+    """Normalize only reviewed Home Assistant readback equivalences.
+
+    This representation is deliberately separate from immutable plan binding
+    and stale-state fingerprints. It is used only after a configuration write
+    (or while proving the already-written state) and never changes the payload
+    dispatched to Home Assistant.
+    """
+
+    if config is not None:
+        if not isinstance(config, dict) or not _verification_keys_are_strings(
+            config
+        ):
+            raise AutomationVerificationNormalizationError(
+                "unsupported automation mapping keys"
+            )
+        for alias, canonical in ALIASES.items():
+            if alias in config and canonical in config:
+                raise AutomationVerificationNormalizationError(
+                    "ambiguous top-level automation aliases"
+                )
+    normalized = normalize_automation(config)
+    if normalized is None:
+        return None, ()
+    categories: set[str] = set()
+    if "action" in normalized:
+        normalized["action"] = _verification_action_sequence(
+            normalized["action"], categories=categories, depth=0
+        )
+    return _canonical(normalized), tuple(sorted(categories))
 
 
 def stable_hash(value: Any) -> str:

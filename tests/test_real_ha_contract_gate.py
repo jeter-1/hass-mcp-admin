@@ -140,6 +140,7 @@ class _RejectingF2AcceptanceGateway(_F2AcceptanceGateway):
                     "status": 400,
                     "method": "POST",
                     "endpoint_category": "config/automation",
+                    "provider_response_received": True,
                     "response_body": "SECRET_RESPONSE_BODY",
                     "authorization": "Bearer SECRET_TOKEN",
                     "administrator_identity": "SECRET_ADMIN",
@@ -166,6 +167,24 @@ class _CanonicalizingF2AcceptanceGateway(_F2AcceptanceGateway):
         return await super().write(
             action, resource_type, resource_id, stored
         )
+
+
+class _BehavioralMismatchF2AcceptanceGateway(
+    _CanonicalizingF2AcceptanceGateway
+):
+    """Accept the write but return a behaviorally different target."""
+
+    async def write(
+        self, action, resource_type, resource_id, approved_config
+    ):
+        result = await super().write(
+            action, resource_type, resource_id, approved_config
+        )
+        if resource_type == "automation":
+            self.configs[(resource_type, resource_id)]["action"][0][
+                "target"
+            ] = {"entity_id": "light.behaviorally_different"}
+        return result
 
 
 class _IndeterminateF2AcceptanceGateway(_F2AcceptanceGateway):
@@ -379,13 +398,16 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
         )
         self.assertIn(direct_update.name, runner_calls)
 
-    def test_exact_identity_and_normalized_fingerprints_are_required(self):
+    def test_exact_identity_and_semantic_verification_are_required(self):
         exact = self.function_with_calls(
-            {"resource_identity_matches", "resource_fingerprint"}
+            {
+                "resource_identity_matches",
+                "compare_resource_verification",
+            }
         )
-        self.assertGreaterEqual(
-            len(calls_under(exact, "resource_fingerprint")),
-            2,
+        self.assertEqual(
+            len(calls_under(exact, "compare_resource_verification")),
+            1,
         )
         self.assertGreaterEqual(
             len(
@@ -400,7 +422,8 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
         exact_text = ast.unparse(exact)
         self.assertIn("desired", exact_text)
         self.assertIn("actual", exact_text)
-        self.assertIn("normalize_resource_config", exact_text)
+        self.assertIn("semantic_match", exact_text)
+        self.assertIn("binding_approved_fingerprint", exact_text)
 
     def test_configuration_check_uses_the_strict_contract_v2_response(self):
         validate = self.contract._assert_strict_configuration_check
@@ -741,7 +764,7 @@ class RealHomeAssistantF2RunnerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(diagnostic["approval_consumed"])
         self.assertEqual(diagnostic["provider_attempt_count"], 1)
-        self.assertFalse(diagnostic["provider_response_received"])
+        self.assertTrue(diagnostic["provider_response_received"])
         self.assertEqual(diagnostic["observed_mutation"], "not_recorded")
         self.assertEqual(
             diagnostic["cause_chain"][-1],
@@ -771,9 +794,31 @@ class RealHomeAssistantF2RunnerTests(unittest.IsolatedAsyncioTestCase):
             self.contract.ErrorCode.CONFIGURATION_PARTIAL_FAILURE,
         )
 
-    async def test_successful_write_readback_mismatch_is_distinguished(self):
+    async def test_canonicalized_action_alias_completes_all_f2_scenarios(self):
+        gateway = _CanonicalizingF2AcceptanceGateway(self.contract)
+        no_traces = SimpleNamespace(headers=[])
+        with patch.object(
+            self.contract,
+            "fetch_normalized_trace_list",
+            new=AsyncMock(return_value=no_traces),
+        ):
+            result = await self.contract._run_f2_policy_acceptance_contract(
+                gateway,
+                "synthetic-f2-runner-token",
+            )
+
+        self.assertEqual(
+            result["completed_scenarios"],
+            ["standard_admin", "elevated_admin", "prohibited"],
+        )
+        self.assertEqual(result["configuration_mutation_count"], 2)
+        self.assertEqual(result["fallback_count"], 0)
+        self.assertFalse(result["physical_actuation_observed"])
+        self.assertEqual(gateway.write_count, 2)
+
+    async def test_successful_write_behavioral_mismatch_is_distinguished(self):
         _failure, diagnostic = await self._capture_f2_failure(
-            _CanonicalizingF2AcceptanceGateway(self.contract)
+            _BehavioralMismatchF2AcceptanceGateway(self.contract)
         )
 
         self.assertEqual(
@@ -791,6 +836,7 @@ class RealHomeAssistantF2RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(diagnostic["ambiguous_write_count"], 0)
         self.assertEqual(diagnostic["mismatch_categories"], ["actions"])
         self.assertEqual(diagnostic["observed_mutation"], "recorded")
+        self.assertTrue(diagnostic["provider_response_received"])
         self.assertEqual(diagnostic["cause_chain"], [
             {
                 "exception_type": "GovernanceError",

@@ -15,6 +15,7 @@ from ha_mcp_engineering.governance.resources import (  # noqa: E402
     ConfigurationMutationNotDispatchedError,
     ConfigurationResourceGateway,
     RESOURCE_NORMALIZATION_VERSION,
+    compare_resource_verification,
     normalize_resource_config,
     resource_fingerprint,
     resource_identity_matches,
@@ -390,6 +391,314 @@ class ResourceValidationTests(unittest.TestCase):
         )
 
 
+class AutomationVerificationNormalizationTests(unittest.TestCase):
+    def comparison(self, approved, observed):
+        return compare_resource_verification(
+            "automation", approved, observed
+        )
+
+    def test_service_and_action_aliases_are_verification_equivalent(self):
+        approved = copy.deepcopy(AUTOMATION)
+        observed = copy.deepcopy(approved)
+        observed["id"] = "hvac_guard"
+        observed["action"][0]["action"] = observed["action"][0].pop(
+            "service"
+        )
+
+        result = self.comparison(approved, observed)
+
+        self.assertTrue(result.semantic_match)
+        self.assertTrue(result.normalization_valid)
+        self.assertNotEqual(
+            result.raw_approved_fingerprint,
+            result.raw_observed_fingerprint,
+        )
+        self.assertNotEqual(
+            result.binding_approved_fingerprint,
+            result.binding_observed_fingerprint,
+        )
+        self.assertEqual(
+            result.normalized_approved_fingerprint,
+            result.normalized_observed_fingerprint,
+        )
+        self.assertEqual(
+            result.canonicalization_categories,
+            ("automation_action_service_alias",),
+        )
+        self.assertEqual(result.verification_normalization_version, 1)
+        self.assertTrue(result.observed_available)
+        self.assertEqual(result.mismatch_categories, ())
+
+    def test_behaviorally_significant_action_changes_remain_mismatches(self):
+        approved = copy.deepcopy(AUTOMATION)
+        approved["action"] = [
+            {
+                "service": "light.turn_on",
+                "target": {"entity_id": "light.first"},
+                "data": {"brightness": 10},
+            },
+            {"delay": 1},
+        ]
+        variants = []
+        changed_service = copy.deepcopy(approved)
+        changed_service["action"][0]["service"] = "light.turn_off"
+        variants.append(changed_service)
+        changed_target = copy.deepcopy(approved)
+        changed_target["action"][0]["target"] = {
+            "entity_id": "light.second"
+        }
+        variants.append(changed_target)
+        changed_data = copy.deepcopy(approved)
+        changed_data["action"][0]["data"] = {"brightness": 20}
+        variants.append(changed_data)
+        variants.append({**copy.deepcopy(approved), "action": []})
+        additional = copy.deepcopy(approved)
+        additional["action"].append({"delay": 2})
+        variants.append(additional)
+        reordered = copy.deepcopy(approved)
+        reordered["action"] = list(reversed(reordered["action"]))
+        variants.append(reordered)
+
+        for observed in variants:
+            with self.subTest(observed=observed):
+                result = self.comparison(approved, observed)
+                self.assertFalse(result.semantic_match)
+                self.assertIn("actions", result.mismatch_categories)
+
+    def test_ambiguous_or_malformed_action_aliases_fail_closed(self):
+        for step in (
+            {"service": "light.turn_on", "action": "light.turn_on"},
+            {"service": 7},
+            {"action": "   "},
+            {"service": "x" * 201},
+        ):
+            approved = copy.deepcopy(AUTOMATION)
+            approved["action"] = [step]
+            result = self.comparison(approved, approved)
+            with self.subTest(step=step):
+                self.assertFalse(result.semantic_match)
+                self.assertFalse(result.normalization_valid)
+                self.assertEqual(
+                    result.mismatch_categories,
+                    ("automation_verification_structure",),
+                )
+
+    def test_reviewed_nested_action_sequences_normalize_only_action_steps(self):
+        approved = copy.deepcopy(AUTOMATION)
+        approved["action"] = [
+            {
+                "choose": [
+                    {
+                        "conditions": [{"condition": "state"}],
+                        "sequence": [{"service": "light.turn_on"}],
+                    }
+                ],
+                "default": [{"service": "light.turn_off"}],
+            },
+            {
+                "if": [{"condition": "template", "value_template": True}],
+                "then": [{"service": "notify.send"}],
+                "else": [{"service": "notify.dismiss"}],
+            },
+            {
+                "repeat": {
+                    "count": 1,
+                    "sequence": [{"service": "light.toggle"}],
+                }
+            },
+            {
+                "parallel": [
+                    {"service": "light.turn_on"},
+                    {"sequence": [{"service": "light.turn_off"}]},
+                ]
+            },
+        ]
+        observed = copy.deepcopy(approved)
+
+        def rewrite(sequence):
+            for step in sequence:
+                if "service" in step:
+                    step["action"] = step.pop("service")
+                for key in ("default", "then", "else", "parallel", "sequence"):
+                    if key in step:
+                        rewrite(step[key])
+                for choice in step.get("choose", []):
+                    rewrite(choice["sequence"])
+                if "repeat" in step:
+                    rewrite(step["repeat"]["sequence"])
+
+        rewrite(observed["action"])
+        result = self.comparison(approved, observed)
+        self.assertTrue(result.semantic_match)
+        self.assertEqual(
+            result.canonicalization_categories,
+            ("automation_action_service_alias",),
+        )
+
+    def test_non_action_service_keys_are_not_rewritten(self):
+        approved = copy.deepcopy(AUTOMATION)
+        approved["action"] = [
+            {
+                "event": "fixture",
+                "event_data": {"service": "literal-value"},
+            }
+        ]
+        observed = copy.deepcopy(approved)
+        observed["action"][0]["event_data"] = {
+            "action": "literal-value"
+        }
+        result = self.comparison(approved, observed)
+        self.assertFalse(result.semantic_match)
+        self.assertEqual(result.canonicalization_categories, ())
+
+    def test_only_reviewed_optional_empty_structures_are_equivalent(self):
+        for field, empty in (
+            ("condition", []),
+            ("variables", {}),
+            ("trace", {}),
+        ):
+            approved = copy.deepcopy(AUTOMATION)
+            approved[field] = empty
+            observed = copy.deepcopy(AUTOMATION)
+            with self.subTest(field=field):
+                self.assertTrue(
+                    self.comparison(approved, observed).semantic_match
+                )
+
+        for field in ("trigger", "action"):
+            omitted = copy.deepcopy(AUTOMATION)
+            omitted.pop(field)
+            empty = copy.deepcopy(AUTOMATION)
+            empty[field] = []
+            with self.subTest(field=field):
+                self.assertFalse(
+                    self.comparison(omitted, empty).semantic_match
+                )
+
+    def test_malformed_reviewed_nested_container_fails_closed(self):
+        for step in (
+            {"parallel": {"service": "light.turn_on"}},
+            {"choose": [{"conditions": []}]},
+            {"repeat": {"count": 1}},
+            {"sequence": [{"service": "light.turn_on"}]},
+            {"then": [{"service": "light.turn_on"}]},
+            {"else": [{"service": "light.turn_on"}]},
+            {"default": [{"service": "light.turn_on"}]},
+            {
+                "service": "light.turn_on",
+                "choose": [
+                    {"sequence": [{"service": "light.turn_off"}]}
+                ],
+            },
+            {
+                "choose": [
+                    {"sequence": [{"service": "light.turn_on"}]}
+                ],
+                "repeat": {
+                    "count": 1,
+                    "sequence": [{"service": "light.turn_off"}],
+                },
+            },
+        ):
+            approved = copy.deepcopy(AUTOMATION)
+            approved["action"] = [step]
+            result = self.comparison(approved, approved)
+            with self.subTest(step=step):
+                self.assertFalse(result.semantic_match)
+                self.assertFalse(result.normalization_valid)
+
+    def test_top_level_alias_collisions_fail_closed(self):
+        for alias, canonical in (
+            ("triggers", "trigger"),
+            ("conditions", "condition"),
+            ("actions", "action"),
+        ):
+            approved = copy.deepcopy(AUTOMATION)
+            approved.setdefault(canonical, [])
+            approved[alias] = copy.deepcopy(approved[canonical])
+            result = self.comparison(approved, approved)
+            with self.subTest(alias=alias):
+                self.assertFalse(result.semantic_match)
+                self.assertFalse(result.normalization_valid)
+
+    def test_non_string_mapping_keys_fail_closed(self):
+        approved = copy.deepcopy(AUTOMATION)
+        approved["action"] = [
+            {"service": "light.turn_on", "data": {1: "invalid"}}
+        ]
+        result = self.comparison(approved, approved)
+        self.assertFalse(result.semantic_match)
+        self.assertFalse(result.normalization_valid)
+        self.assertIsNone(result.raw_approved_fingerprint)
+
+    def test_unavailable_readback_does_not_fabricate_observed_hashes(self):
+        result = compare_resource_verification(
+            "automation",
+            copy.deepcopy(AUTOMATION),
+            None,
+            observed_available=False,
+        )
+        self.assertFalse(result.semantic_match)
+        self.assertTrue(result.normalization_valid)
+        self.assertFalse(result.observed_available)
+        self.assertIsNone(result.raw_observed_fingerprint)
+        self.assertIsNone(result.binding_observed_fingerprint)
+        self.assertIsNone(result.normalized_observed_fingerprint)
+        self.assertEqual(result.mismatch_categories, ("readback_unavailable",))
+
+    def test_ambiguous_simple_action_directives_fail_closed(self):
+        for step in (
+            {"service": "light.turn_on", "delay": 1},
+            {"service": "light.turn_on", "event": "fixture"},
+            {"service": "light.turn_on", "condition": "template"},
+            {
+                "service": "light.turn_on",
+                "device_id": "device",
+                "domain": "light",
+                "type": "turn_on",
+            },
+            {
+                "choose": [
+                    {
+                        "conditions": [],
+                        "sequence": [{"service": "light.turn_on"}],
+                    }
+                ],
+                "delay": 1,
+            },
+        ):
+            approved = copy.deepcopy(AUTOMATION)
+            approved["action"] = [step]
+            result = self.comparison(approved, approved)
+            with self.subTest(step=step):
+                self.assertFalse(result.semantic_match)
+                self.assertFalse(result.normalization_valid)
+
+    def test_invalid_control_structures_fail_closed(self):
+        for step in (
+            {"if": 7, "then": [{"service": "light.turn_on"}]},
+            {"repeat": {"sequence": [{"service": "light.turn_on"}]}},
+            {
+                "repeat": {
+                    "count": 1,
+                    "for_each": [1],
+                    "sequence": [{"service": "light.turn_on"}],
+                }
+            },
+            {
+                "choose": [
+                    {"conditions": "template", "sequence": []}
+                ]
+            },
+        ):
+            approved = copy.deepcopy(AUTOMATION)
+            approved["action"] = [step]
+            result = self.comparison(approved, approved)
+            with self.subTest(step=step):
+                self.assertFalse(result.semantic_match)
+                self.assertFalse(result.normalization_valid)
+
+
 class ConfigurationResourceGatewayTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.rest = FakeRestClient()
@@ -519,6 +828,28 @@ class ConfigurationResourceGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(caught.exception.details["orphan_risk"])
         self.assertTrue(caught.exception.mutation_dispatched)
         self.assertTrue(caught.exception.mutation_completed)
+
+    async def test_malformed_generated_id_response_fails_closed(self):
+        self.websocket.responses["input_boolean/create"] = {
+            "id": None,
+            **INPUT_BOOLEAN,
+        }
+        with self.assertRaises(HomeAssistantApiError) as caught:
+            await self.gateway.create(
+                "input_boolean",
+                "input_boolean.hvac_override",
+                copy.deepcopy(INPUT_BOOLEAN),
+            )
+        self.assertEqual(
+            caught.exception.details["reason"],
+            "generated_identity_mismatch",
+        )
+        self.assertEqual(
+            caught.exception.details["unexpected_resource_id"], "unknown"
+        )
+        self.assertIs(
+            caught.exception.details["provider_response_received"], True
+        )
 
     async def test_helper_name_target_mismatch_performs_no_transport_io(self):
         with self.assertRaises(ValueError):

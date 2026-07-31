@@ -105,13 +105,25 @@ the throwaway pinned Home Assistant container:
    mutation. One approval is insufficient, a different administrator is
    rejected, the same administrator may acknowledge, apply changes only the
    stored configuration, trace identity remains unchanged, and duplicate
-   apply does not redispatch.
+   apply does not redispatch. If Home Assistant rewrites a reviewed action
+   step from `service` to `action`, require different raw/binding fingerprints,
+   matching verification-normalized fingerprints, the bounded
+   `automation_action_service_alias` category, truthful provider-response
+   evidence, and `succeeded_verified`. Behaviorally meaningful changes to
+   targets, data, action order, triggers, or conditions must remain mismatches
+   under the established optional-empty rules, and unsupported or ambiguous
+   structures must fail closed.
 3. Prohibited safety-critical fixture: approval returns
    `prohibited_change`, apply returns `prohibited_change`, no task exists, and
    the configuration gateway records no provider mutation.
 
 All disposable configuration and credentials must be removed in the existing
 `always()` cleanup. No step may contact deployed Home Assistant.
+
+The automation verification normalizer is post-write only. Plan hashes,
+policy-decision hashes, approval bindings, and pre-dispatch stale-state
+fingerprints must remain unchanged, and no full configuration may enter task,
+audit, health, MCP-error, or CI diagnostic output.
 
 ## Required validation
 

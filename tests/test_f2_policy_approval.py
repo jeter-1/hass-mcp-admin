@@ -412,6 +412,33 @@ class F2ApprovalWorkflowTests(F2ApprovalTestCase):
         )
         granted = await self.decide(created, second, principal=ADMIN_A)
         self.assertEqual(granted["status"], "approved")
+        approved_plan = self.repository.get(created["plan_id"])
+        assert (
+            approved_plan is not None
+            and approved_plan.policy_decision is not None
+        )
+        plan_hash_before_apply = self.service.plan_hash(approved_plan)
+        policy_hash_before_apply = (
+            approved_plan.policy_decision.policy_decision_hash
+        )
+        self.assertEqual(
+            approved_plan.policy_decision.policy_class.value,
+            "elevated_admin",
+        )
+        self.assertEqual(
+            approved_plan.policy_decision.risk_delta.value, "moderate"
+        )
+        self.assertEqual(
+            approved_plan.policy_decision.physical_consequence.value,
+            "direct",
+        )
+        self.assertEqual(
+            [
+                item.value
+                for item in approved_plan.policy_decision.required_acknowledgements
+            ],
+            ["plan_approval", "elevated_risk_acknowledgement"],
+        )
         applied = await self.service.apply(
             created["plan_id"], created["plan_hash"]
         )
@@ -447,6 +474,18 @@ class F2ApprovalWorkflowTests(F2ApprovalTestCase):
             "consumed",
         )
         self.assertNotIn("admin-a", json.dumps(task.to_dict()))
+        applied_plan = self.repository.get(created["plan_id"])
+        assert (
+            applied_plan is not None
+            and applied_plan.policy_decision is not None
+        )
+        self.assertEqual(
+            self.service.plan_hash(applied_plan), plan_hash_before_apply
+        )
+        self.assertEqual(
+            applied_plan.policy_decision.policy_decision_hash,
+            policy_hash_before_apply,
+        )
         duplicate = await self.service.apply(
             created["plan_id"], created["plan_hash"]
         )

@@ -35,8 +35,7 @@ from ha_mcp_engineering.errors import (  # noqa: E402
 )
 from ha_mcp_engineering.governance.resources import (  # noqa: E402
     ConfigurationResourceGateway,
-    normalize_resource_config,
-    resource_fingerprint,
+    compare_resource_verification,
     resource_identity_matches,
 )
 from ha_mcp_engineering.governance.normalize import (  # noqa: E402
@@ -755,12 +754,11 @@ def _assert_exact_resource(
     """Require exact identity and normalized desired/readback equality."""
 
     assert resource_identity_matches(resource_type, resource_id, actual)
-    assert normalize_resource_config(
-        resource_type, actual
-    ) == normalize_resource_config(resource_type, desired)
-    desired_fingerprint = resource_fingerprint(resource_type, desired)
-    assert resource_fingerprint(resource_type, actual) == desired_fingerprint
-    return desired_fingerprint
+    comparison = compare_resource_verification(
+        resource_type, desired, actual
+    )
+    assert comparison.semantic_match
+    return comparison.binding_approved_fingerprint
 
 
 def _assert_strict_configuration_check(result) -> None:
@@ -1038,6 +1036,10 @@ def _assert_single_task_dispatch(
     assert task["task_id"] == task_id
     assert task["state"] == "succeeded_verified"
     assert task["provider_attempt_count"] == 1
+    assert task["provider_attempts"][0]["response_received"] is True
+    assert isinstance(
+        task["provider_attempts"][0].get("response_recorded_at"), str
+    )
     assert sum(
         event["event_type"] == "dispatch_attempted"
         for event in task["lifecycle_events"]
@@ -1295,6 +1297,21 @@ async def _run_f2_policy_acceptance_contract(
                     "automation", RESOURCE_IDS["automation"]
                 ),
             )
+            elevated_receipt = elevated_applied["operations"][0][
+                "execution_receipt"
+            ]
+            assert elevated_receipt[
+                "raw_approved_fingerprint"
+            ] != elevated_receipt["raw_observed_fingerprint"]
+            assert elevated_receipt[
+                "normalized_approved_fingerprint"
+            ] == elevated_receipt["normalized_observed_fingerprint"]
+            assert elevated_receipt[
+                "canonicalization_categories"
+            ] == ["automation_action_service_alias"]
+            assert elevated_receipt[
+                "semantic_verification_result"
+            ] == "matched"
             elevated_task = _assert_single_task_dispatch(
                 service,
                 elevated["plan_id"],
