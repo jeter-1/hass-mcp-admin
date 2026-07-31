@@ -7002,6 +7002,9 @@ class ChangeGovernanceService:
             "canonicalization_categories": list(
                 comparison.canonicalization_categories
             ),
+            "mismatch_categories": list(
+                comparison.mismatch_categories
+            ),
             "verification_normalization_version": (
                 comparison.verification_normalization_version
             ),
@@ -7138,6 +7141,17 @@ class ChangeGovernanceService:
             evidence = {
                 key: receipt.get(key) for key in allowed_receipt_fields
             }
+            mismatch_categories = receipt.get("mismatch_categories")
+            if not isinstance(mismatch_categories, list):
+                mismatch_categories = operation.verification.mismatch_fields
+            bounded_mismatches = sorted(
+                str(item)[:120]
+                for item in mismatch_categories[:20]
+                if isinstance(item, str) and item
+            )
+            evidence["mismatch_category"] = (
+                bounded_mismatches[0] if bounded_mismatches else None
+            )
             evidence["operation_id"] = operation.operation_id
             projected.append(evidence)
         return {"configuration_operations": projected}

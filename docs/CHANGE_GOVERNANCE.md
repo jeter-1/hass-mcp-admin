@@ -353,6 +353,13 @@ fingerprints remain distinct bounded evidence. Targets, data, ordering,
 triggers, conditions, and other behaviorally meaningful differences remain
 mismatches under the established optional-empty rules; unsupported or
 ambiguous structures fail closed.
+Each action step must match exactly one reviewed family. Identical unknown
+mappings are not evidence of semantic equality; extra fields on service or
+device actions and malformed choose, repeat, parallel, or if/then/else shapes
+are rejected. The verifier retains a bounded
+`unsupported_automation_action_family` mismatch without serializing the
+unreviewed mapping. Service/action aliasing remains limited to recognized
+simple call steps in action positions.
 This verifier does not change plan or policy hashes, stale-state fingerprints,
 or the configuration dispatched to Home Assistant, and it is not a general
 YAML-equivalence engine. A successful HTTP write with a real behavioral

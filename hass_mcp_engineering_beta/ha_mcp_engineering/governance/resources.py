@@ -277,7 +277,20 @@ def compare_resource_verification(
             )
             approved_categories = ()
             observed_categories = ()
-    except (AutomationVerificationNormalizationError, TypeError, ValueError):
+    except (
+        AutomationVerificationNormalizationError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        mismatch_category = (
+            exc.category
+            if isinstance(exc, AutomationVerificationNormalizationError)
+            else (
+                "automation_verification_structure"
+                if resource_type == "automation"
+                else "configuration_verification_structure"
+            )
+        )
         return ResourceVerificationComparison(
             raw_approved_fingerprint=raw_approved_fingerprint,
             raw_observed_fingerprint=raw_observed_fingerprint,
@@ -286,13 +299,7 @@ def compare_resource_verification(
             normalized_approved_fingerprint=None,
             normalized_observed_fingerprint=None,
             canonicalization_categories=(),
-            mismatch_categories=(
-                (
-                    "automation_verification_structure"
-                    if resource_type == "automation"
-                    else "configuration_verification_structure"
-                ),
-            ),
+            mismatch_categories=(mismatch_category,),
             semantic_match=False,
             normalization_valid=False,
             observed_available=observed_available,

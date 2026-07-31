@@ -120,8 +120,12 @@ the throwaway pinned Home Assistant container:
    `automation_action_service_alias` category, truthful provider-response
    evidence, and `succeeded_verified`. Behaviorally meaningful changes to
    targets, data, action order, triggers, or conditions must remain mismatches
-   under the established optional-empty rules, and unsupported or ambiguous
-   structures must fail closed.
+   under the established optional-empty rules. Each action step must match
+   exactly one reviewed service, device, simple-directive, or control-flow
+   family with only reviewed fields. Unknown or ambiguous families, malformed
+   controls, and extra fields fail closed even when both sides contain the
+   same mapping. A zero-family failure retains only the bounded
+   `unsupported_automation_action_family` category.
 3. Prohibited safety-critical fixtures: both an entity-target fixture and a
    non-entity device-target fixture return `prohibited_change` from approval
    and apply. Each reports `safety_critical`, creates no task, and records no

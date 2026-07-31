@@ -31,6 +31,9 @@
   `service`/`action` alias normalization while retaining raw fingerprints,
   meaningful-field mismatches, unchanged plan/policy hashes, and truthful
   provider-response evidence.
+- Require every verification action step to match exactly one reviewed family;
+  identical unknown mappings, ambiguous families, malformed control flow, and
+  unreviewed extra fields fail closed with bounded evidence.
 - Preserve 48 local Engineering tools, the configured 26 exact-admitted
   delegated reads, stable v1.1.2, and the existing upstream fingerprints.
 

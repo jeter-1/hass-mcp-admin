@@ -162,6 +162,7 @@ class FakeConfigurationGateway:
         self.mismatch_after_write_target = None
         self.canonicalize_automation_action_alias = False
         self.behavioral_mismatch_after_write_target = None
+        self.unsupported_readback_after_write_target = None
         self.validation_result = {"result": "valid", "errors": None}
 
     async def read(self, resource_type, resource_id):
@@ -204,6 +205,13 @@ class FakeConfigurationGateway:
             stored["action"][0]["target"] = {
                 "entity_id": "script.behaviorally_different"
             }
+        if (
+            resource_type,
+            resource_id,
+        ) == self.unsupported_readback_after_write_target:
+            stored["action"] = [
+                {"future_directive": {"bounded_fixture": True}}
+            ]
         if (
             resource_type,
             resource_id,
@@ -1538,6 +1546,84 @@ class ApplyTests(ConfigurationPlanTestCase):
         self.assertEqual(
             len(self.service.task_repository.list()), 1
         )
+        writes_before_duplicate = len(
+            [call for call in self.gateway.calls if call[0] == "write"]
+        )
+        with self.assertRaises(GovernanceError) as duplicate:
+            await self.service.apply(
+                created["plan_id"], created["plan_hash"]
+            )
+        self.assertEqual(
+            duplicate.exception.code, ErrorCode.DUPLICATE_APPLY_ATTEMPT
+        )
+        self.assertEqual(
+            len(
+                [
+                    call
+                    for call in self.gateway.calls
+                    if call[0] == "write"
+                ]
+            ),
+            writes_before_duplicate,
+        )
+
+    async def test_unsupported_readback_family_fails_after_truthful_response(
+        self,
+    ):
+        self.gateway.unsupported_readback_after_write_target = (
+            "automation",
+            "apply_hvac_comfort",
+        )
+        created = await self.create_automation_plan()
+        await self.approve(created)
+
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.apply(
+                created["plan_id"], created["plan_hash"]
+            )
+
+        self.assertEqual(
+            raised.exception.code,
+            ErrorCode.CONFIGURATION_PARTIAL_FAILURE,
+        )
+        self.assertEqual(
+            raised.exception.details["mismatch_fields"],
+            ["unsupported_automation_action_family"],
+        )
+        persisted = self.repository.get(created["plan_id"])
+        assert persisted is not None
+        self.assertEqual(persisted.status, PlanStatus.VERIFICATION_FAILED)
+        self.assertEqual(persisted.approval.state, ApprovalState.CONSUMED)
+        self.assertEqual(
+            persisted.operations[0].verification.mismatch_fields,
+            ["unsupported_automation_action_family"],
+        )
+        self.assertEqual(
+            persisted.operations[0].execution_receipt[
+                "semantic_verification_result"
+            ],
+            "invalid",
+        )
+        self.assertEqual(
+            persisted.operations[0].execution_receipt[
+                "mismatch_categories"
+            ],
+            ["unsupported_automation_action_family"],
+        )
+        task = self.service.task_repository.get_for_plan(created["plan_id"])
+        self.assertIsNotNone(task)
+        assert task is not None
+        self.assertEqual(task.state.value, "failed_post_dispatch")
+        self.assertEqual(len(task.provider_attempts), 1)
+        self.assertTrue(task.provider_attempts[0]["response_received"])
+        self.assertIn("response_recorded_at", task.provider_attempts[0])
+        self.assertEqual(
+            task.verification_summary["configuration_operations"][0][
+                "mismatch_category"
+            ],
+            "unsupported_automation_action_family",
+        )
+        self.assertEqual(len(self.service.task_repository.list()), 1)
         writes_before_duplicate = len(
             [call for call in self.gateway.calls if call[0] == "write"]
         )

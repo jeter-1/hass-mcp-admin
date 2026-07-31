@@ -116,3 +116,9 @@ unknown, unsupported, destructive, or evasive proposals remain prohibited.
 Audit and health surfaces can explain policy and approval state with bounded
 server-owned codes. They must not expose credentials, approval tokens, full
 configuration payloads, or raw Home Assistant user identifiers.
+
+Post-write automation verification recognizes only explicitly reviewed action
+families and fields. Zero or multiple matching families, malformed nested
+control flow, and extra unreviewed fields fail closed even when both raw
+mappings are identical. The narrow `service`/`action` alias applies only to a
+recognized simple action step; it is not a recursive YAML equivalence rule.

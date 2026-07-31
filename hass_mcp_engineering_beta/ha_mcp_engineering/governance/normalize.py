@@ -12,6 +12,10 @@ OPTIONAL_EMPTY = {"condition": [], "variables": {}, "trace": {}}
 AUTOMATION_NORMALIZATION_VERSION = 2
 AUTOMATION_VERIFICATION_NORMALIZATION_VERSION = 1
 AUTOMATION_ACTION_SERVICE_ALIAS = "automation_action_service_alias"
+AUTOMATION_VERIFICATION_STRUCTURE = "automation_verification_structure"
+UNSUPPORTED_AUTOMATION_ACTION_FAMILY = (
+    "unsupported_automation_action_family"
+)
 MAX_AUTOMATION_ACTION_NAME_LENGTH = 200
 MAX_AUTOMATION_ACTION_DEPTH = 4
 AUTOMATION_ACTION_STEP_MODIFIERS = frozenset(
@@ -42,7 +46,76 @@ AUTOMATION_SIMPLE_ACTION_DIRECTIVES = frozenset(
         "wait_template",
     }
 )
-AUTOMATION_DEVICE_ACTION_FIELDS = frozenset({"device_id", "domain", "type"})
+AUTOMATION_DEVICE_ACTION_DISCRIMINATORS = frozenset(
+    {"device_id", "domain", "type"}
+)
+AUTOMATION_DEVICE_ACTION_FIELDS = frozenset(
+    {
+        *AUTOMATION_ACTION_STEP_MODIFIERS,
+        *AUTOMATION_DEVICE_ACTION_DISCRIMINATORS,
+        "entity_id",
+        "subtype",
+    }
+)
+AUTOMATION_SIMPLE_ACTION_FIELDS = {
+    "condition": frozenset(
+        {
+            *AUTOMATION_ACTION_STEP_MODIFIERS,
+            "above",
+            "attribute",
+            "below",
+            "condition",
+            "conditions",
+            "entity_id",
+            "for",
+            "state",
+            "value_template",
+        }
+    ),
+    "delay": frozenset({*AUTOMATION_ACTION_STEP_MODIFIERS, "delay"}),
+    "event": frozenset(
+        {
+            *AUTOMATION_ACTION_STEP_MODIFIERS,
+            "event",
+            "event_data",
+            "event_data_template",
+        }
+    ),
+    "scene": frozenset({*AUTOMATION_ACTION_STEP_MODIFIERS, "scene"}),
+    "set_conversation_response": frozenset(
+        {
+            *AUTOMATION_ACTION_STEP_MODIFIERS,
+            "set_conversation_response",
+        }
+    ),
+    "stop": frozenset(
+        {
+            *AUTOMATION_ACTION_STEP_MODIFIERS,
+            "error",
+            "response_variable",
+            "stop",
+        }
+    ),
+    "variables": frozenset(
+        {*AUTOMATION_ACTION_STEP_MODIFIERS, "variables"}
+    ),
+    "wait_for_trigger": frozenset(
+        {
+            *AUTOMATION_ACTION_STEP_MODIFIERS,
+            "continue_on_timeout",
+            "timeout",
+            "wait_for_trigger",
+        }
+    ),
+    "wait_template": frozenset(
+        {
+            *AUTOMATION_ACTION_STEP_MODIFIERS,
+            "continue_on_timeout",
+            "timeout",
+            "wait_template",
+        }
+    ),
+}
 DIFF_LABELS = {
     "alias": "alias",
     "description": "description",
@@ -91,6 +164,146 @@ def normalize_automation(config: dict[str, Any] | None) -> dict[str, Any] | None
 class AutomationVerificationNormalizationError(ValueError):
     """The automation readback cannot be compared under reviewed semantics."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        category: str = AUTOMATION_VERIFICATION_STRUCTURE,
+    ) -> None:
+        super().__init__(message)
+        self.category = (
+            category
+            if category
+            in {
+                AUTOMATION_VERIFICATION_STRUCTURE,
+                UNSUPPORTED_AUTOMATION_ACTION_FAMILY,
+            }
+            else AUTOMATION_VERIFICATION_STRUCTURE
+        )
+
+
+def _bounded_nonempty_string(value: Any) -> bool:
+    return bool(
+        isinstance(value, str)
+        and value.strip()
+        and value == value.strip()
+        and len(value) <= MAX_AUTOMATION_ACTION_NAME_LENGTH
+    )
+
+
+def _validate_action_modifiers(value: dict[str, Any]) -> None:
+    if "alias" in value and not _bounded_nonempty_string(value["alias"]):
+        raise AutomationVerificationNormalizationError(
+            "invalid automation action alias label"
+        )
+    for field in ("continue_on_error", "enabled"):
+        if field in value and not isinstance(value[field], bool):
+            raise AutomationVerificationNormalizationError(
+                "invalid automation action modifier"
+            )
+
+
+def _validate_mapping_field(value: dict[str, Any], field: str) -> None:
+    if field in value and not isinstance(value[field], dict):
+        raise AutomationVerificationNormalizationError(
+            "invalid automation action mapping field"
+        )
+
+
+def _validate_service_action(value: dict[str, Any]) -> None:
+    if not set(value).issubset(AUTOMATION_SERVICE_ACTION_FIELDS):
+        raise AutomationVerificationNormalizationError(
+            "unsupported automation service action fields"
+        )
+    for field in ("data", "data_template", "metadata", "target"):
+        _validate_mapping_field(value, field)
+    if "response_variable" in value and not _bounded_nonempty_string(
+        value["response_variable"]
+    ):
+        raise AutomationVerificationNormalizationError(
+            "invalid automation response variable"
+        )
+
+
+def _validate_device_action(value: dict[str, Any]) -> None:
+    if (
+        not set(value).issubset(AUTOMATION_DEVICE_ACTION_FIELDS)
+        or not AUTOMATION_DEVICE_ACTION_DISCRIMINATORS.issubset(value)
+    ):
+        raise AutomationVerificationNormalizationError(
+            "unsupported automation device action fields"
+        )
+    for field in AUTOMATION_DEVICE_ACTION_DISCRIMINATORS | {
+        "entity_id",
+        "subtype",
+    }:
+        if field in value and not _bounded_nonempty_string(value[field]):
+            raise AutomationVerificationNormalizationError(
+                "invalid automation device action field"
+            )
+
+
+def _valid_time_period(value: Any) -> bool:
+    return (
+        isinstance(value, (int, float, dict))
+        and not isinstance(value, bool)
+    ) or _bounded_nonempty_string(value)
+
+
+def _validate_simple_action(
+    value: dict[str, Any], family: str
+) -> None:
+    allowed = AUTOMATION_SIMPLE_ACTION_FIELDS[family]
+    if not set(value).issubset(allowed):
+        raise AutomationVerificationNormalizationError(
+            "unsupported automation simple action fields"
+        )
+    primary = value[family]
+    if family in {
+        "condition",
+        "event",
+        "scene",
+        "set_conversation_response",
+        "stop",
+        "wait_template",
+    } and not _bounded_nonempty_string(primary):
+        raise AutomationVerificationNormalizationError(
+            "invalid automation simple action value"
+        )
+    if family == "delay" and not _valid_time_period(primary):
+        raise AutomationVerificationNormalizationError(
+            "invalid automation delay action"
+        )
+    if family == "variables" and not isinstance(primary, dict):
+        raise AutomationVerificationNormalizationError(
+            "invalid automation variables action"
+        )
+    if family == "wait_for_trigger" and not isinstance(primary, list):
+        raise AutomationVerificationNormalizationError(
+            "invalid automation wait trigger action"
+        )
+    for field in ("event_data", "event_data_template"):
+        _validate_mapping_field(value, field)
+    if "timeout" in value and not _valid_time_period(value["timeout"]):
+        raise AutomationVerificationNormalizationError(
+            "invalid automation action timeout"
+        )
+    for field in ("continue_on_timeout", "error"):
+        if field in value and not isinstance(value[field], bool):
+            raise AutomationVerificationNormalizationError(
+                "invalid automation simple action option"
+            )
+    if "response_variable" in value and not _bounded_nonempty_string(
+        value["response_variable"]
+    ):
+        raise AutomationVerificationNormalizationError(
+            "invalid automation response variable"
+        )
+    if "conditions" in value and not isinstance(value["conditions"], list):
+        raise AutomationVerificationNormalizationError(
+            "invalid automation condition collection"
+        )
+
 
 def _verification_action_sequence(
     value: Any,
@@ -128,6 +341,7 @@ def _verification_action_step(
     allow_sequence_wrapper: bool,
 ) -> dict[str, Any]:
     normalized = {key: _canonical(value) for key, value in step.items()}
+    _validate_action_modifiers(normalized)
     has_service = "service" in normalized
     has_action = "action" in normalized
     if has_service and has_action:
@@ -153,19 +367,21 @@ def _verification_action_step(
             if key in normalized
         )
     )
-    if AUTOMATION_DEVICE_ACTION_FIELDS.intersection(normalized):
+    if AUTOMATION_DEVICE_ACTION_DISCRIMINATORS.intersection(normalized):
         action_families.append("device")
     if len(action_families) > 1:
         raise AutomationVerificationNormalizationError(
             "ambiguous automation action family"
         )
 
-    action_family = action_families[0] if action_families else None
+    if not action_families:
+        raise AutomationVerificationNormalizationError(
+            "unsupported automation action family",
+            category=UNSUPPORTED_AUTOMATION_ACTION_FAMILY,
+        )
+    action_family = action_families[0]
     if has_service or has_action:
-        if not set(normalized).issubset(AUTOMATION_SERVICE_ACTION_FIELDS):
-            raise AutomationVerificationNormalizationError(
-                "unsupported automation service action fields"
-            )
+        _validate_service_action(normalized)
         alias_key = "service" if has_service else "action"
         action_name = normalized[alias_key]
         if (
@@ -181,6 +397,12 @@ def _verification_action_step(
             normalized.pop("service")
             normalized["action"] = action_name
             categories.add(AUTOMATION_ACTION_SERVICE_ALIAS)
+
+    if action_family == "device":
+        _validate_device_action(normalized)
+
+    if action_family in AUTOMATION_SIMPLE_ACTION_DIRECTIVES:
+        _validate_simple_action(normalized, action_family)
 
     if "default" in normalized and action_family != "choose":
         raise AutomationVerificationNormalizationError(
@@ -215,6 +437,12 @@ def _verification_action_step(
             ):
                 raise AutomationVerificationNormalizationError(
                     "unsupported automation choose branch"
+                )
+            if "alias" in choice and not _bounded_nonempty_string(
+                choice["alias"]
+            ):
+                raise AutomationVerificationNormalizationError(
+                    "invalid automation choose branch alias"
                 )
             normalized_choice = {
                 key: _canonical(value) for key, value in choice.items()
@@ -283,6 +511,27 @@ def _verification_action_step(
             raise AutomationVerificationNormalizationError(
                 "unsupported automation repeat action"
             )
+        for selector in ("count", "for_each"):
+            if selector in repeat:
+                selected = repeat[selector]
+                if selector == "count":
+                    valid_count = (
+                        isinstance(selected, int)
+                        and not isinstance(selected, bool)
+                        and selected > 0
+                    ) or _bounded_nonempty_string(selected)
+                    if not valid_count:
+                        raise AutomationVerificationNormalizationError(
+                            "invalid automation repeat count"
+                        )
+                if selector == "for_each":
+                    valid_collection = isinstance(
+                        selected, (list, dict)
+                    ) or _bounded_nonempty_string(selected)
+                    if not valid_collection:
+                        raise AutomationVerificationNormalizationError(
+                            "invalid automation repeat collection"
+                        )
         normalized_repeat = {
             key: _canonical(value) for key, value in repeat.items()
         }
@@ -294,8 +543,12 @@ def _verification_action_step(
         normalized["repeat"] = _canonical(normalized_repeat)
 
     if action_family == "parallel":
-        if not set(normalized).issubset(
-            AUTOMATION_ACTION_STEP_MODIFIERS | {"parallel"}
+        if (
+            not set(normalized).issubset(
+                AUTOMATION_ACTION_STEP_MODIFIERS | {"parallel"}
+            )
+            or not isinstance(normalized.get("parallel"), list)
+            or not normalized["parallel"]
         ):
             raise AutomationVerificationNormalizationError(
                 "unsupported automation parallel action"

@@ -85,7 +85,11 @@ For automation configuration readback only, Home Assistant's accepted
 `service`-to-`action` step canonicalization is compared through a reviewed,
 schema-aware semantic normalizer. Raw and normalized fingerprints remain
 separate evidence; meaningful target, data, ordering, and control differences
-remain mismatches, while unsupported or ambiguous structures fail closed. The
+remain mismatches. Every action step must match exactly one reviewed family;
+unknown families, multiple-family ambiguity, malformed control flow, and
+unreviewed extra fields fail closed even when approved and observed mappings
+are byte-identical. The bounded `unsupported_automation_action_family`
+category identifies a zero-family readback without exposing its payload. The
 normalizer does not affect plan or policy hashes,
 stale-state protection, dispatch payloads, or other YAML structures.
 

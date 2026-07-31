@@ -483,6 +483,113 @@ class AutomationVerificationNormalizationTests(unittest.TestCase):
                     ("automation_verification_structure",),
                 )
 
+    def test_unknown_action_families_fail_closed_even_when_identical(self):
+        for step in (
+            {},
+            {"future_directive": {"value": True}},
+            {"arbitrary_mapping": "same-on-both-sides"},
+        ):
+            approved = copy.deepcopy(AUTOMATION)
+            approved["action"] = [step]
+            result = self.comparison(approved, approved)
+            with self.subTest(step=step):
+                self.assertFalse(result.semantic_match)
+                self.assertFalse(result.normalization_valid)
+                self.assertEqual(
+                    result.mismatch_categories,
+                    ("unsupported_automation_action_family",),
+                )
+
+    def test_simple_service_action_rejects_unreviewed_fields(self):
+        approved = copy.deepcopy(AUTOMATION)
+        approved["action"] = [
+            {
+                "service": "light.turn_on",
+                "target": {"entity_id": "light.test"},
+                "unreviewed_future_directive": True,
+            }
+        ]
+        result = self.comparison(approved, approved)
+        self.assertFalse(result.semantic_match)
+        self.assertFalse(result.normalization_valid)
+        self.assertEqual(
+            result.mismatch_categories,
+            ("automation_verification_structure",),
+        )
+
+    def test_device_actions_require_one_exact_reviewed_shape(self):
+        valid = {
+            "device_id": "device-test",
+            "domain": "light",
+            "entity_id": "light.test",
+            "type": "turn_on",
+        }
+        approved = copy.deepcopy(AUTOMATION)
+        approved["action"] = [valid]
+        self.assertTrue(self.comparison(approved, approved).semantic_match)
+
+        invalid = (
+            {key: value for key, value in valid.items() if key != "device_id"},
+            {key: value for key, value in valid.items() if key != "domain"},
+            {key: value for key, value in valid.items() if key != "type"},
+            {**valid, "device_id": ["device-test"]},
+            {**valid, "unreviewed_future_directive": True},
+            {**valid, "service": "light.turn_on"},
+        )
+        for step in invalid:
+            candidate = copy.deepcopy(AUTOMATION)
+            candidate["action"] = [step]
+            result = self.comparison(candidate, candidate)
+            with self.subTest(step=step):
+                self.assertFalse(result.semantic_match)
+                self.assertFalse(result.normalization_valid)
+
+    def test_reviewed_simple_action_families_validate_exact_fields(self):
+        valid_steps = (
+            {
+                "condition": "state",
+                "entity_id": "input_boolean.test",
+                "state": "on",
+            },
+            {"delay": 1},
+            {"event": "fixture", "event_data": {"bounded": True}},
+            {"scene": "scene.test"},
+            {"set_conversation_response": "Complete"},
+            {"stop": "Complete", "error": False},
+            {"variables": {"bounded": True}},
+            {
+                "wait_for_trigger": [
+                    {
+                        "platform": "state",
+                        "entity_id": "binary_sensor.test",
+                    }
+                ],
+                "timeout": {"seconds": 5},
+                "continue_on_timeout": False,
+            },
+            {"wait_template": "{{ true }}", "timeout": 5},
+        )
+        for step in valid_steps:
+            approved = copy.deepcopy(AUTOMATION)
+            approved["action"] = [step]
+            with self.subTest(step=step):
+                self.assertTrue(
+                    self.comparison(approved, approved).semantic_match
+                )
+
+        for step in (
+            {"delay": 1, "unreviewed_future_directive": True},
+            {"event": "fixture", "unknown_event_option": True},
+            {"variables": ["not", "a", "mapping"]},
+            {"wait_for_trigger": "not-a-list"},
+        ):
+            approved = copy.deepcopy(AUTOMATION)
+            approved["action"] = [step]
+            result = self.comparison(approved, approved)
+            with self.subTest(step=step):
+                self.assertFalse(result.semantic_match)
+                self.assertFalse(result.normalization_valid)
+
     def test_reviewed_nested_action_sequences_normalize_only_action_steps(self):
         approved = copy.deepcopy(AUTOMATION)
         approved["action"] = [
@@ -689,6 +796,25 @@ class AutomationVerificationNormalizationTests(unittest.TestCase):
                 "choose": [
                     {"conditions": "template", "sequence": []}
                 ]
+            },
+            {
+                "choose": [{"conditions": [], "sequence": []}],
+                "unreviewed_future_directive": True,
+            },
+            {
+                "repeat": {"count": 0, "sequence": []},
+            },
+            {
+                "parallel": [],
+            },
+            {
+                "parallel": [{"delay": 1}],
+                "unreviewed_future_directive": True,
+            },
+            {
+                "if": [],
+                "then": [],
+                "unreviewed_future_directive": True,
             },
         ):
             approved = copy.deepcopy(AUTOMATION)
