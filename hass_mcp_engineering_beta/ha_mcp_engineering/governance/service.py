@@ -1498,6 +1498,99 @@ class ChangeGovernanceService:
                 return True
         return False
 
+    def _effective_prohibited_plan_failures(
+        self,
+        plan: ChangePlan,
+        *,
+        policy_snapshot_validated: bool = False,
+    ) -> tuple[str, ...]:
+        """Explain why a record does not match a reviewed prohibited shape.
+
+        Clause names are private, deterministic, and contain no record data.
+        Task storage is consulted exactly once and storage errors remain fatal.
+        """
+
+        failures: list[str] = []
+        decision = plan.policy_decision
+        approval = plan.approval
+        if decision is None:
+            failures.append("policy_snapshot_missing")
+        else:
+            if decision.policy_class != ApprovalPolicyClass.PROHIBITED:
+                failures.append("policy_class_not_prohibited")
+            if decision.required_acknowledgements:
+                failures.append("required_acknowledgements_not_empty")
+            if approval.policy_decision_hash != decision.policy_decision_hash:
+                failures.append("approval_policy_hash_mismatch")
+            if approval.policy_class != decision.policy_class.value:
+                failures.append("approval_policy_class_mismatch")
+            if (
+                not policy_snapshot_validated
+                and not policy_snapshot_matches(plan)
+            ):
+                failures.append("policy_snapshot_invalid")
+        if plan.risk.apply_allowed:
+            failures.append("apply_allowed")
+        if approval.authority_version != APPROVAL_AUTHORITY_VERSION:
+            failures.append("approval_authority_version_mismatch")
+        if approval.approval_kind != "apply":
+            failures.append("approval_kind_not_apply")
+        if self._prohibited_approval_has_authority_evidence(plan):
+            failures.append("approval_authority_evidence_present")
+        if self._prohibited_plan_has_execution_evidence(plan):
+            failures.append("execution_evidence_present")
+        try:
+            task = self.task_repository.get_for_plan(plan.plan_id)
+        except ExecutionTaskStorageError as exc:
+            raise GovernanceError(
+                ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+            ) from exc
+        if task is not None:
+            failures.append("execution_task_present")
+
+        historical_candidate = bool(
+            plan.status == PlanStatus.SUPERSEDED
+            or approval.state == ApprovalState.INVALIDATED
+            or approval.bundle_state == "invalidated"
+            or any(
+                event.event == "change_plan_superseded"
+                for event in plan.events
+            )
+        )
+        current_candidate = bool(
+            approval.bundle_state == "prohibited"
+            or plan.status == PlanStatus.AWAITING_APPROVAL
+        )
+        if historical_candidate:
+            if not (
+                plan.contract_version
+                < CONFIGURATION_PLAN_CONTRACT_VERSION
+            ):
+                failures.append(
+                    "historical_contract_version_not_supported"
+                )
+            if plan.status != PlanStatus.SUPERSEDED:
+                failures.append("historical_status_not_superseded")
+            if approval.state != ApprovalState.INVALIDATED:
+                failures.append("historical_approval_state_not_invalidated")
+            if approval.bundle_state != "invalidated":
+                failures.append("historical_bundle_state_not_invalidated")
+            if not any(
+                event.event == "change_plan_superseded"
+                for event in plan.events
+            ):
+                failures.append("historical_superseded_event_missing")
+        elif current_candidate:
+            if approval.bundle_state != "prohibited":
+                failures.append("current_bundle_state_not_prohibited")
+            if approval.state != ApprovalState.REQUIRED:
+                failures.append("current_approval_state_not_required")
+            if plan.status != PlanStatus.AWAITING_APPROVAL:
+                failures.append("current_status_not_awaiting_approval")
+        else:
+            failures.append("prohibited_representation_not_supported")
+        return tuple(failures)
+
     def _is_effectively_prohibited_plan(
         self,
         plan: ChangePlan,
@@ -1514,50 +1607,10 @@ class ChangeGovernanceService:
         that source-established shape as terminal without rewriting it.
         """
 
-        decision = plan.policy_decision
-        approval = plan.approval
-        if (
-            decision is None
-            or decision.policy_class != ApprovalPolicyClass.PROHIBITED
-            or decision.required_acknowledgements
-            or plan.risk.apply_allowed
-            or approval.authority_version != APPROVAL_AUTHORITY_VERSION
-            or approval.policy_decision_hash
-            != decision.policy_decision_hash
-            or approval.policy_class != decision.policy_class.value
-            or approval.approval_kind != "apply"
-            or (
-                not policy_snapshot_validated
-                and not policy_snapshot_matches(plan)
-            )
-            or self._prohibited_approval_has_authority_evidence(plan)
-            or self._prohibited_plan_has_execution_evidence(plan)
-        ):
-            return False
-        try:
-            if self.task_repository.get_for_plan(plan.plan_id) is not None:
-                return False
-        except ExecutionTaskStorageError as exc:
-            raise GovernanceError(
-                ErrorCode.EXECUTION_TASK_STORAGE_ERROR
-            ) from exc
-
-        current = bool(
-            approval.bundle_state == "prohibited"
-            and approval.state == ApprovalState.REQUIRED
-            and plan.status == PlanStatus.AWAITING_APPROVAL
+        return not self._effective_prohibited_plan_failures(
+            plan,
+            policy_snapshot_validated=policy_snapshot_validated,
         )
-        beta6_superseded = bool(
-            plan.contract_version < CONFIGURATION_PLAN_CONTRACT_VERSION
-            and plan.status == PlanStatus.SUPERSEDED
-            and approval.state == ApprovalState.INVALIDATED
-            and approval.bundle_state == "invalidated"
-            and any(
-                event.event == "change_plan_superseded"
-                for event in plan.events
-            )
-        )
-        return current or beta6_superseded
 
     @staticmethod
     def _approval_bundle_state(plan: ChangePlan) -> str:
