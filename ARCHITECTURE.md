@@ -1,5 +1,19 @@
 # HA MCP Engineering Server Architecture
 
+## 2.2.0-beta.7 acceptance corrections
+
+Beta 7 retains F2 policy and authority while separating transport response
+receipt from write success and desired-state verification for configuration
+providers. New tasks record received HTTP responses and WebSocket frames before
+readback, including empty successes and received errors; no-response failures
+remain false, and historical task evidence is not rewritten.
+
+Validated prohibited plans are derived as terminal and non-actionable in public
+plan, health, Ingress, and handoff projections without changing the persisted
+plan schema. Task schema 1, authority version 3, one-task ownership, same-admin
+elevated acknowledgement, stale-state protection, zero fallback, and the
+25/23/48 plus configured 26/74 tool contract remain unchanged.
+
 ## 2.2.0-beta.6 policy and elevated-approval semantics
 
 F2 adds a deterministic runtime policy decision to every new governed plan.

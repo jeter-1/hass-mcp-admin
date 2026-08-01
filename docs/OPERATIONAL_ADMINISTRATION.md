@@ -1,6 +1,6 @@
 # Governed operational administration
 
-Version: `2.2.0-beta.6`
+Version: `2.2.0-beta.7`
 
 The accepted 2.1A lifecycle retains four public proposal tools:
 `create_backup_plan`, `create_reload_plan`, `create_addon_restart_plan`, and

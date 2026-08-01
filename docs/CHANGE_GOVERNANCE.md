@@ -1,5 +1,13 @@
 # Beta automation change governance
 
+## 2.2.0-beta.7 acceptance corrections
+
+Beta 7 records configuration-provider response receipt from affirmative
+transport evidence before readback and projects validated prohibited F2 plans
+as terminal, visible, and non-actionable. It changes no plan/policy hash,
+classification, approval sequence, task schema, provider route, or fallback.
+See [`V2_2_0_BETA7_ACCEPTANCE.md`](V2_2_0_BETA7_ACCEPTANCE.md).
+
 ## 2.2.0-beta.6 F2 policy and approval authority
 
 Every new governed plan contains one deterministic server-derived `f2-v1`
