@@ -1,6 +1,6 @@
 # Engineering 2.1 and 2.2 foundation roadmap
 
-Status: 2.1A accepted; F2 policy foundation target `2.2.0-beta.6`
+Status: 2.1A and F2 accepted; Beta 7 acceptance corrections in `2.2.0-beta.7`
 
 The required milestone order is:
 
@@ -93,6 +93,14 @@ F2 does not add a resource, MCP tool, provider, arbitrary service call,
 update/recovery execution, shared F3 lock semantics, F4 transaction graphs or
 compensation, F5 generalized verification, write fallback, or C1/K1/E1 runtime
 authority. F1 task schema 1 and no-blind-redispatch behavior remain unchanged.
+
+## 2.2.0-beta.7 F2 acceptance corrections
+
+Beta 7 records affirmative configuration-provider response evidence before
+readback and projects prohibited plans as terminal/non-actionable across legacy
+compatibility fields, pending health counters, Ingress, and handoff evidence.
+It does not change policy mapping, approval authority, task schema, resource or
+provider reachability, update/recovery behavior, or fallback.
 
 Each operation must remain operation-specific. This roadmap does not authorize
 a generic administrator, arbitrary Supervisor command, service-call shortcut,

@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.2.0-beta.7 - Acceptance evidence and projection corrections
+
+- Record configuration-provider HTTP responses and WebSocket frames truthfully
+  before readback, including empty successes and received error responses,
+  while retaining false for a timeout or connection failure with no known
+  response.
+- Keep provider response receipt, write outcome, readback, and semantic
+  verification as separate durable facts; a later mismatch cannot erase a
+  received response and readback cannot manufacture one.
+- Project validated F2 prohibited plans as terminal and non-actionable in plan
+  detail, inventory, handoff evidence, Ingress, and health instead of claiming
+  that they await or require an approval that cannot exist.
+- Preserve authority-v3 persisted enum fields and historical schema-v1 task
+  evidence without migration or startup backfill.
+- Preserve F2 policy mapping, same-administrator approval, one-task ownership,
+  task schema 1, 48 local tools, 26 configured delegated reads, stable v1.1.2,
+  and zero fallback.
+
 ## 2.2.0-beta.6 - Policy, risk, and elevated approval semantics
 
 - Add deterministic, server-derived `risk_delta`, independent

@@ -1,6 +1,6 @@
 # Governed operational administration
 
-Version: `2.2.0-beta.6`
+Version: `2.2.0-beta.7`
 
 The accepted 2.1A lifecycle retains four public proposal tools:
 `create_backup_plan`, `create_reload_plan`, `create_addon_restart_plan`, and
@@ -65,6 +65,14 @@ original provider invocation is interrupted by Engineering self-restart,
 startup readback may verify the operation while the task retains
 `response_received=false` and no `provider_response_recorded` event. Readback,
 process-identity change, and reconciliation never manufacture response timing.
+
+The Beta 7 correction applies that same contract to configuration providers.
+An HTTP response or WebSocket frame is affirmative receipt evidence whether it
+is a success, an empty success, or a bounded provider error; the durable attempt
+records `response_received=true` and a timestamp before readback. A timeout,
+connection failure, or interruption with no known response remains false.
+Provider success and semantic desired-state verification remain independent,
+and no response body is stored.
 
 Operation-specific `apply_attempts` includes eligible initial applies and
 durable duplicate applies. `no_blind_redispatch_preventions` includes the

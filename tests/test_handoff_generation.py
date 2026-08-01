@@ -232,11 +232,30 @@ class GovernanceInterpretationTests(unittest.TestCase):
             health=SimpleNamespace(),
         )
 
-    def plan(self, status, verification="not_run", plan_id="plan-1", approval_state="required"):
+    def plan(
+        self,
+        status,
+        verification="not_run",
+        plan_id="plan-1",
+        approval_state="required",
+        *,
+        policy_class=None,
+        bundle_state=None,
+    ):
         return SimpleNamespace(
             plan_id=plan_id, title="Test plan", updated_at="2026-07-13T00:00:00Z",
             status=SimpleNamespace(value=status), verification=SimpleNamespace(status=verification),
-            approval=SimpleNamespace(state=SimpleNamespace(value=approval_state)),
+            approval=SimpleNamespace(
+                state=SimpleNamespace(value=approval_state),
+                bundle_state=bundle_state,
+            ),
+            policy_decision=(
+                SimpleNamespace(
+                    policy_class=SimpleNamespace(value=policy_class)
+                )
+                if policy_class is not None
+                else None
+            ),
         )
 
     def test_only_applied_and_verified_is_completed(self):
@@ -274,6 +293,21 @@ class GovernanceInterpretationTests(unittest.TestCase):
         status, assessment = _status_and_assessment("change", items, False, 0, {})
         self.assertEqual(status, "ready")
         self.assertEqual(assessment, "no_material_findings")
+
+    def test_prohibited_policy_is_non_actionable_historical_evidence(self):
+        item = self.provider()._plan_item(
+            self.plan(
+                "awaiting_approval",
+                policy_class="prohibited",
+                bundle_state="prohibited",
+            ),
+            {},
+        )
+        self.assertEqual(item.section, "confirmed_findings")
+        self.assertEqual(item.status, "not_applicable")
+        self.assertFalse(item.requires_authorization)
+        self.assertEqual(item.authorization_type, "none")
+        self.assertIn("prohibited", item.summary)
 
     def test_external_pending_is_open_authorization_work_without_challenge_material(self):
         item = self.provider()._plan_item(

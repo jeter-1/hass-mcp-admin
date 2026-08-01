@@ -28,7 +28,12 @@ from ha_mcp_engineering.governance.task_storage import (
     TASK_NAMESPACE,
 )
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
-from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
+from ha_mcp_engineering.errors import (  # noqa: E402
+    ErrorCode,
+    GovernanceError,
+    HomeAssistantApiError,
+    HomeAssistantTimeoutError,
+)
 from ha_mcp_engineering.governance.service import (  # noqa: E402
     ChangeGovernanceService,
 )
@@ -563,6 +568,29 @@ class DurableTaskApplyTests(ExternalApprovalTestCase):
         self.assertEqual(task["plan_id"], created["plan_id"])
         self.assertEqual(task["plan_hash"], created["plan_hash"])
         self.assertEqual(task["state"], "succeeded_verified")
+        self.assertEqual(task["provider_attempt_count"], 1)
+        self.assertEqual(
+            task["provider_attempts"][0]["provider"],
+            "direct_home_assistant_automation",
+        )
+        self.assertTrue(
+            task["provider_attempts"][0]["response_received"]
+        )
+        self.assertIsInstance(
+            task["provider_attempts"][0]["response_recorded_at"], str
+        )
+        self.assertTrue(
+            task["verification_summary"][
+                "provider_response_received"
+            ]
+        )
+        self.assertEqual(
+            sum(
+                event["event_type"] == "provider_response_recorded"
+                for event in task["lifecycle_events"]
+            ),
+            1,
+        )
         self.assertEqual(
             self.service.get_plan(created["plan_id"])["execution_task"][
                 "task_id"
@@ -592,6 +620,199 @@ class DurableTaskApplyTests(ExternalApprovalTestCase):
             ],
             1,
         )
+
+    async def test_empty_success_response_is_recorded_before_readback(self):
+        created = await self.create()
+        await self.grant(created)
+        original_write = self.gateway.write
+
+        async def empty_success(automation_id, config):
+            await original_write(automation_id, config)
+            return None
+
+        self.gateway.write = empty_success
+        applied = await self.service.apply(
+            created["plan_id"], created["plan_hash"]
+        )
+        task = self.service.get_execution_task(applied["task_id"])
+
+        self.assertEqual(task["state"], "succeeded_verified")
+        self.assertTrue(task["provider_attempts"][0]["response_received"])
+        self.assertIsInstance(
+            task["provider_attempts"][0]["response_recorded_at"], str
+        )
+        self.assertTrue(
+            task["verification_summary"][
+                "provider_response_received"
+            ]
+        )
+        self.assertNotIn("response_body", json.dumps(task))
+
+    async def test_received_provider_error_is_distinct_from_failure(self):
+        created = await self.create()
+        await self.grant(created)
+
+        async def received_error(_automation_id, _config):
+            self.gateway.writes += 1
+            raise HomeAssistantApiError(
+                details={
+                    "status": 400,
+                    "method": "POST",
+                    "endpoint_category": "config/automation",
+                    "provider_response_received": True,
+                }
+            )
+
+        self.gateway.write = received_error
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.apply(
+                created["plan_id"], created["plan_hash"]
+            )
+
+        self.assertEqual(
+            raised.exception.code, ErrorCode.AUTOMATION_APPLY_FAILED
+        )
+        task = self.service.task_repository.get_for_plan(
+            created["plan_id"]
+        )
+        self.assertIsNotNone(task)
+        assert task is not None
+        self.assertEqual(task.state.value, "failed_post_dispatch")
+        self.assertTrue(task.provider_attempts[0]["response_received"])
+        self.assertIn(
+            "response_recorded_at", task.provider_attempts[0]
+        )
+        self.assertTrue(
+            task.verification_summary["provider_response_received"]
+        )
+        self.assertNotIn("response_body", json.dumps(task.to_dict()))
+
+    async def test_timeout_without_response_remains_false(self):
+        created = await self.create()
+        await self.grant(created)
+
+        async def timeout(_automation_id, _config):
+            self.gateway.writes += 1
+            raise HomeAssistantTimeoutError(
+                details={
+                    "method": "POST",
+                    "endpoint_category": "config/automation",
+                }
+            )
+
+        self.gateway.write = timeout
+        with self.assertRaises(GovernanceError):
+            await self.service.apply(
+                created["plan_id"], created["plan_hash"]
+            )
+
+        task = self.service.task_repository.get_for_plan(
+            created["plan_id"]
+        )
+        self.assertIsNotNone(task)
+        assert task is not None
+        self.assertFalse(task.provider_attempts[0]["response_received"])
+        self.assertNotIn(
+            "response_recorded_at", task.provider_attempts[0]
+        )
+        self.assertFalse(
+            task.verification_summary["provider_response_received"]
+        )
+
+    async def test_successful_write_readback_mismatch_retains_response(self):
+        created = await self.create()
+        await self.grant(created)
+        original_get = self.gateway.get
+
+        async def mismatched_readback(automation_id):
+            value = await original_get(automation_id)
+            if self.gateway.writes and value is not None:
+                value["description"] = "Different readback"
+            return value
+
+        self.gateway.get = mismatched_readback
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.apply(
+                created["plan_id"], created["plan_hash"]
+            )
+
+        self.assertEqual(
+            raised.exception.code,
+            ErrorCode.AUTOMATION_VERIFICATION_FAILED,
+        )
+        task = self.service.task_repository.get_for_plan(
+            created["plan_id"]
+        )
+        self.assertIsNotNone(task)
+        assert task is not None
+        self.assertEqual(task.state.value, "failed_post_dispatch")
+        self.assertTrue(task.provider_attempts[0]["response_received"])
+        self.assertTrue(
+            task.verification_summary["provider_response_received"]
+        )
+        writes = self.gateway.writes
+        with self.assertRaises(GovernanceError):
+            await self.service.apply(
+                created["plan_id"], created["plan_hash"]
+            )
+        self.assertEqual(self.gateway.writes, writes)
+
+    async def test_historical_terminal_false_response_is_not_rewritten(self):
+        task = make_task()
+        task.append_event(
+            "preflight_started",
+            timestamp(1),
+            new_state=ExecutionTaskState.PREFLIGHT,
+            changes={"started_at": timestamp(1)},
+        )
+        consume_task_approval(task, timestamp(2))
+        task.append_event(
+            "dispatch_attempted",
+            timestamp(3),
+            new_state=ExecutionTaskState.DISPATCHING,
+            changes={
+                "dispatched_at": timestamp(3),
+                "maximum_post_dispatch_deadline": timestamp(86_403),
+                "provider_attempts": [
+                    {
+                        "attempt": 1,
+                        "attempted_at": timestamp(3),
+                        "provider": "historical_provider",
+                        "response_received": False,
+                    }
+                ],
+            },
+        )
+        task.append_event(
+            "verification_started",
+            timestamp(4),
+            new_state=ExecutionTaskState.VERIFYING,
+        )
+        task.append_event(
+            "task_completed",
+            timestamp(5),
+            new_state=ExecutionTaskState.SUCCEEDED_VERIFIED,
+            changes={
+                "completed_at": timestamp(5),
+                "terminal_outcome": "historical_verified",
+                "verification_summary": {
+                    "status": "verified",
+                    "provider_response_received": False,
+                },
+            },
+        )
+        self.service.task_repository.save(task)
+        before = task.to_dict()
+
+        result = await self.service.reconcile_execution_tasks(
+            trigger="startup"
+        )
+        after = self.service.task_repository.get(task.task_id)
+
+        self.assertEqual(result["checked"], 0)
+        self.assertIsNotNone(after)
+        assert after is not None
+        self.assertEqual(after.to_dict(), before)
 
     async def test_invalid_apply_authority_creates_no_task_or_dispatch(self):
         created = await self.create()

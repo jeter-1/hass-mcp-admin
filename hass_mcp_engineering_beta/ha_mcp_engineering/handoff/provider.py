@@ -345,12 +345,24 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
 
     def _plan_item(self, plan, evidence):
         status = _value(getattr(plan, "status", "unknown"))
-        approval_state = _value(getattr(getattr(plan, "approval", None), "state", "required"))
+        approval = getattr(plan, "approval", None)
+        approval_state = _value(getattr(approval, "state", "required"))
+        policy_class = _value(
+            getattr(
+                getattr(plan, "policy_decision", None),
+                "policy_class",
+                "",
+            )
+        )
+        bundle_state = str(getattr(approval, "bundle_state", "") or "")
+        if policy_class == "prohibited" and bundle_state == "prohibited":
+            status = "prohibited"
+            approval_state = "prohibited"
         verification_status = str(getattr(getattr(plan, "verification", None), "status", "not_run"))
         verified = status == "applied" and verification_status == "passed"
         historical = status in {
             "draft", "validation_failed", "expired", "superseded", "rolled_back",
-            "rejected", "invalidated", "cancelled",
+            "rejected", "invalidated", "cancelled", "prohibited",
         }
         active_failure = status in {"failed", "verification_failed", "rollback_failed"}
         active_pending = status in {

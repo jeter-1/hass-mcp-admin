@@ -128,6 +128,15 @@ MAX_APPROVAL_PROJECTION_TARGETS = 8
 MAX_APPROVAL_PROJECTION_DATA = 8
 MAX_APPROVAL_PROJECTION_DEPTH = 4
 MAX_APPROVAL_PROJECTION_CONTROLS = 16
+AUTOMATION_PROVIDER_RESPONSE_EVENTS = frozenset(
+    {
+        "automation_provider_completed",
+        "automation_provider_failed",
+    }
+)
+PROVIDER_RESPONSE_EVIDENCE_INCONSISTENT = (
+    "provider_response_evidence_inconsistent"
+)
 
 
 def _usable_invocation_request_id(value: object) -> str | None:
@@ -1994,6 +2003,20 @@ class ChangeGovernanceService:
                 )
                 if isinstance(recorded, str):
                     response_recorded_at = recorded
+            elif (
+                plan.contract_version
+                < CONFIGURATION_PLAN_CONTRACT_VERSION
+                and event in AUTOMATION_PROVIDER_RESPONSE_EVENTS
+                and plan.events
+                and plan.events[-1].event == event
+            ):
+                # A contract-v1 automation provider event is emitted only
+                # after the REST transport returned a response (including an
+                # empty successful body) or exposed a bounded received-error
+                # marker. The persisted event timestamp is the durable receipt
+                # time; readback never manufactures this evidence.
+                response_received = True
+                response_recorded_at = plan.events[-1].timestamp
             elif plan.operational is not None:
                 response_received = bool(
                     plan.operational.dispatch.get(
@@ -2364,9 +2387,18 @@ class ChangeGovernanceService:
     def _public(self, plan: ChangePlan, *, include_configs: bool = True) -> dict[str, Any]:
         self._require_v2_persisted_plan_safe(plan)
         value = plan.to_dict()
+        prohibited = self._is_prohibited_plan(plan)
+        if prohibited:
+            # Authority-v3 persists the legacy pre-approval enum values to
+            # preserve the closed task/plan schema. Public projections must
+            # nevertheless describe the authoritative F2 terminal lifecycle,
+            # not an approval action that can never exist.
+            value["status"] = "prohibited"
         # CSRF material is private to the Ingress authority and must never be
         # returned through MCP plan reads or summaries.
         if isinstance(value.get("approval"), dict):
+            if prohibited:
+                value["approval"]["state"] = "prohibited"
             value["approval"].pop("csrf_digest", None)
             value["approval"].pop("csrf_issued_at", None)
             value["approval"].pop("approver_principal", None)
@@ -2392,8 +2424,9 @@ class ChangeGovernanceService:
         value["approval_bundle_state"] = self._approval_bundle_state(
             plan
         )
-        value["status_is_legacy"] = True
+        value["status_is_legacy"] = not prohibited
         value["authoritative_lifecycle_field"] = "approval_lifecycle"
+        value["approval_actionable"] = self._approval_is_actionable(plan)
         value["approval_challenge_created"] = bool(plan.approval.challenge_id)
         value["next_required_operation"] = (
             "approve_change_plan"
@@ -2498,6 +2531,62 @@ class ChangeGovernanceService:
             ApprovalState.INVALIDATED: "approval_invalidated",
         }[plan.approval.state]
 
+    @classmethod
+    def _is_prohibited_plan(cls, plan: ChangePlan) -> bool:
+        """Return the authoritative F2 non-actionable projection."""
+
+        return bool(
+            plan.policy_decision is not None
+            and plan.policy_decision.policy_class
+            == ApprovalPolicyClass.PROHIBITED
+            and cls._approval_bundle_state(plan) == "prohibited"
+        )
+
+    @classmethod
+    def _effective_plan_status(cls, plan: ChangePlan) -> str:
+        return (
+            "prohibited"
+            if cls._is_prohibited_plan(plan)
+            else plan.status.value
+        )
+
+    @classmethod
+    def _approval_is_actionable(cls, plan: ChangePlan) -> bool:
+        """Project actionability without upgrading legacy authority records."""
+
+        decision = plan.policy_decision
+        if decision is None:
+            return bool(
+                plan.status
+                in {
+                    PlanStatus.AWAITING_APPROVAL,
+                    PlanStatus.ROLLBACK_PENDING,
+                }
+                and plan.approval.state
+                in {
+                    ApprovalState.REQUIRED,
+                    ApprovalState.EXTERNAL_PENDING,
+                }
+            )
+        if (
+            cls._is_prohibited_plan(plan)
+            or not decision.required_acknowledgements
+        ):
+            return False
+        return bool(
+            plan.status
+            in {
+                PlanStatus.AWAITING_APPROVAL,
+                PlanStatus.ROLLBACK_PENDING,
+            }
+            and cls._approval_lifecycle(plan)
+            in {
+                "approval_not_requested",
+                "approval_pending_external",
+                "pending_elevated_risk_acknowledgement",
+            }
+        )
+
     def _summary(self, plan: ChangePlan) -> dict[str, Any]:
         """Return bounded plan inventory; get_change_plan is the detail path."""
         value = {
@@ -2505,11 +2594,12 @@ class ChangeGovernanceService:
             "plan_hash": self.plan_hash(plan),
             "plan_version": plan.plan_version,
             "title": plan.title,
-            "status": plan.status.value,
+            "status": self._effective_plan_status(plan),
             "approval_lifecycle": self._approval_lifecycle(plan),
             "approval_bundle_state": self._approval_bundle_state(plan),
-            "status_is_legacy": True,
+            "status_is_legacy": not self._is_prohibited_plan(plan),
             "authoritative_lifecycle_field": "approval_lifecycle",
+            "approval_actionable": self._approval_is_actionable(plan),
             "approval_challenge_created": bool(plan.approval.challenge_id),
             "target": {"target_type": plan.target_type, "target_id": plan.target_id},
             "operation": plan.operation.value,
@@ -3742,6 +3832,8 @@ class ChangeGovernanceService:
                         continue
                     raise
             self._resolve_lifecycle(plan)
+            if is_terminal_plan(plan):
+                continue
             if plan.status in {
                 PlanStatus.AWAITING_APPROVAL,
                 PlanStatus.APPROVED,
@@ -3786,7 +3878,7 @@ class ChangeGovernanceService:
     def list_plans(self, status: str = "", limit: int = 20) -> dict[str, Any]:
         plans = []
         for plan in self.resolved_plans():
-            if status and plan.status.value != status:
+            if status and self._effective_plan_status(plan) != status:
                 continue
             plans.append(self._summary(plan))
             if len(plans) >= max(1, min(limit, 100)):
@@ -4680,6 +4772,16 @@ class ChangeGovernanceService:
             )
         if task.state in TERMINAL_TASK_STATES:
             return
+        if self._configuration_response_projection_mismatch(task, plan):
+            # New authority-v3 executions with affirmative provider-response
+            # evidence must not become successful while the durable task says
+            # otherwise. Historical terminal tasks are never inspected here.
+            self._manual_review_task(
+                task,
+                PROVIDER_RESPONSE_EVIDENCE_INCONSISTENT,
+                plan,
+            )
+            return
         dispatched = self._task_is_dispatched(task)
         legacy = {
             **task.legacy_projection,
@@ -4806,6 +4908,13 @@ class ChangeGovernanceService:
                     "verification_summary": {
                         **task.verification_summary,
                         "status": "failed",
+                        "provider_response_received": bool(
+                            task.provider_attempts
+                            and task.provider_attempts[-1].get(
+                                "response_received"
+                            )
+                            is True
+                        ),
                         **self._configuration_task_verification_evidence(
                             plan
                         ),
@@ -7034,6 +7143,50 @@ class ChangeGovernanceService:
         Home Assistant, or dispatches a provider.
         """
 
+        if plan.contract_version < CONFIGURATION_PLAN_CONTRACT_VERSION:
+            response_event = next(
+                (
+                    event
+                    for event in reversed(plan.events)
+                    if event.event in AUTOMATION_PROVIDER_RESPONSE_EVENTS
+                ),
+                None,
+            )
+            if response_event is None:
+                return
+            try:
+                parse_task_timestamp(response_event.timestamp)
+            except (TypeError, ValueError):
+                return
+            attempts = [dict(item) for item in task.provider_attempts]
+            if not attempts or attempts[-1].get("response_received") is True:
+                return
+            attempts[-1] = {
+                **attempts[-1],
+                "response_received": True,
+                "response_recorded_at": response_event.timestamp,
+            }
+            self._record_task_event(
+                task,
+                "provider_response_recorded",
+                new_state=(
+                    ExecutionTaskState.OBSERVING
+                    if task.state == ExecutionTaskState.DISPATCHING
+                    else None
+                ),
+                changes={
+                    "provider_attempts": attempts,
+                    "verification_summary": {
+                        **task.verification_summary,
+                        "status": "pending",
+                        "provider_response_received": True,
+                        "response_evidence_source": (
+                            "persisted_automation_provider_event"
+                        ),
+                    },
+                },
+            )
+            return
         if plan.contract_version != CONFIGURATION_PLAN_CONTRACT_VERSION:
             return
         response_events = {
@@ -7101,6 +7254,56 @@ class ChangeGovernanceService:
                 },
             },
         )
+
+    @staticmethod
+    def _configuration_response_projection_mismatch(
+        task: ExecutionTask,
+        plan: ChangePlan,
+    ) -> bool:
+        """Detect new affirmative response evidence missing from its task."""
+
+        if (
+            task.approval_reference.get("authority_version")
+            != APPROVAL_AUTHORITY_VERSION
+        ):
+            return False
+        if plan.contract_version < CONFIGURATION_PLAN_CONTRACT_VERSION:
+            has_response = any(
+                event.event in AUTOMATION_PROVIDER_RESPONSE_EVENTS
+                for event in plan.events
+            )
+            return bool(
+                has_response
+                and (
+                    not task.provider_attempts
+                    or task.provider_attempts[-1].get(
+                        "response_received"
+                    )
+                    is not True
+                )
+            )
+        if plan.contract_version != CONFIGURATION_PLAN_CONTRACT_VERSION:
+            return False
+        response_operation_ids = {
+            operation.operation_id
+            for operation in plan.operations
+            if isinstance(operation.execution_receipt, dict)
+            and operation.execution_receipt.get(
+                "provider_response_received"
+            )
+            is True
+        }
+        for operation_id in response_operation_ids:
+            matching = [
+                attempt
+                for attempt in task.provider_attempts
+                if attempt.get("operation_id") == operation_id
+            ]
+            if not matching or matching[-1].get(
+                "response_received"
+            ) is not True:
+                return True
+        return False
 
     @staticmethod
     def _configuration_response_was_received(
@@ -8307,12 +8510,48 @@ class ChangeGovernanceService:
         self._record(plan, "change_apply_started", "success")
         try:
             await self.gateway.write(plan.target_id, plan.proposed_config)
-            actual = await self.gateway.get(plan.target_id)
         except Exception as exc:
+            if self._configuration_response_was_received(exc):
+                self._record(
+                    plan,
+                    "automation_provider_failed",
+                    "failure",
+                    error_code=(
+                        exc.code.value
+                        if isinstance(exc, EngineeringServerError)
+                        else ErrorCode.AUTOMATION_APPLY_FAILED.value
+                    ),
+                )
             plan.status = PlanStatus.FAILED
             plan.failure_information = {"error_code": ErrorCode.AUTOMATION_APPLY_FAILED.value}
             self._record(plan, "change_apply_failed", "failure", error_code=ErrorCode.AUTOMATION_APPLY_FAILED.value)
             raise GovernanceError(ErrorCode.AUTOMATION_APPLY_FAILED) from exc
+        else:
+            # Normal return from the transport proves that a response arrived,
+            # even when Home Assistant used an empty success body. Persist this
+            # fact before readback so later verification cannot erase it.
+            self._record(
+                plan,
+                "automation_provider_completed",
+                "success",
+            )
+
+        try:
+            actual = await self.gateway.get(plan.target_id)
+        except Exception as exc:
+            plan.status = PlanStatus.FAILED
+            plan.failure_information = {
+                "error_code": ErrorCode.AUTOMATION_APPLY_FAILED.value
+            }
+            self._record(
+                plan,
+                "change_apply_failed",
+                "failure",
+                error_code=ErrorCode.AUTOMATION_APPLY_FAILED.value,
+            )
+            raise GovernanceError(
+                ErrorCode.AUTOMATION_APPLY_FAILED
+            ) from exc
 
         duration = round((time.perf_counter() - started) * 1000, 3)
         actual_fingerprint = state_fingerprint(actual)
@@ -8983,10 +9222,13 @@ class ChangeGovernanceService:
             "storage_status": storage["status"],
             "storage_corruption_count": storage["corruption_count"],
             "total_plans": len(plans),
-            "plans_awaiting_approval": sum(plan.status == PlanStatus.AWAITING_APPROVAL for plan in plans),
+            "plans_awaiting_approval": sum(
+                plan.status == PlanStatus.AWAITING_APPROVAL
+                and self._approval_is_actionable(plan)
+                for plan in plans
+            ),
             "plans_requiring_approval": sum(
-                plan.status in {PlanStatus.AWAITING_APPROVAL, PlanStatus.ROLLBACK_PENDING}
-                and plan.approval.state in {ApprovalState.REQUIRED, ApprovalState.EXTERNAL_PENDING}
+                self._approval_is_actionable(plan)
                 for plan in plans
             ),
             "external_approval_enabled": True,

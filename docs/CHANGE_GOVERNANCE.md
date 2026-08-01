@@ -1,5 +1,13 @@
 # Beta automation change governance
 
+## 2.2.0-beta.7 acceptance corrections
+
+Beta 7 records configuration-provider response receipt from affirmative
+transport evidence before readback and projects validated prohibited F2 plans
+as terminal, visible, and non-actionable. It changes no plan/policy hash,
+classification, approval sequence, task schema, provider route, or fallback.
+See [`V2_2_0_BETA7_ACCEPTANCE.md`](V2_2_0_BETA7_ACCEPTANCE.md).
+
 ## 2.2.0-beta.6 F2 policy and approval authority
 
 Every new governed plan contains one deterministic server-derived `f2-v1`
@@ -228,6 +236,14 @@ field. The older persisted `status` value remains available and is marked with
 RC2dev4 records without a storage migration. Callers must not infer an external
 challenge from legacy `status: awaiting_approval`; only
 `approval_pending_external` means a challenge exists.
+
+The Beta 7 compatibility projection treats a validated F2 `prohibited` policy
+decision and `prohibited` approval bundle as terminal, visible, and
+non-actionable. Public plan detail, inventory, and handoff evidence project
+`status: prohibited` and `approval.state: prohibited`; pending approval filters,
+Ingress queues, and health counters exclude it. The authority-v3 persisted enum
+fields remain unchanged for schema compatibility, and historical authority-v1
+and authority-v2 records retain their existing projection.
 
 ## Planning, normalization, and fingerprints
 

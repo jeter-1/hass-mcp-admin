@@ -1,5 +1,19 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## 2.2.0-beta.7 configuration-provider response truth
+
+Configuration execution records transport receipt independently from provider
+success and desired-state verification. A completed HTTP response—including an
+empty success or a received error—or a WebSocket response frame records
+`response_received=true` with `response_recorded_at`. A connection failure,
+timeout, reset, or process interruption before any known response leaves the
+field false. Readback never supplies or backfills transport evidence.
+
+The bounded provider attempt and verification summary project the same durable
+receipt fact. They retain no response body, headers, credentials, target
+configuration, or administrator identity. Historical schema-v1 tasks remain
+readable exactly as persisted and are not heuristically rewritten.
+
 ## 2.2.0-beta.2 provider-response and duplicate-counter truth
 
 `provider_response_recorded` means the original provider invocation returned a

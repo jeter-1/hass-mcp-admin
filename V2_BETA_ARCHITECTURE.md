@@ -1,5 +1,18 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## 2.2.0-beta.7 acceptance corrections
+
+Beta 7 adds no authority or operation. It durably records affirmative
+configuration-provider transport responses independently from semantic
+readback, and it projects validated prohibited F2 plans as terminal historical
+evidence instead of pending authorization work. Response bodies and historical
+records remain untouched.
+
+The accepted Beta 6 F2 plan/policy hashes, authority-v3 sequencing, durable
+task reservation and consumption order, post-write verification, no blind
+redispatch, supported providers/resources, and zero-fallback boundary remain
+authoritative.
+
 ## 2.2.0-beta.6 policy and elevated-approval semantics
 
 F2 derives one immutable `f2-v1` policy decision from normalized governed-plan
