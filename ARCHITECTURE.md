@@ -1,5 +1,22 @@
 # HA MCP Engineering Server Architecture
 
+## 2.2.0-beta.8 persisted prohibited-plan compatibility
+
+Beta 8 adds one read-only compatibility interpretation for the exact validated
+Beta 6 authority-v3 prohibited-plan shape produced when same-target
+supersession changed only legacy lifecycle fields to `superseded` and
+`invalidated`. Immutable policy validation remains mandatory. Any authority,
+task, provider, apply, verification, rollback, or contradictory evidence fails
+closed.
+
+The effective prohibited predicate is shared by detail, inventory, health,
+Ingress, rehydration, and handoff projections. Valid records are terminal,
+non-actionable, and counted as prohibited without a storage migration or
+record rewrite. Beta 7 response truthfulness, task schema 1, authority version
+3, one-task ownership, policy mapping, zero fallback, and the 25/23/48 plus
+configured 26/74 tool contract remain unchanged. Delta-aware safety-reducing
+policy is deferred to Beta 9.
+
 ## 2.2.0-beta.7 acceptance corrections
 
 Beta 7 retains F2 policy and authority while separating transport response

@@ -1,6 +1,6 @@
 # Engineering 2.1 and 2.2 foundation roadmap
 
-Status: 2.1A and F2 accepted; Beta 7 acceptance corrections in `2.2.0-beta.7`
+Status: 2.1A and F2 accepted; Beta 8 compatibility correction in `2.2.0-beta.8`
 
 The required milestone order is:
 
@@ -101,6 +101,18 @@ readback and projects prohibited plans as terminal/non-actionable across legacy
 compatibility fields, pending health counters, Ingress, and handoff evidence.
 It does not change policy mapping, approval authority, task schema, resource or
 provider reachability, update/recovery behavior, or fallback.
+
+## 2.2.0-beta.8 persisted prohibited-plan compatibility
+
+Beta 8 restores detail, listing, health, Ingress, startup, and handoff reads for
+the exact validated Beta 6 prohibited-plan shape created by same-target
+supersession. Compatibility is structural and read-only; no record is migrated
+or rewritten, and any authority or execution contradiction fails closed.
+
+Delta-aware safety-reducing policy is explicitly deferred to Beta 9. F3 begins
+only after that separate milestone is accepted. Beta 8 changes no policy
+classification, approval sequence, task ownership, provider, tool, resource,
+or fallback boundary.
 
 Each operation must remain operation-specific. This roadmap does not authorize
 a generic administrator, arbitrary Supervisor command, service-call shortcut,

@@ -1,12 +1,14 @@
 # Beta automation change governance
 
-## 2.2.0-beta.7 acceptance corrections
+## 2.2.0-beta.8 persisted prohibited-plan compatibility
 
-Beta 7 records configuration-provider response receipt from affirmative
-transport evidence before readback and projects validated prohibited F2 plans
-as terminal, visible, and non-actionable. It changes no plan/policy hash,
-classification, approval sequence, task schema, provider route, or fallback.
-See [`V2_2_0_BETA7_ACCEPTANCE.md`](V2_2_0_BETA7_ACCEPTANCE.md).
+Beta 8 recognizes the exact validated prohibited-plan form persisted by Beta 6
+after same-target supersession, then projects it as terminal/non-actionable
+across compatibility status, Ingress, handoff, and health without rewriting
+storage. Beta 7 response truthfulness remains unchanged. It changes no
+plan/policy hash, classification, approval sequence, task schema, provider
+route, or fallback. See
+[`V2_2_0_BETA8_ACCEPTANCE.md`](V2_2_0_BETA8_ACCEPTANCE.md).
 
 ## 2.2.0-beta.6 F2 policy and approval authority
 

@@ -3,7 +3,7 @@
 > Stable v1.1.2 under `hass_mcp_admin` is retained as historical repository
 > source but is operationally retired. It is not covered by the Engineering
 > dependency audit and is not a supported rollback option. The Engineering v2
-> add-on is developed in place at `2.2.0-beta.7`, based on the exact
+> add-on is developed in place at `2.2.0-beta.8`, based on the exact
 > `v2.0.1` release, at
 > [`hass_mcp_engineering_beta/`](hass_mcp_engineering_beta/) on port `8100`.
 > Its existing technical “Beta” identity is retained to avoid a slug or runtime
@@ -42,10 +42,10 @@
 > Dev15 contract-level compatibility, partial quarantine, dashboard
 > independence, and retry-cadence separation are documented in
 > [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md).
-> The current Engineering development version is `2.2.0-beta.7`. Its narrow
-> F2 response-evidence and prohibited-projection corrections are recorded in
-> [`docs/V2_2_0_BETA7_RELEASE_NOTES.md`](docs/V2_2_0_BETA7_RELEASE_NOTES.md)
-> and [`docs/V2_2_0_BETA7_ACCEPTANCE.md`](docs/V2_2_0_BETA7_ACCEPTANCE.md).
+> The current Engineering development version is `2.2.0-beta.8`. Its narrow
+> persisted prohibited-plan compatibility correction is recorded in
+> [`docs/V2_2_0_BETA8_RELEASE_NOTES.md`](docs/V2_2_0_BETA8_RELEASE_NOTES.md)
+> and [`docs/V2_2_0_BETA8_ACCEPTANCE.md`](docs/V2_2_0_BETA8_ACCEPTANCE.md).
 > The accepted F2 architecture remains recorded in ADR-012 and the historical
 > Beta 6 release documents.
 > The inert update-and-recovery preflight foundation remains recorded in
@@ -238,13 +238,14 @@ outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 
 ## Engineering v2 milestones
 
-The current Engineering development version is `2.2.0-beta.7`, based on the
-accepted Beta 6 F2 foundation. It corrects provider-response evidence and
-prohibited-plan projections without adding a resource type, provider, tool,
-arbitrary service call, approval mode, or fallback.
+The current Engineering development version is `2.2.0-beta.8`, based on the
+accepted Beta 6 F2 foundation and Beta 7 evidence corrections. It restores
+read compatibility for validated persisted prohibited plans without adding a
+resource type, provider, tool, arbitrary service call, approval mode, or
+fallback.
 The roadmap and acceptance authority are
 [`docs/2_1_ROADMAP.md`](docs/2_1_ROADMAP.md) and
-[`docs/V2_2_0_BETA7_ACCEPTANCE.md`](docs/V2_2_0_BETA7_ACCEPTANCE.md). Determine advertised
+[`docs/V2_2_0_BETA8_ACCEPTANCE.md`](docs/V2_2_0_BETA8_ACCEPTANCE.md). Determine advertised
 release state from authoritative version metadata and
 `scripts/codex-context.py`, not from this milestone narrative. Engineering has
 48 statically registered

@@ -1,9 +1,10 @@
 # HA MCP Engineering Server Beta
 
 This directory contains the Engineering v2 add-on. Development version
-`2.2.0-beta.7` corrects configuration-provider response evidence and
-non-actionable prohibited-plan projections while preserving the accepted F2,
-E1, K1, C1, and durable execution-task boundaries.
+`2.2.0-beta.8` restores read compatibility for the validated prohibited-plan
+representation persisted by Beta 6, while retaining Beta 7 provider-response
+truthfulness and the accepted F2, E1, K1, C1, and durable execution-task
+boundaries.
 Its technical “Beta” display name, slug, image repository, and runtime
 identity remain unchanged to avoid a migration. Stable v1.1.2
 `hass_mcp_admin` source remains in the repository as operationally retired
@@ -108,12 +109,13 @@ reboot and completeness defects, RC2dev14 established practical configuration
 plans, and RC2dev16 corrected delegated structured-error normalization without
 changing upstream admission or adding search behavior. Version `2.0.1`
 promoted the accepted RC1-dev2 behavior without a functional change. Development
-version `2.2.0-beta.7` retains governed controlled reload, exact add-on restart,
+version `2.2.0-beta.8` retains governed controlled reload, exact add-on restart,
 Home Assistant restart, readback-only reconciliation, and one durable execution
 task for each newly executed plan. It adds authority-version-3 policy and
-approval bundles without another tool, provider, resource, or fallback. Beta 7
-records received configuration-provider responses before readback and excludes
-prohibited plans from actionable approval projections and counters. Its
+approval bundles without another tool, provider, resource, or fallback. Beta 8
+recognizes the exact safe Beta 6 superseded/invalidated prohibited record as
+terminal without migration; Beta 7 response truthfulness and current prohibited
+projection remain unchanged. Its
 update/recovery preflight,
 knowledge-provenance, and signed compatibility-registry packages are not loaded
 during startup and do not change compatibility admission.
@@ -123,8 +125,8 @@ retains
 exact reviewed 7.14.2 compatibility, reviewed 7.14.1 rollback compatibility,
 and the hardened MCP SDK boundary. Its changes, rollback, and acceptance
 requirements are recorded in
-[`../docs/V2_2_0_BETA7_RELEASE_NOTES.md`](../docs/V2_2_0_BETA7_RELEASE_NOTES.md),
-[`../docs/V2_2_0_BETA7_ACCEPTANCE.md`](../docs/V2_2_0_BETA7_ACCEPTANCE.md), and
+[`../docs/V2_2_0_BETA8_RELEASE_NOTES.md`](../docs/V2_2_0_BETA8_RELEASE_NOTES.md),
+[`../docs/V2_2_0_BETA8_ACCEPTANCE.md`](../docs/V2_2_0_BETA8_ACCEPTANCE.md), and
 [`../docs/OPERATIONAL_ADMINISTRATION.md`](../docs/OPERATIONAL_ADMINISTRATION.md).
 Determine
 exact advertised state from version metadata and `scripts/codex-context.py`.

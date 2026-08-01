@@ -1,5 +1,14 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## 2.2.0-beta.8 persisted prohibited-plan accounting
+
+Validated Beta 6 prohibited plans whose legacy lifecycle was changed by
+same-target supersession are counted under `plans_by_policy_class.prohibited`
+and `prohibited_policy_decisions`. They are excluded from awaiting, required,
+pending challenge, Ingress, external approval, and handoff authorization work.
+Health derives this from the same strict effective-prohibited predicate used by
+plan detail and inventory. Reads and startup do not rewrite the record.
+
 ## 2.2.0-beta.7 configuration-provider response truth
 
 Configuration execution records transport receipt independently from provider
