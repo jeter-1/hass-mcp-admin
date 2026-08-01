@@ -343,12 +343,32 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
         try:
             service = self.governance.require()
             requested_ids = set(query["change_plan_ids"])
-            plans = service.resolved_plans()
+            plans, projection_failures = (
+                service._resolved_plans_with_projection_failures()
+            )
             if requested_ids:
                 plans = [plan for plan in plans if plan.plan_id in requested_ids]
             else:
                 plans = plans[:20]
-            return plans, _complete("governance_plans", "engineering", "governance_persistence", len(plans), cached=False, upstream=False)
+            coverage = (
+                _projection_partial(
+                    "governance_plans",
+                    "engineering",
+                    "governance_persistence",
+                    len(plans),
+                    len(projection_failures),
+                )
+                if projection_failures
+                else _complete(
+                    "governance_plans",
+                    "engineering",
+                    "governance_persistence",
+                    len(plans),
+                    cached=False,
+                    upstream=False,
+                )
+            )
+            return plans, coverage
         except Exception:
             return [], _failed("governance_plans", "engineering", "governance_persistence", upstream=False)
 
@@ -594,6 +614,25 @@ def _complete(source, provider, capability, examined, *, cached, upstream):
 
 def _failed(source, provider, capability, *, upstream):
     return IncidentSourceCoverage(source, provider, capability, "failed", True, True, 0, 1, [f"{source.replace('_', ' ').title()} evidence was unavailable."], 0.0, False, "provider_upstream_error", upstream)
+
+
+def _projection_partial(source, provider, capability, examined, failed):
+    return IncidentSourceCoverage(
+        source,
+        provider,
+        capability,
+        "partial",
+        True,
+        True,
+        examined,
+        failed,
+        ["Some governance plans could not be projected safely."],
+        0.0,
+        False,
+        "governance_projection_failure",
+        False,
+        ["governance_projection_failure"],
+    )
 
 
 def _not_requested(source, capability):

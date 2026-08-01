@@ -568,8 +568,12 @@ class PersistedProhibitedCompatibilityTests(unittest.IsolatedAsyncioTestCase):
                 "elevated_admin": 1,
                 "prohibited": 2,
                 "legacy_without_policy_snapshot": 0,
+                "projection_failed": 0,
             },
         )
+        self.assertEqual(health["projection_failure_count"], 0)
+        self.assertIsNone(health["projection_failure_warning"])
+        self.assertTrue(health["policy_class_accounting_valid"])
         self.assertEqual(health["prohibited_policy_decisions"], 2)
         self.assertEqual(health["plans_awaiting_approval"], 2)
         self.assertEqual(health["plans_requiring_approval"], 2)

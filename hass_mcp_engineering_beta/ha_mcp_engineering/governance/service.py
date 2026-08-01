@@ -120,6 +120,7 @@ LIFECYCLE_OPERATIONS = frozenset(
     }
 )
 MAX_CONFIGURATION_OPERATIONS = 8
+MAX_PLAN_PROJECTION_FAILURES = 20
 SUPPORTED_CONFIGURATION_RESOURCES = frozenset({"automation", "script", "helper"})
 SUPPORTED_HELPER_TYPES = frozenset({"input_boolean", "input_number"})
 SUPPORTED_CONFIGURATION_ACTIONS = frozenset({"create", "update"})
@@ -133,6 +134,14 @@ AUTOMATION_PROVIDER_RESPONSE_EVENTS = frozenset(
     {
         "automation_provider_completed",
         "automation_provider_failed",
+    }
+)
+PLAN_PROJECTION_FAILURE_CODES = frozenset(
+    {
+        ErrorCode.POLICY_SNAPSHOT_MISMATCH,
+        ErrorCode.APPROVAL_AUTHORITY_MISMATCH,
+        ErrorCode.APPROVAL_PRINCIPAL_MISMATCH,
+        ErrorCode.APPROVAL_SEQUENCE_FAILURE,
     }
 )
 PROVIDER_RESPONSE_EVIDENCE_INCONSISTENT = (
@@ -4097,10 +4106,13 @@ class ChangeGovernanceService:
         self._resolve_lifecycle(plan)
         return self._public(plan)
 
-    def resolved_plans(
+    def _resolved_plans_with_projection_failures(
         self, *, validate_policy: bool = True
-    ) -> list[ChangePlan]:
-        """Return persisted plans after applying the shared effective lifecycle."""
+    ) -> tuple[
+        list[ChangePlan],
+        list[tuple[ChangePlan, ErrorCode]],
+    ]:
+        """Resolve readable records while isolating bounded plan failures."""
 
         try:
             plans = self.repository.list()
@@ -4108,22 +4120,75 @@ class ChangeGovernanceService:
             raise GovernanceError(
                 ErrorCode.CHANGE_PLAN_STORAGE_ERROR
             ) from exc
+        resolved: list[ChangePlan] = []
+        failures: list[tuple[ChangePlan, ErrorCode]] = []
         for plan in plans:
-            self._require_v2_persisted_plan_safe(plan)
-            if validate_policy and plan.policy_decision is not None:
-                self._require_policy_snapshot(plan)
-            self._resolve_lifecycle(plan)
+            try:
+                self._require_v2_persisted_plan_safe(plan)
+                if validate_policy and plan.policy_decision is not None:
+                    self._require_policy_snapshot(plan)
+                self._resolve_lifecycle(plan)
+            except GovernanceError as exc:
+                if exc.code not in PLAN_PROJECTION_FAILURE_CODES:
+                    raise
+                failures.append((plan, exc.code))
+                continue
+            resolved.append(plan)
+        return resolved, sorted(
+            failures,
+            key=lambda item: item[0].plan_id,
+        )
+
+    def resolved_plans(
+        self, *, validate_policy: bool = True
+    ) -> list[ChangePlan]:
+        """Return persisted plans after applying the shared effective lifecycle."""
+
+        plans, failures = self._resolved_plans_with_projection_failures(
+            validate_policy=validate_policy
+        )
+        if failures:
+            failed_plan, error_code = failures[0]
+            raise GovernanceError(
+                error_code,
+                details={"resource_id": failed_plan.plan_id},
+            )
         return plans
 
     def list_plans(self, status: str = "", limit: int = 20) -> dict[str, Any]:
-        plans = []
-        for plan in self.resolved_plans():
-            if status and self._effective_plan_status(plan) != status:
+        selected: list[dict[str, Any]] = []
+        plans, failures = self._resolved_plans_with_projection_failures()
+        for plan in plans:
+            try:
+                effective_status = self._effective_plan_status(plan)
+                if status and effective_status != status:
+                    continue
+                if len(selected) >= max(1, min(limit, 100)):
+                    continue
+                selected.append(self._summary(plan))
+            except GovernanceError as exc:
+                if exc.code not in PLAN_PROJECTION_FAILURE_CODES:
+                    raise
+                failures.append((plan, exc.code))
                 continue
-            plans.append(self._summary(plan))
-            if len(plans) >= max(1, min(limit, 100)):
-                break
-        return {"count": len(plans), "plans": plans}
+        failures = sorted(failures, key=lambda item: item[0].plan_id)
+        projected_failures = [
+            {
+                "plan_id": plan.plan_id,
+                "error_code": error_code.value,
+            }
+            for plan, error_code in failures[:MAX_PLAN_PROJECTION_FAILURES]
+        ]
+        return {
+            "count": len(selected),
+            "plans": selected,
+            "projection_failures": projected_failures,
+            "projection_failure_count": len(failures),
+            "projection_failures_truncated": (
+                len(failures) > len(projected_failures)
+            ),
+            "partial": bool(failures),
+        }
 
     def approve(self, plan_id: str, expected_plan_hash: str, approval_note: str = "") -> dict[str, Any]:
         """Request external approval without granting authority to the MCP caller."""
@@ -4350,7 +4415,8 @@ class ChangeGovernanceService:
 
     def pending_external_reviews(self) -> list[dict[str, Any]]:
         reviews: list[dict[str, Any]] = []
-        for plan in self.resolved_plans():
+        plans, _failures = self._resolved_plans_with_projection_failures()
+        for plan in plans:
             calculated = self.plan_hash(plan)
             if not self._active_challenge_matches(plan, calculated):
                 continue
@@ -6524,7 +6590,10 @@ class ChangeGovernanceService:
         started = time.monotonic()
         selected = checked = completed = pending = failed = 0
         bounded = False
-        for candidate in self.resolved_plans():
+        candidates, _failures = (
+            self._resolved_plans_with_projection_failures()
+        )
+        for candidate in candidates:
             if not self._eligible_lifecycle_reconciliation(candidate):
                 continue
             if (
@@ -9357,9 +9426,11 @@ class ChangeGovernanceService:
         return {"status": "rolled_back", "plan": self._public(plan, include_configs=False)}
 
     def health_summary(self) -> dict[str, Any]:
-        # Health remains available when a hand-built F2 record is invalid, but
-        # invalid snapshots are never counted as an authoritative policy class.
-        plans = self.resolved_plans(validate_policy=False)
+        # Record-level governance projection failures remain visible and
+        # non-actionable without hiding otherwise healthy plan accounting.
+        plans, projection_failures = (
+            self._resolved_plans_with_projection_failures()
+        )
         storage = self.repository.health()
         try:
             tasks = self.task_repository.list()
@@ -9423,12 +9494,7 @@ class ChangeGovernanceService:
             reverse=True,
         )
         valid_policy_plans = {
-            plan.plan_id: bool(
-                plan.policy_decision is not None
-                and policy_snapshot_matches(plan)
-                and self._approval_bundle_integrity_error(plan) is None
-            )
-            for plan in plans
+            plan.plan_id: plan.policy_decision is not None for plan in plans
         }
         plans_by_policy_class = {
             policy_class.value: sum(
@@ -9441,6 +9507,13 @@ class ChangeGovernanceService:
         }
         plans_by_policy_class["legacy_without_policy_snapshot"] = sum(
             plan.policy_decision is None for plan in plans
+        )
+        plans_by_policy_class["projection_failed"] = len(
+            projection_failures
+        )
+        total_plans = len(plans) + len(projection_failures)
+        policy_class_accounting_valid = bool(
+            sum(plans_by_policy_class.values()) == total_plans
         )
 
         def has_active_action(
@@ -9461,7 +9534,7 @@ class ChangeGovernanceService:
             "storage": storage,
             "storage_status": storage["status"],
             "storage_corruption_count": storage["corruption_count"],
-            "total_plans": len(plans),
+            "total_plans": total_plans,
             "plans_awaiting_approval": sum(
                 plan.status == PlanStatus.AWAITING_APPROVAL
                 and self._approval_is_actionable(plan)
@@ -9475,6 +9548,15 @@ class ChangeGovernanceService:
             "ingress_approval_ui_configured": True,
             "approval_authority_version": APPROVAL_AUTHORITY_VERSION,
             "plans_by_policy_class": plans_by_policy_class,
+            "projection_failure_count": len(projection_failures),
+            "projection_failure_warning": (
+                "one_or_more_governance_plans_could_not_be_projected"
+                if projection_failures
+                else None
+            ),
+            "policy_class_accounting_valid": (
+                policy_class_accounting_valid
+            ),
             "pending_plan_approvals": sum(
                 has_active_action(
                     plan, ApprovalActionKind.PLAN_APPROVAL
@@ -9525,9 +9607,8 @@ class ChangeGovernanceService:
                 for event in plan.events
             )
             + sum(
-                plan.policy_decision is not None
-                and not policy_snapshot_matches(plan)
-                for plan in plans
+                error_code == ErrorCode.POLICY_SNAPSHOT_MISMATCH
+                for _plan, error_code in projection_failures
             ),
             "approval_principal_mismatches": sum(
                 event.error_code
@@ -9536,11 +9617,8 @@ class ChangeGovernanceService:
                 for event in plan.events
             )
             + sum(
-                self._approval_bundle_integrity_error(plan)
-                == ErrorCode.APPROVAL_PRINCIPAL_MISMATCH
-                for plan in plans
-                if plan.policy_decision is not None
-                and policy_snapshot_matches(plan)
+                error_code == ErrorCode.APPROVAL_PRINCIPAL_MISMATCH
+                for _plan, error_code in projection_failures
             ),
             "approval_sequence_failures": sum(
                 event.error_code
@@ -9549,11 +9627,8 @@ class ChangeGovernanceService:
                 for event in plan.events
             )
             + sum(
-                self._approval_bundle_integrity_error(plan)
-                == ErrorCode.APPROVAL_SEQUENCE_FAILURE
-                for plan in plans
-                if plan.policy_decision is not None
-                and policy_snapshot_matches(plan)
+                error_code == ErrorCode.APPROVAL_SEQUENCE_FAILURE
+                for _plan, error_code in projection_failures
             ),
             "pending_challenge_count": sum(
                 self._active_challenge_matches(

@@ -280,7 +280,7 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
         self.assertIn("HomeAssistantWebSocketClient", constructors)
 
         service_calls = calls_under(self.tree, "ChangeGovernanceService")
-        self.assertEqual(len(service_calls), 4)
+        self.assertEqual(len(service_calls), 3)
         governed_gateway_constructors = []
         for service_call in service_calls:
             service_argument_names = {
@@ -307,7 +307,7 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
             governed_gateway_constructors.count(
                 "_LegacyAutomationCompatibilityGateway"
             ),
-            2,
+            1,
         )
         observed = next(
             node

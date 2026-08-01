@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -21,6 +22,7 @@ from ha_mcp_engineering.governance.service import (  # noqa: E402
 )
 from ha_mcp_engineering.governance.storage import (  # noqa: E402
     ChangePlanRepository,
+    ChangePlanStorageError,
 )
 from ha_mcp_engineering.governance.task_models import (  # noqa: E402
     new_execution_task,
@@ -28,9 +30,13 @@ from ha_mcp_engineering.governance.task_models import (  # noqa: E402
 from ha_mcp_engineering.governance.task_storage import (  # noqa: E402
     ExecutionTaskStorageError,
 )
+from ha_mcp_engineering.handoff.provider import (  # noqa: E402
+    EngineeringHandoffProvider,
+)
 from tests.test_beta25_external_approval import (  # noqa: E402
     Clock,
     FakeGateway,
+    RuntimeShim,
 )
 
 
@@ -325,6 +331,228 @@ class RealBeta6CompatibilityTests(unittest.TestCase):
             raised.exception.code,
             ErrorCode.EXECUTION_TASK_STORAGE_ERROR,
         )
+
+    def test_partial_listing_reports_projection_failure_without_hiding_valid_plan(self):
+        valid_id, valid_path = self._write(FIXTURE_PATHS[0])
+        invalid = json.loads(FIXTURE_PATHS[1].read_text(encoding="utf-8"))
+        invalid["approval"]["state"] = "consumed"
+        invalid["approval"]["bundle_state"] = "consumed"
+        invalid["approval"]["consumed_at"] = invalid["updated_at"]
+        invalid_id, invalid_path = self._write_value(invalid)
+        before = {
+            valid_id: valid_path.read_bytes(),
+            invalid_id: invalid_path.read_bytes(),
+        }
+
+        unfiltered = self.service.list_plans(limit=100)
+        self.assertEqual([item["plan_id"] for item in unfiltered["plans"]], [valid_id])
+        self.assertTrue(unfiltered["partial"])
+        self.assertEqual(unfiltered["projection_failure_count"], 1)
+        self.assertEqual(
+            unfiltered["projection_failures"],
+            [
+                {
+                    "plan_id": invalid_id,
+                    "error_code": "approval_sequence_failure",
+                }
+            ],
+        )
+        self.assertFalse(unfiltered["projection_failures_truncated"])
+
+        prohibited = self.service.list_plans(status="prohibited", limit=100)
+        self.assertEqual(
+            [item["plan_id"] for item in prohibited["plans"]],
+            [valid_id],
+        )
+        self.assertEqual(prohibited["projection_failure_count"], 1)
+        awaiting = self.service.list_plans(
+            status="awaiting_approval", limit=100
+        )
+        self.assertEqual(awaiting["plans"], [])
+        self.assertEqual(awaiting["projection_failure_count"], 1)
+
+        health = self.service.health_summary()
+        self.assertEqual(health["total_plans"], 2)
+        self.assertEqual(health["plans_by_policy_class"]["prohibited"], 1)
+        self.assertEqual(
+            health["plans_by_policy_class"]["projection_failed"], 1
+        )
+        self.assertEqual(health["projection_failure_count"], 1)
+        self.assertEqual(
+            health["projection_failure_warning"],
+            "one_or_more_governance_plans_could_not_be_projected",
+        )
+        self.assertTrue(health["policy_class_accounting_valid"])
+        self.assertEqual(
+            sum(health["plans_by_policy_class"].values()),
+            health["total_plans"],
+        )
+        self.assertEqual(health["plans_awaiting_approval"], 0)
+        self.assertEqual(health["plans_requiring_approval"], 0)
+        self.assertEqual(health["pending_plan_approvals"], 0)
+        self.assertEqual(health["pending_elevated_acknowledgements"], 0)
+        self.assertEqual(self.service.pending_external_reviews(), [])
+
+        recovered = ChangeGovernanceService(
+            self.repository,
+            self.service.gateway,
+            now=Clock(),
+        )
+        self.assertEqual(recovered.pending_external_reviews(), [])
+        recovered_health = recovered.health_summary()
+        self.assertEqual(recovered_health["projection_failure_count"], 1)
+        self.assertTrue(recovered_health["policy_class_accounting_valid"])
+        self.assertEqual(valid_path.read_bytes(), before[valid_id])
+        self.assertEqual(invalid_path.read_bytes(), before[invalid_id])
+        self.assertEqual(self.service.gateway.writes, 0)
+
+    def test_multiple_projection_failures_are_deterministic_and_bounded(self):
+        expected_ids = []
+        for fixture_path in reversed(FIXTURE_PATHS):
+            value = json.loads(fixture_path.read_text(encoding="utf-8"))
+            value["approval"]["state"] = "consumed"
+            value["approval"]["bundle_state"] = "consumed"
+            value["approval"]["consumed_at"] = value["updated_at"]
+            plan_id, _path = self._write_value(value)
+            expected_ids.append(plan_id)
+        listed = self.service.list_plans(limit=100)
+        self.assertEqual(listed["plans"], [])
+        self.assertEqual(listed["projection_failure_count"], 2)
+        self.assertEqual(
+            [item["plan_id"] for item in listed["projection_failures"]],
+            sorted(expected_ids),
+        )
+        self.assertTrue(listed["partial"])
+        self.assertFalse(listed["projection_failures_truncated"])
+
+    def test_projection_failure_details_are_bounded(self):
+        value = self._fixture()
+        plan_id, _path = self._write_value(value)
+        plan = self.repository.get(plan_id)
+        self.assertIsNotNone(plan)
+        assert plan is not None
+        failures = []
+        for index in range(25):
+            projected = copy.copy(plan)
+            projected.plan_id = f"{index:032x}"
+            failures.append(
+                (projected, ErrorCode.APPROVAL_SEQUENCE_FAILURE)
+            )
+        with patch.object(
+            self.service,
+            "_resolved_plans_with_projection_failures",
+            return_value=([], failures),
+        ):
+            listed = self.service.list_plans(limit=100)
+        self.assertEqual(listed["projection_failure_count"], 25)
+        self.assertEqual(len(listed["projection_failures"]), 20)
+        self.assertTrue(listed["projection_failures_truncated"])
+        self.assertTrue(listed["partial"])
+
+    def test_systemic_plan_storage_failure_is_not_partial_success(self):
+        with patch.object(
+            self.repository,
+            "list",
+            side_effect=ChangePlanStorageError("synthetic unavailable"),
+        ):
+            with self.assertRaises(GovernanceError) as raised:
+                self.service.list_plans(limit=100)
+        self.assertEqual(
+            raised.exception.code,
+            ErrorCode.CHANGE_PLAN_STORAGE_ERROR,
+        )
+
+
+class ProjectionFailureHandoffTests(unittest.IsolatedAsyncioTestCase):
+    async def test_handoff_keeps_valid_plans_and_marks_projection_coverage_partial(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "plans"
+            repository = ChangePlanRepository(root)
+            gateway = FakeGateway()
+            service = ChangeGovernanceService(
+                repository,
+                gateway,
+                now=Clock(),
+            )
+            valid = FIXTURE_PATHS[0].read_bytes()
+            valid_id = json.loads(valid)["plan_id"]
+            valid_path = root / f"{valid_id}.json"
+            valid_path.write_bytes(valid)
+            invalid = json.loads(
+                FIXTURE_PATHS[1].read_text(encoding="utf-8")
+            )
+            invalid["approval"]["state"] = "consumed"
+            invalid["approval"]["bundle_state"] = "consumed"
+            invalid["approval"]["consumed_at"] = invalid["updated_at"]
+            invalid_id = invalid["plan_id"]
+            invalid_path = root / f"{invalid_id}.json"
+            invalid_path.write_text(
+                json.dumps(invalid, sort_keys=True, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            before = {
+                valid_id: valid_path.read_bytes(),
+                invalid_id: invalid_path.read_bytes(),
+            }
+            provider = EngineeringHandoffProvider(
+                governance=RuntimeShim(service),
+                incident=None,
+                dependency_index=SimpleNamespace(),
+                rest_client=None,
+                health=None,
+            )
+            operational_reconciliation = (
+                await service.reconcile_operational_plans(
+                    trigger="startup"
+                )
+            )
+            self.assertEqual(operational_reconciliation["checked"], 0)
+            self.assertEqual(operational_reconciliation["pending"], 0)
+            self.assertEqual(operational_reconciliation["failed"], 0)
+            bundle = await provider._collect(
+                {
+                    "include_runtime_health": False,
+                    "include_governance_context": True,
+                    "include_dependency_context": False,
+                    "include_integrity_context": False,
+                    "include_reliability_context": False,
+                    "include_incident_context": False,
+                    "include_recommendations": False,
+                    "focus_entity_ids": [],
+                    "automation_ids": [],
+                    "change_plan_ids": [valid_id, invalid_id],
+                    "lookback_hours": 168,
+                    "refresh_index": False,
+                }
+            )
+            item = next(
+                item
+                for item in bundle.items
+                if valid_id in item.change_plan_ids
+            )
+            self.assertEqual(item.status, "not_applicable")
+            self.assertFalse(item.requires_authorization)
+            failed_item = next(
+                item
+                for item in bundle.items
+                if invalid_id in item.change_plan_ids
+            )
+            self.assertFalse(failed_item.requires_authorization)
+            self.assertEqual(failed_item.authorization_type, "none")
+            coverage = next(
+                item
+                for item in bundle.coverage
+                if item.source_type == "governance_plans"
+            )
+            self.assertEqual(coverage.completeness, "partial")
+            self.assertEqual(coverage.failed_items, 1)
+            self.assertEqual(
+                coverage.failure_category,
+                "governance_projection_failure",
+            )
+            self.assertEqual(valid_path.read_bytes(), before[valid_id])
+            self.assertEqual(invalid_path.read_bytes(), before[invalid_id])
+            self.assertEqual(gateway.writes, 0)
 
 
 if __name__ == "__main__":
