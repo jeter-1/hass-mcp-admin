@@ -15,6 +15,13 @@ This is not two-person control. A `prohibited` plan creates no actionable
 challenge. See ADR-012 in the architecture decision records and the
 active [`V2_2_0_BETA6_ACCEPTANCE.md`](V2_2_0_BETA6_ACCEPTANCE.md).
 
+The Beta 7 correction makes that non-actionability consistent across legacy
+compatibility fields and health. A prohibited F2 record remains visible as
+governance history, but is projected as `prohibited`, never as awaiting or
+requiring approval. It is excluded from the Ingress queue and every pending
+approval counter, creates no challenge or control, and continues to reject both
+approval and apply with `prohibited_change`.
+
 This boundary does not prove that an automation will behave correctly. Apply
 verification proves that Home Assistant stored the intended configuration,
 returned the expected automation identity, and accepted its configuration.

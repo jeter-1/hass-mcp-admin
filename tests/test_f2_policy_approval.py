@@ -829,6 +829,31 @@ class F2ApprovalWorkflowTests(F2ApprovalTestCase):
 
     async def test_prohibited_plan_has_no_approval_task_provider_or_fallback(self):
         created = await self.create_prohibited()
+        self.assertEqual(created["status"], "prohibited")
+        self.assertFalse(created["status_is_legacy"])
+        self.assertEqual(created["approval"]["state"], "prohibited")
+        self.assertEqual(created["approval_lifecycle"], "prohibited")
+        self.assertEqual(created["approval_bundle_state"], "prohibited")
+        self.assertEqual(
+            created["policy_decision"]["required_acknowledgements"], []
+        )
+        self.assertFalse(created["approval_challenge_created"])
+        self.assertFalse(created["approval_actionable"])
+        self.assertFalse(created["apply_allowed"])
+        self.assertIsNone(created["next_required_operation"])
+        self.assertEqual(
+            self.service.list_plans(status="awaiting_approval")["count"],
+            0,
+        )
+        prohibited_listing = self.service.list_plans(status="prohibited")
+        self.assertEqual(prohibited_listing["count"], 1)
+        self.assertEqual(
+            prohibited_listing["plans"][0]["status"], "prohibited"
+        )
+        self.assertFalse(
+            prohibited_listing["plans"][0]["approval_actionable"]
+        )
+        self.assertEqual(self.service.pending_external_reviews(), [])
         with self.assertRaises(GovernanceError) as approval_error:
             self.service.approve(
                 created["plan_id"], created["plan_hash"]
@@ -849,6 +874,42 @@ class F2ApprovalWorkflowTests(F2ApprovalTestCase):
         )
         health = self.service.health_summary()
         self.assertEqual(health["prohibited_policy_decisions"], 1)
+        self.assertEqual(health["plans_awaiting_approval"], 0)
+        self.assertEqual(health["plans_requiring_approval"], 0)
+        self.assertEqual(health["pending_plan_approvals"], 0)
+        self.assertEqual(health["pending_elevated_acknowledgements"], 0)
+        self.assertEqual(health["externally_approved_plans"], 0)
+        self.assertEqual(health["rejected_plans"], 0)
+
+        # Prohibited is an authoritative terminal projection, while the
+        # authority-v3 persisted enum fields remain byte-compatible.
+        persisted = self.repository.get(created["plan_id"])
+        assert persisted is not None
+        self.assertEqual(persisted.status.value, "awaiting_approval")
+        self.assertEqual(persisted.approval.state.value, "required")
+        self.assertEqual(persisted.approval.bundle_state, "prohibited")
+        before = persisted.to_dict()
+        self.clock.advance(minutes=121)
+        recovered = ChangeGovernanceService(
+            self.repository,
+            self.gateway,
+            now=self.clock,
+        )
+        recovered_public = recovered.get_plan(created["plan_id"])
+        self.assertEqual(recovered_public["status"], "prohibited")
+        self.assertEqual(
+            recovered_public["approval"]["state"], "prohibited"
+        )
+        self.assertFalse(recovered_public["approval_actionable"])
+        self.assertEqual(recovered.pending_external_reviews(), [])
+        after = self.repository.get(created["plan_id"])
+        assert after is not None
+        self.assertEqual(after.to_dict(), before)
+        self.service = recovered
+        await self.create_standard()
+        after_replacement = self.repository.get(created["plan_id"])
+        assert after_replacement is not None
+        self.assertEqual(after_replacement.to_dict(), before)
 
     async def test_task_persistence_failure_cannot_consume_approval(self):
         created = await self.create_standard()
@@ -1078,6 +1139,10 @@ class F2ApprovalWorkflowTests(F2ApprovalTestCase):
         self.assertEqual(first["consumed_standard_approval_bundles"], 1)
         self.assertEqual(first["consumed_elevated_approval_bundles"], 1)
         self.assertEqual(first["granted_elevated_acknowledgements"], 1)
+        self.assertEqual(first["plans_awaiting_approval"], 0)
+        self.assertEqual(first["plans_requiring_approval"], 0)
+        self.assertEqual(first["pending_plan_approvals"], 0)
+        self.assertEqual(first["pending_elevated_acknowledgements"], 0)
         self.assertEqual(
             first["plans_by_policy_class"],
             {
@@ -1087,6 +1152,51 @@ class F2ApprovalWorkflowTests(F2ApprovalTestCase):
                 "legacy_without_policy_snapshot": 0,
             },
         )
+
+    async def test_standard_and_elevated_pending_plans_remain_counted(self):
+        standard = await self.create_standard()
+        standard_created = self.service.health_summary()
+        self.assertEqual(standard_created["plans_awaiting_approval"], 1)
+        self.assertEqual(standard_created["plans_requiring_approval"], 1)
+        standard_pending = self.service.approve(
+            standard["plan_id"], standard["plan_hash"]
+        )
+        self.assertEqual(
+            self.service.health_summary()["pending_plan_approvals"], 1
+        )
+        await self.decide(standard, standard_pending)
+        await self.service.apply(standard["plan_id"], standard["plan_hash"])
+
+        elevated = await self.create_elevated()
+        elevated_created = self.service.health_summary()
+        self.assertEqual(elevated_created["plans_awaiting_approval"], 1)
+        self.assertEqual(elevated_created["plans_requiring_approval"], 1)
+        elevated_pending = self.service.approve(
+            elevated["plan_id"], elevated["plan_hash"]
+        )
+        self.assertEqual(
+            self.service.health_summary()["pending_plan_approvals"], 1
+        )
+        acknowledgement_pending = await self.decide(
+            elevated, elevated_pending
+        )
+        acknowledgement_health = self.service.health_summary()
+        self.assertEqual(
+            acknowledgement_health["pending_plan_approvals"], 0
+        )
+        self.assertEqual(
+            acknowledgement_health[
+                "pending_elevated_acknowledgements"
+            ],
+            1,
+        )
+        self.assertEqual(
+            acknowledgement_health["plans_requiring_approval"], 1
+        )
+        await self.decide(elevated, acknowledgement_pending)
+        fully_approved = self.service.health_summary()
+        self.assertEqual(fully_approved["plans_awaiting_approval"], 0)
+        self.assertEqual(fully_approved["plans_requiring_approval"], 0)
 
 
 class F2IngressTests(F2ApprovalTestCase):
@@ -1188,6 +1298,30 @@ class F2IngressTests(F2ApprovalTestCase):
         ) as client:
             response = await client.get(f"/plans/{created['plan_id']}")
         self.assertEqual(response.status_code, 403)
+
+    async def test_prohibited_plan_is_never_an_ingress_action(self):
+        created = await self.create_prohibited()
+        async with await self._client() as client:
+            inbox = await client.get("/")
+            review = await client.get(f"/plans/{created['plan_id']}")
+        self.assertEqual(inbox.status_code, 200)
+        self.assertIn("No governed plans", inbox.text)
+        self.assertNotIn(created["plan_id"], inbox.text)
+        self.assertEqual(review.status_code, 404)
+        self.assertNotIn("Approve exact plan", review.text)
+
+        self.service = ChangeGovernanceService(
+            self.repository,
+            self.gateway,
+            now=self.clock,
+        )
+        async with await self._client() as client:
+            recovered_inbox = await client.get("/")
+            recovered_review = await client.get(
+                f"/plans/{created['plan_id']}"
+            )
+        self.assertIn("No governed plans", recovered_inbox.text)
+        self.assertEqual(recovered_review.status_code, 404)
 
 
 if __name__ == "__main__":

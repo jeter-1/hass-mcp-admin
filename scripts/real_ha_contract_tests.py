@@ -1052,6 +1052,9 @@ def _assert_single_task_dispatch(
     assert isinstance(
         task["provider_attempts"][0].get("response_recorded_at"), str
     )
+    assert task["verification_summary"][
+        "provider_response_received"
+    ] is True
     assert sum(
         event["event_type"] == "dispatch_attempted"
         for event in task["lifecycle_events"]
@@ -1382,6 +1385,7 @@ async def _run_f2_policy_acceptance_contract(
             scenario = "prohibited"
             active_operation_id = "prohibited_automation_update"
             observed_mutation_baseline = len(observed.mutations)
+            prohibited_health_baseline = service.health_summary()
             prohibited = await service.create_configuration_plan(
                 title="F2 disposable prohibited plan",
                 description="Attempt to configure a safety-critical action.",
@@ -1408,6 +1412,11 @@ async def _run_f2_policy_acceptance_contract(
             assert prohibited["policy_decision"][
                 "required_acknowledgements"
             ] == []
+            assert prohibited["status"] == "prohibited"
+            assert prohibited["approval"]["state"] == "prohibited"
+            assert prohibited["approval_lifecycle"] == "prohibited"
+            assert prohibited["approval_actionable"] is False
+            assert prohibited["approval_challenge_created"] is False
             try:
                 service.approve(
                     prohibited["plan_id"], prohibited["plan_hash"]
@@ -1436,6 +1445,25 @@ async def _run_f2_policy_acceptance_contract(
             assert prohibited_plan.approval.bundle_state == "prohibited"
             assert prohibited_plan.approval.challenge_id is None
             assert prohibited_plan.approval.state.value == "required"
+            prohibited_health = service.health_summary()
+            assert prohibited_health["plans_awaiting_approval"] == (
+                prohibited_health_baseline["plans_awaiting_approval"]
+            )
+            assert prohibited_health["plans_requiring_approval"] == (
+                prohibited_health_baseline["plans_requiring_approval"]
+            )
+            assert prohibited_health["pending_plan_approvals"] == (
+                prohibited_health_baseline["pending_plan_approvals"]
+            )
+            assert prohibited_health[
+                "pending_elevated_acknowledgements"
+            ] == prohibited_health_baseline[
+                "pending_elevated_acknowledgements"
+            ]
+            assert prohibited_health["prohibited_policy_decisions"] == (
+                prohibited_health_baseline["prohibited_policy_decisions"]
+                + 1
+            )
             assert len(observed.mutations) == mutation_count + 1
 
             scenario = "prohibited_non_entity_target"
@@ -1503,6 +1531,29 @@ async def _run_f2_policy_acceptance_contract(
                 "prohibited"
             )
             assert prohibited_device_plan.approval.challenge_id is None
+            prohibited_device_public = service.get_plan(
+                prohibited_device_target["plan_id"]
+            )
+            assert prohibited_device_public["status"] == "prohibited"
+            assert prohibited_device_public["approval"]["state"] == (
+                "prohibited"
+            )
+            assert prohibited_device_public["approval_actionable"] is False
+            prohibited_device_health = service.health_summary()
+            assert prohibited_device_health["plans_awaiting_approval"] == (
+                prohibited_health_baseline["plans_awaiting_approval"]
+            )
+            assert prohibited_device_health["plans_requiring_approval"] == (
+                prohibited_health_baseline["plans_requiring_approval"]
+            )
+            assert prohibited_device_health[
+                "prohibited_policy_decisions"
+            ] == (
+                prohibited_health_baseline[
+                    "prohibited_policy_decisions"
+                ]
+                + 2
+            )
             assert len(observed.mutations) == mutation_count + 1
             return {
                 "completed_scenarios": [

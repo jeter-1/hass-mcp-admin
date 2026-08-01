@@ -614,8 +614,17 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
         task_helper = self.functions["_assert_single_task_dispatch"]
         task_text = ast.unparse(task_helper)
         self.assertIn("provider_attempt_count", task_text)
+        self.assertIn("provider_response_received", task_text)
         self.assertIn("dispatch_attempted", task_text)
         self.assertIn("succeeded_verified", task_text)
+        for projection_evidence in (
+            "approval_actionable",
+            "plans_awaiting_approval",
+            "plans_requiring_approval",
+            "prohibited_policy_decisions",
+        ):
+            with self.subTest(projection_evidence=projection_evidence):
+                self.assertIn(projection_evidence, contract_text)
 
     def test_f2_disposable_fixtures_bound_future_actions_without_triggering(self):
         self.assertEqual(

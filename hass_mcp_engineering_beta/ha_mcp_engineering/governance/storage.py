@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import threading
 from .models import (
+    ApprovalPolicyClass,
     ChangeOperation,
     ChangePlan,
     PlanStatus,
@@ -41,9 +42,18 @@ TERMINAL_STATUSES = {
 def is_terminal_plan(plan: ChangePlan) -> bool:
     """Return lifecycle finality without changing contract-v1 semantics."""
 
-    return plan.status in TERMINAL_STATUSES or (
-        plan.contract_version >= 2
-        and plan.status == PlanStatus.VERIFICATION_FAILED
+    return bool(
+        plan.status in TERMINAL_STATUSES
+        or (
+            plan.policy_decision is not None
+            and plan.policy_decision.policy_class
+            == ApprovalPolicyClass.PROHIBITED
+            and plan.approval.bundle_state == "prohibited"
+        )
+        or (
+            plan.contract_version >= 2
+            and plan.status == PlanStatus.VERIFICATION_FAILED
+        )
     )
 
 

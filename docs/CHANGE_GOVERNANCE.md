@@ -229,6 +229,14 @@ RC2dev4 records without a storage migration. Callers must not infer an external
 challenge from legacy `status: awaiting_approval`; only
 `approval_pending_external` means a challenge exists.
 
+The Beta 7 compatibility projection treats a validated F2 `prohibited` policy
+decision and `prohibited` approval bundle as terminal, visible, and
+non-actionable. Public plan detail, inventory, and handoff evidence project
+`status: prohibited` and `approval.state: prohibited`; pending approval filters,
+Ingress queues, and health counters exclude it. The authority-v3 persisted enum
+fields remain unchanged for schema compatibility, and historical authority-v1
+and authority-v2 records retain their existing projection.
+
 ## Planning, normalization, and fingerprints
 
 `create_change_plan` accepts only `create_automation` and `update_automation`.

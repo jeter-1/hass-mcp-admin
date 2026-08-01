@@ -2387,9 +2387,18 @@ class ChangeGovernanceService:
     def _public(self, plan: ChangePlan, *, include_configs: bool = True) -> dict[str, Any]:
         self._require_v2_persisted_plan_safe(plan)
         value = plan.to_dict()
+        prohibited = self._is_prohibited_plan(plan)
+        if prohibited:
+            # Authority-v3 persists the legacy pre-approval enum values to
+            # preserve the closed task/plan schema. Public projections must
+            # nevertheless describe the authoritative F2 terminal lifecycle,
+            # not an approval action that can never exist.
+            value["status"] = "prohibited"
         # CSRF material is private to the Ingress authority and must never be
         # returned through MCP plan reads or summaries.
         if isinstance(value.get("approval"), dict):
+            if prohibited:
+                value["approval"]["state"] = "prohibited"
             value["approval"].pop("csrf_digest", None)
             value["approval"].pop("csrf_issued_at", None)
             value["approval"].pop("approver_principal", None)
@@ -2415,8 +2424,9 @@ class ChangeGovernanceService:
         value["approval_bundle_state"] = self._approval_bundle_state(
             plan
         )
-        value["status_is_legacy"] = True
+        value["status_is_legacy"] = not prohibited
         value["authoritative_lifecycle_field"] = "approval_lifecycle"
+        value["approval_actionable"] = self._approval_is_actionable(plan)
         value["approval_challenge_created"] = bool(plan.approval.challenge_id)
         value["next_required_operation"] = (
             "approve_change_plan"
@@ -2521,6 +2531,62 @@ class ChangeGovernanceService:
             ApprovalState.INVALIDATED: "approval_invalidated",
         }[plan.approval.state]
 
+    @classmethod
+    def _is_prohibited_plan(cls, plan: ChangePlan) -> bool:
+        """Return the authoritative F2 non-actionable projection."""
+
+        return bool(
+            plan.policy_decision is not None
+            and plan.policy_decision.policy_class
+            == ApprovalPolicyClass.PROHIBITED
+            and cls._approval_bundle_state(plan) == "prohibited"
+        )
+
+    @classmethod
+    def _effective_plan_status(cls, plan: ChangePlan) -> str:
+        return (
+            "prohibited"
+            if cls._is_prohibited_plan(plan)
+            else plan.status.value
+        )
+
+    @classmethod
+    def _approval_is_actionable(cls, plan: ChangePlan) -> bool:
+        """Project actionability without upgrading legacy authority records."""
+
+        decision = plan.policy_decision
+        if decision is None:
+            return bool(
+                plan.status
+                in {
+                    PlanStatus.AWAITING_APPROVAL,
+                    PlanStatus.ROLLBACK_PENDING,
+                }
+                and plan.approval.state
+                in {
+                    ApprovalState.REQUIRED,
+                    ApprovalState.EXTERNAL_PENDING,
+                }
+            )
+        if (
+            cls._is_prohibited_plan(plan)
+            or not decision.required_acknowledgements
+        ):
+            return False
+        return bool(
+            plan.status
+            in {
+                PlanStatus.AWAITING_APPROVAL,
+                PlanStatus.ROLLBACK_PENDING,
+            }
+            and cls._approval_lifecycle(plan)
+            in {
+                "approval_not_requested",
+                "approval_pending_external",
+                "pending_elevated_risk_acknowledgement",
+            }
+        )
+
     def _summary(self, plan: ChangePlan) -> dict[str, Any]:
         """Return bounded plan inventory; get_change_plan is the detail path."""
         value = {
@@ -2528,11 +2594,12 @@ class ChangeGovernanceService:
             "plan_hash": self.plan_hash(plan),
             "plan_version": plan.plan_version,
             "title": plan.title,
-            "status": plan.status.value,
+            "status": self._effective_plan_status(plan),
             "approval_lifecycle": self._approval_lifecycle(plan),
             "approval_bundle_state": self._approval_bundle_state(plan),
-            "status_is_legacy": True,
+            "status_is_legacy": not self._is_prohibited_plan(plan),
             "authoritative_lifecycle_field": "approval_lifecycle",
+            "approval_actionable": self._approval_is_actionable(plan),
             "approval_challenge_created": bool(plan.approval.challenge_id),
             "target": {"target_type": plan.target_type, "target_id": plan.target_id},
             "operation": plan.operation.value,
@@ -3765,6 +3832,8 @@ class ChangeGovernanceService:
                         continue
                     raise
             self._resolve_lifecycle(plan)
+            if is_terminal_plan(plan):
+                continue
             if plan.status in {
                 PlanStatus.AWAITING_APPROVAL,
                 PlanStatus.APPROVED,
@@ -3809,7 +3878,7 @@ class ChangeGovernanceService:
     def list_plans(self, status: str = "", limit: int = 20) -> dict[str, Any]:
         plans = []
         for plan in self.resolved_plans():
-            if status and plan.status.value != status:
+            if status and self._effective_plan_status(plan) != status:
                 continue
             plans.append(self._summary(plan))
             if len(plans) >= max(1, min(limit, 100)):
@@ -9153,10 +9222,13 @@ class ChangeGovernanceService:
             "storage_status": storage["status"],
             "storage_corruption_count": storage["corruption_count"],
             "total_plans": len(plans),
-            "plans_awaiting_approval": sum(plan.status == PlanStatus.AWAITING_APPROVAL for plan in plans),
+            "plans_awaiting_approval": sum(
+                plan.status == PlanStatus.AWAITING_APPROVAL
+                and self._approval_is_actionable(plan)
+                for plan in plans
+            ),
             "plans_requiring_approval": sum(
-                plan.status in {PlanStatus.AWAITING_APPROVAL, PlanStatus.ROLLBACK_PENDING}
-                and plan.approval.state in {ApprovalState.REQUIRED, ApprovalState.EXTERNAL_PENDING}
+                self._approval_is_actionable(plan)
                 for plan in plans
             ),
             "external_approval_enabled": True,
