@@ -1,5 +1,11 @@
 # HA MCP Engineering Server 2.2.0-beta.8
 
+> Superseded compatibility attempt: the manually reconstructed historical
+> fixture omitted `contract_version` and therefore defaulted to contract v1.
+> Shipped Beta 6 wrote contract-v2 records with prepared operations, so the
+> deployed Beta 8 gate did not recognize the real records. Beta 9 replaces this
+> fixture and gate; this document remains historical Beta 8 intent only.
+
 Version `2.2.0-beta.8` is a narrow persistence-compatibility correction on the
 accepted Beta 7 runtime. It restores reads for a validated prohibited-plan
 representation persisted by Beta 6. It does not implement delta-aware

@@ -1658,7 +1658,7 @@ class ChangeGovernanceService:
         targeted the same automation. That transition changed only the legacy
         lifecycle fields to ``superseded``/``invalidated``. The immutable F2
         policy snapshot remained prohibited, with no acknowledgement,
-        challenge, task, dispatch, apply, or rollback authority. Beta 8 treats
+        challenge, task, dispatch, apply, or rollback authority. Beta 9 treats
         that source-established shape as terminal without rewriting it.
         """
 

@@ -6,12 +6,13 @@ Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100) beside
 v1.1.2 (`hass_mcp_admin`, port 8099). Stable v1.1.2 is now operationally
 retired; use the current Engineering release notes for rollback.
 
-The active Beta 8 source and later operator-controlled acceptance boundary is
-[`V2_2_0_BETA8_ACCEPTANCE.md`](V2_2_0_BETA8_ACCEPTANCE.md). It requires
-read-only compatibility for validated Beta 6 prohibited plans and retains the
-Beta 7 truthful provider-response contract before any separately authorized
-deployment. Source validation does not access deployed Home Assistant or
-perform an add-on update.
+The active Beta 9 source and later operator-controlled acceptance boundary is
+[`V2_2_0_BETA9_ACCEPTANCE.md`](V2_2_0_BETA9_ACCEPTANCE.md). It requires
+read-only compatibility for the real contract-v2 Beta 6 prohibited records,
+bounded partial inventory on per-record projection failure, reconciled health,
+and retention of the Beta 7 truthful provider-response contract before any
+separately authorized deployment. Source validation does not access deployed
+Home Assistant or perform an add-on update.
 
 RC2 had to expose 38 registered/25 canonical tools and no planned feature
 capabilities. It added no tool or schema, so connector recreation was not

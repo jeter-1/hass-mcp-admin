@@ -1,13 +1,23 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
-## 2.2.0-beta.8 persisted prohibited-plan accounting
+## 2.2.0-beta.9 prohibited-plan projection accounting
 
-Validated Beta 6 prohibited plans whose legacy lifecycle was changed by
-same-target supersession are counted under `plans_by_policy_class.prohibited`
-and `prohibited_policy_decisions`. They are excluded from awaiting, required,
-pending challenge, Ingress, external approval, and handoff authorization work.
-Health derives this from the same strict effective-prohibited predicate used by
-plan detail and inventory. Reads and startup do not rewrite the record.
+Validated contract-v2 Beta 6 prohibited plans whose legacy lifecycle was
+changed by same-target supersession are counted under
+`plans_by_policy_class.prohibited` and `prohibited_policy_decisions`. They are
+excluded from awaiting, required, pending challenge, Ingress, external
+approval, and handoff authorization work. Health derives this from the same
+strict effective-prohibited predicate used by plan detail and inventory. Reads
+and startup do not rewrite the record.
+
+An individually loaded plan that fails bounded governance projection is counted
+under `plans_by_policy_class.projection_failed` and increments
+`projection_failure_count`; `projection_failure_warning` is populated and
+`policy_class_accounting_valid` verifies that every loaded plan belongs to
+exactly one policy bucket. Projection failures remain non-actionable and do not
+enter any pending counter. List responses retain valid projections and expose
+bounded `projection_failures`, their total count, truncation, and `partial=true`.
+Systemic repository or task-storage failure remains a top-level failure.
 
 ## 2.2.0-beta.7 configuration-provider response truth
 

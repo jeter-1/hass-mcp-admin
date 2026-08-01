@@ -1,21 +1,27 @@
 # HA MCP Engineering Server Architecture
 
-## 2.2.0-beta.8 persisted prohibited-plan compatibility
+## 2.2.0-beta.9 real Beta 6 prohibited-plan compatibility
 
-Beta 8 adds one read-only compatibility interpretation for the exact validated
-Beta 6 authority-v3 prohibited-plan shape produced when same-target
-supersession changed only legacy lifecycle fields to `superseded` and
-`invalidated`. Immutable policy validation remains mandatory. Any authority,
-task, provider, apply, verification, rollback, or contradictory evidence fails
-closed.
+Beta 9 recognizes the exact contract-v2 authority-v3 prohibited-plan shape
+written by shipped Beta 6 when same-target supersession changed only legacy
+lifecycle fields to `superseded` and `invalidated`. The compatibility boundary
+is proven by neutral fixtures generated through the exact historical writer,
+not by manually reconstructing a record and relying on a missing-version
+default. Immutable plan and policy validation remain mandatory. Any authority,
+task, provider, apply, verification, rollback, operation-state, or event
+contradiction fails closed.
 
-The effective prohibited predicate is shared by detail, inventory, health,
-Ingress, rehydration, and handoff projections. Valid records are terminal,
-non-actionable, and counted as prohibited without a storage migration or
-record rewrite. Beta 7 response truthfulness, task schema 1, authority version
-3, one-task ownership, policy mapping, zero fallback, and the 25/23/48 plus
-configured 26/74 tool contract remain unchanged. Delta-aware safety-reducing
-policy is deferred to Beta 9.
+The effective prohibited predicate remains shared by detail, inventory,
+health, Ingress, rehydration, and handoff projections. Prepared contract-v2
+operations are not dispatch evidence; adjacent dispatching, response, verified,
+or applied states are rejected. A per-record governance projection failure is
+reported explicitly without hiding valid list results, while systemic storage
+failure still fails the call. Health assigns every loaded plan to a policy
+bucket and warns on `projection_failed` records. Reads remain byte-preserving.
+Beta 7 response truthfulness, task schema 1, authority version 3, one-task
+ownership, policy mapping, zero fallback, and the 25/23/48 plus configured
+26/74 tool contract remain unchanged. Delta-aware safety-reducing policy is
+deferred to Beta 10.
 
 ## 2.2.0-beta.7 acceptance corrections
 
