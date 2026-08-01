@@ -1,6 +1,6 @@
 # Governed operational administration
 
-Version: `2.2.0-beta.8`
+Version: `2.2.0-beta.9`
 
 The accepted 2.1A lifecycle retains four public proposal tools:
 `create_backup_plan`, `create_reload_plan`, `create_addon_restart_plan`, and
@@ -24,11 +24,20 @@ mismatched, authority-v2, prohibited, expired, rejected, or incomplete approval
 evidence cannot create a task or reach a provider. F2 does not add another
 operational action, provider, fallback, or verification contract.
 
-Beta 8 additionally restores read-only compatibility for the exact validated
-Beta 6 prohibited record whose legacy lifecycle was changed by same-target
-supersession. It remains terminal and absent from operational approval queues,
-rehydration scans, and handoff authorization work. No stored plan, approval,
-event, task, or timestamp is migrated, and contradictory records fail closed.
+Beta 9 restores read-only compatibility for the real contract-v2 Beta 6
+prohibited record whose legacy lifecycle was changed by same-target
+supersession. Source-generated historical fixtures prove that prepared
+contract-v2 operations are not dispatch evidence. The record remains terminal
+and absent from operational approval queues, rehydration scans, and handoff
+authorization work. No stored plan, approval, event, task, or timestamp is
+migrated, and contradictory records fail closed.
+
+Plan inventory contains a per-record governance projection failure without
+hiding other valid records. Each bounded failure item carries only its opaque
+plan ID and error code. Health assigns those records to the fail-closed
+`projection_failed` policy bucket, warns explicitly, and keeps policy-class
+accounting equal to the loaded plan total. Systemic storage failures remain
+top-level failures and are not converted to partial success.
 
 ## Durable execution tasks
 

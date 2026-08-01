@@ -1,6 +1,6 @@
 # Engineering 2.1 and 2.2 foundation roadmap
 
-Status: 2.1A and F2 accepted; Beta 8 compatibility correction in `2.2.0-beta.8`
+Status: 2.1A and F2 accepted; Beta 9 compatibility correction in `2.2.0-beta.9`
 
 The required milestone order is:
 
@@ -109,8 +109,22 @@ the exact validated Beta 6 prohibited-plan shape created by same-target
 supersession. Compatibility is structural and read-only; no record is migrated
 or rewritten, and any authority or execution contradiction fails closed.
 
-Delta-aware safety-reducing policy is explicitly deferred to Beta 9. F3 begins
-only after that separate milestone is accepted. Beta 8 changes no policy
+Beta 8's manually reconstructed compatibility fixture omitted
+`contract_version`, defaulted to contract v1, and did not model the contract-v2
+records actually written by Beta 6. The deployed correction therefore did not
+recognize those real records.
+
+## 2.2.0-beta.9 real persisted prohibited-plan compatibility
+
+Beta 9 generates neutral compatibility fixtures through the exact shipped Beta
+6 writer, recognizes only its contract-v2 prohibited/superseded representation,
+validates prepared operation evidence, retains every contradiction refusal, and
+keeps reads byte-preserving. It also contains bounded per-record projection
+failures in plan inventory and reconciles every loaded plan in health without
+swallowing systemic storage errors.
+
+Delta-aware safety-reducing policy is explicitly deferred to Beta 10. F3 begins
+only after that separate milestone is accepted. Beta 9 changes no policy
 classification, approval sequence, task ownership, provider, tool, resource,
 or fallback boundary.
 

@@ -1,5 +1,9 @@
 # 2.2.0-beta.8 acceptance contract
 
+> Superseded failed acceptance boundary: its reconstructed fixture omitted
+> `contract_version` and defaulted to contract v1, unlike shipped Beta 6's
+> contract-v2 output. Use `V2_2_0_BETA9_ACCEPTANCE.md` for current authority.
+
 Version: `2.2.0-beta.8`
 
 Source baseline:

@@ -16,6 +16,7 @@ from ha_mcp_engineering.approval_web import (  # noqa: E402
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
 from ha_mcp_engineering.governance.models import (  # noqa: E402
     ApprovalState,
+    ChangePlan,
     PlanStatus,
 )
 from ha_mcp_engineering.governance.service import (  # noqa: E402
@@ -45,11 +46,10 @@ from tests.test_beta25_external_approval import (  # noqa: E402
 HISTORICAL_PLAN_ID = "a" * 32
 FIXED_TIME = "2026-07-14T12:00:00+00:00"
 
-# Produced with the Beta 6 merge's own ChangeGovernanceService constructors and
-# ChangePlan.to_dict serializer. Beta 6 created a prohibited plan and then
-# superseded it when a later plan targeted the same automation. Identifiers,
-# caller attribution, text, and timestamps are fixed sanitized test values.
-BETA6_PERSISTED_PROHIBITED = {
+# Retained only to document the fictional Beta 8 regression fixture. It omitted
+# contract_version and operations, so deserialization treated it as contract-v1.
+# Compatibility tests below use the source-generated contract-v2 fixture.
+_RETIRED_MANUAL_CONTRACT_V1_FIXTURE = {
     "applied_at": None,
     "apply_request_id": None,
     "approval": {
@@ -265,6 +265,17 @@ BETA6_PERSISTED_PROHIBITED = {
     "warnings": [],
 }
 
+_REAL_BETA6_FIXTURE_PATH = (
+    ROOT
+    / "tests"
+    / "fixtures"
+    / "beta6_prohibited_superseded_contract_v2_a.json"
+)
+BETA6_PERSISTED_PROHIBITED = json.loads(
+    _REAL_BETA6_FIXTURE_PATH.read_text(encoding="utf-8")
+)
+HISTORICAL_PLAN_ID = BETA6_PERSISTED_PROHIBITED["plan_id"]
+
 
 class PersistedProhibitedCompatibilityTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -284,6 +295,16 @@ class PersistedProhibitedCompatibilityTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         end_request(self.context)
         self.temp.cleanup()
+
+    def test_retired_manual_fixture_exposes_beta8_contract_default_error(self):
+        self.assertNotIn(
+            "contract_version", _RETIRED_MANUAL_CONTRACT_V1_FIXTURE
+        )
+        self.assertNotIn("operations", _RETIRED_MANUAL_CONTRACT_V1_FIXTURE)
+        deserialized = ChangePlan.from_dict(
+            copy.deepcopy(_RETIRED_MANUAL_CONTRACT_V1_FIXTURE)
+        )
+        self.assertEqual(deserialized.contract_version, 1)
 
     def write_historical(self, value=None):
         payload = copy.deepcopy(value or BETA6_PERSISTED_PROHIBITED)
@@ -547,8 +568,12 @@ class PersistedProhibitedCompatibilityTests(unittest.IsolatedAsyncioTestCase):
                 "elevated_admin": 1,
                 "prohibited": 2,
                 "legacy_without_policy_snapshot": 0,
+                "projection_failed": 0,
             },
         )
+        self.assertEqual(health["projection_failure_count"], 0)
+        self.assertIsNone(health["projection_failure_warning"])
+        self.assertTrue(health["policy_class_accounting_valid"])
         self.assertEqual(health["prohibited_policy_decisions"], 2)
         self.assertEqual(health["plans_awaiting_approval"], 2)
         self.assertEqual(health["plans_requiring_approval"], 2)

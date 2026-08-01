@@ -1,0 +1,28 @@
+{
+  "fixtures": [
+    {
+      "contract_version": 2,
+      "operation_count": 1,
+      "operation_execution_status_values": [
+        "pending"
+      ],
+      "path": "tests/fixtures/beta6_prohibited_superseded_contract_v2_a.json",
+      "sha256": "cfbf074af6c6c368148334e55c911ea0f8edda82971b81ed6ee7dc519b031140"
+    },
+    {
+      "contract_version": 2,
+      "operation_count": 1,
+      "operation_execution_status_values": [
+        "pending"
+      ],
+      "path": "tests/fixtures/beta6_prohibited_superseded_contract_v2_b.json",
+      "sha256": "74c47545724355422c6b389c6b391a6b7abdc9ebff7b6118ac8ccc67bdb1af09"
+    }
+  ],
+  "generation_timestamp": "2026-08-01T16:00:00Z",
+  "generator": "scripts/generate_beta6_prohibited_compatibility_fixtures.py",
+  "generator_command": "python3 scripts/generate_beta6_prohibited_compatibility_fixtures.py --beta6-worktree <exact-beta6-worktree> --output-dir tests/fixtures --generated-at 2026-08-01T16:00:00Z",
+  "generator_sha256": "2e0caeef1570efe0f454d79d9cb688aabd1edceaa66fe5ba971d24622178e513",
+  "historical_source_commit": "5c7eebf962837f85f2309b1b5099401fb075cd6e",
+  "schema_version": 1
+}

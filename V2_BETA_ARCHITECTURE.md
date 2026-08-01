@@ -1,18 +1,23 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
-## 2.2.0-beta.8 persisted prohibited-plan compatibility
+## 2.2.0-beta.9 real Beta 6 prohibited-plan compatibility
 
-Beta 8 recognizes one exact source-established Beta 6 persistence form: a
-validated authority-v3 prohibited plan with empty acknowledgements and no
-authority or execution evidence whose legacy lifecycle was changed by
-same-target supersession to `superseded`/`invalidated`. It projects that record
-as prohibited across all read consumers without changing the stored record.
+Beta 9 recognizes one exact source-generated Beta 6 persistence form: a
+contract-v2 authority-v3 prohibited plan with prepared operations, empty
+acknowledgements, and no authority or execution evidence whose legacy
+lifecycle was changed by same-target supersession to
+`superseded`/`invalidated`. Exact historical-code fixtures and provenance are
+the compatibility authority; a manually reconstructed contract-v1 fixture is
+retired.
 
 This is compatibility interpretation, not policy inference or migration.
 Malformed or contradictory records fail closed, pre-F2 actionability remains
-status-based, and current Beta 7 prohibited plans retain their existing shape.
-No approval, task, provider, tool, resource, fallback, or execution boundary is
-expanded. Delta-aware safety-reducing policy remains a Beta 9 milestone.
+status-based, and current prohibited plans retain their existing shape.
+Per-record projection errors are bounded and visible in partial listings and a
+reconciled health bucket; systemic storage errors still fail closed. No read
+rewrites storage, and no approval, task, provider, tool, resource, fallback, or
+execution boundary is expanded. Delta-aware safety-reducing policy remains a
+Beta 10 milestone.
 
 ## 2.2.0-beta.7 acceptance corrections
 

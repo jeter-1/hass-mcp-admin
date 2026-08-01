@@ -1,14 +1,22 @@
 # Beta automation change governance
 
-## 2.2.0-beta.8 persisted prohibited-plan compatibility
+## 2.2.0-beta.9 real Beta 6 prohibited-plan compatibility
 
-Beta 8 recognizes the exact validated prohibited-plan form persisted by Beta 6
+Beta 9 recognizes the exact contract-v2 prohibited-plan form written by Beta 6
 after same-target supersession, then projects it as terminal/non-actionable
 across compatibility status, Ingress, handoff, and health without rewriting
-storage. Beta 7 response truthfulness remains unchanged. It changes no
-plan/policy hash, classification, approval sequence, task schema, provider
-route, or fallback. See
-[`V2_2_0_BETA8_ACCEPTANCE.md`](V2_2_0_BETA8_ACCEPTANCE.md).
+storage. Exact historical-code fixtures replace the incomplete manual fixture
+whose missing `contract_version` defaulted to 1. Prepared operations remain
+non-execution evidence; any task, dispatch, response, apply, verification,
+rollback, operation-state, event, or authority contradiction fails closed.
+
+Inventory returns other valid plans alongside bounded per-record projection
+failures, while systemic storage failure remains fatal. Health assigns every
+loaded record to a policy bucket and surfaces an explicit projection warning.
+Beta 7 response truthfulness remains unchanged. This changes no plan/policy
+hash, classification, approval sequence, task schema, provider route, or
+fallback. See
+[`V2_2_0_BETA9_ACCEPTANCE.md`](V2_2_0_BETA9_ACCEPTANCE.md).
 
 ## 2.2.0-beta.6 F2 policy and approval authority
 

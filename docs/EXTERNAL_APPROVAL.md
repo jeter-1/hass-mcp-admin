@@ -1,6 +1,6 @@
 # External human approval authority
 
-Version `2.2.0-beta.8` preserves the Beta 25 separation between an
+Version `2.2.0-beta.9` preserves the Beta 25 separation between an
 authenticated MCP caller and the human authority that approves governed Home
 Assistant changes. A caller may create a
 plan and request review, but only an authenticated Home Assistant administrator
@@ -13,7 +13,7 @@ requires plan approval followed by a distinct
 `elevated_risk_acknowledgement` from the same authenticated administrator.
 This is not two-person control. A `prohibited` plan creates no actionable
 challenge. See ADR-012 in the architecture decision records and the
-active [`V2_2_0_BETA8_ACCEPTANCE.md`](V2_2_0_BETA8_ACCEPTANCE.md).
+active [`V2_2_0_BETA9_ACCEPTANCE.md`](V2_2_0_BETA9_ACCEPTANCE.md).
 
 The Beta 7 correction makes that non-actionability consistent across legacy
 compatibility fields and health. A prohibited F2 record remains visible as
@@ -22,13 +22,14 @@ requiring approval. It is excluded from the Ingress queue and every pending
 approval counter, creates no challenge or control, and continues to reject both
 approval and apply with `prohibited_change`.
 
-The same terminal projection applies to the validated Beta 6 persisted form
+The same terminal projection applies to the contract-v2 Beta 6 persisted form
 created when same-target supersession changed only the prohibited plan's legacy
 lifecycle fields to `superseded` and `invalidated`. Compatibility is structural,
-not ID-based: it requires an intact prohibited policy snapshot, no required
-acknowledgements, and no approval, task, dispatch, apply, verification, or
-rollback evidence. Reads, startup, Ingress inventory, and handoff generation do
-not migrate or rewrite that record. A contradictory record fails closed.
+not ID-based: it requires an intact prohibited policy snapshot, exact prepared
+operation evidence, no required acknowledgements, and no approval, task,
+dispatch, response, apply, verification, or rollback evidence. Reads, startup,
+Ingress inventory, and handoff generation do not migrate or rewrite that
+record. A contradictory record fails closed.
 
 `status_is_legacy` is a property of the status projection returned in a response;
 it is not a record-age or pre-F2 indicator. Plans that genuinely predate F2 and
@@ -272,8 +273,8 @@ validation cannot change the deployed add-on route.
 ## Historical RC2 deployed acceptance procedure
 
 The procedure below records the earlier RC2 authority-version-2 acceptance and
-does not authorize current Beta 8 deployment. Use
-[`V2_2_0_BETA8_ACCEPTANCE.md`](V2_2_0_BETA8_ACCEPTANCE.md) for the current
+does not authorize current Beta 9 deployment. Use
+[`V2_2_0_BETA9_ACCEPTANCE.md`](V2_2_0_BETA9_ACCEPTANCE.md) for the current
 source and later operator-controlled acceptance boundary. Implementation and CI
 must not access the deployed environment.
 

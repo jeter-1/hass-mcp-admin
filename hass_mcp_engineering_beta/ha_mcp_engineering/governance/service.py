@@ -110,6 +110,7 @@ APPROVAL_CHANNEL = "home_assistant_ingress"
 APPROVAL_CHALLENGE_TTL = timedelta(minutes=60)
 DEFAULT_APPROVER_PRINCIPAL = "home_assistant_admin_ingress"
 CONFIGURATION_PLAN_CONTRACT_VERSION = 2
+BETA6_PROHIBITED_COMPAT_CONTRACT_VERSION = 2
 OPERATIONAL_PLAN_CONTRACT_VERSION = 3
 LIFECYCLE_OPERATIONS = frozenset(
     {
@@ -119,6 +120,7 @@ LIFECYCLE_OPERATIONS = frozenset(
     }
 )
 MAX_CONFIGURATION_OPERATIONS = 8
+MAX_PLAN_PROJECTION_FAILURES = 20
 SUPPORTED_CONFIGURATION_RESOURCES = frozenset({"automation", "script", "helper"})
 SUPPORTED_HELPER_TYPES = frozenset({"input_boolean", "input_number"})
 SUPPORTED_CONFIGURATION_ACTIONS = frozenset({"create", "update"})
@@ -132,6 +134,14 @@ AUTOMATION_PROVIDER_RESPONSE_EVENTS = frozenset(
     {
         "automation_provider_completed",
         "automation_provider_failed",
+    }
+)
+PLAN_PROJECTION_FAILURE_CODES = frozenset(
+    {
+        ErrorCode.POLICY_SNAPSHOT_MISMATCH,
+        ErrorCode.APPROVAL_AUTHORITY_MISMATCH,
+        ErrorCode.APPROVAL_PRINCIPAL_MISMATCH,
+        ErrorCode.APPROVAL_SEQUENCE_FAILURE,
     }
 )
 PROVIDER_RESPONSE_EVIDENCE_INCONSISTENT = (
@@ -1453,10 +1463,17 @@ class ChangeGovernanceService:
             or plan.failure_information is not None
             or plan.verification.status != "not_run"
             or plan.verification.checked_at is not None
+            or plan.verification.desired_fingerprint is not None
+            or plan.verification.actual_fingerprint is not None
+            or plan.verification.config_check_status is not None
+            or bool(plan.verification.mismatch_fields)
+            or plan.verification.duration_ms is not None
+            or plan.configuration_check_status not in {None, "not_run"}
             or plan.rollback.requested_at is not None
             or plan.rollback.approved_at is not None
             or plan.rollback.rolled_back_at is not None
             or plan.rollback.request_id is not None
+            or plan.rollback.expected_current_fingerprint is not None
             or plan.rollback.failure_code is not None
             or plan.execution_outcome
             not in {None, "not_started", "not_applied"}
@@ -1465,9 +1482,16 @@ class ChangeGovernanceService:
         if any(
             operation.execution_status != StepExecutionStatus.PENDING
             or operation.execution_receipt is not None
+            or operation.snapshot is not None
             or operation.post_apply_fingerprint is not None
             or operation.failure_information is not None
             or operation.verification.status != "not_run"
+            or operation.verification.checked_at is not None
+            or operation.verification.desired_fingerprint is not None
+            or operation.verification.actual_fingerprint is not None
+            or operation.verification.config_check_status is not None
+            or bool(operation.verification.mismatch_fields)
+            or operation.verification.duration_ms is not None
             for operation in plan.operations
         ):
             return True
@@ -1485,18 +1509,142 @@ class ChangeGovernanceService:
             ):
                 return True
         allowed_events = {
-            "change_plan_created": None,
-            "policy_approval_rejected": ErrorCode.PROHIBITED_CHANGE.value,
-            "change_apply_rejected": ErrorCode.PROHIBITED_CHANGE.value,
-            "change_plan_superseded": None,
+            "change_plan_created": (
+                "success",
+                None,
+            ),
+            "policy_approval_rejected": (
+                "rejected",
+                ErrorCode.PROHIBITED_CHANGE.value,
+            ),
+            "change_apply_rejected": (
+                "rejected",
+                ErrorCode.PROHIBITED_CHANGE.value,
+            ),
+            "change_plan_superseded": (
+                "rejected",
+                None,
+            ),
         }
         for event in plan.events:
             if event.event not in allowed_events:
                 return True
-            required_code = allowed_events[event.event]
-            if required_code is not None and event.error_code != required_code:
+            result_status, required_code = allowed_events[event.event]
+            if (
+                event.result_status != result_status
+                or event.error_code != required_code
+            ):
                 return True
+        event_names = [event.event for event in plan.events]
+        if (
+            not event_names
+            or event_names[0] != "change_plan_created"
+            or event_names.count("change_plan_created") != 1
+            or event_names.count("change_plan_superseded") > 1
+        ):
+            return True
         return False
+
+    def _effective_prohibited_plan_failures(
+        self,
+        plan: ChangePlan,
+        *,
+        policy_snapshot_validated: bool = False,
+    ) -> tuple[str, ...]:
+        """Explain why a record does not match a reviewed prohibited shape.
+
+        Clause names are private, deterministic, and contain no record data.
+        Task storage is consulted exactly once and storage errors remain fatal.
+        """
+
+        failures: list[str] = []
+        decision = plan.policy_decision
+        approval = plan.approval
+        if decision is None:
+            failures.append("policy_snapshot_missing")
+        else:
+            if decision.policy_class != ApprovalPolicyClass.PROHIBITED:
+                failures.append("policy_class_not_prohibited")
+            if decision.required_acknowledgements:
+                failures.append("required_acknowledgements_not_empty")
+            if approval.policy_decision_hash != decision.policy_decision_hash:
+                failures.append("approval_policy_hash_mismatch")
+            if approval.policy_class != decision.policy_class.value:
+                failures.append("approval_policy_class_mismatch")
+            if (
+                not policy_snapshot_validated
+                and not policy_snapshot_matches(plan)
+            ):
+                failures.append("policy_snapshot_invalid")
+        if plan.risk.apply_allowed:
+            failures.append("apply_allowed")
+        if approval.authority_version != APPROVAL_AUTHORITY_VERSION:
+            failures.append("approval_authority_version_mismatch")
+        if approval.approval_kind != "apply":
+            failures.append("approval_kind_not_apply")
+        if self._prohibited_approval_has_authority_evidence(plan):
+            failures.append("approval_authority_evidence_present")
+        if self._prohibited_plan_has_execution_evidence(plan):
+            failures.append("execution_evidence_present")
+        try:
+            task = self.task_repository.get_for_plan(plan.plan_id)
+        except ExecutionTaskStorageError as exc:
+            raise GovernanceError(
+                ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+            ) from exc
+        if task is not None:
+            failures.append("execution_task_present")
+
+        historical_candidate = bool(
+            plan.status == PlanStatus.SUPERSEDED
+            or approval.state == ApprovalState.INVALIDATED
+            or approval.bundle_state == "invalidated"
+            or any(
+                event.event == "change_plan_superseded"
+                for event in plan.events
+            )
+        )
+        current_candidate = bool(
+            approval.bundle_state == "prohibited"
+            or plan.status == PlanStatus.AWAITING_APPROVAL
+        )
+        if historical_candidate:
+            if (
+                plan.contract_version
+                != BETA6_PROHIBITED_COMPAT_CONTRACT_VERSION
+            ):
+                failures.append(
+                    "historical_contract_version_not_supported"
+                )
+            if plan.operation != ChangeOperation.CONFIGURATION_PLAN:
+                failures.append("historical_operation_not_configuration_plan")
+            if plan.target_type != "configuration_plan":
+                failures.append("historical_target_type_not_configuration_plan")
+            if plan.target_id != plan.plan_id:
+                failures.append("historical_target_id_not_plan_id")
+            if not plan.operations:
+                failures.append("historical_operations_missing")
+            if plan.status != PlanStatus.SUPERSEDED:
+                failures.append("historical_status_not_superseded")
+            if approval.state != ApprovalState.INVALIDATED:
+                failures.append("historical_approval_state_not_invalidated")
+            if approval.bundle_state != "invalidated":
+                failures.append("historical_bundle_state_not_invalidated")
+            if not any(
+                event.event == "change_plan_superseded"
+                for event in plan.events
+            ):
+                failures.append("historical_superseded_event_missing")
+        elif current_candidate:
+            if approval.bundle_state != "prohibited":
+                failures.append("current_bundle_state_not_prohibited")
+            if approval.state != ApprovalState.REQUIRED:
+                failures.append("current_approval_state_not_required")
+            if plan.status != PlanStatus.AWAITING_APPROVAL:
+                failures.append("current_status_not_awaiting_approval")
+        else:
+            failures.append("prohibited_representation_not_supported")
+        return tuple(failures)
 
     def _is_effectively_prohibited_plan(
         self,
@@ -1506,58 +1654,18 @@ class ChangeGovernanceService:
     ) -> bool:
         """Recognize current and exact safe Beta 6 prohibited records.
 
-        Beta 6 could supersede a prohibited contract-v1 plan when a later plan
+        Beta 6 could supersede a prohibited contract-v2 plan when a later plan
         targeted the same automation. That transition changed only the legacy
         lifecycle fields to ``superseded``/``invalidated``. The immutable F2
         policy snapshot remained prohibited, with no acknowledgement,
-        challenge, task, dispatch, apply, or rollback authority. Beta 8 treats
+        challenge, task, dispatch, apply, or rollback authority. Beta 9 treats
         that source-established shape as terminal without rewriting it.
         """
 
-        decision = plan.policy_decision
-        approval = plan.approval
-        if (
-            decision is None
-            or decision.policy_class != ApprovalPolicyClass.PROHIBITED
-            or decision.required_acknowledgements
-            or plan.risk.apply_allowed
-            or approval.authority_version != APPROVAL_AUTHORITY_VERSION
-            or approval.policy_decision_hash
-            != decision.policy_decision_hash
-            or approval.policy_class != decision.policy_class.value
-            or approval.approval_kind != "apply"
-            or (
-                not policy_snapshot_validated
-                and not policy_snapshot_matches(plan)
-            )
-            or self._prohibited_approval_has_authority_evidence(plan)
-            or self._prohibited_plan_has_execution_evidence(plan)
-        ):
-            return False
-        try:
-            if self.task_repository.get_for_plan(plan.plan_id) is not None:
-                return False
-        except ExecutionTaskStorageError as exc:
-            raise GovernanceError(
-                ErrorCode.EXECUTION_TASK_STORAGE_ERROR
-            ) from exc
-
-        current = bool(
-            approval.bundle_state == "prohibited"
-            and approval.state == ApprovalState.REQUIRED
-            and plan.status == PlanStatus.AWAITING_APPROVAL
+        return not self._effective_prohibited_plan_failures(
+            plan,
+            policy_snapshot_validated=policy_snapshot_validated,
         )
-        beta6_superseded = bool(
-            plan.contract_version < CONFIGURATION_PLAN_CONTRACT_VERSION
-            and plan.status == PlanStatus.SUPERSEDED
-            and approval.state == ApprovalState.INVALIDATED
-            and approval.bundle_state == "invalidated"
-            and any(
-                event.event == "change_plan_superseded"
-                for event in plan.events
-            )
-        )
-        return current or beta6_superseded
 
     @staticmethod
     def _approval_bundle_state(plan: ChangePlan) -> str:
@@ -3998,10 +4106,13 @@ class ChangeGovernanceService:
         self._resolve_lifecycle(plan)
         return self._public(plan)
 
-    def resolved_plans(
+    def _resolved_plans_with_projection_failures(
         self, *, validate_policy: bool = True
-    ) -> list[ChangePlan]:
-        """Return persisted plans after applying the shared effective lifecycle."""
+    ) -> tuple[
+        list[ChangePlan],
+        list[tuple[ChangePlan, ErrorCode]],
+    ]:
+        """Resolve readable records while isolating bounded plan failures."""
 
         try:
             plans = self.repository.list()
@@ -4009,22 +4120,75 @@ class ChangeGovernanceService:
             raise GovernanceError(
                 ErrorCode.CHANGE_PLAN_STORAGE_ERROR
             ) from exc
+        resolved: list[ChangePlan] = []
+        failures: list[tuple[ChangePlan, ErrorCode]] = []
         for plan in plans:
-            self._require_v2_persisted_plan_safe(plan)
-            if validate_policy and plan.policy_decision is not None:
-                self._require_policy_snapshot(plan)
-            self._resolve_lifecycle(plan)
+            try:
+                self._require_v2_persisted_plan_safe(plan)
+                if validate_policy and plan.policy_decision is not None:
+                    self._require_policy_snapshot(plan)
+                self._resolve_lifecycle(plan)
+            except GovernanceError as exc:
+                if exc.code not in PLAN_PROJECTION_FAILURE_CODES:
+                    raise
+                failures.append((plan, exc.code))
+                continue
+            resolved.append(plan)
+        return resolved, sorted(
+            failures,
+            key=lambda item: item[0].plan_id,
+        )
+
+    def resolved_plans(
+        self, *, validate_policy: bool = True
+    ) -> list[ChangePlan]:
+        """Return persisted plans after applying the shared effective lifecycle."""
+
+        plans, failures = self._resolved_plans_with_projection_failures(
+            validate_policy=validate_policy
+        )
+        if failures:
+            failed_plan, error_code = failures[0]
+            raise GovernanceError(
+                error_code,
+                details={"resource_id": failed_plan.plan_id},
+            )
         return plans
 
     def list_plans(self, status: str = "", limit: int = 20) -> dict[str, Any]:
-        plans = []
-        for plan in self.resolved_plans():
-            if status and self._effective_plan_status(plan) != status:
+        selected: list[dict[str, Any]] = []
+        plans, failures = self._resolved_plans_with_projection_failures()
+        for plan in plans:
+            try:
+                effective_status = self._effective_plan_status(plan)
+                if status and effective_status != status:
+                    continue
+                if len(selected) >= max(1, min(limit, 100)):
+                    continue
+                selected.append(self._summary(plan))
+            except GovernanceError as exc:
+                if exc.code not in PLAN_PROJECTION_FAILURE_CODES:
+                    raise
+                failures.append((plan, exc.code))
                 continue
-            plans.append(self._summary(plan))
-            if len(plans) >= max(1, min(limit, 100)):
-                break
-        return {"count": len(plans), "plans": plans}
+        failures = sorted(failures, key=lambda item: item[0].plan_id)
+        projected_failures = [
+            {
+                "plan_id": plan.plan_id,
+                "error_code": error_code.value,
+            }
+            for plan, error_code in failures[:MAX_PLAN_PROJECTION_FAILURES]
+        ]
+        return {
+            "count": len(selected),
+            "plans": selected,
+            "projection_failures": projected_failures,
+            "projection_failure_count": len(failures),
+            "projection_failures_truncated": (
+                len(failures) > len(projected_failures)
+            ),
+            "partial": bool(failures),
+        }
 
     def approve(self, plan_id: str, expected_plan_hash: str, approval_note: str = "") -> dict[str, Any]:
         """Request external approval without granting authority to the MCP caller."""
@@ -4251,7 +4415,8 @@ class ChangeGovernanceService:
 
     def pending_external_reviews(self) -> list[dict[str, Any]]:
         reviews: list[dict[str, Any]] = []
-        for plan in self.resolved_plans():
+        plans, _failures = self._resolved_plans_with_projection_failures()
+        for plan in plans:
             calculated = self.plan_hash(plan)
             if not self._active_challenge_matches(plan, calculated):
                 continue
@@ -6425,7 +6590,10 @@ class ChangeGovernanceService:
         started = time.monotonic()
         selected = checked = completed = pending = failed = 0
         bounded = False
-        for candidate in self.resolved_plans():
+        candidates, _failures = (
+            self._resolved_plans_with_projection_failures()
+        )
+        for candidate in candidates:
             if not self._eligible_lifecycle_reconciliation(candidate):
                 continue
             if (
@@ -9258,9 +9426,11 @@ class ChangeGovernanceService:
         return {"status": "rolled_back", "plan": self._public(plan, include_configs=False)}
 
     def health_summary(self) -> dict[str, Any]:
-        # Health remains available when a hand-built F2 record is invalid, but
-        # invalid snapshots are never counted as an authoritative policy class.
-        plans = self.resolved_plans(validate_policy=False)
+        # Record-level governance projection failures remain visible and
+        # non-actionable without hiding otherwise healthy plan accounting.
+        plans, projection_failures = (
+            self._resolved_plans_with_projection_failures()
+        )
         storage = self.repository.health()
         try:
             tasks = self.task_repository.list()
@@ -9324,12 +9494,7 @@ class ChangeGovernanceService:
             reverse=True,
         )
         valid_policy_plans = {
-            plan.plan_id: bool(
-                plan.policy_decision is not None
-                and policy_snapshot_matches(plan)
-                and self._approval_bundle_integrity_error(plan) is None
-            )
-            for plan in plans
+            plan.plan_id: plan.policy_decision is not None for plan in plans
         }
         plans_by_policy_class = {
             policy_class.value: sum(
@@ -9342,6 +9507,13 @@ class ChangeGovernanceService:
         }
         plans_by_policy_class["legacy_without_policy_snapshot"] = sum(
             plan.policy_decision is None for plan in plans
+        )
+        plans_by_policy_class["projection_failed"] = len(
+            projection_failures
+        )
+        total_plans = len(plans) + len(projection_failures)
+        policy_class_accounting_valid = bool(
+            sum(plans_by_policy_class.values()) == total_plans
         )
 
         def has_active_action(
@@ -9362,7 +9534,7 @@ class ChangeGovernanceService:
             "storage": storage,
             "storage_status": storage["status"],
             "storage_corruption_count": storage["corruption_count"],
-            "total_plans": len(plans),
+            "total_plans": total_plans,
             "plans_awaiting_approval": sum(
                 plan.status == PlanStatus.AWAITING_APPROVAL
                 and self._approval_is_actionable(plan)
@@ -9376,6 +9548,15 @@ class ChangeGovernanceService:
             "ingress_approval_ui_configured": True,
             "approval_authority_version": APPROVAL_AUTHORITY_VERSION,
             "plans_by_policy_class": plans_by_policy_class,
+            "projection_failure_count": len(projection_failures),
+            "projection_failure_warning": (
+                "one_or_more_governance_plans_could_not_be_projected"
+                if projection_failures
+                else None
+            ),
+            "policy_class_accounting_valid": (
+                policy_class_accounting_valid
+            ),
             "pending_plan_approvals": sum(
                 has_active_action(
                     plan, ApprovalActionKind.PLAN_APPROVAL
@@ -9426,9 +9607,8 @@ class ChangeGovernanceService:
                 for event in plan.events
             )
             + sum(
-                plan.policy_decision is not None
-                and not policy_snapshot_matches(plan)
-                for plan in plans
+                error_code == ErrorCode.POLICY_SNAPSHOT_MISMATCH
+                for _plan, error_code in projection_failures
             ),
             "approval_principal_mismatches": sum(
                 event.error_code
@@ -9437,11 +9617,8 @@ class ChangeGovernanceService:
                 for event in plan.events
             )
             + sum(
-                self._approval_bundle_integrity_error(plan)
-                == ErrorCode.APPROVAL_PRINCIPAL_MISMATCH
-                for plan in plans
-                if plan.policy_decision is not None
-                and policy_snapshot_matches(plan)
+                error_code == ErrorCode.APPROVAL_PRINCIPAL_MISMATCH
+                for _plan, error_code in projection_failures
             ),
             "approval_sequence_failures": sum(
                 event.error_code
@@ -9450,11 +9627,8 @@ class ChangeGovernanceService:
                 for event in plan.events
             )
             + sum(
-                self._approval_bundle_integrity_error(plan)
-                == ErrorCode.APPROVAL_SEQUENCE_FAILURE
-                for plan in plans
-                if plan.policy_decision is not None
-                and policy_snapshot_matches(plan)
+                error_code == ErrorCode.APPROVAL_SEQUENCE_FAILURE
+                for _plan, error_code in projection_failures
             ),
             "pending_challenge_count": sum(
                 self._active_challenge_matches(

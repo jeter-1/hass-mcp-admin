@@ -1081,14 +1081,25 @@ class F2ApprovalWorkflowTests(F2ApprovalTestCase):
             policy_error.exception.code,
             ErrorCode.POLICY_SNAPSHOT_MISMATCH,
         )
-        with self.assertRaises(GovernanceError) as list_error:
-            self.service.list_plans()
+        listed = self.service.list_plans()
+        self.assertTrue(listed["partial"])
+        self.assertEqual(listed["plans"], [])
         self.assertEqual(
-            list_error.exception.code,
-            ErrorCode.POLICY_SNAPSHOT_MISMATCH,
+            listed["projection_failures"],
+            [
+                {
+                    "plan_id": created["plan_id"],
+                    "error_code": "policy_snapshot_mismatch",
+                }
+            ],
         )
         health = self.service.health_summary()
         self.assertEqual(health["policy_snapshot_mismatches"], 1)
+        self.assertEqual(health["projection_failure_count"], 1)
+        self.assertEqual(
+            health["plans_by_policy_class"]["projection_failed"], 1
+        )
+        self.assertTrue(health["policy_class_accounting_valid"])
         plan.policy_decision = original_policy
         self.repository.save(plan)
 
@@ -1150,8 +1161,12 @@ class F2ApprovalWorkflowTests(F2ApprovalTestCase):
                 "elevated_admin": 1,
                 "prohibited": 1,
                 "legacy_without_policy_snapshot": 0,
+                "projection_failed": 0,
             },
         )
+        self.assertEqual(first["projection_failure_count"], 0)
+        self.assertIsNone(first["projection_failure_warning"])
+        self.assertTrue(first["policy_class_accounting_valid"])
 
     async def test_standard_and_elevated_pending_plans_remain_counted(self):
         standard = await self.create_standard()

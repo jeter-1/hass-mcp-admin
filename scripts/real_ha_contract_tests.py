@@ -41,11 +41,6 @@ from ha_mcp_engineering.governance.resources import (  # noqa: E402
 from ha_mcp_engineering.governance.normalize import (  # noqa: E402
     normalize_automation,
 )
-from ha_mcp_engineering.governance.models import (  # noqa: E402
-    ApprovalState,
-    ChangeEvent,
-    PlanStatus,
-)
 from ha_mcp_engineering.governance.service import (  # noqa: E402
     AutomationGateway,
     ChangeGovernanceService,
@@ -1584,54 +1579,26 @@ async def _run_f2_policy_acceptance_contract(
             observed_mutation_baseline = len(observed.mutations)
             upgrade_health_baseline = service.health_summary()
             legacy_gateway = _LegacyAutomationCompatibilityGateway(gateway)
-            legacy_service = ChangeGovernanceService(
-                service.repository,
-                legacy_gateway,
-                sensitive_values=(token,),
+            historical_fixture_path = (
+                ROOT
+                / "tests"
+                / "fixtures"
+                / "beta6_prohibited_superseded_contract_v2_a.json"
             )
-            historical_created = await legacy_service.create_plan(
-                title="F2 persisted Beta 6 prohibited fixture",
-                description=(
-                    "Exercise read-only compatibility for a source-established "
-                    "prohibited lifecycle shape."
-                ),
-                operation="update_automation",
-                automation_id=RESOURCE_IDS["automation"],
-                proposed_config=copy.deepcopy(
-                    F2_PROHIBITED_DEVICE_TARGET_AUTOMATION_CONFIG
-                ),
-            )
-            active_plan_id = historical_created["plan_id"]
-            historical = service.repository.get(active_plan_id)
-            assert historical is not None
-            assert historical.contract_version < 2
-            assert historical.policy_decision is not None
-            assert historical.policy_decision.policy_class.value == (
-                "prohibited"
-            )
-            assert historical.policy_decision.required_acknowledgements == ()
-            assert historical.approval.challenge_id is None
-            assert historical.approval.bundle_state == "prohibited"
-
-            # Beta 6's same-target supersession path changed only these legacy
-            # lifecycle fields while leaving the validated prohibited policy
-            # snapshot and empty authority bundle intact.
-            historical.status = PlanStatus.SUPERSEDED
-            historical.approval.state = ApprovalState.INVALIDATED
-            historical.approval.bundle_state = "invalidated"
-            historical.events.append(
-                ChangeEvent(
-                    event="change_plan_superseded",
-                    timestamp=historical.updated_at,
-                    request_id="f2-real-ha-policy-contract",
-                    caller_id="f2-real-ha-contract-caller",
-                    result_status="rejected",
-                )
-            )
-            service.repository.save(historical)
+            historical_bytes = historical_fixture_path.read_bytes()
+            historical_value = json.loads(historical_bytes)
+            active_plan_id = historical_value["plan_id"]
+            assert historical_value["contract_version"] == 2
+            assert historical_value["operations"]
+            assert {
+                operation["execution_status"]
+                for operation in historical_value["operations"]
+            } == {"pending"}
             historical_path = (
                 Path(directory) / "plans" / f"{active_plan_id}.json"
             )
+            assert not historical_path.exists()
+            historical_path.write_bytes(historical_bytes)
             persisted_before = historical_path.read_bytes()
 
             recovered = ChangeGovernanceService(
@@ -1655,6 +1622,8 @@ async def _run_f2_policy_acceptance_contract(
             assert active_plan_id in {
                 item["plan_id"] for item in historical_listing["plans"]
             }
+            assert historical_listing["partial"] is False
+            assert historical_listing["projection_failure_count"] == 0
             awaiting_listing = recovered.list_plans(
                 status="awaiting_approval", limit=100
             )
@@ -1669,6 +1638,8 @@ async def _run_f2_policy_acceptance_contract(
             assert upgrade_health["prohibited_policy_decisions"] == (
                 upgrade_health_baseline["prohibited_policy_decisions"] + 1
             )
+            assert upgrade_health["projection_failure_count"] == 0
+            assert upgrade_health["policy_class_accounting_valid"] is True
             for counter in (
                 "plans_awaiting_approval",
                 "plans_requiring_approval",

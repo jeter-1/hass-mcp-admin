@@ -1,6 +1,35 @@
 # Changelog
 
+## 2.2.0-beta.9 - Real Beta 6 prohibited-plan compatibility
+
+- Correct the historical compatibility gate to recognize exactly the
+  contract-v2 prohibited/superseded representation written by shipped Beta 6,
+  rather than the contract-v1 default produced by an incomplete manual test
+  fixture.
+- Generate neutral compatibility fixtures through the exact Beta 6 writer and
+  supersession lifecycle, with committed source, generator, and fixture
+  provenance; contract-v2 prepared operations remain non-execution evidence.
+- Retain strict immutable plan and policy validation and reject any authority,
+  task, dispatch, response, apply, verification, rollback, operation-state, or
+  event contradiction.
+- Return bounded partial plan listings when an individual loaded plan cannot be
+  projected, while preserving top-level failure for systemic storage errors.
+- Reconcile every stored plan into a health policy-class bucket, including the
+  fail-closed `projection_failed` bucket and an explicit bounded warning.
+- Preserve byte-identical records on detail, listing, health, startup, Ingress,
+  and handoff reads; add no migration, challenge, task, provider call, or
+  fallback.
+- Retain Beta 7 provider-response truthfulness, current prohibited semantics,
+  authority version 3, task schema 1, the 25/23/48 plus configured 26/74 tool
+  contract, stable v1.1.2, and zero fallback.
+- Defer delta-aware safety-reducing policy to Beta 10; Beta 9 adds no policy,
+  provider, resource, tool, execution, recovery, or fallback authority.
+
 ## 2.2.0-beta.8 - Persisted prohibited-plan compatibility
+
+- Historical correction: Beta 8's manually reconstructed fixture omitted
+  `contract_version` and defaulted to contract v1, so its intended historical
+  branch did not recognize the real contract-v2 records written by Beta 6.
 
 - Recognize the exact validated Beta 6 authority-v3 prohibited-plan shape in
   which same-target supersession changed only legacy lifecycle fields to
