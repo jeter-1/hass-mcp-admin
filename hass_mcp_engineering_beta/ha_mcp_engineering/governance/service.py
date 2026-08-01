@@ -110,6 +110,7 @@ APPROVAL_CHANNEL = "home_assistant_ingress"
 APPROVAL_CHALLENGE_TTL = timedelta(minutes=60)
 DEFAULT_APPROVER_PRINCIPAL = "home_assistant_admin_ingress"
 CONFIGURATION_PLAN_CONTRACT_VERSION = 2
+BETA6_PROHIBITED_COMPAT_CONTRACT_VERSION = 2
 OPERATIONAL_PLAN_CONTRACT_VERSION = 3
 LIFECYCLE_OPERATIONS = frozenset(
     {
@@ -1453,10 +1454,17 @@ class ChangeGovernanceService:
             or plan.failure_information is not None
             or plan.verification.status != "not_run"
             or plan.verification.checked_at is not None
+            or plan.verification.desired_fingerprint is not None
+            or plan.verification.actual_fingerprint is not None
+            or plan.verification.config_check_status is not None
+            or bool(plan.verification.mismatch_fields)
+            or plan.verification.duration_ms is not None
+            or plan.configuration_check_status not in {None, "not_run"}
             or plan.rollback.requested_at is not None
             or plan.rollback.approved_at is not None
             or plan.rollback.rolled_back_at is not None
             or plan.rollback.request_id is not None
+            or plan.rollback.expected_current_fingerprint is not None
             or plan.rollback.failure_code is not None
             or plan.execution_outcome
             not in {None, "not_started", "not_applied"}
@@ -1465,9 +1473,16 @@ class ChangeGovernanceService:
         if any(
             operation.execution_status != StepExecutionStatus.PENDING
             or operation.execution_receipt is not None
+            or operation.snapshot is not None
             or operation.post_apply_fingerprint is not None
             or operation.failure_information is not None
             or operation.verification.status != "not_run"
+            or operation.verification.checked_at is not None
+            or operation.verification.desired_fingerprint is not None
+            or operation.verification.actual_fingerprint is not None
+            or operation.verification.config_check_status is not None
+            or bool(operation.verification.mismatch_fields)
+            or operation.verification.duration_ms is not None
             for operation in plan.operations
         ):
             return True
@@ -1485,17 +1500,40 @@ class ChangeGovernanceService:
             ):
                 return True
         allowed_events = {
-            "change_plan_created": None,
-            "policy_approval_rejected": ErrorCode.PROHIBITED_CHANGE.value,
-            "change_apply_rejected": ErrorCode.PROHIBITED_CHANGE.value,
-            "change_plan_superseded": None,
+            "change_plan_created": (
+                "success",
+                None,
+            ),
+            "policy_approval_rejected": (
+                "rejected",
+                ErrorCode.PROHIBITED_CHANGE.value,
+            ),
+            "change_apply_rejected": (
+                "rejected",
+                ErrorCode.PROHIBITED_CHANGE.value,
+            ),
+            "change_plan_superseded": (
+                "rejected",
+                None,
+            ),
         }
         for event in plan.events:
             if event.event not in allowed_events:
                 return True
-            required_code = allowed_events[event.event]
-            if required_code is not None and event.error_code != required_code:
+            result_status, required_code = allowed_events[event.event]
+            if (
+                event.result_status != result_status
+                or event.error_code != required_code
+            ):
                 return True
+        event_names = [event.event for event in plan.events]
+        if (
+            not event_names
+            or event_names[0] != "change_plan_created"
+            or event_names.count("change_plan_created") != 1
+            or event_names.count("change_plan_superseded") > 1
+        ):
+            return True
         return False
 
     def _effective_prohibited_plan_failures(
@@ -1562,13 +1600,21 @@ class ChangeGovernanceService:
             or plan.status == PlanStatus.AWAITING_APPROVAL
         )
         if historical_candidate:
-            if not (
+            if (
                 plan.contract_version
-                < CONFIGURATION_PLAN_CONTRACT_VERSION
+                != BETA6_PROHIBITED_COMPAT_CONTRACT_VERSION
             ):
                 failures.append(
                     "historical_contract_version_not_supported"
                 )
+            if plan.operation != ChangeOperation.CONFIGURATION_PLAN:
+                failures.append("historical_operation_not_configuration_plan")
+            if plan.target_type != "configuration_plan":
+                failures.append("historical_target_type_not_configuration_plan")
+            if plan.target_id != plan.plan_id:
+                failures.append("historical_target_id_not_plan_id")
+            if not plan.operations:
+                failures.append("historical_operations_missing")
             if plan.status != PlanStatus.SUPERSEDED:
                 failures.append("historical_status_not_superseded")
             if approval.state != ApprovalState.INVALIDATED:
@@ -1599,7 +1645,7 @@ class ChangeGovernanceService:
     ) -> bool:
         """Recognize current and exact safe Beta 6 prohibited records.
 
-        Beta 6 could supersede a prohibited contract-v1 plan when a later plan
+        Beta 6 could supersede a prohibited contract-v2 plan when a later plan
         targeted the same automation. That transition changed only the legacy
         lifecycle fields to ``superseded``/``invalidated``. The immutable F2
         policy snapshot remained prohibited, with no acknowledgement,
