@@ -128,6 +128,15 @@ MAX_APPROVAL_PROJECTION_TARGETS = 8
 MAX_APPROVAL_PROJECTION_DATA = 8
 MAX_APPROVAL_PROJECTION_DEPTH = 4
 MAX_APPROVAL_PROJECTION_CONTROLS = 16
+AUTOMATION_PROVIDER_RESPONSE_EVENTS = frozenset(
+    {
+        "automation_provider_completed",
+        "automation_provider_failed",
+    }
+)
+PROVIDER_RESPONSE_EVIDENCE_INCONSISTENT = (
+    "provider_response_evidence_inconsistent"
+)
 
 
 def _usable_invocation_request_id(value: object) -> str | None:
@@ -1994,6 +2003,20 @@ class ChangeGovernanceService:
                 )
                 if isinstance(recorded, str):
                     response_recorded_at = recorded
+            elif (
+                plan.contract_version
+                < CONFIGURATION_PLAN_CONTRACT_VERSION
+                and event in AUTOMATION_PROVIDER_RESPONSE_EVENTS
+                and plan.events
+                and plan.events[-1].event == event
+            ):
+                # A contract-v1 automation provider event is emitted only
+                # after the REST transport returned a response (including an
+                # empty successful body) or exposed a bounded received-error
+                # marker. The persisted event timestamp is the durable receipt
+                # time; readback never manufactures this evidence.
+                response_received = True
+                response_recorded_at = plan.events[-1].timestamp
             elif plan.operational is not None:
                 response_received = bool(
                     plan.operational.dispatch.get(
@@ -4680,6 +4703,16 @@ class ChangeGovernanceService:
             )
         if task.state in TERMINAL_TASK_STATES:
             return
+        if self._configuration_response_projection_mismatch(task, plan):
+            # New authority-v3 executions with affirmative provider-response
+            # evidence must not become successful while the durable task says
+            # otherwise. Historical terminal tasks are never inspected here.
+            self._manual_review_task(
+                task,
+                PROVIDER_RESPONSE_EVIDENCE_INCONSISTENT,
+                plan,
+            )
+            return
         dispatched = self._task_is_dispatched(task)
         legacy = {
             **task.legacy_projection,
@@ -4806,6 +4839,13 @@ class ChangeGovernanceService:
                     "verification_summary": {
                         **task.verification_summary,
                         "status": "failed",
+                        "provider_response_received": bool(
+                            task.provider_attempts
+                            and task.provider_attempts[-1].get(
+                                "response_received"
+                            )
+                            is True
+                        ),
                         **self._configuration_task_verification_evidence(
                             plan
                         ),
@@ -7034,6 +7074,50 @@ class ChangeGovernanceService:
         Home Assistant, or dispatches a provider.
         """
 
+        if plan.contract_version < CONFIGURATION_PLAN_CONTRACT_VERSION:
+            response_event = next(
+                (
+                    event
+                    for event in reversed(plan.events)
+                    if event.event in AUTOMATION_PROVIDER_RESPONSE_EVENTS
+                ),
+                None,
+            )
+            if response_event is None:
+                return
+            try:
+                parse_task_timestamp(response_event.timestamp)
+            except (TypeError, ValueError):
+                return
+            attempts = [dict(item) for item in task.provider_attempts]
+            if not attempts or attempts[-1].get("response_received") is True:
+                return
+            attempts[-1] = {
+                **attempts[-1],
+                "response_received": True,
+                "response_recorded_at": response_event.timestamp,
+            }
+            self._record_task_event(
+                task,
+                "provider_response_recorded",
+                new_state=(
+                    ExecutionTaskState.OBSERVING
+                    if task.state == ExecutionTaskState.DISPATCHING
+                    else None
+                ),
+                changes={
+                    "provider_attempts": attempts,
+                    "verification_summary": {
+                        **task.verification_summary,
+                        "status": "pending",
+                        "provider_response_received": True,
+                        "response_evidence_source": (
+                            "persisted_automation_provider_event"
+                        ),
+                    },
+                },
+            )
+            return
         if plan.contract_version != CONFIGURATION_PLAN_CONTRACT_VERSION:
             return
         response_events = {
@@ -7101,6 +7185,56 @@ class ChangeGovernanceService:
                 },
             },
         )
+
+    @staticmethod
+    def _configuration_response_projection_mismatch(
+        task: ExecutionTask,
+        plan: ChangePlan,
+    ) -> bool:
+        """Detect new affirmative response evidence missing from its task."""
+
+        if (
+            task.approval_reference.get("authority_version")
+            != APPROVAL_AUTHORITY_VERSION
+        ):
+            return False
+        if plan.contract_version < CONFIGURATION_PLAN_CONTRACT_VERSION:
+            has_response = any(
+                event.event in AUTOMATION_PROVIDER_RESPONSE_EVENTS
+                for event in plan.events
+            )
+            return bool(
+                has_response
+                and (
+                    not task.provider_attempts
+                    or task.provider_attempts[-1].get(
+                        "response_received"
+                    )
+                    is not True
+                )
+            )
+        if plan.contract_version != CONFIGURATION_PLAN_CONTRACT_VERSION:
+            return False
+        response_operation_ids = {
+            operation.operation_id
+            for operation in plan.operations
+            if isinstance(operation.execution_receipt, dict)
+            and operation.execution_receipt.get(
+                "provider_response_received"
+            )
+            is True
+        }
+        for operation_id in response_operation_ids:
+            matching = [
+                attempt
+                for attempt in task.provider_attempts
+                if attempt.get("operation_id") == operation_id
+            ]
+            if not matching or matching[-1].get(
+                "response_received"
+            ) is not True:
+                return True
+        return False
 
     @staticmethod
     def _configuration_response_was_received(
@@ -8307,12 +8441,48 @@ class ChangeGovernanceService:
         self._record(plan, "change_apply_started", "success")
         try:
             await self.gateway.write(plan.target_id, plan.proposed_config)
-            actual = await self.gateway.get(plan.target_id)
         except Exception as exc:
+            if self._configuration_response_was_received(exc):
+                self._record(
+                    plan,
+                    "automation_provider_failed",
+                    "failure",
+                    error_code=(
+                        exc.code.value
+                        if isinstance(exc, EngineeringServerError)
+                        else ErrorCode.AUTOMATION_APPLY_FAILED.value
+                    ),
+                )
             plan.status = PlanStatus.FAILED
             plan.failure_information = {"error_code": ErrorCode.AUTOMATION_APPLY_FAILED.value}
             self._record(plan, "change_apply_failed", "failure", error_code=ErrorCode.AUTOMATION_APPLY_FAILED.value)
             raise GovernanceError(ErrorCode.AUTOMATION_APPLY_FAILED) from exc
+        else:
+            # Normal return from the transport proves that a response arrived,
+            # even when Home Assistant used an empty success body. Persist this
+            # fact before readback so later verification cannot erase it.
+            self._record(
+                plan,
+                "automation_provider_completed",
+                "success",
+            )
+
+        try:
+            actual = await self.gateway.get(plan.target_id)
+        except Exception as exc:
+            plan.status = PlanStatus.FAILED
+            plan.failure_information = {
+                "error_code": ErrorCode.AUTOMATION_APPLY_FAILED.value
+            }
+            self._record(
+                plan,
+                "change_apply_failed",
+                "failure",
+                error_code=ErrorCode.AUTOMATION_APPLY_FAILED.value,
+            )
+            raise GovernanceError(
+                ErrorCode.AUTOMATION_APPLY_FAILED
+            ) from exc
 
         duration = round((time.perf_counter() - started) * 1000, 3)
         actual_fingerprint = state_fingerprint(actual)

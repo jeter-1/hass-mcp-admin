@@ -332,6 +332,9 @@ class ErrorTaxonomyTests(unittest.TestCase):
                 asyncio.run(client.request("GET", "/config"))
         self.assertEqual(caught.exception.code, ErrorCode.HA_TIMEOUT)
         self.assertTrue(caught.exception.retryable)
+        self.assertNotIn(
+            "provider_response_received", caught.exception.details
+        )
 
     def test_home_assistant_unavailable_mapping(self):
         client = HomeAssistantRestClient(settings("unused"))
@@ -343,6 +346,37 @@ class ErrorTaxonomyTests(unittest.TestCase):
                 asyncio.run(client.request("GET", "/config"))
         self.assertEqual(caught.exception.code, ErrorCode.HA_UNAVAILABLE)
         self.assertNotIn("private endpoint detail", json.dumps(caught.exception.details))
+        self.assertNotIn(
+            "provider_response_received", caught.exception.details
+        )
+
+    def test_rest_success_with_body_returns_after_received_response(self):
+        client = HomeAssistantRestClient(settings("unused"))
+        response = _RestResponse(200, '{"result":"ok"}')
+        with patch(
+            "ha_mcp_engineering.clients.rest.aiohttp.ClientSession",
+            return_value=_RestSession(response),
+        ):
+            result = asyncio.run(
+                client.request(
+                    "POST", "/config/automation/config/fixture"
+                )
+            )
+        self.assertEqual(result, {"result": "ok"})
+
+    def test_rest_empty_success_returns_normally_without_body_evidence(self):
+        client = HomeAssistantRestClient(settings("unused"))
+        response = _RestResponse(204, "")
+        with patch(
+            "ha_mcp_engineering.clients.rest.aiohttp.ClientSession",
+            return_value=_RestSession(response),
+        ):
+            result = asyncio.run(
+                client.request(
+                    "POST", "/config/automation/config/fixture"
+                )
+            )
+        self.assertIsNone(result)
 
     def test_rest_rejection_records_received_response_without_body(self):
         client = HomeAssistantRestClient(settings("unused"))
