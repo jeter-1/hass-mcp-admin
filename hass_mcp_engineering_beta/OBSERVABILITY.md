@@ -650,6 +650,14 @@ envelope containing safe operational data:
 It never returns the secret, tokens, headers, cookies, complete MCP endpoint
 paths, private request payloads, or raw audit/log records.
 
+Governance policy totals use the validated effective lifecycle rather than a
+stale compatibility status. A source-established Beta 6 prohibited record whose
+legacy fields were superseded/invalidated is counted under
+`plans_by_policy_class.prohibited` and `prohibited_policy_decisions`, while it is
+excluded from every pending approval and Ingress counter. The projection is
+read-only and does not rewrite the persisted record. Pre-F2 plans without a
+policy snapshot intentionally retain their legacy status-based actionability.
+
 The delegation diagnostic reflects current reality: Beta 12 verifies the Home Assistant
 MCP endpoint but does not configure or call it because Assist lacks exact mappings for
 the approved administrative reads. It must not be interpreted as a Home Assistant API

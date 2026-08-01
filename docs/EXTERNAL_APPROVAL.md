@@ -22,6 +22,19 @@ requiring approval. It is excluded from the Ingress queue and every pending
 approval counter, creates no challenge or control, and continues to reject both
 approval and apply with `prohibited_change`.
 
+The same terminal projection applies to the validated Beta 6 persisted form
+created when same-target supersession changed only the prohibited plan's legacy
+lifecycle fields to `superseded` and `invalidated`. Compatibility is structural,
+not ID-based: it requires an intact prohibited policy snapshot, no required
+acknowledgements, and no approval, task, dispatch, apply, verification, or
+rollback evidence. Reads, startup, Ingress inventory, and handoff generation do
+not migrate or rewrite that record. A contradictory record fails closed.
+
+`status_is_legacy` is a property of the status projection returned in a response;
+it is not a record-age or pre-F2 indicator. Plans that genuinely predate F2 and
+lack a policy snapshot intentionally keep their existing status-based
+actionability rules.
+
 This boundary does not prove that an automation will behave correctly. Apply
 verification proves that Home Assistant stored the intended configuration,
 returned the expected automation identity, and accepted its configuration.

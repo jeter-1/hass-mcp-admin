@@ -237,6 +237,12 @@ RC2dev4 records without a storage migration. Callers must not infer an external
 challenge from legacy `status: awaiting_approval`; only
 `approval_pending_external` means a challenge exists.
 
+`status_is_legacy` describes the status value returned in that response. It is
+not a record-age marker and does not mean that a record predates F2. Pre-F2
+plans without an immutable policy snapshot intentionally retain their bounded
+status-based actionability rules for backward compatibility; the F2 prohibited
+compatibility projection does not infer policy for those records.
+
 The Beta 7 compatibility projection treats a validated F2 `prohibited` policy
 decision and `prohibited` approval bundle as terminal, visible, and
 non-actionable. Public plan detail, inventory, and handoff evidence project
@@ -244,6 +250,16 @@ non-actionable. Public plan detail, inventory, and handoff evidence project
 Ingress queues, and health counters exclude it. The authority-v3 persisted enum
 fields remain unchanged for schema compatibility, and historical authority-v1
 and authority-v2 records retain their existing projection.
+
+Read compatibility also recognizes the source-established Beta 6 shape in
+which same-target supersession changed only a validated prohibited plan's
+legacy fields to `status: superseded`, `approval.state: invalidated`, and
+`approval.bundle_state: invalidated`. Recognition requires the validated
+prohibited policy snapshot, empty acknowledgements, no authority, task,
+provider, apply, verification, or rollback evidence, and the bounded
+supersession event. It is an in-memory projection: no plan, event history,
+hash, challenge, or timestamp is rewritten. Contradictory records continue to
+fail closed.
 
 ## Planning, normalization, and fingerprints
 
