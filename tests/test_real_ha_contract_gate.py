@@ -280,7 +280,8 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
         self.assertIn("HomeAssistantWebSocketClient", constructors)
 
         service_calls = calls_under(self.tree, "ChangeGovernanceService")
-        self.assertEqual(len(service_calls), 2)
+        self.assertEqual(len(service_calls), 4)
+        governed_gateway_constructors = []
         for service_call in service_calls:
             service_argument_names = {
                 argument.id
@@ -291,10 +292,23 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
                 for keyword in service_call.keywords
                 if isinstance(keyword.value, ast.Name)
             }
-            self.assertIn(
-                "_ObservedConfigurationGateway",
-                {assignments.get(name) for name in service_argument_names},
+            call_constructors = {
+                assignments.get(name) for name in service_argument_names
+            }
+            governed_gateway_constructors.extend(call_constructors)
+            self.assertTrue(
+                {
+                    "_ObservedConfigurationGateway",
+                    "_LegacyAutomationCompatibilityGateway",
+                }
+                & call_constructors
             )
+        self.assertEqual(
+            governed_gateway_constructors.count(
+                "_LegacyAutomationCompatibilityGateway"
+            ),
+            2,
+        )
         observed = next(
             node
             for node in ast.walk(self.tree)
@@ -753,6 +767,7 @@ class RealHomeAssistantF2RunnerTests(unittest.IsolatedAsyncioTestCase):
                 "elevated_admin",
                 "prohibited",
                 "prohibited_non_entity_target",
+                "persisted_beta6_prohibited_upgrade",
             ],
         )
         self.assertEqual(result["configuration_mutation_count"], 2)
@@ -838,6 +853,7 @@ class RealHomeAssistantF2RunnerTests(unittest.IsolatedAsyncioTestCase):
                 "elevated_admin",
                 "prohibited",
                 "prohibited_non_entity_target",
+                "persisted_beta6_prohibited_upgrade",
             ],
         )
         self.assertEqual(result["configuration_mutation_count"], 2)

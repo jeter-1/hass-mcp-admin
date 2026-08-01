@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.2.0-beta.8 - Persisted prohibited-plan compatibility
+
+- Recognize the exact validated Beta 6 authority-v3 prohibited-plan shape in
+  which same-target supersession changed only legacy lifecycle fields to
+  `superseded` and `invalidated`.
+- Project those records as terminal and non-actionable across detail, listing,
+  health, Ingress, startup rehydration, and handoff paths without rewriting
+  their persisted fields, events, hashes, or timestamps.
+- Count validated historical records as prohibited while excluding them from
+  awaiting, required, pending-challenge, and authorization-required work.
+- Fail closed when a purported historical record has nonempty
+  acknowledgements, authority, a task, provider or apply evidence, successful
+  work, or an invalid policy snapshot.
+- Retain Beta 7 transport-response truthfulness, current prohibited semantics,
+  authority version 3, task schema 1, the 25/23/48 plus configured 26/74 tool
+  contract, stable v1.1.2, and zero fallback.
+- Defer delta-aware safety-reducing policy to Beta 9; Beta 8 adds no policy,
+  provider, resource, tool, execution, recovery, or fallback authority.
+
 ## 2.2.0-beta.7 - Acceptance evidence and projection corrections
 
 - Record configuration-provider HTTP responses and WebSocket frames truthfully

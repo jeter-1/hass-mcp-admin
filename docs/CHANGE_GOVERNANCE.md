@@ -1,12 +1,14 @@
 # Beta automation change governance
 
-## 2.2.0-beta.7 acceptance corrections
+## 2.2.0-beta.8 persisted prohibited-plan compatibility
 
-Beta 7 records configuration-provider response receipt from affirmative
-transport evidence before readback and projects validated prohibited F2 plans
-as terminal, visible, and non-actionable. It changes no plan/policy hash,
-classification, approval sequence, task schema, provider route, or fallback.
-See [`V2_2_0_BETA7_ACCEPTANCE.md`](V2_2_0_BETA7_ACCEPTANCE.md).
+Beta 8 recognizes the exact validated prohibited-plan form persisted by Beta 6
+after same-target supersession, then projects it as terminal/non-actionable
+across compatibility status, Ingress, handoff, and health without rewriting
+storage. Beta 7 response truthfulness remains unchanged. It changes no
+plan/policy hash, classification, approval sequence, task schema, provider
+route, or fallback. See
+[`V2_2_0_BETA8_ACCEPTANCE.md`](V2_2_0_BETA8_ACCEPTANCE.md).
 
 ## 2.2.0-beta.6 F2 policy and approval authority
 
@@ -237,6 +239,12 @@ RC2dev4 records without a storage migration. Callers must not infer an external
 challenge from legacy `status: awaiting_approval`; only
 `approval_pending_external` means a challenge exists.
 
+`status_is_legacy` describes the status value returned in that response. It is
+not a record-age marker and does not mean that a record predates F2. Pre-F2
+plans without an immutable policy snapshot intentionally retain their bounded
+status-based actionability rules for backward compatibility; the F2 prohibited
+compatibility projection does not infer policy for those records.
+
 The Beta 7 compatibility projection treats a validated F2 `prohibited` policy
 decision and `prohibited` approval bundle as terminal, visible, and
 non-actionable. Public plan detail, inventory, and handoff evidence project
@@ -244,6 +252,16 @@ non-actionable. Public plan detail, inventory, and handoff evidence project
 Ingress queues, and health counters exclude it. The authority-v3 persisted enum
 fields remain unchanged for schema compatibility, and historical authority-v1
 and authority-v2 records retain their existing projection.
+
+Read compatibility also recognizes the source-established Beta 6 shape in
+which same-target supersession changed only a validated prohibited plan's
+legacy fields to `status: superseded`, `approval.state: invalidated`, and
+`approval.bundle_state: invalidated`. Recognition requires the validated
+prohibited policy snapshot, empty acknowledgements, no authority, task,
+provider, apply, verification, or rollback evidence, and the bounded
+supersession event. It is an in-memory projection: no plan, event history,
+hash, challenge, or timestamp is rewritten. Contradictory records continue to
+fail closed.
 
 ## Planning, normalization, and fingerprints
 

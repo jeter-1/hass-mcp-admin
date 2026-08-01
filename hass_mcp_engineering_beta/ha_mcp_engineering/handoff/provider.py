@@ -136,8 +136,17 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
             coverage.append(plan_coverage)
             coverage.append(_complete("change_verification", "engineering", "exact_verification", len(plans), cached=True, upstream=False))
             payloads["governance_plans"] = plans
+            governance_service = self.governance.require()
             for plan in plans:
-                items.append(self._plan_item(plan, evidence))
+                items.append(
+                    self._plan_item(
+                        plan,
+                        evidence,
+                        effective_status=(
+                            governance_service._effective_plan_status(plan)
+                        ),
+                    )
+                )
             found_ids = {plan.plan_id for plan in plans}
             for plan_id in query["change_plan_ids"]:
                 if plan_id in found_ids:
@@ -343,8 +352,12 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
         except Exception:
             return [], _failed("governance_plans", "engineering", "governance_persistence", upstream=False)
 
-    def _plan_item(self, plan, evidence):
-        status = _value(getattr(plan, "status", "unknown"))
+    def _plan_item(self, plan, evidence, *, effective_status=None):
+        status = (
+            str(effective_status)
+            if isinstance(effective_status, str) and effective_status
+            else _value(getattr(plan, "status", "unknown"))
+        )
         approval = getattr(plan, "approval", None)
         approval_state = _value(getattr(approval, "state", "required"))
         policy_class = _value(
@@ -355,7 +368,9 @@ class EngineeringHandoffProvider(EngineeringEvidenceProvider):
             )
         )
         bundle_state = str(getattr(approval, "bundle_state", "") or "")
-        if policy_class == "prohibited" and bundle_state == "prohibited":
+        if status == "prohibited" or (
+            policy_class == "prohibited" and bundle_state == "prohibited"
+        ):
             status = "prohibited"
             approval_state = "prohibited"
         verification_status = str(getattr(getattr(plan, "verification", None), "status", "not_run"))

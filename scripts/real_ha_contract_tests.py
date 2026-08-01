@@ -41,6 +41,11 @@ from ha_mcp_engineering.governance.resources import (  # noqa: E402
 from ha_mcp_engineering.governance.normalize import (  # noqa: E402
     normalize_automation,
 )
+from ha_mcp_engineering.governance.models import (  # noqa: E402
+    ApprovalState,
+    ChangeEvent,
+    PlanStatus,
+)
 from ha_mcp_engineering.governance.service import (  # noqa: E402
     AutomationGateway,
     ChangeGovernanceService,
@@ -754,6 +759,24 @@ class _ObservedConfigurationGateway:
         return result
 
     async def validate_all(self):
+        return await self.gateway.validate_all()
+
+
+class _LegacyAutomationCompatibilityGateway:
+    """Expose the contract-v1 automation interface over the reviewed gateway."""
+
+    def __init__(self, gateway: ConfigurationResourceGateway):
+        self.gateway = gateway
+
+    async def get(self, automation_id: str) -> dict | None:
+        return await self.gateway.read("automation", automation_id)
+
+    async def write(self, automation_id: str, config: dict):
+        return await self.gateway.write(
+            "update", "automation", automation_id, config
+        )
+
+    async def validate(self):
         return await self.gateway.validate_all()
 
 
@@ -1555,12 +1578,117 @@ async def _run_f2_policy_acceptance_contract(
                 + 2
             )
             assert len(observed.mutations) == mutation_count + 1
+
+            scenario = "persisted_beta6_prohibited_upgrade"
+            active_operation_id = "persisted_prohibited_automation_update"
+            observed_mutation_baseline = len(observed.mutations)
+            upgrade_health_baseline = service.health_summary()
+            legacy_gateway = _LegacyAutomationCompatibilityGateway(gateway)
+            legacy_service = ChangeGovernanceService(
+                service.repository,
+                legacy_gateway,
+                sensitive_values=(token,),
+            )
+            historical_created = await legacy_service.create_plan(
+                title="F2 persisted Beta 6 prohibited fixture",
+                description=(
+                    "Exercise read-only compatibility for a source-established "
+                    "prohibited lifecycle shape."
+                ),
+                operation="update_automation",
+                automation_id=RESOURCE_IDS["automation"],
+                proposed_config=copy.deepcopy(
+                    F2_PROHIBITED_DEVICE_TARGET_AUTOMATION_CONFIG
+                ),
+            )
+            active_plan_id = historical_created["plan_id"]
+            historical = service.repository.get(active_plan_id)
+            assert historical is not None
+            assert historical.contract_version < 2
+            assert historical.policy_decision is not None
+            assert historical.policy_decision.policy_class.value == (
+                "prohibited"
+            )
+            assert historical.policy_decision.required_acknowledgements == ()
+            assert historical.approval.challenge_id is None
+            assert historical.approval.bundle_state == "prohibited"
+
+            # Beta 6's same-target supersession path changed only these legacy
+            # lifecycle fields while leaving the validated prohibited policy
+            # snapshot and empty authority bundle intact.
+            historical.status = PlanStatus.SUPERSEDED
+            historical.approval.state = ApprovalState.INVALIDATED
+            historical.approval.bundle_state = "invalidated"
+            historical.events.append(
+                ChangeEvent(
+                    event="change_plan_superseded",
+                    timestamp=historical.updated_at,
+                    request_id="f2-real-ha-policy-contract",
+                    caller_id="f2-real-ha-contract-caller",
+                    result_status="rejected",
+                )
+            )
+            service.repository.save(historical)
+            historical_path = (
+                Path(directory) / "plans" / f"{active_plan_id}.json"
+            )
+            persisted_before = historical_path.read_bytes()
+
+            recovered = ChangeGovernanceService(
+                service.repository,
+                legacy_gateway,
+                sensitive_values=(token,),
+            )
+            historical_public = recovered.get_plan(active_plan_id)
+            assert historical_public["status"] == "prohibited"
+            assert historical_public["approval"]["state"] == "prohibited"
+            assert historical_public["approval_lifecycle"] == "prohibited"
+            assert historical_public["approval_bundle_state"] == "prohibited"
+            assert historical_public["approval_actionable"] is False
+            assert historical_public["approval_challenge_created"] is False
+            assert historical_public["apply_allowed"] is False
+            assert historical_public["next_required_operation"] is None
+            assert recovered.list_plans(limit=100)["count"] >= 1
+            historical_listing = recovered.list_plans(
+                status="prohibited", limit=100
+            )
+            assert active_plan_id in {
+                item["plan_id"] for item in historical_listing["plans"]
+            }
+            awaiting_listing = recovered.list_plans(
+                status="awaiting_approval", limit=100
+            )
+            assert active_plan_id not in {
+                item["plan_id"] for item in awaiting_listing["plans"]
+            }
+            assert all(
+                review["plan_id"] != active_plan_id
+                for review in recovered.pending_external_reviews()
+            )
+            upgrade_health = recovered.health_summary()
+            assert upgrade_health["prohibited_policy_decisions"] == (
+                upgrade_health_baseline["prohibited_policy_decisions"] + 1
+            )
+            for counter in (
+                "plans_awaiting_approval",
+                "plans_requiring_approval",
+                "pending_plan_approvals",
+                "pending_elevated_acknowledgements",
+                "pending_challenge_count",
+            ):
+                assert upgrade_health[counter] == upgrade_health_baseline[counter]
+            assert recovered.list_execution_tasks(
+                plan_id=active_plan_id
+            )["count"] == 0
+            assert historical_path.read_bytes() == persisted_before
+            assert len(observed.mutations) == observed_mutation_baseline
             return {
                 "completed_scenarios": [
                     "standard_admin",
                     "elevated_admin",
                     "prohibited",
                     "prohibited_non_entity_target",
+                    "persisted_beta6_prohibited_upgrade",
                 ],
                 "standard_task_id": standard_applied["task_id"],
                 "elevated_task_id": elevated_applied["task_id"],

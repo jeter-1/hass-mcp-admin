@@ -1,6 +1,6 @@
 # Governed operational administration
 
-Version: `2.2.0-beta.7`
+Version: `2.2.0-beta.8`
 
 The accepted 2.1A lifecycle retains four public proposal tools:
 `create_backup_plan`, `create_reload_plan`, `create_addon_restart_plan`, and
@@ -23,6 +23,12 @@ It is recomputed before approval and immediately before dispatch. Missing,
 mismatched, authority-v2, prohibited, expired, rejected, or incomplete approval
 evidence cannot create a task or reach a provider. F2 does not add another
 operational action, provider, fallback, or verification contract.
+
+Beta 8 additionally restores read-only compatibility for the exact validated
+Beta 6 prohibited record whose legacy lifecycle was changed by same-target
+supersession. It remains terminal and absent from operational approval queues,
+rehydration scans, and handoff authorization work. No stored plan, approval,
+event, task, or timestamp is migrated, and contradictory records fail closed.
 
 ## Durable execution tasks
 

@@ -1217,8 +1217,7 @@ class ChangeGovernanceService:
             else None
         )
 
-    @staticmethod
-    def _require_policy_snapshot(plan: ChangePlan) -> None:
+    def _require_policy_snapshot(self, plan: ChangePlan) -> None:
         if plan.policy_decision is None:
             raise GovernanceError(
                 ErrorCode.POLICY_SNAPSHOT_REQUIRED,
@@ -1232,9 +1231,7 @@ class ChangeGovernanceService:
                 ErrorCode.POLICY_SNAPSHOT_MISMATCH,
                 details={"resource_id": plan.plan_id},
             )
-        bundle_error = ChangeGovernanceService._approval_bundle_integrity_error(
-            plan
-        )
+        bundle_error = self._approval_bundle_integrity_error(plan)
         if bundle_error is not None:
             METRICS.record_classified_outcome(bundle_error.value)
             raise GovernanceError(
@@ -1242,8 +1239,8 @@ class ChangeGovernanceService:
                 details={"resource_id": plan.plan_id},
             )
 
-    @staticmethod
     def _approval_bundle_integrity_error(
+        self,
         plan: ChangePlan,
     ) -> ErrorCode | None:
         """Validate persisted authority-v3 state without upgrading legacy data."""
@@ -1263,14 +1260,13 @@ class ChangeGovernanceService:
 
         acknowledgement = approval.elevated_risk_acknowledgement
         if decision.policy_class == ApprovalPolicyClass.PROHIBITED:
-            if (
-                approval.bundle_state != "prohibited"
-                or acknowledgement is not None
-                or approval.challenge_id is not None
-                or approval.state != ApprovalState.REQUIRED
-            ):
-                return ErrorCode.APPROVAL_SEQUENCE_FAILURE
-            return None
+            return (
+                None
+                if self._is_effectively_prohibited_plan(
+                    plan, policy_snapshot_validated=True
+                )
+                else ErrorCode.APPROVAL_SEQUENCE_FAILURE
+            )
         if decision.policy_class == ApprovalPolicyClass.STANDARD_ADMIN:
             if acknowledgement is not None:
                 return ErrorCode.APPROVAL_SEQUENCE_FAILURE
@@ -1414,6 +1410,154 @@ class ChangeGovernanceService:
         ):
             return ErrorCode.APPROVAL_PRINCIPAL_MISMATCH
         return None
+
+    @staticmethod
+    def _prohibited_approval_has_authority_evidence(plan: ChangePlan) -> bool:
+        """Return whether a prohibited record contains actionable authority."""
+
+        approval = plan.approval
+        return bool(
+            approval.channel is not None
+            or approval.approver_principal is not None
+            or approval.principal_separation_enforced is not None
+            or approval.approved_at is not None
+            or approval.approving_caller_id is not None
+            or approval.approval_note is not None
+            or approval.bound_plan_hash is not None
+            or approval.consumed_at is not None
+            or approval.approval_expires_at is not None
+            or approval.challenge_id is not None
+            or approval.challenge_requested_at is not None
+            or approval.challenge_expires_at is not None
+            or approval.challenge_plan_version is not None
+            or approval.challenge_target_type is not None
+            or approval.challenge_target_id is not None
+            or approval.challenge_operation is not None
+            or approval.challenge_risk_level is not None
+            or approval.request_note is not None
+            or approval.csrf_digest is not None
+            or approval.csrf_issued_at is not None
+            or approval.same_principal_confirmed is not None
+            or approval.elevated_risk_acknowledgement is not None
+        )
+
+    @staticmethod
+    def _prohibited_plan_has_execution_evidence(plan: ChangePlan) -> bool:
+        """Reject compatibility when any dispatch or successful work is present."""
+
+        if (
+            plan.applied_at is not None
+            or plan.apply_request_id is not None
+            or plan.post_apply_fingerprint is not None
+            or plan.snapshot is not None
+            or plan.failure_information is not None
+            or plan.verification.status != "not_run"
+            or plan.verification.checked_at is not None
+            or plan.rollback.requested_at is not None
+            or plan.rollback.approved_at is not None
+            or plan.rollback.rolled_back_at is not None
+            or plan.rollback.request_id is not None
+            or plan.rollback.failure_code is not None
+            or plan.execution_outcome
+            not in {None, "not_started", "not_applied"}
+        ):
+            return True
+        if any(
+            operation.execution_status != StepExecutionStatus.PENDING
+            or operation.execution_receipt is not None
+            or operation.post_apply_fingerprint is not None
+            or operation.failure_information is not None
+            or operation.verification.status != "not_run"
+            for operation in plan.operations
+        ):
+            return True
+        if plan.operational is not None:
+            dispatch = plan.operational.dispatch
+            if (
+                bool(dispatch.get("dispatched"))
+                or dispatch.get("attempt_count") not in {None, 0}
+                or dispatch.get("attempted_at") is not None
+                or dispatch.get("provider_operation_id") is not None
+                or dispatch.get("provider_response_received") is True
+                or plan.operational.final_outcome is not None
+                or plan.operational.verification.status != "not_run"
+                or plan.operational.verification.attempt_count != 0
+            ):
+                return True
+        allowed_events = {
+            "change_plan_created": None,
+            "policy_approval_rejected": ErrorCode.PROHIBITED_CHANGE.value,
+            "change_apply_rejected": ErrorCode.PROHIBITED_CHANGE.value,
+            "change_plan_superseded": None,
+        }
+        for event in plan.events:
+            if event.event not in allowed_events:
+                return True
+            required_code = allowed_events[event.event]
+            if required_code is not None and event.error_code != required_code:
+                return True
+        return False
+
+    def _is_effectively_prohibited_plan(
+        self,
+        plan: ChangePlan,
+        *,
+        policy_snapshot_validated: bool = False,
+    ) -> bool:
+        """Recognize current and exact safe Beta 6 prohibited records.
+
+        Beta 6 could supersede a prohibited contract-v1 plan when a later plan
+        targeted the same automation. That transition changed only the legacy
+        lifecycle fields to ``superseded``/``invalidated``. The immutable F2
+        policy snapshot remained prohibited, with no acknowledgement,
+        challenge, task, dispatch, apply, or rollback authority. Beta 8 treats
+        that source-established shape as terminal without rewriting it.
+        """
+
+        decision = plan.policy_decision
+        approval = plan.approval
+        if (
+            decision is None
+            or decision.policy_class != ApprovalPolicyClass.PROHIBITED
+            or decision.required_acknowledgements
+            or plan.risk.apply_allowed
+            or approval.authority_version != APPROVAL_AUTHORITY_VERSION
+            or approval.policy_decision_hash
+            != decision.policy_decision_hash
+            or approval.policy_class != decision.policy_class.value
+            or approval.approval_kind != "apply"
+            or (
+                not policy_snapshot_validated
+                and not policy_snapshot_matches(plan)
+            )
+            or self._prohibited_approval_has_authority_evidence(plan)
+            or self._prohibited_plan_has_execution_evidence(plan)
+        ):
+            return False
+        try:
+            if self.task_repository.get_for_plan(plan.plan_id) is not None:
+                return False
+        except ExecutionTaskStorageError as exc:
+            raise GovernanceError(
+                ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+            ) from exc
+
+        current = bool(
+            approval.bundle_state == "prohibited"
+            and approval.state == ApprovalState.REQUIRED
+            and plan.status == PlanStatus.AWAITING_APPROVAL
+        )
+        beta6_superseded = bool(
+            plan.contract_version < CONFIGURATION_PLAN_CONTRACT_VERSION
+            and plan.status == PlanStatus.SUPERSEDED
+            and approval.state == ApprovalState.INVALIDATED
+            and approval.bundle_state == "invalidated"
+            and any(
+                event.event == "change_plan_superseded"
+                for event in plan.events
+            )
+        )
+        return current or beta6_superseded
 
     @staticmethod
     def _approval_bundle_state(plan: ChangePlan) -> str:
@@ -2387,7 +2531,7 @@ class ChangeGovernanceService:
     def _public(self, plan: ChangePlan, *, include_configs: bool = True) -> dict[str, Any]:
         self._require_v2_persisted_plan_safe(plan)
         value = plan.to_dict()
-        prohibited = self._is_prohibited_plan(plan)
+        prohibited = self._is_effectively_prohibited_plan(plan)
         if prohibited:
             # Authority-v3 persists the legacy pre-approval enum values to
             # preserve the closed task/plan schema. Public projections must
@@ -2421,7 +2565,7 @@ class ChangeGovernanceService:
             }
         approval_lifecycle = self._approval_lifecycle(plan)
         value["approval_lifecycle"] = approval_lifecycle
-        value["approval_bundle_state"] = self._approval_bundle_state(
+        value["approval_bundle_state"] = self._effective_approval_bundle_state(
             plan
         )
         value["status_is_legacy"] = not prohibited
@@ -2512,9 +2656,15 @@ class ChangeGovernanceService:
             return sanitized.value
         return value
 
-    @classmethod
-    def _approval_lifecycle(cls, plan: ChangePlan) -> str:
-        bundle_state = cls._approval_bundle_state(plan)
+    def _effective_approval_bundle_state(self, plan: ChangePlan) -> str:
+        return (
+            "prohibited"
+            if self._is_effectively_prohibited_plan(plan)
+            else self._approval_bundle_state(plan)
+        )
+
+    def _approval_lifecycle(self, plan: ChangePlan) -> str:
+        bundle_state = self._effective_approval_bundle_state(plan)
         if bundle_state == "pending_elevated_risk_acknowledgement":
             return "pending_elevated_risk_acknowledgement"
         if bundle_state == "fully_approved":
@@ -2531,27 +2681,14 @@ class ChangeGovernanceService:
             ApprovalState.INVALIDATED: "approval_invalidated",
         }[plan.approval.state]
 
-    @classmethod
-    def _is_prohibited_plan(cls, plan: ChangePlan) -> bool:
-        """Return the authoritative F2 non-actionable projection."""
-
-        return bool(
-            plan.policy_decision is not None
-            and plan.policy_decision.policy_class
-            == ApprovalPolicyClass.PROHIBITED
-            and cls._approval_bundle_state(plan) == "prohibited"
-        )
-
-    @classmethod
-    def _effective_plan_status(cls, plan: ChangePlan) -> str:
+    def _effective_plan_status(self, plan: ChangePlan) -> str:
         return (
             "prohibited"
-            if cls._is_prohibited_plan(plan)
+            if self._is_effectively_prohibited_plan(plan)
             else plan.status.value
         )
 
-    @classmethod
-    def _approval_is_actionable(cls, plan: ChangePlan) -> bool:
+    def _approval_is_actionable(self, plan: ChangePlan) -> bool:
         """Project actionability without upgrading legacy authority records."""
 
         decision = plan.policy_decision
@@ -2569,7 +2706,7 @@ class ChangeGovernanceService:
                 }
             )
         if (
-            cls._is_prohibited_plan(plan)
+            self._is_effectively_prohibited_plan(plan)
             or not decision.required_acknowledgements
         ):
             return False
@@ -2579,7 +2716,7 @@ class ChangeGovernanceService:
                 PlanStatus.AWAITING_APPROVAL,
                 PlanStatus.ROLLBACK_PENDING,
             }
-            and cls._approval_lifecycle(plan)
+            and self._approval_lifecycle(plan)
             in {
                 "approval_not_requested",
                 "approval_pending_external",
@@ -2596,8 +2733,12 @@ class ChangeGovernanceService:
             "title": plan.title,
             "status": self._effective_plan_status(plan),
             "approval_lifecycle": self._approval_lifecycle(plan),
-            "approval_bundle_state": self._approval_bundle_state(plan),
-            "status_is_legacy": not self._is_prohibited_plan(plan),
+            "approval_bundle_state": self._effective_approval_bundle_state(
+                plan
+            ),
+            "status_is_legacy": not self._is_effectively_prohibited_plan(
+                plan
+            ),
             "authoritative_lifecycle_field": "approval_lifecycle",
             "approval_actionable": self._approval_is_actionable(plan),
             "approval_challenge_created": bool(plan.approval.challenge_id),
