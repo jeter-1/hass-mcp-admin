@@ -29,6 +29,7 @@ from ha_mcp_engineering.governance.models import (  # noqa: E402
     PlanStatus,
 )
 from ha_mcp_engineering.governance.normalize import state_fingerprint  # noqa: E402
+from ha_mcp_engineering.governance.policy import evaluate_change_policy  # noqa: E402
 from ha_mcp_engineering.governance.runtime import GOVERNANCE  # noqa: E402
 from ha_mcp_engineering.governance.service import (  # noqa: E402
     APPROVAL_AUTHORITY_VERSION,
@@ -44,7 +45,7 @@ from ha_mcp_engineering.tools import compatibility, governance as governance_too
 from ha_mcp_engineering.version import SCHEMA_VERSION  # noqa: E402
 
 
-BETA25_PUBLIC_SCHEMA_SHA256 = "eeec35d49f6d8c59fb1215694e54314b21bb6fd4a723d65e956e8e438699876a"
+F2_PUBLIC_SCHEMA_SHA256 = "30cee281e0f7ef3c3aae30955568ff5dddbe18ba4f5d1e080b89708e712ebe29"
 
 CURRENT = {
     "alias": "Beta 26 expiry fixture",
@@ -123,7 +124,7 @@ class Beta26LifecycleTests(unittest.IsolatedAsyncioTestCase):
         GOVERNANCE.storage_error = self.old_governance_error
         self.temp.cleanup()
 
-    async def create(self, target="fixture", *, expiration_minutes=60, description="After"):
+    async def create(self, target="fixture", *, expiration_minutes=120, description="After"):
         self.gateway.configs[target] = {**copy.deepcopy(CURRENT), "id": target}
         proposed = copy.deepcopy(CURRENT)
         proposed["description"] = description
@@ -135,6 +136,28 @@ class Beta26LifecycleTests(unittest.IsolatedAsyncioTestCase):
             proposed_config=proposed,
             expiration_minutes=expiration_minutes,
         )
+
+    async def fully_approve(self, created):
+        pending = self.service.approve(
+            created["plan_id"], created["plan_hash"]
+        )
+        while pending["status"] == "approval_pending":
+            _, csrf = await self.service.issue_external_csrf(
+                created["plan_id"], pending["challenge_id"]
+            )
+            pending = await self.service.decide_external_approval(
+                plan_id=created["plan_id"],
+                challenge_id=pending["challenge_id"],
+                expected_plan_hash=created["plan_hash"],
+                approval_kind=pending["approval_kind"],
+                approval_action=pending["approval_action"],
+                csrf_nonce=csrf,
+                decision="approve",
+                approver_principal=(
+                    "home_assistant_admin_ingress:beta26-reviewer"
+                ),
+            )
+        return pending
 
     def audit_events(self):
         if not self.audit_path.exists():
@@ -176,8 +199,15 @@ class Beta26LifecycleTests(unittest.IsolatedAsyncioTestCase):
         created = await self.create(expiration_minutes=5)
         plan = self.repository.get(created["plan_id"])
         plan.status = PlanStatus.EXPIRED
-        plan.approval.state = ApprovalState.INVALIDATED
         plan.expires_at = (self.clock() - timedelta(minutes=1)).isoformat()
+        plan.policy_decision = evaluate_change_policy(plan)
+        self.service._bind_new_plan_policy(plan)
+        plan.approval.state = ApprovalState.INVALIDATED
+        plan.approval.bundle_state = "invalidated"
+        if plan.approval.elevated_risk_acknowledgement is not None:
+            plan.approval.elevated_risk_acknowledgement.state = (
+                ApprovalState.INVALIDATED
+            )
         plan.updated_at = "2026-07-14T11:59:00+00:00"
         plan.events.append(
             ChangeEvent(
@@ -244,9 +274,9 @@ class Beta26LifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.audit_events()), baseline_audit_count + 1)
 
     async def test_expired_challenge_is_resolved_on_reads_and_can_be_replaced_once(self):
-        created = await self.create(expiration_minutes=20)
+        created = await self.create(expiration_minutes=120)
         first = self.service.approve(created["plan_id"], created["plan_hash"])
-        self.clock.advance(minutes=16)
+        self.clock.advance(minutes=61)
         self.repository.save_count = 0
 
         public = self.service.get_plan(created["plan_id"])
@@ -292,22 +322,34 @@ class Beta26LifecycleTests(unittest.IsolatedAsyncioTestCase):
             await self.service.issue_external_csrf(created["plan_id"], first["challenge_id"])
         self.assertEqual(old.exception.code, ErrorCode.EXTERNAL_APPROVAL_INVALID)
 
-    def configure_apply_denial(self, plan, case):
+    async def configure_apply_denial(self, created, case):
         if case == "missing":
             return
         if case == "invalidated":
+            plan = self.repository.get(created["plan_id"])
             plan.approval.state = ApprovalState.INVALIDATED
+            plan.approval.bundle_state = "invalidated"
+            if plan.approval.elevated_risk_acknowledgement is not None:
+                plan.approval.elevated_risk_acknowledgement.state = (
+                    ApprovalState.INVALIDATED
+                )
+            self.repository.save(plan)
             return
-        plan.status = PlanStatus.APPROVED
-        plan.approval.state = (
-            ApprovalState.CONSUMED if case == "consumed" else ApprovalState.APPROVED
-        )
-        plan.approval.authority_version = 1 if case == "legacy" else APPROVAL_AUTHORITY_VERSION
-        plan.approval.channel = APPROVAL_CHANNEL
-        plan.approval.approver_principal = "home_assistant_admin_ingress"
-        plan.approval.principal_separation_enforced = True
-        plan.approval.approval_kind = "rollback" if case == "wrong_kind" else "apply"
-        plan.approval.approval_expires_at = (self.clock() + timedelta(minutes=30)).isoformat()
+        if case == "legacy":
+            plan = self.repository.get(created["plan_id"])
+            plan.policy_decision = None
+            plan.approval = ChangeApproval(authority_version=2)
+            self.repository.save(plan)
+            return
+
+        await self.fully_approve(created)
+        plan = self.repository.get(created["plan_id"])
+        if case == "consumed":
+            self.service._consume_approval_bundle(plan)
+        elif case == "wrong_kind":
+            plan.approval.approval_kind = "rollback"
+            plan.approval.bound_plan_hash = self.service.plan_hash(plan)
+        self.repository.save(plan)
 
     async def test_apply_denials_precede_all_upstream_or_write_activity(self):
         expected_codes = {
@@ -316,7 +358,7 @@ class Beta26LifecycleTests(unittest.IsolatedAsyncioTestCase):
             "missing": ErrorCode.EXTERNAL_APPROVAL_REQUIRED,
             "wrong_kind": ErrorCode.APPROVAL_HASH_MISMATCH,
             "consumed": ErrorCode.APPROVAL_ALREADY_CONSUMED,
-            "legacy": ErrorCode.APPROVAL_HASH_MISMATCH,
+            "legacy": ErrorCode.POLICY_SNAPSHOT_REQUIRED,
         }
         with patch("ha_mcp_engineering.dependency.DEPENDENCY_ANALYSIS.invalidate") as invalidate:
             for index, (case, expected) in enumerate(expected_codes.items()):
@@ -324,15 +366,22 @@ class Beta26LifecycleTests(unittest.IsolatedAsyncioTestCase):
                     created = await self.create(target=f"apply_{index}")
                     if case == "expired":
                         self.service.approve(created["plan_id"], created["plan_hash"])
-                        self.clock.advance(minutes=16)
+                        self.clock.advance(minutes=61)
                     else:
-                        plan = self.repository.get(created["plan_id"])
-                        self.configure_apply_denial(plan, case)
-                        self.repository.save(plan)
+                        await self.configure_apply_denial(created, case)
                     reads_before = self.gateway.reads
                     writes_before = self.gateway.writes
+                    expected_hash = (
+                        self.service.plan_hash(
+                            self.repository.get(created["plan_id"])
+                        )
+                        if case == "legacy"
+                        else created["plan_hash"]
+                    )
                     with self.assertRaises(GovernanceError) as raised:
-                        await self.service.apply(created["plan_id"], created["plan_hash"])
+                        await self.service.apply(
+                            created["plan_id"], expected_hash
+                        )
                     self.assertEqual(raised.exception.code, expected)
                     self.assertEqual(self.gateway.reads, reads_before)
                     self.assertEqual(self.gateway.writes, writes_before)
@@ -354,21 +403,22 @@ class Beta26LifecycleTests(unittest.IsolatedAsyncioTestCase):
             authority_version=APPROVAL_AUTHORITY_VERSION,
             approval_kind="rollback",
         )
+        plan.policy_decision = evaluate_change_policy(plan)
+        self.service._bind_new_plan_policy(plan)
+        plan.approval.approval_kind = "rollback"
         if case == "invalidated":
             plan.approval.state = ApprovalState.INVALIDATED
-        elif case == "wrong_kind":
-            plan.approval.state = ApprovalState.APPROVED
-            plan.approval.approval_kind = "apply"
-        elif case == "consumed":
-            plan.approval.state = ApprovalState.CONSUMED
+            plan.approval.bundle_state = "invalidated"
+            if plan.approval.elevated_risk_acknowledgement is not None:
+                plan.approval.elevated_risk_acknowledgement.state = (
+                    ApprovalState.INVALIDATED
+                )
         elif case == "legacy":
-            plan.approval.state = ApprovalState.APPROVED
-            plan.approval.authority_version = 1
-        if plan.approval.state == ApprovalState.APPROVED:
-            plan.approval.channel = APPROVAL_CHANNEL
-            plan.approval.approver_principal = "home_assistant_admin_ingress"
-            plan.approval.principal_separation_enforced = True
-            plan.approval.approval_expires_at = (self.clock() + timedelta(minutes=30)).isoformat()
+            plan.policy_decision = None
+            plan.approval = ChangeApproval(
+                authority_version=2,
+                approval_kind="rollback",
+            )
 
     async def test_rollback_denials_precede_all_upstream_or_write_activity(self):
         expected_codes = {
@@ -377,7 +427,7 @@ class Beta26LifecycleTests(unittest.IsolatedAsyncioTestCase):
             "missing": ErrorCode.EXTERNAL_APPROVAL_REQUIRED,
             "wrong_kind": ErrorCode.EXTERNAL_APPROVAL_REQUIRED,
             "consumed": ErrorCode.EXTERNAL_APPROVAL_REQUIRED,
-            "legacy": ErrorCode.APPROVAL_AUTHORITY_MISMATCH,
+            "legacy": ErrorCode.POLICY_SNAPSHOT_REQUIRED,
         }
         with patch("ha_mcp_engineering.dependency.DEPENDENCY_ANALYSIS.invalidate") as invalidate:
             for index, (case, expected) in enumerate(expected_codes.items()):
@@ -389,8 +439,27 @@ class Beta26LifecycleTests(unittest.IsolatedAsyncioTestCase):
                     self.repository.save(plan)
                     if case == "expired":
                         current_hash = self.service.plan_hash(plan)
-                        self.service.approve(created["plan_id"], current_hash)
-                        self.clock.advance(minutes=16)
+                        self.service.approve(
+                            created["plan_id"], current_hash
+                        )
+                        self.clock.advance(minutes=61)
+                    elif case in {"wrong_kind", "consumed"}:
+                        current_hash = self.service.plan_hash(plan)
+                        approval = {
+                            "plan_id": created["plan_id"],
+                            "plan_hash": current_hash,
+                        }
+                        await self.fully_approve(approval)
+                        plan = self.repository.get(created["plan_id"])
+                        if case == "wrong_kind":
+                            plan.approval.approval_kind = "apply"
+                            plan.approval.bound_plan_hash = (
+                                self.service.plan_hash(plan)
+                            )
+                            self.repository.save(plan)
+                        else:
+                            self.service._consume_approval_bundle(plan)
+                            self.repository.save(plan)
                     reads_before = self.gateway.reads
                     writes_before = self.gateway.writes
                     snapshot_before = self.repository.get(created["plan_id"]).snapshot.fingerprint
@@ -409,7 +478,7 @@ class Beta26LifecycleTests(unittest.IsolatedAsyncioTestCase):
 
 
 class Beta26PublicCompatibilityTests(unittest.TestCase):
-    def test_beta25_public_schema_snapshot_and_catalog_are_unchanged(self):
+    def test_f2_public_schema_snapshot_and_catalog_are_bounded(self):
         tools = registered_tools(get_registered_server()).values()
         schemas = {
             tool.name: tool.parameters
@@ -429,7 +498,7 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
             }
         }
         encoded = json.dumps(schemas, sort_keys=True, separators=(",", ":")).encode()
-        self.assertEqual(hashlib.sha256(encoded).hexdigest(), BETA25_PUBLIC_SCHEMA_SHA256)
+        self.assertEqual(hashlib.sha256(encoded).hexdigest(), F2_PUBLIC_SCHEMA_SHA256)
         self.assertEqual(len(tools), 48)
         self.assertEqual(len(CAPABILITIES), 25)
         self.assertEqual(len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES), 48)

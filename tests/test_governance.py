@@ -27,7 +27,10 @@ from ha_mcp_engineering.governance.normalize import (  # noqa: E402
     state_fingerprint,
     structured_diff,
 )
-from ha_mcp_engineering.governance.risk import classify_risk  # noqa: E402
+from ha_mcp_engineering.governance.risk import (  # noqa: E402
+    SAFETY_CRITICAL_SERVICES,
+    classify_risk,
+)
 from ha_mcp_engineering.governance.models import ChangeOperation  # noqa: E402
 from ha_mcp_engineering.governance.service import ChangeGovernanceService  # noqa: E402
 from ha_mcp_engineering.governance.storage import (  # noqa: E402
@@ -324,6 +327,83 @@ class NormalizationAndRiskTests(unittest.TestCase):
         self.assertEqual(risk.level, RiskLevel.HIGH)
         self.assertFalse(risk.apply_allowed)
 
+    def test_safety_critical_service_evidence_is_target_independent(self):
+        self.assertEqual(
+            SAFETY_CRITICAL_SERVICES,
+            frozenset(
+                {
+                    "alarm_control_panel.alarm_disarm",
+                    "lock.unlock",
+                }
+            ),
+        )
+        cases = (
+            {
+                "service": "lock.unlock",
+                "target": {"device_id": "secret-device-id"},
+            },
+            {
+                "action": "lock.unlock",
+                "target": {"area_id": "secret-area-id"},
+            },
+            {"service": "lock.unlock", "data": {"entity_id": "all"}},
+            {"service": "lock.unlock"},
+            {
+                "service": "alarm_control_panel.alarm_disarm",
+                "target": {"device_id": "secret-alarm-id"},
+            },
+        )
+        for step in cases:
+            proposed = copy.deepcopy(CURRENT)
+            proposed["action"] = [step]
+            risk = classify_risk(
+                ChangeOperation.UPDATE_AUTOMATION,
+                structured_diff(CURRENT, proposed),
+                proposed,
+            )
+            rendered = json.dumps(risk.evidence, sort_keys=True)
+            with self.subTest(step=step):
+                self.assertEqual(risk.level, RiskLevel.HIGH)
+                self.assertIn("safety_critical_service", rendered)
+                self.assertNotIn("secret-device-id", rendered)
+                self.assertNotIn("secret-area-id", rendered)
+                self.assertNotIn("secret-alarm-id", rendered)
+
+    def test_action_analysis_does_not_scan_condition_or_data_mappings(self):
+        proposed = copy.deepcopy(CURRENT)
+        proposed["action"] = [
+            {
+                "service": "light.turn_on",
+                "data": {
+                    "sequence": [{"service": "lock.unlock"}],
+                },
+            },
+            {
+                "choose": [
+                    {
+                        "conditions": [
+                            {
+                                "condition": "template",
+                                "service": "lock.unlock",
+                            }
+                        ],
+                        "sequence": [{"service": "light.turn_on"}],
+                    }
+                ]
+            },
+        ]
+        risk = classify_risk(
+            ChangeOperation.UPDATE_AUTOMATION,
+            structured_diff(CURRENT, proposed),
+            proposed,
+        )
+        services = {
+            item.get("service")
+            for item in risk.evidence
+            if "service" in item
+        }
+        self.assertNotIn("lock.unlock", services)
+
     def test_high_risk_broad_target(self):
         proposed = copy.deepcopy(CURRENT)
         proposed["action"] = [{"service": "light.turn_off", "target": {"entity_id": "all"}}]
@@ -446,6 +526,16 @@ class ApprovalAndApplyTests(GovernanceTestCase):
         path = self.repository._path(created["plan_id"])
         legacy = json.loads(path.read_text(encoding="utf-8"))
         legacy.pop("normalization_version", None)
+        legacy.pop("policy_decision", None)
+        legacy["approval"]["authority_version"] = 2
+        for field in (
+            "policy_decision_hash",
+            "policy_class",
+            "bundle_state",
+            "same_principal_confirmed",
+            "elevated_risk_acknowledgement",
+        ):
+            legacy["approval"].pop(field, None)
         legacy_proposed = normalize_automation(legacy["proposed_config"])
         legacy_proposed["id"] = "porch"
         legacy_current = normalize_automation(legacy["current_config"])
@@ -460,9 +550,8 @@ class ApprovalAndApplyTests(GovernanceTestCase):
         self.assertEqual(readable["normalization_version"], 1)
         with self.assertRaises(GovernanceError) as raised:
             self.service.approve(created["plan_id"], readable["plan_hash"])
-        self.assertEqual(raised.exception.code, ErrorCode.APPROVAL_HASH_MISMATCH)
         self.assertEqual(
-            raised.exception.details["reason"], "normalization_version_mismatch"
+            raised.exception.code, ErrorCode.POLICY_SNAPSHOT_REQUIRED
         )
         self.assertNotIn(
             "normalization_version", json.loads(path.read_text(encoding="utf-8"))
@@ -506,13 +595,13 @@ class ApprovalAndApplyTests(GovernanceTestCase):
             self.service.approve(plan_id, self.service.plan_hash(self.repository.get(plan_id)))
         self.assertEqual(approval.exception.code, ErrorCode.CHANGE_PLAN_NOT_APPROVED)
 
-    async def test_high_risk_plan_cannot_be_approved(self):
+    async def test_safety_critical_plan_cannot_be_approved(self):
         proposed = copy.deepcopy(CURRENT)
         proposed["action"] = [{"service": "lock.unlock", "target": {"entity_id": "lock.example"}}]
         created = await self.update_plan(proposed)
         with self.assertRaises(GovernanceError) as raised:
             self.service.approve(created["plan_id"], created["plan_hash"])
-        self.assertEqual(raised.exception.code, ErrorCode.HIGH_RISK_CHANGE_REJECTED)
+        self.assertEqual(raised.exception.code, ErrorCode.PROHIBITED_CHANGE)
 
     async def test_repeated_approval_request_is_idempotent(self):
         created = await self.update_plan()
@@ -529,7 +618,9 @@ class ApprovalAndApplyTests(GovernanceTestCase):
         self.repository.save(plan)
         with self.assertRaises(GovernanceError) as raised:
             await self.service.apply(created["plan_id"])
-        self.assertEqual(raised.exception.code, ErrorCode.APPROVAL_HASH_MISMATCH)
+        self.assertEqual(
+            raised.exception.code, ErrorCode.POLICY_SNAPSHOT_MISMATCH
+        )
 
     async def test_approved_update_applies_and_verifies(self):
         created, _ = await self.approved_plan()

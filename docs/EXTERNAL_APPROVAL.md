@@ -1,11 +1,19 @@
 # External human approval authority
 
-Version `2.0.0-rc.2` preserves the Beta 25 separation between an
+Version `2.2.0-beta.6` preserves the Beta 25 separation between an
 authenticated MCP caller and the human authority that approves governed Home
 Assistant changes. A caller may create a
 plan and request review, but only an authenticated Home Assistant administrator
 using the add-on's Ingress panel can approve or reject the exact plan. The MCP
 access secret is never accepted by the approval listener.
+
+F2 authority version 3 derives policy from the immutable plan. A
+`standard_admin` plan requires one `plan_approval`. An `elevated_admin` plan
+requires plan approval followed by a distinct
+`elevated_risk_acknowledgement` from the same authenticated administrator.
+This is not two-person control. A `prohibited` plan creates no actionable
+challenge. See ADR-012 in the architecture decision records and the
+active [`V2_2_0_BETA6_ACCEPTANCE.md`](V2_2_0_BETA6_ACCEPTANCE.md).
 
 This boundary does not prove that an automation will behave correctly. Apply
 verification proves that Home Assistant stored the intended configuration,
@@ -58,13 +66,16 @@ active challenge and reports:
   "status": "approval_pending",
   "plan_id": "opaque-plan-id",
   "approval_kind": "apply",
+  "approval_action": "plan_approval",
   "bound_plan_hash": "exact-plan-hash",
+  "policy_decision_hash": "exact-policy-hash",
+  "policy_class": "standard_admin",
   "external_approval_required": true,
   "approval_channel": "home_assistant_ingress",
   "challenge_id": "opaque-non-secret-id",
   "requested_at": "RFC3339 timestamp",
   "challenge_expires_at": "RFC3339 timestamp",
-  "authority_version": 2
+  "authority_version": 3
 }
 ```
 
@@ -74,8 +85,10 @@ It cannot approve through MCP or through a direct listener request. The optional
 credential, nor approver identity.
 
 Each challenge is cryptographically random and bound to plan ID, plan version,
-exact plan hash, approval kind, target type and ID, operation, risk, request
-time, and expiry. Its lifetime is at most 15 minutes and never outlives the plan.
+exact plan and policy-decision hashes, policy class, approval action and kind,
+target type and ID, operation, risk, request time, and expiry. Its lifetime is
+at most 60 minutes and never outlives the plan, whose default lifetime is 120
+minutes.
 Repeated requests for the same eligible plan/hash/kind return the same active
 challenge without extending it. A replacement after expiry invalidates the old
 challenge. Plan expiry, supersession, rejection, hash change, or incompatible
@@ -111,19 +124,27 @@ snapshot, approval consumption, or dependency-index invalidation.
 ## Human review and decision
 
 The pending inbox and review page display a bounded, escaped plan title,
-description, ID, exact hash, plan version, approval kind, operation, target,
-risk, expiration, changed fields, before/after summaries, warnings, validation
-result, current approval state and whether apply is currently allowed. Rollback
+description, ID, shortened exact hash, plan version, policy class, risk delta,
+physical consequence, bounded reason summaries, active approval action,
+approval kind, operation, target, expiration, changed fields, before/after
+summaries, warnings, validation result, current approval state and whether
+apply is currently allowed. Rollback
 review also displays the original apply timestamp, post-apply fingerprint,
 snapshot fingerprint, rollback target, and exact rollback-bound hash.
 
 Approve and Reject are POST-only actions. The server re-reads the persisted plan,
 checks the one-time CSRF nonce, recomputes the current plan hash, and revalidates
 the full challenge binding before atomically recording a decision. Approval
-records authority version `2`, channel `home_assistant_ingress`, the bounded
+records authority version `3`, channel `home_assistant_ingress`, the bounded
 approver principal, challenge and plan identifiers, exact bound hash, approval
 kind, decision time, challenge request and expiry, and
 `principal_separation_enforced: true`.
+
+For an elevated bundle the panel exposes only plan approval first. After that
+POST succeeds, a new challenge requires an explicit elevated-risk
+acknowledgement from the same administrator. Viewing the page is not an
+acknowledgement, a stale page cannot submit the next action, and another
+administrator receives `approval_principal_mismatch`.
 
 Rejection is terminal. A rejected plan cannot be approved, applied, reopened, or
 reused. Reconsideration requires a new plan. Rejected plans remain readable as
@@ -132,10 +153,11 @@ handoffs.
 
 ## Apply and rollback enforcement
 
-Apply requires every prior governance gate plus authority version `2`, the
+Apply requires every prior governance gate plus authority version `3`, the
 external Ingress channel and principal, principal-separation enforcement, the
-exact challenge-bound plan hash, approval kind `apply`, unexpired and unconsumed
-approval, and a non-rejected plan. Without that record,
+exact challenge-bound plan and policy hashes, the required ordered action set,
+same-administrator confirmation for elevated policy, approval kind `apply`,
+unexpired and unconsumed approval, and a non-rejected plan. Without that record,
 `apply_change_plan` returns `external_approval_required` before a Home Assistant
 write, provider write dispatch, apply snapshot, approval consumption, or index
 invalidation.
@@ -161,8 +183,15 @@ Approval states are `required`, `external_pending`, `approved`, `rejected`,
 principal, exact binding, kind, and timestamps when applicable; they never
 expose CSRF nonces, cookies, Ingress credentials, or raw request headers.
 
+Bundle states are `pending_plan_approval`,
+`pending_elevated_risk_acknowledgement`, `fully_approved`, `consumed`,
+`rejected`, `expired`, and `invalidated`. The two elevated action records have
+separate challenge IDs and timestamps but bind the same plan and policy hashes.
+
 Audit events include `external_approval_requested`, optional bounded
 `external_approval_viewed`, `external_approval_granted`,
+`elevated_risk_acknowledgement_requested`,
+`elevated_risk_acknowledgement_granted`,
 `external_approval_rejected`, `external_approval_expired`,
 `external_approval_invalidated`, and `external_approval_consumed`. Records may
 contain bounded IDs, channel, principal, kind, result, reason, timestamp and
@@ -170,16 +199,19 @@ server version. They exclude full configuration/diff, request notes, CSRF data,
 cookies, authentication material, secrets and authenticated URLs.
 
 Governance health additively reports whether external approval and the Ingress
-UI are configured, authority version, pending/granted/rejected/expired/
-invalidated/consumed counts, and the last safe approval failure category. These
+UI are configured, authority version, policy-class counts, pending plan and
+elevated actions, granted elevated acknowledgements, consumed standard and
+elevated bundles, prohibited decisions, policy/principal/sequence failures,
+legacy approval counts, and the last safe approval failure category. These
 metrics are observability only and never authorize a change.
 
-## Upgrade from Beta 24
+## Upgrade to authority version 3
 
-Beta 24 caller-approved records use approval authority version `1` or omit the
-field. Beta 25 never silently upgrades, rehashes, or transfers that authority.
-Active pre-Beta-25 plans fail closed with `approval_authority_mismatch` or
-`external_approval_required` and must be recreated. Terminal applied,
+Authority-version-1 and authority-version-2 records remain readable history.
+Beta 6 never silently upgrades, rehashes, or transfers that authority. Active
+pre-F2 plans fail closed with `policy_snapshot_required`,
+`approval_authority_mismatch`, or `external_approval_required` and must be
+recreated. Terminal applied,
 rolled-back, expired, superseded, failed and other historical records remain
 readable. Beta 24 automation behavioral normalization version `2` is unchanged.
 
@@ -198,7 +230,14 @@ not-found conversion, configuration validation, the application's REST
 WebSocket entity and area registries, the service catalog, the System Log
 command, and actual trace list/detail shape after a harmless event in the
 disposable instance. The job waits for Core to report `RUNNING` and for every
-required integration to finish setup before testing integration-owned commands;
+required integration to finish setup before testing integration-owned commands.
+It also exercises one standard helper update, one elevated automation
+configuration whose future physical action is never triggered, and
+entity-target plus device-target prohibited safety-critical fixtures. The
+reviewed safety-critical service name is authoritative; changing the target
+shape cannot make it approvable. The job proves separate same-administrator
+actions, one task and provider attempt per applied plan, exact readback,
+duplicate-apply refusal, and zero provider mutation for either prohibited plan;
 its startup and execution are bounded, and it never contacts the deployed Home
 Assistant environment. To
 update the baseline, review the new Home Assistant release, resolve its immutable
@@ -210,10 +249,13 @@ The WebSocket client preserves Home Assistant's documented app proxy at
 `/api/websocket` endpoint. Both URL contracts are tested so disposable direct-Core
 validation cannot change the deployed add-on route.
 
-## Deployed acceptance procedure
+## Historical RC2 deployed acceptance procedure
 
-Run this only after the user installs RC2. Implementation and CI must not
-access the deployed environment.
+The procedure below records the earlier RC2 authority-version-2 acceptance and
+does not authorize current Beta 6 deployment. Use
+[`V2_2_0_BETA6_ACCEPTANCE.md`](V2_2_0_BETA6_ACCEPTANCE.md) for the current
+source and later operator-controlled acceptance boundary. Implementation and CI
+must not access the deployed environment.
 
 1. Call `server_info`, `list_capabilities`, and `get_server_health`. Confirm
    `2.0.0-rc.2`, the exact build SHA and UTC build time, 38 registered/25

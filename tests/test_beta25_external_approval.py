@@ -220,7 +220,10 @@ class PrincipalSeparationTests(ExternalApprovalTestCase):
                     await self.service.issue_external_csrf(
                         created["plan_id"], pending["challenge_id"]
                     )
-                self.assertEqual(raised.exception.code, ErrorCode.EXTERNAL_APPROVAL_INVALID)
+                self.assertEqual(
+                    raised.exception.code,
+                    ErrorCode.POLICY_SNAPSHOT_MISMATCH,
+                )
 
     async def test_rejection_is_terminal_and_historical(self):
         created = await self.create()
@@ -245,7 +248,7 @@ class PrincipalSeparationTests(ExternalApprovalTestCase):
         created = await self.create()
         first = self.service.approve(created["plan_id"], created["plan_hash"])
         _, old_csrf = await self.service.issue_external_csrf(created["plan_id"], first["challenge_id"])
-        self.clock.advance(minutes=16)
+        self.clock.advance(minutes=61)
         second = self.service.approve(created["plan_id"], created["plan_hash"])
         self.assertNotEqual(first["challenge_id"], second["challenge_id"])
         with self.assertRaises(GovernanceError):
@@ -303,7 +306,7 @@ class PrincipalSeparationTests(ExternalApprovalTestCase):
 
         expiring = await self.create(description="Expired restart")
         self.service.approve(expiring["plan_id"], expiring["plan_hash"])
-        self.clock.advance(minutes=16)
+        self.clock.advance(minutes=61)
         self.service.pending_external_reviews()
         expired_reload = ChangeGovernanceService(self.repository, self.gateway, now=self.clock)
         self.assertEqual(expired_reload.get_plan(expiring["plan_id"])["approval"]["state"], "expired")
@@ -348,7 +351,16 @@ class PrincipalSeparationTests(ExternalApprovalTestCase):
             with self.subTest(status=status):
                 legacy = copy.deepcopy(original)
                 legacy["status"] = status
+                legacy.pop("policy_decision", None)
                 legacy["approval"].pop("authority_version", None)
+                for key in (
+                    "policy_decision_hash",
+                    "policy_class",
+                    "bundle_state",
+                    "same_principal_confirmed",
+                    "elevated_risk_acknowledgement",
+                ):
+                    legacy["approval"].pop(key, None)
                 path.write_text(json.dumps(legacy), encoding="utf-8")
                 readable = self.service.get_plan(created["plan_id"])
                 self.assertEqual(readable["status"], status)
@@ -425,7 +437,7 @@ class PrincipalSeparationTests(ExternalApprovalTestCase):
         )
         await self.service.apply(created["plan_id"], created["plan_hash"])
         health = self.service.health_summary()
-        self.assertEqual(health["approval_authority_version"], 2)
+        self.assertEqual(health["approval_authority_version"], 3)
         self.assertEqual(health["pending_challenge_count"], 0)
         self.assertEqual(health["granted_approval_count"], 1)
         self.assertEqual(health["approval_consumption_count"], 1)

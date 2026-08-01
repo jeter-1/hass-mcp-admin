@@ -219,6 +219,12 @@ class IngressApprovalApplication:
                 challenge_id=one("challenge_id")[:256],
                 expected_plan_hash=one("plan_hash")[:128],
                 approval_kind=one("approval_kind")[:16],
+                # Pre-F2 standard-approval forms did not carry an action
+                # discriminator. Preserve that bounded standard path while an
+                # elevated acknowledgement still requires its exact action.
+                approval_action=(
+                    one("approval_action")[:64] or "plan_approval"
+                ),
                 csrf_nonce=one("csrf")[:256],
                 decision=decision,
                 approver_principal=principal,
@@ -708,6 +714,17 @@ def _render_review(prefix: str, review: dict[str, Any], csrf: str) -> str:
             ),
         ),
         row("Risk", review.get("risk_level")),
+        row("Policy class", review.get("policy_class")),
+        row("Risk delta", review.get("risk_delta")),
+        row("Physical consequence", review.get("physical_consequence")),
+        row("Policy reason codes", review.get("policy_reason_codes")),
+        row("Policy decision hash", review.get("policy_decision_hash")),
+        row("Administrator action", review.get("approval_action")),
+        row("Approval bundle state", review.get("approval_bundle_state")),
+        row(
+            "Same administrator required",
+            review.get("same_principal_requirement"),
+        ),
         row("Plan expiration", review.get("expires_at")),
         row("Challenge expiration", review.get("challenge_expires_at")),
         row("MCP request note (not human approval)", review.get("request_note")),
@@ -754,14 +771,33 @@ def _render_review(prefix: str, review: dict[str, Any], csrf: str) -> str:
             ("challenge_id", review.get("challenge_id")),
             ("plan_hash", review.get("plan_hash")),
             ("approval_kind", review.get("approval_kind")),
+            ("approval_action", review.get("approval_action")),
             ("csrf", csrf),
         )
     )
     plan_id = escape(_text(review.get("plan_id"), 64), quote=True)
     approve_action = escape(f"{prefix}/plans/{plan_id}/approve", quote=True)
     reject_action = escape(f"{prefix}/plans/{plan_id}/reject", quote=True)
+    elevated_acknowledgement = (
+        review.get("approval_action")
+        == "elevated_risk_acknowledgement"
+    )
+    action_label = (
+        "Acknowledge elevated risk"
+        if elevated_acknowledgement
+        else "Approve exact plan"
+    )
+    action_explanation = (
+        "The same authenticated Home Assistant administrator who approved "
+        "the plan must separately acknowledge the displayed elevated risk "
+        "and physical consequence."
+        if elevated_acknowledgement
+        else "This action approves the exact plan. Elevated plans require a "
+        "separate acknowledgement on a subsequent page."
+    )
     approve_form = (
-        f'<form method="post" action="{approve_action}">{hidden}<button type="submit">Approve exact plan</button></form>'
+        f'<p>{escape(action_explanation)}</p>'
+        f'<form method="post" action="{approve_action}">{hidden}<button type="submit">{escape(action_label)}</button></form>'
         if not projection_error
         else ""
     )

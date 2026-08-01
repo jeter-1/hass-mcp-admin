@@ -702,8 +702,7 @@ class DurableTaskApplyTests(ExternalApprovalTestCase):
             new_state=ExecutionTaskState.PREFLIGHT,
             changes={"started_at": self.service._timestamp()},
         )
-        plan.approval.state = ApprovalState.CONSUMED
-        plan.approval.consumed_at = self.service._timestamp()
+        self.service._consume_approval_bundle(plan)
         self.repository.save(plan)
         self.service._record_task_event(
             task,
@@ -783,8 +782,7 @@ class DurableTaskApplyTests(ExternalApprovalTestCase):
             new_state=ExecutionTaskState.PREFLIGHT,
             changes={"started_at": self.service._timestamp()},
         )
-        plan.approval.state = ApprovalState.CONSUMED
-        plan.approval.consumed_at = self.service._timestamp()
+        self.service._consume_approval_bundle(plan)
         self.repository.save(plan)
         self.service._record_task_event(
             task,
@@ -843,8 +841,7 @@ class DurableTaskApplyTests(ExternalApprovalTestCase):
             new_state=ExecutionTaskState.PREFLIGHT,
             changes={"started_at": self.service._timestamp()},
         )
-        plan.approval.state = ApprovalState.CONSUMED
-        plan.approval.consumed_at = self.service._timestamp()
+        self.service._consume_approval_bundle(plan)
         self.repository.save(plan)
         self.service._record_task_event(
             task,
@@ -901,8 +898,7 @@ class DurableTaskApplyTests(ExternalApprovalTestCase):
             new_state=ExecutionTaskState.PREFLIGHT,
             changes={"started_at": self.service._timestamp()},
         )
-        plan.approval.state = ApprovalState.CONSUMED
-        plan.approval.consumed_at = self.service._timestamp()
+        self.service._consume_approval_bundle(plan)
         self.repository.save(plan)
         self.service._record_task_event(
             task,

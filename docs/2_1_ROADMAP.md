@@ -1,6 +1,6 @@
 # Engineering 2.1 and 2.2 foundation roadmap
 
-Status: 2.1A accepted; E1 foundation release `2.2.0-beta.5`
+Status: 2.1A accepted; F2 policy foundation target `2.2.0-beta.6`
 
 The required milestone order is:
 
@@ -80,6 +80,19 @@ E1 is a pure evaluator. It does not collect evidence, load at startup, access
 Home Assistant or the network, register a tool, create a plan, approval, or
 task, call a provider, perform an update, backup, restart, restore, downgrade,
 or safe-mode action, integrate C1 or K1 at runtime, or add fallback behavior.
+
+## 2.2.0-beta.6 F2 policy foundation
+
+Beta 6 derives deterministic risk delta, physical consequence, and
+`standard_admin`, `elevated_admin`, or `prohibited` policy from each normalized
+governed plan. Authority version 3 binds policy to the plan and requires one
+administrator action for standard plans or separate plan approval and
+elevated-risk acknowledgement from the same administrator for elevated plans.
+
+F2 does not add a resource, MCP tool, provider, arbitrary service call,
+update/recovery execution, shared F3 lock semantics, F4 transaction graphs or
+compensation, F5 generalized verification, write fallback, or C1/K1/E1 runtime
+authority. F1 task schema 1 and no-blind-redispatch behavior remain unchanged.
 
 Each operation must remain operation-specific. This roadmap does not authorize
 a generic administrator, arbitrary Supervisor command, service-call shortcut,

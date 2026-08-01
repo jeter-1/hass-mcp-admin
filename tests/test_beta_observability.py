@@ -25,6 +25,7 @@ from ha_mcp_engineering.clients.rest import HomeAssistantRestClient  # noqa: E40
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.errors import (  # noqa: E402
     ERROR_CATALOG,
+    AutomationNotFoundError,
     ConfigurationError,
     ErrorCode,
     GovernanceError,
@@ -49,6 +50,35 @@ from ha_mcp_engineering.version import SERVER_VERSION  # noqa: E402
 
 
 SECRET = "observability-test-access-secret"
+
+
+class _RestResponse:
+    def __init__(self, status, text):
+        self.status = status
+        self._text = text
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+    async def text(self):
+        return self._text
+
+
+class _RestSession:
+    def __init__(self, response):
+        self.response = response
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+    def request(self, *_args, **_kwargs):
+        return self.response
 
 
 def settings(audit_path: str, **overrides) -> Settings:
@@ -197,6 +227,10 @@ class ErrorTaxonomyTests(unittest.TestCase):
             "approval_already_consumed", "stale_target_state",
             "external_approval_required", "approval_authority_mismatch",
             "external_approval_invalid", "external_approval_expired",
+            "prohibited_change", "policy_snapshot_required",
+            "policy_snapshot_mismatch",
+            "elevated_risk_acknowledgement_required",
+            "approval_principal_mismatch", "approval_sequence_failure",
             "change_plan_rejected",
             "change_in_progress", "unsupported_change_operation",
             "high_risk_change_rejected", "automation_validation_failed",
@@ -309,6 +343,28 @@ class ErrorTaxonomyTests(unittest.TestCase):
                 asyncio.run(client.request("GET", "/config"))
         self.assertEqual(caught.exception.code, ErrorCode.HA_UNAVAILABLE)
         self.assertNotIn("private endpoint detail", json.dumps(caught.exception.details))
+
+    def test_rest_rejection_records_received_response_without_body(self):
+        client = HomeAssistantRestClient(settings("unused"))
+        response = _RestResponse(404, "SECRET_RESPONSE_BODY")
+        with patch(
+            "ha_mcp_engineering.clients.rest.aiohttp.ClientSession",
+            return_value=_RestSession(response),
+        ):
+            with self.assertRaises(AutomationNotFoundError) as caught:
+                asyncio.run(
+                    client.request(
+                        "POST", "/config/automation/config/fixture"
+                    )
+                )
+        self.assertIs(
+            caught.exception.details.get("provider_response_received"),
+            True,
+        )
+        self.assertEqual(caught.exception.details.get("status"), 404)
+        self.assertNotIn(
+            "SECRET_RESPONSE_BODY", json.dumps(caught.exception.details)
+        )
 
 
 class RedactionAndAuditTests(unittest.TestCase):

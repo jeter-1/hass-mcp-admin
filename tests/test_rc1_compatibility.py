@@ -58,7 +58,7 @@ from ha_mcp_engineering.version import SCHEMA_VERSION  # noqa: E402
 
 
 BETA26_BASELINE_SHA = "b64db57ddffc5108b9078717ce720440f5361412"
-BETA26_SCHEMA_SHA256 = "eeec35d49f6d8c59fb1215694e54314b21bb6fd4a723d65e956e8e438699876a"
+F2_EXISTING_TOOL_SCHEMA_SHA256 = "30cee281e0f7ef3c3aae30955568ff5dddbe18ba4f5d1e080b89708e712ebe29"
 BETA26_SEARCH_ENTITIES_SCHEMA_SHA256 = "050632a52cb5baf438cfe71edfdb59ad2a715013d7684d2958cc40f4a2d00850"
 BETA26_ENUM_SHA256 = "465924bf56992b93019184e30b5a322582e9d2789ca670fc3742004e8daa0cfb"
 BETA26_CLASSIFICATION_SHA256 = "1a9dd62cd6a5c737b4cc65265b6f4f03e5532881f6d38b0e6f79994fa90a9684"
@@ -157,7 +157,7 @@ def enum_rows(value, path=""):
 
 
 class RC1PublicContractTests(unittest.TestCase):
-    def test_exact_beta26_tool_names_schemas_and_enums_are_frozen(self):
+    def test_existing_tools_retain_the_exact_f2_compatible_contract(self):
         tools = registered_tools(get_registered_server()).values()
         names = tuple(sorted(tool.name for tool in tools))
         schemas = {tool.name: tool.parameters for tool in tools}
@@ -183,7 +183,10 @@ class RC1PublicContractTests(unittest.TestCase):
                 )
             ),
         )
-        self.assertEqual(canonical_sha256(beta26_schemas), BETA26_SCHEMA_SHA256)
+        self.assertEqual(
+            canonical_sha256(beta26_schemas),
+            F2_EXISTING_TOOL_SCHEMA_SHA256,
+        )
         self.assertEqual(
             canonical_sha256(schemas["search_entities"]),
             BETA26_SEARCH_ENTITIES_SCHEMA_SHA256,
@@ -695,7 +698,9 @@ class RC1InitializationTests(unittest.IsolatedAsyncioTestCase):
                 {item["plan_id"] for item in service.pending_external_reviews()},
                 {ids["pending-challenge"], ids["rollback-pending"]},
             )
-            self.assertTrue(service.get_plan(ids["approved-plan"])["apply_allowed"])
+            self.assertFalse(
+                service.get_plan(ids["approved-plan"])["apply_allowed"]
+            )
             self.assertFalse(service.get_plan(ids["expired-challenge"])["apply_allowed"])
             self.assertEqual(gateway.reads, 0)
             self.assertEqual(gateway.writes, 0)
@@ -719,7 +724,10 @@ class RC1InitializationTests(unittest.IsolatedAsyncioTestCase):
             plan = service.repository.get(ids["legacy-active"])
             with self.assertRaises(GovernanceError) as raised:
                 await service.apply(plan.plan_id, service.plan_hash(plan))
-            self.assertEqual(raised.exception.code, ErrorCode.APPROVAL_AUTHORITY_MISMATCH)
+            self.assertEqual(
+                raised.exception.code,
+                ErrorCode.POLICY_SNAPSHOT_REQUIRED,
+            )
             self.assertEqual(gateway.reads, 0)
             self.assertEqual(gateway.writes, 0)
             rejected = service.repository.get(plan.plan_id)

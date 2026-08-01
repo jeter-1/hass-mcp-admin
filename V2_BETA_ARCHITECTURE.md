@@ -1,5 +1,22 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## 2.2.0-beta.6 policy and elevated-approval semantics
+
+F2 derives one immutable `f2-v1` policy decision from normalized governed-plan
+authority. It exposes separate risk delta and physical consequence, then maps
+the plan to `standard_admin`, `elevated_admin`, or `prohibited`. Unknown,
+critical, safety-critical, unsupported, destructive, or policy-evasive
+authority fails closed.
+
+Authority version 3 retains one external Home Assistant administrator for a
+standard plan and requires two ordered actions from the same administrator for
+an elevated plan. This is not two-person control. Approval consumption cannot
+open another task or dispatch opportunity: F1 task schema 1, one-task
+ownership, no blind redispatch, readback-only recovery, and operation-specific
+verification remain authoritative. No MCP tool, provider, resource type,
+fallback, update/recovery execution, compensation, or generalized verification
+is added.
+
 ## 2.2.0-beta.5 update and recovery preflight foundation
 
 E1 defines immutable input and output contracts for a pure evaluation of

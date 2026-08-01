@@ -158,7 +158,11 @@ class FakeConfigurationGateway:
         self.replace_on_read_count = {}
         self.fail_write_target = None
         self.fail_write_exception = None
+        self.fail_after_write_target = None
         self.mismatch_after_write_target = None
+        self.canonicalize_automation_action_alias = False
+        self.behavioral_mismatch_after_write_target = None
+        self.unsupported_readback_after_write_target = None
         self.validation_result = {"result": "valid", "errors": None}
 
     async def read(self, resource_type, resource_id):
@@ -188,11 +192,34 @@ class FakeConfigurationGateway:
         else:
             stored["id"] = resource_id
         if (
+            resource_type == "automation"
+            and self.canonicalize_automation_action_alias
+        ):
+            for step in stored.get("action", []):
+                if isinstance(step, dict) and "service" in step:
+                    step["action"] = step.pop("service")
+        if (
+            resource_type,
+            resource_id,
+        ) == self.behavioral_mismatch_after_write_target:
+            stored["action"][0]["target"] = {
+                "entity_id": "script.behaviorally_different"
+            }
+        if (
+            resource_type,
+            resource_id,
+        ) == self.unsupported_readback_after_write_target:
+            stored["action"] = [
+                {"future_directive": {"bounded_fixture": True}}
+            ]
+        if (
             resource_type,
             resource_id,
         ) == self.mismatch_after_write_target:
             stored["id"] = "unexpected_identity"
         self.configs[(resource_type, resource_id)] = stored
+        if (resource_type, resource_id) == self.fail_after_write_target:
+            raise RuntimeError("synthetic lost provider response")
         return {"result": "ok"}
 
     async def validate(self):
@@ -236,6 +263,24 @@ class ConfigurationPlanTestCase(unittest.IsolatedAsyncioTestCase):
             description="Repository-local Dev14 acceptance fixture",
             operations=hvac_operations(),
             caller_context={"acceptance_case": "hvac"},
+        )
+
+    async def create_automation_plan(self):
+        return await self.service.create_configuration_plan(
+            title="Governed automation verification fixture",
+            description="Exercise exact post-write semantic verification",
+            operations=[
+                {
+                    "operation_id": "update_comfort_automation",
+                    "resource_type": "automation",
+                    "action": "update",
+                    "target_id": "apply_hvac_comfort",
+                    "depends_on": [],
+                    "proposed_config": copy.deepcopy(
+                        PROPOSED_AUTOMATION
+                    ),
+                }
+            ],
         )
 
     def persisted_artifact_text(self):
@@ -348,13 +393,30 @@ class ConfigurationPlanTestCase(unittest.IsolatedAsyncioTestCase):
             plan_id=created["plan_id"],
             challenge_id=pending["challenge_id"],
             expected_plan_hash=created["plan_hash"],
-            approval_kind="apply",
+            approval_kind=pending["approval_kind"],
+            approval_action=pending["approval_action"],
             csrf_nonce=csrf,
             decision="approve",
             approver_principal=(
                 "home_assistant_admin_ingress:dev14-reviewer"
             ),
         )
+        if granted["status"] == "approval_pending":
+            _, second_csrf = await self.service.issue_external_csrf(
+                created["plan_id"], granted["challenge_id"]
+            )
+            granted = await self.service.decide_external_approval(
+                plan_id=created["plan_id"],
+                challenge_id=granted["challenge_id"],
+                expected_plan_hash=created["plan_hash"],
+                approval_kind=granted["approval_kind"],
+                approval_action=granted["approval_action"],
+                csrf_nonce=second_csrf,
+                decision="approve",
+                approver_principal=(
+                    "home_assistant_admin_ingress:dev14-reviewer"
+                ),
+            )
         return pending, review, granted
 
 
@@ -1318,6 +1380,445 @@ class PlanCreationTests(ConfigurationPlanTestCase):
 
 
 class ApplyTests(ConfigurationPlanTestCase):
+    async def test_service_action_alias_does_not_weaken_stale_state(self):
+        created = await self.create_automation_plan()
+        changed_current = copy.deepcopy(CURRENT_AUTOMATION)
+        changed_current["action"][0]["action"] = changed_current[
+            "action"
+        ][0].pop("service")
+        self.gateway.configs[("automation", "apply_hvac_comfort")] = (
+            changed_current
+        )
+        await self.approve(created)
+
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.apply(
+                created["plan_id"], created["plan_hash"]
+            )
+
+        self.assertEqual(
+            raised.exception.code, ErrorCode.STALE_TARGET_STATE
+        )
+        self.assertEqual(
+            [call for call in self.gateway.calls if call[0] == "write"],
+            [],
+        )
+
+    async def test_canonicalized_automation_readback_verifies_without_rebinding(
+        self,
+    ):
+        self.gateway.canonicalize_automation_action_alias = True
+        created = await self.create_automation_plan()
+        before = self.repository.get(created["plan_id"])
+        plan_hash_before = self.service.plan_hash(before)
+        policy_hash_before = before.policy_decision.policy_decision_hash
+        proposed_hash = before.operations[0].proposed_config_hash
+        await self.approve(created)
+
+        applied = await self.service.apply(
+            created["plan_id"], created["plan_hash"]
+        )
+
+        self.assertEqual(applied["status"], "applied")
+        operation = applied["operations"][0]
+        receipt = operation["execution_receipt"]
+        self.assertEqual(
+            receipt["binding_approved_fingerprint"], proposed_hash
+        )
+        self.assertNotEqual(
+            receipt["binding_approved_fingerprint"],
+            receipt["binding_observed_fingerprint"],
+        )
+        self.assertNotEqual(
+            receipt["raw_approved_fingerprint"],
+            receipt["raw_observed_fingerprint"],
+        )
+        self.assertEqual(
+            receipt["normalized_approved_fingerprint"],
+            receipt["normalized_observed_fingerprint"],
+        )
+        self.assertEqual(
+            receipt["canonicalization_categories"],
+            ["automation_action_service_alias"],
+        )
+        self.assertEqual(
+            receipt["semantic_verification_result"], "matched"
+        )
+        self.assertTrue(receipt["desired_state_proven"])
+        self.assertEqual(operation["verification"]["status"], "passed")
+        self.assertEqual(
+            operation["verification"]["desired_fingerprint"],
+            proposed_hash,
+        )
+        self.assertEqual(
+            operation["verification"]["actual_fingerprint"],
+            receipt["binding_observed_fingerprint"],
+        )
+
+        persisted = self.repository.get(created["plan_id"])
+        self.assertEqual(self.service.plan_hash(persisted), plan_hash_before)
+        self.assertEqual(
+            persisted.policy_decision.policy_decision_hash,
+            policy_hash_before,
+        )
+        task = self.service.get_execution_task(applied["task_id"])
+        self.assertEqual(task["provider_attempt_count"], 1)
+        self.assertTrue(task["provider_attempts"][0]["response_received"])
+        self.assertIsInstance(
+            task["provider_attempts"][0]["response_recorded_at"], str
+        )
+        self.assertEqual(
+            sum(
+                event["event_type"] == "provider_response_recorded"
+                for event in task["lifecycle_events"]
+            ),
+            1,
+        )
+        task_evidence = task["verification_summary"][
+            "configuration_operations"
+        ][0]
+        self.assertEqual(
+            task_evidence["normalized_approved_fingerprint"],
+            task_evidence["normalized_observed_fingerprint"],
+        )
+        self.assertNotIn("proposed_config", task_evidence)
+        self.assertNotIn("observed_config", task_evidence)
+
+        writes_before_duplicate = len(
+            [call for call in self.gateway.calls if call[0] == "write"]
+        )
+        duplicate = await self.service.apply(
+            created["plan_id"], created["plan_hash"]
+        )
+        self.assertEqual(duplicate["status"], "already_applied")
+        self.assertEqual(duplicate["task_id"], applied["task_id"])
+        self.assertEqual(
+            len(
+                [
+                    call
+                    for call in self.gateway.calls
+                    if call[0] == "write"
+                ]
+            ),
+            writes_before_duplicate,
+        )
+
+    async def test_real_readback_mismatch_retains_response_and_single_task(
+        self,
+    ):
+        self.gateway.canonicalize_automation_action_alias = True
+        self.gateway.behavioral_mismatch_after_write_target = (
+            "automation",
+            "apply_hvac_comfort",
+        )
+        created = await self.create_automation_plan()
+        await self.approve(created)
+
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.apply(
+                created["plan_id"], created["plan_hash"]
+            )
+
+        self.assertEqual(
+            raised.exception.code,
+            ErrorCode.CONFIGURATION_PARTIAL_FAILURE,
+        )
+        persisted = self.repository.get(created["plan_id"])
+        self.assertEqual(persisted.status, PlanStatus.VERIFICATION_FAILED)
+        self.assertEqual(
+            persisted.operations[0].verification.mismatch_fields,
+            ["actions"],
+        )
+        task = self.service.task_repository.get_for_plan(created["plan_id"])
+        self.assertIsNotNone(task)
+        assert task is not None
+        self.assertEqual(task.state.value, "failed_post_dispatch")
+        self.assertEqual(len(task.provider_attempts), 1)
+        self.assertTrue(task.provider_attempts[0]["response_received"])
+        self.assertIn("response_recorded_at", task.provider_attempts[0])
+        self.assertEqual(
+            sum(
+                event.event_type == "verification_started"
+                for event in task.events
+            ),
+            1,
+        )
+        self.assertEqual(
+            len(self.service.task_repository.list()), 1
+        )
+        writes_before_duplicate = len(
+            [call for call in self.gateway.calls if call[0] == "write"]
+        )
+        with self.assertRaises(GovernanceError) as duplicate:
+            await self.service.apply(
+                created["plan_id"], created["plan_hash"]
+            )
+        self.assertEqual(
+            duplicate.exception.code, ErrorCode.DUPLICATE_APPLY_ATTEMPT
+        )
+        self.assertEqual(
+            len(
+                [
+                    call
+                    for call in self.gateway.calls
+                    if call[0] == "write"
+                ]
+            ),
+            writes_before_duplicate,
+        )
+
+    async def test_unsupported_readback_family_fails_after_truthful_response(
+        self,
+    ):
+        self.gateway.unsupported_readback_after_write_target = (
+            "automation",
+            "apply_hvac_comfort",
+        )
+        created = await self.create_automation_plan()
+        await self.approve(created)
+
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.apply(
+                created["plan_id"], created["plan_hash"]
+            )
+
+        self.assertEqual(
+            raised.exception.code,
+            ErrorCode.CONFIGURATION_PARTIAL_FAILURE,
+        )
+        self.assertEqual(
+            raised.exception.details["mismatch_fields"],
+            ["unsupported_automation_action_family"],
+        )
+        persisted = self.repository.get(created["plan_id"])
+        assert persisted is not None
+        self.assertEqual(persisted.status, PlanStatus.VERIFICATION_FAILED)
+        self.assertEqual(persisted.approval.state, ApprovalState.CONSUMED)
+        self.assertEqual(
+            persisted.operations[0].verification.mismatch_fields,
+            ["unsupported_automation_action_family"],
+        )
+        self.assertEqual(
+            persisted.operations[0].execution_receipt[
+                "semantic_verification_result"
+            ],
+            "invalid",
+        )
+        self.assertEqual(
+            persisted.operations[0].execution_receipt[
+                "mismatch_categories"
+            ],
+            ["unsupported_automation_action_family"],
+        )
+        task = self.service.task_repository.get_for_plan(created["plan_id"])
+        self.assertIsNotNone(task)
+        assert task is not None
+        self.assertEqual(task.state.value, "failed_post_dispatch")
+        self.assertEqual(len(task.provider_attempts), 1)
+        self.assertTrue(task.provider_attempts[0]["response_received"])
+        self.assertIn("response_recorded_at", task.provider_attempts[0])
+        self.assertEqual(
+            task.verification_summary["configuration_operations"][0][
+                "mismatch_category"
+            ],
+            "unsupported_automation_action_family",
+        )
+        self.assertEqual(len(self.service.task_repository.list()), 1)
+        writes_before_duplicate = len(
+            [call for call in self.gateway.calls if call[0] == "write"]
+        )
+        with self.assertRaises(GovernanceError) as duplicate:
+            await self.service.apply(
+                created["plan_id"], created["plan_hash"]
+            )
+        self.assertEqual(
+            duplicate.exception.code, ErrorCode.DUPLICATE_APPLY_ATTEMPT
+        )
+        self.assertEqual(
+            len(
+                [
+                    call
+                    for call in self.gateway.calls
+                    if call[0] == "write"
+                ]
+            ),
+            writes_before_duplicate,
+        )
+
+    async def test_ambiguous_write_uses_semantic_readback_without_redispatch(
+        self,
+    ):
+        self.gateway.canonicalize_automation_action_alias = True
+        self.gateway.fail_after_write_target = (
+            "automation",
+            "apply_hvac_comfort",
+        )
+        created = await self.create_automation_plan()
+        await self.approve(created)
+
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.apply(
+                created["plan_id"], created["plan_hash"]
+            )
+
+        self.assertEqual(
+            raised.exception.code,
+            ErrorCode.CONFIGURATION_PARTIAL_FAILURE,
+        )
+        persisted = self.repository.get(created["plan_id"])
+        operation = persisted.operations[0]
+        self.assertEqual(
+            operation.execution_status, StepExecutionStatus.APPLIED_VERIFIED
+        )
+        self.assertEqual(
+            operation.execution_receipt["outcome"],
+            "state_proven_desired_after_ambiguous_write",
+        )
+        self.assertTrue(
+            operation.failure_information["desired_state_proven"]
+        )
+        self.assertEqual(
+            operation.execution_receipt[
+                "normalized_approved_fingerprint"
+            ],
+            operation.execution_receipt[
+                "normalized_observed_fingerprint"
+            ],
+        )
+        task = self.service.task_repository.get_for_plan(created["plan_id"])
+        self.assertIsNotNone(task)
+        assert task is not None
+        self.assertEqual(len(task.provider_attempts), 1)
+        self.assertFalse(task.provider_attempts[0]["response_received"])
+        self.assertNotIn("response_recorded_at", task.provider_attempts[0])
+        writes_before_duplicate = len(
+            [call for call in self.gateway.calls if call[0] == "write"]
+        )
+        with self.assertRaises(GovernanceError):
+            await self.service.apply(
+                created["plan_id"], created["plan_hash"]
+            )
+        self.assertEqual(
+            len(
+                [
+                    call
+                    for call in self.gateway.calls
+                    if call[0] == "write"
+                ]
+            ),
+            writes_before_duplicate,
+        )
+
+    async def test_task_response_evidence_recovers_from_persisted_receipt(
+        self,
+    ):
+        self.gateway.canonicalize_automation_action_alias = True
+        created = await self.create_automation_plan()
+        await self.approve(created)
+        original_save_task = self.service._save_task
+        block_response_projection = True
+
+        def fail_response_projection(task):
+            if (
+                block_response_projection
+                and task.events[-1].event_type
+                == "provider_response_recorded"
+            ):
+                raise GovernanceError(
+                    ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+                )
+            original_save_task(task)
+
+        self.service._save_task = fail_response_projection
+        try:
+            with self.assertRaises(GovernanceError) as raised:
+                await self.service.apply(
+                    created["plan_id"], created["plan_hash"]
+                )
+        finally:
+            block_response_projection = False
+            self.service._save_task = original_save_task
+
+        self.assertEqual(
+            raised.exception.code,
+            ErrorCode.EXECUTION_TASK_STORAGE_ERROR,
+        )
+        plan = self.repository.get(created["plan_id"])
+        operation = plan.operations[0]
+        self.assertTrue(
+            operation.execution_receipt["provider_response_received"]
+        )
+        self.assertEqual(
+            sum(
+                event.event
+                in {
+                    "configuration_operation_provider_completed",
+                    "configuration_operation_provider_failed",
+                }
+                for event in plan.events
+            ),
+            1,
+        )
+        task = self.service.task_repository.get_for_plan(created["plan_id"])
+        self.assertIsNotNone(task)
+        assert task is not None
+        self.assertFalse(task.provider_attempts[0]["response_received"])
+        self.assertEqual(
+            len(
+                [
+                    call
+                    for call in self.gateway.calls
+                    if call[0] == "write"
+                ]
+            ),
+            1,
+        )
+
+        reconciliation = await self.service.reconcile_execution_tasks(
+            trigger="startup"
+        )
+        restored = self.service.task_repository.get(task.task_id)
+        self.assertIsNotNone(restored)
+        assert restored is not None
+        self.assertTrue(restored.provider_attempts[0]["response_received"])
+        self.assertEqual(
+            restored.provider_attempts[0]["response_recorded_at"],
+            operation.execution_receipt["provider_response_recorded_at"],
+        )
+        self.assertEqual(
+            sum(
+                event.event_type == "provider_response_recorded"
+                for event in restored.events
+            ),
+            1,
+        )
+        self.assertEqual(reconciliation["provider_dispatches"], 0)
+        writes_after_reconciliation = len(
+            [call for call in self.gateway.calls if call[0] == "write"]
+        )
+
+        await self.service.reconcile_execution_tasks(trigger="startup")
+        restored_again = self.service.task_repository.get(task.task_id)
+        self.assertIsNotNone(restored_again)
+        assert restored_again is not None
+        self.assertEqual(
+            sum(
+                event.event_type == "provider_response_recorded"
+                for event in restored_again.events
+            ),
+            1,
+        )
+        self.assertEqual(
+            len(
+                [
+                    call
+                    for call in self.gateway.calls
+                    if call[0] == "write"
+                ]
+            ),
+            writes_after_reconciliation,
+        )
+
     async def test_one_approval_applies_in_order_reads_back_and_validates(self):
         created = await self.create_hvac_plan()
         await self.approve(created)
@@ -1636,6 +2137,15 @@ class ApplyTests(ConfigurationPlanTestCase):
         )
         self.assertIn(("validate_all",), self.gateway.calls)
         self.assertFalse(persisted.rollback.available)
+        task = self.service.task_repository.get_for_plan(created["plan_id"])
+        self.assertIsNotNone(task)
+        assert task is not None
+        self.assertEqual(len(task.provider_attempts), 2)
+        self.assertTrue(task.provider_attempts[0]["response_received"])
+        self.assertFalse(task.provider_attempts[1]["response_received"])
+        self.assertNotIn(
+            "response_recorded_at", task.provider_attempts[1]
+        )
 
     async def test_unexpected_helper_identity_is_reported_as_orphan_risk(self):
         created = await self.create_hvac_plan()
@@ -2112,8 +2622,8 @@ class RestartRecoveryTests(ConfigurationPlanTestCase):
         created = await self.create_hvac_plan()
         await self.approve(created)
         plan = self.repository.get(created["plan_id"])
+        self.service._consume_approval_bundle(plan)
         plan.status = PlanStatus.APPLYING
-        plan.approval.state = ApprovalState.CONSUMED
         plan.operations[0].execution_status = StepExecutionStatus.FAILED
         plan.operations[0].execution_receipt = {
             "write_attempted": False,
@@ -2165,8 +2675,8 @@ class RestartRecoveryTests(ConfigurationPlanTestCase):
         created = await self.create_hvac_plan()
         await self.approve(created)
         plan = self.repository.get(created["plan_id"])
+        self.service._consume_approval_bundle(plan)
         plan.status = PlanStatus.APPLYING
-        plan.approval.state = ApprovalState.CONSUMED
         plan.operations[0].execution_status = (
             StepExecutionStatus.APPLIED_VERIFIED
         )
@@ -2217,8 +2727,8 @@ class RestartRecoveryTests(ConfigurationPlanTestCase):
         created = await self.create_hvac_plan()
         await self.approve(created)
         plan = self.repository.get(created["plan_id"])
+        self.service._consume_approval_bundle(plan)
         plan.status = PlanStatus.APPLYING
-        plan.approval.state = ApprovalState.CONSUMED
         plan.operations[0].execution_status = StepExecutionStatus.APPLYING
         plan.operations[0].execution_receipt = {
             "write_attempted": True,
@@ -2269,8 +2779,8 @@ class RestartRecoveryTests(ConfigurationPlanTestCase):
         created = await self.create_hvac_plan()
         await self.approve(created)
         plan = self.repository.get(created["plan_id"])
+        self.service._consume_approval_bundle(plan)
         plan.status = PlanStatus.APPLYING
-        plan.approval.state = ApprovalState.CONSUMED
         plan.operations[0].execution_status = (
             StepExecutionStatus.APPLIED_VERIFIED
         )
@@ -2315,8 +2825,8 @@ class RestartRecoveryTests(ConfigurationPlanTestCase):
         created = await self.create_hvac_plan()
         await self.approve(created)
         plan = self.repository.get(created["plan_id"])
+        self.service._consume_approval_bundle(plan)
         plan.status = PlanStatus.APPLYING
-        plan.approval.state = ApprovalState.CONSUMED
         plan.operations[0].execution_status = StepExecutionStatus.FAILED
         plan.operations[0].execution_receipt = {
             "write_attempted": True,
@@ -2351,8 +2861,8 @@ class RestartRecoveryTests(ConfigurationPlanTestCase):
         created = await self.create_hvac_plan()
         await self.approve(created)
         plan = self.repository.get(created["plan_id"])
+        self.service._consume_approval_bundle(plan)
         plan.status = PlanStatus.APPLYING
-        plan.approval.state = ApprovalState.CONSUMED
         for operation in plan.operations:
             operation.execution_status = (
                 StepExecutionStatus.APPLIED_VERIFIED

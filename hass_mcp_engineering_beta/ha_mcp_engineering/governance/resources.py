@@ -7,6 +7,7 @@ Assistant write transport.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import math
 import re
 from typing import Any
@@ -15,7 +16,14 @@ from ..clients.rest import ExpectedHttpStatus, HomeAssistantRestClient
 from ..clients.websocket import HomeAssistantWebSocketClient
 from ..errors import HomeAssistantApiError
 from ..sanitization import sanitize_untrusted_data
-from .normalize import normalize_automation, stable_hash, structured_diff
+from .normalize import (
+    AUTOMATION_VERIFICATION_NORMALIZATION_VERSION,
+    AutomationVerificationNormalizationError,
+    normalize_automation,
+    normalize_automation_for_verification,
+    stable_hash,
+    structured_diff,
+)
 from .validation import validate_automation
 
 
@@ -89,6 +97,24 @@ class ConfigurationMutationCompletedUnexpectedlyError(
 
     mutation_dispatched = True
     mutation_completed = True
+
+
+@dataclass(frozen=True)
+class ResourceVerificationComparison:
+    """Bounded post-write comparison evidence without configuration bodies."""
+
+    raw_approved_fingerprint: str | None
+    raw_observed_fingerprint: str | None
+    binding_approved_fingerprint: str | None
+    binding_observed_fingerprint: str | None
+    normalized_approved_fingerprint: str | None
+    normalized_observed_fingerprint: str | None
+    canonicalization_categories: tuple[str, ...]
+    mismatch_categories: tuple[str, ...]
+    semantic_match: bool
+    normalization_valid: bool
+    observed_available: bool
+    verification_normalization_version: int | None
 
 
 def validate_resource(
@@ -199,6 +225,181 @@ def resource_fingerprint(
     """Hash an exact normalized resource state, including absence."""
 
     return stable_hash(normalize_resource_config(resource_type, config))
+
+
+def compare_resource_verification(
+    resource_type: str,
+    approved: dict[str, Any] | None,
+    observed: dict[str, Any] | None,
+    *,
+    observed_available: bool = True,
+) -> ResourceVerificationComparison:
+    """Compare a post-write readback under reviewed resource semantics.
+
+    Binding fingerprints remain the existing plan/stale-state contract. The
+    additional normalized fingerprints are verification-only and never feed
+    immutable plan or policy hashes.
+    """
+
+    _require_supported_type(resource_type)
+    raw_approved_fingerprint = _safe_raw_fingerprint(approved)
+    raw_observed_fingerprint = (
+        _safe_raw_fingerprint(observed) if observed_available else None
+    )
+    binding_approved_fingerprint = _safe_binding_fingerprint(
+        resource_type, approved
+    )
+    binding_observed_fingerprint = (
+        _safe_binding_fingerprint(resource_type, observed)
+        if observed_available
+        else None
+    )
+    try:
+        if resource_type == "automation":
+            normalized_approved, approved_categories = (
+                normalize_automation_for_verification(approved)
+            )
+            if observed_available:
+                normalized_observed, observed_categories = (
+                    normalize_automation_for_verification(observed)
+                )
+            else:
+                normalized_observed = None
+                observed_categories = ()
+        else:
+            normalized_approved = normalize_resource_config(
+                resource_type, approved
+            )
+            normalized_observed = (
+                normalize_resource_config(resource_type, observed)
+                if observed_available
+                else None
+            )
+            approved_categories = ()
+            observed_categories = ()
+    except (
+        AutomationVerificationNormalizationError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        mismatch_category = (
+            exc.category
+            if isinstance(exc, AutomationVerificationNormalizationError)
+            else (
+                "automation_verification_structure"
+                if resource_type == "automation"
+                else "configuration_verification_structure"
+            )
+        )
+        return ResourceVerificationComparison(
+            raw_approved_fingerprint=raw_approved_fingerprint,
+            raw_observed_fingerprint=raw_observed_fingerprint,
+            binding_approved_fingerprint=binding_approved_fingerprint,
+            binding_observed_fingerprint=binding_observed_fingerprint,
+            normalized_approved_fingerprint=None,
+            normalized_observed_fingerprint=None,
+            canonicalization_categories=(),
+            mismatch_categories=(mismatch_category,),
+            semantic_match=False,
+            normalization_valid=False,
+            observed_available=observed_available,
+            verification_normalization_version=(
+                AUTOMATION_VERIFICATION_NORMALIZATION_VERSION
+                if resource_type == "automation"
+                else None
+            ),
+        )
+
+    normalized_approved_fingerprint = stable_hash(normalized_approved)
+    normalized_observed_fingerprint = (
+        stable_hash(normalized_observed) if observed_available else None
+    )
+    semantic_match = (
+        observed_available
+        and normalized_approved_fingerprint
+        == normalized_observed_fingerprint
+    )
+    mismatch_categories: tuple[str, ...] = ()
+    if not observed_available:
+        mismatch_categories = ("readback_unavailable",)
+    elif not semantic_match:
+        difference = structured_resource_diff(
+            resource_type,
+            normalized_approved,
+            normalized_observed or {},
+        )
+        allowed = {
+            "alias",
+            "description",
+            "mode",
+            "maximum_runs",
+            "triggers",
+            "conditions",
+            "actions",
+            "variables",
+            "trace_settings",
+            "blueprint_usage",
+            "icon",
+            "initial",
+            "max",
+            "min",
+            "name",
+            "sequence",
+            "step",
+            "unit_of_measurement",
+        }
+        mismatch_categories = tuple(
+            sorted(
+                {
+                    field if field in allowed else "other_configuration"
+                    for item in difference.get("changed_fields", [])
+                    if isinstance(item, dict)
+                    and isinstance((field := item.get("field")), str)
+                }
+            )[:10]
+        ) or ("configuration",)
+    return ResourceVerificationComparison(
+        raw_approved_fingerprint=raw_approved_fingerprint,
+        raw_observed_fingerprint=raw_observed_fingerprint,
+        binding_approved_fingerprint=binding_approved_fingerprint,
+        binding_observed_fingerprint=binding_observed_fingerprint,
+        normalized_approved_fingerprint=(
+            normalized_approved_fingerprint
+        ),
+        normalized_observed_fingerprint=(
+            normalized_observed_fingerprint
+        ),
+        canonicalization_categories=tuple(
+            sorted(set(approved_categories) | set(observed_categories))
+        ),
+        mismatch_categories=mismatch_categories,
+        semantic_match=semantic_match,
+        normalization_valid=True,
+        observed_available=observed_available,
+        verification_normalization_version=(
+            AUTOMATION_VERIFICATION_NORMALIZATION_VERSION
+            if resource_type == "automation"
+            else None
+        ),
+    )
+
+
+def _safe_raw_fingerprint(value: Any) -> str | None:
+    if not _mapping_keys_are_strings(value):
+        return None
+    try:
+        return stable_hash(_canonical(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_binding_fingerprint(
+    resource_type: str, value: dict[str, Any] | None
+) -> str | None:
+    try:
+        return resource_fingerprint(resource_type, value)
+    except (TypeError, ValueError):
+        return None
 
 
 def structured_resource_diff(
@@ -439,6 +640,7 @@ class ConfigurationResourceGateway:
                             f"{resource_type}.{unexpected_id}"
                         ),
                         "orphan_risk": True,
+                        "provider_response_received": True,
                     }
                 )
             raise HomeAssistantApiError(
@@ -446,6 +648,7 @@ class ConfigurationResourceGateway:
                     "operation": f"{resource_type}_config_create",
                     "resource_id": resource_id,
                     "reason": "generated_identity_mismatch",
+                    "provider_response_received": True,
                     "unexpected_resource_id": (
                         f"{resource_type}.{unexpected_id}"
                         if isinstance(unexpected_id, str)
@@ -543,6 +746,7 @@ class ConfigurationResourceGateway:
                 "operation": operation,
                 "resource_id": resource_id,
                 "reason": reason,
+                "provider_response_received": True,
             }
         )
 

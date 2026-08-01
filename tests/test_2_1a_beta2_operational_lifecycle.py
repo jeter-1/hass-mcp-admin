@@ -41,6 +41,9 @@ from ha_mcp_engineering.governance.models import (  # noqa: E402
     PlanStatus,
 )
 from ha_mcp_engineering.governance.normalize import stable_hash  # noqa: E402
+from ha_mcp_engineering.governance.policy import (  # noqa: E402
+    evaluate_change_policy,
+)
 from ha_mcp_engineering.governance.operational_lifecycle import (  # noqa: E402
     ENGINEERING_ADDON_SLUG,
     LifecycleGatewayError,
@@ -574,17 +577,34 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
         _, csrf = await self.service.issue_external_csrf(
             plan["plan_id"], pending["challenge_id"]
         )
-        await self.service.decide_external_approval(
+        result = await self.service.decide_external_approval(
             plan_id=plan["plan_id"],
             challenge_id=pending["challenge_id"],
             expected_plan_hash=plan["plan_hash"],
             approval_kind="apply",
+            approval_action=pending["approval_action"],
             csrf_nonce=csrf,
             decision="approve",
             approver_principal=(
                 "home_assistant_admin_ingress:fixture"
             ),
         )
+        if result.get("status") == "approval_pending":
+            _, csrf = await self.service.issue_external_csrf(
+                plan["plan_id"], result["challenge_id"]
+            )
+            await self.service.decide_external_approval(
+                plan_id=plan["plan_id"],
+                challenge_id=result["challenge_id"],
+                expected_plan_hash=plan["plan_hash"],
+                approval_kind="apply",
+                approval_action=result["approval_action"],
+                csrf_nonce=csrf,
+                decision="approve",
+                approver_principal=(
+                    "home_assistant_admin_ingress:fixture"
+                ),
+            )
         return plan
 
     async def create_for(self, operation, target="automation"):
@@ -1561,7 +1581,7 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
         created = await self.service.create_home_assistant_restart_plan()
         plan_public = await self.grant(created)
         plan = self.repository.get(plan_public["plan_id"])
-        plan.approval.state = ApprovalState.CONSUMED
+        self.service._consume_approval_bundle(plan)
         attempted_at = self.clock()
         self.assertAlmostEqual(
             RESTART_DISRUPTION_PROBE_ATTEMPTS
@@ -1634,7 +1654,7 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
         created = await self.service.create_home_assistant_restart_plan()
         plan_public = await self.grant(created)
         plan = self.repository.get(plan_public["plan_id"])
-        plan.approval.state = ApprovalState.CONSUMED
+        self.service._consume_approval_bundle(plan)
         attempted_at = self.clock()
         deadline = attempted_at + timedelta(
             seconds=RESTART_OUTAGE_ELIGIBILITY_WINDOW_SECONDS
@@ -2711,6 +2731,8 @@ class GovernedOperationalLifecycleTests(unittest.IsolatedAsyncioTestCase):
         persisted.current_state_fingerprint = stable_hash(
             persisted.operational.baseline
         )
+        persisted.policy_decision = evaluate_change_policy(persisted)
+        self.service._bind_new_plan_policy(persisted)
         self.repository.save(persisted)
         historical_hash = self.service.plan_hash(persisted)
         created["plan"]["plan_hash"] = historical_hash
@@ -3805,7 +3827,39 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             )
             plan = repository.get(created["plan"]["plan_id"])
             original_hash = service.plan_hash(plan)
-            plan.approval.state = ApprovalState.CONSUMED
+            pending = service.approve(plan.plan_id, original_hash)
+            _, csrf = await service.issue_external_csrf(
+                plan.plan_id, pending["challenge_id"]
+            )
+            pending = await service.decide_external_approval(
+                plan_id=plan.plan_id,
+                challenge_id=pending["challenge_id"],
+                expected_plan_hash=original_hash,
+                approval_kind="apply",
+                approval_action=pending["approval_action"],
+                csrf_nonce=csrf,
+                decision="approve",
+                approver_principal=(
+                    "home_assistant_admin_ingress:fixture"
+                ),
+            )
+            _, csrf = await service.issue_external_csrf(
+                plan.plan_id, pending["challenge_id"]
+            )
+            await service.decide_external_approval(
+                plan_id=plan.plan_id,
+                challenge_id=pending["challenge_id"],
+                expected_plan_hash=original_hash,
+                approval_kind="apply",
+                approval_action=pending["approval_action"],
+                csrf_nonce=csrf,
+                decision="approve",
+                approver_principal=(
+                    "home_assistant_admin_ingress:fixture"
+                ),
+            )
+            plan = repository.get(plan.plan_id)
+            service._consume_approval_bundle(plan)
             plan.operational.dispatch.update(
                 {
                     "attempt_count": 1,

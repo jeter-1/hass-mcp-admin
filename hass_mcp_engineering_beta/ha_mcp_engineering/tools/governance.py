@@ -31,7 +31,7 @@ ConfigurationOperations = Annotated[
 
 async def create_backup_plan(
     backup_name: Annotated[str, Field(max_length=96)] = "",
-    expiration_minutes: Annotated[int, Field(ge=5, le=1440)] = 60,
+    expiration_minutes: Annotated[int, Field(ge=5, le=1440)] = 120,
 ) -> str:
     """Propose one governed local backup; planning never dispatches creation.
 
@@ -62,7 +62,7 @@ async def create_reload_plan(
         "input_boolean",
         "input_number",
     ],
-    expiration_minutes: Annotated[int, Field(ge=5, le=1440)] = 60,
+    expiration_minutes: Annotated[int, Field(ge=5, le=1440)] = 120,
 ) -> str:
     """Propose one exact controlled reload; planning never dispatches it.
 
@@ -95,7 +95,7 @@ async def create_addon_restart_plan(
             pattern=r"^[a-z0-9][a-z0-9_-]{0,127}$",
         ),
     ],
-    expiration_minutes: Annotated[int, Field(ge=5, le=1440)] = 60,
+    expiration_minutes: Annotated[int, Field(ge=5, le=1440)] = 120,
 ) -> str:
     """Propose restarting one exact installed add-on without dispatching it.
 
@@ -119,7 +119,7 @@ async def create_addon_restart_plan(
 
 
 async def create_home_assistant_restart_plan(
-    expiration_minutes: Annotated[int, Field(ge=5, le=1440)] = 60,
+    expiration_minutes: Annotated[int, Field(ge=5, le=1440)] = 120,
 ) -> str:
     """Propose one Home Assistant restart without dispatching it.
 
@@ -149,7 +149,7 @@ async def create_change_plan(
     operation: str,
     automation_id: str,
     proposed_config: dict[str, Any],
-    expiration_minutes: int = 60,
+    expiration_minutes: int = 120,
     caller_context: dict = None,
 ) -> str:
     """Dry-run a create_automation or update_automation proposal.
@@ -179,7 +179,7 @@ async def create_configuration_plan(
     title: str,
     description: str,
     operations: ConfigurationOperations,
-    expiration_minutes: int = 60,
+    expiration_minutes: int = 120,
     caller_context: dict = None,
 ) -> str:
     """Dry-run one bounded, ordered configuration proposal.
