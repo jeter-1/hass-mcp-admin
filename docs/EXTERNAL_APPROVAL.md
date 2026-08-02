@@ -1,6 +1,6 @@
 # External human approval authority
 
-Version `2.2.0-beta.9` preserves the Beta 25 separation between an
+Version `2.2.0-beta.10` preserves the Beta 25 separation between an
 authenticated MCP caller and the human authority that approves governed Home
 Assistant changes. A caller may create a
 plan and request review, but only an authenticated Home Assistant administrator
@@ -13,7 +13,7 @@ requires plan approval followed by a distinct
 `elevated_risk_acknowledgement` from the same authenticated administrator.
 This is not two-person control. A `prohibited` plan creates no actionable
 challenge. See ADR-012 in the architecture decision records and the
-active [`V2_2_0_BETA9_ACCEPTANCE.md`](V2_2_0_BETA9_ACCEPTANCE.md).
+active [`V2_2_0_BETA10_ACCEPTANCE.md`](V2_2_0_BETA10_ACCEPTANCE.md).
 
 The Beta 7 correction makes that non-actionability consistent across legacy
 compatibility fields and health. A prohibited F2 record remains visible as
@@ -30,6 +30,13 @@ operation evidence, no required acknowledgements, and no approval, task,
 dispatch, response, apply, verification, or rollback evidence. Reads, startup,
 Ingress inventory, and handoff generation do not migrate or rewrite that
 record. A contradictory record fails closed.
+
+The same non-actionable projection applies to the separate exact Beta 6
+contract-v1 expired-automation profile introduced in Beta 10. It requires the
+legacy `create_plan` writer shape, empty operations, expired/invalidated state,
+and one of two complete rejected-event sequences with no granted authority,
+task, provider receipt, apply, verification, or rollback evidence. It does not
+make expiry generally acceptable and does not rewrite the record.
 
 `status_is_legacy` is a property of the status projection returned in a response;
 it is not a record-age or pre-F2 indicator. Plans that genuinely predate F2 and
@@ -273,8 +280,8 @@ validation cannot change the deployed add-on route.
 ## Historical RC2 deployed acceptance procedure
 
 The procedure below records the earlier RC2 authority-version-2 acceptance and
-does not authorize current Beta 9 deployment. Use
-[`V2_2_0_BETA9_ACCEPTANCE.md`](V2_2_0_BETA9_ACCEPTANCE.md) for the current
+does not authorize current Beta 10 deployment. Use
+[`V2_2_0_BETA10_ACCEPTANCE.md`](V2_2_0_BETA10_ACCEPTANCE.md) for the current
 source and later operator-controlled acceptance boundary. Implementation and CI
 must not access the deployed environment.
 

@@ -1,0 +1,66 @@
+{
+  "fixtures": [
+    {
+      "contract_version_key_present": false,
+      "deserialized_contract_version": 1,
+      "expected_event_sequence": [
+        {
+          "error_code": null,
+          "event": "change_plan_created",
+          "result_status": "success"
+        },
+        {
+          "error_code": "change_plan_expired",
+          "event": "change_plan_expired",
+          "result_status": "rejected"
+        }
+      ],
+      "operation": "update_automation",
+      "operations_key_present": false,
+      "path": "tests/fixtures/beta6_legacy_prohibited_expired_automation_a.json",
+      "sha256": "6d80200367c6d3a2c82b30205b417beab8ab2ee9bf9144242c522314b2857fbb",
+      "status": "expired",
+      "target_type": "automation"
+    },
+    {
+      "contract_version_key_present": false,
+      "deserialized_contract_version": 1,
+      "expected_event_sequence": [
+        {
+          "error_code": null,
+          "event": "change_plan_created",
+          "result_status": "success"
+        },
+        {
+          "error_code": "prohibited_change",
+          "event": "policy_approval_rejected",
+          "result_status": "rejected"
+        },
+        {
+          "error_code": "prohibited_change",
+          "event": "change_apply_rejected",
+          "result_status": "rejected"
+        },
+        {
+          "error_code": "change_plan_expired",
+          "event": "change_plan_expired",
+          "result_status": "rejected"
+        }
+      ],
+      "operation": "update_automation",
+      "operations_key_present": false,
+      "path": "tests/fixtures/beta6_legacy_prohibited_expired_automation_b.json",
+      "sha256": "94e7e2d9d793e76f56dfa2529699a3575a2151650baa47e6d61a39a723e74eff",
+      "status": "expired",
+      "target_type": "automation"
+    }
+  ],
+  "generation_timestamp": "2026-08-02T22:00:00Z",
+  "generator": "scripts/generate_beta6_prohibited_compatibility_fixtures.py",
+  "generator_command": "python3 scripts/generate_beta6_prohibited_compatibility_fixtures.py --beta6-worktree <exact-beta6-worktree> --output-dir tests/fixtures --generated-at 2026-08-02T22:00:00Z",
+  "generator_sha256": "877d1b2a700637518419153890435b1f2dd4ddf8e5be19ee53ed54792ea1bd3a",
+  "historical_source_commit": "5c7eebf962837f85f2309b1b5099401fb075cd6e",
+  "schema_version": 1,
+  "terminal_lifecycle": "ChangeGovernanceService._expire_if_needed",
+  "writer_path": "ChangeGovernanceService.create_plan"
+}

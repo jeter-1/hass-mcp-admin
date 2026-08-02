@@ -1,5 +1,21 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## 2.2.0-beta.10 legacy expired-plan projection
+
+Exact contract-v1 prohibited/expired automation records written through the
+Beta 6 legacy writer use the same terminal public projection and reconciled
+policy-class accounting as current and contract-v2 historical prohibited
+records. They increment `plans_by_policy_class.prohibited` and
+`prohibited_policy_decisions` and remain absent from every pending, challenge,
+Ingress, external-approval, and handoff-authorization counter.
+
+The recognition profile accepts only either complete historical event sequence
+and no authority or execution evidence. It does not make expiry a generic
+non-execution event. Detail, list, health, startup, Ingress, and handoff reads
+remain byte-preserving. Unrecognized records continue through Beta 9's bounded
+`projection_failed` accounting and partial-list contract; systemic storage and
+task-store failures remain top-level failures.
+
 ## 2.2.0-beta.9 prohibited-plan projection accounting
 
 Validated contract-v2 Beta 6 prohibited plans whose legacy lifecycle was

@@ -1,9 +1,10 @@
 # HA MCP Engineering Server Beta
 
 This directory contains the Engineering v2 add-on. Development version
-`2.2.0-beta.9` restores read compatibility for the real contract-v2
-prohibited/superseded representation persisted by Beta 6, contains bounded
-per-record projection failures, and reconciles governance health while
+`2.2.0-beta.10` restores read compatibility for the exact contract-v1
+prohibited/expired automation representation written by Beta 6's legacy
+writer, alongside the contract-v2 superseded representation. It retains
+bounded per-record projection failures and reconciled governance health while
 retaining Beta 7 provider-response truthfulness and the accepted F2, E1, K1,
 C1, and durable execution-task boundaries.
 Its technical “Beta” display name, slug, image repository, and runtime
@@ -110,13 +111,16 @@ reboot and completeness defects, RC2dev14 established practical configuration
 plans, and RC2dev16 corrected delegated structured-error normalization without
 changing upstream admission or adding search behavior. Version `2.0.1`
 promoted the accepted RC1-dev2 behavior without a functional change. Development
-version `2.2.0-beta.9` retains governed controlled reload, exact add-on restart,
+version `2.2.0-beta.10` retains governed controlled reload, exact add-on restart,
 Home Assistant restart, readback-only reconciliation, and one durable execution
 task for each newly executed plan. It adds authority-version-3 policy and
 approval bundles without another tool, provider, resource, or fallback. Beta 9
 recognizes the exact contract-v2 Beta 6 superseded/invalidated prohibited
 record as terminal without migration, reports bounded per-record projection
-failures without hiding valid list results, and reconciles policy-class health;
+failures without hiding valid list results, and reconciles policy-class health.
+Beta 10 separately recognizes only the exact source-generated contract-v1
+expired automation profile and its two complete event sequences without
+globally allowlisting expiry.
 Beta 7 response truthfulness and current prohibited projection remain
 unchanged. Its
 update/recovery preflight,
@@ -128,8 +132,8 @@ retains
 exact reviewed 7.14.2 compatibility, reviewed 7.14.1 rollback compatibility,
 and the hardened MCP SDK boundary. Its changes, rollback, and acceptance
 requirements are recorded in
-[`../docs/V2_2_0_BETA9_RELEASE_NOTES.md`](../docs/V2_2_0_BETA9_RELEASE_NOTES.md),
-[`../docs/V2_2_0_BETA9_ACCEPTANCE.md`](../docs/V2_2_0_BETA9_ACCEPTANCE.md), and
+[`../docs/V2_2_0_BETA10_RELEASE_NOTES.md`](../docs/V2_2_0_BETA10_RELEASE_NOTES.md),
+[`../docs/V2_2_0_BETA10_ACCEPTANCE.md`](../docs/V2_2_0_BETA10_ACCEPTANCE.md), and
 [`../docs/OPERATIONAL_ADMINISTRATION.md`](../docs/OPERATIONAL_ADMINISTRATION.md).
 Determine
 exact advertised state from version metadata and `scripts/codex-context.py`.

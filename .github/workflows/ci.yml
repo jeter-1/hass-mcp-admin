@@ -26,6 +26,34 @@ jobs:
             tests/requirements.txt
       - name: Install dependencies
         run: python -m pip install -r hass_mcp_engineering_beta/requirements.txt -r tests/requirements.txt
+      - name: Regenerate historical compatibility fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          historical_sha="5c7eebf962837f85f2309b1b5099401fb075cd6e"
+          historical_worktree="$RUNNER_TEMP/beta6-fixture-source"
+          generated="$RUNNER_TEMP/beta6-generated-fixtures"
+          cleanup() {
+            git worktree remove "$historical_worktree" >/dev/null 2>&1 || true
+            git worktree prune
+          }
+          trap cleanup EXIT
+          git worktree add --detach "$historical_worktree" "$historical_sha"
+          PYTHONDONTWRITEBYTECODE=1 \
+            python scripts/generate_beta6_prohibited_compatibility_fixtures.py \
+            --beta6-worktree "$historical_worktree" \
+            --output-dir "$generated" \
+            --generated-at 2026-08-02T22:00:00Z
+          for fixture in \
+            beta6_prohibited_superseded_contract_v2_a.json \
+            beta6_prohibited_superseded_contract_v2_b.json \
+            beta6_prohibited_superseded_contract_v2_provenance.json \
+            beta6_legacy_prohibited_expired_automation_a.json \
+            beta6_legacy_prohibited_expired_automation_b.json \
+            beta6_legacy_prohibited_expired_automation_provenance.json
+          do
+            cmp "$generated/$fixture" "tests/fixtures/$fixture"
+          done
       - name: Audit Engineering dependencies
         run: python -m pip_audit --strict --progress-spinner off --requirement hass_mcp_engineering_beta/requirements.txt
       - name: Compile Python

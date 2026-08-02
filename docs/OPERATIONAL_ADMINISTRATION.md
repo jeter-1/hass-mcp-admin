@@ -1,6 +1,6 @@
 # Governed operational administration
 
-Version: `2.2.0-beta.9`
+Version: `2.2.0-beta.10`
 
 The accepted 2.1A lifecycle retains four public proposal tools:
 `create_backup_plan`, `create_reload_plan`, `create_addon_restart_plan`, and
@@ -38,6 +38,13 @@ plan ID and error code. Health assigns those records to the fail-closed
 `projection_failed` policy bucket, warns explicitly, and keeps policy-class
 accounting equal to the loaded plan total. Systemic storage failures remain
 top-level failures and are not converted to partial success.
+
+Beta 10 adds a separate exact compatibility profile for Beta 6 contract-v1
+legacy `update_automation` plans that expired without authority or execution.
+Only the two complete source-generated event sequences are recognized. The
+profile creates no approval, task, provider, retry, or recovery work and does
+not globally treat expiry as non-execution evidence. Detail, listing, health,
+startup, Ingress, and handoff reads preserve the stored bytes.
 
 ## Durable execution tasks
 

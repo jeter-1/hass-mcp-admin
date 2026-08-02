@@ -111,6 +111,7 @@ APPROVAL_CHALLENGE_TTL = timedelta(minutes=60)
 DEFAULT_APPROVER_PRINCIPAL = "home_assistant_admin_ingress"
 CONFIGURATION_PLAN_CONTRACT_VERSION = 2
 BETA6_PROHIBITED_COMPAT_CONTRACT_VERSION = 2
+BETA6_LEGACY_EXPIRED_AUTOMATION_CONTRACT_VERSION = 1
 OPERATIONAL_PLAN_CONTRACT_VERSION = 3
 LIFECYCLE_OPERATIONS = frozenset(
     {
@@ -1452,8 +1453,10 @@ class ChangeGovernanceService:
         )
 
     @staticmethod
-    def _prohibited_plan_has_execution_evidence(plan: ChangePlan) -> bool:
-        """Reject compatibility when any dispatch or successful work is present."""
+    def _prohibited_plan_has_non_event_execution_evidence(
+        plan: ChangePlan,
+    ) -> bool:
+        """Reject compatibility when dispatch or successful work is present."""
 
         if (
             plan.applied_at is not None
@@ -1508,6 +1511,19 @@ class ChangeGovernanceService:
                 or plan.operational.verification.attempt_count != 0
             ):
                 return True
+        return False
+
+    @staticmethod
+    def _prohibited_plan_has_execution_evidence(plan: ChangePlan) -> bool:
+        """Reject execution evidence under the reviewed default event profile."""
+
+        has_non_event_evidence = (
+            ChangeGovernanceService._prohibited_plan_has_non_event_execution_evidence(
+                plan
+            )
+        )
+        if has_non_event_evidence:
+            return True
         allowed_events = {
             "change_plan_created": (
                 "success",
@@ -1545,6 +1561,131 @@ class ChangeGovernanceService:
             return True
         return False
 
+    @staticmethod
+    def _is_beta6_legacy_expired_automation_candidate(
+        plan: ChangePlan,
+    ) -> bool:
+        """Identify the legacy era without treating its fields as proof."""
+
+        return bool(
+            plan.contract_version
+            == BETA6_LEGACY_EXPIRED_AUTOMATION_CONTRACT_VERSION
+            and (
+                plan.status == PlanStatus.EXPIRED
+                or plan.approval.state == ApprovalState.INVALIDATED
+                or plan.approval.bundle_state == "invalidated"
+                or any(
+                    event.event == "change_plan_expired"
+                    for event in plan.events
+                )
+            )
+        )
+
+    def _beta6_legacy_expired_automation_failures(
+        self,
+        plan: ChangePlan,
+        *,
+        policy_snapshot_validated: bool = False,
+    ) -> tuple[str, ...]:
+        """Validate the exact Beta 6 legacy expired-automation profile."""
+
+        failures: list[str] = []
+        decision = plan.policy_decision
+        approval = plan.approval
+        if decision is None:
+            failures.append("legacy_policy_snapshot_missing")
+        else:
+            if decision.policy_class != ApprovalPolicyClass.PROHIBITED:
+                failures.append("legacy_policy_class_not_prohibited")
+            if decision.required_acknowledgements:
+                failures.append("legacy_required_acknowledgements_not_empty")
+            if approval.policy_decision_hash != decision.policy_decision_hash:
+                failures.append("legacy_approval_policy_hash_mismatch")
+            if approval.policy_class != decision.policy_class.value:
+                failures.append("legacy_approval_policy_class_mismatch")
+            if (
+                not policy_snapshot_validated
+                and not policy_snapshot_matches(plan)
+            ):
+                failures.append("legacy_policy_snapshot_invalid")
+        if plan.risk.apply_allowed:
+            failures.append("legacy_apply_allowed")
+        if (
+            plan.contract_version
+            != BETA6_LEGACY_EXPIRED_AUTOMATION_CONTRACT_VERSION
+        ):
+            failures.append("legacy_contract_version_not_supported")
+        if plan.plan_version != 1:
+            failures.append("legacy_plan_version_not_supported")
+        if plan.operation != ChangeOperation.UPDATE_AUTOMATION:
+            failures.append("legacy_operation_not_update_automation")
+        if plan.target_type != "automation":
+            failures.append("legacy_target_type_not_automation")
+        if not plan.target_id:
+            failures.append("legacy_target_id_empty")
+        if plan.target_id == plan.plan_id:
+            failures.append("legacy_target_id_matches_plan_id")
+        if plan.operations:
+            failures.append("legacy_operations_not_empty")
+        if plan.status != PlanStatus.EXPIRED:
+            failures.append("legacy_status_not_expired")
+        if approval.state != ApprovalState.INVALIDATED:
+            failures.append("legacy_approval_state_not_invalidated")
+        if approval.bundle_state != "invalidated":
+            failures.append("legacy_bundle_state_not_invalidated")
+        if approval.authority_version != APPROVAL_AUTHORITY_VERSION:
+            failures.append("legacy_approval_authority_version_mismatch")
+        if approval.approval_kind != "apply":
+            failures.append("legacy_approval_kind_not_apply")
+
+        observed_events = tuple(
+            (event.event, event.result_status, event.error_code)
+            for event in plan.events
+        )
+        allowed_event_sequences = (
+            (
+                ("change_plan_created", "success", None),
+                (
+                    "change_plan_expired",
+                    "rejected",
+                    ErrorCode.CHANGE_PLAN_EXPIRED.value,
+                ),
+            ),
+            (
+                ("change_plan_created", "success", None),
+                (
+                    "policy_approval_rejected",
+                    "rejected",
+                    ErrorCode.PROHIBITED_CHANGE.value,
+                ),
+                (
+                    "change_apply_rejected",
+                    "rejected",
+                    ErrorCode.PROHIBITED_CHANGE.value,
+                ),
+                (
+                    "change_plan_expired",
+                    "rejected",
+                    ErrorCode.CHANGE_PLAN_EXPIRED.value,
+                ),
+            ),
+        )
+        if observed_events not in allowed_event_sequences:
+            failures.append("legacy_event_sequence_not_supported")
+        if self._prohibited_approval_has_authority_evidence(plan):
+            failures.append("legacy_approval_authority_evidence_present")
+        if self._prohibited_plan_has_non_event_execution_evidence(plan):
+            failures.append("legacy_execution_evidence_present")
+        try:
+            task = self.task_repository.get_for_plan(plan.plan_id)
+        except ExecutionTaskStorageError as exc:
+            raise GovernanceError(
+                ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+            ) from exc
+        if task is not None:
+            failures.append("legacy_execution_task_present")
+        return tuple(failures)
+
     def _effective_prohibited_plan_failures(
         self,
         plan: ChangePlan,
@@ -1556,6 +1697,12 @@ class ChangeGovernanceService:
         Clause names are private, deterministic, and contain no record data.
         Task storage is consulted exactly once and storage errors remain fatal.
         """
+
+        if self._is_beta6_legacy_expired_automation_candidate(plan):
+            return self._beta6_legacy_expired_automation_failures(
+                plan,
+                policy_snapshot_validated=policy_snapshot_validated,
+            )
 
         failures: list[str] = []
         decision = plan.policy_decision
@@ -1654,12 +1801,12 @@ class ChangeGovernanceService:
     ) -> bool:
         """Recognize current and exact safe Beta 6 prohibited records.
 
-        Beta 6 could supersede a prohibited contract-v2 plan when a later plan
-        targeted the same automation. That transition changed only the legacy
-        lifecycle fields to ``superseded``/``invalidated``. The immutable F2
-        policy snapshot remained prohibited, with no acknowledgement,
-        challenge, task, dispatch, apply, or rollback authority. Beta 9 treats
-        that source-established shape as terminal without rewriting it.
+        Beta 6 persisted two reviewed forms: contract-v2 configuration plans
+        superseded by a later same-target plan, and contract-v1 automation
+        plans expired through the legacy lifecycle. Their immutable F2 policy
+        snapshots remained prohibited with no acknowledgement, challenge,
+        task, dispatch, apply, or rollback authority. Beta 10 treats only the
+        exact source-generated forms as terminal without rewriting them.
         """
 
         return not self._effective_prohibited_plan_failures(

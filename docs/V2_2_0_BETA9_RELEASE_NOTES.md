@@ -1,11 +1,15 @@
 # HA MCP Engineering Server 2.2.0-beta.9
 
+> Historical release: the later Beta 10 compatibility correction covers the
+> distinct contract-v1 legacy `create_plan`/expiration representation and
+> moves delta-aware safety-reducing policy to Beta 11.
+
 Version `2.2.0-beta.9` is a narrow persisted-format compatibility correction on
 the accepted Beta 8 runtime. It recognizes the real contract-v2
 prohibited/superseded record written by Beta 6, contains individual governance
 projection failures, and reconciles plan policy accounting. It does not
-implement delta-aware safety-reducing policy; that milestone is deferred to
-Beta 10.
+implement delta-aware safety-reducing policy. That milestone was subsequently
+moved to Beta 11 when Beta 10 was allocated to legacy compatibility.
 
 ## Beta 8 regression corrected
 
