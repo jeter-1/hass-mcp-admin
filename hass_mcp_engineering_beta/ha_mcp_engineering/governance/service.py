@@ -1801,12 +1801,12 @@ class ChangeGovernanceService:
     ) -> bool:
         """Recognize current and exact safe Beta 6 prohibited records.
 
-        Beta 6 could supersede a prohibited contract-v2 plan when a later plan
-        targeted the same automation. That transition changed only the legacy
-        lifecycle fields to ``superseded``/``invalidated``. The immutable F2
-        policy snapshot remained prohibited, with no acknowledgement,
-        challenge, task, dispatch, apply, or rollback authority. Beta 9 treats
-        that source-established shape as terminal without rewriting it.
+        Beta 6 persisted two reviewed forms: contract-v2 configuration plans
+        superseded by a later same-target plan, and contract-v1 automation
+        plans expired through the legacy lifecycle. Their immutable F2 policy
+        snapshots remained prohibited with no acknowledgement, challenge,
+        task, dispatch, apply, or rollback authority. Beta 10 treats only the
+        exact source-generated forms as terminal without rewriting them.
         """
 
         return not self._effective_prohibited_plan_failures(

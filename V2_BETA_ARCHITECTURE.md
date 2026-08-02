@@ -1,5 +1,23 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## 2.2.0-beta.10 legacy expired-automation compatibility
+
+Beta 10 recognizes an additional exact source-generated Beta 6 persistence
+form: a contract-v1, plan-version-1 prohibited `update_automation` record from
+the legacy `create_plan` writer after its real expiration lifecycle. This is a
+separate profile from contract-v2 configuration-plan supersession. It accepts
+only the two complete historical event sequences and never adds expiry to the
+generic event allowlist.
+
+All immutable policy/hash, target, lifecycle, authority-v3, empty-operation,
+and no-authority/no-execution predicates must pass. Any challenge, grant,
+consumption, task, provider receipt, apply, verification, rollback, event, or
+task-store contradiction fails closed. Historical reads do not migrate or
+rewrite storage. CI regenerates both historical fixture families from the exact
+Beta 6 commit and requires byte equality. Beta 9 inventory/health behavior and
+Beta 7 transport evidence remain unchanged. Delta-aware safety-reducing policy
+moves to Beta 11.
+
 ## 2.2.0-beta.9 real Beta 6 prohibited-plan compatibility
 
 Beta 9 recognizes one exact source-generated Beta 6 persistence form: a
@@ -17,7 +35,7 @@ Per-record projection errors are bounded and visible in partial listings and a
 reconciled health bucket; systemic storage errors still fail closed. No read
 rewrites storage, and no approval, task, provider, tool, resource, fallback, or
 execution boundary is expanded. Delta-aware safety-reducing policy remains a
-Beta 10 milestone.
+later milestone; Beta 10 is the legacy expired-automation correction.
 
 ## 2.2.0-beta.7 acceptance corrections
 

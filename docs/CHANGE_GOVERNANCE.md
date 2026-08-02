@@ -1,5 +1,20 @@
 # Beta automation change governance
 
+## 2.2.0-beta.10 legacy expired-automation compatibility
+
+Beta 10 separately recognizes the exact contract-v1 prohibited/expired
+`update_automation` form produced by Beta 6's legacy `create_plan` path. It
+requires an intact authority-v3 prohibited policy snapshot, empty operations,
+expired/invalidated legacy state, no authority or execution evidence, and one
+of the two complete source-generated event sequences. Expiry is not accepted
+by the generic event profile.
+
+The detail, inventory, health, Ingress, startup, and handoff paths project a
+matching record as terminal and non-actionable without modifying persisted
+bytes. All contract-v2 predicates, projection-failure containment, health
+reconciliation, and task-store failure propagation remain unchanged. See
+[`V2_2_0_BETA10_ACCEPTANCE.md`](V2_2_0_BETA10_ACCEPTANCE.md).
+
 ## 2.2.0-beta.9 real Beta 6 prohibited-plan compatibility
 
 Beta 9 recognizes the exact contract-v2 prohibited-plan form written by Beta 6
@@ -16,7 +31,8 @@ loaded record to a policy bucket and surfaces an explicit projection warning.
 Beta 7 response truthfulness remains unchanged. This changes no plan/policy
 hash, classification, approval sequence, task schema, provider route, or
 fallback. See
-[`V2_2_0_BETA9_ACCEPTANCE.md`](V2_2_0_BETA9_ACCEPTANCE.md).
+[`V2_2_0_BETA9_ACCEPTANCE.md`](V2_2_0_BETA9_ACCEPTANCE.md) for the historical
+contract-v2 boundary.
 
 ## 2.2.0-beta.6 F2 policy and approval authority
 

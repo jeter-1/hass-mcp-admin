@@ -1,6 +1,6 @@
 # Engineering 2.1 and 2.2 foundation roadmap
 
-Status: 2.1A and F2 accepted; Beta 9 compatibility correction in `2.2.0-beta.9`
+Status: 2.1A and F2 accepted; Beta 10 compatibility correction in `2.2.0-beta.10`
 
 The required milestone order is:
 
@@ -123,10 +123,24 @@ keeps reads byte-preserving. It also contains bounded per-record projection
 failures in plan inventory and reconciles every loaded plan in health without
 swallowing systemic storage errors.
 
-Delta-aware safety-reducing policy is explicitly deferred to Beta 10. F3 begins
-only after that separate milestone is accepted. Beta 9 changes no policy
+Beta 10 corrects the separate legacy contract-v1 expired-automation form and
+moves delta-aware safety-reducing policy to Beta 11. F3 begins only after that
+separate milestone is accepted. Beta 9 changes no policy
 classification, approval sequence, task ownership, provider, tool, resource,
 or fallback boundary.
+
+## 2.2.0-beta.10 legacy expired-automation compatibility
+
+Beta 10 generates neutral fixtures through Beta 6's exact legacy `create_plan`
+writer and expiration lifecycle. It recognizes only the source-established
+contract-v1 prohibited/expired automation profile and its two complete event
+sequences. It retains Beta 9 contract-v2 compatibility, partial listing, health
+reconciliation, and byte-preserving reads. CI regenerates both historical
+fixture families from the exact Beta 6 commit.
+
+Delta-aware safety-reducing policy is deferred to Beta 11. Beta 10 adds no
+policy classification, approval sequence, task ownership, provider, tool,
+resource, execution, recovery, or fallback authority.
 
 Each operation must remain operation-specific. This roadmap does not authorize
 a generic administrator, arbitrary Supervisor command, service-call shortcut,

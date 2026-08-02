@@ -1,5 +1,9 @@
 # 2.2.0-beta.9 acceptance contract
 
+> Historical boundary: Beta 10 adds the separate legacy contract-v1
+> expired-automation profile. Use `V2_2_0_BETA10_ACCEPTANCE.md` for current
+> source and post-deployment acceptance.
+
 Version: `2.2.0-beta.9`
 
 Source baseline:

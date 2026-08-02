@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.2.0-beta.10 - Legacy expired-automation compatibility
+
+- Recognize the exact contract-v1 prohibited/expired `update_automation`
+  records written by Beta 6's legacy `create_plan` path, separately from the
+  existing contract-v2 superseded configuration-plan profile.
+- Generate both legacy fixtures through the exact shipped Beta 6 writer and
+  expiration lifecycle, with neutral pre-hash inputs and committed source,
+  generator, fixture, and event-sequence provenance.
+- Admit only the two source-established complete event sequences. The expiry
+  event is not added to the generic no-execution allowlist, and every
+  additional, missing, reordered, successful, or differently coded event
+  remains fail-closed.
+- Require exact plan, target, lifecycle, authority-v3, prohibited-policy, hash,
+  empty-operation, and no-authority/no-execution evidence. Task-store failures
+  continue to propagate.
+- Preserve byte-identical records across detail, listing, health, startup,
+  Ingress, and handoff reads; no record migration, challenge, task, provider
+  call, fallback, or execution path is added.
+- Regenerate both Beta 6 compatibility fixture families in CI from the exact
+  historical source and compare every fixture and provenance file byte for
+  byte.
+- Retain Beta 7 provider-response truthfulness and Beta 9 partial-list and
+  reconciled-health behavior, authority version 3, task schema 1, the
+  25/23/48 plus configured 26/74 tool contract, stable v1.1.2, and zero
+  fallback.
+- Defer delta-aware safety-reducing policy to Beta 11; Beta 10 adds no policy,
+  provider, resource, tool, execution, recovery, or fallback authority.
+
 ## 2.2.0-beta.9 - Real Beta 6 prohibited-plan compatibility
 
 - Correct the historical compatibility gate to recognize exactly the
