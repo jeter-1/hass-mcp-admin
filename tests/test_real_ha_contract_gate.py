@@ -768,6 +768,7 @@ class RealHomeAssistantF2RunnerTests(unittest.IsolatedAsyncioTestCase):
                 "prohibited",
                 "prohibited_non_entity_target",
                 "persisted_beta6_prohibited_upgrade",
+                "persisted_beta6_legacy_expired_upgrade",
             ],
         )
         self.assertEqual(result["configuration_mutation_count"], 2)
@@ -854,6 +855,7 @@ class RealHomeAssistantF2RunnerTests(unittest.IsolatedAsyncioTestCase):
                 "prohibited",
                 "prohibited_non_entity_target",
                 "persisted_beta6_prohibited_upgrade",
+                "persisted_beta6_legacy_expired_upgrade",
             ],
         )
         self.assertEqual(result["configuration_mutation_count"], 2)
@@ -1108,13 +1110,41 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertEqual(cleanup["if"], "always()")
         cleanup_script = str(cleanup["run"])
         self.assertIn("docker rm -f", cleanup_script)
-        self.assertIn('sudo rm -rf "$RUNNER_TEMP/beta25-real-ha"', cleanup_script)
+        self.assertIn(
+            'sudo rm -rf "$RUNNER_TEMP/beta25-real-ha"', cleanup_script
+        )
         self.assertEqual(job["env"]["HA_CONTRACT_VERSION"], "2026.7.2")
         self.assertRegex(
             job["env"]["HA_CONTRACT_IMAGE"],
             r"^ghcr\.io/home-assistant/home-assistant:2026\.7\.2@sha256:"
             r"[0-9a-f]{64}$",
         )
+
+    def test_validate_job_regenerates_every_beta6_compatibility_fixture(self):
+        validate = self.ci["jobs"]["validate"]
+        step = next(
+            item
+            for item in validate["steps"]
+            if item.get("name")
+            == "Regenerate historical compatibility fixtures"
+        )
+        script = str(step["run"])
+        self.assertIn(
+            "5c7eebf962837f85f2309b1b5099401fb075cd6e",
+            script,
+        )
+        self.assertIn("git worktree add --detach", script)
+        self.assertIn("git worktree remove", script)
+        self.assertIn("cmp", script)
+        for fixture in (
+            "beta6_prohibited_superseded_contract_v2_a.json",
+            "beta6_prohibited_superseded_contract_v2_b.json",
+            "beta6_prohibited_superseded_contract_v2_provenance.json",
+            "beta6_legacy_prohibited_expired_automation_a.json",
+            "beta6_legacy_prohibited_expired_automation_b.json",
+            "beta6_legacy_prohibited_expired_automation_provenance.json",
+        ):
+            self.assertIn(fixture, script)
 
     def test_automatic_publication_requires_the_reusable_complete_ci(self):
         events = workflow_events(self.ci)

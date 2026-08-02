@@ -1579,64 +1579,110 @@ async def _run_f2_policy_acceptance_contract(
             observed_mutation_baseline = len(observed.mutations)
             upgrade_health_baseline = service.health_summary()
             legacy_gateway = _LegacyAutomationCompatibilityGateway(gateway)
-            historical_fixture_path = (
-                ROOT
-                / "tests"
-                / "fixtures"
-                / "beta6_prohibited_superseded_contract_v2_a.json"
+            historical_fixture_names = (
+                "beta6_prohibited_superseded_contract_v2_a.json",
+                "beta6_legacy_prohibited_expired_automation_a.json",
+                "beta6_legacy_prohibited_expired_automation_b.json",
             )
-            historical_bytes = historical_fixture_path.read_bytes()
-            historical_value = json.loads(historical_bytes)
-            active_plan_id = historical_value["plan_id"]
-            assert historical_value["contract_version"] == 2
-            assert historical_value["operations"]
-            assert {
-                operation["execution_status"]
-                for operation in historical_value["operations"]
-            } == {"pending"}
-            historical_path = (
-                Path(directory) / "plans" / f"{active_plan_id}.json"
-            )
-            assert not historical_path.exists()
-            historical_path.write_bytes(historical_bytes)
-            persisted_before = historical_path.read_bytes()
+            historical_records = []
+            for fixture_name in historical_fixture_names:
+                historical_fixture_path = (
+                    ROOT / "tests" / "fixtures" / fixture_name
+                )
+                historical_bytes = historical_fixture_path.read_bytes()
+                historical_value = json.loads(historical_bytes)
+                active_plan_id = historical_value["plan_id"]
+                if "contract_v2" in fixture_name:
+                    assert historical_value["contract_version"] == 2
+                    assert historical_value["operations"]
+                    assert {
+                        operation["execution_status"]
+                        for operation in historical_value["operations"]
+                    } == {"pending"}
+                else:
+                    assert "contract_version" not in historical_value
+                    assert "operations" not in historical_value
+                    assert historical_value["operation"] == (
+                        "update_automation"
+                    )
+                    assert historical_value["target"]["target_type"] == (
+                        "automation"
+                    )
+                    assert historical_value["status"] == "expired"
+                historical_path = (
+                    Path(directory) / "plans" / f"{active_plan_id}.json"
+                )
+                assert not historical_path.exists()
+                historical_path.write_bytes(historical_bytes)
+                historical_records.append(
+                    (
+                        active_plan_id,
+                        historical_path,
+                        historical_path.read_bytes(),
+                    )
+                )
 
             recovered = ChangeGovernanceService(
                 service.repository,
                 legacy_gateway,
                 sensitive_values=(token,),
             )
-            historical_public = recovered.get_plan(active_plan_id)
-            assert historical_public["status"] == "prohibited"
-            assert historical_public["approval"]["state"] == "prohibited"
-            assert historical_public["approval_lifecycle"] == "prohibited"
-            assert historical_public["approval_bundle_state"] == "prohibited"
-            assert historical_public["approval_actionable"] is False
-            assert historical_public["approval_challenge_created"] is False
-            assert historical_public["apply_allowed"] is False
-            assert historical_public["next_required_operation"] is None
-            assert recovered.list_plans(limit=100)["count"] >= 1
+            for historical_plan_id, _path, _before in historical_records:
+                historical_public = recovered.get_plan(historical_plan_id)
+                assert historical_public["status"] == "prohibited"
+                assert historical_public["approval"]["state"] == (
+                    "prohibited"
+                )
+                assert historical_public["approval_lifecycle"] == (
+                    "prohibited"
+                )
+                assert historical_public["approval_bundle_state"] == (
+                    "prohibited"
+                )
+                assert historical_public["approval_actionable"] is False
+                assert historical_public[
+                    "approval_challenge_created"
+                ] is False
+                assert historical_public["apply_allowed"] is False
+                assert historical_public["next_required_operation"] is None
+            assert recovered.list_plans(limit=100)["count"] >= len(
+                historical_records
+            )
             historical_listing = recovered.list_plans(
                 status="prohibited", limit=100
             )
-            assert active_plan_id in {
+            prohibited_plan_ids = {
                 item["plan_id"] for item in historical_listing["plans"]
             }
+            assert all(
+                historical_plan_id in prohibited_plan_ids
+                for historical_plan_id, _path, _before in historical_records
+            )
             assert historical_listing["partial"] is False
             assert historical_listing["projection_failure_count"] == 0
             awaiting_listing = recovered.list_plans(
                 status="awaiting_approval", limit=100
             )
-            assert active_plan_id not in {
+            awaiting_plan_ids = {
                 item["plan_id"] for item in awaiting_listing["plans"]
             }
             assert all(
-                review["plan_id"] != active_plan_id
+                historical_plan_id not in awaiting_plan_ids
+                for historical_plan_id, _path, _before in historical_records
+            )
+            assert all(
+                review["plan_id"]
+                not in {
+                    historical_plan_id
+                    for historical_plan_id, _path, _before
+                    in historical_records
+                }
                 for review in recovered.pending_external_reviews()
             )
             upgrade_health = recovered.health_summary()
             assert upgrade_health["prohibited_policy_decisions"] == (
-                upgrade_health_baseline["prohibited_policy_decisions"] + 1
+                upgrade_health_baseline["prohibited_policy_decisions"]
+                + len(historical_records)
             )
             assert upgrade_health["projection_failure_count"] == 0
             assert upgrade_health["policy_class_accounting_valid"] is True
@@ -1648,10 +1694,13 @@ async def _run_f2_policy_acceptance_contract(
                 "pending_challenge_count",
             ):
                 assert upgrade_health[counter] == upgrade_health_baseline[counter]
-            assert recovered.list_execution_tasks(
-                plan_id=active_plan_id
-            )["count"] == 0
-            assert historical_path.read_bytes() == persisted_before
+            for historical_plan_id, historical_path, persisted_before in (
+                historical_records
+            ):
+                assert recovered.list_execution_tasks(
+                    plan_id=historical_plan_id
+                )["count"] == 0
+                assert historical_path.read_bytes() == persisted_before
             assert len(observed.mutations) == observed_mutation_baseline
             return {
                 "completed_scenarios": [
@@ -1660,6 +1709,7 @@ async def _run_f2_policy_acceptance_contract(
                     "prohibited",
                     "prohibited_non_entity_target",
                     "persisted_beta6_prohibited_upgrade",
+                    "persisted_beta6_legacy_expired_upgrade",
                 ],
                 "standard_task_id": standard_applied["task_id"],
                 "elevated_task_id": elevated_applied["task_id"],
