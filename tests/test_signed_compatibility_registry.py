@@ -529,7 +529,7 @@ class StrictModelTests(unittest.TestCase):
             repr(first).encode("utf-8"),
         )
 
-    def test_compiled_release_evidence_projects_without_translation(self):
+    def test_compiled_release_evidence_omits_local_diagnostics_explicitly(self):
         before = COMPILED_REGISTRY.read_bytes()
         compiled = json.loads(before)
         release = next(
@@ -543,10 +543,15 @@ class StrictModelTests(unittest.TestCase):
             for item in policy["tools"]
         }
         projected = deepcopy(release)
+        projected.pop("runtime_contract_fingerprint_model")
         projected["tool_contracts"] = [
             {
                 "tool_name": name,
-                **contract,
+                **{
+                    field: item
+                    for field, item in contract.items()
+                    if field != "runtime_contract_field_fingerprints"
+                },
                 "argument_restrictions": restrictions[name],
             }
             for name, contract in sorted(

@@ -64,6 +64,15 @@ def by_name(tools: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     return values
 
 
+def input_resource(path: Path | None) -> str | None:
+    if path is None:
+        return None
+    try:
+        return path.resolve().relative_to(ROOT.resolve()).as_posix()
+    except ValueError:
+        return f"local-exact-artifact-capture/{path.name}"
+
+
 def pointer_escape(value: str) -> str:
     return value.replace("~", "~0").replace("/", "~1")
 
@@ -190,7 +199,7 @@ def source_record(
     records = by_name(tools)
     return {
         "source": name,
-        "input_path": str(path) if path is not None else None,
+        "input_resource": input_resource(path),
         "input_sha256": file_sha256(path) if path is not None else None,
         "advertised_tool_count": len(tools),
         "operational_catalog_fingerprint": catalog_fingerprint(tools),
@@ -211,6 +220,9 @@ def markdown(report: dict[str, Any]) -> str:
         "All fingerprints use protocol `2025-03-26`. Values are computed from "
         "the retained reviewed fixture and the exact local artifact captures named "
         "in the machine-readable report.",
+        "The committed fixture is name-sorted, so its strict ordered hash is "
+        "not the retained wire-order strict hash. Exact-image rows preserve "
+        "wire order and are the authority for strict fingerprints.",
         "",
         "## Catalogs",
         "",

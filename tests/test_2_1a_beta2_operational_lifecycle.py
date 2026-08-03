@@ -81,6 +81,11 @@ from ha_mcp_engineering.tools import get_registered_server  # noqa: E402
 from ha_mcp_engineering.mcp_sdk_compatibility import (  # noqa: E402
     registered_tools,
 )
+from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
+    RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1,
+    RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2,
+    load_reviewed_upstream_release_registry,
+)
 
 
 UPSTREAM_ADDON_SLUG = "abcdef12_ha_mcp"
@@ -2850,7 +2855,7 @@ class FakeMcpTransport:
             {
                 "slug": UPSTREAM_ADDON_SLUG,
                 "name": UPSTREAM_ADDON_NAME,
-                "version": "7.14.2",
+                "version": version,
                 "state": "started",
                 "repository": "abcdef12",
             },
@@ -2983,6 +2988,218 @@ class SupervisorSelfIdentityTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
+    async def test_exact_release_models_validate_binding_without_dispatch(self):
+        cases = (
+            (
+                "7.14.2",
+                "ha-mcp-v7.14.2-7917b2d3",
+                RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1,
+            ),
+            (
+                "8.0.0",
+                "ha-mcp-v8.0.0-d65630f6",
+                RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2,
+            ),
+        )
+        registry = load_reviewed_upstream_release_registry()
+        for version, entry_id, expected_model in cases:
+            with self.subTest(version=version):
+                transport = FakeMcpTransport(version)
+                provider = ReviewedOperationalLifecycleProvider()
+                provider.configure(
+                    lifecycle_settings(
+                        "http://abcdef12-ha-mcp:9583/"
+                        "synthetic-upstream-secret/mcp"
+                    ),
+                    transport=transport,
+                )
+
+                evidence = await provider.probe("restart_addon")
+                addon = await provider.get_addon(UPSTREAM_ADDON_SLUG)
+
+                release = registry.by_version[version]
+                self.assertEqual(release.entry_id, entry_id)
+                self.assertEqual(
+                    release.runtime_contract_fingerprint_model,
+                    expected_model,
+                )
+                self.assertEqual(evidence.compatibility_entry_id, entry_id)
+                binding = addon["upstream_addon_identity"]
+                self.assertEqual(binding["status"], "bound")
+                self.assertEqual(binding["slug"], UPSTREAM_ADDON_SLUG)
+                self.assertEqual(binding["installed_version"], version)
+                self.assertEqual(
+                    binding["admission_evidence"][
+                        "compatibility_entry_id"
+                    ],
+                    entry_id,
+                )
+                self.assertEqual(
+                    transport.calls,
+                    [
+                        (
+                            "ha_get_addon",
+                            {
+                                "source": "installed",
+                                "include_stats": False,
+                            },
+                        ),
+                        (
+                            "ha_get_addon",
+                            {"slug": UPSTREAM_ADDON_SLUG},
+                        ),
+                    ],
+                )
+                health = provider.health_snapshot()
+                self.assertEqual(
+                    health["runtime_contract_fingerprint_model"],
+                    expected_model,
+                )
+                self.assertEqual(sum(health["dispatch_counts"].values()), 0)
+                self.assertEqual(health["fallback_count"], 0)
+                self.assertEqual(
+                    health["runtime_contract_mismatch_diagnostics"], None
+                )
+                self.assertFalse(
+                    {
+                        "ha_reload_core",
+                        "ha_manage_addon",
+                        "ha_restart",
+                    }
+                    & {name for name, _arguments in transport.calls}
+                )
+
+    async def test_8_0_0_runtime_drift_fails_closed_with_diagnostics(self):
+        transport = FakeMcpTransport("8.0.0")
+        tools = [deepcopy(item) for item in transport.catalog.tools]
+        target = next(
+            item for item in tools if item["name"] == "ha_manage_addon"
+        )
+        target["_meta"]["ha_mcp"]["pinned"] = not target["_meta"][
+            "ha_mcp"
+        ]["pinned"]
+        transport.catalog = McpReadCatalog(
+            protocol_version=transport.catalog.protocol_version,
+            server_name=transport.catalog.server_name,
+            server_version=transport.catalog.server_version,
+            tools=tuple(tools),
+            connection_latency_ms=1.0,
+        )
+        provider = ReviewedOperationalLifecycleProvider()
+        provider.configure(
+            lifecycle_settings(
+                "http://abcdef12-ha-mcp:9583/"
+                "synthetic-upstream-secret/mcp"
+            ),
+            transport=transport,
+        )
+
+        async def self_identity():
+            return SupervisorSelfAddonIdentity(
+                slug="df26dea6_hass_mcp_engineering_beta",
+                name="HA MCP Engineering Server Beta",
+                version="2.2.0-beta.12",
+                repository="df26dea6",
+            )
+
+        gateway = OperationalLifecycleGateway(
+            provider,
+            None,
+            None,
+            configuration_validator=lambda: None,
+            runtime_snapshot=lambda: {},
+            process_instance_id="runtime-drift-process",
+            self_addon_identity_resolver=self_identity,
+        )
+        release = load_reviewed_upstream_release_registry().by_version[
+            "8.0.0"
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            repository = ChangePlanRepository(Path(directory) / "plans")
+            service = ChangeGovernanceService(
+                repository,
+                LegacyGateway(),
+                AuditLogger(
+                    str(Path(directory) / "audit.jsonl"),
+                    "synthetic-access-secret-value",
+                ),
+                lifecycle_gateway=gateway,
+            )
+            with (
+                patch(
+                    "ha_mcp_engineering.providers.operational_lifecycle."
+                    "catalog_fingerprint",
+                    return_value=release.catalog_fingerprint,
+                ),
+                self.assertRaises(GovernanceError) as raised,
+            ):
+                await service.create_addon_restart_plan(
+                    addon_slug=UPSTREAM_ADDON_SLUG
+                )
+            self.assertEqual(
+                raised.exception.code,
+                ErrorCode.OPERATIONAL_CONTRACT_MISMATCH,
+            )
+            self.assertEqual(repository.list(), [])
+
+        health = provider.health_snapshot()
+        diagnostics = health["runtime_contract_mismatch_diagnostics"]
+        self.assertEqual(
+            health["failure_counts"], {"reviewed_contract_mismatch": 1}
+        )
+        self.assertEqual(sum(health["dispatch_counts"].values()), 0)
+        self.assertEqual(health["fallback_count"], 0)
+        self.assertEqual(transport.calls, [])
+        self.assertEqual(diagnostics["tool"], "ha_manage_addon")
+        self.assertEqual(
+            diagnostics["runtime_contract_fingerprint_model"],
+            RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2,
+        )
+        self.assertNotEqual(
+            diagnostics["expected_runtime_contract_fingerprint"],
+            diagnostics["observed_runtime_contract_fingerprint"],
+        )
+        self.assertEqual(
+            diagnostics["runtime_contract_diff_fields"],
+            ["/_meta/ha_mcp/pinned"],
+        )
+
+    async def test_unknown_8_x_lifecycle_releases_fail_without_dispatch(self):
+        registry = load_reviewed_upstream_release_registry()
+        for version in ("8.0.1", "8.1.0"):
+            with self.subTest(version=version):
+                transport = FakeMcpTransport("8.0.0")
+                transport.catalog = McpReadCatalog(
+                    protocol_version="2025-03-26",
+                    server_name=transport.catalog.server_name,
+                    server_version=version,
+                    tools=transport.catalog.tools,
+                    connection_latency_ms=1.0,
+                )
+                provider = ReviewedOperationalLifecycleProvider()
+                provider.configure(
+                    lifecycle_settings(
+                        "http://abcdef12-ha-mcp:9583/"
+                        "synthetic-upstream-secret/mcp"
+                    ),
+                    transport=transport,
+                )
+
+                with self.assertRaises(
+                    OperationalLifecycleProviderError
+                ) as raised:
+                    await provider.probe("restart_addon")
+
+                self.assertEqual(
+                    raised.exception.category,
+                    "upstream_version_mismatch",
+                )
+                self.assertNotIn(version, registry.by_version)
+                health = provider.health_snapshot()
+                self.assertEqual(sum(health["dispatch_counts"].values()), 0)
+                self.assertEqual(health["fallback_count"], 0)
+                self.assertEqual(transport.calls, [])
+
     async def test_prefixed_engineering_slug_is_exact_self_target(self):
         slug = "df26dea6_hass_mcp_engineering_beta"
         runtime = {

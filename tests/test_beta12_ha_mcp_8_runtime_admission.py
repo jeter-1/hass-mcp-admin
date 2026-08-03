@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -18,8 +19,10 @@ sys.path.insert(0, str(BETA))
 
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     OPERATIONAL_CATALOG_FINGERPRINT_MODEL,
+    SUPPORTED_PROTOCOLS,
     UpstreamReadGateway,
 )
+from ha_mcp_engineering.tools import registered_tools  # noqa: E402
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     MAX_RUNTIME_POLICY_RULE_COUNT,
     RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2,
@@ -38,6 +41,10 @@ RECONSTRUCTION = (
     EVIDENCE / "ha-mcp-8.0.0-live-addon-reconstruction.json"
 )
 REVIEWED_CAPTURE = EVIDENCE / "ha-mcp-8.0.0.json"
+EXACT_ARTIFACT_INSPECTION = (
+    EVIDENCE / "ha-mcp-8.0.0-exact-artifact-inspection.json"
+)
+FIELD_DIFF_REPORT = EVIDENCE / "ha-mcp-8.0.0-live-addon-field-diff.json"
 
 
 def load_json(path: Path) -> dict:
@@ -55,22 +62,23 @@ def reconstruct_live_addon_tools() -> list[dict]:
 
 def server() -> FastMCP:
     value = FastMCP("beta12-runtime-admission")
+    for index in range(48):
 
-    async def native() -> str:
-        return "native"
+        async def native() -> str:
+            return "native"
 
-    value.tool(name="native_beta12_test")(native)
+        value.tool(name=f"native_beta12_test_{index}")(native)
     return value
 
 
 class Beta12ReproductionDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
     async def gateway_for(
-        self, tools: list[dict]
+        self, tools: list[dict], *, version: str = "8.0.0"
     ) -> tuple[UpstreamReadGateway, FastMCP]:
         gateway = UpstreamReadGateway()
         gateway.configure(
             settings(),
-            transport=FakeTransport(tools, version="8.0.0"),
+            transport=FakeTransport(tools, version=version),
             release_registry=load_reviewed_upstream_release_registry(),
             admission_validator=lambda _catalog: None,
         )
@@ -88,7 +96,7 @@ class Beta12ReproductionDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
             expected["observed_live_catalog_fingerprint"],
         )
 
-        gateway, _target = await self.gateway_for(tools)
+        gateway, target = await self.gateway_for(tools)
         health = gateway.health_snapshot()
         self.assertEqual(health["dynamically_exposed_count"], 24)
         self.assertEqual(health["exact_matched_automatic_read_count"], 24)
@@ -101,6 +109,13 @@ class Beta12ReproductionDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(health["fallback_count"], 0)
         self.assertEqual(health["admission_status"], "admitted_exact")
+        self.assertEqual(health["upstream_advertised_tool_count"], 78)
+        self.assertEqual(health["reviewed_automatic_read_count"], 24)
+        self.assertEqual(health["missing_automatic_read_count"], 0)
+        self.assertEqual(health["unreviewed_tool_count"], 0)
+        self.assertEqual(len(registered_tools(target)), 72)
+        self.assertNotIn("ha_search", registered_tools(target))
+        self.assertNotIn("ha_get_operation_status", registered_tools(target))
         self.assertEqual(
             health["observed_catalog_fingerprint"],
             expected["observed_live_catalog_fingerprint"],
@@ -131,6 +146,85 @@ class Beta12ReproductionDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
             health["runtime_contract_fingerprint_model"],
             RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2,
         )
+
+    async def test_7_14_2_regression_accounting_remains_exact(self):
+        tools = load_json(EVIDENCE / "ha-mcp-7.14.2.json")["tools"]
+        gateway, target = await self.gateway_for(tools, version="7.14.2")
+        health = gateway.health_snapshot()
+        self.assertEqual(health["upstream_advertised_tool_count"], 78)
+        self.assertEqual(health["reviewed_automatic_read_count"], 26)
+        self.assertEqual(health["exact_matched_automatic_read_count"], 26)
+        self.assertEqual(health["dynamically_exposed_count"], 26)
+        self.assertEqual(len(registered_tools(target)), 74)
+        self.assertEqual(
+            health["observed_catalog_fingerprint"],
+            "c6bd074d9ee1e832bd90318398c00efd9a9ffd983d5444817bc830208cbfc47c",
+        )
+        self.assertEqual(health["runtime_contract_mismatch_count"], 0)
+        self.assertEqual(health["quarantined_automatic_read_count"], 0)
+        self.assertEqual(health["fallback_count"], 0)
+
+    async def test_unknown_8_x_versions_do_not_inherit_trust(self):
+        tools = reconstruct_live_addon_tools()
+        for version in ("8.0.1", "8.1.0"):
+            with self.subTest(version=version):
+                gateway, target = await self.gateway_for(
+                    tools, version=version
+                )
+                health = gateway.health_snapshot()
+                self.assertEqual(health["version_status"], "rejected_unreviewed")
+                self.assertEqual(health["dynamically_exposed_count"], 0)
+                self.assertEqual(health["fallback_count"], 0)
+                self.assertEqual(len(registered_tools(target)), 48)
+        self.assertEqual(SUPPORTED_PROTOCOLS, frozenset({"2025-03-26"}))
+
+    def test_release_consumers_cannot_hash_raw_tool_descriptors(self):
+        consumers = (
+            BETA
+            / "ha_mcp_engineering"
+            / "providers"
+            / "upstream_read_gateway.py",
+            BETA
+            / "ha_mcp_engineering"
+            / "providers"
+            / "operational_backup.py",
+            BETA
+            / "ha_mcp_engineering"
+            / "providers"
+            / "operational_lifecycle.py",
+        )
+        for path in consumers:
+            with self.subTest(path=path.name):
+                tree = ast.parse(path.read_text(encoding="utf-8"))
+                raw_descriptor_calls = []
+                model_selected_calls = []
+                for node in ast.walk(tree):
+                    if not isinstance(node, ast.Call) or not isinstance(
+                        node.func, ast.Name
+                    ):
+                        continue
+                    if (
+                        node.func.id == "schema_fingerprint"
+                        and node.args
+                        and isinstance(node.args[0], ast.Name)
+                        and node.args[0].id in {"tool", "observed_tool"}
+                    ):
+                        raw_descriptor_calls.append(node.lineno)
+                    if node.func.id == "runtime_contract_fingerprint":
+                        model_selected_calls.append(
+                            (
+                                node.lineno,
+                                any(
+                                    keyword.arg == "model"
+                                    for keyword in node.keywords
+                                ),
+                            )
+                        )
+                self.assertEqual(raw_descriptor_calls, [])
+                self.assertTrue(model_selected_calls)
+                self.assertTrue(
+                    all(selected for _line, selected in model_selected_calls)
+                )
 
     async def test_one_runtime_only_change_has_bounded_exact_diagnostics(self):
         tools = deepcopy(load_json(REVIEWED_CAPTURE)["tools"])
@@ -303,4 +397,65 @@ class Beta12ReproductionDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn(
                 "legacy raw full-descriptor runtime comparator differs",
                 output_markdown.read_text(encoding="utf-8"),
+            )
+
+    def test_exact_artifact_evidence_is_bound_to_reproduced_fingerprints(self):
+        inspection = load_json(EXACT_ARTIFACT_INSPECTION)
+        artifacts = inspection["artifacts"]
+        self.assertEqual(
+            artifacts["standalone_linux_amd64"][
+                "operational_catalog_fingerprint"
+            ],
+            "0bc81aa7bd94416385520b9c4c4f7d9ccbc6a49f8f65b8a2a599135463327316",
+        )
+        self.assertEqual(
+            artifacts["addon_linux_amd64"][
+                "operational_catalog_fingerprint"
+            ],
+            "c61b0959e766f3900300dd4dd69a6d799fc113186d91983f21be69f1bc6b8768",
+        )
+        self.assertEqual(
+            artifacts["addon_linux_arm64"][
+                "source_payload_difference_count"
+            ],
+            0,
+        )
+        self.assertFalse(inspection["production_accessed"])
+
+        report = load_json(FIELD_DIFF_REPORT)
+        sources = {item["source"]: item for item in report["sources"]}
+        self.assertEqual(
+            sources["exact_standalone_image"][
+                "strict_ordered_catalog_fingerprint"
+            ],
+            "ff18cda3ca27abc8cca69685fb5240942cbe24a1508f73b9a26e57e1afe44d5a",
+        )
+        self.assertEqual(
+            sources["exact_addon_image"][
+                "strict_ordered_catalog_fingerprint"
+            ],
+            "f061e48a5d049a2fe84f8b46451a8c2928e0eb5fc68181cf0cbbe71ae5025727",
+        )
+        for tool_name in (
+            "ha_get_state",
+            "ha_config_get_automation",
+            "ha_get_history",
+            "ha_list_services",
+        ):
+            exact_changes = report["field_diffs"][tool_name][
+                "exact_addon_image"
+            ]
+            self.assertEqual(
+                [item["path"] for item in exact_changes],
+                [
+                    "/_meta/ha_mcp/policy/deployment",
+                    "/_meta/ha_mcp/policy/enabled",
+                    "/_meta/ha_mcp/policy/live",
+                ],
+            )
+            self.assertTrue(
+                sources["exact_addon_image"]["tools"][tool_name]["accepted"]
+            )
+            self.assertIsNone(
+                sources["exact_addon_image"]["tools"][tool_name]["reason"]
             )

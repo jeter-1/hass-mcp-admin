@@ -1515,6 +1515,29 @@ def exact_catalog(version: str) -> McpReadCatalog:
 
 
 class OperationalProviderContractTests(unittest.IsolatedAsyncioTestCase):
+    async def test_exact_8_0_0_probe_uses_release_runtime_model(self):
+        transport = FakeTransport(exact_catalog("8.0.0"))
+        provider = ReviewedOperationalBackupProvider()
+        provider._transport = transport
+        provider._state.configured = True
+
+        evidence = await provider.probe()
+
+        release = load_reviewed_upstream_release_registry().by_version[
+            "8.0.0"
+        ]
+        self.assertEqual(evidence.server_version, "8.0.0")
+        self.assertEqual(
+            evidence.tool_contract_fingerprint,
+            release.tool_contracts_by_name[
+                "ha_manage_backup"
+            ].runtime_contract_fingerprint,
+        )
+        health = provider.health_snapshot()
+        self.assertEqual(health["probe_success_count"], 1)
+        self.assertEqual(health["dispatch_count"], 0)
+        self.assertEqual(health["fallback_count"], 0)
+
     async def test_real_transport_preserves_call_time_catalog_drift(self):
         drift = exact_catalog("7.14.2")
         tools = [deepcopy(item) for item in drift.tools]
