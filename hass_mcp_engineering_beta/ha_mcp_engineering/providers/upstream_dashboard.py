@@ -30,6 +30,7 @@ from ..sanitization import sanitize_untrusted_data
 from .upstream_contracts import (
     COMPILED_CONTRACT_FAMILIES,
     CONTRACT_FAMILY,
+    expected_contract_family,
     REQUIRED_SERVER_NAME,
     AdmissionDecision,
     ReleaseAttestation,
@@ -1736,7 +1737,8 @@ def _matching_release_attestation(
             for entry, _source in attestations
             if entry.server_name == server_name
             and entry.upstream_version == server_version
-            and entry.contract_family == CONTRACT_FAMILY
+            and entry.contract_family
+            == expected_contract_family(server_version)
         ),
         None,
     )

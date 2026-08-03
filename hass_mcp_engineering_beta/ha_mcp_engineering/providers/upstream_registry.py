@@ -20,7 +20,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from .upstream_contracts import (
-    CONTRACT_FAMILY,
+    expected_contract_family,
     ContractValidationError,
     ReleaseAttestation,
     _validate_unique_attestations,
@@ -128,7 +128,7 @@ class UpstreamTrustRegistry:
         return any(
             entry.server_name == server_name
             and entry.upstream_version == version
-            and entry.contract_family == CONTRACT_FAMILY
+            and entry.contract_family == expected_contract_family(version)
             for entry, _source in self.effective_attestations()
         )
 

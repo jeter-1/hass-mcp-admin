@@ -40,6 +40,7 @@ from tests.test_readonly_upstream_gateway import (  # noqa: E402
 REGISTRY = RUNTIME / "upstream_release_registry.json"
 POLICY_7141 = RUNTIME / "upstream_tool_policy.json"
 POLICY_7142 = RUNTIME / "upstream_tool_policy_7_14_2.json"
+POLICY_8000 = RUNTIME / "upstream_tool_policy_8_0_0.json"
 CAPTURE_DIRECTORY = (
     ROOT / "docs/evidence/upstream-read-compatibility"
 )
@@ -74,7 +75,7 @@ class RegistryFixture:
     def __init__(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
-        for path in (REGISTRY, POLICY_7141, POLICY_7142):
+        for path in (REGISTRY, POLICY_7141, POLICY_7142, POLICY_8000):
             shutil.copy2(path, self.root / path.name)
         self.path = self.root / REGISTRY.name
         self.capture_directory = (
@@ -84,7 +85,7 @@ class RegistryFixture:
             / "upstream-read-compatibility"
         )
         self.capture_directory.mkdir(parents=True)
-        for version in ("7.14.1", "7.14.2"):
+        for version in ("7.14.1", "7.14.2", "8.0.0"):
             shutil.copy2(
                 CAPTURE_DIRECTORY / f"ha-mcp-{version}.json",
                 self.capture_directory / f"ha-mcp-{version}.json",
@@ -148,7 +149,10 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
             REGISTRY,
             repository_root=ROOT,
         )
-        self.assertEqual(registry.supported_versions, ("7.14.1", "7.14.2"))
+        self.assertEqual(
+            registry.supported_versions,
+            ("7.14.1", "7.14.2", "8.0.0"),
+        )
         self.assertEqual(registry.default_version, "7.14.1")
         self.assertEqual(
             REGISTRY.read_bytes().rstrip(b"\n"),
@@ -159,7 +163,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
             self.assertEqual(len(release.tool_contracts), 78)
             self.assertEqual(
                 release.policy.classification_counts["automatic_read"],
-                26,
+                24 if release.version == "8.0.0" else 26,
             )
             self.assertEqual(
                 {
@@ -608,7 +612,10 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 for entry in release.policy.tools
                 if entry.classification == "automatic_read"
             }
-            self.assertEqual(len(automatic_names), 26)
+            self.assertEqual(
+                len(automatic_names),
+                24 if release.version == "8.0.0" else 26,
+            )
             for tool_name in sorted(automatic_names):
                 for expected_reason, mutate in mutations.items():
                     with self.subTest(

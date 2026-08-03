@@ -27,6 +27,7 @@ from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.errors import DashboardProviderError  # noqa: E402
 from ha_mcp_engineering.providers.upstream_contracts import (  # noqa: E402
     CONTRACT_FAMILY,
+    CONTRACT_FAMILY_V3,
     COMPILED_CONTRACT_FAMILIES,
     COMPILED_ARGUMENT_SHAPES,
     PROHIBITED_ARGUMENTS,
@@ -35,6 +36,7 @@ from ha_mcp_engineering.providers.upstream_contracts import (  # noqa: E402
     decide_admission,
     load_attestations,
     normalize_runtime_contract,
+    expected_contract_family,
 )
 from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
     UpstreamDashboardProvider,
@@ -52,11 +54,26 @@ from ha_mcp_engineering.providers.upstream_registry import (  # noqa: E402
 CONTRACTS = BETA / "ha_mcp_engineering" / "providers" / "contracts"
 SEVEN_THIRTEEN = CONTRACTS / "ha_mcp_7_13_dashboard_read_v1.json"
 SEVEN_FOURTEEN = CONTRACTS / "ha_mcp_7_14_dashboard_read_v2.json"
+EIGHT_ZERO = CONTRACTS / "ha_mcp_8_0_dashboard_read_v3.json"
 
 
 def tool_for(version):
-    path = SEVEN_THIRTEEN if version == "7.13.0" else SEVEN_FOURTEEN
+    path = (
+        SEVEN_THIRTEEN
+        if version == "7.13.0"
+        else EIGHT_ZERO
+        if version == "8.0.0"
+        else SEVEN_FOURTEEN
+    )
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def latest_v2_attestation():
+    return next(
+        item
+        for item in load_attestations()
+        if item.upstream_version == "7.14.2"
+    )
 
 
 def handshake(version, tool=None, *, name="ha-mcp", extra_tools=()):
@@ -142,11 +159,13 @@ class ContractFamilyTests(unittest.TestCase):
     def test_all_reviewed_versions_have_exact_builtin_attestations(self):
         entries = {item.upstream_version: item for item in load_attestations()}
         self.assertEqual(
-            set(entries), {"7.13.0", "7.14.0", "7.14.1", "7.14.2"}
+            set(entries), {"7.13.0", "7.14.0", "7.14.1", "7.14.2", "8.0.0"}
         )
         for version in entries:
             contract = normalize_runtime_contract(
-                tool_for(version), protocol_version="2025-03-26"
+                tool_for(version),
+                protocol_version="2025-03-26",
+                contract_family=expected_contract_family(version),
             )
             decision = decide_admission(
                 server_name="ha-mcp",
@@ -157,7 +176,10 @@ class ContractFamilyTests(unittest.TestCase):
             )
             self.assertTrue(decision.accepted)
             self.assertEqual(decision.status, "admitted_builtin_attestation")
-            self.assertEqual(decision.contract_family, CONTRACT_FAMILY)
+            self.assertEqual(
+                decision.contract_family,
+                expected_contract_family(version),
+            )
             self.assertEqual(
                 contract.runtime_fingerprint,
                 entries[version].runtime_contract_fingerprint,
@@ -253,7 +275,7 @@ class ContractFamilyTests(unittest.TestCase):
             self.assertFalse(decision.runtime_match)
 
     def test_exact_attestation_requires_a_reviewed_evidence_source(self):
-        entry = load_attestations()[-1]
+        entry = latest_v2_attestation()
         decision = decide_admission(
             server_name="ha-mcp",
             server_version="7.14.1",
@@ -295,7 +317,7 @@ class ContractFamilyTests(unittest.TestCase):
         self.assertEqual(renamed_decision.failure_category, "required_tool_missing")
 
     def test_exact_release_mismatch_and_revocation_never_fall_back(self):
-        base = load_attestations()[-1]
+        base = latest_v2_attestation()
         entries = tuple((entry, "builtin") for entry in load_attestations())
         mismatched = replace(
             base,
@@ -337,7 +359,7 @@ class ContractFamilyTests(unittest.TestCase):
         self.assertIs(decision.attestation, revoked)
 
     def test_expired_exact_release_and_registry_enabled_fallback_fail_closed(self):
-        base = load_attestations()[-1]
+        base = latest_v2_attestation()
         expired = replace(
             base,
             entry_id="ha-mcp-v7.14.3-expired",
@@ -409,7 +431,10 @@ class ContractFamilyTests(unittest.TestCase):
 
     def test_registry_data_cannot_expand_compiled_capabilities(self):
         self.assertEqual(set(COMPILED_ARGUMENT_SHAPES), {"list_dashboards", "get_dashboard_config"})
-        self.assertEqual(set(COMPILED_CONTRACT_FAMILIES), {CONTRACT_FAMILY})
+        self.assertEqual(
+            set(COMPILED_CONTRACT_FAMILIES),
+            {CONTRACT_FAMILY, CONTRACT_FAMILY_V3},
+        )
         for tool_name in (
             "ha_set_entity",
             "ha_set_device",
@@ -543,7 +568,7 @@ class RegistryTests(unittest.IsolatedAsyncioTestCase):
         self.now = datetime(2026, 7, 20, 0, 0, tzinfo=timezone.utc)
 
     def future_entry(self, *, version="7.14.3", revoked=False):
-        base = load_attestations()[-1]
+        base = latest_v2_attestation()
         value = dict(base.__dict__)
         value.update(
             {

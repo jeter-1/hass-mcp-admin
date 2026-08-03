@@ -19,6 +19,7 @@ from ..clients.mcp import REQUIRED_DASHBOARD_TOOL
 
 
 CONTRACT_FAMILY = "ha_mcp_dashboard_read_v2"
+CONTRACT_FAMILY_V3 = "ha_mcp_dashboard_read_v3"
 TRUST_MODE = "reviewed_argument_constrained"
 REQUIRED_PROTOCOL_VERSION = "2025-03-26"
 REQUIRED_SERVER_NAME = "ha-mcp"
@@ -168,8 +169,29 @@ COMPILED_CONTRACT_FAMILIES = {
             "response_too_large",
             "upstream_error",
         ),
-    )
+    ),
+    CONTRACT_FAMILY_V3: CompiledContractFamily(
+        family_id=CONTRACT_FAMILY_V3,
+        tool_name=REQUIRED_DASHBOARD_TOOL,
+        trust_mode=TRUST_MODE,
+        protocol_version=REQUIRED_PROTOCOL_VERSION,
+        normalizer="normalize_dashboard_read_v3",
+        response_policy="bounded_structured_omission_before_envelope_limit",
+        hash_contract=HASH_CONTRACT,
+        error_taxonomy=(
+            "dashboard_not_found",
+            "invalid_response",
+            "response_too_large",
+            "upstream_error",
+        ),
+    ),
 }
+
+
+def expected_contract_family(upstream_version: str) -> str:
+    """Select the exact compiled dashboard family for one reviewed release."""
+
+    return CONTRACT_FAMILY_V3 if upstream_version == "8.0.0" else CONTRACT_FAMILY
 
 
 @dataclass(frozen=True)
@@ -397,7 +419,12 @@ def _schema_types(schema: Mapping[str, Any]) -> set[str]:
     return found
 
 
-def _validate_compiled_family(tool: Mapping[str, Any], protocol_version: str) -> None:
+def _validate_compiled_family(
+    tool: Mapping[str, Any],
+    protocol_version: str,
+    *,
+    contract_family: str,
+) -> None:
     if protocol_version != REQUIRED_PROTOCOL_VERSION:
         raise ContractValidationError("unsupported_protocol_version")
     if tool.get("name") != REQUIRED_DASHBOARD_TOOL:
@@ -419,10 +446,24 @@ def _validate_compiled_family(tool: Mapping[str, Any], protocol_version: str) ->
             raise ContractValidationError("upstream_runtime_contract_mismatch")
         allowed_meta = {
             "fastmcp": {"tags"},
-            "ha_mcp": {"llm_api_exposed", "pinned"},
+            "ha_mcp": (
+                {"llm_api_exposed", "pinned", "policy"}
+                if contract_family == CONTRACT_FAMILY_V3
+                else {"llm_api_exposed", "pinned"}
+            ),
         }
         for namespace, value in meta.items():
             if not isinstance(value, dict) or set(value) - allowed_meta[namespace]:
+                raise ContractValidationError("upstream_runtime_contract_mismatch")
+        if contract_family == CONTRACT_FAMILY_V3:
+            ha_meta = meta.get("ha_mcp")
+            policy = ha_meta.get("policy") if isinstance(ha_meta, dict) else None
+            if policy != {
+                "deployment": "standalone",
+                "enabled": False,
+                "live": False,
+                "rules": 0,
+            }:
                 raise ContractValidationError("upstream_runtime_contract_mismatch")
     annotations = tool.get("annotations")
     if not isinstance(annotations, dict):
@@ -430,12 +471,25 @@ def _validate_compiled_family(tool: Mapping[str, Any], protocol_version: str) ->
     allowed_annotation_keys = {*SAFETY_ANNOTATIONS, "title"}
     if set(annotations) - allowed_annotation_keys:
         raise ContractValidationError("upstream_security_contract_mismatch")
-    expected = {
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
-    if "readOnlyHint" in annotations or any(
+    expected = (
+        {
+            "readOnlyHint": True,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        }
+        if contract_family == CONTRACT_FAMILY_V3
+        else {
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        }
+    )
+    forbidden_annotation = (
+        "destructiveHint"
+        if contract_family == CONTRACT_FAMILY_V3
+        else "readOnlyHint"
+    )
+    if forbidden_annotation in annotations or any(
         annotations.get(key) is not expected_value
         for key, expected_value in expected.items()
     ):
@@ -483,20 +537,32 @@ def _validate_compiled_family(tool: Mapping[str, Any], protocol_version: str) ->
         query = properties["query"]
         if _schema_types(query) != {"string", "null"} or query.get("default") is not None:
             raise ContractValidationError("upstream_input_contract_mismatch")
-    if "outputSchema" in tool:
+    if contract_family == CONTRACT_FAMILY_V3:
+        if "outputSchema" in tool and tool["outputSchema"] is not None:
+            raise ContractValidationError("upstream_output_contract_mismatch")
+    elif "outputSchema" in tool:
         raise ContractValidationError("upstream_output_contract_mismatch")
 
 
 def normalize_runtime_contract(
-    tool: Mapping[str, Any], *, protocol_version: str
+    tool: Mapping[str, Any],
+    *,
+    protocol_version: str,
+    contract_family: str = CONTRACT_FAMILY,
 ) -> NormalizedRuntimeContract:
     """Normalize one required tool under the compiled contract family."""
 
-    _validate_compiled_family(tool, protocol_version)
+    if contract_family not in COMPILED_CONTRACT_FAMILIES:
+        raise ContractValidationError("upstream_contract_family_unknown")
+    _validate_compiled_family(
+        tool,
+        protocol_version,
+        contract_family=contract_family,
+    )
     input_contract = _normalize_json_schema(tool["inputSchema"])
     annotations = tool["annotations"]
     security_contract = {
-        "contract_family": CONTRACT_FAMILY,
+        "contract_family": contract_family,
         "tool_name": REQUIRED_DASHBOARD_TOOL,
         "annotations": {
             key: {"present": key in annotations, "value": annotations.get(key)}
@@ -514,13 +580,17 @@ def normalize_runtime_contract(
         "engineering_consumed_contract": OUTPUT_CONTRACT,
     }
     runtime_contract = {
-        "contract_family": CONTRACT_FAMILY,
+        "contract_family": contract_family,
         "protocol_version": protocol_version,
         "tool_name": REQUIRED_DASHBOARD_TOOL,
         "input": input_contract,
         "security": security_contract,
         "output": output_contract,
     }
+    if contract_family == CONTRACT_FAMILY_V3:
+        runtime_contract["runtime_metadata"] = _normalize_json_schema(
+            tool.get("_meta")
+        )
     return NormalizedRuntimeContract(
         input_contract=input_contract,
         security_contract=security_contract,
@@ -601,12 +671,13 @@ def decide_admission(
         )
 
     available_attestations = tuple(attestations)
+    expected_family = expected_contract_family(server_version)
     exact_release = [
         (entry, source)
         for entry, source in available_attestations
         if entry.server_name == server_name
         and entry.upstream_version == server_version
-        and entry.contract_family == CONTRACT_FAMILY
+        and entry.contract_family == expected_family
         and source in _ATTESTATION_SOURCES
     ]
     if exact_release:
@@ -621,7 +692,7 @@ def decide_admission(
                 "rejected_expired_attestation",
                 "upstream_registry_expired",
                 source,
-                CONTRACT_FAMILY,
+                entry.contract_family,
                 entry,
                 None,
             )
@@ -631,13 +702,15 @@ def decide_admission(
                 "rejected_revoked_attestation",
                 "upstream_attestation_revoked",
                 source,
-                CONTRACT_FAMILY,
+                entry.contract_family,
                 entry,
                 None,
             )
         try:
             contract = normalize_runtime_contract(
-                tool, protocol_version=protocol_version
+                tool,
+                protocol_version=protocol_version,
+                contract_family=entry.contract_family,
             )
         except ContractValidationError as exc:
             return AdmissionDecision(
@@ -645,7 +718,7 @@ def decide_admission(
                 "rejected_contract_mismatch",
                 exc.reason,
                 source,
-                CONTRACT_FAMILY,
+                entry.contract_family,
                 entry,
                 None,
             )
@@ -657,7 +730,7 @@ def decide_admission(
                     "rejected_contract_mismatch",
                     f"upstream_{key}_contract_mismatch",
                     source,
-                    CONTRACT_FAMILY,
+                    entry.contract_family,
                     entry,
                     contract,
                     input_match=matches["input"],
@@ -674,7 +747,7 @@ def decide_admission(
             ),
             None,
             source,
-            CONTRACT_FAMILY,
+            entry.contract_family,
             entry,
             contract,
             input_match=True,
