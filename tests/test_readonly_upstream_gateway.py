@@ -2002,6 +2002,13 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
                 "reason",
                 "expected_fingerprint",
                 "observed_fingerprint",
+                "expected_contract_fingerprint",
+                "observed_contract_fingerprint",
+                "expected_runtime_contract_fingerprint",
+                "observed_runtime_contract_fingerprint",
+                "runtime_contract_fingerprint_model",
+                "runtime_contract_diff_fields",
+                "runtime_contract_diff_summary",
             },
         )
         self.assertEqual(len(quarantine[0]["expected_fingerprint"]), 64)

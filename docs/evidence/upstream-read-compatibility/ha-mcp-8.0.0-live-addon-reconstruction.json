@@ -1,0 +1,51 @@
+{
+  "format_version": 1,
+  "base_capture_resource": "docs/evidence/upstream-read-compatibility/ha-mcp-8.0.0.json",
+  "base_capture_sha256": "sha256:6f7039e27835fe3829af88a9de5caad031c6b809a09877cb69aca7f196725911",
+  "source_commit": "9dd3ac620e3149cd34ec3c990b6ee81e778191f2",
+  "protocol_version": "2025-03-26",
+  "addon_artifacts": {
+    "linux/amd64": {
+      "index_digest": "sha256:693ecd5c68f98e64111fbf58e02547a51b2168a942056684dbe262c550aff9cd",
+      "image_manifest_digest": "sha256:65856752c37e4c1f9093060fbbc4a1a826cac1cbd6a76e856af5f5672a96c404"
+    },
+    "linux/arm64": {
+      "index_digest": "sha256:150ee09078919a47db19639deaa8c27ec064390054e27b4e618f82eea9cf7f50",
+      "image_manifest_digest": "sha256:a4bc83ed6f1a531d445e8107c77b7e7d5289d25510316dc6698d65383bf2fedb"
+    }
+  },
+  "documented_non_secret_runtime_state": {
+    "deployment": "addon",
+    "enable_tool_security_policies": true,
+    "policy_middleware_live": true,
+    "policy_rule_count": 0
+  },
+  "transform": {
+    "scope": "every advertised tool",
+    "path": "/_meta/ha_mcp/policy",
+    "replacement": {
+      "deployment": "addon",
+      "enabled": true,
+      "live": true,
+      "rules": 0
+    }
+  },
+  "expected_results": {
+    "advertised_tool_count": 78,
+    "reviewed_stock_catalog_fingerprint": "0bc81aa7bd94416385520b9c4c4f7d9ccbc6a49f8f65b8a2a599135463327316",
+    "observed_live_catalog_fingerprint": "c61b0959e766f3900300dd4dd69a6d799fc113186d91983f21be69f1bc6b8768",
+    "reviewed_strict_full_contract_fingerprint": "ff18cda3ca27abc8cca69685fb5240942cbe24a1508f73b9a26e57e1afe44d5a",
+    "observed_live_strict_full_contract_fingerprint": "f061e48a5d049a2fe84f8b46451a8c2928e0eb5fc68181cf0cbbe71ae5025727",
+    "raw_changed_field_counts": {
+      "/_meta/ha_mcp/policy/deployment": 78,
+      "/_meta/ha_mcp/policy/enabled": 78,
+      "/_meta/ha_mcp/policy/live": 78
+    }
+  },
+  "security_classification": {
+    "classification": "diagnostic runtime state",
+    "admission_rule": "Validate exact field presence, names, JSON types, deployment allowlist, and rule-count bound; normalize only the documented live values for exact 8.0.0.",
+    "safety_rationale": "The block reports an upstream restrictive policy layer and cannot create Engineering write reachability. Names, schemas, descriptions, safety annotations, output contracts, titles, tags, LLM exposure, pinning, identity, exact version, and protocol remain independently exact.",
+    "strict_evidence_retained": true
+  }
+}

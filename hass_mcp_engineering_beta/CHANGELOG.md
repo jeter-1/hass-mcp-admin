@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.2.0-beta.12 - Exact ha-mcp 8.0.0 add-on runtime admission
+
+- Reproduce the Beta 11 production canary's exact
+  `c61b0959e766f3900300dd4dd69a6d799fc113186d91983f21be69f1bc6b8768`
+  catalog from the immutable amd64 Home Assistant add-on artifact using MCP
+  protocol `2025-03-26` and synthetic non-secret settings.
+- Correct the 8.0.0 runtime fingerprint model to validate the exact dynamic
+  policy metadata shape, JSON types, deployment allowlist and rule-count bound
+  before normalizing only its environment-dependent values. All other tool
+  descriptor fields remain exact, and malformed policy metadata quarantines.
+- Publish separate ordinary and runtime mismatch fingerprints, the explicit
+  runtime model, bounded changed-field pointers and summary, reviewed and
+  observed catalog identities, operational and strict models, strict observed
+  evidence, and catalog-level changed-field counts.
+- Preserve 7.14.2 at 78 advertised, 26 admitted reads and 74 total tools. The
+  exact 8.0.0 add-on surface has 78 advertised, 24 admitted reads and 72 total
+  tools while `ha_search` and `ha_get_operation_status` remain held.
+- Preserve exact-release selection, protocol `2025-03-26`, unknown-8.x
+  refusal, dashboard, backup, lifecycle, F1/F2, authority-v3, task-schema-1,
+  stable-v1.1.2 and zero-fallback boundaries. No production deployment or
+  post-correction canary is claimed by this source release.
+
 ## 2.2.0-beta.11 - Bounded restart recovery and exact ha-mcp 8.0.0 compatibility
 
 - Bound restart reconciliation by the original persisted post-dispatch

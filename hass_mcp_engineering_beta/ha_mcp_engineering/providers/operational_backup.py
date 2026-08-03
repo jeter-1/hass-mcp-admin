@@ -22,6 +22,7 @@ from ..configuration import Settings, parse_upstream_dashboard_endpoint
 from ..upstream_tool_policy import (
     catalog_fingerprint,
     load_reviewed_upstream_release_registry,
+    runtime_contract_fingerprint,
     runtime_description_fingerprint,
     schema_fingerprint,
 )
@@ -286,7 +287,10 @@ class ReviewedOperationalBackupProvider:
                         "value": tool.get("outputSchema"),
                     }
                 ),
-                "runtime_contract_fingerprint": schema_fingerprint(tool),
+                "runtime_contract_fingerprint": runtime_contract_fingerprint(
+                    tool,
+                    model=release.runtime_contract_fingerprint_model,
+                ),
             }
         except (TypeError, ValueError, OverflowError):
             self._fail("invalid_response", dispatched=False)

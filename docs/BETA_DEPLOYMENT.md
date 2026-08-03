@@ -6,13 +6,15 @@ Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100) beside
 v1.1.2 (`hass_mcp_admin`, port 8099). Stable v1.1.2 is now operationally
 retired; use the current Engineering release notes for rollback.
 
-The active Beta 11 source and later operator-controlled acceptance boundary is
-[`V2_2_0_BETA11_ACCEPTANCE.md`](V2_2_0_BETA11_ACCEPTANCE.md). It requires
-bounded non-dispatching restart reconciliation, exact 7.14.2 and 8.0.0
-upstream admission, explicit held-for-canary 8.0.0 reads, unknown-8.x refusal,
-and retention of historical governance and provider-response contracts before
-any separately authorized deployment. Source validation does not access
-deployed Home Assistant or perform an add-on update.
+The active Beta 12 source and later operator-controlled acceptance boundary is
+[`V2_2_0_BETA12_ACCEPTANCE.md`](V2_2_0_BETA12_ACCEPTANCE.md). It requires
+bounded non-dispatching restart reconciliation, exact 7.14.2 admission,
+corrected exact 8.0.0 add-on runtime admission, explicit held reads,
+unknown-8.x refusal, and retention of historical governance and provider
+contracts before any separately authorized deployment. Source validation does
+not access deployed Home Assistant or perform an add-on update. The prior
+canary failure and rollback are recorded in
+[`V2_2_0_BETA12_CANARY_FAILURE.md`](V2_2_0_BETA12_CANARY_FAILURE.md).
 
 RC2 had to expose 38 registered/25 canonical tools and no planned feature
 capabilities. It added no tool or schema, so connector recreation was not

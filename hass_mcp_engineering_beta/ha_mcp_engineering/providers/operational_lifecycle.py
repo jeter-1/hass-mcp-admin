@@ -25,6 +25,8 @@ from ..request_context import current_telemetry
 from ..upstream_tool_policy import (
     catalog_fingerprint,
     load_reviewed_upstream_release_registry,
+    runtime_contract_field_fingerprints,
+    runtime_contract_fingerprint,
     runtime_description_fingerprint,
     schema_fingerprint,
 )
@@ -125,6 +127,8 @@ class OperationalProviderState:
     last_success_at: str | None = None
     selected_compatibility_entry_id: str | None = None
     observed_upstream_version: str | None = None
+    runtime_contract_fingerprint_model: str | None = None
+    runtime_contract_mismatch_diagnostics: dict[str, Any] | None = None
     fallback_count: int = 0
 
 
@@ -463,6 +467,9 @@ class ReviewedOperationalLifecycleProvider:
         release = registry.by_version.get(catalog.server_version)
         if release is None:
             self._fail("upstream_version_mismatch", dispatched=False)
+        runtime_model = release.runtime_contract_fingerprint_model
+        with self._lock:
+            self._state.runtime_contract_fingerprint_model = runtime_model
         if catalog.protocol_version not in release.allowed_protocol_versions:
             self._fail("unsupported_protocol_version", dispatched=False)
         try:
@@ -510,10 +517,42 @@ class ReviewedOperationalLifecycleProvider:
                             "value": tool.get("outputSchema"),
                         }
                     ),
-                    "runtime_contract_fingerprint": schema_fingerprint(tool),
+                    "runtime_contract_fingerprint": (
+                        runtime_contract_fingerprint(
+                            tool,
+                            model=runtime_model,
+                        )
+                    ),
                 }
             except (TypeError, ValueError, OverflowError):
                 self._fail("invalid_response", dispatched=False)
+            if (
+                observed["runtime_contract_fingerprint"]
+                != expected.runtime_contract_fingerprint
+            ):
+                expected_fields = dict(
+                    expected.runtime_contract_field_fingerprints
+                )
+                observed_fields = runtime_contract_field_fingerprints(tool)
+                diff_fields = sorted(
+                    pointer
+                    for pointer in expected_fields.keys()
+                    | observed_fields.keys()
+                    if expected_fields.get(pointer)
+                    != observed_fields.get(pointer)
+                )[:16]
+                with self._lock:
+                    self._state.runtime_contract_mismatch_diagnostics = {
+                        "tool": tool_name,
+                        "expected_runtime_contract_fingerprint": (
+                            expected.runtime_contract_fingerprint
+                        ),
+                        "observed_runtime_contract_fingerprint": observed[
+                            "runtime_contract_fingerprint"
+                        ],
+                        "runtime_contract_fingerprint_model": runtime_model,
+                        "runtime_contract_diff_fields": diff_fields or ["/"],
+                    }
             if (
                 expected.policy_classification
                 != _TOOL_POLICY[tool_name]
@@ -673,6 +712,7 @@ class ReviewedOperationalLifecycleProvider:
             self._state.observed_upstream_version = (
                 evidence.server_version
             )
+            self._state.runtime_contract_mismatch_diagnostics = None
 
     def _fail(self, category: str, *, dispatched: bool) -> None:
         with self._lock:
@@ -717,6 +757,15 @@ class ReviewedOperationalLifecycleProvider:
                 ),
                 "observed_upstream_version": (
                     self._state.observed_upstream_version
+                ),
+                "runtime_contract_fingerprint_model": (
+                    self._state.runtime_contract_fingerprint_model
+                ),
+                "runtime_contract_mismatch_diagnostics": (
+                    dict(self._state.runtime_contract_mismatch_diagnostics)
+                    if self._state.runtime_contract_mismatch_diagnostics
+                    is not None
+                    else None
                 ),
                 "fallback_count": self._state.fallback_count,
                 "fallback_policy": "none",

@@ -1,0 +1,54 @@
+{
+  "format_version": 1,
+  "captured_at": "2026-08-03",
+  "protocol_version": "2025-03-26",
+  "source_commit": "9dd3ac620e3149cd34ec3c990b6ee81e778191f2",
+  "execution_constraints": {
+    "docker_daemon_available": false,
+    "amd64_method": "Verify every immutable OCI layer digest, extract the root filesystem locally, then execute the bundled Python and FastMCP entry point against synthetic non-secret settings.",
+    "arm64_method": "Verify and extract every immutable OCI layer, then compare the complete tracked ha_mcp source payload because native arm64 execution was unavailable."
+  },
+  "artifacts": {
+    "standalone_linux_amd64": {
+      "index_digest": "sha256:d65630f6a3fd14d8f536c27432d4d2cf3045e6f6a2d196cba754ee8566491ae4",
+      "status": "executed",
+      "advertised_tool_count": 78,
+      "operational_catalog_fingerprint": "0bc81aa7bd94416385520b9c4c4f7d9ccbc6a49f8f65b8a2a599135463327316",
+      "strict_full_contract_fingerprint": "ff18cda3ca27abc8cca69685fb5240942cbe24a1508f73b9a26e57e1afe44d5a",
+      "raw_tools_list_sha256": "sha256:de2c770542f21122c06c99a52a584d9d6e0498dd52ae767590e2cd894f1b767d"
+    },
+    "standalone_linux_arm64": {
+      "index_digest": "sha256:d65630f6a3fd14d8f536c27432d4d2cf3045e6f6a2d196cba754ee8566491ae4",
+      "status": "source_payload_inspected",
+      "limitation": "The native arm64 standalone process was not executed; architecture-independent tracked source at the exact reviewed commit was inspected."
+    },
+    "addon_linux_amd64": {
+      "index_digest": "sha256:693ecd5c68f98e64111fbf58e02547a51b2168a942056684dbe262c550aff9cd",
+      "image_manifest_digest": "sha256:65856752c37e4c1f9093060fbbc4a1a826cac1cbd6a76e856af5f5672a96c404",
+      "status": "executed",
+      "advertised_tool_count": 78,
+      "operational_catalog_fingerprint": "c61b0959e766f3900300dd4dd69a6d799fc113186d91983f21be69f1bc6b8768",
+      "strict_full_contract_fingerprint": "f061e48a5d049a2fe84f8b46451a8c2928e0eb5fc68181cf0cbbe71ae5025727",
+      "raw_tools_list_sha256": "sha256:d46cdfee69a382b8d44447f3853ed70340c333aab443bda1c55e34d04d8d598f",
+      "documented_non_secret_settings": {
+        "deployment": "addon",
+        "ENABLE_TOOL_SECURITY_POLICIES": true,
+        "policy_middleware_live": true,
+        "policy_rule_count": 0,
+        "settings_ui_disabled_for_capture": true
+      }
+    },
+    "addon_linux_arm64": {
+      "index_digest": "sha256:150ee09078919a47db19639deaa8c27ec064390054e27b4e618f82eea9cf7f50",
+      "image_manifest_digest": "sha256:a4bc83ed6f1a531d445e8107c77b7e7d5289d25510316dc6698d65383bf2fedb",
+      "status": "source_payload_inspected",
+      "compared_source_file_count": 168,
+      "source_payload_difference_count": 0,
+      "source_payload_fingerprint": "41da0e613baea315bf9ef0f618108478eb5c60a415a8e898b5260d5e132c4f63",
+      "start_py_sha256": "dcce68b60a10fbd356cc7e67c13af79f3518da5f44d177cc25c975c2ef07d6ee",
+      "limitation": "The native arm64 add-on process was not executed; its extracted tracked source payload was byte-identical to the executed amd64 add-on payload."
+    }
+  },
+  "production_accessed": false,
+  "credentials_used": "synthetic_non_secret_only"
+}

@@ -1,5 +1,21 @@
 # HA MCP Engineering Server Architecture
 
+## 2.2.0-beta.12 exact add-on runtime admission
+
+Exact 8.0.0 retains per-tool ordinary contract checks and adds an explicit
+version-scoped operational runtime model. The model strictly validates the
+environment-dependent upstream policy-state object before normalizing only its
+documented values; every other raw descriptor field remains exact. Invalid
+shape, presence, type, deployment, bound, or unrelated runtime drift still
+quarantines. Raw sorted-catalog and strict wire-order hashes remain separate
+diagnostic evidence rather than admission aliases.
+
+This corrects the standalone/add-on evidence mismatch without broad 8.x
+trust, protocol expansion, fallback, or held-tool admission. Exact 7.14.2
+remains 26/74; exact 8.0.0 is 24 delegated reads, two held reads and 72 total.
+Dashboard, backup, lifecycle, F1/F2, authority-v3, task-schema-1 and stable
+1.1.2 boundaries are unchanged.
+
 ## 2.2.0-beta.11 bounded restart recovery and exact upstream profiles
 
 Restart reconciliation is a bounded readback-only recovery path, not a
