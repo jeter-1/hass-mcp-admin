@@ -1,5 +1,22 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## 2.2.0-beta.11 bounded restart recovery and exact ha-mcp 8.0.0
+
+The existing lifecycle recovery path now evaluates a cheap persisted
+eligibility gate before any expensive probe. It preserves the original
+evidence deadline, persists capped `1m`/`2m`/`5m`/`15m` backoff, admits one
+worker per task, and terminalizes expired or timestamp-less historical restart
+records without network access. Startup cannot reset timing state and no
+reconciliation path can redispatch.
+
+Compatibility selection is exact-release-only: 7.14.2 retains its existing 26
+delegated reads; 8.0.0 uses a complete independent 78-tool snapshot and admits
+24. `ha_search` and `ha_get_operation_status` are explicit held-for-canary
+entries and remain unavailable. Unknown 8.x releases, mismatched catalogs and
+individual contract mismatches fail closed with bounded health evidence and
+zero fallback. Static evidence does not claim live dashboard, backup,
+lifecycle, outage, reconnect, architecture, digest, or held-tool validation.
+
 ## 2.2.0-beta.10 legacy expired-automation compatibility
 
 Beta 10 recognizes an additional exact source-generated Beta 6 persistence
@@ -16,7 +33,7 @@ task-store contradiction fails closed. Historical reads do not migrate or
 rewrite storage. CI regenerates both historical fixture families from the exact
 Beta 6 commit and requires byte equality. Beta 9 inventory/health behavior and
 Beta 7 transport evidence remain unchanged. Delta-aware safety-reducing policy
-moves to Beta 11.
+remains deferred beyond Beta 11.
 
 ## 2.2.0-beta.9 real Beta 6 prohibited-plan compatibility
 

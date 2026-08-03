@@ -72,7 +72,7 @@ _ALLOWED_TOOL_DESCRIPTOR_FIELDS = frozenset(
 )
 _ALLOWED_TOOL_META_FIELDS = {
     "fastmcp": frozenset({"tags"}),
-    "ha_mcp": frozenset({"llm_api_exposed", "pinned"}),
+    "ha_mcp": frozenset({"llm_api_exposed", "pinned", "policy"}),
 }
 _OBSERVED_IDENTITY_EVIDENCE = re.compile(r"^[A-Za-z0-9_.+\-]{1,128}$")
 _FAILURE_CATEGORIES = frozenset(
@@ -328,6 +328,7 @@ class _AdmittedRoute:
     runtime_description_fingerprint: str
     runtime_annotation_fingerprint: str
     runtime_output_schema_fingerprint: str
+    runtime_contract_fingerprint: str | None
     server_version: str
     protocol_version: str
 
@@ -391,7 +392,11 @@ class UpstreamReadGateway:
             "reviewed_source_commit": None,
             "reviewed_image_index_digest": None,
             "reviewed_architecture_image_digests": {},
+            "reviewed_addon_artifact_digests": {},
             "reviewed_image_revision": None,
+            "reviewed_image_revision_authoritative": False,
+            "strict_full_contract_fingerprint": None,
+            "strict_full_contract_fingerprint_model": None,
             "reviewed_allowed_protocol_versions": [],
             "runtime_artifact_provenance_observed": False,
             "runtime_source_commit_observed": None,
@@ -411,7 +416,13 @@ class UpstreamReadGateway:
             "upstream_advertised_tool_count": 0,
             "observed_advertised_tool_count": 0,
             "reviewed_policy_entry_count": 0,
+            "reviewed_accounted_tool_count": 0,
+            "reviewed_tool_accounting_valid": False,
             "automatic_read_count": 0,
+            "held_read_count": 0,
+            "held_tools": [],
+            "live_canary_required_tools": [],
+            "static_review_completed": False,
             "reviewed_automatic_read_count": 0,
             "exact_matched_automatic_read_count": 0,
             "dynamically_exposed_count": 0,
@@ -446,6 +457,7 @@ class UpstreamReadGateway:
                 "physical_or_high_risk_action": 0,
                 "prohibited": 0,
                 "unsupported": 0,
+                "held_for_canary": 0,
             },
             "reviewed_stock_catalog_tool_count": 0,
             "reviewed_stock_catalog_fingerprint": None,
@@ -557,6 +569,18 @@ class UpstreamReadGateway:
                 "reviewed_release_count": len(supported_versions),
                 "reviewed_policy_entry_count": len(self._policy.tools),
                 "automatic_read_count": counts["automatic_read"],
+                "held_read_count": counts.get("held_for_canary", 0),
+                "held_tools": sorted(
+                    entry.upstream_name
+                    for entry in self._policy.tools
+                    if entry.classification == "held_for_canary"
+                ),
+                "live_canary_required_tools": sorted(
+                    entry.upstream_name
+                    for entry in self._policy.tools
+                    if entry.classification == "held_for_canary"
+                ),
+                "static_review_completed": True,
                 "reviewed_automatic_read_count": counts["automatic_read"],
                 "blocked_mixed_tool_count": counts["mixed_or_requires_wrapper"],
                 "blocked_write_count": counts["persistent_write"],
@@ -566,14 +590,17 @@ class UpstreamReadGateway:
                 "prohibited_count": counts["prohibited"],
                 "unsupported_count": counts["unsupported"],
                 "blocked_classification_counts": {
-                    name: counts[name]
+                    name: counts.get(name, 0)
                     for name in (
                         "mixed_or_requires_wrapper",
                         "persistent_write",
                         "physical_or_high_risk_action",
                         "prohibited",
                         "unsupported",
+                        "held_for_canary",
                     )
+                    if name != "held_for_canary"
+                    or counts.get(name, 0)
                 },
                 "reviewed_stock_catalog_tool_count": (
                     self._policy.reviewed_stock_catalog_tool_count
@@ -638,8 +665,15 @@ class UpstreamReadGateway:
             identity_validated = True
             if self._admission_validator is not None:
                 self._admission_validator(catalog)
+            reviewed_contracts = (
+                selected_release.tool_contracts_by_name
+                if selected_release is not None
+                else None
+            )
             evaluation = self._validate_catalog(
-                catalog, policy=selected_policy
+                catalog,
+                policy=selected_policy,
+                reviewed_contracts=reviewed_contracts,
             )
             candidate_contract_token = _catalog_contract_token(
                 catalog, evaluation
@@ -700,6 +734,12 @@ class UpstreamReadGateway:
                     ),
                     runtime_output_schema_fingerprint=(
                         reviewed_output_schemas[entry.upstream_name]
+                    ),
+                    runtime_contract_fingerprint=(
+                        reviewed_contracts[entry.upstream_name]
+                        .runtime_contract_fingerprint
+                        if reviewed_contracts is not None
+                        else None
                     ),
                     server_version=catalog.server_version,
                     protocol_version=catalog.protocol_version,
@@ -911,8 +951,24 @@ class UpstreamReadGateway:
                         if release is not None
                         else {}
                     ),
+                    "reviewed_addon_artifact_digests": (
+                        release.addon_artifact_digests_by_platform
+                        if release is not None
+                        else {}
+                    ),
                     "reviewed_image_revision": (
                         release.image_revision
+                        if release is not None
+                        else None
+                    ),
+                    "reviewed_image_revision_authoritative": False,
+                    "strict_full_contract_fingerprint": (
+                        release.strict_full_contract_fingerprint
+                        if release is not None
+                        else None
+                    ),
+                    "strict_full_contract_fingerprint_model": (
+                        release.strict_full_contract_fingerprint_model
                         if release is not None
                         else None
                     ),
@@ -940,6 +996,70 @@ class UpstreamReadGateway:
                     "catalog_fingerprint": observed_fingerprint,
                     "observed_catalog_fingerprint": observed_fingerprint,
                     "upstream_advertised_tool_count": len(catalog.tools),
+                    "reviewed_accounted_tool_count": len(policy.tools),
+                    "reviewed_policy_entry_count": len(policy.tools),
+                    "reviewed_stock_catalog_tool_count": (
+                        policy.reviewed_stock_catalog_tool_count
+                    ),
+                    "reviewed_stock_catalog_fingerprint": (
+                        policy.reviewed_stock_catalog_fingerprint
+                    ),
+                    "reviewed_tool_accounting_valid": (
+                        len(policy.tools) == len(catalog.tools)
+                        and not evaluation.unreviewed
+                    ),
+                    "held_read_count": policy.classification_counts.get(
+                        "held_for_canary", 0
+                    ),
+                    "automatic_read_count": policy.classification_counts[
+                        "automatic_read"
+                    ],
+                    "reviewed_automatic_read_count": (
+                        policy.classification_counts["automatic_read"]
+                    ),
+                    "blocked_mixed_tool_count": (
+                        policy.classification_counts[
+                            "mixed_or_requires_wrapper"
+                        ]
+                    ),
+                    "blocked_write_count": policy.classification_counts[
+                        "persistent_write"
+                    ],
+                    "blocked_physical_high_risk_count": (
+                        policy.classification_counts[
+                            "physical_or_high_risk_action"
+                        ]
+                    ),
+                    "prohibited_count": policy.classification_counts[
+                        "prohibited"
+                    ],
+                    "unsupported_count": policy.classification_counts[
+                        "unsupported"
+                    ],
+                    "blocked_classification_counts": {
+                        name: policy.classification_counts.get(name, 0)
+                        for name in (
+                            "held_for_canary",
+                            "mixed_or_requires_wrapper",
+                            "persistent_write",
+                            "physical_or_high_risk_action",
+                            "prohibited",
+                            "unsupported",
+                        )
+                        if name != "held_for_canary"
+                        or policy.classification_counts.get(name, 0)
+                    },
+                    "held_tools": sorted(
+                        entry.upstream_name
+                        for entry in policy.tools
+                        if entry.classification == "held_for_canary"
+                    ),
+                    "live_canary_required_tools": sorted(
+                        entry.upstream_name
+                        for entry in policy.tools
+                        if entry.classification == "held_for_canary"
+                    ),
+                    "static_review_completed": True,
                     "observed_advertised_tool_count": len(catalog.tools),
                     "exact_matched_automatic_read_count": len(
                         evaluation.matched
@@ -1419,6 +1539,7 @@ class UpstreamReadGateway:
         catalog: McpReadCatalog,
         *,
         policy: UpstreamToolPolicy | None = None,
+        reviewed_contracts: dict[str, Any] | None = None,
     ) -> _CatalogEvaluation:
         selected_policy = policy or self._policy
         assert selected_policy is not None
@@ -1479,6 +1600,12 @@ class UpstreamReadGateway:
                         reviewed_runtime_output_schema_fingerprint=(
                             reviewed_output_schemas[entry.upstream_name]
                         ),
+                        reviewed_runtime_contract_fingerprint=(
+                            reviewed_contracts[entry.upstream_name]
+                            .runtime_contract_fingerprint
+                            if reviewed_contracts is not None
+                            else None
+                        ),
                     )
                     reason = "duplicate_tool_descriptor"
                     quarantine_reasons[reason] += 1
@@ -1507,6 +1634,12 @@ class UpstreamReadGateway:
                     ),
                     reviewed_runtime_output_schema_fingerprint=(
                         reviewed_output_schemas[entry.upstream_name]
+                    ),
+                    reviewed_runtime_contract_fingerprint=(
+                        reviewed_contracts[entry.upstream_name]
+                        .runtime_contract_fingerprint
+                        if reviewed_contracts is not None
+                        else None
                     ),
                 )
                 if decision.accepted:
@@ -1676,7 +1809,13 @@ class UpstreamReadGateway:
                     )
                 try:
                     live_evaluation = self._validate_catalog(
-                        catalog, policy=live_policy
+                        catalog,
+                        policy=live_policy,
+                        reviewed_contracts=(
+                            live_release.tool_contracts_by_name
+                            if live_release is not None
+                            else None
+                        ),
                     )
                     live_contract_token = _catalog_contract_token(
                         catalog, live_evaluation
@@ -1730,6 +1869,9 @@ class UpstreamReadGateway:
                     ),
                     reviewed_runtime_output_schema_fingerprint=(
                         mapping.runtime_output_schema_fingerprint
+                    ),
+                    reviewed_runtime_contract_fingerprint=(
+                        mapping.runtime_contract_fingerprint
                     ),
                 )
                 if (
@@ -2404,7 +2546,11 @@ class UpstreamReadGateway:
                 self._state["reviewed_source_commit"] = None
                 self._state["reviewed_image_index_digest"] = None
                 self._state["reviewed_architecture_image_digests"] = {}
+                self._state["reviewed_addon_artifact_digests"] = {}
                 self._state["reviewed_image_revision"] = None
+                self._state["reviewed_image_revision_authoritative"] = False
+                self._state["strict_full_contract_fingerprint"] = None
+                self._state["strict_full_contract_fingerprint_model"] = None
                 self._state["reviewed_allowed_protocol_versions"] = []
                 self._state["catalog_comparison_status"] = {
                     "upstream_version_mismatch": "unknown_version",
@@ -2554,6 +2700,7 @@ def _compare_tool_contract(
     reviewed_runtime_description_fingerprint: str,
     reviewed_runtime_annotation_fingerprint: str,
     reviewed_runtime_output_schema_fingerprint: str,
+    reviewed_runtime_contract_fingerprint: str | None = None,
 ) -> _ContractDecision:
     """Compare one advertised tool with binary-owned reviewed authority."""
 
@@ -2601,6 +2748,14 @@ def _compare_tool_contract(
         "engineering_consumed_contract": consumed_output_contract,
     }
     observed_schema = observed_tool.get("inputSchema")
+    try:
+        observed_runtime_contract_fingerprint = schema_fingerprint(
+            observed_tool
+        )
+    except (TypeError, ValueError, OverflowError, UnicodeEncodeError):
+        observed_runtime_contract_fingerprint = schema_fingerprint(
+            {"invalid_runtime_contract": True}
+        )
     try:
         Draft202012Validator.check_schema(observed_schema)
         observed_schema_fingerprint = schema_fingerprint(observed_schema)
@@ -2662,6 +2817,12 @@ def _compare_tool_contract(
     elif observed_output != expected_output:
         reason = "output_contract_mismatch"
     elif not observed_static_contract["descriptor_fields_valid"]:
+        reason = "runtime_contract_mismatch"
+    elif (
+        reviewed_runtime_contract_fingerprint is not None
+        and observed_runtime_contract_fingerprint
+        != reviewed_runtime_contract_fingerprint
+    ):
         reason = "runtime_contract_mismatch"
     elif entry.classification != "automatic_read":
         reason = "security_classification_mismatch"

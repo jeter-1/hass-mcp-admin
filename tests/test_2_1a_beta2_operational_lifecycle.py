@@ -3810,6 +3810,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         with tempfile.TemporaryDirectory() as directory:
+            clock = Clock()
             repository = ChangePlanRepository(
                 Path(directory) / "plans"
             )
@@ -3820,6 +3821,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                     str(Path(directory) / "audit.jsonl"),
                     "synthetic-access-secret-value",
                 ),
+                now=clock,
                 lifecycle_gateway=gateway,
             )
             created = await service.create_addon_restart_plan(
@@ -3864,6 +3866,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 {
                     "attempt_count": 1,
                     "dispatched": True,
+                    "attempted_at": clock().isoformat(),
                     "provider_response_received": True,
                 }
             )
@@ -3878,6 +3881,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                     str(Path(directory) / "audit-recovered.jsonl"),
                     "synthetic-access-secret-value",
                 ),
+                now=clock,
                 lifecycle_gateway=gateway,
             )
             first = await recovered.reconcile_operational_plans(
@@ -3895,6 +3899,11 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
 
             provider.identity = upstream_addon_identity()
             provider.identity.pop("provider_contract")
+            clock.value = datetime.fromisoformat(
+                pending.operational.dispatch["restart_reconciliation"][
+                    "next_attempt_at"
+                ]
+            )
             second = await recovered.reconcile_operational_plans(
                 trigger="periodic"
             )

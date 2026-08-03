@@ -1,5 +1,23 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## 2.2.0-beta.11 restart and upstream compatibility evidence
+
+`operational_administration.restart_reconciliation` reports bounded current
+activity, the active plan/task identity, operation, state, attempts, last and
+next timestamps, backoff, evidence deadline, last result, pending eligible and
+backoff counts, terminalized/expired totals, expensive probes and avoided
+probes, cheap-gate rejections, single-flight collisions, manual-review
+terminalizations, and failures. When inactive, `active=false` and the plan and
+task identifiers are null; prior active identifiers are never retained.
+
+Upstream health distinguishes exact 7.14.2 and 8.0.0 admission from an unknown
+8.x release and from catalog, schema, description-semantic, annotation,
+output-contract, or runtime-contract mismatch. Under exact 8.0.0, 78 tools are
+reviewed, 24 reads are admitted, and two reads are held for canary. Held tools
+are accounted and intentionally unavailable, not missing or unreviewed. Static
+review and outstanding live-canary state remain explicit; fallback remains
+zero.
+
 ## 2.2.0-beta.10 legacy expired-plan projection
 
 Exact contract-v1 prohibited/expired automation records written through the

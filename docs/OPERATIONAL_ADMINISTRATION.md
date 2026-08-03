@@ -1,6 +1,22 @@
 # Governed operational administration
 
-Version: `2.2.0-beta.10`
+Version: `2.2.0-beta.11`
+
+## Beta 11 bounded restart reconciliation
+
+Restart recovery uses the durable task's persisted
+`maximum_post_dispatch_deadline`; a historical plan without a task derives the
+deadline from its persisted dispatch time plus the existing maximum interval.
+Neither deadline is reset or extended at startup. Missing trustworthy dispatch
+time and expired deadlines terminalize locally with bounded manual-review
+evidence and no Core, Supervisor, or provider probe.
+
+Unchanged eligible readback attempts persist an increasing capped schedule of
+one, two, five, then fifteen minutes, never beyond the deadline. Attempt count,
+last attempt, next attempt, backoff and deadline survive rehydration. Cheap
+persisted eligibility checks, bounded batches and timeouts, and task-level
+single flight prevent overlapping work and retry storms. This recovery path is
+readback-only and cannot dispatch or redispatch a restart.
 
 The accepted 2.1A lifecycle retains four public proposal tools:
 `create_backup_plan`, `create_reload_plan`, `create_addon_restart_plan`, and

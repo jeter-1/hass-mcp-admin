@@ -22,6 +22,7 @@ BETA = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA))
 
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
+    REVIEWED_CAPTURE_FORMAT_VERSION,
     ReviewedUpstreamReleaseRegistry,
     canonical_json,
     catalog_fingerprint,
@@ -34,8 +35,6 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     schema_fingerprint,
     validate_reviewed_release_evidence,
 )
-
-
 MAX_CATALOG_PAGES = 16
 MAX_CATALOG_TOOLS = 512
 MAX_ERROR_BYTES = 16_384
@@ -85,6 +84,45 @@ def strict_load(path: Path) -> Any:
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(canonical_json(value) + b"\n")
+
+
+def import_runtime_capture(
+    *,
+    initialize_response: Path,
+    tools_response: Path,
+    error_contract_from: Path,
+) -> dict[str, Any]:
+    """Import a retained immutable runtime capture into Engineering format."""
+
+    initialized = strict_load(initialize_response)
+    listed = strict_load(tools_response)
+    error_baseline = strict_load(error_contract_from)
+    result = initialized.get("result")
+    listed_result = listed.get("result")
+    if not isinstance(result, dict) or not isinstance(listed_result, dict):
+        raise SystemExit("retained MCP responses are malformed")
+    server = result.get("serverInfo")
+    tools = listed_result.get("tools")
+    if not isinstance(server, dict) or not isinstance(tools, list):
+        raise SystemExit("retained MCP identity or tools are missing")
+    ordered = sorted(tools, key=lambda item: str(item.get("name", "")))
+    if len(ordered) != len({item.get("name") for item in ordered}):
+        raise SystemExit("retained MCP catalog contains duplicate tool names")
+    errors = error_baseline.get("error_shapes")
+    if not isinstance(errors, dict):
+        raise SystemExit("reviewed error-contract baseline is missing")
+    return {
+        "capture_format_version": REVIEWED_CAPTURE_FORMAT_VERSION,
+        "server_name": server.get("name"),
+        "server_version": server.get("version"),
+        "protocol_version": result.get("protocolVersion"),
+        "tool_count": len(ordered),
+        "catalog_fingerprint": catalog_fingerprint(ordered),
+        "tools": ordered,
+        # Error probing is deliberately separate from immutable image discovery.
+        # Source review established no change to these bounded categories.
+        "error_shapes": errors,
+    }
 
 
 def shape_projection(value: Any) -> Any:
@@ -365,6 +403,11 @@ def comparison(
 def candidate_entry(args: argparse.Namespace) -> None:
     capture_value = strict_load(args.capture)
     policy = strict_load(args.base_policy)
+    decisions_value = (
+        strict_load(args.review_decisions)
+        if args.review_decisions is not None
+        else None
+    )
     if args.dashboard_status == "reviewed" and (
         not args.dashboard_entry_id
         or not args.dashboard_attestation_fingerprint
@@ -409,10 +452,55 @@ def candidate_entry(args: argparse.Namespace) -> None:
             "candidate catalog and base policy tool names differ; "
             "classify additions and removals before generation"
         )
+    decisions_by_name: dict[str, dict[str, Any]] = {}
+    if decisions_value is not None:
+        if not isinstance(decisions_value, list):
+            raise SystemExit("review decisions must be a JSON array")
+        decisions_by_name = {
+            item.get("tool_name"): item
+            for item in decisions_value
+            if isinstance(item, dict) and isinstance(item.get("tool_name"), str)
+        }
+        if set(decisions_by_name) != set(policy_by_name):
+            raise SystemExit(
+                "review decisions must account for every captured tool exactly"
+            )
+    held = set(args.held_tool)
+    if not held <= set(policy_by_name):
+        raise SystemExit("held tool is absent from the reviewed catalog")
     for name, item in policy_by_name.items():
+        observed = captured_by_name[name]
         item["input_schema_fingerprint"] = schema_fingerprint(
-            captured_by_name[name]["inputSchema"]
+            observed["inputSchema"]
         )
+        item["description"] = str(observed.get("description") or name)[:500]
+        annotations = observed.get("annotations")
+        if not isinstance(annotations, dict):
+            raise SystemExit(f"reviewed annotations missing for {name}")
+        item["reviewed_annotations"] = {
+            "readOnlyHint": annotations.get("readOnlyHint") is True,
+            "destructiveHint": annotations.get("destructiveHint") is True,
+            "idempotentHint": annotations.get("idempotentHint") is True,
+            "openWorldHint": annotations.get("openWorldHint") is True,
+        }
+        item["source_evidence"] = [
+            f"homeassistant-ai/ha-mcp@{args.source_commit}: exact v{args.version} source review",
+            f"Exact deterministic MCP tools/list capture for ha-mcp {args.version}",
+        ]
+        if decisions_by_name:
+            decision = decisions_by_name[name]
+            disposition = decision.get("recommended_disposition")
+            if not isinstance(disposition, str) or not disposition:
+                raise SystemExit(f"review disposition missing for {name}")
+            item["reason"] = str(
+                decision.get("engineering_admission_impact") or disposition
+            )[:1000]
+        if name in held:
+            item["classification"] = "held_for_canary"
+            item["reason"] = (
+                "Exact 8.0.0 contract is reviewed, but changed runtime semantics "
+                "remain held for a later controlled production canary."
+            )
     automatic_names = {
         name
         for name, item in policy_by_name.items()
@@ -631,6 +719,8 @@ def parse_args() -> argparse.Namespace:
     candidate.add_argument("--arm64-digest", required=True)
     candidate.add_argument("--image-revision", required=True)
     candidate.add_argument("--review-date", required=True)
+    candidate.add_argument("--review-decisions", type=Path)
+    candidate.add_argument("--held-tool", action="append", default=[])
     candidate.add_argument(
         "--dashboard-status",
         choices=("reviewed", "quarantined"),
@@ -641,6 +731,33 @@ def parse_args() -> argparse.Namespace:
     candidate.add_argument("--dashboard-constraints-fingerprint")
     candidate.add_argument("--output-policy", type=Path, required=True)
     candidate.add_argument("--output-entry", type=Path, required=True)
+    imported = commands.add_parser("import-runtime-capture")
+    imported.add_argument("--initialize-response", type=Path, required=True)
+    imported.add_argument("--tools-response", type=Path, required=True)
+    imported.add_argument("--error-contract-from", type=Path, required=True)
+    imported.add_argument("--output", type=Path, required=True)
+    extract = commands.add_parser("extract-tool")
+    extract.add_argument("--capture", type=Path, required=True)
+    extract.add_argument("--tool", required=True)
+    extract.add_argument("--output", type=Path, required=True)
+    dashboard = commands.add_parser("dashboard-attestation")
+    dashboard.add_argument("--descriptor", type=Path, required=True)
+    dashboard.add_argument("--published-descriptor", type=Path, required=True)
+    dashboard.add_argument("--review-evidence", type=Path, required=True)
+    dashboard.add_argument("--version", required=True)
+    dashboard.add_argument("--source-commit", required=True)
+    dashboard.add_argument("--image-index-digest", required=True)
+    dashboard.add_argument("--amd64-digest", required=True)
+    dashboard.add_argument("--arm64-digest", required=True)
+    dashboard.add_argument("--image-revision", required=True)
+    dashboard.add_argument("--catalog-fingerprint", required=True)
+    dashboard.add_argument("--reviewed-at", required=True)
+    dashboard.add_argument("--output", type=Path, required=True)
+    append_entry = commands.add_parser("append-json-entry")
+    append_entry.add_argument("--document", type=Path, required=True)
+    append_entry.add_argument("--entry", type=Path, required=True)
+    append_entry.add_argument("--array-field", default="entries")
+    append_entry.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
 
 
@@ -765,6 +882,104 @@ def main() -> None:
         )
     elif args.command == "candidate":
         candidate_entry(args)
+    elif args.command == "import-runtime-capture":
+        write_json(
+            args.output,
+            import_runtime_capture(
+                initialize_response=args.initialize_response,
+                tools_response=args.tools_response,
+                error_contract_from=args.error_contract_from,
+            ),
+        )
+    elif args.command == "extract-tool":
+        captured = strict_load(args.capture)
+        matches = [
+            item
+            for item in captured.get("tools", [])
+            if isinstance(item, dict) and item.get("name") == args.tool
+        ]
+        if len(matches) != 1:
+            raise SystemExit("capture must contain the requested tool exactly once")
+        write_json(args.output, matches[0])
+    elif args.command == "dashboard-attestation":
+        # Keep capture/diff/registry operations independent of the optional MCP
+        # runtime dependency pulled in by the dashboard provider modules.
+        from ha_mcp_engineering.providers.upstream_contracts import (
+            CONTRACT_FAMILY_V3,
+            normalize_runtime_contract,
+            stable_hash as dashboard_stable_hash,
+        )
+
+        descriptor = strict_load(args.descriptor)
+        published = strict_load(args.published_descriptor)
+        contract = normalize_runtime_contract(
+            descriptor,
+            protocol_version="2025-03-26",
+            contract_family=CONTRACT_FAMILY_V3,
+        )
+        write_json(
+            args.output,
+            {
+                "entry_id": (
+                    f"ha-mcp-v{args.version}-"
+                    f"{args.image_index_digest.removeprefix('sha256:')[:8]}"
+                ),
+                "server_name": "ha-mcp",
+                "upstream_version": args.version,
+                "source_tag": f"v{args.version}",
+                "source_commit": args.source_commit,
+                "image_index_digest": args.image_index_digest,
+                "platform_digests": {
+                    "linux/amd64": args.amd64_digest,
+                    "linux/arm64": args.arm64_digest,
+                },
+                "image_revision": args.image_revision,
+                "contract_family": CONTRACT_FAMILY_V3,
+                "input_contract_fingerprint": contract.input_fingerprint,
+                "security_contract_fingerprint": contract.security_fingerprint,
+                "output_contract_fingerprint": contract.output_fingerprint,
+                "runtime_contract_fingerprint": contract.runtime_fingerprint,
+                "catalog_fingerprint": args.catalog_fingerprint,
+                "raw_input_schema_fingerprint": schema_fingerprint(
+                    descriptor["inputSchema"]
+                ),
+                "reviewed_security_descriptor_fingerprint": dashboard_stable_hash(
+                    descriptor.get("annotations")
+                ),
+                "fixture_runtime_descriptor_fingerprint": dashboard_stable_hash(
+                    descriptor
+                ),
+                "published_runtime_descriptor_fingerprint": dashboard_stable_hash(
+                    published
+                ),
+                "review_evidence_digest": (
+                    "sha256:"
+                    + hashlib.sha256(args.review_evidence.read_bytes()).hexdigest()
+                ),
+                "reviewed_at": args.reviewed_at,
+                "revoked": False,
+            },
+        )
+    elif args.command == "append-json-entry":
+        document = strict_load(args.document)
+        entry = strict_load(args.entry)
+        entries = (
+            document.get(args.array_field)
+            if isinstance(document, dict)
+            else None
+        )
+        if not isinstance(entries, list) or not isinstance(entry, dict):
+            raise SystemExit("append target or entry is malformed")
+        entry_id = entry.get("entry_id")
+        retained = [
+            item
+            for item in entries
+            if not isinstance(item, dict) or item.get("entry_id") != entry_id
+        ]
+        write_json(
+            args.output,
+            {**document, args.array_field: [*retained, entry]},
+        )
     else:
         raise SystemExit("unsupported command")
 

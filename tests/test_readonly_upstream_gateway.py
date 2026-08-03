@@ -1443,7 +1443,7 @@ class PolicyInventoryTests(unittest.TestCase):
         self.assertIn('"ha_search_partial"', acceptance)
         self.assertIn('partial_data.get("partial") is True', acceptance)
         self.assertIn('item.get("entity_id") == "automation.gateway_fixture"', acceptance)
-        self.assertIn("len(UPSTREAM_ERROR_CALLS)", acceptance)
+        self.assertIn("len(error_call_contracts)", acceptance)
         self.assertIn('routing_after.get("partial_results", 0)', acceptance)
         for metric_name in (
             "requests_by_provider",
@@ -1488,7 +1488,7 @@ class PolicyInventoryTests(unittest.TestCase):
         self.assertIn("automation.gateway_fixture_unreadable", fixture)
         self.assertIn("issue_57_synthetic_provider_failure", fixture)
         self.assertIn(
-            'choices=("7.14.1", "7.14.2")', fixture
+            'choices=("7.14.1", "7.14.2", "8.0.0")', fixture
         )
         self.assertIn(
             'INSTALLED_ADDONS[0]["version"] = args.upstream_version',

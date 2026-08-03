@@ -85,13 +85,32 @@ EXPECTED_ENGINEERING_BASELINE_COUNT = 48
 ACCEPTANCE_TIMEOUT_SECONDS = 120
 MAX_DIAGNOSTIC_ITEMS = 32
 MAX_FAILURE_MESSAGE_CHARS = 512
-EXPECTED_STOCK_COUNTS = {
-    "automatic_read": 26,
-    "mixed_or_requires_wrapper": 14,
-    "persistent_write": 32,
-    "physical_or_high_risk_action": 4,
-    "prohibited": 1,
-    "unsupported": 1,
+EXPECTED_STOCK_COUNTS_BY_VERSION = {
+    "7.14.1": {
+        "automatic_read": 26,
+        "mixed_or_requires_wrapper": 14,
+        "persistent_write": 32,
+        "physical_or_high_risk_action": 4,
+        "prohibited": 1,
+        "unsupported": 1,
+    },
+    "7.14.2": {
+        "automatic_read": 26,
+        "mixed_or_requires_wrapper": 14,
+        "persistent_write": 32,
+        "physical_or_high_risk_action": 4,
+        "prohibited": 1,
+        "unsupported": 1,
+    },
+    "8.0.0": {
+        "automatic_read": 24,
+        "held_for_canary": 2,
+        "mixed_or_requires_wrapper": 14,
+        "persistent_write": 32,
+        "physical_or_high_risk_action": 4,
+        "prohibited": 1,
+        "unsupported": 1,
+    },
 }
 REPRESENTATIVE_CALLS = {
     "ha_search": {"domain_filter": "sun", "limit": 5},
@@ -194,8 +213,11 @@ EXPECTED_LAST_CALL_FAILURE_CATEGORY = (
 )
 
 
-def expected_successful_delegated_calls(total_calls: int) -> int:
-    return total_calls - EXPECTED_OPERATIONAL_ERROR_CALLS
+def expected_successful_delegated_calls(
+    total_calls: int,
+    operational_error_calls: int = EXPECTED_OPERATIONAL_ERROR_CALLS,
+) -> int:
+    return total_calls - operational_error_calls
 
 
 class AcceptanceFailure(RuntimeError):
@@ -794,6 +816,42 @@ async def inspect_engineering(
         for entry in policy.tools
         if entry.classification == "automatic_read"
     }
+    held = {
+        entry.exposed_name
+        for entry in policy.tools
+        if entry.classification == "held_for_canary"
+    }
+    representative_calls = {
+        name: arguments
+        for name, arguments in REPRESENTATIVE_CALLS.items()
+        if name in automatic
+    }
+    error_call_contracts = {
+        name: expected
+        for name, expected in UPSTREAM_ERROR_CALLS.items()
+        if expected["tool"] in automatic
+    }
+    partial_search_enabled = "ha_search" in automatic
+    expected_operational_error_calls = sum(
+        1
+        for value in error_call_contracts.values()
+        if value["failure_category"] == "upstream_error"
+    )
+    expected_outcome_category_counts: dict[str, int] = {}
+    for expected_error in error_call_contracts.values():
+        category = expected_error["failure_category"]
+        expected_outcome_category_counts[category] = (
+            expected_outcome_category_counts.get(category, 0) + 1
+        )
+    expected_last_call_failure_category = next(
+        (
+            value["failure_category"]
+            if value["failure_category"] == "upstream_error"
+            else None
+            for value in reversed(tuple(error_call_contracts.values()))
+        ),
+        None,
+    )
     async with streamablehttp_client(endpoint) as (read, write, _session_id):
         async with ClientSession(read, write) as session:
             initialized = await session.initialize()
@@ -827,6 +885,7 @@ async def inspect_engineering(
                         readiness=readiness,
                     ),
                 )
+            require(not held & names, "held-for-canary tool became callable")
             require("ha_get_logs" not in names, "raw log delegation is reachable")
             require("ha_call_service" not in names, "write-classified tool is advertised")
             require(len(names) == len(base_names | automatic), "unexpected tool exposed")
@@ -861,7 +920,7 @@ async def inspect_engineering(
             require(bool(routing_before), "provider-routing metrics missing before calls")
 
             calls: dict[str, dict[str, Any]] = {}
-            for name, arguments in REPRESENTATIVE_CALLS.items():
+            for name, arguments in representative_calls.items():
                 result = await session.call_tool(name, arguments)
                 value = decode_tool_result(result)
                 require(value.get("success") is True, f"{name} did not succeed: {value.get('error_code')}")
@@ -898,48 +957,49 @@ async def inspect_engineering(
                     "completeness": metadata.get("completeness"),
                 }
 
-            partial_search = decode_tool_result(
-                await session.call_tool(
-                    "ha_search",
-                    {
-                        "query": "gateway_fixture",
-                        "search_types": ["automation"],
-                        "limit": 5,
-                    },
+            if partial_search_enabled:
+                partial_search = decode_tool_result(
+                    await session.call_tool(
+                        "ha_search",
+                        {
+                            "query": "gateway_fixture",
+                            "search_types": ["automation"],
+                            "limit": 5,
+                        },
+                    )
                 )
-            )
-            partial_metadata = partial_search.get("metadata") or {}
-            partial_data = partial_search.get("data") or {}
-            require(partial_search.get("success") is True, "partial ha_search failed")
-            require(partial_data.get("partial") is True, "fixture did not induce partial ha_search")
-            partial_automations = partial_data.get("automations")
-            require(
-                isinstance(partial_automations, list)
-                and any(
-                    isinstance(item, dict)
-                    and item.get("entity_id") == "automation.gateway_fixture"
-                    for item in partial_automations
-                ),
-                "partial ha_search did not retain the known usable automation evidence",
-            )
-            require(
-                partial_metadata.get("completeness") == "partial",
-                "Engineering reported partial ha_search as complete",
-            )
-            require(
-                partial_metadata.get("provider") == "upstream_read_gateway",
-                "partial ha_search provider mismatch",
-            )
-            require(
-                partial_metadata.get("fallback") == "none",
-                "partial ha_search fallback mismatch",
-            )
-            calls["ha_search_partial"] = {
-                "tool": "ha_search",
-                "request_id": partial_search.get("request_id"),
-                "provider": partial_metadata.get("provider"),
-                "completeness": partial_metadata.get("completeness"),
-            }
+                partial_metadata = partial_search.get("metadata") or {}
+                partial_data = partial_search.get("data") or {}
+                require(partial_search.get("success") is True, "partial ha_search failed")
+                require(partial_data.get("partial") is True, "fixture did not induce partial ha_search")
+                partial_automations = partial_data.get("automations")
+                require(
+                    isinstance(partial_automations, list)
+                    and any(
+                        isinstance(item, dict)
+                        and item.get("entity_id") == "automation.gateway_fixture"
+                        for item in partial_automations
+                    ),
+                    "partial ha_search did not retain the known usable automation evidence",
+                )
+                require(
+                    partial_metadata.get("completeness") == "partial",
+                    "Engineering reported partial ha_search as complete",
+                )
+                require(
+                    partial_metadata.get("provider") == "upstream_read_gateway",
+                    "partial ha_search provider mismatch",
+                )
+                require(
+                    partial_metadata.get("fallback") == "none",
+                    "partial ha_search fallback mismatch",
+                )
+                calls["ha_search_partial"] = {
+                    "tool": "ha_search",
+                    "request_id": partial_search.get("request_id"),
+                    "provider": partial_metadata.get("provider"),
+                    "completeness": partial_metadata.get("completeness"),
+                }
 
             stats_before_invalid = fixture_stats(fixture_stats_url)
             invalid = decode_tool_result(
@@ -982,7 +1042,7 @@ async def inspect_engineering(
             )
 
             error_calls: dict[str, dict[str, Any]] = {}
-            for error_name, expected in UPSTREAM_ERROR_CALLS.items():
+            for error_name, expected in error_call_contracts.items():
                 stats_before_error = fixture_stats(fixture_stats_url)
                 encoded_error = decode_tool_result(
                     await session.call_tool(
@@ -1087,16 +1147,17 @@ async def inspect_engineering(
                 request_id = evidence["request_id"]
                 require(request_id and request_id in audit_text, f"audit missing {name} request")
                 require(evidence["tool"] in audit_text, f"audit missing {name} tool name")
-            partial_request_id = calls["ha_search_partial"]["request_id"]
-            require(
-                any(
-                    record.get("request_id") == partial_request_id
-                    and record.get("tool_name") == "ha_search"
-                    and record.get("result_status") == "partial"
-                    for record in find_dicts(audit)
-                ),
-                "audit did not preserve partial ha_search status",
-            )
+            if partial_search_enabled:
+                partial_request_id = calls["ha_search_partial"]["request_id"]
+                require(
+                    any(
+                        record.get("request_id") == partial_request_id
+                        and record.get("tool_name") == "ha_search"
+                        and record.get("result_status") == "partial"
+                        for record in find_dicts(audit)
+                    ),
+                    "audit did not preserve partial ha_search status",
+                )
             for error_name, evidence in error_calls.items():
                 require(
                     evidence["request_id"],
@@ -1161,12 +1222,13 @@ async def inspect_engineering(
                 "a delegated read used the direct Home Assistant provider",
             )
             expected_delegated_calls = (
-                len(REPRESENTATIVE_CALLS)
-                + 1
-                + len(UPSTREAM_ERROR_CALLS)
+                len(representative_calls)
+                + int(partial_search_enabled)
+                + len(error_call_contracts)
             )
             expected_successful_calls = expected_successful_delegated_calls(
-                expected_delegated_calls
+                expected_delegated_calls,
+                expected_operational_error_calls,
             )
             for metric_name in (
                 "requests_by_provider",
@@ -1207,13 +1269,13 @@ async def inspect_engineering(
             )
             require(
                 after_failures - before_failures
-                == EXPECTED_OPERATIONAL_ERROR_CALLS,
+                == expected_operational_error_calls,
                 "actual provider failure accounting mismatch",
             )
             require(
                 routing_after.get("partial_results", 0)
                 - routing_before.get("partial_results", 0)
-                == 1,
+                == int(partial_search_enabled),
                 "partial delegated-read accounting mismatch",
             )
             for metric_name in (
@@ -1243,7 +1305,7 @@ async def inspect_engineering(
                 - routing_before_errors["requests_by_provider"].get(
                     "upstream_read_gateway", 0
                 )
-                == len(UPSTREAM_ERROR_CALLS),
+                == len(error_call_contracts),
                 "error-path provider request accounting mismatch",
             )
             require(
@@ -1254,8 +1316,8 @@ async def inspect_engineering(
                     "successful_requests_by_provider"
                 ].get("upstream_read_gateway", 0)
                 == (
-                    len(UPSTREAM_ERROR_CALLS)
-                    - EXPECTED_OPERATIONAL_ERROR_CALLS
+                    len(error_call_contracts)
+                    - expected_operational_error_calls
                 ),
                 "domain outcomes changed provider success accounting",
             )
@@ -1266,7 +1328,7 @@ async def inspect_engineering(
                 - routing_before_errors["failures_by_provider"].get(
                     "upstream_read_gateway", 0
                 )
-                == EXPECTED_OPERATIONAL_ERROR_CALLS,
+                == expected_operational_error_calls,
                 "domain outcomes inflated operational provider failures",
             )
             gateway_failure_before = (
@@ -1274,7 +1336,7 @@ async def inspect_engineering(
             )
             gateway_failure_after = gateway_state.get("failure_counts") or {}
             for category, expected_delta in (
-                EXPECTED_OUTCOME_CATEGORY_COUNTS.items()
+                expected_outcome_category_counts.items()
             ):
                 require(
                     gateway_failure_after.get(category, 0)
@@ -1284,7 +1346,7 @@ async def inspect_engineering(
                 )
             require(
                 gateway_state.get("last_call_failure_category")
-                == EXPECTED_LAST_CALL_FAILURE_CATEGORY,
+                == expected_last_call_failure_category,
                 "last operational gateway failure category mismatch",
             )
             require(fallback_before == fallback_after, "fallback counters changed")
@@ -1854,7 +1916,11 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         "reviewed runtime output-schema mismatch: "
         f"tools={output_schema_mismatches[:MAX_DIAGNOSTIC_ITEMS]}",
     )
-    require(policy.classification_counts == EXPECTED_STOCK_COUNTS, "stock classification counts mismatch")
+    require(
+        policy.classification_counts
+        == EXPECTED_STOCK_COUNTS_BY_VERSION.get(args.expected_upstream_version),
+        "stock classification counts mismatch",
+    )
     engineering = await inspect_engineering(
         args.engineering_endpoint,
         args.fixture_stats_url,

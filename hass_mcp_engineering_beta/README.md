@@ -1,12 +1,12 @@
 # HA MCP Engineering Server Beta
 
 This directory contains the Engineering v2 add-on. Development version
-`2.2.0-beta.10` restores read compatibility for the exact contract-v1
-prohibited/expired automation representation written by Beta 6's legacy
-writer, alongside the contract-v2 superseded representation. It retains
-bounded per-record projection failures and reconciled governance health while
-retaining Beta 7 provider-response truthfulness and the accepted F2, E1, K1,
-C1, and durable execution-task boundaries.
+`2.2.0-beta.11` bounds restart reconciliation by durable evidence deadlines,
+persisted capped backoff, cheap eligibility checks, and task-level single
+flight. It also preserves exact reviewed `ha-mcp` 7.14.2 compatibility and
+adds a separate exact 8.0.0 profile. The 8.0.0 profile exposes 24 delegated
+reads and keeps `ha_search` and `ha_get_operation_status` held for a later
+production canary.
 Its technical “Beta” display name, slug, image repository, and runtime
 identity remain unchanged to avoid a migration. Stable v1.1.2
 `hass_mcp_admin` source remains in the repository as operationally retired
@@ -23,8 +23,8 @@ initially pending, `/health` remains live but `/ready` and authenticated MCP
 traffic return HTTP 503; schema-caching clients therefore cannot retain that
 transient static-only catalog. Once the first stable or terminal reconciliation
 result is known, `/ready` reports the bounded ready state. If discovery
-establishes an exact compiled generic release entry (`ha-mcp` 7.14.1 or
-7.14.2), each of the 26 reviewed pure reads is admitted independently by its
+establishes an exact compiled reviewed release entry (`ha-mcp` 7.14.2 or
+8.0.0), each release's reviewed pure reads are admitted independently by their
 exact input-schema fingerprint, exact bounded full-runtime-description
 fingerprint, exact runtime safety-annotation presence/value fingerprint,
 output-schema
@@ -38,9 +38,10 @@ Each read also requires its exact pinned generic object output-schema
 fingerprint; the fixed Engineering adapter, not that generic schema, owns
 sanitization, bounds, fallback refusal, and partial-data behavior.
 
-A complete reviewed set adds 26 delegated reads for 74 registered tools. One
-missing or quarantined read leaves the other 25 available for 73 registered
-tools. A client that cached an earlier list must re-list or reconnect; the
+A complete reviewed 7.14.2 set adds 26 delegated reads for 74 registered tools.
+The exact 8.0.0 set adds 24 for 72 registered tools; its two held reads are
+accounted but never registered or callable. One missing or quarantined read
+leaves other matches available. A client that cached an earlier list must re-list or reconnect; the
 stateless transport does not broadcast `tools/list_changed`.
 
 Unlisted, mixed, write, action, prohibited, and unsupported tools are never
@@ -111,7 +112,7 @@ reboot and completeness defects, RC2dev14 established practical configuration
 plans, and RC2dev16 corrected delegated structured-error normalization without
 changing upstream admission or adding search behavior. Version `2.0.1`
 promoted the accepted RC1-dev2 behavior without a functional change. Development
-version `2.2.0-beta.10` retains governed controlled reload, exact add-on restart,
+version `2.2.0-beta.11` retains governed controlled reload, exact add-on restart,
 Home Assistant restart, readback-only reconciliation, and one durable execution
 task for each newly executed plan. It adds authority-version-3 policy and
 approval bundles without another tool, provider, resource, or fallback. Beta 9
@@ -121,6 +122,9 @@ failures without hiding valid list results, and reconciles policy-class health.
 Beta 10 separately recognizes only the exact source-generated contract-v1
 expired automation profile and its two complete event sequences without
 globally allowlisting expiry.
+Beta 11 prevents stale restart records from polling indefinitely and adds
+exact 8.0.0 admission without broad 8.x trust. It keeps both new upstream
+reads held pending canary evidence.
 Beta 7 response truthfulness and current prohibited projection remain
 unchanged. Its
 update/recovery preflight,
@@ -132,8 +136,8 @@ retains
 exact reviewed 7.14.2 compatibility, reviewed 7.14.1 rollback compatibility,
 and the hardened MCP SDK boundary. Its changes, rollback, and acceptance
 requirements are recorded in
-[`../docs/V2_2_0_BETA10_RELEASE_NOTES.md`](../docs/V2_2_0_BETA10_RELEASE_NOTES.md),
-[`../docs/V2_2_0_BETA10_ACCEPTANCE.md`](../docs/V2_2_0_BETA10_ACCEPTANCE.md), and
+[`../docs/V2_2_0_BETA11_RELEASE_NOTES.md`](../docs/V2_2_0_BETA11_RELEASE_NOTES.md),
+[`../docs/V2_2_0_BETA11_ACCEPTANCE.md`](../docs/V2_2_0_BETA11_ACCEPTANCE.md), and
 [`../docs/OPERATIONAL_ADMINISTRATION.md`](../docs/OPERATIONAL_ADMINISTRATION.md).
 Determine
 exact advertised state from version metadata and `scripts/codex-context.py`.

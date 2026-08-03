@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.2.0-beta.11 - Bounded restart recovery and exact ha-mcp 8.0.0 compatibility
+
+- Bound restart reconciliation by the original persisted post-dispatch
+  deadline. Expired or structurally ineligible restart records terminalize
+  without Home Assistant, Supervisor, or lifecycle-provider probes and can
+  never redispatch.
+- Persist restart reconciliation attempt timing and capped backoff
+  (`1m`, `2m`, `5m`, then `15m`) across Engineering restarts, enforce
+  task-level single flight and bounded batches, and expose bounded active,
+  pending, avoided-probe, expiry, and failure evidence in health.
+- Preserve exact reviewed `ha-mcp` 7.14.2 admission and add a separate exact
+  reviewed 8.0.0 release entry, contract snapshot, immutable artifact
+  evidence, and complete 78-tool policy.
+- Under 8.0.0, admit exactly 24 delegated reads and hold `ha_search` and
+  `ha_get_operation_status` for a later production canary. Unknown later 8.x
+  releases remain untrusted and expose no delegated reads.
+- Preserve the constrained dashboard list/get wrapper, bounded backup and
+  lifecycle providers, the current MCP protocol policy, 48 Engineering-local
+  tools, task schema 1, approval authority 3, stable source version 1.1.2, and
+  zero fallback.
+- Retain the existing operational admission fingerprint model separately from
+  the stricter full-contract evidence model. Static and exact-image evidence
+  do not claim production architecture, runtime add-on digest, or live
+  dashboard, backup, lifecycle, outage, reconnection, or held-tool behavior.
+- Defer delta-aware safety-reducing policy beyond Beta 11; this release adds no
+  policy classification, provider, Engineering-local tool, write, protocol,
+  or fallback authority.
+
 ## 2.2.0-beta.10 - Legacy expired-automation compatibility
 
 - Recognize the exact contract-v1 prohibited/expired `update_automation`

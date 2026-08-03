@@ -48,6 +48,7 @@ RUNTIME_SAFETY_ANNOTATION_FIELDS = (
 CLASSIFICATIONS = frozenset(
     {
         "automatic_read",
+        "held_for_canary",
         "mixed_or_requires_wrapper",
         "persistent_write",
         "physical_or_high_risk_action",
@@ -333,7 +334,11 @@ class UpstreamToolPolicy:
     @property
     def classification_counts(self) -> dict[str, int]:
         counts = Counter(entry.classification for entry in self.tools)
-        return {name: counts.get(name, 0) for name in sorted(CLASSIFICATIONS)}
+        return {
+            name: counts.get(name, 0)
+            for name in sorted(CLASSIFICATIONS)
+            if name != "held_for_canary" or counts.get(name, 0)
+        }
 
     @property
     def reviewed_runtime_description_fingerprints_by_name(
@@ -457,6 +462,11 @@ class ReviewedUpstreamRelease:
     image_revision: str
     advertised_tool_count: int
     catalog_fingerprint: str
+    strict_full_contract_fingerprint: str | None
+    strict_full_contract_fingerprint_model: str | None
+    addon_artifact_digests: tuple[
+        tuple[str, tuple[tuple[str, str], ...]], ...
+    ]
     capture_resource: str
     capture_sha256: str
     capture_format_version: int
@@ -482,6 +492,15 @@ class ReviewedUpstreamRelease:
     @property
     def architecture_image_digests_by_platform(self) -> dict[str, str]:
         return dict(self.architecture_image_digests)
+
+    @property
+    def addon_artifact_digests_by_platform(
+        self,
+    ) -> dict[str, dict[str, str]]:
+        return {
+            platform: dict(digests)
+            for platform, digests in self.addon_artifact_digests
+        }
 
 
 @dataclass(frozen=True)
@@ -733,7 +752,16 @@ def _load_reviewed_release(
         "entity_lookup_missing_resource_status",
         "tool_contracts",
     }
-    if not isinstance(value, dict) or set(value) != expected:
+    optional = {
+        "strict_full_contract_fingerprint",
+        "strict_full_contract_fingerprint_model",
+        "addon_artifact_digests",
+    }
+    if (
+        not isinstance(value, dict)
+        or not expected <= set(value)
+        or set(value) - expected - optional
+    ):
         raise UpstreamToolPolicyError(
             "release_registry_entry_fields_invalid"
         )
@@ -822,6 +850,38 @@ def _load_reviewed_release(
     if not isinstance(catalog, str) or not _HEX_64.fullmatch(catalog):
         raise UpstreamToolPolicyError(
             "release_registry_catalog_fingerprint_invalid"
+        )
+    strict_fingerprint = value.get("strict_full_contract_fingerprint")
+    strict_model = value.get("strict_full_contract_fingerprint_model")
+    addon_artifacts = value.get("addon_artifact_digests", {})
+    if (strict_fingerprint is None) != (strict_model is None):
+        raise UpstreamToolPolicyError(
+            "release_registry_strict_fingerprint_invalid"
+        )
+    if strict_fingerprint is not None and (
+        not isinstance(strict_fingerprint, str)
+        or not _HEX_64.fullmatch(strict_fingerprint)
+        or strict_model != "ha-mcp-strict-full-contract-v1"
+    ):
+        raise UpstreamToolPolicyError(
+            "release_registry_strict_fingerprint_invalid"
+        )
+    if (
+        not isinstance(addon_artifacts, dict)
+        or set(addon_artifacts) - {"linux/amd64", "linux/arm64"}
+        or any(
+            not isinstance(item, dict)
+            or set(item) != {"index_digest", "image_manifest_digest"}
+            or any(
+                not isinstance(digest_value, str)
+                or not _SHA256_DIGEST.fullmatch(digest_value)
+                for digest_value in item.values()
+            )
+            for item in addon_artifacts.values()
+        )
+    ):
+        raise UpstreamToolPolicyError(
+            "release_registry_addon_artifacts_invalid"
         )
     capture_resource = value["capture_resource"]
     if (
@@ -1018,6 +1078,12 @@ def _load_reviewed_release(
         image_revision=value["image_revision"],
         advertised_tool_count=tool_count,
         catalog_fingerprint=catalog,
+        strict_full_contract_fingerprint=strict_fingerprint,
+        strict_full_contract_fingerprint_model=strict_model,
+        addon_artifact_digests=tuple(
+            (platform, tuple(sorted(item.items())))
+            for platform, item in sorted(addon_artifacts.items())
+        ),
         capture_resource=capture_resource,
         capture_sha256=capture_sha256,
         capture_format_version=value["capture_format_version"],

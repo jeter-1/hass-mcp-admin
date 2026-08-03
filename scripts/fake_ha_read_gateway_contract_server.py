@@ -457,7 +457,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=18123)
     parser.add_argument(
         "--upstream-version",
-        choices=("7.14.1", "7.14.2"),
+        choices=("7.14.1", "7.14.2", "8.0.0"),
         required=True,
     )
     args = parser.parse_args()
