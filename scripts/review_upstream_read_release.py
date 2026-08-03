@@ -23,6 +23,7 @@ sys.path.insert(0, str(BETA))
 
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     REVIEWED_CAPTURE_FORMAT_VERSION,
+    RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1,
     ReviewedUpstreamReleaseRegistry,
     canonical_json,
     catalog_fingerprint,
@@ -542,7 +543,11 @@ def candidate_entry(args: argparse.Namespace) -> None:
         expected_source_commit=args.source_commit,
     )
     contracts = reviewed_tool_contracts_from_capture(
-        capture_value, reviewed_policy
+        capture_value,
+        reviewed_policy,
+        runtime_contract_fingerprint_model=(
+            RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
+        ),
     )
     error_contract = schema_fingerprint(capture_value["error_shapes"])
     try:
@@ -578,6 +583,9 @@ def candidate_entry(args: argparse.Namespace) -> None:
         "catalog_fingerprint": capture_value[
             "catalog_fingerprint"
         ],
+        "runtime_contract_fingerprint_model": (
+            RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
+        ),
         "capture_resource": capture_resource,
         "capture_sha256": capture_digest,
         "capture_format_version": capture_value[

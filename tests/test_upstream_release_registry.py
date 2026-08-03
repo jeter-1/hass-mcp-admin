@@ -24,6 +24,8 @@ from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
 )
 from ha_mcp_engineering.tools import registered_tools  # noqa: E402
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
+    RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1,
+    RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2,
     UpstreamToolPolicyError,
     canonical_json,
     catalog_fingerprint,
@@ -164,6 +166,14 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
             self.assertEqual(
                 release.policy.classification_counts["automatic_read"],
                 24 if release.version == "8.0.0" else 26,
+            )
+            self.assertEqual(
+                release.runtime_contract_fingerprint_model,
+                (
+                    RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2
+                    if release.version == "8.0.0"
+                    else RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
+                ),
             )
             self.assertEqual(
                 {
@@ -312,6 +322,9 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
             lambda value: value["releases"][1]["tool_contracts"][
                 "ha_search"
             ].pop("runtime_contract_fingerprint"),
+            lambda value: value["releases"][1].pop(
+                "runtime_contract_fingerprint_model"
+            ),
             lambda value: value["releases"][1]["tool_contracts"][
                 "ha_search"
             ].update({"policy_classification": "unreviewed_read"}),
@@ -320,6 +333,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
             "release_registry_release_not_approved",
             "release_registry_tool_contracts_incomplete",
             "registry_tool_contract_fields_invalid",
+            "release_registry_entry_fields_invalid",
             "registry_tool_contract_classification_invalid",
         )
         for mutation, error in zip(mutations, expected, strict=True):

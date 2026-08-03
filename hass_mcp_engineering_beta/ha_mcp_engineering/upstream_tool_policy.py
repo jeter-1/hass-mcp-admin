@@ -46,6 +46,19 @@ RUNTIME_SAFETY_ANNOTATION_FIELDS = (
     "openWorldHint",
 )
 RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1 = "mcp-full-tool-descriptor-v1"
+RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2 = (
+    "ha-mcp-operational-tool-descriptor-v2"
+)
+RUNTIME_POLICY_STATE_FINGERPRINT_MODEL_V1 = (
+    "ha-mcp-policy-runtime-state-v1"
+)
+RUNTIME_CONTRACT_FINGERPRINT_MODELS = frozenset(
+    {
+        RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1,
+        RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2,
+    }
+)
+MAX_RUNTIME_POLICY_RULE_COUNT = 10_000
 RUNTIME_CONTRACT_DIAGNOSTIC_PATHS = (
     "/title",
     "/annotations/title",
@@ -140,9 +153,35 @@ def runtime_contract_fingerprint(
 ) -> str:
     """Fingerprint one runtime descriptor under an explicit admission model."""
 
-    if model != RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1:
-        raise UpstreamToolPolicyError("runtime_contract_fingerprint_model_invalid")
-    return schema_fingerprint(tool)
+    if model == RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1:
+        return schema_fingerprint(tool)
+    if model != RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2:
+        raise UpstreamToolPolicyError(
+            "runtime_contract_fingerprint_model_invalid"
+        )
+    normalized = json.loads(canonical_json(tool))
+    meta = normalized.get("_meta")
+    if not isinstance(meta, dict):
+        return schema_fingerprint(normalized)
+    ha_mcp = meta.get("ha_mcp")
+    if not isinstance(ha_mcp, dict):
+        return schema_fingerprint(normalized)
+    policy = ha_mcp.get("policy")
+    policy_valid = (
+        isinstance(policy, dict)
+        and set(policy) == {"deployment", "enabled", "live", "rules"}
+        and policy.get("deployment") in {"standalone", "addon"}
+        and isinstance(policy.get("enabled"), bool)
+        and isinstance(policy.get("live"), bool)
+        and isinstance(policy.get("rules"), int)
+        and not isinstance(policy.get("rules"), bool)
+        and 0 <= policy["rules"] <= MAX_RUNTIME_POLICY_RULE_COUNT
+    )
+    ha_mcp["policy"] = {
+        "fingerprint_model": RUNTIME_POLICY_STATE_FINGERPRINT_MODEL_V1,
+        "valid": policy_valid,
+    }
+    return schema_fingerprint(normalized)
 
 
 def runtime_contract_field_fingerprints(
@@ -524,6 +563,7 @@ class ReviewedUpstreamRelease:
     image_revision: str
     advertised_tool_count: int
     catalog_fingerprint: str
+    runtime_contract_fingerprint_model: str
     strict_full_contract_fingerprint: str | None
     strict_full_contract_fingerprint_model: str | None
     addon_artifact_digests: tuple[
@@ -563,13 +603,6 @@ class ReviewedUpstreamRelease:
             platform: dict(digests)
             for platform, digests in self.addon_artifact_digests
         }
-
-
-    @property
-    def runtime_contract_fingerprint_model(self) -> str:
-        """Return the legacy exact full-descriptor admission model."""
-
-        return RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
 
 
 @dataclass(frozen=True)
@@ -809,6 +842,7 @@ def _load_reviewed_release(
         "image_revision",
         "advertised_tool_count",
         "catalog_fingerprint",
+        "runtime_contract_fingerprint_model",
         "capture_resource",
         "capture_sha256",
         "capture_format_version",
@@ -919,6 +953,11 @@ def _load_reviewed_release(
     if not isinstance(catalog, str) or not _HEX_64.fullmatch(catalog):
         raise UpstreamToolPolicyError(
             "release_registry_catalog_fingerprint_invalid"
+        )
+    runtime_model = value["runtime_contract_fingerprint_model"]
+    if runtime_model not in RUNTIME_CONTRACT_FINGERPRINT_MODELS:
+        raise UpstreamToolPolicyError(
+            "release_registry_runtime_fingerprint_model_invalid"
         )
     strict_fingerprint = value.get("strict_full_contract_fingerprint")
     strict_model = value.get("strict_full_contract_fingerprint_model")
@@ -1147,6 +1186,7 @@ def _load_reviewed_release(
         image_revision=value["image_revision"],
         advertised_tool_count=tool_count,
         catalog_fingerprint=catalog,
+        runtime_contract_fingerprint_model=runtime_model,
         strict_full_contract_fingerprint=strict_fingerprint,
         strict_full_contract_fingerprint_model=strict_model,
         addon_artifact_digests=tuple(
@@ -1178,6 +1218,10 @@ def _load_reviewed_release(
 def reviewed_tool_contracts_from_capture(
     capture_value: dict[str, Any],
     policy: UpstreamToolPolicy,
+    *,
+    runtime_contract_fingerprint_model: str = (
+        RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
+    ),
 ) -> dict[str, dict[str, Any]]:
     """Derive the complete evidence ledger from one normalized capture."""
 
@@ -1224,7 +1268,9 @@ def reviewed_tool_contracts_from_capture(
                     "value": tool.get("outputSchema"),
                 }
             ),
-            "runtime_contract_fingerprint": schema_fingerprint(tool),
+            "runtime_contract_fingerprint": runtime_contract_fingerprint(
+                tool, model=runtime_contract_fingerprint_model
+            ),
             "runtime_contract_field_fingerprints": (
                 runtime_contract_field_fingerprints(tool)
             ),
@@ -1509,7 +1555,11 @@ def generated_reviewed_release_registry(
             verify_digest=False,
         )
         contracts = reviewed_tool_contracts_from_capture(
-            capture_value, release.policy
+            capture_value,
+            release.policy,
+            runtime_contract_fingerprint_model=(
+                release.runtime_contract_fingerprint_model
+            ),
         )
         for name, expected in contracts.items():
             policy_entry = release.policy.by_name[name]

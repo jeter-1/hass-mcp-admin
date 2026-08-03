@@ -21,9 +21,11 @@ from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     UpstreamReadGateway,
 )
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
-    RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1,
+    MAX_RUNTIME_POLICY_RULE_COUNT,
+    RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2,
     catalog_fingerprint,
     load_reviewed_upstream_release_registry,
+    runtime_contract_fingerprint,
     schema_fingerprint,
 )
 from tests.test_readonly_upstream_gateway import (  # noqa: E402
@@ -76,7 +78,7 @@ class Beta12ReproductionDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
         await gateway.initialize(target)
         return gateway, target
 
-    async def test_live_addon_fingerprint_reproduces_all_24_mismatches(self):
+    async def test_live_addon_fingerprint_reproduces_and_admits_24_reads(self):
         fixture = load_json(RECONSTRUCTION)
         tools = reconstruct_live_addon_tools()
         expected = fixture["expected_results"]
@@ -88,13 +90,17 @@ class Beta12ReproductionDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
 
         gateway, _target = await self.gateway_for(tools)
         health = gateway.health_snapshot()
-        self.assertEqual(health["dynamically_exposed_count"], 0)
-        self.assertEqual(health["runtime_contract_mismatch_count"], 24)
-        self.assertEqual(health["quarantined_automatic_read_count"], 24)
+        self.assertEqual(health["dynamically_exposed_count"], 24)
+        self.assertEqual(health["exact_matched_automatic_read_count"], 24)
+        self.assertEqual(health["runtime_contract_mismatch_count"], 0)
+        self.assertEqual(health["quarantined_automatic_read_count"], 0)
+        self.assertEqual(health["quarantine_reason_counts"], {})
+        self.assertEqual(health["held_read_count"], 2)
         self.assertEqual(
-            health["quarantine_reason_counts"],
-            {"runtime_contract_mismatch": 24},
+            health["held_tools"], ["ha_get_operation_status", "ha_search"]
         )
+        self.assertEqual(health["fallback_count"], 0)
+        self.assertEqual(health["admission_status"], "admitted_exact")
         self.assertEqual(
             health["observed_catalog_fingerprint"],
             expected["observed_live_catalog_fingerprint"],
@@ -120,32 +126,11 @@ class Beta12ReproductionDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
             schema_fingerprint({"tools": tools}),
         )
 
-        expected_diff = [
-            "/_meta/ha_mcp/policy/deployment",
-            "/_meta/ha_mcp/policy/enabled",
-            "/_meta/ha_mcp/policy/live",
-        ]
-        self.assertEqual(len(health["quarantined_tools"]), 24)
-        for item in health["quarantined_tools"]:
-            with self.subTest(tool=item["upstream_name"]):
-                self.assertEqual(
-                    item["expected_contract_fingerprint"],
-                    item["observed_contract_fingerprint"],
-                )
-                self.assertNotEqual(
-                    item["expected_runtime_contract_fingerprint"],
-                    item["observed_runtime_contract_fingerprint"],
-                )
-                self.assertEqual(
-                    item["runtime_contract_fingerprint_model"],
-                    RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1,
-                )
-                self.assertEqual(
-                    item["runtime_contract_diff_fields"], expected_diff
-                )
-                self.assertLessEqual(
-                    len(item["runtime_contract_diff_summary"]), 512
-                )
+        self.assertEqual(health["quarantined_tools"], [])
+        self.assertEqual(
+            health["runtime_contract_fingerprint_model"],
+            RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2,
+        )
 
     async def test_one_runtime_only_change_has_bounded_exact_diagnostics(self):
         tools = deepcopy(load_json(REVIEWED_CAPTURE)["tools"])
@@ -171,8 +156,89 @@ class Beta12ReproductionDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
             item["runtime_contract_diff_fields"],
             ["/_meta/ha_mcp/pinned"],
         )
+        self.assertEqual(
+            item["runtime_contract_fingerprint_model"],
+            RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2,
+        )
         self.assertNotIn("True", item["runtime_contract_diff_summary"])
         self.assertLessEqual(len(item["runtime_contract_diff_summary"]), 512)
+
+    async def test_invalid_dynamic_policy_shapes_remain_fail_closed(self):
+        invalid_values = (
+            None,
+            {},
+            {
+                "deployment": "embedded",
+                "enabled": True,
+                "live": True,
+                "rules": 0,
+            },
+            {
+                "deployment": "addon",
+                "enabled": 1,
+                "live": True,
+                "rules": 0,
+            },
+            {
+                "deployment": "addon",
+                "enabled": True,
+                "live": True,
+                "rules": MAX_RUNTIME_POLICY_RULE_COUNT + 1,
+            },
+            {
+                "deployment": "addon",
+                "enabled": True,
+                "live": True,
+                "rules": 0,
+                "unreviewed": False,
+            },
+        )
+        for invalid in invalid_values:
+            with self.subTest(policy=invalid):
+                tools = deepcopy(load_json(REVIEWED_CAPTURE)["tools"])
+                changed = next(
+                    tool for tool in tools if tool["name"] == "ha_get_state"
+                )
+                changed["_meta"]["ha_mcp"]["policy"] = invalid
+                gateway, _target = await self.gateway_for(tools)
+                health = gateway.health_snapshot()
+                self.assertEqual(health["runtime_contract_mismatch_count"], 1)
+                self.assertEqual(
+                    health["quarantined_automatic_read_count"], 1
+                )
+                self.assertEqual(health["dynamically_exposed_count"], 23)
+                self.assertEqual(
+                    health["quarantined_tools"][0]["upstream_name"],
+                    "ha_get_state",
+                )
+
+    def test_only_valid_policy_runtime_values_are_normalized(self):
+        reviewed = deepcopy(load_json(REVIEWED_CAPTURE)["tools"][0])
+        addon = deepcopy(reviewed)
+        addon["_meta"]["ha_mcp"]["policy"] = {
+            "deployment": "addon",
+            "enabled": True,
+            "live": True,
+            "rules": MAX_RUNTIME_POLICY_RULE_COUNT,
+        }
+        self.assertEqual(
+            runtime_contract_fingerprint(
+                reviewed, model=RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2
+            ),
+            runtime_contract_fingerprint(
+                addon, model=RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2
+            ),
+        )
+        invalid = deepcopy(addon)
+        invalid["_meta"]["ha_mcp"]["policy"]["rules"] = True
+        self.assertNotEqual(
+            runtime_contract_fingerprint(
+                reviewed, model=RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2
+            ),
+            runtime_contract_fingerprint(
+                invalid, model=RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2
+            ),
+        )
 
     def test_reproduction_script_writes_machine_and_human_readable_diff(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -221,6 +287,19 @@ class Beta12ReproductionDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
                         "/_meta/ha_mcp/policy/live",
                     ],
                 )
+                reviewed = sources["reviewed_fixture"]["tools"][tool_name]
+                addon = sources["live_addon_reconstruction"]["tools"][
+                    tool_name
+                ]
+                self.assertNotEqual(
+                    reviewed["raw_runtime_contract_fingerprint"],
+                    addon["raw_runtime_contract_fingerprint"],
+                )
+                self.assertEqual(
+                    reviewed["admission_runtime_contract_fingerprint"],
+                    addon["admission_runtime_contract_fingerprint"],
+                )
+                self.assertTrue(addon["accepted"])
             self.assertIn(
                 "legacy raw full-descriptor runtime comparator differs",
                 output_markdown.read_text(encoding="utf-8"),
