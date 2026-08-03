@@ -786,7 +786,7 @@ class GatewayAndHealthTests(unittest.TestCase):
                 "admission_status": "not_evaluated",
                 "admission_source": None,
                 "contract_family": None,
-                "compiled_contract_family_count": 1,
+                "compiled_contract_family_count": 2,
                 "enabled_upstream_capabilities": [
                     "list_dashboards",
                     "get_dashboard_config",

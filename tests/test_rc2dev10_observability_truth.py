@@ -250,7 +250,11 @@ class RegistryAndDriftTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_selected_remote_attestation_supplies_both_evidence_families(self):
         entry = replace(
-            load_attestations()[-1],
+            next(
+                item
+                for item in load_attestations()
+                if item.upstream_version == "7.14.1"
+            ),
             entry_id="ha-mcp-v7.14.3-synthetic",
             upstream_version="7.14.3",
             source_tag="v7.14.3",
