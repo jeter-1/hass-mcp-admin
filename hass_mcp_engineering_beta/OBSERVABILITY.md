@@ -15,8 +15,10 @@ fingerprints and their model, reviewed and observed strict full-contract
 fingerprints and the strict model, and bounded changed-field counts. Raw
 catalog and strict fingerprints remain diagnostic evidence; exact admission
 continues to come from per-tool reviewed contracts. Exact 8.0.0 add-on policy
-state produces three raw catalog differences across 78 tools while its
-validated operational runtime model admits the reviewed 24 reads.
+state produces three changed raw member paths across 78 tools because `rules`
+remains `0` in both artifacts. Its validated operational runtime model covers
+all four dynamic values—`deployment`, `enabled`, `live` and `rules`—and admits
+the reviewed 24 reads.
 
 ## 2.2.0-beta.11 restart and upstream compatibility evidence
 

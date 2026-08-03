@@ -12,8 +12,11 @@ unchanged.
 
 Beta 11 reviewed the standalone 8.0.0 tool surface, whose descriptors reported
 the policy middleware as `standalone`/disabled/not-live. The exact add-on and
-production canary reported `addon`/enabled/live. Those three values appeared on
-all 78 tools. Ordinary contract hashes were equal, but the separate raw
+production canary reported `addon`/enabled/live. Those three members changed
+on all 78 tools; `rules` remained `0` in both artifacts. The v2 model validates
+and normalizes the complete four-member dynamic policy state—`deployment`,
+`enabled`, `live` and `rules`—rather than only the three members that happened
+to differ. Ordinary contract hashes were equal, but the separate raw
 full-descriptor runtime hashes differed, so all 24 automatic reads were
 quarantined together.
 

@@ -50,10 +50,12 @@ The exact add-on amd64 artifact must reproduce 78 tools, operational
 fingerprint `c61b0959e766f3900300dd4dd69a6d799fc113186d91983f21be69f1bc6b8768`
 and strict wire-order fingerprint
 `f061e48a5d049a2fe84f8b46451a8c2928e0eb5fc68181cf0cbbe71ae5025727`.
-The field diff must be limited to policy `deployment`, `enabled` and `live`
-for all four representative reads. Unavailable native architecture lanes must
-be recorded explicitly; source-payload inspection is not reported as native
-execution.
+The observed field diff must be limited to policy `deployment`, `enabled` and
+`live` for all four representative reads, with `rules=0` unchanged in both
+artifacts. Admission must nevertheless validate and normalize all four dynamic
+policy-state values: `deployment`, `enabled`, `live` and `rules`. Unavailable
+native architecture lanes must be recorded explicitly; source-payload
+inspection is not reported as native execution.
 
 ## Preserved provider and governance boundaries
 

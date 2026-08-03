@@ -77,11 +77,15 @@ Every exact add-on descriptor and the live reconstruction contained:
 {"deployment":"addon","enabled":true,"live":true,"rules":0}
 ```
 
-These are the only field differences for `ha_get_state`,
+These are the only observed field differences for `ha_get_state`,
 `ha_config_get_automation`, `ha_get_history` and `ha_list_services`; the same
-three changes occur on all 78 descriptors. Input schemas, descriptions,
-annotations, output contracts, titles, tags, LLM exposure and pinning are
-unchanged. Machine- and human-readable comparisons are in
+three changed members occur on all 78 descriptors. The complete dynamic
+policy-state surface normalized by the v2 model has four members:
+`deployment`, `enabled`, `live` and `rules`. `rules` remained `0` in both
+captured artifacts, so it does not appear in the three-item raw diff, but it
+is still validated and normalized. Input schemas, descriptions, annotations,
+output contracts, titles, tags, LLM exposure and pinning are unchanged.
+Machine- and human-readable comparisons are in
 [`ha-mcp-8.0.0-live-addon-field-diff.json`](evidence/upstream-read-compatibility/ha-mcp-8.0.0-live-addon-field-diff.json)
 and
 [`ha-mcp-8.0.0-live-addon-field-diff.md`](evidence/upstream-read-compatibility/ha-mcp-8.0.0-live-addon-field-diff.md).
@@ -123,14 +127,23 @@ uses the explicit version-scoped
 It requires the policy object to contain exactly `deployment`, `enabled`,
 `live` and `rules`; requires `standalone` or `addon`, real JSON booleans, and a
 non-boolean integer rule count from zero through 10,000; then replaces only
-those validated dynamic values with a stable model marker before hashing.
+those four validated dynamic values with a bounded representation containing
+the policy-state fingerprint model identifier and whether the object has the
+exact valid reviewed structure. The complete policy object is not ignored.
 
-Missing, null, empty, extra-field, wrong-type, unknown-deployment and
-out-of-range policy values produce a different fingerprint and quarantine.
-Every other raw descriptor field remains exact. Exact 7.14.1 and 7.14.2 keep
-the legacy full-descriptor model. Raw operational catalog and strict
-full-contract fingerprints remain visible evidence and are not admission
-aliases. There is no version special case that suppresses comparison.
+A policy object that is required but missing, is not an object, contains
+unexpected keys, uses an unreviewed deployment value, contains incorrect JSON
+types, has a `rules` value outside zero through 10,000, or is otherwise
+structurally invalid produces a different runtime fingerprint and quarantines.
+If the expected policy container is absent, the implementation retains the
+plain canonical fingerprint rather than inventing a valid normalized policy
+state. Every other raw descriptor field remains exact, including `name`,
+`description`, `inputSchema`, `annotations.readOnlyHint`, `/_meta/fastmcp/tags`,
+`/_meta/ha_mcp/pinned` and `/_meta/ha_mcp/llm_api_exposed`. Exact 7.14.1 and
+7.14.2 keep the legacy full-descriptor model. Raw operational catalog and
+strict full-contract fingerprints remain visible evidence and are not
+admission aliases. There is no version special case that suppresses
+comparison.
 
 The automatic-read gateway, operational backup provider and operational
 lifecycle provider now all call the shared runtime-contract fingerprint API
@@ -152,6 +165,21 @@ observed operational fingerprints and model, reviewed and observed strict
 fingerprints and strict model, and bounded catalog changed-field counts.
 Diagnostic values and raw descriptors are not emitted.
 
+## Non-blocking follow-up
+
+- O-1: Consider exposing whether v2 policy-state normalization actually
+  applied, for example `runtime_policy_state_normalized=true|false`. This
+  would distinguish a validated normalization from the documented plain
+  canonical-fingerprint fallback when the expected policy container is not
+  present. This is follow-up observability only and is not implemented in
+  Beta 12.
+- O-2: Consider exposing `diff_fields_incomplete=true` when complete runtime
+  fingerprints differ but none of the bounded diagnostic paths identify a
+  changed field. `runtime_contract_diff_fields` is intentionally a bounded
+  diagnostic subset and may be empty while the full fingerprint still
+  correctly detects drift. This is follow-up observability only and is not
+  implemented in Beta 12.
+
 ## Hypothesis disposition
 
 - H-1 and H-3 were confirmed: the fixture was standalone-derived and the
@@ -164,7 +192,7 @@ Diagnostic values and raw descriptors are not emitted.
 - H-2, H-6 and H-8 were rejected by exact protocol and field-level evidence.
 - H-9 was partly confirmed with a stricter classification: the difference is
   safe diagnostic/security state, not merely presentation metadata.
-- H-10 was rejected for the three reviewed values, while malformed or
+- H-10 was rejected for the four reviewed dynamic values, while malformed or
   structurally unreviewed policy metadata remains security-relevant and
   fail-closed.
 
