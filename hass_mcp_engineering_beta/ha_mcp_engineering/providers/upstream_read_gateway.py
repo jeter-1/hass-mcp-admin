@@ -28,6 +28,7 @@ from ..request_context import current_request_id, current_telemetry
 from ..sanitization import sanitize_untrusted_data
 from ..tool_framework import timing_since
 from ..upstream_tool_policy import (
+    RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1,
     REVIEWED_UPSTREAM_SERVER,
     ReviewedUpstreamRelease,
     ReviewedUpstreamReleaseRegistry,
@@ -37,6 +38,8 @@ from ..upstream_tool_policy import (
     load_reviewed_upstream_release_registry,
     load_upstream_tool_policy,
     runtime_annotation_fingerprint,
+    runtime_contract_field_fingerprints,
+    runtime_contract_fingerprint,
     runtime_description_fingerprint,
     schema_fingerprint,
 )
@@ -49,7 +52,9 @@ SUPPORTED_PROTOCOLS = frozenset({REVIEWED_PROTOCOL_VERSION})
 RECONCILIATION_RETRY_DELAYS_SECONDS = (1.0, 2.0, 4.0, 8.0, 16.0, 30.0)
 COMPATIBILITY_REPROBE_INTERVAL_SECONDS = 900.0
 MAX_QUARANTINE_RECORDS = 26
+MAX_RUNTIME_CONTRACT_DIFF_FIELDS = 16
 MAX_STRUCTURED_UPSTREAM_ERROR_BYTES = 16_384
+OPERATIONAL_CATALOG_FINGERPRINT_MODEL = "mcp-sorted-full-tool-catalog-v1"
 _TRANSIENT_DISCOVERY_FAILURES = frozenset({"connection_failed", "timeout"})
 _STARTUP_ORDERING_FAILURES = frozenset({"endpoint_rejected"})
 STARTUP_ORDERING_GRACE_SECONDS = 600.0
@@ -307,13 +312,19 @@ class _ContractDecision:
     reason: str | None
     expected_fingerprint: str
     observed_fingerprint: str
+    expected_runtime_contract_fingerprint: str
+    observed_runtime_contract_fingerprint: str
+    runtime_contract_fingerprint_model: str
+    runtime_contract_diff_fields: tuple[str, ...]
+    runtime_contract_diff_summary: str
+    raw_runtime_contract_diff_fields: tuple[str, ...]
 
 
 @dataclass(frozen=True)
 class _CatalogEvaluation:
     matched: tuple[_ContractDecision, ...]
     missing: tuple[str, ...]
-    quarantined: tuple[dict[str, str], ...]
+    quarantined: tuple[dict[str, Any], ...]
     quarantine_reason_counts: dict[str, int]
     blocked: tuple[dict[str, str], ...]
     unreviewed: tuple[str, ...]
@@ -329,6 +340,8 @@ class _AdmittedRoute:
     runtime_annotation_fingerprint: str
     runtime_output_schema_fingerprint: str
     runtime_contract_fingerprint: str | None
+    runtime_contract_field_fingerprints: tuple[tuple[str, str], ...]
+    runtime_contract_fingerprint_model: str
     server_version: str
     protocol_version: str
 
@@ -397,6 +410,9 @@ class UpstreamReadGateway:
             "reviewed_image_revision_authoritative": False,
             "strict_full_contract_fingerprint": None,
             "strict_full_contract_fingerprint_model": None,
+            "reviewed_strict_full_contract_fingerprint": None,
+            "observed_strict_full_contract_fingerprint": None,
+            "runtime_contract_fingerprint_model": None,
             "reviewed_allowed_protocol_versions": [],
             "runtime_artifact_provenance_observed": False,
             "runtime_source_commit_observed": None,
@@ -413,6 +429,11 @@ class UpstreamReadGateway:
             "protocol_version": None,
             "catalog_fingerprint": None,
             "observed_catalog_fingerprint": None,
+            "reviewed_catalog_fingerprint": None,
+            "operational_catalog_fingerprint_model": (
+                OPERATIONAL_CATALOG_FINGERPRINT_MODEL
+            ),
+            "catalog_diff_field_counts": {},
             "upstream_advertised_tool_count": 0,
             "observed_advertised_tool_count": 0,
             "reviewed_policy_entry_count": 0,
@@ -674,12 +695,23 @@ class UpstreamReadGateway:
                 catalog,
                 policy=selected_policy,
                 reviewed_contracts=reviewed_contracts,
+                runtime_contract_fingerprint_model=(
+                    selected_release.runtime_contract_fingerprint_model
+                    if selected_release is not None
+                    else RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
+                ),
             )
             candidate_contract_token = _catalog_contract_token(
                 catalog, evaluation
             )
             observed_fingerprint = _safe_catalog_fingerprint(
                 list(catalog.tools)
+            )
+            observed_strict_fingerprint = _safe_strict_catalog_fingerprint(
+                list(catalog.tools)
+            )
+            catalog_diff_field_counts = _catalog_diff_field_counts(
+                list(catalog.tools), reviewed_contracts
             )
             base_names = set(registry.snapshot()).difference(
                 self._registered_names
@@ -740,6 +772,17 @@ class UpstreamReadGateway:
                         .runtime_contract_fingerprint
                         if reviewed_contracts is not None
                         else None
+                    ),
+                    runtime_contract_field_fingerprints=(
+                        reviewed_contracts[entry.upstream_name]
+                        .runtime_contract_field_fingerprints
+                        if reviewed_contracts is not None
+                        else ()
+                    ),
+                    runtime_contract_fingerprint_model=(
+                        selected_release.runtime_contract_fingerprint_model
+                        if selected_release is not None
+                        else RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
                     ),
                     server_version=catalog.server_version,
                     protocol_version=catalog.protocol_version,
@@ -838,6 +881,10 @@ class UpstreamReadGateway:
                     catalog=catalog,
                     evaluation=evaluation,
                     observed_fingerprint=observed_fingerprint,
+                    observed_strict_fingerprint=(
+                        observed_strict_fingerprint
+                    ),
+                    catalog_diff_field_counts=catalog_diff_field_counts,
                     collisions=collisions,
                     full_admission=full_admission,
                     compatibility_status=compatibility_status,
@@ -881,6 +928,8 @@ class UpstreamReadGateway:
         catalog: McpReadCatalog,
         evaluation: _CatalogEvaluation,
         observed_fingerprint: str | None,
+        observed_strict_fingerprint: str | None,
+        catalog_diff_field_counts: dict[str, int],
         collisions: list[dict[str, str]],
         full_admission: bool,
         compatibility_status: str,
@@ -972,6 +1021,19 @@ class UpstreamReadGateway:
                         if release is not None
                         else None
                     ),
+                    "reviewed_strict_full_contract_fingerprint": (
+                        release.strict_full_contract_fingerprint
+                        if release is not None
+                        else None
+                    ),
+                    "observed_strict_full_contract_fingerprint": (
+                        observed_strict_fingerprint
+                    ),
+                    "runtime_contract_fingerprint_model": (
+                        release.runtime_contract_fingerprint_model
+                        if release is not None
+                        else RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
+                    ),
                     "reviewed_allowed_protocol_versions": (
                         list(release.allowed_protocol_versions)
                         if release is not None
@@ -995,6 +1057,15 @@ class UpstreamReadGateway:
                     "protocol_version": catalog.protocol_version[:64],
                     "catalog_fingerprint": observed_fingerprint,
                     "observed_catalog_fingerprint": observed_fingerprint,
+                    "reviewed_catalog_fingerprint": (
+                        policy.reviewed_stock_catalog_fingerprint
+                    ),
+                    "operational_catalog_fingerprint_model": (
+                        OPERATIONAL_CATALOG_FINGERPRINT_MODEL
+                    ),
+                    "catalog_diff_field_counts": dict(
+                        catalog_diff_field_counts
+                    ),
                     "upstream_advertised_tool_count": len(catalog.tools),
                     "reviewed_accounted_tool_count": len(policy.tools),
                     "reviewed_policy_entry_count": len(policy.tools),
@@ -1540,6 +1611,9 @@ class UpstreamReadGateway:
         *,
         policy: UpstreamToolPolicy | None = None,
         reviewed_contracts: dict[str, Any] | None = None,
+        runtime_contract_fingerprint_model: str = (
+            RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
+        ),
     ) -> _CatalogEvaluation:
         selected_policy = policy or self._policy
         assert selected_policy is not None
@@ -1567,7 +1641,7 @@ class UpstreamReadGateway:
             unreviewed.append(safe_name)
         missing_reviewed_reads: list[str] = []
         matched: list[_ContractDecision] = []
-        quarantined: list[dict[str, str]] = []
+        quarantined: list[dict[str, Any]] = []
         quarantine_reasons: Counter[str] = Counter()
         blocked: list[dict[str, str]] = []
         reviewed_descriptions = (
@@ -1606,6 +1680,17 @@ class UpstreamReadGateway:
                             if reviewed_contracts is not None
                             else None
                         ),
+                        reviewed_runtime_contract_field_fingerprints=(
+                            dict(
+                                reviewed_contracts[entry.upstream_name]
+                                .runtime_contract_field_fingerprints
+                            )
+                            if reviewed_contracts is not None
+                            else None
+                        ),
+                        runtime_contract_fingerprint_model=(
+                            runtime_contract_fingerprint_model
+                        ),
                     )
                     reason = "duplicate_tool_descriptor"
                     quarantine_reasons[reason] += 1
@@ -1618,6 +1703,27 @@ class UpstreamReadGateway:
                             ),
                             "observed_fingerprint": schema_fingerprint(
                                 {"descriptor_count": len(observed)}
+                            ),
+                            "expected_contract_fingerprint": (
+                                reference.expected_fingerprint
+                            ),
+                            "observed_contract_fingerprint": schema_fingerprint(
+                                {"descriptor_count": len(observed)}
+                            ),
+                            "expected_runtime_contract_fingerprint": (
+                                reference.expected_runtime_contract_fingerprint
+                            ),
+                            "observed_runtime_contract_fingerprint": (
+                                reference.observed_runtime_contract_fingerprint
+                            ),
+                            "runtime_contract_fingerprint_model": (
+                                reference.runtime_contract_fingerprint_model
+                            ),
+                            "runtime_contract_diff_fields": [
+                                "/descriptor_count"
+                            ],
+                            "runtime_contract_diff_summary": (
+                                "Duplicate runtime descriptors were observed."
                             ),
                         }
                     )
@@ -1641,6 +1747,17 @@ class UpstreamReadGateway:
                         if reviewed_contracts is not None
                         else None
                     ),
+                    reviewed_runtime_contract_field_fingerprints=(
+                        dict(
+                            reviewed_contracts[entry.upstream_name]
+                            .runtime_contract_field_fingerprints
+                        )
+                        if reviewed_contracts is not None
+                        else None
+                    ),
+                    runtime_contract_fingerprint_model=(
+                        runtime_contract_fingerprint_model
+                    ),
                 )
                 if decision.accepted:
                     matched.append(decision)
@@ -1648,12 +1765,7 @@ class UpstreamReadGateway:
                     reason = decision.reason or "contract_mismatch"
                     quarantine_reasons[reason] += 1
                     quarantined.append(
-                        {
-                            "upstream_name": entry.upstream_name,
-                            "reason": reason,
-                            "expected_fingerprint": decision.expected_fingerprint,
-                            "observed_fingerprint": decision.observed_fingerprint,
-                        }
+                        _quarantine_record(decision, reason=reason)
                     )
             else:
                 blocked.append(
@@ -1702,7 +1814,7 @@ class UpstreamReadGateway:
         contract_fingerprint: str,
         telemetry: Any,
         route_context: dict[str, Any],
-        live_contract_failure: dict[str, str],
+        live_contract_failure: dict[str, Any],
     ) -> tuple[_AdmittedRoute, Any]:
         """Bind one call to the current route and same-session target contract."""
 
@@ -1816,6 +1928,11 @@ class UpstreamReadGateway:
                             if live_release is not None
                             else None
                         ),
+                        runtime_contract_fingerprint_model=(
+                            live_release.runtime_contract_fingerprint_model
+                            if live_release is not None
+                            else RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
+                        ),
                     )
                     live_contract_token = _catalog_contract_token(
                         catalog, live_evaluation
@@ -1873,6 +1990,12 @@ class UpstreamReadGateway:
                     reviewed_runtime_contract_fingerprint=(
                         mapping.runtime_contract_fingerprint
                     ),
+                    reviewed_runtime_contract_field_fingerprints=dict(
+                        mapping.runtime_contract_field_fingerprints
+                    ),
+                    runtime_contract_fingerprint_model=(
+                        mapping.runtime_contract_fingerprint_model
+                    ),
                 )
                 if (
                     not decision.accepted
@@ -1892,6 +2015,27 @@ class UpstreamReadGateway:
                             ),
                             "observed_fingerprint": (
                                 decision.observed_fingerprint
+                            ),
+                            "expected_contract_fingerprint": (
+                                decision.expected_fingerprint
+                            ),
+                            "observed_contract_fingerprint": (
+                                decision.observed_fingerprint
+                            ),
+                            "expected_runtime_contract_fingerprint": (
+                                decision.expected_runtime_contract_fingerprint
+                            ),
+                            "observed_runtime_contract_fingerprint": (
+                                decision.observed_runtime_contract_fingerprint
+                            ),
+                            "runtime_contract_fingerprint_model": (
+                                decision.runtime_contract_fingerprint_model
+                            ),
+                            "runtime_contract_diff_fields": list(
+                                decision.runtime_contract_diff_fields
+                            ),
+                            "runtime_contract_diff_summary": (
+                                decision.runtime_contract_diff_summary
                             ),
                         }
                     )
@@ -1956,7 +2100,7 @@ class UpstreamReadGateway:
         mapping: _AdmittedRoute | None = None
         route_was_admitted = False
         route_context: dict[str, Any] = {}
-        live_contract_failure: dict[str, str] = {}
+        live_contract_failure: dict[str, Any] = {}
         response_limit = min(
             policy_entry.response_limit_bytes,
             self._settings.response_size_limit if self._settings else 60_000,
@@ -2191,7 +2335,7 @@ class UpstreamReadGateway:
         *,
         exposed_name: str,
         mapping: _AdmittedRoute,
-        failure: dict[str, str],
+        failure: dict[str, Any],
     ) -> bool:
         """Remove one live-drifted route and keep unrelated matches available."""
 
@@ -2246,6 +2390,37 @@ class UpstreamReadGateway:
                                 {"live_contract": "unknown"}
                             ),
                         ),
+                        "expected_contract_fingerprint": failure.get(
+                            "expected_contract_fingerprint",
+                            mapping.contract_fingerprint,
+                        ),
+                        "observed_contract_fingerprint": failure.get(
+                            "observed_contract_fingerprint",
+                            schema_fingerprint(
+                                {"live_contract": "unknown"}
+                            ),
+                        ),
+                        "expected_runtime_contract_fingerprint": failure.get(
+                            "expected_runtime_contract_fingerprint",
+                            mapping.runtime_contract_fingerprint or "unknown",
+                        ),
+                        "observed_runtime_contract_fingerprint": failure.get(
+                            "observed_runtime_contract_fingerprint",
+                            "unknown",
+                        ),
+                        "runtime_contract_fingerprint_model": failure.get(
+                            "runtime_contract_fingerprint_model",
+                            mapping.runtime_contract_fingerprint_model,
+                        ),
+                        "runtime_contract_diff_fields": list(
+                            failure.get("runtime_contract_diff_fields", [])
+                        )[:MAX_RUNTIME_CONTRACT_DIFF_FIELDS],
+                        "runtime_contract_diff_summary": str(
+                            failure.get(
+                                "runtime_contract_diff_summary",
+                                "The live runtime contract changed.",
+                            )
+                        )[:512],
                     }
                 )
                 quarantined.sort(
@@ -2413,6 +2588,8 @@ class UpstreamReadGateway:
                     "version_status": "reviewed_exact",
                     "observed_advertised_tool_count": len(catalog.tools),
                     "observed_catalog_fingerprint": None,
+                    "observed_strict_full_contract_fingerprint": None,
+                    "catalog_diff_field_counts": {},
                     "last_discovery_stable": False,
                     "observed_catalog_matches_reviewed_stock_fixture": False,
                     "compatibility_status": "reconciling",
@@ -2551,6 +2728,11 @@ class UpstreamReadGateway:
                 self._state["reviewed_image_revision_authoritative"] = False
                 self._state["strict_full_contract_fingerprint"] = None
                 self._state["strict_full_contract_fingerprint_model"] = None
+                self._state["reviewed_strict_full_contract_fingerprint"] = None
+                self._state["observed_strict_full_contract_fingerprint"] = None
+                self._state["runtime_contract_fingerprint_model"] = None
+                self._state["reviewed_catalog_fingerprint"] = None
+                self._state["catalog_diff_field_counts"] = {}
                 self._state["reviewed_allowed_protocol_versions"] = []
                 self._state["catalog_comparison_status"] = {
                     "upstream_version_mismatch": "unknown_version",
@@ -2642,6 +2824,46 @@ def _safe_catalog_fingerprint(
         return None
 
 
+def _safe_strict_catalog_fingerprint(
+    tools: list[dict[str, Any]],
+) -> str | None:
+    """Fingerprint the observed order-preserving strict evidence envelope."""
+
+    try:
+        return schema_fingerprint({"tools": tools})
+    except (TypeError, ValueError, UnicodeError, OverflowError):
+        return None
+
+
+def _catalog_diff_field_counts(
+    tools: list[dict[str, Any]],
+    reviewed_contracts: dict[str, Any] | None,
+) -> dict[str, int]:
+    """Count bounded raw diagnostic-field drift across the reviewed catalog."""
+
+    if reviewed_contracts is None:
+        return {}
+    observed_by_name: dict[str, list[dict[str, Any]]] = {}
+    for tool in tools:
+        name = tool.get("name") if isinstance(tool, dict) else None
+        if isinstance(name, str) and name in reviewed_contracts:
+            observed_by_name.setdefault(name, []).append(tool)
+    counts: Counter[str] = Counter()
+    for name, contract in reviewed_contracts.items():
+        observed = observed_by_name.get(name, [])
+        if len(observed) != 1:
+            counts["/tool_descriptor_count"] += 1
+            continue
+        expected_fields = dict(
+            contract.runtime_contract_field_fingerprints
+        )
+        observed_fields = runtime_contract_field_fingerprints(observed[0])
+        for pointer in expected_fields:
+            if expected_fields[pointer] != observed_fields.get(pointer):
+                counts[pointer] += 1
+    return dict(sorted(counts.items()))
+
+
 def _catalog_contract_token(
     catalog: McpReadCatalog, evaluation: _CatalogEvaluation
 ) -> str:
@@ -2701,6 +2923,12 @@ def _compare_tool_contract(
     reviewed_runtime_annotation_fingerprint: str,
     reviewed_runtime_output_schema_fingerprint: str,
     reviewed_runtime_contract_fingerprint: str | None = None,
+    reviewed_runtime_contract_field_fingerprints: (
+        dict[str, str] | None
+    ) = None,
+    runtime_contract_fingerprint_model: str = (
+        RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
+    ),
 ) -> _ContractDecision:
     """Compare one advertised tool with binary-owned reviewed authority."""
 
@@ -2749,13 +2977,34 @@ def _compare_tool_contract(
     }
     observed_schema = observed_tool.get("inputSchema")
     try:
-        observed_runtime_contract_fingerprint = schema_fingerprint(
+        observed_runtime_contract_fingerprint = runtime_contract_fingerprint(
+            observed_tool,
+            model=runtime_contract_fingerprint_model,
+        )
+        observed_runtime_fields = runtime_contract_field_fingerprints(
             observed_tool
         )
     except (TypeError, ValueError, OverflowError, UnicodeEncodeError):
         observed_runtime_contract_fingerprint = schema_fingerprint(
             {"invalid_runtime_contract": True}
         )
+        observed_runtime_fields = {}
+    expected_runtime_contract_fingerprint = (
+        reviewed_runtime_contract_fingerprint or "unknown"
+    )
+    raw_runtime_diff_fields = tuple(
+        sorted(
+            pointer
+            for pointer in set(
+                reviewed_runtime_contract_field_fingerprints or {}
+            )
+            | set(observed_runtime_fields)
+            if (reviewed_runtime_contract_field_fingerprints or {}).get(
+                pointer
+            )
+            != observed_runtime_fields.get(pointer)
+        )
+    )
     try:
         Draft202012Validator.check_schema(observed_schema)
         observed_schema_fingerprint = schema_fingerprint(observed_schema)
@@ -2828,6 +3077,12 @@ def _compare_tool_contract(
         reason = "security_classification_mismatch"
     elif protocol_version not in SUPPORTED_PROTOCOLS:
         reason = "unsupported_protocol_version"
+    runtime_diff_fields = raw_runtime_diff_fields
+    if reason == "runtime_contract_mismatch" and not runtime_diff_fields:
+        runtime_diff_fields = ("/",)
+    runtime_diff_fields = runtime_diff_fields[
+        :MAX_RUNTIME_CONTRACT_DIFF_FIELDS
+    ]
     return _ContractDecision(
         entry=entry,
         observed_tool=observed_tool,
@@ -2835,7 +3090,74 @@ def _compare_tool_contract(
         reason=reason,
         expected_fingerprint=schema_fingerprint(expected_contract),
         observed_fingerprint=schema_fingerprint(observed_contract),
+        expected_runtime_contract_fingerprint=(
+            expected_runtime_contract_fingerprint
+        ),
+        observed_runtime_contract_fingerprint=(
+            observed_runtime_contract_fingerprint
+        ),
+        runtime_contract_fingerprint_model=(
+            runtime_contract_fingerprint_model
+        ),
+        runtime_contract_diff_fields=runtime_diff_fields,
+        runtime_contract_diff_summary=_runtime_contract_diff_summary(
+            runtime_diff_fields,
+            truncated=(
+                len(raw_runtime_diff_fields)
+                > MAX_RUNTIME_CONTRACT_DIFF_FIELDS
+            ),
+        ),
+        raw_runtime_contract_diff_fields=raw_runtime_diff_fields,
     )
+
+
+def _runtime_contract_diff_summary(
+    fields: tuple[str, ...],
+    *,
+    truncated: bool,
+) -> str:
+    """Summarize only reviewed constant JSON pointers under a fixed bound."""
+
+    if not fields:
+        return "No admission-relevant runtime field difference was identified."
+    suffix = "; additional fields omitted" if truncated else ""
+    return (
+        f"{len(fields)} runtime contract field(s) differ: "
+        f"{', '.join(fields)}{suffix}."
+    )[:512]
+
+
+def _quarantine_record(
+    decision: _ContractDecision,
+    *,
+    reason: str,
+) -> dict[str, Any]:
+    """Build one bounded quarantine diagnostic without descriptor values."""
+
+    return {
+        "upstream_name": decision.entry.upstream_name,
+        "reason": reason,
+        # Compatibility aliases retained for existing health consumers.
+        "expected_fingerprint": decision.expected_fingerprint,
+        "observed_fingerprint": decision.observed_fingerprint,
+        "expected_contract_fingerprint": decision.expected_fingerprint,
+        "observed_contract_fingerprint": decision.observed_fingerprint,
+        "expected_runtime_contract_fingerprint": (
+            decision.expected_runtime_contract_fingerprint
+        ),
+        "observed_runtime_contract_fingerprint": (
+            decision.observed_runtime_contract_fingerprint
+        ),
+        "runtime_contract_fingerprint_model": (
+            decision.runtime_contract_fingerprint_model
+        ),
+        "runtime_contract_diff_fields": list(
+            decision.runtime_contract_diff_fields
+        ),
+        "runtime_contract_diff_summary": (
+            decision.runtime_contract_diff_summary
+        ),
+    }
 
 
 def _observed_output_contract(tool: dict[str, Any]) -> dict[str, Any]:

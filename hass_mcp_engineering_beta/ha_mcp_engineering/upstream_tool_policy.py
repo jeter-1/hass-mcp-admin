@@ -16,7 +16,7 @@ RELEASE_REGISTRY_PATH = Path(__file__).with_name(
     "upstream_release_registry.json"
 )
 POLICY_SCHEMA_VERSION = 1
-RELEASE_REGISTRY_FORMAT_VERSION = 1
+RELEASE_REGISTRY_FORMAT_VERSION = 2
 REVIEWED_CAPTURE_FORMAT_VERSION = 1
 REVIEWED_UPSTREAM_SERVER = "ha-mcp"
 REVIEWED_UPSTREAM_VERSION = "7.14.1"
@@ -44,6 +44,18 @@ RUNTIME_SAFETY_ANNOTATION_FIELDS = (
     "destructiveHint",
     "idempotentHint",
     "openWorldHint",
+)
+RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1 = "mcp-full-tool-descriptor-v1"
+RUNTIME_CONTRACT_DIAGNOSTIC_PATHS = (
+    "/title",
+    "/annotations/title",
+    "/_meta/fastmcp/tags",
+    "/_meta/ha_mcp/llm_api_exposed",
+    "/_meta/ha_mcp/pinned",
+    "/_meta/ha_mcp/policy/deployment",
+    "/_meta/ha_mcp/policy/enabled",
+    "/_meta/ha_mcp/policy/live",
+    "/_meta/ha_mcp/policy/rules",
 )
 CLASSIFICATIONS = frozenset(
     {
@@ -119,6 +131,39 @@ def schema_fingerprint(schema: Any) -> str:
 def catalog_fingerprint(tools: list[dict[str, Any]]) -> str:
     ordered = sorted(tools, key=lambda item: str(item.get("name", "")))
     return hashlib.sha256(canonical_json(ordered)).hexdigest()
+
+
+def runtime_contract_fingerprint(
+    tool: dict[str, Any],
+    *,
+    model: str = RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1,
+) -> str:
+    """Fingerprint one runtime descriptor under an explicit admission model."""
+
+    if model != RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1:
+        raise UpstreamToolPolicyError("runtime_contract_fingerprint_model_invalid")
+    return schema_fingerprint(tool)
+
+
+def runtime_contract_field_fingerprints(
+    tool: dict[str, Any],
+) -> dict[str, str]:
+    """Fingerprint bounded diagnostic fields without publishing their values."""
+
+    values: dict[str, str] = {}
+    for pointer in RUNTIME_CONTRACT_DIAGNOSTIC_PATHS:
+        current: Any = tool
+        present = True
+        for name in pointer.lstrip("/").split("/"):
+            if not isinstance(current, dict) or name not in current:
+                present = False
+                current = None
+                break
+            current = current[name]
+        values[pointer] = schema_fingerprint(
+            {"present": present, "value": current if present else None}
+        )
+    return values
 
 
 def runtime_description_fingerprint(value: Any) -> str | None:
@@ -368,6 +413,7 @@ class ReviewedReleaseToolContract:
     annotation_fingerprint: str
     output_contract_fingerprint: str
     runtime_contract_fingerprint: str
+    runtime_contract_field_fingerprints: tuple[tuple[str, str], ...]
     policy_classification: str
     reviewed_automatic_read: bool
     quarantine_reason: str | None
@@ -380,6 +426,7 @@ class ReviewedReleaseToolContract:
             "annotation_fingerprint",
             "output_contract_fingerprint",
             "runtime_contract_fingerprint",
+            "runtime_contract_field_fingerprints",
             "policy_classification",
             "reviewed_automatic_read",
             "quarantine_reason",
@@ -400,6 +447,18 @@ class ReviewedReleaseToolContract:
                 raise UpstreamToolPolicyError(
                     "registry_tool_contract_fingerprint_invalid"
                 )
+        diagnostic_fields = value["runtime_contract_field_fingerprints"]
+        if (
+            not isinstance(diagnostic_fields, dict)
+            or set(diagnostic_fields) != set(RUNTIME_CONTRACT_DIAGNOSTIC_PATHS)
+            or any(
+                not isinstance(item, str) or not _HEX_64.fullmatch(item)
+                for item in diagnostic_fields.values()
+            )
+        ):
+            raise UpstreamToolPolicyError(
+                "registry_tool_contract_diagnostic_fingerprints_invalid"
+            )
         classification = value["policy_classification"]
         if classification not in CLASSIFICATIONS:
             raise UpstreamToolPolicyError(
@@ -440,6 +499,9 @@ class ReviewedReleaseToolContract:
             runtime_contract_fingerprint=value[
                 "runtime_contract_fingerprint"
             ],
+            runtime_contract_field_fingerprints=tuple(
+                sorted(diagnostic_fields.items())
+            ),
             policy_classification=classification,
             reviewed_automatic_read=automatic,
             quarantine_reason=quarantine,
@@ -501,6 +563,13 @@ class ReviewedUpstreamRelease:
             platform: dict(digests)
             for platform, digests in self.addon_artifact_digests
         }
+
+
+    @property
+    def runtime_contract_fingerprint_model(self) -> str:
+        """Return the legacy exact full-descriptor admission model."""
+
+        return RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
 
 
 @dataclass(frozen=True)
@@ -1156,6 +1225,9 @@ def reviewed_tool_contracts_from_capture(
                 }
             ),
             "runtime_contract_fingerprint": schema_fingerprint(tool),
+            "runtime_contract_field_fingerprints": (
+                runtime_contract_field_fingerprints(tool)
+            ),
             "policy_classification": classification,
             "reviewed_automatic_read": (
                 classification == "automatic_read"
