@@ -24,14 +24,118 @@ ALLOWED_DASHBOARD_ARGUMENTS = frozenset(
 MAX_TOOL_CATALOG_SIZE = 500
 MAX_TOOL_CATALOG_PAGES = 20
 MAX_UPSTREAM_CONTENT_CHARS = 2_000_000
+MAX_GROUPED_ERROR_CATEGORIES = 8
+_RECOGNIZED_TYPED_ERROR_CATEGORIES = frozenset(
+    {
+        "annotation_mismatch",
+        "authentication_failed",
+        "connection_failed",
+        "dashboard_not_found",
+        "endpoint_rejected",
+        "hash_contract_mismatch",
+        "input_schema_mismatch",
+        "internal_error",
+        "invalid_response",
+        "not_configured",
+        "output_contract_mismatch",
+        "prohibited_argument",
+        "protocol_error",
+        "required_tool_missing",
+        "response_too_large",
+        "reviewed_annotation_mismatch",
+        "reviewed_contract_mismatch",
+        "runtime_descriptor_semantic_drift",
+        "schema_incompatible",
+        "schema_mismatch",
+        "security_contract_mismatch",
+        "server_identity_mismatch",
+        "timeout",
+        "unsupported_protocol_version",
+        "unsupported_trust_profile",
+        "upstream_attestation_missing",
+        "upstream_attestation_revoked",
+        "upstream_contract_family_unknown",
+        "upstream_error",
+        "upstream_input_contract_mismatch",
+        "upstream_output_contract_mismatch",
+        "upstream_registry_expired",
+        "upstream_registry_invalid_signature",
+        "upstream_registry_replay_conflict",
+        "upstream_registry_rollback",
+        "upstream_registry_unavailable",
+        "upstream_runtime_contract_mismatch",
+        "upstream_security_contract_mismatch",
+        "upstream_version_mismatch",
+    }
+)
+_TYPED_ERROR_PRECEDENCE = {
+    category: priority
+    for priority, categories in enumerate(
+        (
+            {
+                "prohibited_argument",
+                "hash_contract_mismatch",
+                "reviewed_annotation_mismatch",
+                "reviewed_contract_mismatch",
+                "security_contract_mismatch",
+                "runtime_descriptor_semantic_drift",
+                "upstream_input_contract_mismatch",
+                "upstream_output_contract_mismatch",
+                "upstream_runtime_contract_mismatch",
+                "upstream_security_contract_mismatch",
+            },
+            {
+                "annotation_mismatch",
+                "input_schema_mismatch",
+                "output_contract_mismatch",
+                "required_tool_missing",
+                "schema_incompatible",
+                "schema_mismatch",
+                "server_identity_mismatch",
+                "unsupported_protocol_version",
+                "unsupported_trust_profile",
+                "upstream_attestation_missing",
+                "upstream_attestation_revoked",
+                "upstream_contract_family_unknown",
+                "upstream_registry_expired",
+                "upstream_registry_invalid_signature",
+                "upstream_registry_replay_conflict",
+                "upstream_registry_rollback",
+                "upstream_registry_unavailable",
+                "upstream_version_mismatch",
+            },
+            {"authentication_failed", "endpoint_rejected"},
+            {
+                "dashboard_not_found",
+                "invalid_response",
+                "protocol_error",
+                "response_too_large",
+                "upstream_error",
+            },
+            {"connection_failed", "not_configured", "timeout"},
+            {"internal_error"},
+        )
+    )
+    for category in categories
+}
 
 
 class DashboardTransportError(RuntimeError):
     """Secret-free transport failure classified at the MCP boundary."""
 
-    def __init__(self, category: str):
+    def __init__(
+        self,
+        category: str,
+        *,
+        retryable: bool | None = None,
+        grouped_categories: tuple[str, ...] = (),
+    ):
         super().__init__("The upstream dashboard MCP transport failed.")
         self.category = category
+        self.retryable = retryable
+        self.grouped_categories = grouped_categories[
+            :MAX_GROUPED_ERROR_CATEGORIES
+        ]
 
 
 @dataclass(frozen=True)
@@ -166,9 +270,7 @@ class McpDashboardTransport:
         except BaseException as exc:
             if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)):
                 raise
-            raise DashboardTransportError(
-                _classify_transport_exception(exc)
-            ) from None
+            raise _classified_transport_error(exc) from None
 
     async def _list_all_tools(self, session: ClientSession) -> list[dict[str, Any]]:
         tools: list[dict[str, Any]] = []
@@ -225,8 +327,68 @@ def _iter_exceptions(exc: BaseException):
         yield exc
 
 
+def _recognized_typed_error_details(
+    leaves: tuple[BaseException, ...],
+) -> tuple[str, bool | None, tuple[str, ...]] | None:
+    """Select one bounded typed category using security-first precedence."""
+
+    recognized = [
+        (index, leaf)
+        for index, leaf in enumerate(leaves)
+        if isinstance(leaf, DashboardTransportError)
+        and leaf.category in _RECOGNIZED_TYPED_ERROR_CATEGORIES
+    ]
+    if not recognized:
+        return None
+    selected_index, selected = min(
+        recognized,
+        key=lambda item: (
+            _TYPED_ERROR_PRECEDENCE.get(item[1].category, 999),
+            item[0],
+        ),
+    )
+    del selected_index
+    same_category = [
+        leaf for _index, leaf in recognized if leaf.category == selected.category
+    ]
+    retryability = [
+        leaf.retryable
+        for leaf in same_category
+        if leaf.retryable is not None
+    ]
+    retryable = (
+        False
+        if False in retryability
+        else True
+        if retryability and all(retryability)
+        else None
+    )
+    categories = tuple(
+        dict.fromkeys(leaf.category for _index, leaf in recognized)
+    )[:MAX_GROUPED_ERROR_CATEGORIES]
+    return selected.category, retryable, categories
+
+
+def _classified_transport_error(
+    exc: BaseException,
+) -> DashboardTransportError:
+    leaves = tuple(_iter_exceptions(exc))
+    typed = _recognized_typed_error_details(leaves)
+    if typed is not None:
+        category, retryable, categories = typed
+        return DashboardTransportError(
+            category,
+            retryable=retryable,
+            grouped_categories=categories,
+        )
+    return DashboardTransportError(_classify_transport_exception(exc))
+
+
 def _classify_transport_exception(exc: BaseException) -> str:
     leaves = tuple(_iter_exceptions(exc))
+    typed = _recognized_typed_error_details(leaves)
+    if typed is not None:
+        return typed[0]
     for leaf in leaves:
         response = getattr(leaf, "response", None)
         status = getattr(response, "status_code", None)

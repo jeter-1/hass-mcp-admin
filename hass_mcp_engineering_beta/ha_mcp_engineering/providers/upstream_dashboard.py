@@ -27,9 +27,17 @@ from ..errors import DashboardProviderError, ErrorCode, GovernanceError
 from ..observability import METRICS
 from ..request_context import current_telemetry
 from ..sanitization import sanitize_untrusted_data
+from ..upstream_tool_policy import (
+    RUNTIME_POLICY_STATE_FINGERPRINT_MODEL_V1,
+    load_reviewed_upstream_release_registry,
+    runtime_contract_fingerprint,
+    runtime_contract_mismatch_fields,
+    runtime_policy_state_fingerprint_projection,
+)
 from .upstream_contracts import (
     COMPILED_CONTRACT_FAMILIES,
     CONTRACT_FAMILY,
+    CONTRACT_FAMILY_V3,
     expected_contract_family,
     REQUIRED_SERVER_NAME,
     AdmissionDecision,
@@ -274,6 +282,13 @@ class DashboardProviderState:
     security_contract_fingerprint: str | None = None
     output_contract_fingerprint: str | None = None
     normalized_runtime_contract_fingerprint: str | None = None
+    release_runtime_contract_fingerprint_model: str | None = None
+    expected_release_runtime_contract_fingerprint: str | None = None
+    observed_release_runtime_contract_fingerprint: str | None = None
+    release_runtime_contract_match: bool = False
+    runtime_contract_diff_fields: tuple[str, ...] = ()
+    runtime_policy_fingerprint_model: str | None = None
+    runtime_policy_state_normalized: bool | None = None
     input_contract_match: bool = False
     security_contract_match: bool = False
     output_contract_match: bool = False
@@ -745,18 +760,98 @@ class UpstreamDashboardProvider:
             raise DashboardTransportError("invalid_response")
 
         schema = tool.get("inputSchema")
+        contract_family = expected_contract_family(
+            handshake.server_version
+        )
+        runtime_policy_projection: dict[str, Any] | None = None
+        if contract_family == CONTRACT_FAMILY_V3:
+            meta = tool.get("_meta")
+            ha_mcp = meta.get("ha_mcp") if isinstance(meta, dict) else None
+            policy = (
+                ha_mcp.get("policy")
+                if isinstance(ha_mcp, dict)
+                else None
+            )
+            runtime_policy_projection = (
+                runtime_policy_state_fingerprint_projection(policy)
+            )
+        release_runtime_model: str | None = None
+        expected_release_runtime: str | None = None
+        observed_release_runtime: str | None = None
+        release_runtime_diff_fields: tuple[str, ...] = ()
         try:
             schema_fingerprint = _stable_hash(schema)
             runtime_descriptor_fingerprint = _stable_hash(tool)
             security_contract_fingerprint = _stable_hash(
-                _reviewed_security_contract_projection(tool)
+                _reviewed_security_contract_projection(
+                    tool,
+                    contract_family=expected_contract_family(
+                        handshake.server_version
+                    ),
+                )
             )
+            reviewed_release = (
+                load_reviewed_upstream_release_registry()
+                .by_version.get(handshake.server_version)
+            )
+            if reviewed_release is not None:
+                reviewed_tool = reviewed_release.tool_contracts_by_name.get(
+                    REQUIRED_DASHBOARD_TOOL
+                )
+                if reviewed_tool is not None:
+                    release_runtime_model = (
+                        reviewed_release.runtime_contract_fingerprint_model
+                    )
+                    expected_release_runtime = (
+                        reviewed_tool.runtime_contract_fingerprint
+                    )
+                    observed_release_runtime = runtime_contract_fingerprint(
+                        tool,
+                        model=release_runtime_model,
+                    )
+                    if observed_release_runtime != expected_release_runtime:
+                        release_runtime_diff_fields = (
+                            runtime_contract_mismatch_fields(
+                                tool,
+                                expected_field_fingerprints=dict(
+                                    reviewed_tool.runtime_contract_field_fingerprints
+                                ),
+                                model=release_runtime_model,
+                            )
+                        )
         except (TypeError, ValueError, OverflowError):
             with self._lock:
                 self._state.required_schema_compatible = False
                 self._state.capability_status = "unavailable"
                 self._state.validation_reason = "reviewed_contract_mismatch"
             raise DashboardTransportError("reviewed_contract_mismatch") from None
+        with self._lock:
+            self._state.release_runtime_contract_fingerprint_model = (
+                release_runtime_model
+            )
+            self._state.expected_release_runtime_contract_fingerprint = (
+                expected_release_runtime
+            )
+            self._state.observed_release_runtime_contract_fingerprint = (
+                observed_release_runtime
+            )
+            self._state.release_runtime_contract_match = bool(
+                expected_release_runtime
+                and observed_release_runtime == expected_release_runtime
+            )
+            self._state.runtime_contract_diff_fields = (
+                release_runtime_diff_fields[:16]
+            )
+            self._state.runtime_policy_fingerprint_model = (
+                RUNTIME_POLICY_STATE_FINGERPRINT_MODEL_V1
+                if runtime_policy_projection is not None
+                else None
+            )
+            self._state.runtime_policy_state_normalized = (
+                bool(runtime_policy_projection["valid"])
+                if runtime_policy_projection is not None
+                else None
+            )
         attestations = self._registry.effective_attestations()
         informational_attestation = _matching_release_attestation(
             attestations,
@@ -1362,6 +1457,27 @@ class UpstreamDashboardProvider:
                 "normalized_runtime_contract_fingerprint": (
                     state.normalized_runtime_contract_fingerprint
                 ),
+                "release_runtime_contract_fingerprint_model": (
+                    state.release_runtime_contract_fingerprint_model
+                ),
+                "expected_release_runtime_contract_fingerprint": (
+                    state.expected_release_runtime_contract_fingerprint
+                ),
+                "observed_release_runtime_contract_fingerprint": (
+                    state.observed_release_runtime_contract_fingerprint
+                ),
+                "release_runtime_contract_match": (
+                    state.release_runtime_contract_match
+                ),
+                "runtime_contract_diff_fields": list(
+                    state.runtime_contract_diff_fields
+                ),
+                "runtime_policy_fingerprint_model": (
+                    state.runtime_policy_fingerprint_model
+                ),
+                "runtime_policy_state_normalized": (
+                    state.runtime_policy_state_normalized
+                ),
                 "input_contract_match": state.input_contract_match,
                 "security_contract_match": state.security_contract_match,
                 "output_contract_match": state.output_contract_match,
@@ -1611,6 +1727,8 @@ def _diagnostic_catalog_fingerprint(tools: list[Any]) -> str | None:
 
 def _reviewed_security_contract_projection(
     tool: dict[str, Any],
+    *,
+    contract_family: str | None = None,
 ) -> dict[str, Any]:
     """Project only fields that can change reviewed dispatch safety.
 
@@ -1621,7 +1739,7 @@ def _reviewed_security_contract_projection(
     annotations record both presence and value; unknown annotations and
     unknown top-level metadata fail closed.
 
-    Exclusions are intentionally narrow:
+    Legacy-family exclusions are intentionally narrow:
 
     * top-level ``title`` and ``description`` are display/documentation text;
     * ``annotations.title`` is a display label, not a safety hint;
@@ -1630,8 +1748,11 @@ def _reviewed_security_contract_projection(
       exposes tools to its own conversation-agent integration. Engineering
       neither selects nor dispatches from those values.
 
-    Every other unexpected field is retained in the projection and therefore
-    changes the blocking security fingerprint.
+    Dashboard v3 instead retains description, annotation title, FastMCP tags,
+    ``pinned``, and ``llm_api_exposed`` while replacing only a structurally
+    valid four-key policy object with the shared bounded v2 policy marker.
+    Every unexpected or malformed field remains in the projection and changes
+    the blocking security fingerprint.
     """
 
     if not isinstance(tool, dict):
@@ -1646,6 +1767,7 @@ def _reviewed_security_contract_projection(
         "idempotentHint",
         "openWorldHint",
     )
+    normalized_policy = contract_family == CONTRACT_FAMILY_V3
     annotation_projection = {
         "safety": {
             key: {
@@ -1657,7 +1779,12 @@ def _reviewed_security_contract_projection(
         "unreviewed": {
             key: value
             for key, value in annotations.items()
-            if key not in {*safety_keys, "title"}
+            if key
+            not in (
+                set(safety_keys)
+                if normalized_policy
+                else {*safety_keys, "title"}
+            )
         },
     }
 
@@ -1671,15 +1798,26 @@ def _reviewed_security_contract_projection(
                 if not isinstance(value, dict):
                     unreviewed_meta[namespace] = value
                     continue
+                normalized_value = dict(value)
+                if normalized_policy and namespace == "ha_mcp":
+                    normalized_value["policy"] = (
+                        runtime_policy_state_fingerprint_projection(
+                            value.get("policy")
+                        )
+                    )
                 excluded = (
-                    {"tags"}
+                    set()
+                    if normalized_policy
+                    else {"tags"}
                     if namespace == "fastmcp"
                     else {"llm_api_exposed", "pinned"}
                     if namespace == "ha_mcp"
                     else set()
                 )
                 remaining = {
-                    key: item for key, item in value.items() if key not in excluded
+                    key: item
+                    for key, item in normalized_value.items()
+                    if key not in excluded
                 }
                 if remaining:
                     unreviewed_meta[namespace] = remaining
@@ -1693,7 +1831,7 @@ def _reviewed_security_contract_projection(
         "annotations",
         "_meta",
     }
-    return {
+    projection = {
         "name": tool.get("name"),
         "inputSchema": tool.get("inputSchema"),
         "outputSchema": {
@@ -1708,6 +1846,12 @@ def _reviewed_security_contract_projection(
         },
         "unreviewedMetadata": unreviewed_meta,
     }
+    if normalized_policy:
+        projection["description"] = tool.get("description")
+        projection["runtime_policy_fingerprint_model"] = (
+            RUNTIME_POLICY_STATE_FINGERPRINT_MODEL_V1
+        )
+    return projection
 
 
 def _runtime_descriptor_drift(

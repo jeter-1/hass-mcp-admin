@@ -234,6 +234,39 @@ def runtime_contract_field_fingerprints(
     return values
 
 
+def runtime_contract_mismatch_fields(
+    tool: dict[str, Any],
+    *,
+    expected_field_fingerprints: dict[str, str],
+    model: str,
+    limit: int = MAX_REVIEWED_CATALOG_DIAGNOSTICS,
+) -> tuple[str, ...]:
+    """Return bounded value-free fields relevant to one runtime model."""
+
+    observed_fields = runtime_contract_field_fingerprints(tool)
+    meta = tool.get("_meta")
+    ha_mcp = meta.get("ha_mcp") if isinstance(meta, dict) else None
+    policy = (
+        ha_mcp.get("policy") if isinstance(ha_mcp, dict) else None
+    )
+    normalized_policy_paths = (
+        RUNTIME_POLICY_DYNAMIC_PATHS
+        if model == RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2
+        and runtime_policy_state_fingerprint_projection(policy)["valid"]
+        else frozenset()
+    )
+    return tuple(
+        sorted(
+            pointer
+            for pointer in expected_field_fingerprints.keys()
+            | observed_fields.keys()
+            if expected_field_fingerprints.get(pointer)
+            != observed_fields.get(pointer)
+            and pointer not in normalized_policy_paths
+        )[: max(0, limit)]
+    )
+
+
 def runtime_description_fingerprint(value: Any) -> str | None:
     """Fingerprint one exact, bounded runtime description fail closed."""
 
@@ -966,12 +999,13 @@ def validate_reviewed_release_catalog(
                 }
             )
             if "runtime_contract_fingerprint" in components:
-                expected_fields = dict(
-                    contract.runtime_contract_field_fingerprints
-                )
                 try:
-                    observed_fields = runtime_contract_field_fingerprints(
-                        tool
+                    diff_fields = runtime_contract_mismatch_fields(
+                        tool,
+                        expected_field_fingerprints=dict(
+                            contract.runtime_contract_field_fingerprints
+                        ),
+                        model=runtime_model,
                     )
                 except (
                     TypeError,
@@ -980,35 +1014,7 @@ def validate_reviewed_release_catalog(
                     UnicodeError,
                     RecursionError,
                 ):
-                    observed_fields = {}
-                meta = tool.get("_meta")
-                ha_mcp = (
-                    meta.get("ha_mcp") if isinstance(meta, dict) else None
-                )
-                policy = (
-                    ha_mcp.get("policy")
-                    if isinstance(ha_mcp, dict)
-                    else None
-                )
-                normalized_policy_paths = (
-                    RUNTIME_POLICY_DYNAMIC_PATHS
-                    if runtime_model
-                    == RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2
-                    and runtime_policy_state_fingerprint_projection(policy)[
-                        "valid"
-                    ]
-                    else frozenset()
-                )
-                diff_fields = tuple(
-                    sorted(
-                        pointer
-                        for pointer in expected_fields.keys()
-                        | observed_fields.keys()
-                        if expected_fields.get(pointer)
-                        != observed_fields.get(pointer)
-                        and pointer not in normalized_policy_paths
-                    )[:MAX_REVIEWED_CATALOG_DIAGNOSTICS]
-                )
+                    diff_fields = ()
         if components:
             mismatch_items.append(
                 ReviewedCatalogToolMismatch(

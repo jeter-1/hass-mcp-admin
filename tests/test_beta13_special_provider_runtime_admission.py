@@ -16,11 +16,18 @@ sys.path.insert(0, str(BETA))
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     REVIEWED_NORMALIZED_CATALOG_FINGERPRINT_MODEL_V1,
     load_reviewed_upstream_release_registry,
+    runtime_contract_fingerprint,
     validate_reviewed_release_catalog,
+)
+from ha_mcp_engineering.clients.mcp import (  # noqa: E402
+    DashboardTransportError,
+    McpDashboardHandshake,
+    validate_dashboard_read_arguments,
 )
 from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
     McpReadCatalog,
 )
+from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.providers.operational_backup import (  # noqa: E402
     OperationalBackupProviderError,
     ReviewedOperationalBackupProvider,
@@ -28,6 +35,15 @@ from ha_mcp_engineering.providers.operational_backup import (  # noqa: E402
 from ha_mcp_engineering.providers.operational_lifecycle import (  # noqa: E402
     OperationalLifecycleProviderError,
     ReviewedOperationalLifecycleProvider,
+)
+from ha_mcp_engineering.providers.upstream_contracts import (  # noqa: E402
+    CONTRACT_FAMILY_V3,
+    decide_admission,
+    load_attestations,
+    normalize_runtime_contract,
+)
+from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
+    UpstreamDashboardProvider,
 )
 
 
@@ -48,6 +64,39 @@ def addon_8_tools() -> list[dict]:
     for tool in tools:
         tool["_meta"]["ha_mcp"]["policy"] = deepcopy(policy)
     return tools
+
+
+def dashboard_tool(tools: list[dict]) -> dict:
+    return next(
+        item for item in tools if item["name"] == "ha_config_get_dashboard"
+    )
+
+
+def dashboard_decision(tool: dict):
+    return decide_admission(
+        server_name="ha-mcp",
+        server_version="8.0.0",
+        protocol_version="2025-03-26",
+        tool=tool,
+        attestations=tuple((item, "builtin") for item in load_attestations()),
+    )
+
+
+def dashboard_settings() -> Settings:
+    return Settings(
+        ha_url="http://supervisor/core",
+        ha_token="synthetic-supervisor-token",
+        access_secret="synthetic-access-secret-value",
+        port=8100,
+        audit_path="audit.jsonl",
+        rate_limit_per_minute=120,
+        rate_limit_burst=25,
+        destructive_services=frozenset(),
+        response_size_limit=60_000,
+        upstream_dashboard_mcp_url=(
+            "http://ha-mcp:9583/synthetic-dashboard-secret/mcp"
+        ),
+    )
 
 
 def validate(version: str, tools: list[dict], **overrides):
@@ -76,6 +125,21 @@ class CatalogTransport:
 
     async def discover(self) -> McpReadCatalog:
         return self.catalog
+
+
+class DashboardCatalogTransport:
+    def __init__(self, tool: dict) -> None:
+        self.handshake = McpDashboardHandshake(
+            protocol_version="2025-03-26",
+            server_name="ha-mcp",
+            server_version="8.0.0",
+            tools=(tool,),
+            connection_latency_ms=1.0,
+        )
+        self.dispatch_count = 0
+
+    async def discover(self) -> McpDashboardHandshake:
+        return self.handshake
 
 
 class ReviewedCatalogValidatorTests(unittest.TestCase):
@@ -320,6 +384,209 @@ class SpecialProviderCatalogAdmissionTests(unittest.IsolatedAsyncioTestCase):
         lifecycle_health = lifecycle.health_snapshot()
         self.assertEqual(sum(lifecycle_health["dispatch_counts"].values()), 0)
         self.assertEqual(lifecycle_health["fallback_count"], 0)
+
+
+class DashboardV3RuntimeAdmissionTests(unittest.IsolatedAsyncioTestCase):
+    def test_standalone_and_addon_use_identical_normalized_dashboard_contracts(
+        self,
+    ):
+        standalone_tool = dashboard_tool(reviewed_tools("8.0.0"))
+        addon_tool = dashboard_tool(addon_8_tools())
+        standalone = normalize_runtime_contract(
+            standalone_tool,
+            protocol_version="2025-03-26",
+            contract_family=CONTRACT_FAMILY_V3,
+        )
+        addon = normalize_runtime_contract(
+            addon_tool,
+            protocol_version="2025-03-26",
+            contract_family=CONTRACT_FAMILY_V3,
+        )
+
+        self.assertEqual(
+            standalone.security_fingerprint,
+            addon.security_fingerprint,
+        )
+        self.assertEqual(
+            standalone.runtime_fingerprint,
+            addon.runtime_fingerprint,
+        )
+        self.assertEqual(
+            addon.security_fingerprint,
+            "f1f03110ee84abc017287ebfdc12706dd2368668414ba082efd593e89b583c95",
+        )
+        self.assertEqual(
+            addon.runtime_fingerprint,
+            "806f6d6b0b54cd49162684834e650f8ca7c8f2735b36e8772263b1bbe00a5569",
+        )
+        self.assertTrue(dashboard_decision(standalone_tool).accepted)
+        self.assertTrue(dashboard_decision(addon_tool).accepted)
+
+    async def test_addon_dashboard_admission_reports_exact_release_model(self):
+        tool = dashboard_tool(addon_8_tools())
+        transport = DashboardCatalogTransport(tool)
+        provider = UpstreamDashboardProvider()
+        provider.configure(dashboard_settings(), transport=transport)
+
+        await provider.refresh_capabilities()
+
+        health = provider.health_snapshot()
+        exact_release_fingerprint = (
+            "fb7f3789c8c020d8636a96b85a207635e94eefe9e0944c8814de59aba17e532e"
+        )
+        self.assertEqual(health["admission_status"], "admitted_builtin_attestation")
+        self.assertEqual(health["contract_family"], CONTRACT_FAMILY_V3)
+        self.assertEqual(
+            health["release_runtime_contract_fingerprint_model"],
+            "ha-mcp-operational-tool-descriptor-v2",
+        )
+        self.assertEqual(
+            health["expected_release_runtime_contract_fingerprint"],
+            exact_release_fingerprint,
+        )
+        self.assertEqual(
+            health["observed_release_runtime_contract_fingerprint"],
+            exact_release_fingerprint,
+        )
+        self.assertTrue(health["release_runtime_contract_match"])
+        self.assertEqual(health["runtime_contract_diff_fields"], [])
+        self.assertTrue(health["runtime_policy_state_normalized"])
+        self.assertEqual(transport.dispatch_count, 0)
+
+    def test_all_four_valid_policy_values_are_normalized(self):
+        baseline = dashboard_tool(reviewed_tools("8.0.0"))
+        expected = runtime_contract_fingerprint(
+            baseline,
+            model="ha-mcp-operational-tool-descriptor-v2",
+        )
+        variants = (
+            {"deployment": "addon"},
+            {"enabled": True},
+            {"live": True},
+            {"rules": 10_000},
+        )
+        for changes in variants:
+            with self.subTest(changes=changes):
+                tool = deepcopy(baseline)
+                tool["_meta"]["ha_mcp"]["policy"].update(changes)
+                self.assertEqual(
+                    runtime_contract_fingerprint(
+                        tool,
+                        model="ha-mcp-operational-tool-descriptor-v2",
+                    ),
+                    expected,
+                )
+                self.assertTrue(dashboard_decision(tool).accepted)
+
+    def test_malformed_policy_shapes_fail_closed(self):
+        baseline = dashboard_tool(addon_8_tools())
+        cases: dict[str, object] = {
+            "missing_policy": None,
+            "not_object": "addon",
+            "missing_key": {
+                "deployment": "addon",
+                "enabled": True,
+                "live": True,
+            },
+            "extra_key": {
+                "deployment": "addon",
+                "enabled": True,
+                "live": True,
+                "rules": 0,
+                "future": False,
+            },
+            "wrong_boolean_type": {
+                "deployment": "addon",
+                "enabled": 1,
+                "live": True,
+                "rules": 0,
+            },
+            "wrong_rules_type": {
+                "deployment": "addon",
+                "enabled": True,
+                "live": True,
+                "rules": True,
+            },
+            "rules_above_bound": {
+                "deployment": "addon",
+                "enabled": True,
+                "live": True,
+                "rules": 10_001,
+            },
+            "unsupported_deployment": {
+                "deployment": "production",
+                "enabled": True,
+                "live": True,
+                "rules": 0,
+            },
+        }
+        for name, policy in cases.items():
+            with self.subTest(name=name):
+                tool = deepcopy(baseline)
+                if name == "missing_policy":
+                    tool["_meta"]["ha_mcp"].pop("policy")
+                else:
+                    tool["_meta"]["ha_mcp"]["policy"] = policy
+                decision = dashboard_decision(tool)
+                self.assertFalse(decision.accepted)
+                self.assertEqual(
+                    decision.failure_category,
+                    "upstream_runtime_contract_mismatch",
+                )
+
+    def test_security_and_execution_relevant_drift_remains_rejected(self):
+        baseline = dashboard_tool(addon_8_tools())
+        cases: dict[str, dict] = {}
+        pinned = deepcopy(baseline)
+        pinned["_meta"]["ha_mcp"]["pinned"] = True
+        cases["pinned"] = pinned
+        exposed = deepcopy(baseline)
+        exposed["_meta"]["ha_mcp"]["llm_api_exposed"] = False
+        cases["llm_api_exposed"] = exposed
+        tags = deepcopy(baseline)
+        tags["_meta"]["fastmcp"]["tags"].append("future")
+        cases["tags"] = tags
+        annotations = deepcopy(baseline)
+        annotations["annotations"]["readOnlyHint"] = False
+        cases["annotations"] = annotations
+        schema = deepcopy(baseline)
+        schema["inputSchema"]["properties"]["list_only"]["type"] = "string"
+        cases["input_schema"] = schema
+        output = deepcopy(baseline)
+        output["outputSchema"] = {"type": "object"}
+        cases["output_contract"] = output
+        name = deepcopy(baseline)
+        name["name"] = "ha_config_get_dashboard_future"
+        cases["name"] = name
+        description = deepcopy(baseline)
+        description["description"] += " drift"
+        cases["description"] = description
+
+        for label, tool in cases.items():
+            with self.subTest(label=label):
+                self.assertFalse(dashboard_decision(tool).accepted)
+
+    def test_dashboard_argument_surface_remains_exact(self):
+        validate_dashboard_read_arguments(
+            {"list_only": True, "include_screenshot": False}
+        )
+        validate_dashboard_read_arguments(
+            {
+                "url_path": "operator-dashboard",
+                "list_only": False,
+                "force_reload": False,
+                "include_screenshot": False,
+            }
+        )
+        rejected = (
+            {"list_only": True, "include_screenshot": True},
+            {"list_only": True, "preferences": {}},
+            {"list_only": True, "mode": "search"},
+        )
+        for arguments in rejected:
+            with self.subTest(arguments=arguments):
+                with self.assertRaises(DashboardTransportError):
+                    validate_dashboard_read_arguments(arguments)
 
 
 if __name__ == "__main__":

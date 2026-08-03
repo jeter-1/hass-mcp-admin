@@ -176,11 +176,22 @@ class Beta11ReleaseEvidenceTests(unittest.TestCase):
 
         changed = deepcopy(tool)
         changed["_meta"]["ha_mcp"]["policy"]["enabled"] = True
-        refused = decide_admission(
+        normalized = decide_admission(
             server_name="ha-mcp",
             server_version="8.0.0",
             protocol_version="2025-03-26",
             tool=changed,
+            attestations=tuple((item, "builtin") for item in load_attestations()),
+        )
+        self.assertTrue(normalized.accepted)
+
+        malformed = deepcopy(tool)
+        malformed["_meta"]["ha_mcp"]["policy"]["enabled"] = 1
+        refused = decide_admission(
+            server_name="ha-mcp",
+            server_version="8.0.0",
+            protocol_version="2025-03-26",
+            tool=malformed,
             attestations=tuple((item, "builtin") for item in load_attestations()),
         )
         self.assertFalse(refused.accepted)
