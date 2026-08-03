@@ -1,5 +1,12 @@
 # Beta automation change governance
 
+## 2.2.0-beta.12 preservation boundary
+
+The exact 8.0.0 runtime-admission correction changes no plan, approval,
+execution-task, provider, operation, persistence, recovery, or policy
+semantics. Authority version 3, task schema 1, historical-plan compatibility,
+one-task ownership and no-blind-redispatch remain unchanged.
+
 ## 2.2.0-beta.11 restart recovery boundary
 
 Restart reconciliation retains the original authority-v3 consumption and

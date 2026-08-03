@@ -1,6 +1,11 @@
 # Governed operational administration
 
-Version: `2.2.0-beta.11`
+Version: `2.2.0-beta.12`
+
+Beta 12 changes only exact upstream read-admission evidence and diagnostics.
+Operational proposals, authority version 3, task schema 1, provider routing,
+argument constraints, verification and no-blind-redispatch behavior are
+unchanged.
 
 ## Beta 11 bounded restart reconciliation
 

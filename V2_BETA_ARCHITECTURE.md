@@ -1,5 +1,19 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## 2.2.0-beta.12 exact ha-mcp 8.0.0 add-on admission
+
+Beta 12 separates exact 8.0.0 operational admission from raw catalog and
+strict evidence. The operational runtime model requires the exact dynamic
+policy-state field set, JSON types, deployment allowlist, and bounded rule
+count before normalizing only those environment values. It leaves every other
+descriptor field exact and fails closed on malformed or unrelated drift.
+
+The exact add-on amd64 artifact reproduces the live `c61b0959…` catalog and
+admits 24 reads locally. The held reads, unknown-release refusal, protocol,
+zero-fallback, dashboard, backup, lifecycle, task, approval and stable-v1
+boundaries do not change. A later controlled production canary remains
+required.
+
 ## 2.2.0-beta.11 bounded restart recovery and exact ha-mcp 8.0.0
 
 The existing lifecycle recovery path now evaluates a cheap persisted

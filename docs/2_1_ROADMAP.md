@@ -1,6 +1,6 @@
 # Engineering 2.1 and 2.2 foundation roadmap
 
-Status: 2.1A and F2 accepted; Beta 11 reliability and exact-upstream correction in `2.2.0-beta.11`
+Status: 2.1A and F2 accepted; exact 8.0.0 add-on admission correction in `2.2.0-beta.12`
 
 The required milestone order is:
 
@@ -149,6 +149,15 @@ then adds one independently reviewed exact 8.0.0 upstream profile alongside
 7.14.2. It does not begin delta-aware policy or F3. The two new 8.0.0 reads are
 held for a subsequent production-canary decision and unknown 8.x releases
 remain fail-closed.
+
+## 2.2.0-beta.12 exact add-on runtime admission
+
+Beta 12 corrects only the exact 8.0.0 standalone/add-on runtime-evidence
+boundary. It validates then normalizes the documented dynamic upstream policy
+state while retaining exact ordinary contracts and strict raw evidence.
+Unknown 8.x, both held reads, protocol, fallback, provider and governance
+boundaries remain unchanged. Delta-aware safety-reducing policy remains
+deferred beyond Beta 12.
 
 Each operation must remain operation-specific. This roadmap does not authorize
 a generic administrator, arbitrary Supervisor command, service-call shortcut,

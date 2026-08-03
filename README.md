@@ -3,7 +3,7 @@
 > Stable v1.1.2 under `hass_mcp_admin` is retained as historical repository
 > source but is operationally retired. It is not covered by the Engineering
 > dependency audit and is not a supported rollback option. The Engineering v2
-> add-on is developed in place at `2.2.0-beta.11`, based on the exact
+> add-on is developed in place at `2.2.0-beta.12`, based on the exact
 > `v2.0.1` release, at
 > [`hass_mcp_engineering_beta/`](hass_mcp_engineering_beta/) on port `8100`.
 > Its existing technical “Beta” identity is retained to avoid a slug or runtime
@@ -42,11 +42,12 @@
 > Dev15 contract-level compatibility, partial quarantine, dashboard
 > independence, and retry-cadence separation are documented in
 > [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md).
-> The current Engineering development version is `2.2.0-beta.11`. Its bounded
-> restart-reconciliation and exact `ha-mcp` 7.14.2/8.0.0 compatibility
-> boundaries are recorded in
-> [`docs/V2_2_0_BETA11_RELEASE_NOTES.md`](docs/V2_2_0_BETA11_RELEASE_NOTES.md)
-> and [`docs/V2_2_0_BETA11_ACCEPTANCE.md`](docs/V2_2_0_BETA11_ACCEPTANCE.md).
+> The current Engineering development version is `2.2.0-beta.12`. Its exact
+> `ha-mcp` 8.0.0 add-on admission correction and remaining production-canary
+> boundary are recorded in
+> [`docs/V2_2_0_BETA12_RELEASE_NOTES.md`](docs/V2_2_0_BETA12_RELEASE_NOTES.md),
+> [`docs/V2_2_0_BETA12_ACCEPTANCE.md`](docs/V2_2_0_BETA12_ACCEPTANCE.md), and
+> [`docs/V2_2_0_BETA12_CANARY_FAILURE.md`](docs/V2_2_0_BETA12_CANARY_FAILURE.md).
 > The accepted F2 architecture remains recorded in ADR-012 and the historical
 > Beta 6 release documents.
 > The inert update-and-recovery preflight foundation remains recorded in
@@ -239,15 +240,15 @@ outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 
 ## Engineering v2 milestones
 
-The current Engineering development version is `2.2.0-beta.11`, based on the
-accepted Beta 6 F2 foundation and Beta 7 evidence corrections. It adds an
-exact, read-only profile for legacy contract-v1 prohibited/expired automation
-records alongside Beta 9's contract-v2 compatibility, partial-list containment,
-and reconciled health accounting. It adds no resource type, provider, tool,
-arbitrary service call, approval mode, or fallback.
+The current Engineering development version is `2.2.0-beta.12`, based on the
+accepted Beta 6 F2 foundation and Beta 7 evidence corrections. It corrects the
+exact 8.0.0 add-on runtime fingerprint model while preserving Beta 10
+historical-plan compatibility and Beta 11 bounded restart reconciliation. It
+adds no resource type, provider, tool, arbitrary service call, approval mode,
+or fallback.
 The roadmap and acceptance authority are
 [`docs/2_1_ROADMAP.md`](docs/2_1_ROADMAP.md) and
-[`docs/V2_2_0_BETA10_ACCEPTANCE.md`](docs/V2_2_0_BETA10_ACCEPTANCE.md). Determine advertised
+[`docs/V2_2_0_BETA12_ACCEPTANCE.md`](docs/V2_2_0_BETA12_ACCEPTANCE.md). Determine advertised
 release state from authoritative version metadata and
 `scripts/codex-context.py`, not from this milestone narrative. Engineering has
 48 statically registered

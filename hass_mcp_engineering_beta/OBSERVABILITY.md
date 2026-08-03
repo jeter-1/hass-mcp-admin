@@ -1,5 +1,23 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## 2.2.0-beta.12 runtime-contract evidence
+
+A quarantined read reports compatibility aliases plus separate ordinary
+`expected_contract_fingerprint` and `observed_contract_fingerprint`, separate
+`expected_runtime_contract_fingerprint` and
+`observed_runtime_contract_fingerprint`, the explicit runtime fingerprint
+model, bounded reviewed JSON-pointer differences, and a sanitized summary.
+Descriptor values are not emitted. A runtime failure can therefore show equal
+ordinary hashes while identifying the distinct failed runtime surface.
+
+Catalog health separately reports reviewed and observed operational catalog
+fingerprints and their model, reviewed and observed strict full-contract
+fingerprints and the strict model, and bounded changed-field counts. Raw
+catalog and strict fingerprints remain diagnostic evidence; exact admission
+continues to come from per-tool reviewed contracts. Exact 8.0.0 add-on policy
+state produces three raw catalog differences across 78 tools while its
+validated operational runtime model admits the reviewed 24 reads.
+
 ## 2.2.0-beta.11 restart and upstream compatibility evidence
 
 `operational_administration.restart_reconciliation` reports bounded current
