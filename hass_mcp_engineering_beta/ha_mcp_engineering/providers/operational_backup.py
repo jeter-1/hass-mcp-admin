@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
@@ -20,11 +21,11 @@ from ..clients.upstream_read import (
 )
 from ..configuration import Settings, parse_upstream_dashboard_endpoint
 from ..upstream_tool_policy import (
-    catalog_fingerprint,
     load_reviewed_upstream_release_registry,
     runtime_contract_fingerprint,
     runtime_description_fingerprint,
     schema_fingerprint,
+    validate_reviewed_release_catalog,
 )
 from ..version import SERVER_VERSION
 
@@ -64,6 +65,9 @@ class BackupProviderEvidence:
     source_commit: str
     image_index_digest: str
     catalog_fingerprint: str
+    normalized_catalog_fingerprint: str
+    aggregate_fingerprint_model: str
+    runtime_contract_fingerprint_model: str
     tool_contract_fingerprint: str
     argument_constraints: dict[str, Any]
 
@@ -77,6 +81,15 @@ class BackupProviderEvidence:
             "reviewed_source_commit": self.source_commit,
             "reviewed_image_index_digest": self.image_index_digest,
             "catalog_fingerprint": self.catalog_fingerprint,
+            "normalized_catalog_fingerprint": (
+                self.normalized_catalog_fingerprint
+            ),
+            "aggregate_fingerprint_model": (
+                self.aggregate_fingerprint_model
+            ),
+            "runtime_contract_fingerprint_model": (
+                self.runtime_contract_fingerprint_model
+            ),
             "tool_contract_fingerprint": self.tool_contract_fingerprint,
             "argument_constraints": dict(self.argument_constraints),
             "runtime_artifact_observed": False,
@@ -109,6 +122,8 @@ class BackupProviderState:
     last_success_at: str | None = None
     selected_compatibility_entry_id: str | None = None
     observed_upstream_version: str | None = None
+    runtime_contract_fingerprint_model: str | None = None
+    catalog_validation: dict[str, Any] | None = None
     fallback_count: int = 0
 
 
@@ -254,6 +269,12 @@ class ReviewedOperationalBackupProvider:
             self._fail("upstream_version_mismatch", dispatched=False)
         if catalog.protocol_version not in release.allowed_protocol_versions:
             self._fail("unsupported_protocol_version", dispatched=False)
+        with self._lock:
+            self._state.selected_compatibility_entry_id = release.entry_id
+            self._state.observed_upstream_version = catalog.server_version
+            self._state.runtime_contract_fingerprint_model = (
+                release.runtime_contract_fingerprint_model
+            )
         tools = [
             item
             for item in catalog.tools
@@ -262,9 +283,6 @@ class ReviewedOperationalBackupProvider:
         if len(tools) != 1:
             self._fail("required_tool_missing", dispatched=False)
         try:
-            observed_catalog_fingerprint = catalog_fingerprint(
-                [dict(item) for item in catalog.tools]
-            )
             tool = tools[0]
             expected = release.tool_contracts_by_name[REQUIRED_TOOL]
             observed = {
@@ -303,8 +321,28 @@ class ReviewedOperationalBackupProvider:
             )
         ):
             self._fail("reviewed_contract_mismatch", dispatched=False)
-        if observed_catalog_fingerprint != release.catalog_fingerprint:
+        catalog_validation = validate_reviewed_release_catalog(
+            release,
+            observed_server_name=catalog.server_name,
+            observed_upstream_version=catalog.server_version,
+            observed_protocol_version=catalog.protocol_version,
+            tools=catalog.tools,
+        )
+        with self._lock:
+            self._state.catalog_validation = catalog_validation.as_dict()
+        if not catalog_validation.valid:
             self._fail("catalog_mismatch", dispatched=False)
+        observed_catalog_fingerprint = (
+            catalog_validation.observed_raw_catalog_fingerprint
+        )
+        normalized_catalog_fingerprint = (
+            catalog_validation.normalized_catalog_fingerprint
+        )
+        if (
+            observed_catalog_fingerprint is None
+            or normalized_catalog_fingerprint is None
+        ):
+            self._fail("internal_invariant_violation", dispatched=False)
         return BackupProviderEvidence(
             provider=PROVIDER_ID,
             server_name=catalog.server_name,
@@ -314,6 +352,15 @@ class ReviewedOperationalBackupProvider:
             source_commit=release.source_commit,
             image_index_digest=release.image_index_digest,
             catalog_fingerprint=observed_catalog_fingerprint,
+            normalized_catalog_fingerprint=(
+                normalized_catalog_fingerprint
+            ),
+            aggregate_fingerprint_model=(
+                catalog_validation.aggregate_fingerprint_model
+            ),
+            runtime_contract_fingerprint_model=(
+                release.runtime_contract_fingerprint_model
+            ),
             tool_contract_fingerprint=expected.runtime_contract_fingerprint,
             argument_constraints={
                 "scope": "snapshot",
@@ -441,6 +488,14 @@ class ReviewedOperationalBackupProvider:
                 ),
                 "observed_upstream_version": (
                     self._state.observed_upstream_version
+                ),
+                "runtime_contract_fingerprint_model": (
+                    self._state.runtime_contract_fingerprint_model
+                ),
+                "catalog_validation": (
+                    deepcopy(self._state.catalog_validation)
+                    if self._state.catalog_validation is not None
+                    else None
                 ),
                 "fallback_count": self._state.fallback_count,
                 "fallback_policy": "none",

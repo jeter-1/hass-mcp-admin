@@ -3111,9 +3111,6 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             process_instance_id="runtime-drift-process",
             self_addon_identity_resolver=self_identity,
         )
-        release = load_reviewed_upstream_release_registry().by_version[
-            "8.0.0"
-        ]
         with tempfile.TemporaryDirectory() as directory:
             repository = ChangePlanRepository(Path(directory) / "plans")
             service = ChangeGovernanceService(
@@ -3125,14 +3122,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 lifecycle_gateway=gateway,
             )
-            with (
-                patch(
-                    "ha_mcp_engineering.providers.operational_lifecycle."
-                    "catalog_fingerprint",
-                    return_value=release.catalog_fingerprint,
-                ),
-                self.assertRaises(GovernanceError) as raised,
-            ):
+            with self.assertRaises(GovernanceError) as raised:
                 await service.create_addon_restart_plan(
                     addon_slug=UPSTREAM_ADDON_SLUG
                 )
@@ -3143,21 +3133,21 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(repository.list(), [])
 
         health = provider.health_snapshot()
-        diagnostics = health["runtime_contract_mismatch_diagnostics"]
+        catalog_validation = health["catalog_validation"]
+        diagnostics = catalog_validation["mismatch_diagnostics"][0]
         self.assertEqual(
-            health["failure_counts"], {"reviewed_contract_mismatch": 1}
+            health["failure_counts"], {"catalog_mismatch": 1}
         )
         self.assertEqual(sum(health["dispatch_counts"].values()), 0)
         self.assertEqual(health["fallback_count"], 0)
         self.assertEqual(transport.calls, [])
-        self.assertEqual(diagnostics["tool"], "ha_manage_addon")
+        self.assertEqual(diagnostics["tool_name"], "ha_manage_addon")
         self.assertEqual(
-            diagnostics["runtime_contract_fingerprint_model"],
+            catalog_validation["runtime_contract_fingerprint_model"],
             RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2,
         )
-        self.assertNotEqual(
-            diagnostics["expected_runtime_contract_fingerprint"],
-            diagnostics["observed_runtime_contract_fingerprint"],
+        self.assertIn(
+            "runtime_contract_fingerprint", diagnostics["components"]
         )
         self.assertEqual(
             diagnostics["runtime_contract_diff_fields"],

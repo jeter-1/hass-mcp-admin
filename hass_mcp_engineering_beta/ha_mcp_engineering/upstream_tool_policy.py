@@ -63,6 +63,14 @@ RUNTIME_CONTRACT_FINGERPRINT_MODELS = frozenset(
     }
 )
 MAX_RUNTIME_POLICY_RULE_COUNT = 10_000
+RUNTIME_POLICY_DYNAMIC_PATHS = frozenset(
+    {
+        "/_meta/ha_mcp/policy/deployment",
+        "/_meta/ha_mcp/policy/enabled",
+        "/_meta/ha_mcp/policy/live",
+        "/_meta/ha_mcp/policy/rules",
+    }
+)
 MAX_REVIEWED_CATALOG_DIAGNOSTICS = 16
 REVIEWED_CATALOG_COMPONENTS = (
     "classification",
@@ -180,6 +188,15 @@ def runtime_contract_fingerprint(
     if not isinstance(ha_mcp, dict):
         return schema_fingerprint(normalized)
     policy = ha_mcp.get("policy")
+    ha_mcp["policy"] = runtime_policy_state_fingerprint_projection(policy)
+    return schema_fingerprint(normalized)
+
+
+def runtime_policy_state_fingerprint_projection(
+    policy: Any,
+) -> dict[str, Any]:
+    """Project only validity of the exact reviewed dynamic policy shape."""
+
     policy_valid = (
         isinstance(policy, dict)
         and set(policy) == {"deployment", "enabled", "live", "rules"}
@@ -190,11 +207,10 @@ def runtime_contract_fingerprint(
         and not isinstance(policy.get("rules"), bool)
         and 0 <= policy["rules"] <= MAX_RUNTIME_POLICY_RULE_COUNT
     )
-    ha_mcp["policy"] = {
+    return {
         "fingerprint_model": RUNTIME_POLICY_STATE_FINGERPRINT_MODEL_V1,
         "valid": policy_valid,
     }
-    return schema_fingerprint(normalized)
 
 
 def runtime_contract_field_fingerprints(
@@ -965,6 +981,24 @@ def validate_reviewed_release_catalog(
                     RecursionError,
                 ):
                     observed_fields = {}
+                meta = tool.get("_meta")
+                ha_mcp = (
+                    meta.get("ha_mcp") if isinstance(meta, dict) else None
+                )
+                policy = (
+                    ha_mcp.get("policy")
+                    if isinstance(ha_mcp, dict)
+                    else None
+                )
+                normalized_policy_paths = (
+                    RUNTIME_POLICY_DYNAMIC_PATHS
+                    if runtime_model
+                    == RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2
+                    and runtime_policy_state_fingerprint_projection(policy)[
+                        "valid"
+                    ]
+                    else frozenset()
+                )
                 diff_fields = tuple(
                     sorted(
                         pointer
@@ -972,6 +1006,7 @@ def validate_reviewed_release_catalog(
                         | observed_fields.keys()
                         if expected_fields.get(pointer)
                         != observed_fields.get(pointer)
+                        and pointer not in normalized_policy_paths
                     )[:MAX_REVIEWED_CATALOG_DIAGNOSTICS]
                 )
         if components:

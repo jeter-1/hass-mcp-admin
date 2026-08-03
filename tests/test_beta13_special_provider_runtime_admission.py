@@ -18,6 +18,17 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     load_reviewed_upstream_release_registry,
     validate_reviewed_release_catalog,
 )
+from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
+    McpReadCatalog,
+)
+from ha_mcp_engineering.providers.operational_backup import (  # noqa: E402
+    OperationalBackupProviderError,
+    ReviewedOperationalBackupProvider,
+)
+from ha_mcp_engineering.providers.operational_lifecycle import (  # noqa: E402
+    OperationalLifecycleProviderError,
+    ReviewedOperationalLifecycleProvider,
+)
 
 
 def load_json(path: Path) -> dict:
@@ -50,6 +61,21 @@ def validate(version: str, tools: list[dict], **overrides):
         ),
         tools=tools,
     )
+
+
+class CatalogTransport:
+    def __init__(self, version: str, tools: list[dict]) -> None:
+        self.catalog = McpReadCatalog(
+            protocol_version="2025-03-26",
+            server_name="ha-mcp",
+            server_version=version,
+            tools=tuple(tools),
+            connection_latency_ms=1.0,
+        )
+        self.dispatch_count = 0
+
+    async def discover(self) -> McpReadCatalog:
+        return self.catalog
 
 
 class ReviewedCatalogValidatorTests(unittest.TestCase):
@@ -188,6 +214,112 @@ class ReviewedCatalogValidatorTests(unittest.TestCase):
             "unsupported_runtime_fingerprint_model",
         )
         self.assertEqual(result.normalized_catalog_fingerprint, None)
+
+
+class SpecialProviderCatalogAdmissionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_backup_accepts_exact_addon_catalog_without_dispatch(self):
+        transport = CatalogTransport("8.0.0", addon_8_tools())
+        provider = ReviewedOperationalBackupProvider()
+        provider._transport = transport
+        provider._state.configured = True
+
+        evidence = await provider.probe()
+
+        self.assertEqual(
+            evidence.catalog_fingerprint,
+            "c61b0959e766f3900300dd4dd69a6d799fc113186d91983f21be69f1bc6b8768",
+        )
+        self.assertEqual(
+            evidence.normalized_catalog_fingerprint,
+            provider.health_snapshot()["catalog_validation"][
+                "expected_normalized_catalog_fingerprint"
+            ],
+        )
+        health = provider.health_snapshot()
+        self.assertEqual(
+            health["selected_compatibility_entry_id"],
+            "ha-mcp-v8.0.0-d65630f6",
+        )
+        self.assertEqual(
+            health["catalog_validation"]["reviewed_accounted_count"], 78
+        )
+        self.assertEqual(
+            health["catalog_validation"]["validation_status"],
+            "accepted_exact",
+        )
+        self.assertEqual(health["dispatch_count"], 0)
+        self.assertEqual(health["fallback_count"], 0)
+
+    async def test_lifecycle_accepts_exact_addon_catalog_for_each_operation(
+        self,
+    ):
+        for operation in (
+            "controlled_reload",
+            "restart_addon",
+            "restart_home_assistant",
+        ):
+            with self.subTest(operation=operation):
+                transport = CatalogTransport("8.0.0", addon_8_tools())
+                provider = ReviewedOperationalLifecycleProvider()
+                provider._transport = transport
+                provider._state.configured = True
+
+                evidence = await provider.probe(operation)
+
+                self.assertEqual(
+                    evidence.normalized_catalog_fingerprint,
+                    provider.health_snapshot()["catalog_validation"][
+                        "expected_normalized_catalog_fingerprint"
+                    ],
+                )
+                health = provider.health_snapshot()
+                self.assertEqual(
+                    health["selected_compatibility_entry_id"],
+                    "ha-mcp-v8.0.0-d65630f6",
+                )
+                self.assertEqual(
+                    health["catalog_validation"]["observed_tool_count"],
+                    78,
+                )
+                self.assertEqual(sum(health["dispatch_counts"].values()), 0)
+                self.assertEqual(health["fallback_count"], 0)
+
+    async def test_catalog_drift_fails_before_special_provider_dispatch(self):
+        tools = addon_8_tools()
+        tools[0]["_meta"]["ha_mcp"]["pinned"] = not tools[0][
+            "_meta"
+        ]["ha_mcp"]["pinned"]
+
+        backup_transport = CatalogTransport("8.0.0", tools)
+        backup = ReviewedOperationalBackupProvider()
+        backup._transport = backup_transport
+        backup._state.configured = True
+        with self.assertRaises(OperationalBackupProviderError) as caught:
+            await backup.probe()
+        self.assertEqual(caught.exception.category, "catalog_mismatch")
+        backup_health = backup.health_snapshot()
+        self.assertEqual(backup_health["dispatch_count"], 0)
+        self.assertEqual(
+            backup_health["catalog_validation"]["validation_status"],
+            "rejected_catalog_mismatch",
+        )
+        self.assertEqual(
+            backup_health["catalog_validation"]["mismatch_diagnostics"][
+                0
+            ]["runtime_contract_diff_fields"],
+            ["/_meta/ha_mcp/pinned"],
+        )
+
+        lifecycle_transport = CatalogTransport("8.0.0", tools)
+        lifecycle = ReviewedOperationalLifecycleProvider()
+        lifecycle._transport = lifecycle_transport
+        lifecycle._state.configured = True
+        with self.assertRaises(OperationalLifecycleProviderError) as caught:
+            await lifecycle.probe("restart_addon")
+        self.assertEqual(caught.exception.category, "catalog_mismatch")
+        lifecycle_health = lifecycle.health_snapshot()
+        self.assertEqual(sum(lifecycle_health["dispatch_counts"].values()), 0)
+        self.assertEqual(lifecycle_health["fallback_count"], 0)
 
 
 if __name__ == "__main__":
