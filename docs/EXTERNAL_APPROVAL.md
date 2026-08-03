@@ -1,6 +1,6 @@
 # External human approval authority
 
-Version `2.2.0-beta.10` preserves the Beta 25 separation between an
+Version `2.2.0-beta.11` preserves the Beta 25 separation between an
 authenticated MCP caller and the human authority that approves governed Home
 Assistant changes. A caller may create a
 plan and request review, but only an authenticated Home Assistant administrator
@@ -13,7 +13,7 @@ requires plan approval followed by a distinct
 `elevated_risk_acknowledgement` from the same authenticated administrator.
 This is not two-person control. A `prohibited` plan creates no actionable
 challenge. See ADR-012 in the architecture decision records and the
-active [`V2_2_0_BETA10_ACCEPTANCE.md`](V2_2_0_BETA10_ACCEPTANCE.md).
+active [`V2_2_0_BETA11_ACCEPTANCE.md`](V2_2_0_BETA11_ACCEPTANCE.md).
 
 The Beta 7 correction makes that non-actionability consistent across legacy
 compatibility fields and health. A prohibited F2 record remains visible as

@@ -3,7 +3,7 @@
 > Stable v1.1.2 under `hass_mcp_admin` is retained as historical repository
 > source but is operationally retired. It is not covered by the Engineering
 > dependency audit and is not a supported rollback option. The Engineering v2
-> add-on is developed in place at `2.2.0-beta.10`, based on the exact
+> add-on is developed in place at `2.2.0-beta.11`, based on the exact
 > `v2.0.1` release, at
 > [`hass_mcp_engineering_beta/`](hass_mcp_engineering_beta/) on port `8100`.
 > Its existing technical “Beta” identity is retained to avoid a slug or runtime
@@ -42,10 +42,11 @@
 > Dev15 contract-level compatibility, partial quarantine, dashboard
 > independence, and retry-cadence separation are documented in
 > [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md).
-> The current Engineering development version is `2.2.0-beta.10`. Its exact
-> Beta 6 legacy expired-automation compatibility boundary is recorded in
-> [`docs/V2_2_0_BETA10_RELEASE_NOTES.md`](docs/V2_2_0_BETA10_RELEASE_NOTES.md)
-> and [`docs/V2_2_0_BETA10_ACCEPTANCE.md`](docs/V2_2_0_BETA10_ACCEPTANCE.md).
+> The current Engineering development version is `2.2.0-beta.11`. Its bounded
+> restart-reconciliation and exact `ha-mcp` 7.14.2/8.0.0 compatibility
+> boundaries are recorded in
+> [`docs/V2_2_0_BETA11_RELEASE_NOTES.md`](docs/V2_2_0_BETA11_RELEASE_NOTES.md)
+> and [`docs/V2_2_0_BETA11_ACCEPTANCE.md`](docs/V2_2_0_BETA11_ACCEPTANCE.md).
 > The accepted F2 architecture remains recorded in ADR-012 and the historical
 > Beta 6 release documents.
 > The inert update-and-recovery preflight foundation remains recorded in
@@ -104,7 +105,7 @@ Current tools:
 | Beta analysis | `entity_dependency_analysis`, `automation_reliability_analysis`, `change_impact_analysis`, `configuration_integrity_analysis`, `incident_correlation`, `handoff_generation` |
 | Governance | four operational proposal tools plus `create_change_plan`, `create_configuration_plan`, `get_change_plan`, `list_change_plans`, `approve_change_plan`, `apply_change_plan`, `rollback_change` |
 | General execution | `call_service` is compatibility-visible but fails closed in v2; Phase 1 does not delegate service execution or any upstream write |
-| Reviewed upstream reads | Up to 26 exact semantic-contract-matching `ha-mcp` reads are admitted independently; one missing or quarantined read leaves the other matches available, and no new or write tool is inferred into policy. See [ADR-006](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md). |
+| Reviewed upstream reads | Exact `ha-mcp` 7.14.2 admits up to 26 reviewed reads; exact 8.0.0 admits 24 and holds `ha_search` plus `ha_get_operation_status` for a later canary. Unknown releases expose none, and no new or write tool is inferred into policy. See [ADR-006](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md). |
 
 It runs against the Supervisor's internal HA proxy, so **no long-lived access token is
 needed** — auth to HA is handled by the injected `SUPERVISOR_TOKEN`.
@@ -238,7 +239,7 @@ outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 
 ## Engineering v2 milestones
 
-The current Engineering development version is `2.2.0-beta.10`, based on the
+The current Engineering development version is `2.2.0-beta.11`, based on the
 accepted Beta 6 F2 foundation and Beta 7 evidence corrections. It adds an
 exact, read-only profile for legacy contract-v1 prohibited/expired automation
 records alongside Beta 9's contract-v2 compatibility, partial-list containment,

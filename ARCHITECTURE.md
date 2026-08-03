@@ -1,5 +1,27 @@
 # HA MCP Engineering Server Architecture
 
+## 2.2.0-beta.11 bounded restart recovery and exact upstream profiles
+
+Restart reconciliation is a bounded readback-only recovery path, not a
+polling or dispatch subsystem. Durable tasks retain their original
+`maximum_post_dispatch_deadline`; historical restart plans derive the same
+limit from the persisted dispatch timestamp and the existing maximum interval.
+Expired or permanently ineligible records terminalize locally without a Core,
+Supervisor, or provider request. Attempt count, last/next attempt, capped
+backoff, and deadline survive process restarts. Per-task single flight,
+bounded batches and timeouts prevent one stale record from monopolizing the
+worker. Reconciliation never redispatches a restart.
+
+Upstream admission now selects one complete exact release profile. Exact
+7.14.2 keeps 26 delegated reads and 74 configured tools. Exact 8.0.0 admits 24
+delegated reads and 72 configured tools while holding `ha_search` and
+`ha_get_operation_status` for a later controlled canary. The held tools are
+fully accounted but neither registered nor callable. Unknown later 8.x
+versions inherit no trust. Operational admission fingerprints and strict
+full-contract evidence fingerprints remain separately named deterministic
+models. The dashboard, backup, lifecycle, protocol, provider, governance,
+task-schema, stable-v1, and zero-fallback boundaries are unchanged.
+
 ## 2.2.0-beta.10 legacy expired-automation compatibility
 
 Beta 10 adds a separate exact read-only profile for contract-v1 prohibited
@@ -17,7 +39,7 @@ contract-v1 and contract-v2 fixtures and provenance byte-for-byte. Reads remain
 byte-preserving. Beta 9 partial-list containment and health reconciliation,
 Beta 7 response truthfulness, task schema 1, authority version 3, zero fallback,
 and the 25/23/48 plus configured 26/74 tool contract remain unchanged.
-Delta-aware safety-reducing policy is deferred to Beta 11.
+Delta-aware safety-reducing policy remains deferred beyond Beta 11.
 
 ## 2.2.0-beta.9 real Beta 6 prohibited-plan compatibility
 

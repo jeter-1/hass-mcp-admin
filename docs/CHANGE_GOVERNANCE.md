@@ -1,5 +1,14 @@
 # Beta automation change governance
 
+## 2.2.0-beta.11 restart recovery boundary
+
+Restart reconciliation retains the original authority-v3 consumption and
+dispatch evidence and can only gather bounded readback evidence before the
+persisted deadline. It does not request authority, create a second task, extend
+the verification window, or redispatch. Expired or permanently ineligible
+restart work terminalizes without provider access; unrelated plans and tasks
+retain their existing governance behavior.
+
 ## 2.2.0-beta.10 legacy expired-automation compatibility
 
 Beta 10 separately recognizes the exact contract-v1 prohibited/expired
