@@ -214,6 +214,23 @@ MAX_APPROVAL_PROJECTION_DETAILS_PER_PLAN = 128
 MAX_OPERATIONAL_RECONCILIATIONS_PER_PASS = 20
 OPERATIONAL_RECONCILIATION_TIME_BUDGET_SECONDS = 10.0
 EXECUTION_TASK_POST_DISPATCH_DEADLINE = timedelta(hours=24)
+RESTART_RECONCILIATION_BACKOFF_SECONDS = (60, 120, 300, 900)
+RESTART_RECONCILIATION_PROBE_TIMEOUT_SECONDS = 10.0
+RESTART_VERIFICATION_WINDOW_EXPIRED = (
+    "restart_verification_window_expired"
+)
+RESTART_DISPATCH_TIMESTAMP_UNAVAILABLE = (
+    "restart_dispatch_timestamp_unavailable"
+)
+RESTART_RECONCILIATION_STATE_INVALID = (
+    "restart_reconciliation_state_invalid"
+)
+RESTART_RECONCILIATION_OPERATIONS = frozenset(
+    {
+        ChangeOperation.RESTART_ADDON,
+        ChangeOperation.RESTART_HOME_ASSISTANT,
+    }
+)
 HOME_ASSISTANT_OUTAGE_CATEGORIES = frozenset(
     {"provider_timeout", "provider_unavailable"}
 )
@@ -1072,6 +1089,29 @@ class ChangeGovernanceService:
         self._active_lifecycle_reconciliations = 0
         self._active_task_ids_by_plan: dict[str, str] = {}
         self._task_reconciliation_runs = 0
+        self._restart_reconciliation_inflight: set[str] = set()
+        self._restart_reconciliation_active: dict[str, Any] = {
+            "active": False,
+            "plan_id": None,
+            "task_id": None,
+            "task_state": None,
+            "operation": None,
+            "attempt_count": 0,
+            "last_attempt_at": None,
+            "next_attempt_at": None,
+            "backoff_seconds": 0,
+            "evidence_deadline": None,
+        }
+        self._restart_reconciliation_counters: dict[str, Any] = {
+            "last_result": None,
+            "expired_record_count": 0,
+            "expensive_probe_count": 0,
+            "expensive_probes_avoided": 0,
+            "cheap_gate_rejection_count": 0,
+            "single_flight_collision_count": 0,
+            "manual_review_terminalization_count": 0,
+            "failure_count": 0,
+        }
         self.repository.cleanup(now=self.now())
         self.repository.recover_incomplete(self._timestamp())
         self.task_repository.cleanup(now=self.now())
@@ -5486,9 +5526,20 @@ class ChangeGovernanceService:
                 and task.state not in TERMINAL_TASK_STATES
                 and self._task_deadline_expired(task)
             ):
-                self._manual_review_task(
-                    task, "maximum_post_dispatch_deadline_exceeded", plan
-                )
+                if self._restart_reconciliation_candidate(plan):
+                    self._terminalize_restart_reconciliation(
+                        plan,
+                        task,
+                        RESTART_VERIFICATION_WINDOW_EXPIRED,
+                    )
+                    task = self._load_task(task.task_id)
+                    plan = self._load(plan.plan_id)
+                else:
+                    self._manual_review_task(
+                        task,
+                        "maximum_post_dispatch_deadline_exceeded",
+                        plan,
+                    )
                 return self._terminal_task_apply_result(task, plan)
             if (
                 task is not None
@@ -6574,6 +6625,319 @@ class ChangeGovernanceService:
             and plan.approval.state == ApprovalState.CONSUMED
         )
 
+    @staticmethod
+    def _restart_reconciliation_candidate(plan: ChangePlan) -> bool:
+        return bool(
+            plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION
+            and plan.operation in RESTART_RECONCILIATION_OPERATIONS
+            and plan.status
+            in {
+                PlanStatus.APPLYING,
+                PlanStatus.VERIFICATION_REQUIRED,
+            }
+            and plan.operational is not None
+        )
+
+    @staticmethod
+    def _restart_reconciliation_persisted_state(
+        plan: ChangePlan,
+        task: ExecutionTask | None,
+    ) -> dict[str, Any]:
+        plan_state: dict[str, Any] = {}
+        if plan.operational is not None:
+            candidate = plan.operational.dispatch.get(
+                "restart_reconciliation"
+            )
+            if isinstance(candidate, dict):
+                plan_state = dict(candidate)
+        if task is not None:
+            candidate = task.verification_summary.get(
+                "restart_reconciliation"
+            )
+            if isinstance(candidate, dict) and candidate:
+                return dict(candidate)
+        return plan_state
+
+    def _restart_evidence_deadline(
+        self,
+        plan: ChangePlan,
+        task: ExecutionTask | None,
+    ) -> tuple[datetime | None, str | None]:
+        if task is not None:
+            if not self._task_is_dispatched(task):
+                return None, "restart_task_dispatch_evidence_missing"
+            try:
+                if task.maximum_post_dispatch_deadline is None:
+                    raise ValueError("missing deadline")
+                return (
+                    parse_task_timestamp(
+                        task.maximum_post_dispatch_deadline
+                    ),
+                    None,
+                )
+            except (TypeError, ValueError):
+                return None, RESTART_RECONCILIATION_STATE_INVALID
+        operational = plan.operational
+        if operational is None:
+            return None, RESTART_RECONCILIATION_STATE_INVALID
+        attempted_at = _parse_governance_timestamp(
+            operational.dispatch.get("attempted_at")
+        )
+        if attempted_at is None:
+            return None, RESTART_DISPATCH_TIMESTAMP_UNAVAILABLE
+        return attempted_at + EXECUTION_TASK_POST_DISPATCH_DEADLINE, None
+
+    def _restart_reconciliation_gate(
+        self,
+        plan: ChangePlan,
+        task: ExecutionTask | None,
+    ) -> dict[str, Any]:
+        if not self._restart_reconciliation_candidate(plan):
+            return {"eligible": False, "reason": "not_restart_candidate"}
+        operational = plan.operational
+        assert operational is not None
+        if task is not None and task.state in TERMINAL_TASK_STATES:
+            return {"eligible": False, "reason": "task_terminal"}
+        if plan.approval.state != ApprovalState.CONSUMED:
+            return {
+                "eligible": False,
+                "terminal_reason": "restart_approval_consumption_missing",
+            }
+        if (
+            operational.dispatch.get("attempt_count") != 1
+            or operational.dispatch.get("dispatched") is not True
+        ):
+            return {
+                "eligible": False,
+                "terminal_reason": "restart_dispatch_evidence_invalid",
+            }
+        deadline, deadline_error = self._restart_evidence_deadline(
+            plan, task
+        )
+        if deadline_error is not None:
+            return {
+                "eligible": False,
+                "terminal_reason": deadline_error,
+            }
+        assert deadline is not None
+        now = self.now()
+        if now >= deadline:
+            return {
+                "eligible": False,
+                "terminal_reason": RESTART_VERIFICATION_WINDOW_EXPIRED,
+                "evidence_deadline": deadline.isoformat(),
+            }
+        state = self._restart_reconciliation_persisted_state(plan, task)
+        try:
+            attempt_count = int(state.get("attempt_count", 0))
+            if attempt_count < 0 or isinstance(
+                state.get("attempt_count", 0), bool
+            ):
+                raise ValueError("invalid attempt count")
+            next_value = state.get("next_attempt_at")
+            next_attempt = (
+                parse_task_timestamp(next_value)
+                if next_value is not None
+                else None
+            )
+            if next_attempt is not None and next_attempt > deadline:
+                raise ValueError("next attempt exceeds deadline")
+        except (TypeError, ValueError):
+            return {
+                "eligible": False,
+                "terminal_reason": RESTART_RECONCILIATION_STATE_INVALID,
+                "evidence_deadline": deadline.isoformat(),
+            }
+        if next_attempt is not None and now < next_attempt:
+            return {
+                "eligible": False,
+                "reason": "restart_reconciliation_backoff",
+                "backoff": True,
+                "attempt_count": attempt_count,
+                "next_attempt_at": next_attempt.isoformat(),
+                "evidence_deadline": deadline.isoformat(),
+            }
+        if self.lifecycle_gateway is None:
+            return {
+                "eligible": False,
+                "reason": "restart_reconciliation_provider_unavailable",
+                "attempt_count": attempt_count,
+                "evidence_deadline": deadline.isoformat(),
+            }
+        return {
+            "eligible": True,
+            "attempt_count": attempt_count,
+            "evidence_deadline": deadline.isoformat(),
+        }
+
+    def _terminalize_restart_reconciliation(
+        self,
+        plan: ChangePlan,
+        task: ExecutionTask | None,
+        reason: str,
+    ) -> bool:
+        if not self._restart_reconciliation_candidate(plan):
+            return False
+        operational = plan.operational
+        assert operational is not None
+        now = self._timestamp()
+        persisted = self._restart_reconciliation_persisted_state(
+            plan, task
+        )
+        deadline, _deadline_error = self._restart_evidence_deadline(
+            plan, task
+        )
+        operational.dispatch["restart_reconciliation"] = {
+            **persisted,
+            "next_attempt_at": None,
+            "backoff_seconds": 0,
+            "evidence_deadline": (
+                deadline.isoformat() if deadline is not None else None
+            ),
+            "last_result": reason,
+            "terminalized_at": now,
+        }
+        plan.status = PlanStatus.VERIFICATION_FAILED
+        plan.execution_outcome = "manual_review_required"
+        operational.final_outcome = "manual_review_required"
+        operational.verification.status = "manual_review_required"
+        operational.verification.checked_at = now
+        operational.verification.mismatch_fields = list(
+            dict.fromkeys(
+                [*operational.verification.mismatch_fields, reason]
+            )
+        )
+        plan.failure_information = {
+            "error_code": reason,
+            "failure_stage": "post_dispatch",
+            "provider_dispatch_occurred": True,
+            "redispatch_performed": False,
+            "fallback": "none",
+            "fallback_occurred": False,
+        }
+        self._record(
+            plan,
+            f"{plan.operation.value}_reconciliation_terminalized",
+            "partial",
+            error_code=reason,
+            failure_category=reason,
+            failure_stage="post_dispatch",
+        )
+        if task is not None and task.state not in TERMINAL_TASK_STATES:
+            task = self._load_task(task.task_id)
+            self._manual_review_task(task, reason, self._load(plan.plan_id))
+        counters = self._restart_reconciliation_counters
+        counters["last_result"] = reason
+        counters["manual_review_terminalization_count"] += 1
+        if reason == RESTART_VERIFICATION_WINDOW_EXPIRED:
+            counters["expired_record_count"] += 1
+        return True
+
+    def _begin_restart_reconciliation_attempt(
+        self,
+        plan: ChangePlan,
+        task: ExecutionTask | None,
+        *,
+        trigger: str,
+        evidence_deadline: str,
+    ) -> tuple[dict[str, Any], ExecutionTask | None]:
+        prior = self._restart_reconciliation_persisted_state(plan, task)
+        attempt_count = int(prior.get("attempt_count", 0)) + 1
+        backoff_seconds = RESTART_RECONCILIATION_BACKOFF_SECONDS[
+            min(
+                attempt_count - 1,
+                len(RESTART_RECONCILIATION_BACKOFF_SECONDS) - 1,
+            )
+        ]
+        now = self.now()
+        deadline = parse_task_timestamp(evidence_deadline)
+        next_attempt = min(
+            now + timedelta(seconds=backoff_seconds), deadline
+        )
+        state = {
+            "attempt_count": attempt_count,
+            "last_attempt_at": now.isoformat(),
+            "next_attempt_at": next_attempt.isoformat(),
+            "backoff_seconds": backoff_seconds,
+            "evidence_deadline": evidence_deadline,
+            "last_result": "probe_started",
+            "trigger": trigger,
+        }
+        operational = plan.operational
+        assert operational is not None
+        operational.dispatch["restart_reconciliation"] = dict(state)
+        self._record(
+            plan,
+            f"{plan.operation.value}_{trigger}_reconciliation_started",
+            "success",
+        )
+        if task is not None:
+            task = self._load_task(task.task_id)
+            self._record_task_event(
+                task,
+                "restart_reconciliation_attempted",
+                changes={
+                    "verification_summary": {
+                        **task.verification_summary,
+                        "restart_reconciliation": dict(state),
+                    }
+                },
+            )
+        return state, task
+
+    def _complete_restart_reconciliation_attempt(
+        self,
+        plan: ChangePlan,
+        task: ExecutionTask | None,
+        state: dict[str, Any],
+        *,
+        result: str,
+        terminal: bool = False,
+    ) -> ExecutionTask | None:
+        state = {
+            **state,
+            "last_result": result,
+            "next_attempt_at": (
+                None if terminal else state.get("next_attempt_at")
+            ),
+            "backoff_seconds": (
+                0 if terminal else state.get("backoff_seconds", 0)
+            ),
+        }
+        operational = plan.operational
+        assert operational is not None
+        operational.dispatch["restart_reconciliation"] = dict(state)
+        self._record(
+            plan,
+            f"{plan.operation.value}_reconciliation_{result}",
+            "success" if terminal else "partial",
+            error_code=(
+                None
+                if terminal
+                else ErrorCode.OPERATIONAL_VERIFICATION_PENDING.value
+            ),
+        )
+        if task is not None and task.state not in TERMINAL_TASK_STATES:
+            task = self._load_task(task.task_id)
+            self._record_task_event(
+                task,
+                "restart_reconciliation_result_recorded",
+                changes={
+                    "verification_summary": {
+                        **task.verification_summary,
+                        "restart_reconciliation": dict(state),
+                    }
+                },
+                result_status=("success" if terminal else "partial"),
+                error_code=(
+                    None
+                    if terminal
+                    else ErrorCode.OPERATIONAL_VERIFICATION_PENDING.value
+                ),
+            )
+        self._restart_reconciliation_counters["last_result"] = result
+        return task
+
     async def reconcile_execution_tasks(
         self,
         *,
@@ -6662,11 +7026,18 @@ class ChangeGovernanceService:
                         failed += 1
                     continue
                 if self._task_deadline_expired(task):
-                    self._manual_review_task(
-                        task,
-                        "maximum_post_dispatch_deadline_exceeded",
-                        plan,
-                    )
+                    if self._restart_reconciliation_candidate(plan):
+                        self._terminalize_restart_reconciliation(
+                            plan,
+                            task,
+                            RESTART_VERIFICATION_WINDOW_EXPIRED,
+                        )
+                    else:
+                        self._manual_review_task(
+                            task,
+                            "maximum_post_dispatch_deadline_exceeded",
+                            plan,
+                        )
                     manual_review += 1
                     continue
                 if not self._task_is_dispatched(task):
@@ -6741,24 +7112,34 @@ class ChangeGovernanceService:
             self._resolved_plans_with_projection_failures()
         )
         for candidate in candidates:
-            if not self._eligible_lifecycle_reconciliation(candidate):
-                continue
-            if (
-                selected >= max_plans
-                or time.monotonic() - started >= time_budget_seconds
+            restart_candidate = self._restart_reconciliation_candidate(
+                candidate
+            )
+            if not restart_candidate and not (
+                self._eligible_lifecycle_reconciliation(candidate)
             ):
-                bounded = True
-                break
-            selected += 1
+                continue
             plan_lock = self._plan_locks.setdefault(
                 candidate.plan_id, asyncio.Lock()
             )
             if plan_lock.locked():
+                if restart_candidate:
+                    self._restart_reconciliation_counters[
+                        "single_flight_collision_count"
+                    ] += 1
+                    self._restart_reconciliation_counters[
+                        "expensive_probes_avoided"
+                    ] += 1
                 pending += 1
                 continue
             async with plan_lock:
                 plan = self._load(candidate.plan_id)
-                if not self._eligible_lifecycle_reconciliation(plan):
+                restart_candidate = (
+                    self._restart_reconciliation_candidate(plan)
+                )
+                if not restart_candidate and not (
+                    self._eligible_lifecycle_reconciliation(plan)
+                ):
                     continue
                 try:
                     task = self.task_repository.get_for_plan(plan.plan_id)
@@ -6766,7 +7147,22 @@ class ChangeGovernanceService:
                     raise GovernanceError(
                         ErrorCode.EXECUTION_TASK_STORAGE_ERROR
                     ) from exc
-                if task is not None:
+                if restart_candidate:
+                    gate = self._restart_reconciliation_gate(plan, task)
+                    if not gate.get("eligible"):
+                        counters = self._restart_reconciliation_counters
+                        counters["cheap_gate_rejection_count"] += 1
+                        counters["expensive_probes_avoided"] += 1
+                        terminal_reason = gate.get("terminal_reason")
+                        if isinstance(terminal_reason, str):
+                            self._terminalize_restart_reconciliation(
+                                plan, task, terminal_reason
+                            )
+                            failed += 1
+                        else:
+                            pending += 1
+                        continue
+                elif task is not None:
                     if task.state in TERMINAL_TASK_STATES:
                         continue
                     if not self._task_is_dispatched(task):
@@ -6777,14 +7173,30 @@ class ChangeGovernanceService:
                         )
                         failed += 1
                         continue
-                    if self._task_deadline_expired(task):
-                        self._manual_review_task(
-                            task,
-                            "maximum_post_dispatch_deadline_exceeded",
-                            plan,
-                        )
-                        failed += 1
-                        continue
+                if (
+                    selected >= max_plans
+                    or time.monotonic() - started >= time_budget_seconds
+                ):
+                    bounded = True
+                    break
+                selected += 1
+                reconciliation_key = (
+                    task.task_id if task is not None else plan.plan_id
+                )
+                if (
+                    restart_candidate
+                    and reconciliation_key
+                    in self._restart_reconciliation_inflight
+                ):
+                    self._restart_reconciliation_counters[
+                        "single_flight_collision_count"
+                    ] += 1
+                    self._restart_reconciliation_counters[
+                        "expensive_probes_avoided"
+                    ] += 1
+                    pending += 1
+                    continue
+                if task is not None:
                     self._active_task_ids_by_plan[
                         plan.plan_id
                     ] = task.task_id
@@ -6799,6 +7211,13 @@ class ChangeGovernanceService:
                     self._active_task_ids_by_plan.pop(
                         plan.plan_id, None
                     )
+                    if restart_candidate:
+                        self._restart_reconciliation_counters[
+                            "single_flight_collision_count"
+                        ] += 1
+                        self._restart_reconciliation_counters[
+                            "expensive_probes_avoided"
+                        ] += 1
                     pending += 1
                     continue
                 checked += 1
@@ -6812,14 +7231,6 @@ class ChangeGovernanceService:
                         plan.operational.verification.status = (
                             "verification_pending"
                         )
-                    self._record(
-                        plan,
-                        (
-                            f"{plan.operation.value}_{trigger}_"
-                            "reconciliation_started"
-                        ),
-                        "success",
-                    )
                     remaining = (
                         time_budget_seconds
                         - (time.monotonic() - started)
@@ -6828,6 +7239,99 @@ class ChangeGovernanceService:
                         pending += 1
                         bounded = True
                         break
+                    attempt_state: dict[str, Any] | None = None
+                    if restart_candidate:
+                        gate = self._restart_reconciliation_gate(plan, task)
+                        if not gate.get("eligible"):
+                            self._restart_reconciliation_counters[
+                                "cheap_gate_rejection_count"
+                            ] += 1
+                            self._restart_reconciliation_counters[
+                                "expensive_probes_avoided"
+                            ] += 1
+                            terminal_reason = gate.get("terminal_reason")
+                            if isinstance(terminal_reason, str):
+                                self._terminalize_restart_reconciliation(
+                                    plan, task, terminal_reason
+                                )
+                                failed += 1
+                            else:
+                                pending += 1
+                            self._active_task_ids_by_plan.pop(
+                                plan.plan_id, None
+                            )
+                            continue
+                        evidence_deadline = str(
+                            gate["evidence_deadline"]
+                        )
+                        deadline_remaining = (
+                            parse_task_timestamp(evidence_deadline)
+                            - self.now()
+                        ).total_seconds()
+                        if deadline_remaining <= 0:
+                            self._terminalize_restart_reconciliation(
+                                plan,
+                                task,
+                                RESTART_VERIFICATION_WINDOW_EXPIRED,
+                            )
+                            self._restart_reconciliation_counters[
+                                "expensive_probes_avoided"
+                            ] += 1
+                            failed += 1
+                            self._active_task_ids_by_plan.pop(
+                                plan.plan_id, None
+                            )
+                            continue
+                        attempt_state, task = (
+                            self._begin_restart_reconciliation_attempt(
+                                plan,
+                                task,
+                                trigger=trigger,
+                                evidence_deadline=evidence_deadline,
+                            )
+                        )
+                        self._restart_reconciliation_inflight.add(
+                            reconciliation_key
+                        )
+                        self._restart_reconciliation_active = {
+                            "active": True,
+                            "plan_id": plan.plan_id,
+                            "task_id": (
+                                task.task_id if task is not None else None
+                            ),
+                            "task_state": (
+                                task.state.value if task is not None else None
+                            ),
+                            "operation": plan.operation.value,
+                            "attempt_count": attempt_state["attempt_count"],
+                            "last_attempt_at": attempt_state[
+                                "last_attempt_at"
+                            ],
+                            "next_attempt_at": attempt_state[
+                                "next_attempt_at"
+                            ],
+                            "backoff_seconds": attempt_state[
+                                "backoff_seconds"
+                            ],
+                            "evidence_deadline": evidence_deadline,
+                        }
+                        self._restart_reconciliation_counters[
+                            "expensive_probe_count"
+                        ] += 1
+                        remaining = min(
+                            remaining,
+                            deadline_remaining,
+                            RESTART_RECONCILIATION_PROBE_TIMEOUT_SECONDS,
+                        )
+                    else:
+                        self._record(
+                            plan,
+                            (
+                                f"{plan.operation.value}_{trigger}_"
+                                "reconciliation_started"
+                            ),
+                            "success",
+                        )
                     self._active_lifecycle_reconciliations += 1
                     try:
                         result = await asyncio.wait_for(
@@ -6837,17 +7341,26 @@ class ChangeGovernanceService:
                     except TimeoutError:
                         pending += 1
                         bounded = True
-                        self._record(
-                            plan,
-                            (
-                                f"{plan.operation.value}_{trigger}_"
-                                "reconciliation_deferred"
-                            ),
-                            "partial",
-                            error_code=(
-                                ErrorCode.OPERATIONAL_VERIFICATION_PENDING.value
-                            ),
-                        )
+                        if restart_candidate and attempt_state is not None:
+                            plan = self._load(plan.plan_id)
+                            task = self._complete_restart_reconciliation_attempt(
+                                plan,
+                                task,
+                                attempt_state,
+                                result="timeout",
+                            )
+                        else:
+                            self._record(
+                                plan,
+                                (
+                                    f"{plan.operation.value}_{trigger}_"
+                                    "reconciliation_deferred"
+                                ),
+                                "partial",
+                                error_code=(
+                                    ErrorCode.OPERATIONAL_VERIFICATION_PENDING.value
+                                ),
+                            )
                         if task is not None:
                             task = self._load_task(task.task_id)
                             self._project_task_after_apply(
@@ -6860,6 +7373,23 @@ class ChangeGovernanceService:
                         continue
                     except GovernanceError as exc:
                         failed += 1
+                        if restart_candidate and attempt_state is not None:
+                            self._restart_reconciliation_counters[
+                                "failure_count"
+                            ] += 1
+                            plan = self._load(plan.plan_id)
+                            task = self._complete_restart_reconciliation_attempt(
+                                plan,
+                                task,
+                                attempt_state,
+                                result="failed",
+                                terminal=plan.status
+                                in {
+                                    PlanStatus.APPLIED,
+                                    PlanStatus.FAILED,
+                                    PlanStatus.VERIFICATION_FAILED,
+                                },
+                            )
                         if task is not None:
                             task = self._load_task(task.task_id)
                             self._project_task_after_apply(
@@ -6870,6 +7400,10 @@ class ChangeGovernanceService:
                         continue
                     except Exception as exc:
                         failed += 1
+                        if restart_candidate:
+                            self._restart_reconciliation_counters[
+                                "failure_count"
+                            ] += 1
                         log_event(
                             self.logger,
                             logging.WARNING,
@@ -6884,20 +7418,34 @@ class ChangeGovernanceService:
                                 "error_type": type(exc).__name__,
                             },
                         )
-                        try:
-                            self._record(
-                                plan,
-                                (
-                                    f"{plan.operation.value}_{trigger}_"
-                                    "reconciliation_deferred"
-                                ),
-                                "partial",
-                                error_code=(
-                                    ErrorCode.OPERATIONAL_VERIFICATION_PENDING.value
-                                ),
-                            )
-                        except Exception:
-                            pass
+                        if restart_candidate and attempt_state is not None:
+                            try:
+                                plan = self._load(plan.plan_id)
+                                task = (
+                                    self._complete_restart_reconciliation_attempt(
+                                        plan,
+                                        task,
+                                        attempt_state,
+                                        result="failed",
+                                    )
+                                )
+                            except Exception:
+                                pass
+                        else:
+                            try:
+                                self._record(
+                                    plan,
+                                    (
+                                        f"{plan.operation.value}_{trigger}_"
+                                        "reconciliation_deferred"
+                                    ),
+                                    "partial",
+                                    error_code=(
+                                        ErrorCode.OPERATIONAL_VERIFICATION_PENDING.value
+                                    ),
+                                )
+                            except Exception:
+                                pass
                         if task is not None:
                             task = self._load_task(task.task_id)
                             self._project_task_after_apply(
@@ -6912,6 +7460,35 @@ class ChangeGovernanceService:
                         self._active_lifecycle_reconciliations -= 1
                         self._active_task_ids_by_plan.pop(
                             plan.plan_id, None
+                        )
+                        if restart_candidate:
+                            self._restart_reconciliation_inflight.discard(
+                                reconciliation_key
+                            )
+                            self._restart_reconciliation_active = {
+                                "active": False,
+                                "plan_id": None,
+                                "task_id": None,
+                                "task_state": None,
+                                "operation": None,
+                                "attempt_count": 0,
+                                "last_attempt_at": None,
+                                "next_attempt_at": None,
+                                "backoff_seconds": 0,
+                                "evidence_deadline": None,
+                            }
+                    if restart_candidate and attempt_state is not None:
+                        plan = self._load(plan.plan_id)
+                        task = self._complete_restart_reconciliation_attempt(
+                            plan,
+                            task,
+                            attempt_state,
+                            result=(
+                                "verified"
+                                if result.get("status") == "applied"
+                                else "pending"
+                            ),
+                            terminal=result.get("status") == "applied",
                         )
                     if task is not None:
                         task = self._load_task(task.task_id)
@@ -6928,6 +7505,7 @@ class ChangeGovernanceService:
             "pending": pending,
             "failed": failed,
             "bounded": bounded,
+            "provider_dispatches": 0,
         }
 
     def _lifecycle_preflight_matches(
@@ -9932,6 +10510,66 @@ class ChangeGovernanceService:
             )
         )
         tasks_by_plan = {task.plan_id: task for task in tasks}
+        pending_restart_eligible = 0
+        pending_restart_backoff = 0
+        for plan in operational_plans:
+            if not self._restart_reconciliation_candidate(plan):
+                continue
+            gate = self._restart_reconciliation_gate(
+                plan, tasks_by_plan.get(plan.plan_id)
+            )
+            if gate.get("eligible"):
+                pending_restart_eligible += 1
+            elif gate.get("backoff"):
+                pending_restart_backoff += 1
+        persisted_restart_terminalizations = sum(
+            event.event.endswith("_reconciliation_terminalized")
+            for plan in operational_plans
+            for event in plan.events
+        )
+        persisted_restart_expirations = sum(
+            event.error_code == RESTART_VERIFICATION_WINDOW_EXPIRED
+            for plan in operational_plans
+            for event in plan.events
+        )
+        restart_active = dict(self._restart_reconciliation_active)
+        restart_counters = dict(self._restart_reconciliation_counters)
+        restart_counters["expired_record_count"] = max(
+            int(restart_counters["expired_record_count"]),
+            persisted_restart_expirations,
+        )
+        restart_counters["manual_review_terminalization_count"] = max(
+            int(restart_counters["manual_review_terminalization_count"]),
+            persisted_restart_terminalizations,
+        )
+        summary["restart_reconciliation"] = {
+            **restart_active,
+            "last_result": restart_counters["last_result"],
+            "pending_eligible_record_count": pending_restart_eligible,
+            "pending_backoff_record_count": pending_restart_backoff,
+            "terminalized_record_count": (
+                persisted_restart_terminalizations
+            ),
+            "expired_record_count": restart_counters[
+                "expired_record_count"
+            ],
+            "expensive_probe_count": restart_counters[
+                "expensive_probe_count"
+            ],
+            "expensive_probes_avoided": restart_counters[
+                "expensive_probes_avoided"
+            ],
+            "cheap_gate_rejection_count": restart_counters[
+                "cheap_gate_rejection_count"
+            ],
+            "single_flight_collision_count": restart_counters[
+                "single_flight_collision_count"
+            ],
+            "manual_review_terminalization_count": restart_counters[
+                "manual_review_terminalization_count"
+            ],
+            "failure_count": restart_counters["failure_count"],
+        }
 
         def apply_attempt_count(plan: ChangePlan) -> int:
             def plan_event_matches(event: ChangeEvent) -> bool:
