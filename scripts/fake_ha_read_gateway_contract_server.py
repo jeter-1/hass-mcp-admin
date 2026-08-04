@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from copy import deepcopy
 from datetime import UTC, datetime
 import json
 from typing import Any
@@ -138,6 +139,8 @@ INSTALLED_ADDONS = [
         "repository": "abcdef12",
     }
 ]
+SOURCE_DERIVED_MINIMUM_ADDON_DETAIL_BYTES = 71_986
+ADDON_DETAIL_PROFILE = "compact"
 DASHBOARDS = [
     {
         "id": "compatibility-fixture",
@@ -204,6 +207,8 @@ class FixtureState:
             "operational_backup_creates": list(
                 self.operational_backup_creates
             ),
+            "addon_detail_profile": ADDON_DETAIL_PROFILE,
+            "addon_detail_payload_bytes": _addon_detail_payload_bytes(),
         }
 
 
@@ -294,7 +299,7 @@ def _result_for(message_type: str, request_data: dict[str, Any]) -> Any:
             slug = endpoint.removeprefix("/addons/").removesuffix(
                 "/info"
             )
-            return next(
+            addon = next(
                 (
                     addon
                     for addon in INSTALLED_ADDONS
@@ -302,6 +307,7 @@ def _result_for(message_type: str, request_data: dict[str, Any]) -> Any:
                 ),
                 None,
             )
+            return _addon_detail(addon) if addon is not None else None
         return None
     if message_type == "get_states":
         return STATES
@@ -372,6 +378,77 @@ def _result_for(message_type: str, request_data: dict[str, Any]) -> Any:
             "last_action_event": STATE.last_backup_event,
         }
     return None
+
+
+def _addon_detail(addon: dict[str, Any]) -> dict[str, Any]:
+    detail = deepcopy(addon)
+    if ADDON_DETAIL_PROFILE != "live-8.0.0":
+        return detail
+    detail.update(
+        {
+            "advanced": False,
+            "arch": ["amd64", "aarch64", "armv7"],
+            "available": True,
+            "build": False,
+            "changelog": False,
+            "documentation": True,
+            "full_access": False,
+            "hassio_api": True,
+            "homeassistant_api": True,
+            "hostname": "abcdef12-ha-mcp",
+            "ingress": False,
+            "long_description": (
+                "Synthetic source-shaped Supervisor add-on detail."
+            ),
+            "options": {},
+            "protected": True,
+            "rating": 4,
+            "schema": {},
+            "stage": "stable",
+            "translations": {
+                locale: {
+                    "configuration": {
+                        "synthetic_contract_text": ""
+                    }
+                }
+                for locale in (
+                    "de",
+                    "en",
+                    "es",
+                    "fr",
+                    "it",
+                    "ru",
+                    "zh-Hans",
+                )
+            },
+            "url": "https://example.invalid/synthetic-addon",
+            "version_latest": "8.0.0",
+        }
+    )
+    payload = {"success": True, "addon": detail}
+    encoded = json.dumps(
+        payload,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    padding = SOURCE_DERIVED_MINIMUM_ADDON_DETAIL_BYTES - len(encoded)
+    if padding <= 0:
+        raise RuntimeError("live-equivalent add-on detail baseline is too large")
+    detail["translations"]["en"]["configuration"][
+        "synthetic_contract_text"
+    ] = "x" * padding
+    return detail
+
+
+def _addon_detail_payload_bytes() -> int:
+    detail = _addon_detail(INSTALLED_ADDONS[0])
+    return len(
+        json.dumps(
+            {"success": True, "addon": detail},
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    )
 
 
 def _generate_backup(request_data: dict[str, Any]) -> dict[str, Any] | None:
@@ -502,7 +579,19 @@ def main() -> None:
         choices=("7.14.1", "7.14.2", "8.0.0"),
         required=True,
     )
+    parser.add_argument(
+        "--addon-detail-profile",
+        choices=("compact", "live-8.0.0"),
+        default="compact",
+    )
     args = parser.parse_args()
+    global ADDON_DETAIL_PROFILE
+    ADDON_DETAIL_PROFILE = args.addon_detail_profile
+    if (
+        ADDON_DETAIL_PROFILE == "live-8.0.0"
+        and args.upstream_version != "8.0.0"
+    ):
+        parser.error("live-8.0.0 detail requires upstream version 8.0.0")
     INSTALLED_ADDONS[0]["version"] = args.upstream_version
     application = web.Application(middlewares=[read_only_guard])
     application.router.add_get("/api/", api_root)

@@ -89,6 +89,13 @@ EXPECTED_HELD_TOOLS = {"ha_get_operation_status", "ha_search"}
 EXPECTED_DASHBOARD_RUNTIME_FINGERPRINT = (
     "fb7f3789c8c020d8636a96b85a207635e94eefe9e0944c8814de59aba17e532e"
 )
+EXPECTED_LIFECYCLE_ADDON_RESPONSE_MODEL = (
+    "ha-mcp-lifecycle-addon-structured-content-v1"
+)
+EXPECTED_LIFECYCLE_ADDON_RESPONSE_ENVELOPE = (
+    "mcp-direct-structured-content-v1"
+)
+EXPECTED_SOURCE_DERIVED_MINIMUM_DETAIL_BYTES = 71_986
 ACCEPTANCE_TIMEOUT_SECONDS = 180
 
 
@@ -98,6 +105,50 @@ class AcceptanceFailure(RuntimeError):
 
 class _UnusedConfigurationGateway:
     """Unused configuration boundary required by the governance service."""
+
+
+class _LifecycleEnvelopeRecordingTransport(McpReadGatewayTransport):
+    """Record bounded envelope facts without retaining add-on response data."""
+
+    detail_text_bytes: int | None = None
+    detail_text_item_count: int | None = None
+    detail_structured_content_present: bool = False
+
+    async def execute_read(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        **kwargs: Any,
+    ):
+        observed = await super().execute_read(
+            tool_name,
+            arguments,
+            **kwargs,
+        )
+        if tool_name == "ha_get_addon" and "slug" in arguments:
+            result = observed.call_result
+            content = result.get("content")
+            self.detail_text_item_count = (
+                len(content) if isinstance(content, list) else None
+            )
+            text = (
+                content[0].get("text")
+                if isinstance(content, list)
+                and len(content) == 1
+                and isinstance(content[0], dict)
+                and content[0].get("type") == "text"
+                else None
+            )
+            self.detail_text_bytes = (
+                len(text.encode("utf-8"))
+                if isinstance(text, str)
+                else None
+            )
+            self.detail_structured_content_present = isinstance(
+                result.get("structuredContent"),
+                dict,
+            )
+        return observed
 
 
 def require(condition: bool, message: str) -> None:
@@ -264,14 +315,15 @@ async def _planning_acceptance(
             client_version=SERVER_VERSION,
         ),
     )
+    lifecycle_transport = _LifecycleEnvelopeRecordingTransport(
+        endpoint,
+        timeout_seconds=30.0,
+        client_version=SERVER_VERSION,
+    )
     lifecycle_provider = ReviewedOperationalLifecycleProvider()
     lifecycle_provider.configure(
         settings,
-        transport=McpReadGatewayTransport(
-            endpoint,
-            timeout_seconds=30.0,
-            client_version=SERVER_VERSION,
-        ),
+        transport=lifecycle_transport,
     )
 
     async def configuration_validator() -> dict[str, Any]:
@@ -369,6 +421,39 @@ async def _planning_acceptance(
     require(lifecycle_health.get("fallback_count") == 0, "lifecycle fallback occurred")
     require(backup_health.get("selected_compatibility_entry_id") == EXPECTED_ENTRY_ID, "backup selected the wrong release")
     require(lifecycle_health.get("selected_compatibility_entry_id") == EXPECTED_ENTRY_ID, "lifecycle selected the wrong release")
+    require(
+        lifecycle_health.get(
+            "lifecycle_addon_response_contract_model"
+        )
+        == EXPECTED_LIFECYCLE_ADDON_RESPONSE_MODEL,
+        "lifecycle selected the wrong add-on response model",
+    )
+    require(
+        lifecycle_health.get(
+            "lifecycle_addon_response_envelope_variant"
+        )
+        == EXPECTED_LIFECYCLE_ADDON_RESPONSE_ENVELOPE,
+        "lifecycle selected the wrong add-on response envelope",
+    )
+    require(
+        lifecycle_health.get("lifecycle_addon_response_diagnostics")
+        is None,
+        "lifecycle retained response-contract failure diagnostics",
+    )
+    require(
+        lifecycle_transport.detail_text_item_count == 1,
+        "immutable add-on detail did not emit one text item",
+    )
+    require(
+        lifecycle_transport.detail_text_bytes is not None
+        and lifecycle_transport.detail_text_bytes
+        >= EXPECTED_SOURCE_DERIVED_MINIMUM_DETAIL_BYTES,
+        "immutable add-on detail text did not cross the Beta 14 bound",
+    )
+    require(
+        lifecycle_transport.detail_structured_content_present,
+        "immutable add-on detail omitted direct structured content",
+    )
     return {
         "persisted_plan_count": len(persisted),
         "proposal_operations": sorted(
@@ -383,6 +468,25 @@ async def _planning_acceptance(
         "lifecycle_dispatch_counts": lifecycle_dispatch_counts,
         "backup_fallback_count": backup_health.get("fallback_count"),
         "lifecycle_fallback_count": lifecycle_health.get("fallback_count"),
+        "lifecycle_addon_response_contract_model": (
+            lifecycle_health.get(
+                "lifecycle_addon_response_contract_model"
+            )
+        ),
+        "lifecycle_addon_response_envelope_variant": (
+            lifecycle_health.get(
+                "lifecycle_addon_response_envelope_variant"
+            )
+        ),
+        "immutable_addon_detail_text_bytes": (
+            lifecycle_transport.detail_text_bytes
+        ),
+        "immutable_addon_detail_text_item_count": (
+            lifecycle_transport.detail_text_item_count
+        ),
+        "immutable_addon_detail_structured_content_present": (
+            lifecycle_transport.detail_structured_content_present
+        ),
     }
 
 
@@ -446,6 +550,15 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         )
 
     after = fixture_stats(args.fixture_stats_url)
+    require(
+        after.get("addon_detail_profile") == "live-8.0.0",
+        "fixture did not use the live-equivalent add-on detail profile",
+    )
+    require(
+        after.get("addon_detail_payload_bytes")
+        == EXPECTED_SOURCE_DERIVED_MINIMUM_DETAIL_BYTES,
+        "live-equivalent add-on detail byte cardinality changed",
+    )
     require(not after.get("http_mutations"), "an HTTP mutation reached the synthetic fixture")
     require(not after.get("websocket_mutations"), "an unreviewed WebSocket mutation reached the synthetic fixture")
     require(not after.get("operational_backup_creates"), "backup planning created a backup")
@@ -490,6 +603,10 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             ),
             "backup_create_count": len(
                 after.get("operational_backup_creates") or []
+            ),
+            "addon_detail_profile": after.get("addon_detail_profile"),
+            "addon_detail_payload_bytes": after.get(
+                "addon_detail_payload_bytes"
             ),
         },
         "fallback_count": 0,

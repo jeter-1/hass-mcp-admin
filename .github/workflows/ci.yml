@@ -454,6 +454,7 @@ jobs:
           set -euo pipefail
           python scripts/fake_ha_read_gateway_contract_server.py \
             --port 18123 --upstream-version 8.0.0 \
+            --addon-detail-profile live-8.0.0 \
             > "$RUNNER_TEMP/addon-runtime-ha.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/addon-runtime-ha.pid"
           for attempt in $(seq 1 30); do
