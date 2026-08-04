@@ -16,6 +16,9 @@ import re
 from typing import Any, Iterable, Mapping
 
 from ..clients.mcp import REQUIRED_DASHBOARD_TOOL
+from ..upstream_tool_policy import (
+    runtime_policy_state_fingerprint_projection,
+)
 
 
 CONTRACT_FAMILY = "ha_mcp_dashboard_read_v2"
@@ -458,12 +461,9 @@ def _validate_compiled_family(
         if contract_family == CONTRACT_FAMILY_V3:
             ha_meta = meta.get("ha_mcp")
             policy = ha_meta.get("policy") if isinstance(ha_meta, dict) else None
-            if policy != {
-                "deployment": "standalone",
-                "enabled": False,
-                "live": False,
-                "rules": 0,
-            }:
+            if not runtime_policy_state_fingerprint_projection(policy)[
+                "valid"
+            ]:
                 raise ContractValidationError("upstream_runtime_contract_mismatch")
     annotations = tool.get("annotations")
     if not isinstance(annotations, dict):
@@ -572,6 +572,22 @@ def normalize_runtime_contract(
         "compiled_argument_shapes": COMPILED_ARGUMENT_SHAPES,
         "prohibited_arguments": sorted(PROHIBITED_ARGUMENTS),
     }
+    runtime_metadata = tool.get("_meta")
+    if contract_family == CONTRACT_FAMILY_V3:
+        ha_meta = (
+            runtime_metadata.get("ha_mcp")
+            if isinstance(runtime_metadata, dict)
+            else None
+        )
+        policy = (
+            ha_meta.get("policy") if isinstance(ha_meta, dict) else None
+        )
+        policy_projection = runtime_policy_state_fingerprint_projection(
+            policy
+        )
+        security_contract["runtime_policy_state"] = policy_projection
+        runtime_metadata = json.loads(canonical_json(runtime_metadata))
+        runtime_metadata["ha_mcp"]["policy"] = policy_projection
     output_contract = {
         "declared_output_schema": {
             "present": "outputSchema" in tool,
@@ -588,8 +604,13 @@ def normalize_runtime_contract(
         "output": output_contract,
     }
     if contract_family == CONTRACT_FAMILY_V3:
+        runtime_contract["descriptor_identity"] = {
+            "name": tool.get("name"),
+            "description": tool.get("description"),
+            "annotations": _normalize_json_schema(tool.get("annotations")),
+        }
         runtime_contract["runtime_metadata"] = _normalize_json_schema(
-            tool.get("_meta")
+            runtime_metadata
         )
     return NormalizedRuntimeContract(
         input_contract=input_contract,

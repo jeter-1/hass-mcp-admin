@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from collections import Counter
 from dataclasses import dataclass
 import hashlib
@@ -52,6 +53,9 @@ RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2 = (
 RUNTIME_POLICY_STATE_FINGERPRINT_MODEL_V1 = (
     "ha-mcp-policy-runtime-state-v1"
 )
+REVIEWED_NORMALIZED_CATALOG_FINGERPRINT_MODEL_V1 = (
+    "ha-mcp-reviewed-normalized-catalog-v1"
+)
 RUNTIME_CONTRACT_FINGERPRINT_MODELS = frozenset(
     {
         RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1,
@@ -59,6 +63,23 @@ RUNTIME_CONTRACT_FINGERPRINT_MODELS = frozenset(
     }
 )
 MAX_RUNTIME_POLICY_RULE_COUNT = 10_000
+RUNTIME_POLICY_DYNAMIC_PATHS = frozenset(
+    {
+        "/_meta/ha_mcp/policy/deployment",
+        "/_meta/ha_mcp/policy/enabled",
+        "/_meta/ha_mcp/policy/live",
+        "/_meta/ha_mcp/policy/rules",
+    }
+)
+MAX_REVIEWED_CATALOG_DIAGNOSTICS = 16
+REVIEWED_CATALOG_COMPONENTS = (
+    "classification",
+    "input_schema_fingerprint",
+    "description_fingerprint",
+    "annotation_fingerprint",
+    "output_contract_fingerprint",
+    "runtime_contract_fingerprint",
+)
 RUNTIME_CONTRACT_DIAGNOSTIC_PATHS = (
     "/title",
     "/annotations/title",
@@ -167,6 +188,15 @@ def runtime_contract_fingerprint(
     if not isinstance(ha_mcp, dict):
         return schema_fingerprint(normalized)
     policy = ha_mcp.get("policy")
+    ha_mcp["policy"] = runtime_policy_state_fingerprint_projection(policy)
+    return schema_fingerprint(normalized)
+
+
+def runtime_policy_state_fingerprint_projection(
+    policy: Any,
+) -> dict[str, Any]:
+    """Project only validity of the exact reviewed dynamic policy shape."""
+
     policy_valid = (
         isinstance(policy, dict)
         and set(policy) == {"deployment", "enabled", "live", "rules"}
@@ -177,11 +207,10 @@ def runtime_contract_fingerprint(
         and not isinstance(policy.get("rules"), bool)
         and 0 <= policy["rules"] <= MAX_RUNTIME_POLICY_RULE_COUNT
     )
-    ha_mcp["policy"] = {
+    return {
         "fingerprint_model": RUNTIME_POLICY_STATE_FINGERPRINT_MODEL_V1,
         "valid": policy_valid,
     }
-    return schema_fingerprint(normalized)
 
 
 def runtime_contract_field_fingerprints(
@@ -203,6 +232,39 @@ def runtime_contract_field_fingerprints(
             {"present": present, "value": current if present else None}
         )
     return values
+
+
+def runtime_contract_mismatch_fields(
+    tool: dict[str, Any],
+    *,
+    expected_field_fingerprints: dict[str, str],
+    model: str,
+    limit: int = MAX_REVIEWED_CATALOG_DIAGNOSTICS,
+) -> tuple[str, ...]:
+    """Return bounded value-free fields relevant to one runtime model."""
+
+    observed_fields = runtime_contract_field_fingerprints(tool)
+    meta = tool.get("_meta")
+    ha_mcp = meta.get("ha_mcp") if isinstance(meta, dict) else None
+    policy = (
+        ha_mcp.get("policy") if isinstance(ha_mcp, dict) else None
+    )
+    normalized_policy_paths = (
+        RUNTIME_POLICY_DYNAMIC_PATHS
+        if model == RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2
+        and runtime_policy_state_fingerprint_projection(policy)["valid"]
+        else frozenset()
+    )
+    return tuple(
+        sorted(
+            pointer
+            for pointer in expected_field_fingerprints.keys()
+            | observed_fields.keys()
+            if expected_field_fingerprints.get(pointer)
+            != observed_fields.get(pointer)
+            and pointer not in normalized_policy_paths
+        )[: max(0, limit)]
+    )
 
 
 def runtime_description_fingerprint(value: Any) -> str | None:
@@ -624,6 +686,446 @@ class ReviewedUpstreamReleaseRegistry:
     @property
     def default_release(self) -> ReviewedUpstreamRelease:
         return self.by_version[self.default_version]
+
+
+@dataclass(frozen=True)
+class ReviewedCatalogToolMismatch:
+    """One bounded, value-free mismatch in a reviewed catalog."""
+
+    tool_name: str
+    components: tuple[str, ...]
+    runtime_contract_diff_fields: tuple[str, ...]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "tool_name": self.tool_name,
+            "components": list(self.components),
+            "runtime_contract_diff_fields": list(
+                self.runtime_contract_diff_fields
+            ),
+        }
+
+
+@dataclass(frozen=True)
+class ReviewedCatalogValidation:
+    """Fail-closed exact-release validation for one complete tools catalog."""
+
+    selected_compatibility_entry_id: str
+    observed_server_name: str
+    observed_upstream_version: str
+    observed_protocol_version: str
+    runtime_contract_fingerprint_model: str
+    aggregate_fingerprint_model: str
+    expected_tool_count: int
+    observed_tool_count: int
+    reviewed_accounted_count: int
+    missing_tool_count: int
+    missing_tools: tuple[str, ...]
+    additional_tool_count: int
+    additional_tools: tuple[str, ...]
+    duplicated_tool_count: int
+    duplicated_tools: tuple[str, ...]
+    unreviewed_tool_count: int
+    unreviewed_tools: tuple[str, ...]
+    invalid_descriptor_count: int
+    classification_mismatch_count: int
+    classification_mismatches: tuple[str, ...]
+    component_mismatch_counts: tuple[tuple[str, int], ...]
+    mismatch_diagnostics: tuple[ReviewedCatalogToolMismatch, ...]
+    diagnostics_truncated: bool
+    reviewed_standalone_raw_catalog_fingerprint: str
+    observed_raw_catalog_fingerprint: str | None
+    expected_normalized_catalog_fingerprint: str | None
+    normalized_catalog_fingerprint: str | None
+    validation_status: str
+
+    @property
+    def valid(self) -> bool:
+        return self.validation_status == "accepted_exact"
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "selected_compatibility_entry_id": (
+                self.selected_compatibility_entry_id
+            ),
+            "observed_server_name": self.observed_server_name,
+            "observed_upstream_version": self.observed_upstream_version,
+            "observed_protocol_version": self.observed_protocol_version,
+            "runtime_contract_fingerprint_model": (
+                self.runtime_contract_fingerprint_model
+            ),
+            "aggregate_fingerprint_model": self.aggregate_fingerprint_model,
+            "expected_tool_count": self.expected_tool_count,
+            "observed_tool_count": self.observed_tool_count,
+            "reviewed_accounted_count": self.reviewed_accounted_count,
+            "missing_tool_count": self.missing_tool_count,
+            "missing_tools": list(self.missing_tools),
+            "additional_tool_count": self.additional_tool_count,
+            "additional_tools": list(self.additional_tools),
+            "duplicated_tool_count": self.duplicated_tool_count,
+            "duplicated_tools": list(self.duplicated_tools),
+            "unreviewed_tool_count": self.unreviewed_tool_count,
+            "unreviewed_tools": list(self.unreviewed_tools),
+            "invalid_descriptor_count": self.invalid_descriptor_count,
+            "classification_mismatch_count": (
+                self.classification_mismatch_count
+            ),
+            "classification_mismatches": list(
+                self.classification_mismatches
+            ),
+            "component_mismatch_counts": dict(
+                self.component_mismatch_counts
+            ),
+            "mismatch_diagnostics": [
+                item.as_dict() for item in self.mismatch_diagnostics
+            ],
+            "diagnostics_truncated": self.diagnostics_truncated,
+            "reviewed_standalone_raw_catalog_fingerprint": (
+                self.reviewed_standalone_raw_catalog_fingerprint
+            ),
+            "observed_raw_catalog_fingerprint": (
+                self.observed_raw_catalog_fingerprint
+            ),
+            "expected_normalized_catalog_fingerprint": (
+                self.expected_normalized_catalog_fingerprint
+            ),
+            "normalized_catalog_fingerprint": (
+                self.normalized_catalog_fingerprint
+            ),
+            "validation_status": self.validation_status,
+            "valid": self.valid,
+        }
+
+
+def _catalog_tool_component_fingerprints(
+    tool: dict[str, Any],
+    *,
+    runtime_contract_fingerprint_model: str,
+) -> dict[str, str]:
+    return {
+        "input_schema_fingerprint": schema_fingerprint(
+            tool.get("inputSchema")
+        ),
+        "description_fingerprint": (
+            runtime_description_fingerprint(tool.get("description"))
+            or schema_fingerprint({"invalid_description": True})
+        ),
+        "annotation_fingerprint": schema_fingerprint(
+            {
+                "present": "annotations" in tool,
+                "value": tool.get("annotations"),
+            }
+        ),
+        "output_contract_fingerprint": schema_fingerprint(
+            {
+                "present": "outputSchema" in tool,
+                "value": tool.get("outputSchema"),
+            }
+        ),
+        "runtime_contract_fingerprint": runtime_contract_fingerprint(
+            tool,
+            model=runtime_contract_fingerprint_model,
+        ),
+    }
+
+
+def _normalized_catalog_fingerprint(
+    release: ReviewedUpstreamRelease,
+    entries: list[dict[str, str]],
+) -> str:
+    return schema_fingerprint(
+        {
+            "fingerprint_model": (
+                REVIEWED_NORMALIZED_CATALOG_FINGERPRINT_MODEL_V1
+            ),
+            "selected_compatibility_entry_id": release.entry_id,
+            "runtime_contract_fingerprint_model": (
+                release.runtime_contract_fingerprint_model
+            ),
+            "tools": sorted(entries, key=lambda item: item["name"]),
+        }
+    )
+
+
+def validate_reviewed_release_catalog(
+    release: ReviewedUpstreamRelease,
+    *,
+    observed_server_name: str,
+    observed_upstream_version: str,
+    observed_protocol_version: str,
+    tools: Sequence[Any],
+) -> ReviewedCatalogValidation:
+    """Validate a complete catalog under one exact release-declared model.
+
+    Raw catalog fingerprints are retained as diagnostic evidence. Admission is
+    derived from the exact reviewed tool set and every per-tool contract
+    component, with runtime descriptors evaluated under the selected release's
+    explicit fingerprint model.
+    """
+
+    runtime_model = release.runtime_contract_fingerprint_model
+    expected_contracts = release.tool_contracts_by_name
+    expected_policy = release.policy.by_name
+    expected_names = set(expected_contracts)
+    component_counts = Counter(
+        {name: 0 for name in REVIEWED_CATALOG_COMPONENTS}
+    )
+    classification_mismatches = sorted(
+        name
+        for name in expected_names | set(expected_policy)
+        if name not in expected_contracts
+        or name not in expected_policy
+        or expected_contracts[name].policy_classification
+        != expected_policy[name].classification
+    )
+    component_counts["classification"] = len(classification_mismatches)
+
+    descriptors_by_name: dict[str, list[dict[str, Any]]] = {}
+    invalid_descriptor_count = 0
+    raw_tools: list[dict[str, Any]] = []
+    for item in tools:
+        if not isinstance(item, dict):
+            invalid_descriptor_count += 1
+            continue
+        raw_tools.append(dict(item))
+        name = item.get("name")
+        if not isinstance(name, str) or not _TOOL_NAME.fullmatch(name):
+            invalid_descriptor_count += 1
+            continue
+        descriptors_by_name.setdefault(name, []).append(item)
+
+    observed_names = set(descriptors_by_name)
+    missing = sorted(expected_names - observed_names)
+    additional = sorted(observed_names - expected_names)
+    duplicated = sorted(
+        name
+        for name, descriptors in descriptors_by_name.items()
+        if len(descriptors) != 1
+    )
+    unreviewed = list(additional)
+
+    observed_raw_fingerprint: str | None = None
+    try:
+        if len(raw_tools) == len(tools):
+            observed_raw_fingerprint = catalog_fingerprint(raw_tools)
+    except (
+        TypeError,
+        ValueError,
+        OverflowError,
+        UnicodeError,
+        RecursionError,
+    ):
+        invalid_descriptor_count += 1
+
+    expected_entries: list[dict[str, str]] = []
+    for name in sorted(expected_names):
+        contract = expected_contracts[name]
+        expected_entries.append(
+            {
+                "name": name,
+                "classification": contract.policy_classification,
+                "input_schema_fingerprint": (
+                    contract.input_schema_fingerprint
+                ),
+                "description_fingerprint": (
+                    contract.description_fingerprint
+                ),
+                "annotation_fingerprint": contract.annotation_fingerprint,
+                "output_contract_fingerprint": (
+                    contract.output_contract_fingerprint
+                ),
+                "runtime_contract_fingerprint": (
+                    contract.runtime_contract_fingerprint
+                ),
+            }
+        )
+
+    expected_normalized: str | None = None
+    runtime_model_supported = runtime_model in (
+        RUNTIME_CONTRACT_FINGERPRINT_MODELS
+    )
+    if runtime_model_supported:
+        expected_normalized = _normalized_catalog_fingerprint(
+            release, expected_entries
+        )
+
+    observed_entries: list[dict[str, str]] = []
+    mismatch_items: list[ReviewedCatalogToolMismatch] = []
+    accounted = 0
+    for name in sorted(expected_names & observed_names):
+        descriptors = descriptors_by_name[name]
+        if len(descriptors) != 1:
+            continue
+        tool = descriptors[0]
+        components: list[str] = []
+        diff_fields: tuple[str, ...] = ()
+        try:
+            observed_components = _catalog_tool_component_fingerprints(
+                tool,
+                runtime_contract_fingerprint_model=runtime_model,
+            )
+        except (
+            TypeError,
+            ValueError,
+            OverflowError,
+            UnicodeError,
+            RecursionError,
+        ):
+            invalid_descriptor_count += 1
+            components.append("descriptor_invalid")
+            observed_components = None
+
+        contract = expected_contracts[name]
+        classification = (
+            expected_policy[name].classification
+            if name in expected_policy
+            else "unreviewed"
+        )
+        if (
+            name in classification_mismatches
+            or classification != contract.policy_classification
+        ):
+            components.append("classification")
+        if observed_components is not None:
+            for component, observed in observed_components.items():
+                if observed != getattr(contract, component):
+                    components.append(component)
+                    component_counts[component] += 1
+            observed_entries.append(
+                {
+                    "name": name,
+                    "classification": classification,
+                    **observed_components,
+                }
+            )
+            if "runtime_contract_fingerprint" in components:
+                try:
+                    diff_fields = runtime_contract_mismatch_fields(
+                        tool,
+                        expected_field_fingerprints=dict(
+                            contract.runtime_contract_field_fingerprints
+                        ),
+                        model=runtime_model,
+                    )
+                except (
+                    TypeError,
+                    ValueError,
+                    OverflowError,
+                    UnicodeError,
+                    RecursionError,
+                ):
+                    diff_fields = ()
+        if components:
+            mismatch_items.append(
+                ReviewedCatalogToolMismatch(
+                    tool_name=name,
+                    components=tuple(sorted(set(components))),
+                    runtime_contract_diff_fields=diff_fields,
+                )
+            )
+        else:
+            accounted += 1
+
+    normalized_fingerprint: str | None = None
+    if (
+        runtime_model_supported
+        and not missing
+        and not additional
+        and not duplicated
+        and invalid_descriptor_count == 0
+        and len(observed_entries) == len(expected_entries)
+    ):
+        normalized_fingerprint = _normalized_catalog_fingerprint(
+            release, observed_entries
+        )
+
+    identity_status = None
+    if observed_server_name != release.server_name:
+        identity_status = "server_identity_mismatch"
+    elif observed_upstream_version != release.version:
+        identity_status = "upstream_version_mismatch"
+    elif observed_protocol_version not in release.allowed_protocol_versions:
+        identity_status = "unsupported_protocol_version"
+    elif not runtime_model_supported:
+        identity_status = "unsupported_runtime_fingerprint_model"
+
+    valid = (
+        identity_status is None
+        and len(tools) == release.advertised_tool_count
+        and not missing
+        and not additional
+        and not duplicated
+        and invalid_descriptor_count == 0
+        and not classification_mismatches
+        and all(value == 0 for value in component_counts.values())
+        and accounted == release.advertised_tool_count
+        and expected_normalized is not None
+        and normalized_fingerprint == expected_normalized
+    )
+    validation_status = (
+        "accepted_exact"
+        if valid
+        else identity_status or "rejected_catalog_mismatch"
+    )
+
+    bounded_mismatches = mismatch_items[
+        :MAX_REVIEWED_CATALOG_DIAGNOSTICS
+    ]
+    bounded_missing = missing[:MAX_REVIEWED_CATALOG_DIAGNOSTICS]
+    bounded_additional = additional[:MAX_REVIEWED_CATALOG_DIAGNOSTICS]
+    bounded_duplicated = duplicated[:MAX_REVIEWED_CATALOG_DIAGNOSTICS]
+    bounded_unreviewed = unreviewed[:MAX_REVIEWED_CATALOG_DIAGNOSTICS]
+    bounded_classifications = classification_mismatches[
+        :MAX_REVIEWED_CATALOG_DIAGNOSTICS
+    ]
+    diagnostics_truncated = any(
+        (
+            len(mismatch_items) > len(bounded_mismatches),
+            len(missing) > len(bounded_missing),
+            len(additional) > len(bounded_additional),
+            len(duplicated) > len(bounded_duplicated),
+            len(unreviewed) > len(bounded_unreviewed),
+            len(classification_mismatches)
+            > len(bounded_classifications),
+        )
+    )
+    return ReviewedCatalogValidation(
+        selected_compatibility_entry_id=release.entry_id,
+        observed_server_name=observed_server_name,
+        observed_upstream_version=observed_upstream_version,
+        observed_protocol_version=observed_protocol_version,
+        runtime_contract_fingerprint_model=runtime_model,
+        aggregate_fingerprint_model=(
+            REVIEWED_NORMALIZED_CATALOG_FINGERPRINT_MODEL_V1
+        ),
+        expected_tool_count=release.advertised_tool_count,
+        observed_tool_count=len(tools),
+        reviewed_accounted_count=accounted,
+        missing_tool_count=len(missing),
+        missing_tools=tuple(bounded_missing),
+        additional_tool_count=len(additional),
+        additional_tools=tuple(bounded_additional),
+        duplicated_tool_count=len(duplicated),
+        duplicated_tools=tuple(bounded_duplicated),
+        unreviewed_tool_count=len(unreviewed),
+        unreviewed_tools=tuple(bounded_unreviewed),
+        invalid_descriptor_count=invalid_descriptor_count,
+        classification_mismatch_count=len(classification_mismatches),
+        classification_mismatches=tuple(bounded_classifications),
+        component_mismatch_counts=tuple(
+            (name, component_counts[name])
+            for name in REVIEWED_CATALOG_COMPONENTS
+        ),
+        mismatch_diagnostics=tuple(bounded_mismatches),
+        diagnostics_truncated=diagnostics_truncated,
+        reviewed_standalone_raw_catalog_fingerprint=(
+            release.catalog_fingerprint
+        ),
+        observed_raw_catalog_fingerprint=observed_raw_fingerprint,
+        expected_normalized_catalog_fingerprint=expected_normalized,
+        normalized_catalog_fingerprint=normalized_fingerprint,
+        validation_status=validation_status,
+    )
 
 
 def load_upstream_tool_policy(

@@ -30,6 +30,7 @@ from ha_mcp_engineering.clients.mcp import (  # noqa: E402
     McpDashboardRead,
     McpDashboardTransport,
     REQUIRED_DASHBOARD_TOOL,
+    _classified_transport_error,
     _classify_transport_exception,
 )
 from ha_mcp_engineering.configuration import (  # noqa: E402
@@ -481,6 +482,137 @@ class McpTransportLifecycleTests(unittest.IsolatedAsyncioTestCase):
         for exc, category in cases:
             with self.subTest(category=category):
                 self.assertEqual(_classify_transport_exception(exc), category)
+
+    def test_typed_exception_groups_preserve_precise_bounded_categories(self):
+        homogeneous = ExceptionGroup(
+            "nested",
+            [
+                DashboardTransportError(
+                    "upstream_runtime_contract_mismatch",
+                    retryable=False,
+                ),
+                ExceptionGroup(
+                    "deeper",
+                    [
+                        DashboardTransportError(
+                            "upstream_runtime_contract_mismatch",
+                            retryable=False,
+                        )
+                    ],
+                ),
+            ],
+        )
+        classified = _classified_transport_error(homogeneous)
+        self.assertEqual(
+            classified.category,
+            "upstream_runtime_contract_mismatch",
+        )
+        self.assertFalse(classified.retryable)
+        self.assertEqual(
+            classified.grouped_categories,
+            ("upstream_runtime_contract_mismatch",),
+        )
+
+        heterogeneous = ExceptionGroup(
+            "mixed",
+            [
+                DashboardTransportError("connection_failed", retryable=True),
+                DashboardTransportError(
+                    "upstream_security_contract_mismatch",
+                    retryable=False,
+                ),
+            ],
+        )
+        classified = _classified_transport_error(heterogeneous)
+        self.assertEqual(
+            classified.category,
+            "upstream_security_contract_mismatch",
+        )
+        self.assertFalse(classified.retryable)
+        self.assertEqual(
+            classified.grouped_categories,
+            ("connection_failed", "upstream_security_contract_mismatch"),
+        )
+
+        unknown = _classified_transport_error(
+            ExceptionGroup("unknown", [RuntimeError("synthetic-secret")])
+        )
+        self.assertEqual(unknown.category, "internal_error")
+        self.assertNotIn("synthetic-secret", repr(unknown))
+
+    async def test_async_context_group_preserves_typed_contract_category(self):
+        @asynccontextmanager
+        async def grouped_streamable(_url, **_kwargs):
+            try:
+                yield ("read", "write", lambda: "session-id")
+            except DashboardTransportError as exc:
+                raise ExceptionGroup(
+                    "synthetic context shutdown",
+                    [exc, RuntimeError("synthetic-secret")],
+                ) from None
+
+        class Session:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return False
+
+            async def initialize(self):
+                return types.InitializeResult(
+                    protocolVersion="2025-03-26",
+                    capabilities=types.ServerCapabilities(),
+                    serverInfo=types.Implementation(
+                        name="ha-mcp", version="8.0.0"
+                    ),
+                )
+
+            async def list_tools(self, cursor=None):
+                return types.ListToolsResult(
+                    tools=[
+                        types.Tool(
+                            name=REQUIRED_DASHBOARD_TOOL,
+                            description="read",
+                            inputSchema=dashboard_schema(),
+                            annotations=types.ToolAnnotations(
+                                readOnlyHint=True,
+                                destructiveHint=False,
+                            ),
+                        )
+                    ]
+                )
+
+        transport = McpDashboardTransport(
+            SECRET_URL,
+            timeout_seconds=2,
+            client_version=SERVER_VERSION,
+        )
+        with (
+            patch(
+                "ha_mcp_engineering.clients.mcp.streamablehttp_client",
+                grouped_streamable,
+            ),
+            patch("ha_mcp_engineering.clients.mcp.ClientSession", Session),
+        ):
+            with self.assertRaises(DashboardTransportError) as caught:
+                await transport.execute_dashboard_read(
+                    {"list_only": True, "include_screenshot": False},
+                    lambda _handshake: (_ for _ in ()).throw(
+                        DashboardTransportError(
+                            "upstream_runtime_contract_mismatch",
+                            retryable=False,
+                        )
+                    ),
+                )
+        self.assertEqual(
+            caught.exception.category,
+            "upstream_runtime_contract_mismatch",
+        )
+        self.assertFalse(caught.exception.retryable)
+        self.assertNotIn("synthetic-secret", repr(caught.exception))
 
     async def test_http_401_and_403_are_authentication_failures(self):
         for status in (401, 403):

@@ -1,12 +1,14 @@
 # Governed operational administration
 
-Version: `2.2.0-beta.13`
+Version: `2.2.0-beta.14`
 
-Beta 13 changes only the Engineering dependency pins. Beta 12 changed exact
-upstream read-admission evidence and diagnostics.
-Operational proposals, authority version 3, task schema 1, provider routing,
-argument constraints, verification and no-blind-redispatch behavior are
-unchanged.
+Beta 14 replaces stale raw-catalog admission equality in backup and lifecycle
+with the shared exact-release, model-aware full-catalog validator. It does not
+change supported operations, arguments, approval, plan hashing, dispatch,
+verification, reconciliation, or fallback. A valid probe may reach the
+existing proposal-only persistence boundary; invalid catalog or required-tool
+evidence still stops before persistence, and planning dispatches nothing.
+Beta 13's secure dependency pins and strict audit remain unchanged.
 
 ## Beta 11 bounded restart reconciliation
 

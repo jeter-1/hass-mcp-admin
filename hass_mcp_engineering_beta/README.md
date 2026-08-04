@@ -1,12 +1,13 @@
 # HA MCP Engineering Server Beta
 
 This directory contains the Engineering v2 add-on. Development version
-`2.2.0-beta.13` is a dependency-security release that updates only
-`aiohttp` and `cryptography` to stable fixed versions. It preserves bounded
-restart reconciliation, exact 7.14.2 compatibility, and Beta 12 automatic-read
-admission without changing provider behavior. The remaining `ha-mcp` 8.0.0
-dashboard, backup, and lifecycle correction moves to Beta 14, so production
-8.0.0 acceptance remains blocked.
+`2.2.0-beta.14` corrects the remaining exact `ha-mcp` 8.0.0 Dashboard v3,
+backup, and lifecycle admission paths after reproducing the Beta 12 canary
+failures against the immutable add-on runtime. It preserves Beta 12 automatic
+read admission, Beta 13's `aiohttp` and `cryptography` security updates,
+bounded restart reconciliation, and exact 7.14.2 compatibility. The corrected
+8.0.0 profile exposes 24 delegated reads and keeps `ha_search` and
+`ha_get_operation_status` held for a later production canary.
 Its technical “Beta” display name, slug, image repository, and runtime
 identity remain unchanged to avoid a migration. Stable v1.1.2
 `hass_mcp_admin` source remains in the repository as operationally retired
@@ -119,7 +120,7 @@ reboot and completeness defects, RC2dev14 established practical configuration
 plans, and RC2dev16 corrected delegated structured-error normalization without
 changing upstream admission or adding search behavior. Version `2.0.1`
 promoted the accepted RC1-dev2 behavior without a functional change. Development
-version `2.2.0-beta.13` retains governed controlled reload, exact add-on restart,
+version `2.2.0-beta.14` retains governed controlled reload, exact add-on restart,
 Home Assistant restart, readback-only reconciliation, and one durable execution
 task for each newly executed plan. It adds authority-version-3 policy and
 approval bundles without another tool, provider, resource, or fallback. Beta 9
@@ -135,8 +136,10 @@ reads held pending canary evidence.
 Beta 12 validates and normalizes only exact 8.0.0's dynamic policy-state
 metadata, retains raw strict evidence, and improves bounded mismatch health.
 Beta 13 changes only the Engineering dependency pins and retains the Beta 12
-provider boundary. The remaining 8.0.0 special-provider correction is deferred
-to Beta 14.
+provider boundary. Beta 14 applies exact release/model-aware validation to the
+complete catalog used by backup and lifecycle, reuses the bounded policy
+projection in Dashboard v3, preserves typed Dashboard errors through nested
+exception groups, and adds immutable add-on-runtime acceptance.
 Beta 7 response truthfulness and current prohibited projection remain
 unchanged. Its
 update/recovery preflight,
@@ -148,8 +151,8 @@ retains
 exact reviewed 7.14.2 compatibility, reviewed 7.14.1 rollback compatibility,
 and the hardened MCP SDK boundary. Its changes, rollback, and acceptance
 requirements are recorded in
-[`../docs/V2_2_0_BETA13_RELEASE_NOTES.md`](../docs/V2_2_0_BETA13_RELEASE_NOTES.md),
-[`../docs/V2_2_0_BETA13_ACCEPTANCE.md`](../docs/V2_2_0_BETA13_ACCEPTANCE.md), and
+[`../docs/V2_2_0_BETA14_RELEASE_NOTES.md`](../docs/V2_2_0_BETA14_RELEASE_NOTES.md),
+[`../docs/V2_2_0_BETA14_ACCEPTANCE.md`](../docs/V2_2_0_BETA14_ACCEPTANCE.md), and
 [`../docs/OPERATIONAL_ADMINISTRATION.md`](../docs/OPERATIONAL_ADMINISTRATION.md).
 Determine
 exact advertised state from version metadata and `scripts/codex-context.py`.

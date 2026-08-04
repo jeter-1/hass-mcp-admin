@@ -1,5 +1,22 @@
 # HA MCP Engineering Server Architecture
 
+## 2.2.0-beta.14 exact special-provider runtime admission
+
+Backup and lifecycle now use one exact-release, model-aware full-catalog
+validator instead of treating a raw standalone catalog hash as authoritative
+for a valid add-on deployment. The validator covers all 78 reviewed tools and
+derives one deterministic normalized aggregate from exact classification,
+schema, security annotation, output, and release-model runtime results. Raw
+catalog hashes remain bounded diagnostics. Exact version, protocol, tool set,
+classification, model, and per-component mismatches still fail closed.
+
+Dashboard v3 remains a separate constrained provider, but its security and
+runtime projections reuse the reviewed four-key policy validator and bounded
+projection. Typed dashboard contract errors retain precise bounded categories
+through exception groups. The Beta 13 secure dependency pins and strict audit
+remain in force. No dashboard arguments, provider actions, authorization,
+dispatch, held-tool, protocol, fallback, F1/F2, or stable-v1 boundary changes.
+
 ## 2.2.0-beta.12 exact add-on runtime admission
 
 Exact 8.0.0 retains per-tool ordinary contract checks and adds an explicit

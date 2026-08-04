@@ -1,5 +1,15 @@
 # Beta automation change governance
 
+## 2.2.0-beta.14 preservation boundary
+
+The special-provider runtime-admission correction changes no plan, approval,
+task, policy, persistence, apply, or dispatch semantics. Valid backup and
+lifecycle probes may again reach the existing proposal-only persistence
+boundary, but planning cannot dispatch. Invalid catalogs and provider-tool
+contracts still fail before persistence. Authority version 3, task schema 1,
+same-administrator enforcement, one-task ownership, no-blind-redispatch, and
+zero fallback remain unchanged.
+
 ## 2.2.0-beta.13 preservation boundary
 
 The dependency-security release changes no plan, approval, execution-task,
