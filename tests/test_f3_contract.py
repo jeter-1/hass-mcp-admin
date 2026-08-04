@@ -424,11 +424,26 @@ class F3ContractDeclarationTests(unittest.TestCase):
     def test_runtime_does_not_import_the_repository_root_facade(self):
         runtime = BETA_DIR / "ha_mcp_engineering"
         for path in sorted(runtime.rglob("*.py")):
+            if "f3_configuration" in path.parts:
+                continue
             with self.subTest(path=path.relative_to(ROOT)):
                 self.assertNotIn(
                     "f3_contracts",
                     path.read_text(encoding="utf-8"),
                 )
+
+    def test_only_runtime_inert_f3_configuration_package_imports_contract(self):
+        runtime = BETA_DIR / "ha_mcp_engineering"
+        importers = {
+            path.relative_to(runtime).as_posix()
+            for path in sorted(runtime.rglob("*.py"))
+            if "f3_contracts" in path.read_text(encoding="utf-8")
+        }
+        self.assertTrue(importers)
+        self.assertTrue(
+            all(path.startswith("f3_configuration/") for path in importers),
+            importers,
+        )
 
     def test_required_contract_documents_have_distinct_boundaries(self):
         documents = {
