@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.2.0-beta.19 - F3-C2 operational-adapter conformance
+
+- Add runtime-inert strategies for governed full backup, controlled reload,
+  exact installed add-on restart, and Home Assistant restart. The strategies
+  consume the canonical shipped Beta 17/18 F3 contracts and merged executor;
+  no current route imports or activates them.
+- Keep final locked preflight before caller-owned idempotent approval
+  consumption, durable F3 intent immediately before one exact provider
+  mutation, and post-intent reconstruction readback-only. Operation evidence
+  is a bounded projection of the authoritative F3 child record; C2 adds no
+  independent recovery ledger.
+- Bind exact resource, Home Assistant core, and reviewed provider locks,
+  including the Beta 18 `reload:<domain>` conflict key. Manual-review holds
+  select only the affected resource key and never expire automatically;
+  promotion, authenticated reconciliation, and release authority remain F3-D.
+- Require truthful effect evidence: readiness alone cannot verify a lost-
+  response reload, unchanged running state cannot verify an add-on restart,
+  and Home Assistant restart requires persisted outage/reconnect evidence.
+- Preserve exact 7.14.2 78/26/74 and exact 8.0.0 78/24/72 accounting, held
+  tools `ha_search` and `ha_get_operation_status`, 48 Engineering-local tools,
+  task schema 1, current plan contracts, F2 policy, secure dependency pins,
+  stable v1.1.2, and zero fallback.
+
 ## 2.2.0-beta.18 - F3-C1 configuration-adapter conformance
 
 - Add internal `f3-operation-adapter-v1` configuration strategies for
