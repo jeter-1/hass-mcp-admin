@@ -1526,7 +1526,10 @@ class BetaApplicationTests(unittest.TestCase):
                                         "success": True,
                                         "addons": [],
                                         "summary": {
-                                            "total_installed": 0
+                                            "total_installed": 0,
+                                            "running": 0,
+                                            "stopped": 0,
+                                            "updates_available": 0,
                                         },
                                     }
                                 ),

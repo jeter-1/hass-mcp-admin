@@ -8050,6 +8050,8 @@ class ChangeGovernanceService:
             "unsupported_protocol_version",
             "required_tool_missing",
             "upstream_addon_identity_unavailable",
+            "addon_response_contract_mismatch",
+            "unsupported_response_contract_model",
         }:
             return ErrorCode.OPERATIONAL_CONTRACT_MISMATCH
         if category in {
