@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.2.0-beta.18 - F3-C1 configuration-adapter conformance
+
+- Add internal `f3-operation-adapter-v1` configuration strategies for
+  automation, script, `input_boolean`, and `input_number` create/update using
+  existing normalization, validation, fingerprint, risk, and policy evidence.
+- Add exact configuration lock-set calculation, late stale-state preflight,
+  one-dispatch intent boundary, authoritative readback verification, bounded
+  observability, and readback-only process reconstruction.
+- Prove ordered 1–8 operation semantics, duplicate and cancellation decisions,
+  response/process loss, external-writer limitations, and migration
+  equivalence through deterministic offline fixtures.
+- Keep the package disconnected from application startup, governance routes,
+  provider routing, and MCP registration. Canonical F3-A executor/lock
+  conformance is isolated; all runtime activation remains pending F3-D.
+- Preserve task schema 1, current plan vocabulary, F2 policy, approval
+  authority, 48 Engineering-local tools, exact 7.14.2 and 8.0.0 accounting,
+  secure dependency pins, stable v1.1.2, and zero fallback.
+
 ## 2.2.0-beta.17 - Canonical F3 contracts and dashboard deferral
 
 - Ship `ha_mcp_engineering.f3.contracts` as the sole runtime definition of
