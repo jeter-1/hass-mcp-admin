@@ -1,13 +1,14 @@
 # Governed operational administration
 
-Version: `2.2.0-beta.14`
+Version: `2.2.0-beta.15`
 
-Beta 14 replaces stale raw-catalog admission equality in backup and lifecycle
-with the shared exact-release, model-aware full-catalog validator. It does not
-change supported operations, arguments, approval, plan hashing, dispatch,
-verification, reconciliation, or fallback. A valid probe may reach the
-existing proposal-only persistence boundary; invalid catalog or required-tool
-evidence still stops before persistence, and planning dispatches nothing.
+Beta 15 binds exact 8.0.0 add-on detail to its reviewed structured lifecycle
+response envelope and projects only the identity needed for restart planning.
+Beta 14's model-aware catalog validator remains authoritative. Supported
+operations, arguments, approval, plan hashing, dispatch, verification,
+reconciliation, and fallback do not change. A valid probe may reach the
+existing proposal-only persistence boundary; invalid catalog, response, or
+identity evidence stops before persistence, and planning dispatches nothing.
 Beta 13's secure dependency pins and strict audit remain unchanged.
 
 ## Beta 11 bounded restart reconciliation

@@ -1,6 +1,6 @@
 # Engineering 2.1 and 2.2 foundation roadmap
 
-Status: 2.1A and F2 accepted; exact 8.0.0 special-provider correction in `2.2.0-beta.14`
+Status: 2.1A and F2 accepted; live 8.0.0 lifecycle response correction in `2.2.0-beta.15`
 
 The required milestone order is:
 

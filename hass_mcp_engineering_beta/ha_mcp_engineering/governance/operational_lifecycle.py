@@ -60,6 +60,18 @@ RESTART_DISRUPTION_PROBE_ATTEMPTS = 15
 RESTART_DISRUPTION_PROBE_INTERVAL_SECONDS = 1.0
 RESTART_OUTAGE_ELIGIBILITY_WINDOW_SECONDS = 180.0
 _SAFE_IDENTITY = re.compile(r"^[^\x00-\x1f\x7f]{1,160}$")
+_CONCLUSIVE_PROVIDER_CONTRACT_FAILURES = frozenset(
+    {
+        "addon_response_contract_mismatch",
+        "catalog_mismatch",
+        "required_tool_missing",
+        "reviewed_contract_mismatch",
+        "server_identity_mismatch",
+        "unsupported_protocol_version",
+        "unsupported_response_contract_model",
+        "upstream_version_mismatch",
+    }
+)
 
 
 def _parse_aware_timestamp(value: Any) -> datetime | None:
@@ -385,14 +397,7 @@ class OperationalLifecycleGateway:
                         "redispatch_performed": False,
                     },
                 }
-            if exc.category in {
-                "catalog_mismatch",
-                "reviewed_contract_mismatch",
-                "server_identity_mismatch",
-                "upstream_version_mismatch",
-                "unsupported_protocol_version",
-                "required_tool_missing",
-            }:
+            if exc.category in _CONCLUSIVE_PROVIDER_CONTRACT_FAILURES:
                 return _upstream_binding_verification_result(
                     "failed",
                     identity_status="provider_contract_mismatch",
@@ -504,14 +509,7 @@ class OperationalLifecycleGateway:
             try:
                 admitted = await self.provider.probe("restart_addon")
             except OperationalLifecycleProviderError as exc:
-                if exc.category in {
-                    "catalog_mismatch",
-                    "reviewed_contract_mismatch",
-                    "server_identity_mismatch",
-                    "upstream_version_mismatch",
-                    "unsupported_protocol_version",
-                    "required_tool_missing",
-                }:
+                if exc.category in _CONCLUSIVE_PROVIDER_CONTRACT_FAILURES:
                     return _upstream_binding_verification_result(
                         "failed",
                         identity_status="provider_contract_mismatch",

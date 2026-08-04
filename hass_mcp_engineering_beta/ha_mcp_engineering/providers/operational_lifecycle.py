@@ -23,6 +23,7 @@ from ..clients.upstream_read import (
 )
 from ..configuration import Settings, parse_upstream_dashboard_endpoint
 from ..request_context import current_telemetry
+from ..sanitization import sanitize_untrusted_data
 from ..upstream_tool_policy import (
     load_reviewed_upstream_release_registry,
     runtime_contract_field_fingerprints,
@@ -36,6 +37,17 @@ from ..version import SERVER_VERSION
 
 PROVIDER_ID = "upstream_operational_lifecycle"
 MAX_RESULT_BYTES = 60_000
+MAX_LIFECYCLE_ADDON_STRUCTURED_TEXT_BYTES = 250_000
+LIFECYCLE_ADDON_RESPONSE_MODEL_TEXT_V1 = (
+    "ha-mcp-lifecycle-addon-text-json-v1"
+)
+LIFECYCLE_ADDON_RESPONSE_MODEL_STRUCTURED_V1 = (
+    "ha-mcp-lifecycle-addon-structured-content-v1"
+)
+LIFECYCLE_ADDON_RESPONSE_ENVELOPE_TEXT = "mcp-text-content-v1"
+LIFECYCLE_ADDON_RESPONSE_ENVELOPE_STRUCTURED = (
+    "mcp-direct-structured-content-v1"
+)
 RELOAD_TOOL = "ha_reload_core"
 ADDON_ACTION_TOOL = "ha_manage_addon"
 ADDON_READ_TOOL = "ha_get_addon"
@@ -53,15 +65,69 @@ RELOAD_SERVICES = {
     "input_numbers": "input_number.reload",
 }
 _SAFE_SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,127}$")
+_SAFE_REPOSITORY = re.compile(r"^[a-z0-9][a-z0-9_-]{0,127}$")
 _SAFE_TEXT = re.compile(r"^[^\x00-\x1f\x7f]{1,160}$")
+_SAFE_VERSION = re.compile(
+    r"^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}"
+    r"(?:[-+][A-Za-z0-9.-]{1,32})?$"
+)
+_SENSITIVE_TOKEN_FRAGMENT = re.compile(
+    r"(?:gh[pousr]_[A-Za-z0-9]{20,}|"
+    r"github_pat_[A-Za-z0-9_]{20,}|"
+    r"sk-[A-Za-z0-9_-]{20,})"
+)
+_CREDENTIAL_URL_FRAGMENT = re.compile(
+    r"(?:(?:[A-Za-z][A-Za-z0-9+.-]*:)?//)"
+    r"[^\s/@]+(?::[^\s/@]*)?@[^\s]+"
+)
 _SAFE_ENDPOINT_HOST = re.compile(
     r"^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$"
+)
+_REVIEWED_ADDON_STATES = frozenset({"started", "stopped"})
+_INSTALLED_SUMMARY_FIELDS = frozenset(
+    {"total_installed", "running", "stopped", "updates_available"}
 )
 _TOOL_POLICY = {
     RELOAD_TOOL: "physical_or_high_risk_action",
     ADDON_ACTION_TOOL: "mixed_or_requires_wrapper",
     ADDON_READ_TOOL: "mixed_or_requires_wrapper",
     HA_RESTART_TOOL: "physical_or_high_risk_action",
+}
+
+
+@dataclass(frozen=True)
+class LifecycleAddonResponseContract:
+    """Exact reviewed response envelope for one admitted upstream release."""
+
+    model: str
+    envelope_variant: str
+
+
+_LIFECYCLE_ADDON_RESPONSE_CONTRACTS = {
+    (
+        "ha-mcp-v7.14.1-68f386d9",
+        "7.14.1",
+        "2025-03-26",
+    ): LifecycleAddonResponseContract(
+        model=LIFECYCLE_ADDON_RESPONSE_MODEL_TEXT_V1,
+        envelope_variant=LIFECYCLE_ADDON_RESPONSE_ENVELOPE_TEXT,
+    ),
+    (
+        "ha-mcp-v7.14.2-7917b2d3",
+        "7.14.2",
+        "2025-03-26",
+    ): LifecycleAddonResponseContract(
+        model=LIFECYCLE_ADDON_RESPONSE_MODEL_TEXT_V1,
+        envelope_variant=LIFECYCLE_ADDON_RESPONSE_ENVELOPE_TEXT,
+    ),
+    (
+        "ha-mcp-v8.0.0-d65630f6",
+        "8.0.0",
+        "2025-03-26",
+    ): LifecycleAddonResponseContract(
+        model=LIFECYCLE_ADDON_RESPONSE_MODEL_STRUCTURED_V1,
+        envelope_variant=LIFECYCLE_ADDON_RESPONSE_ENVELOPE_STRUCTURED,
+    ),
 }
 
 
@@ -87,6 +153,8 @@ class OperationalProviderEvidence:
     normalized_catalog_fingerprint: str
     aggregate_fingerprint_model: str
     runtime_contract_fingerprint_model: str
+    lifecycle_addon_response_contract_model: str
+    lifecycle_addon_response_envelope_variant: str
     tool_contract_fingerprints: dict[str, str]
     argument_constraints: dict[str, Any]
 
@@ -108,6 +176,12 @@ class OperationalProviderEvidence:
             ),
             "runtime_contract_fingerprint_model": (
                 self.runtime_contract_fingerprint_model
+            ),
+            "lifecycle_addon_response_contract_model": (
+                self.lifecycle_addon_response_contract_model
+            ),
+            "lifecycle_addon_response_envelope_variant": (
+                self.lifecycle_addon_response_envelope_variant
             ),
             "tool_contract_fingerprints": dict(
                 self.tool_contract_fingerprints
@@ -141,6 +215,9 @@ class OperationalProviderState:
     selected_compatibility_entry_id: str | None = None
     observed_upstream_version: str | None = None
     runtime_contract_fingerprint_model: str | None = None
+    lifecycle_addon_response_contract_model: str | None = None
+    lifecycle_addon_response_envelope_variant: str | None = None
+    lifecycle_addon_response_diagnostics: dict[str, Any] | None = None
     runtime_contract_mismatch_diagnostics: dict[str, Any] | None = None
     catalog_validation: dict[str, Any] | None = None
     fallback_count: int = 0
@@ -268,11 +345,25 @@ class ReviewedOperationalLifecycleProvider:
 
         def validate(catalog: McpReadCatalog) -> None:
             nonlocal evidence
-            evidence = self._validate_catalog(
+            candidate = self._validate_catalog(
                 catalog,
                 (ADDON_READ_TOOL,),
                 operation="restart_addon",
             )
+            if evidence is None:
+                evidence = candidate
+                return
+            if (
+                _provider_contract_identity(candidate)
+                != _provider_contract_identity(evidence)
+            ):
+                self._record_addon_response_diagnostics(
+                    identity_mismatch_fields=("provider_contract",),
+                )
+                self._fail(
+                    "addon_response_contract_mismatch",
+                    dispatched=False,
+                )
 
         try:
             inventory_exchange = await self._execute_observed_read(
@@ -281,15 +372,74 @@ class ReviewedOperationalLifecycleProvider:
                 timeout_seconds=60.0,
                 catalog_validator=validate,
             )
-            inventory = self._decode(
+            assert evidence is not None
+            inventory = self._decode_addon_response(
                 inventory_exchange.call_result,
+                evidence=evidence,
                 dispatched=False,
+                error_category=_upstream_error_category,
             )
             addons = inventory.get("addons")
-            if inventory.get("success") is not True or not isinstance(
-                addons, list
+            summary = inventory.get("summary")
+            missing_paths = tuple(
+                f"/{name}"
+                for name in ("addons", "summary")
+                if name not in inventory
+            )
+            invalid_paths = tuple(
+                f"/{name}"
+                for name, value, expected_type in (
+                    ("addons", addons, list),
+                    ("summary", summary, dict),
+                )
+                if name in inventory and not isinstance(value, expected_type)
+            )
+            if missing_paths or invalid_paths:
+                self._record_addon_response_diagnostics(
+                    missing_paths=missing_paths,
+                    invalid_paths=invalid_paths,
+                )
+                self._fail(
+                    "addon_response_contract_mismatch",
+                    dispatched=False,
+                )
+            (
+                missing_inventory_paths,
+                invalid_inventory_paths,
+            ) = _installed_inventory_diagnostic_paths(
+                addons,
+                summary,
+            )
+            incomplete_inventory_paths = _incomplete_response_paths(
+                inventory
+            )
+            incomplete_summary_paths = _incomplete_response_paths(
+                summary,
+                prefix="/summary",
+            )
+            if (
+                missing_inventory_paths
+                or invalid_inventory_paths
+                or incomplete_inventory_paths
+                or incomplete_summary_paths
             ):
-                self._fail("invalid_response", dispatched=False)
+                self._record_addon_response_diagnostics(
+                    observed_cardinality=min(len(addons), 2),
+                    missing_paths=missing_inventory_paths,
+                    invalid_paths=tuple(
+                        dict.fromkeys(
+                            (
+                                *invalid_inventory_paths,
+                                *incomplete_inventory_paths,
+                                *incomplete_summary_paths,
+                            )
+                        )
+                    ),
+                )
+                self._fail(
+                    "addon_response_contract_mismatch",
+                    dispatched=False,
+                )
             matches = [
                 item
                 for item in addons
@@ -297,10 +447,37 @@ class ReviewedOperationalLifecycleProvider:
             ]
             if not matches:
                 assert evidence is not None
+                self._record_addon_response_diagnostics(
+                    expected_cardinality=1,
+                    observed_cardinality=0,
+                )
                 self._fail("addon_not_found", dispatched=False)
             if len(matches) != 1:
-                self._fail("invalid_response", dispatched=False)
+                self._record_addon_response_diagnostics(
+                    expected_cardinality=1,
+                    observed_cardinality=min(len(matches), 2),
+                    invalid_paths=("/addons",),
+                )
+                self._fail(
+                    "addon_response_contract_mismatch",
+                    dispatched=False,
+                )
             assert evidence is not None
+            inventory_addon = _project_addon_identity(
+                matches[0],
+                required_slug=slug,
+                require_installed=True,
+            )
+            if inventory_addon is None:
+                self._record_addon_response_diagnostics(
+                    expected_cardinality=1,
+                    observed_cardinality=1,
+                    invalid_paths=("/addons/0",),
+                )
+                self._fail(
+                    "addon_response_contract_mismatch",
+                    dispatched=False,
+                )
             upstream_identity = _bind_upstream_addon_identity(
                 addons,
                 endpoint_host=self._configured_endpoint_host,
@@ -313,32 +490,59 @@ class ReviewedOperationalLifecycleProvider:
                 timeout_seconds=60.0,
                 catalog_validator=validate,
             )
-            payload = self._decode(
+            payload = self._decode_addon_response(
                 exchange.call_result,
+                evidence=evidence,
                 dispatched=False,
                 error_category=_addon_error_category,
             )
             addon = payload.get("addon")
-            if payload.get("success") is not True or not isinstance(addon, dict):
-                self._fail("invalid_response", dispatched=False)
-            observed_slug = _safe_text(addon.get("slug"))
-            name = _safe_text(addon.get("name"))
-            version = _safe_text(addon.get("version"))
-            state = _safe_text(addon.get("state"))
-            if observed_slug != slug or None in {name, version, state}:
-                self._fail("invalid_response", dispatched=False)
+            detail_addon = _project_addon_identity(
+                addon,
+                required_slug=slug,
+            )
+            if detail_addon is None:
+                self._record_addon_response_diagnostics(
+                    expected_cardinality=1,
+                    observed_cardinality=(
+                        1 if isinstance(addon, dict) else 0
+                    ),
+                    missing_paths=(
+                        ("/addon",) if "addon" not in payload else ()
+                    ),
+                    invalid_paths=(
+                        ("/addon",) if "addon" in payload else ()
+                    ),
+                )
+                self._fail(
+                    "addon_response_contract_mismatch",
+                    dispatched=False,
+                )
+            identity_mismatches = tuple(
+                name
+                for name in (
+                    "slug",
+                    "name",
+                    "version",
+                    "state",
+                    "repository",
+                    "update_available",
+                )
+                if inventory_addon[name] != detail_addon[name]
+            )
+            if identity_mismatches:
+                self._record_addon_response_diagnostics(
+                    expected_cardinality=1,
+                    observed_cardinality=1,
+                    identity_mismatch_fields=identity_mismatches,
+                )
+                self._fail(
+                    "addon_response_contract_mismatch",
+                    dispatched=False,
+                )
             self._record_success(evidence)
             return {
-                "slug": observed_slug,
-                "name": name,
-                "version": version,
-                "state": state,
-                "repository": _safe_text(addon.get("repository")),
-                "update_available": (
-                    addon.get("update_available")
-                    if isinstance(addon.get("update_available"), bool)
-                    else None
-                ),
+                **detail_addon,
                 "provider": evidence.as_dict(),
                 "upstream_addon_identity": upstream_identity,
             }
@@ -476,6 +680,19 @@ class ReviewedOperationalLifecycleProvider:
         operation: str,
     ) -> OperationalProviderEvidence:
         registry = load_reviewed_upstream_release_registry()
+        with self._lock:
+            self._state.selected_compatibility_entry_id = None
+            self._state.observed_upstream_version = (
+                catalog.server_version
+                if isinstance(catalog.server_version, str)
+                and _SAFE_VERSION.fullmatch(catalog.server_version)
+                else None
+            )
+            self._state.runtime_contract_fingerprint_model = None
+            self._state.lifecycle_addon_response_contract_model = None
+            self._state.lifecycle_addon_response_envelope_variant = None
+            self._state.lifecycle_addon_response_diagnostics = None
+            self._state.catalog_validation = None
         if catalog.server_name != "ha-mcp":
             self._fail("server_identity_mismatch", dispatched=False)
         release = registry.by_version.get(catalog.server_version)
@@ -488,6 +705,23 @@ class ReviewedOperationalLifecycleProvider:
             self._state.runtime_contract_fingerprint_model = runtime_model
         if catalog.protocol_version not in release.allowed_protocol_versions:
             self._fail("unsupported_protocol_version", dispatched=False)
+        response_contract = _lifecycle_addon_response_contract(
+            entry_id=release.entry_id,
+            upstream_version=catalog.server_version,
+            protocol_version=catalog.protocol_version,
+        )
+        if response_contract is None:
+            self._fail(
+                "unsupported_response_contract_model",
+                dispatched=False,
+            )
+        with self._lock:
+            self._state.lifecycle_addon_response_contract_model = (
+                response_contract.model
+            )
+            self._state.lifecycle_addon_response_envelope_variant = (
+                response_contract.envelope_variant
+            )
         catalog_validation = validate_reviewed_release_catalog(
             release,
             observed_server_name=catalog.server_name,
@@ -615,6 +849,12 @@ class ReviewedOperationalLifecycleProvider:
                 catalog_validation.aggregate_fingerprint_model
             ),
             runtime_contract_fingerprint_model=runtime_model,
+            lifecycle_addon_response_contract_model=(
+                response_contract.model
+            ),
+            lifecycle_addon_response_envelope_variant=(
+                response_contract.envelope_variant
+            ),
             tool_contract_fingerprints=fingerprints,
             argument_constraints=self._constraints(operation),
         )
@@ -697,6 +937,243 @@ class ReviewedOperationalLifecycleProvider:
             )
         return payload
 
+    def _decode_addon_response(
+        self,
+        result: dict[str, Any],
+        *,
+        evidence: OperationalProviderEvidence,
+        dispatched: bool,
+        error_category: Callable[[Any], str],
+    ) -> dict[str, Any]:
+        """Decode one exact-release add-on detail envelope.
+
+        The exact 8.0.0 add-on returns the same result in a large text item and
+        direct structured content.  The reviewed structured model keeps the
+        global one-megabyte MCP exchange bound, validates the wire envelope,
+        and projects only lifecycle identity fields at the call site.  It does
+        not retain or expose the secret-bearing Supervisor detail object.
+        """
+
+        if not isinstance(result, dict):
+            self._record_addon_response_diagnostics(
+                invalid_paths=("/",),
+            )
+            self._fail(
+                "addon_response_contract_mismatch",
+                dispatched=dispatched,
+            )
+        model = evidence.lifecycle_addon_response_contract_model
+        if model == LIFECYCLE_ADDON_RESPONSE_MODEL_TEXT_V1:
+            payload = self._decode(
+                result,
+                dispatched=dispatched,
+                error_category=error_category,
+            )
+            if "success" not in payload:
+                self._record_addon_response_diagnostics(
+                    missing_paths=("/success",),
+                )
+                self._fail(
+                    "addon_response_contract_mismatch",
+                    dispatched=dispatched,
+                )
+            if payload.get("success") is not True:
+                self._record_addon_response_diagnostics(
+                    invalid_paths=("/success",),
+                )
+                self._fail(
+                    "addon_response_contract_mismatch",
+                    dispatched=dispatched,
+                )
+            incomplete_paths = _incomplete_response_paths(payload)
+            if incomplete_paths:
+                self._record_addon_response_diagnostics(
+                    invalid_paths=incomplete_paths,
+                )
+                self._fail(
+                    "addon_response_contract_mismatch",
+                    dispatched=dispatched,
+                )
+            return payload
+        if model != LIFECYCLE_ADDON_RESPONSE_MODEL_STRUCTURED_V1:
+            self._record_addon_response_diagnostics(
+                invalid_paths=("/response_contract_model",),
+            )
+            self._fail(
+                "unsupported_response_contract_model",
+                dispatched=dispatched,
+            )
+        content = result.get("content")
+        if "content" not in result:
+            self._record_addon_response_diagnostics(
+                missing_paths=("/content",),
+            )
+            self._fail(
+                "addon_response_contract_mismatch",
+                dispatched=dispatched,
+            )
+        if not isinstance(content, list) or len(content) != 1:
+            self._record_addon_response_diagnostics(
+                invalid_paths=("/content",),
+            )
+            self._fail(
+                "addon_response_contract_mismatch",
+                dispatched=dispatched,
+            )
+        item = content[0]
+        if not isinstance(item, dict):
+            self._record_addon_response_diagnostics(
+                invalid_paths=("/content/0",),
+            )
+            self._fail(
+                "addon_response_contract_mismatch",
+                dispatched=dispatched,
+            )
+        missing_item_paths = tuple(
+            f"/content/0/{name}"
+            for name in ("type", "text")
+            if name not in item
+        )
+        invalid_item_paths = tuple(
+            path
+            for path, invalid in (
+                ("/content/0/type", item.get("type") != "text"),
+                (
+                    "/content/0/text",
+                    not isinstance(item.get("text"), str),
+                ),
+            )
+            if path.rsplit("/", 1)[-1] in item and invalid
+        )
+        if missing_item_paths or invalid_item_paths:
+            self._record_addon_response_diagnostics(
+                missing_paths=missing_item_paths,
+                invalid_paths=invalid_item_paths,
+            )
+            self._fail(
+                "addon_response_contract_mismatch",
+                dispatched=dispatched,
+            )
+        text = item["text"]
+        try:
+            if (
+                len(text.encode("utf-8"))
+                > MAX_LIFECYCLE_ADDON_STRUCTURED_TEXT_BYTES
+            ):
+                raise ValueError("bounded lifecycle detail exceeded")
+            text_payload = json.loads(
+                text,
+                object_pairs_hook=_reject_duplicate_members,
+                parse_constant=_reject_nonfinite,
+            )
+        except (TypeError, ValueError, UnicodeError, RecursionError):
+            self._record_addon_response_diagnostics(
+                invalid_paths=("/content/0/text",),
+            )
+            self._fail(
+                "addon_response_contract_mismatch",
+                dispatched=dispatched,
+            )
+        payload = result.get("structuredContent")
+        if "structuredContent" not in result:
+            self._record_addon_response_diagnostics(
+                missing_paths=("/structuredContent",),
+            )
+            self._fail(
+                "addon_response_contract_mismatch",
+                dispatched=dispatched,
+            )
+        if not isinstance(payload, dict):
+            self._record_addon_response_diagnostics(
+                invalid_paths=("/structuredContent",),
+            )
+            self._fail(
+                "addon_response_contract_mismatch",
+                dispatched=dispatched,
+            )
+        if not _json_values_exact(text_payload, payload):
+            self._record_addon_response_diagnostics(
+                invalid_paths=(
+                    "/content/0/text",
+                    "/structuredContent",
+                ),
+            )
+            self._fail(
+                "addon_response_contract_mismatch",
+                dispatched=dispatched,
+            )
+        if result.get("isError") or payload.get("success") is False:
+            code = (
+                payload.get("error", {}).get("code")
+                if isinstance(payload.get("error"), dict)
+                else None
+            )
+            self._fail(
+                error_category(code),
+                dispatched=dispatched,
+            )
+        if "success" not in payload:
+            self._record_addon_response_diagnostics(
+                missing_paths=("/structuredContent/success",),
+            )
+            self._fail(
+                "addon_response_contract_mismatch",
+                dispatched=dispatched,
+            )
+        if payload.get("success") is not True:
+            self._record_addon_response_diagnostics(
+                invalid_paths=("/structuredContent/success",),
+            )
+            self._fail(
+                "addon_response_contract_mismatch",
+                dispatched=dispatched,
+            )
+        incomplete_paths = _incomplete_response_paths(
+            payload,
+            prefix="/structuredContent",
+        )
+        if incomplete_paths:
+            self._record_addon_response_diagnostics(
+                invalid_paths=incomplete_paths,
+            )
+            self._fail(
+                "addon_response_contract_mismatch",
+                dispatched=dispatched,
+            )
+        return payload
+
+    def _record_addon_response_diagnostics(
+        self,
+        *,
+        expected_cardinality: int = 1,
+        observed_cardinality: int | None = None,
+        missing_paths: tuple[str, ...] = (),
+        invalid_paths: tuple[str, ...] = (),
+        identity_mismatch_fields: tuple[str, ...] = (),
+    ) -> None:
+        diagnostics = {
+            "response_contract_model": (
+                self._state.lifecycle_addon_response_contract_model
+            ),
+            "envelope_variant": (
+                self._state.lifecycle_addon_response_envelope_variant
+            ),
+            "expected_collection_cardinality": expected_cardinality,
+            "observed_collection_cardinality": observed_cardinality,
+            "missing_semantic_field_paths": list(missing_paths[:8]),
+            "invalid_semantic_field_paths": list(invalid_paths[:8]),
+            "identity_mismatch_fields": list(
+                identity_mismatch_fields[:8]
+            ),
+            "diagnostics_truncated": (
+                len(missing_paths) > 8
+                or len(invalid_paths) > 8
+                or len(identity_mismatch_fields) > 8
+            ),
+        }
+        with self._lock:
+            self._state.lifecycle_addon_response_diagnostics = diagnostics
+
     def _normalize_success(
         self,
         operation: str,
@@ -750,6 +1227,7 @@ class ReviewedOperationalLifecycleProvider:
                 evidence.server_version
             )
             self._state.runtime_contract_mismatch_diagnostics = None
+            self._state.lifecycle_addon_response_diagnostics = None
 
     def _fail(self, category: str, *, dispatched: bool) -> None:
         with self._lock:
@@ -798,6 +1276,20 @@ class ReviewedOperationalLifecycleProvider:
                 "runtime_contract_fingerprint_model": (
                     self._state.runtime_contract_fingerprint_model
                 ),
+                "lifecycle_addon_response_contract_model": (
+                    self._state.lifecycle_addon_response_contract_model
+                ),
+                "lifecycle_addon_response_envelope_variant": (
+                    self._state.lifecycle_addon_response_envelope_variant
+                ),
+                "lifecycle_addon_response_diagnostics": (
+                    deepcopy(
+                        self._state.lifecycle_addon_response_diagnostics
+                    )
+                    if self._state.lifecycle_addon_response_diagnostics
+                    is not None
+                    else None
+                ),
                 "runtime_contract_mismatch_diagnostics": (
                     dict(self._state.runtime_contract_mismatch_diagnostics)
                     if self._state.runtime_contract_mismatch_diagnostics
@@ -814,6 +1306,257 @@ class ReviewedOperationalLifecycleProvider:
             }
 
 
+def _lifecycle_addon_response_contract(
+    *,
+    entry_id: str,
+    upstream_version: str,
+    protocol_version: str,
+) -> LifecycleAddonResponseContract | None:
+    contract = _LIFECYCLE_ADDON_RESPONSE_CONTRACTS.get(
+        (entry_id, upstream_version, protocol_version)
+    )
+    if contract is None:
+        return None
+    if (
+        contract.model == LIFECYCLE_ADDON_RESPONSE_MODEL_TEXT_V1
+        and contract.envelope_variant
+        == LIFECYCLE_ADDON_RESPONSE_ENVELOPE_TEXT
+    ):
+        return contract
+    if (
+        contract.model
+        == LIFECYCLE_ADDON_RESPONSE_MODEL_STRUCTURED_V1
+        and contract.envelope_variant
+        == LIFECYCLE_ADDON_RESPONSE_ENVELOPE_STRUCTURED
+    ):
+        return contract
+    return None
+
+
+def _provider_contract_identity(
+    evidence: OperationalProviderEvidence,
+) -> tuple[Any, ...]:
+    """Return exact release contract identity without raw catalog diagnostics."""
+
+    return (
+        evidence.provider,
+        evidence.server_name,
+        evidence.server_version,
+        evidence.protocol_version,
+        evidence.compatibility_entry_id,
+        evidence.source_commit,
+        evidence.image_index_digest,
+        evidence.normalized_catalog_fingerprint,
+        evidence.aggregate_fingerprint_model,
+        evidence.runtime_contract_fingerprint_model,
+        evidence.lifecycle_addon_response_contract_model,
+        evidence.lifecycle_addon_response_envelope_variant,
+        tuple(sorted(evidence.tool_contract_fingerprints.items())),
+        json.dumps(
+            evidence.argument_constraints,
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+    )
+
+
+def _project_addon_identity(
+    value: Any,
+    *,
+    required_slug: str,
+    require_installed: bool = False,
+) -> dict[str, Any] | None:
+    """Project only the reviewed lifecycle identity surface."""
+
+    if not isinstance(value, dict):
+        return None
+    slug = value.get("slug")
+    name = _safe_text(value.get("name"))
+    version = _safe_text(value.get("version"))
+    state = _safe_text(value.get("state"))
+    repository_value = value.get("repository")
+    repository_prefix = (
+        _repository_from_slug(slug) if isinstance(slug, str) else None
+    )
+    repository: str | None = None
+    if repository_value is not None:
+        if (
+            not isinstance(repository_value, str)
+            or not _SAFE_REPOSITORY.fullmatch(repository_value)
+            or repository_value != repository_prefix
+        ):
+            return None
+        repository = repository_value
+    if (
+        not isinstance(slug, str)
+        or not _SAFE_SLUG.fullmatch(slug)
+        or slug != required_slug
+        or repository_prefix is None
+        or state not in _REVIEWED_ADDON_STATES
+        or None in {name, version, state}
+    ):
+        return None
+    if require_installed and value.get("installed") is not True:
+        return None
+    if "installed" in value and value.get("installed") is not True:
+        return None
+    update_available = value.get("update_available")
+    if (
+        "update_available" in value
+        and update_available is not None
+        and not isinstance(update_available, bool)
+    ):
+        return None
+    return {
+        "slug": slug,
+        "name": name,
+        "version": version,
+        "state": state,
+        "repository": repository,
+        "update_available": (
+            update_available if isinstance(update_available, bool) else None
+        ),
+    }
+
+
+def _repository_from_slug(slug: str) -> str | None:
+    """Return the exact Supervisor repository prefix for one installed slug."""
+
+    repository, separator, addon_slug = slug.partition("_")
+    if (
+        separator != "_"
+        or not addon_slug
+        or not _SAFE_REPOSITORY.fullmatch(repository)
+    ):
+        return None
+    return repository
+
+
+def _installed_inventory_diagnostic_paths(
+    addons: list[Any],
+    summary: dict[str, Any],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Validate the exact installed-list projection emitted by ha-mcp."""
+
+    missing_paths: list[str] = []
+    invalid_paths: list[str] = []
+    if set(summary).difference(_INSTALLED_SUMMARY_FIELDS):
+        invalid_paths.append("/summary")
+
+    counts: dict[str, int] = {}
+    for name in _INSTALLED_SUMMARY_FIELDS:
+        if name not in summary:
+            missing_paths.append(f"/summary/{name}")
+            continue
+        observed = summary.get(name)
+        if (
+            not isinstance(observed, int)
+            or isinstance(observed, bool)
+            or observed < 0
+        ):
+            invalid_paths.append(f"/summary/{name}")
+        else:
+            counts[name] = observed
+
+    running = 0
+    updates_available = 0
+    for item in addons:
+        if not isinstance(item, dict):
+            invalid_paths.append("/addons")
+            continue
+        slug = item.get("slug")
+        if (
+            not isinstance(slug, str)
+            or _project_addon_identity(
+                item,
+                required_slug=slug,
+                require_installed=True,
+            )
+            is None
+        ):
+            invalid_paths.append("/addons")
+            continue
+        if item["state"] == "started":
+            running += 1
+        if item.get("update_available") is True:
+            updates_available += 1
+
+    expected = {
+        "total_installed": len(addons),
+        "running": running,
+        "stopped": len(addons) - running,
+        "updates_available": updates_available,
+    }
+    for name, value in expected.items():
+        if name in counts and counts[name] != value:
+            invalid_paths.append(f"/summary/{name}")
+    return (
+        tuple(dict.fromkeys(missing_paths)),
+        tuple(dict.fromkeys(invalid_paths)),
+    )
+
+
+def _incomplete_response_paths(
+    value: dict[str, Any],
+    *,
+    prefix: str = "",
+) -> tuple[str, ...]:
+    paths: list[str] = []
+
+    def path(name: str) -> str:
+        return f"{prefix}/{name}"
+
+    for name in ("warning", "warnings"):
+        if name not in value:
+            continue
+        observed = value.get(name)
+        if not (
+            observed is None
+            or observed is False
+            or (isinstance(observed, str) and observed == "")
+            or (isinstance(observed, list) and not observed)
+            or (isinstance(observed, dict) and not observed)
+        ):
+            paths.append(path(name))
+    for name in ("truncated", "partial", "has_more"):
+        if name in value and value.get(name) is not False:
+            paths.append(path(name))
+    for name in ("next", "next_cursor"):
+        if name not in value:
+            continue
+        observed = value.get(name)
+        if observed is not None and not (
+            isinstance(observed, str) and observed == ""
+        ):
+            paths.append(path(name))
+    pagination = value.get("pagination")
+    if "pagination" not in value:
+        return tuple(paths)
+    if not isinstance(pagination, dict):
+        paths.append(path("pagination"))
+        return tuple(paths)
+    if set(pagination).difference({"has_more", "next", "next_cursor"}):
+        paths.append(path("pagination"))
+    if (
+        "has_more" in pagination
+        and pagination.get("has_more") is not False
+    ):
+        paths.append(path("pagination/has_more"))
+    for name in ("next", "next_cursor"):
+        if name not in pagination:
+            continue
+        observed = pagination.get(name)
+        if observed is not None and not (
+            isinstance(observed, str) and observed == ""
+        ):
+            paths.append(path(f"pagination/{name}"))
+    return tuple(dict.fromkeys(paths))
+
+
+def _response_reports_incomplete(value: dict[str, Any]) -> bool:
+    return bool(_incomplete_response_paths(value))
+
+
 def _reject_duplicate_members(
     pairs: list[tuple[str, Any]],
 ) -> dict[str, Any]:
@@ -825,16 +1568,46 @@ def _reject_duplicate_members(
     return result
 
 
+def _json_values_exact(left: Any, right: Any) -> bool:
+    """Compare decoded JSON without Python's bool/int coercion."""
+
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return left.keys() == right.keys() and all(
+            _json_values_exact(left[key], right[key]) for key in left
+        )
+    if isinstance(left, list):
+        return len(left) == len(right) and all(
+            _json_values_exact(left_item, right_item)
+            for left_item, right_item in zip(left, right, strict=True)
+        )
+    return left == right
+
+
 def _reject_nonfinite(_value: str) -> None:
     raise ValueError("non-finite JSON constant")
 
 
 def _safe_text(value: Any) -> str | None:
-    return (
-        value
-        if isinstance(value, str) and _SAFE_TEXT.fullmatch(value)
-        else None
-    )
+    if not isinstance(value, str) or not _SAFE_TEXT.fullmatch(value):
+        return None
+    parsed = urlsplit(value)
+    if parsed.netloc and (
+        parsed.username is not None or parsed.password is not None
+    ):
+        return None
+    sanitized = sanitize_untrusted_data(value, max_string=160)
+    if (
+        sanitized.failed_closed
+        or sanitized.redaction_applied
+        or sanitized.truncated_field_count
+        or sanitized.value != value
+        or _SENSITIVE_TOKEN_FRAGMENT.search(value)
+        or _CREDENTIAL_URL_FRAGMENT.search(value)
+    ):
+        return None
+    return value
 
 
 def _bind_upstream_addon_identity(
@@ -885,22 +1658,22 @@ def _bind_upstream_addon_identity(
 
     candidate = candidates[0]
     slug = candidate.get("slug")
-    name = _safe_text(candidate.get("name"))
-    installed_version = _safe_text(candidate.get("version"))
-    repository = _safe_text(candidate.get("repository"))
+    projected = _project_addon_identity(
+        candidate,
+        required_slug=slug if isinstance(slug, str) else "",
+        require_installed=True,
+    )
     if (
-        not isinstance(slug, str)
-        or name is None
-        or installed_version is None
-        or installed_version != evidence.server_version
+        projected is None
+        or projected["version"] != evidence.server_version
     ):
         return {"status": "conflicting", **unbound_evidence}
     return {
         "status": "bound",
-        "slug": slug,
-        "name": name,
-        "installed_version": installed_version,
-        "repository": repository,
+        "slug": projected["slug"],
+        "name": projected["name"],
+        "installed_version": projected["version"],
+        "repository": projected["repository"],
         "endpoint_host": endpoint_host,
         "identity_source": (
             "configured_endpoint_supervisor_dns_and_reviewed_admission"

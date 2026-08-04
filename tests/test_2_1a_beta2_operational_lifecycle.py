@@ -160,6 +160,12 @@ def provider_evidence(operation: str) -> dict:
         "catalog_fingerprint": (
             "c6bd074d9ee1e832bd90318398c00efd9a9ffd983d5444817bc830208cbfc47c"
         ),
+        "lifecycle_addon_response_contract_model": (
+            "ha-mcp-lifecycle-addon-text-json-v1"
+        ),
+        "lifecycle_addon_response_envelope_variant": (
+            "mcp-text-content-v1"
+        ),
         "tool_contract_fingerprints": {"fixture": "f" * 64},
         "argument_constraints": constraints,
         "runtime_artifact_observed": False,
@@ -2842,21 +2848,27 @@ class FakeMcpTransport:
                 "slug": "local_test_addon",
                 "name": "Fixture",
                 "version": "1.0.0",
+                "installed": True,
                 "state": "started",
+                "update_available": False,
                 "repository": "local",
             },
             {
                 "slug": "df26dea6_hass_mcp_engineering_beta",
                 "name": "HA MCP Engineering Server Beta",
                 "version": "2.1.1-beta.2",
+                "installed": True,
                 "state": "started",
+                "update_available": False,
                 "repository": "df26dea6",
             },
             {
                 "slug": UPSTREAM_ADDON_SLUG,
                 "name": UPSTREAM_ADDON_NAME,
                 "version": version,
+                "installed": True,
                 "state": "started",
+                "update_available": False,
                 "repository": "abcdef12",
             },
         ]
@@ -2902,6 +2914,21 @@ class FakeMcpTransport:
                 "addons": deepcopy(self.addons),
                 "summary": {
                     "total_installed": len(self.addons),
+                    "running": sum(
+                        1
+                        for addon in self.addons
+                        if addon["state"] == "started"
+                    ),
+                    "stopped": sum(
+                        1
+                        for addon in self.addons
+                        if addon["state"] != "started"
+                    ),
+                    "updates_available": sum(
+                        1
+                        for addon in self.addons
+                        if addon.get("update_available") is True
+                    ),
                 },
             }
         else:
@@ -2924,6 +2951,11 @@ class FakeMcpTransport:
                 "content": [
                     {"type": "text", "text": json.dumps(payload)}
                 ],
+                **(
+                    {"structuredContent": deepcopy(payload)}
+                    if self.catalog.server_version == "8.0.0"
+                    else {}
+                ),
                 "isError": False,
             }
         )
@@ -3542,11 +3574,13 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
         transport = FakeMcpTransport()
         transport.addons.append(
             {
-                "slug": "abcdef12-ha-mcp",
+                "slug": "abcdef12-ha_mcp",
                 "name": "Unrelated lookalike",
                 "version": "7.14.2",
+                "installed": True,
                 "state": "started",
-                "repository": "unrelated",
+                "update_available": False,
+                "repository": "abcdef12-ha",
             }
         )
         provider = ReviewedOperationalLifecycleProvider()
@@ -3557,6 +3591,12 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
             ),
             transport=transport,
         )
+        observed = await provider.get_addon("local_test_addon")
+        self.assertEqual(
+            observed["upstream_addon_identity"]["status"],
+            "ambiguous",
+        )
+        transport.calls.clear()
 
         async def self_identity():
             return SupervisorSelfAddonIdentity(
@@ -3600,6 +3640,19 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(
             "ha_manage_addon",
             [tool_name for tool_name, _arguments in transport.calls],
+        )
+        health = provider.health_snapshot()
+        self.assertEqual(sum(health["dispatch_counts"].values()), 0)
+        self.assertEqual(health["fallback_count"], 0)
+        self.assertEqual(
+            transport.calls,
+            [
+                (
+                    "ha_get_addon",
+                    {"source": "installed", "include_stats": False},
+                ),
+                ("ha_get_addon", {"slug": "local_test_addon"}),
+            ],
         )
 
     async def test_real_addon_provider_failure_still_degrades_health(self):

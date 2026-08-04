@@ -1,5 +1,22 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## 2.2.0-beta.15 lifecycle add-on response evidence
+
+Lifecycle health identifies the exact selected compatibility entry, observed
+upstream version and protocol, lifecycle add-on response-contract model, and
+reviewed envelope variant. A response-contract failure exposes only bounded
+expected/observed cardinality, missing or invalid semantic paths, identity
+mismatch field names, and a truncation flag. It never publishes response
+values, full inventory, translations, options, unrelated add-on identities,
+exception strings, tokens, or credential-bearing URLs. Dispatch and fallback
+counters remain explicit.
+
+Exact 8.0.0 reports model
+`ha-mcp-lifecycle-addon-structured-content-v1` and envelope
+`mcp-direct-structured-content-v1`. Exact 7.14.1 and 7.14.2 retain the bounded
+text model. Unsupported release/protocol/model combinations and incomplete or
+ambiguous responses fail closed before plan creation.
+
 ## 2.2.0-beta.14 special-provider admission evidence
 
 Backup and lifecycle health retain the exact selected compatibility entry,
