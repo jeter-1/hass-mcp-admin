@@ -578,6 +578,18 @@ requirements, fails on dependency resolution or an applicable known
 vulnerability, and is reused by the protected promotion workflow. No advisory
 exceptions are configured.
 
+The `2.2.0-beta.13` dependency-security release advances only the Engineering
+runtime to `aiohttp==3.14.3` and `cryptography==50.0.0`. These are the lowest
+stable releases that jointly resolve CVE-2026-69244, CVE-2026-69247,
+CVE-2026-69248, and CVE-2026-69249; `cryptography==49.0.0` still remains
+affected by CVE-2026-69247. The project uses `aiohttp` for bounded REST,
+WebSocket, Supervisor, and registry HTTP clients and uses `cryptography` for
+fail-closed Ed25519 registry verification. It does not invoke the reported
+PKCS#7 decryption or X.509 verification APIs, but strict auditing is retained
+without an exception because released fixes are available. Python 3.12 and
+published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
+performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
+
 CVE-2025-66416 remains a reviewed, mitigated, deferred configuration risk.
 MCP 1.28.1 supplies Host and Origin controls and automatically configures them
 for loopback binds, but the Engineering production FastMCP instance binds to
