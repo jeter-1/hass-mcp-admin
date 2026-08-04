@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.2.0-beta.16 - F3-A durable execution infrastructure
+
+- Add the internal `f3-operation-adapter-v1` shared executor with exact
+  prepared-operation validation, preflight, durable dispatch intent,
+  observation, verification, readback-only recovery, cancellation, and stable
+  normalized outcomes.
+- Add versioned cross-process resource and provider locks using one stable
+  POSIX `flock` transaction inode, atomic state replacement, canonical
+  multi-lock ordering, shared/exclusive modes, bounded leases, renewal,
+  owner/task binding, fencing generations, and explicit stale recovery.
+- Prove through deterministic synthetic adapters and injected process/response
+  loss that intent persistence precedes provider invocation, persistence
+  failure invokes the provider zero times, and no reconstructed attempt can
+  dispatch or mutate more than once.
+- Keep the new package disconnected from application startup and every current
+  adapter. Add no MCP tool, provider behavior, dashboard write, task/plan
+  schema, fallback, or production signing/execution authority.
+- Preserve exact 7.14.2 78/26/74 and exact 8.0.0 78/24/72 accounting, held
+  tools `ha_search` and `ha_get_operation_status`, 48 Engineering-local tools,
+  `aiohttp==3.14.3`, `cryptography==50.0.0`, stable v1.1.2, and zero fallback.
+
 ## 2.2.0-beta.15 - Live lifecycle add-on response compatibility
 
 - Reproduce exact `ha-mcp` 8.0.0 add-on detail at a 71,986-byte compact
