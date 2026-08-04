@@ -465,15 +465,19 @@ class AddonIsolationTests(unittest.TestCase):
             beta,
             [
                 "mcp==1.28.1",
-                "aiohttp==3.14.2",
+                "aiohttp==3.14.3",
                 "uvicorn==0.51.0",
                 "starlette==1.3.1",
                 "PyYAML==6.0.2",
-                "cryptography==48.0.1",
+                "cryptography==50.0.0",
                 "jsonschema==4.25.1",
             ],
         )
         self.assertTrue(all("==" in requirement for requirement in beta))
+        for requirement in beta:
+            with self.subTest(requirement=requirement):
+                version = requirement.split("==", maxsplit=1)[1]
+                self.assertRegex(version, r"^\d+(?:\.\d+)+(?:\.post\d+)?$")
 
     def test_required_v2_boundaries_and_documentation_exist(self):
         package = BETA_DIR / "ha_mcp_engineering"
