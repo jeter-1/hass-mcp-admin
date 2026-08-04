@@ -178,6 +178,48 @@ an immutable add-on-runtime CI lane proves planning without dispatch. Unknown
 8.x, held reads, protocol, authorization, fallback, governance, and stable-v1
 boundaries do not change.
 
+## 2.2.0-beta.15 live lifecycle response compatibility
+
+Beta 15 preserves Beta 14 provider admission while correcting the exact
+8.0.0 add-on inventory/detail response projection used by lifecycle identity
+binding. Exact 7.14.2 and 8.0.0 accounting, held reads, dashboard reads,
+backup, approval, protocol, fallback, security pins, and stable-v1 boundaries
+remain unchanged.
+
+## F3-0 contract freeze and F3 delivery
+
+F3-0 freezes the operation-adapter lifecycle, lock/dispatch/recovery contract,
+and the required governed update of one existing storage-mode dashboard. It is
+a non-behavioral planning boundary: Engineering remains `2.2.0-beta.15`, task
+schema 1 and 48 local tools remain unchanged, and no adapter is migrated.
+
+The F3 contract documents are:
+
+- [current-state inventory](F3_CURRENT_STATE_INVENTORY.md);
+- [adapter and lock ADR](architecture/ADR-013-F3-OPERATION-ADAPTER-AND-LOCK-CONTRACT.md);
+- [dashboard-write contract](F3_DASHBOARD_WRITE_CONTRACT.md);
+- [parallel-development plan](F3_PARALLEL_DEVELOPMENT_PLAN.md); and
+- [completion acceptance](F3_COMPLETION_ACCEPTANCE.md).
+
+The required dashboard boundary is an exact existing storage-mode dashboard,
+bounded declarative patch, external administrator approval,
+`dashboard:<url_path>` lock, stale-hash rejection, durable intent, one setter
+invocation, exact reread, and verified terminal outcome. Dashboard deletion,
+resources, preferences, screenshots, arbitrary Python, service calls, and
+cross-dashboard transactions are excluded.
+
+The reviewed upstream setter currently performs hash validation and save as
+separate operations. F3-B is therefore blocked from enabling writes until it
+proves atomic compare/save or exclusion covering all dashboard writers (or a
+separately authorized residual-risk decision revises the completion contract).
+Readback alone cannot detect an external edit overwritten inside that window.
+
+Delivery order is F3-0, then F3-A adapter/lock core, then independently
+reviewable F3-B dashboard writes plus F3-C1/C2 adapter conformance, then F3-D
+recovery/acceptance, followed by final integration/release. B, C1, C2, and D
+may develop in parallel against the accepted contract, but merge dependencies
+remain explicit. F4 retains graph execution and generalized compensation.
+
 Each operation must remain operation-specific. This roadmap does not authorize
 a generic administrator, arbitrary Supervisor command, service-call shortcut,
 fallback, restore, or deletion.
