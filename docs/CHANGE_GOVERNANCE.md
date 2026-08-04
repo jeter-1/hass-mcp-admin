@@ -1,14 +1,15 @@
 # Beta automation change governance
 
-## 2.2.0-beta.14 preservation boundary
+## 2.2.0-beta.15 preservation boundary
 
-The special-provider runtime-admission correction changes no plan, approval,
-task, policy, persistence, apply, or dispatch semantics. Valid backup and
-lifecycle probes may again reach the existing proposal-only persistence
-boundary, but planning cannot dispatch. Invalid catalogs and provider-tool
-contracts still fail before persistence. Authority version 3, task schema 1,
-same-administrator enforcement, one-task ownership, no-blind-redispatch, and
-zero fallback remain unchanged.
+The exact lifecycle add-on response correction changes no plan, approval, task,
+policy, persistence, apply, or dispatch semantics. Exact 8.0.0 add-on detail
+responses now use the release-bound structured envelope and project only the
+reviewed identity fields after complete inventory and exact list/detail
+agreement. Malformed, partial, ambiguous, or mismatched responses still fail
+before persistence. Authority version 3, task schema 1, same-administrator
+enforcement, one-task ownership, no-blind-redispatch, and zero fallback remain
+unchanged.
 
 ## 2.2.0-beta.13 preservation boundary
 

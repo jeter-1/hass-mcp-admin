@@ -3,7 +3,7 @@
 > Stable v1.1.2 under `hass_mcp_admin` is retained as historical repository
 > source but is operationally retired. It is not covered by the Engineering
 > dependency audit and is not a supported rollback option. The Engineering v2
-> add-on is developed in place at `2.2.0-beta.14`, based on the exact
+> add-on is developed in place at `2.2.0-beta.15`, based on the exact
 > `v2.0.1` release, at
 > [`hass_mcp_engineering_beta/`](hass_mcp_engineering_beta/) on port `8100`.
 > Its existing technical “Beta” identity is retained to avoid a slug or runtime
@@ -42,13 +42,13 @@
 > Dev15 contract-level compatibility, partial quarantine, dashboard
 > independence, and retry-cadence separation are documented in
 > [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md).
-> The current Engineering development version is `2.2.0-beta.14`. It corrects
-> exact `ha-mcp` 8.0.0 Dashboard, backup, and lifecycle admission while
-> preserving the Beta 13 dependency-security baseline. Its release and
+> The current Engineering development version is `2.2.0-beta.15`. It corrects
+> exact `ha-mcp` 8.0.0 lifecycle add-on detail response handling after Beta 14
+> corrected catalog, Dashboard, backup, and reload admission. Its release and
 > acceptance authority are recorded in
-> [`docs/V2_2_0_BETA14_RELEASE_NOTES.md`](docs/V2_2_0_BETA14_RELEASE_NOTES.md)
+> [`docs/V2_2_0_BETA15_RELEASE_NOTES.md`](docs/V2_2_0_BETA15_RELEASE_NOTES.md)
 > and
-> [`docs/V2_2_0_BETA14_ACCEPTANCE.md`](docs/V2_2_0_BETA14_ACCEPTANCE.md).
+> [`docs/V2_2_0_BETA15_ACCEPTANCE.md`](docs/V2_2_0_BETA15_ACCEPTANCE.md).
 > The Beta 12 special-provider canary failure remains recorded in
 > [`docs/V2_2_0_BETA12_CANARY_FAILURE.md`](docs/V2_2_0_BETA12_CANARY_FAILURE.md).
 > Production `ha-mcp` 8.0.0 acceptance remains pending a later controlled
@@ -245,16 +245,16 @@ outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
 
 ## Engineering v2 milestones
 
-The current Engineering development version is `2.2.0-beta.14`, based on the
-accepted Beta 13 dependency-security boundary. It corrects the remaining exact
-8.0.0 Dashboard, backup, and lifecycle runtime-admission paths while preserving
+The current Engineering development version is `2.2.0-beta.15`, based on the
+accepted Beta 14 special-provider admission boundary. It corrects the live
+exact 8.0.0 add-on detail response used for lifecycle identity while preserving
 Beta 10 historical-plan compatibility, Beta 11 bounded restart reconciliation,
-Beta 12 automatic-read admission, and Beta 13 secure dependency pins. It adds
-no resource type, provider, tool, arbitrary service call, approval mode, or
-fallback.
+Beta 12 automatic-read admission, Beta 13 secure dependency pins, and Beta 14
+Dashboard, backup, and catalog validation. It adds no resource type, provider,
+tool, arbitrary service call, approval mode, or fallback.
 The roadmap and acceptance authority are
 [`docs/2_1_ROADMAP.md`](docs/2_1_ROADMAP.md) and
-[`docs/V2_2_0_BETA14_ACCEPTANCE.md`](docs/V2_2_0_BETA14_ACCEPTANCE.md). Determine advertised
+[`docs/V2_2_0_BETA15_ACCEPTANCE.md`](docs/V2_2_0_BETA15_ACCEPTANCE.md). Determine advertised
 release state from authoritative version metadata and
 `scripts/codex-context.py`, not from this milestone narrative. Engineering has
 48 statically registered

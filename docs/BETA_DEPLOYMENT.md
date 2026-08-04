@@ -6,12 +6,13 @@ Engineering Server Beta** (`hass_mcp_engineering_beta`, port 8100) beside
 v1.1.2 (`hass_mcp_admin`, port 8099). Stable v1.1.2 is now operationally
 retired; use the current Engineering release notes for rollback.
 
-The active Beta 14 source and later operator-controlled acceptance boundary is
-[`V2_2_0_BETA14_ACCEPTANCE.md`](V2_2_0_BETA14_ACCEPTANCE.md). Beta 14 inherits
-the Beta 13 dependency-security pins and corrects exact `ha-mcp` 8.0.0
-Dashboard, backup, and lifecycle admission without changing authorization or
-dispatch behavior. Deploy and validate it against 7.14.2 before any separately
-authorized 8.0.0 canary. Source validation does not access deployed Home
+The active Beta 15 source and later operator-controlled acceptance boundary is
+[`V2_2_0_BETA15_ACCEPTANCE.md`](V2_2_0_BETA15_ACCEPTANCE.md). Beta 15 inherits
+the Beta 13 dependency-security pins and Beta 14 special-provider admission,
+then corrects the exact `ha-mcp` 8.0.0 live add-on detail response without
+changing authorization or dispatch behavior. Deploy and validate it against
+the current exact 8.0.0 boundary only under a separately authorized canary.
+Source validation does not access deployed Home
 Assistant or perform an add-on update. The original canary failure and rollback
 remain recorded in
 [`V2_2_0_BETA12_CANARY_FAILURE.md`](V2_2_0_BETA12_CANARY_FAILURE.md).

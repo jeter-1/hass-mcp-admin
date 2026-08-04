@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.2.0-beta.15 - Live lifecycle add-on response compatibility
+
+- Reproduce exact `ha-mcp` 8.0.0 add-on detail at a 71,986-byte compact
+  source-derived minimum and prove Beta 14's generic 60,000-byte lifecycle text
+  decoder rejected it before plan persistence or dispatch.
+- Bind exact 8.0.0 and protocol `2025-03-26` to a reviewed direct structured
+  lifecycle response model while retaining the bounded text model for exact
+  7.14.1 and 7.14.2. Keep the complete MCP exchange and parallel text
+  representations independently bounded.
+- Project only the exact add-on identity fields required for lifecycle
+  planning, require inventory/detail agreement, and reject malformed,
+  incomplete, duplicate, ambiguous, unknown-model, or drifting responses with
+  bounded value-free diagnostics.
+- Extend immutable 8.0.0 add-on runtime acceptance with a secret-free
+  source-shaped Supervisor detail fixture at the source-derived minimum
+  response cardinality.
+  Require four disposable proposals, zero provider dispatch, zero fixture
+  mutation, and zero fallback.
+- Preserve exact 7.14.2 78/26/74 and exact 8.0.0 78/24/72 accounting, the two
+  held reads, Dashboard and backup behavior, model-aware full-catalog
+  validation, secure dependency pins, strict audit, stable v1.1.2, and zero
+  fallback. Production acceptance remains pending a separate live canary.
+
 ## 2.2.0-beta.14 - Exact special-provider runtime admission
 
 - Replace stale raw whole-catalog admission equality in the backup and

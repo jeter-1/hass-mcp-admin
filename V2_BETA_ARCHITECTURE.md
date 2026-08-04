@@ -1,5 +1,21 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## 2.2.0-beta.15 live lifecycle response compatibility
+
+Beta 15 adds one exact-release-bound lifecycle response projection. Exact
+8.0.0's add-on detail result is accepted through its reviewed direct
+`structuredContent` envelope under independent transport and model bounds, then
+reduced to the exact lifecycle identity fields. The redundant text and
+structured payloads must agree. Inventory completeness, exact slug
+cardinality, endpoint binding, installed identity, and response types remain
+fail-closed.
+
+The immutable add-on-runtime lane now uses a secret-free, source-shaped
+Supervisor response at the 71,986-byte source-derived minimum cardinality.
+Dashboard, backup,
+catalog admission, provider actions, planning/dispatch separation, held tools,
+protocol, secure dependency pins, and zero fallback do not change.
+
 ## 2.2.0-beta.14 special-provider model-aware admission
 
 The three special-provider failures left after Beta 12 are resolved without

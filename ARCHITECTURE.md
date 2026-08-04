@@ -1,5 +1,20 @@
 # HA MCP Engineering Server Architecture
 
+## 2.2.0-beta.15 exact lifecycle add-on response contracts
+
+Exact lifecycle response decoding is selected only after reviewed release and
+protocol admission. Exact 8.0.0 uses a bounded direct-structured response model
+for the full Supervisor add-on detail envelope, validates its parallel text
+representation, and immediately projects only the identity fields needed by
+governed restart planning. Exact 7.14.1 and 7.14.2 retain their reviewed
+bounded text model. Unknown response models, malformed or incomplete
+envelopes, ambiguous identity, and list/detail drift fail before plan creation.
+
+The global MCP response bound, exact tool/catalog admission, endpoint-host
+binding, action and argument constraints, approval separation, zero dispatch
+during planning, held tools, zero fallback, secure dependencies, and stable-v1
+boundary are unchanged.
+
 ## 2.2.0-beta.14 exact special-provider runtime admission
 
 Backup and lifecycle now use one exact-release, model-aware full-catalog
