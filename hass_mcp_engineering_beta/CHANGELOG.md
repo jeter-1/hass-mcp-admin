@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.2.0-beta.13 - Dependency security remediation
+
+- Advance the Engineering-only `aiohttp` pin from 3.14.2 to 3.14.3 and
+  `cryptography` from 48.0.1 to 50.0.0, the lowest stable combination that
+  resolves CVE-2026-69244, CVE-2026-69247, CVE-2026-69248, and
+  CVE-2026-69249.
+- Retain strict `pip-audit` enforcement without an advisory exception,
+  package ignore, prerelease, Git dependency, or fallback. Add an exact
+  stable-version guard alongside the synchronized runtime-pin test.
+- Preserve all Beta 12 runtime behavior: exact-release and protocol admission,
+  48 Engineering-local tools, governance, approval, provider arguments,
+  dispatch separation, held-tool policy, and zero fallback.
+- Leave stable v1.1.2 unchanged. The `ha-mcp` 8.0.0 dashboard, backup, and
+  lifecycle special-provider correction is not included and moves to Beta 14;
+  production 8.0.0 acceptance remains blocked until that release.
+
 ## 2.2.0-beta.12 - Exact ha-mcp 8.0.0 add-on runtime admission
 
 - Reproduce the Beta 11 production canary's exact

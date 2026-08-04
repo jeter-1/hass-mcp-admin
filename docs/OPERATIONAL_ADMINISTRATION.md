@@ -1,8 +1,9 @@
 # Governed operational administration
 
-Version: `2.2.0-beta.12`
+Version: `2.2.0-beta.13`
 
-Beta 12 changes only exact upstream read-admission evidence and diagnostics.
+Beta 13 changes only the Engineering dependency pins. Beta 12 changed exact
+upstream read-admission evidence and diagnostics.
 Operational proposals, authority version 3, task schema 1, provider routing,
 argument constraints, verification and no-blind-redispatch behavior are
 unchanged.
