@@ -37,6 +37,10 @@ class SyntheticResponseLost(SyntheticProviderError):
     pass
 
 
+class SyntheticProcessLoss(BaseException):
+    pass
+
+
 @dataclass
 class SyntheticCounters:
     prepare_invocations: int = 0
@@ -233,6 +237,8 @@ class SyntheticOperationAdapter:
         count = self.counters.observation_invocations
         if self.behavior.observation == "raise":
             raise SyntheticProviderError("synthetic observation failed")
+        if self.behavior.observation == "process_loss":
+            raise SyntheticProcessLoss()
         if self.behavior.observation == "malformed":
             return ObservationResult(
                 outcome=NormalizedOperationOutcome.OBSERVING,
@@ -298,6 +304,8 @@ class SyntheticOperationAdapter:
         count = self.counters.verification_invocations
         if self.behavior.verification == "raise":
             raise SyntheticProviderError("synthetic verification failed")
+        if self.behavior.verification == "process_loss":
+            raise SyntheticProcessLoss()
         if self.behavior.verification == "observing":
             return VerificationResult(
                 outcome=NormalizedOperationOutcome.OBSERVING,

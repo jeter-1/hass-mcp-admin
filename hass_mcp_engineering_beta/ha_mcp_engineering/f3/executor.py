@@ -368,6 +368,11 @@ class SharedOperationExecutor:
         handle: LockHandle | None = None
         try:
             self._inject("before_lock_acquisition")
+            if not claim.created:
+                self._release_expired_pre_dispatch_locks(
+                    identity=identity,
+                    prepared=prepared,
+                )
             requests = normalize_lock_requests(
                 getattr(adapter, "lock_requests")(prepared)
             )
@@ -656,8 +661,14 @@ class SharedOperationExecutor:
             prepared=prepared,
         )
         if handle is None:
+            yielded = self.execution_repository.yield_claim(
+                identity.task_id,
+                owner_id=identity.owner_id,
+                claim_generation=claim.claim_generation,
+                now=self.now(),
+            )
             return self._result(
-                record,
+                yielded,
                 duplicate=True,
                 extra_codes=("recovery_waiting_for_lock_lease",),
             )
@@ -758,6 +769,28 @@ class SharedOperationExecutor:
         )
         return handle
 
+    def _release_expired_pre_dispatch_locks(
+        self,
+        *,
+        identity: ExecutionIdentity,
+        prepared: object,
+    ) -> None:
+        """Release only the exact expired attempt's pre-intent lock set."""
+        decisions: dict[tuple[str, int], StaleRecoveryDecision] = {}
+        for record in self.lock_store.expired_records(now=self.now()):
+            if (
+                record.task_id == identity.task_id
+                and record.plan_id == identity.plan_id
+                and record.operation_id == str(getattr(prepared, "operation"))
+                and record.attempt_id == identity.attempt_id
+            ):
+                decisions[(record.key, record.generation)] = StaleRecoveryDecision(
+                    action=StaleRecoveryAction.RELEASE,
+                    reason_code="pre_dispatch_process_reconstruction",
+                )
+        if decisions:
+            self.lock_store.recover_expired(decisions, now=self.now())
+
     async def _observe_and_verify(
         self,
         *,
@@ -838,8 +871,12 @@ class SharedOperationExecutor:
                         handle,
                         reason_code="observation_evidence_exhausted",
                     )
-                self._renew_safely(handle)
-                return self._result(record)
+                renewal_failure = self._renewal_failure_result(
+                    claim, identity, handle
+                )
+                if renewal_failure is not None:
+                    return renewal_failure
+                return self._yield_and_result(record, claim, identity)
         except SimulatedProcessLoss:
             raise
         except Exception:
@@ -865,8 +902,12 @@ class SharedOperationExecutor:
                 diagnostic_codes=("observation_failed",),
                 now=self.now(),
             )
-            self._renew_safely(handle)
-            return self._result(record)
+            renewal_failure = self._renewal_failure_result(
+                claim, identity, handle
+            )
+            if renewal_failure is not None:
+                return renewal_failure
+            return self._yield_and_result(record, claim, identity)
 
         try:
             verification = await getattr(adapter, "verify")(
@@ -913,7 +954,12 @@ class SharedOperationExecutor:
                 else:
                     self._release_safely(handle)
             else:
-                self._renew_safely(handle)
+                renewal_failure = self._renewal_failure_result(
+                    claim, identity, handle
+                )
+                if renewal_failure is not None:
+                    return renewal_failure
+                return self._yield_and_result(record, claim, identity)
             return self._result(record)
         except SimulatedProcessLoss:
             raise
@@ -941,8 +987,12 @@ class SharedOperationExecutor:
                 diagnostic_codes=("verification_failed",),
                 now=self.now(),
             )
-            self._renew_safely(handle)
-            return self._result(record)
+            renewal_failure = self._renewal_failure_result(
+                claim, identity, handle
+            )
+            if renewal_failure is not None:
+                return renewal_failure
+            return self._yield_and_result(record, claim, identity)
 
     @staticmethod
     def _validate_observation(observation: object) -> None:
@@ -1056,11 +1106,36 @@ class SharedOperationExecutor:
             now=self.now(),
         )
 
-    def _renew_safely(self, handle: LockHandle) -> LockHandle:
+    def _yield_and_result(
+        self,
+        record: ExecutionRecord,
+        claim: ExecutionClaim,
+        identity: ExecutionIdentity,
+    ) -> ExecutorResult:
+        yielded = self.execution_repository.yield_claim(
+            identity.task_id,
+            owner_id=identity.owner_id,
+            claim_generation=claim.claim_generation,
+            now=self.now(),
+        )
+        return self._result(yielded)
+
+    def _renewal_failure_result(
+        self,
+        claim: ExecutionClaim,
+        identity: ExecutionIdentity,
+        handle: LockHandle,
+    ) -> ExecutorResult | None:
         try:
-            return self.lock_store.renew(handle, now=self.now())
+            self.lock_store.renew(handle, now=self.now())
+            return None
         except DurableLockError:
-            return handle
+            return self._manual_review(
+                claim,
+                identity,
+                handle,
+                reason_code="lock_renewal_failed",
+            )
 
     def _release_safely(self, handle: LockHandle) -> None:
         try:

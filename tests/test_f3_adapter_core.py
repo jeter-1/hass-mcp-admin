@@ -328,6 +328,46 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(adapter.counters.simulated_mutations, 0)
         self.assertEqual(adapter.counters.recovery_invocations, 1)
 
+    async def test_expired_preintent_locks_reconstruct_with_new_preflight(self):
+        def lose(stage: str) -> None:
+            if stage == "after_preflight_before_durable_intent":
+                raise SimulatedProcessLoss()
+
+        adapter = SyntheticOperationAdapter()
+        with self.assertRaises(SimulatedProcessLoss):
+            await self.executor(fault_hook=lose).execute(
+                adapter=adapter,
+                prepared=prepared_dashboard_operation(),
+                identity=_identity(),
+            )
+        first_generations = tuple(
+            item.generation for item in self.locks.records()
+        )
+        self.assertEqual(adapter.counters.preflight_invocations, 1)
+        self.assertEqual(adapter.counters.dispatch_invocations, 0)
+        self.clock.advance(61)
+        result = await self.executor().execute(
+            adapter=adapter,
+            prepared=prepared_dashboard_operation(),
+            identity=_identity(
+                owner="owner-recovery", request="request-recovery"
+            ),
+        )
+        self.assertEqual(result.outcome, "succeeded_verified")
+        self.assertEqual(adapter.counters.preflight_invocations, 2)
+        self.assertEqual(adapter.counters.dispatch_invocations, 1)
+        self.assertEqual(adapter.counters.simulated_mutations, 1)
+        self.assertEqual(self.locks.records(), ())
+        durable = self.executions.get("task-synthetic")
+        self.assertIsNotNone(durable)
+        assert durable is not None
+        self.assertTrue(
+            all(
+                token["generation"] not in first_generations
+                for token in durable.lock_tokens
+            )
+        )
+
     async def test_duplicate_active_task_reports_existing_without_locks(self):
         prepared = prepared_dashboard_operation()
         self.executions.claim(

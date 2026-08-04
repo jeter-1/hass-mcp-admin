@@ -288,7 +288,7 @@ class DurableExecutionRepository:
                 )
                 > instant
             )
-            if claim_active and durable_identity.owner_id != identity.owner_id:
+            if claim_active:
                 raise DuplicateExecutionActive(record)
             if record.dispatch_intent is not None:
                 # Claim transfer permits observation-only reconstruction.  It
@@ -647,6 +647,35 @@ class DurableExecutionRepository:
                 event_type="verification_recorded",
                 occurred_at=now_text,
                 diagnostic_codes=bounded_diagnostics(diagnostic_codes),
+            )
+
+        return self.mutate_claimed(
+            task_id,
+            owner_id=owner_id,
+            claim_generation=claim_generation,
+            mutator=update,
+        )
+
+    def yield_claim(
+        self,
+        task_id: str,
+        *,
+        owner_id: str,
+        claim_generation: int,
+        now: datetime | None = None,
+    ) -> ExecutionRecord:
+        """End an in-process single-flight claim while work remains observable."""
+        now_text = timestamp(now or utc_now())
+
+        def update(record: ExecutionRecord) -> None:
+            if record.terminal:
+                raise ExecutionStorageError("terminal execution cannot yield a claim")
+            record.claim_expires_at = now_text
+            append_execution_event(
+                record,
+                event_type="execution_claim_yielded",
+                occurred_at=now_text,
+                diagnostic_codes=("observation_resume_allowed",),
             )
 
         return self.mutate_claimed(

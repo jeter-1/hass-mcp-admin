@@ -227,9 +227,13 @@ class DurableLockStore:
                 raise ValueError("state is not an object")
             if set(state) != {"schema_version", "next_generation", "records"}:
                 raise ValueError("state fields are invalid")
-            if int(state["schema_version"]) != LOCK_STATE_SCHEMA_VERSION:
+            if type(state["schema_version"]) is not int:
+                raise ValueError("lock-state schema version is invalid")
+            if state["schema_version"] != LOCK_STATE_SCHEMA_VERSION:
                 raise ValueError("unsupported lock-state schema")
-            next_generation = int(state["next_generation"])
+            if type(state["next_generation"]) is not int:
+                raise ValueError("lock-state generation is invalid")
+            next_generation = state["next_generation"]
             records = [LockRecord.from_dict(item) for item in state["records"]]
             ordered = sorted(records, key=lambda item: (item.key.encode("utf-8"), item.generation))
             if records != ordered:
@@ -327,7 +331,7 @@ class DurableLockStore:
         owner.validate()
         timing.validate()
         normalized = normalize_lock_requests(requests)
-        instant = (now or utc_now()).astimezone()
+        instant = now or utc_now()
         acquired_at = timestamp(instant)
         lease_expires_at = timestamp(
             instant + timedelta(seconds=timing.lease_seconds)

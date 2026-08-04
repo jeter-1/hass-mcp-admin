@@ -131,6 +131,18 @@ def validate_sha256(value: object, *, field_name: str) -> str:
     return value
 
 
+def require_bool(value: object, *, field_name: str) -> bool:
+    if type(value) is not bool:
+        raise ValueError(f"{field_name} must be a boolean")
+    return value
+
+
+def require_int(value: object, *, field_name: str) -> int:
+    if type(value) is not int:
+        raise ValueError(f"{field_name} must be an integer")
+    return value
+
+
 @dataclass(frozen=True)
 class LockTiming:
     """Explicit bounded lease, renewal, and waiting constraints."""
@@ -267,6 +279,8 @@ class LockRecord:
         ).validate()
         if self.generation < 1:
             raise ValueError("lock generation is invalid")
+        if type(self.conflict_hold) is not bool:
+            raise ValueError("lock conflict hold must be a boolean")
         acquired = parse_timestamp(self.acquired_at, field_name="acquired_at")
         renewed = parse_timestamp(self.last_renewed_at, field_name="last_renewed_at")
         expires = parse_timestamp(self.lease_expires_at, field_name="lease_expires_at")
@@ -306,7 +320,9 @@ class LockRecord:
         if set(value) != allowed:
             raise ValueError("lock record fields are invalid")
         record = cls(
-            schema_version=int(value["schema_version"]),
+            schema_version=require_int(
+                value["schema_version"], field_name="schema_version"
+            ),
             key=str(value["key"]),
             scopes=tuple(str(item) for item in value["scopes"]),
             mode=str(value["mode"]),
@@ -318,9 +334,11 @@ class LockRecord:
             acquired_at=str(value["acquired_at"]),
             lease_expires_at=str(value["lease_expires_at"]),
             last_renewed_at=str(value["last_renewed_at"]),
-            generation=int(value["generation"]),
+            generation=require_int(value["generation"], field_name="generation"),
             evidence_references=tuple(str(item) for item in value["evidence_references"]),
-            conflict_hold=bool(value["conflict_hold"]),
+            conflict_hold=require_bool(
+                value["conflict_hold"], field_name="conflict_hold"
+            ),
         )
         record.validate()
         return record
@@ -419,11 +437,11 @@ class ExecutionRecord:
 
     def execution_identity(self) -> ExecutionIdentity:
         return ExecutionIdentity(
-            task_id=str(self.identity["task_id"]),
-            plan_id=(str(self.identity["plan_id"]) if self.identity.get("plan_id") is not None else None),
-            attempt_id=str(self.identity["attempt_id"]),
-            request_id=str(self.identity["request_id"]),
-            owner_id=str(self.identity["owner_id"]),
+            task_id=self.identity["task_id"],
+            plan_id=self.identity["plan_id"],
+            attempt_id=self.identity["attempt_id"],
+            request_id=self.identity["request_id"],
+            owner_id=self.identity["owner_id"],
         )
 
     def validate(self) -> None:
@@ -440,6 +458,15 @@ class ExecutionRecord:
         validate_identifier(self.target["target_type"], field_name="target_type")
         validate_identifier(self.target["target_id"], field_name="target_id")
         validate_sha256(self.prepared_operation_hash, field_name="prepared_operation_hash")
+        if set(self.identity) != {
+            "task_id", "plan_id", "attempt_id", "request_id", "owner_id"
+        }:
+            raise ValueError("execution identity fields are invalid")
+        allowed_states = {
+            "planning", "preflight", "dispatching", "observation", "terminal"
+        }
+        if self.state not in allowed_states:
+            raise ValueError("execution phase state is invalid")
         allowed_task_states = {
             "created",
             "preflight",
@@ -454,6 +481,12 @@ class ExecutionRecord:
         }
         if self.task_state not in allowed_task_states:
             raise ValueError("execution task state is invalid")
+        if type(self.terminal) is not bool:
+            raise ValueError("execution terminal flag must be a boolean")
+        if type(self.preflight_completed) is not bool:
+            raise ValueError("preflight flag must be a boolean")
+        if type(self.provider_response_received) is not bool:
+            raise ValueError("provider-response flag must be a boolean")
         if self.normalized_outcome is not None:
             if self.normalized_outcome not in NORMALIZED_OUTCOME_TO_TASK_STATE:
                 raise ValueError("execution outcome is invalid")
@@ -463,8 +496,9 @@ class ExecutionRecord:
                 raise ValueError("terminal task-state projection is invalid")
         elif self.terminal:
             raise ValueError("terminal execution record is missing an outcome")
-        if self.dispatch_count not in {0, 1}:
+        if type(self.dispatch_count) is not int or self.dispatch_count not in {0, 1}:
             raise ValueError("execution record has multiple dispatches")
+        self._validate_lock_tokens(self.lock_tokens)
         if self.dispatch_intent is None and self.dispatch_count:
             raise ValueError("dispatch count exists without durable intent")
         if self.dispatch_intent is not None:
@@ -480,19 +514,86 @@ class ExecutionRecord:
                 self.dispatch_intent["provider_arguments_hash"],
                 field_name="provider_arguments_hash",
             )
+            validate_identifier(
+                self.dispatch_intent["request_id"], field_name="request_id"
+            )
+            validate_identifier(
+                self.dispatch_intent["provider_operation"],
+                field_name="provider_operation",
+            )
+            self._validate_lock_tokens(self.dispatch_intent["lock_tokens"])
+            if self.dispatch_intent["lock_tokens"] != self.lock_tokens:
+                raise ValueError("durable intent lock tokens are inconsistent")
             if self.dispatch_intent["possibly_dispatched"] is not True:
                 raise ValueError("durable intent must be possibly dispatched")
         parse_timestamp(self.created_at, field_name="created_at")
         parse_timestamp(self.updated_at, field_name="updated_at")
         parse_timestamp(self.claim_expires_at, field_name="claim_expires_at")
-        if self.claim_generation < 1:
+        if type(self.claim_generation) is not int or self.claim_generation < 1:
             raise ValueError("execution claim generation is invalid")
-        if not 0 <= self.observation_attempts <= 32:
+        if type(self.observation_attempts) is not int or not 0 <= self.observation_attempts <= 32:
             raise ValueError("observation attempts are invalid")
-        if not 0 <= self.verification_attempts <= 32:
+        if type(self.verification_attempts) is not int or not 0 <= self.verification_attempts <= 32:
             raise ValueError("verification attempts are invalid")
+        if not isinstance(self.evidence, dict):
+            raise ValueError("execution evidence is invalid")
+        allowed_evidence = {
+            "evidence_hash", "resulting_state_fingerprint", "mismatch_fields",
+            "manual_review_reason_code",
+        }
+        if set(self.evidence) - allowed_evidence:
+            raise ValueError("execution evidence fields are invalid")
+        for key, value in self.evidence.items():
+            if key in {"evidence_hash", "resulting_state_fingerprint"}:
+                validate_sha256(value, field_name=key)
+            elif key == "mismatch_fields":
+                if list(bounded_diagnostics(value)) != value:
+                    raise ValueError("execution mismatch fields are invalid")
+            elif bounded_diagnostics((value,)) != (value,):
+                raise ValueError("manual-review evidence is invalid")
         if len(self.events) > MAX_EXECUTION_EVENTS:
             raise ValueError("execution event bound exceeded")
+        for expected_sequence, event in enumerate(self.events, start=1):
+            if not isinstance(event, dict) or set(event) != {
+                "sequence", "event_type", "occurred_at", "diagnostic_codes"
+            }:
+                raise ValueError("execution event fields are invalid")
+            if require_int(event["sequence"], field_name="event sequence") != expected_sequence:
+                raise ValueError("execution event sequence is invalid")
+            if not isinstance(event["event_type"], str) or not EVIDENCE_PATTERN.fullmatch(
+                event["event_type"]
+            ):
+                raise ValueError("execution event type is invalid")
+            parse_timestamp(event["occurred_at"], field_name="event occurred_at")
+            if list(bounded_diagnostics(event["diagnostic_codes"])) != event[
+                "diagnostic_codes"
+            ]:
+                raise ValueError("execution event diagnostics are invalid")
+
+    @staticmethod
+    def _validate_lock_tokens(value: object) -> None:
+        if not isinstance(value, list) or len(value) > MAX_EVIDENCE_ITEMS:
+            raise ValueError("execution lock tokens are invalid")
+        keys: list[str] = []
+        for item in value:
+            if not isinstance(item, dict) or set(item) != {
+                "key", "generation", "mode", "owner_id"
+            }:
+                raise ValueError("execution lock-token fields are invalid")
+            token = LockToken(
+                key=item["key"],
+                generation=require_int(
+                    item["generation"], field_name="lock generation"
+                ),
+                mode=item["mode"],
+            )
+            token.validate()
+            validate_identifier(item["owner_id"], field_name="owner_id")
+            keys.append(token.key)
+        if keys != sorted(keys, key=lambda item: item.encode("utf-8")):
+            raise ValueError("execution lock tokens are not bytewise sorted")
+        if len(keys) != len(set(keys)):
+            raise ValueError("execution lock tokens are duplicated")
 
     def to_dict(self) -> dict[str, Any]:
         self.validate()
@@ -538,32 +639,49 @@ class ExecutionRecord:
         if set(value) != allowed:
             raise ValueError("execution record fields are invalid")
         record = cls(
-            schema_version=int(value["schema_version"]),
+            schema_version=require_int(
+                value["schema_version"], field_name="schema_version"
+            ),
             identity=dict(value["identity"]),
-            adapter_model=str(value["adapter_model"]),
-            adapter_id=str(value["adapter_id"]),
-            operation=str(value["operation"]),
-            target={str(k): str(v) for k, v in dict(value["target"]).items()},
-            prepared_operation_hash=str(value["prepared_operation_hash"]),
-            state=str(value["state"]),
+            adapter_model=value["adapter_model"],
+            adapter_id=value["adapter_id"],
+            operation=value["operation"],
+            target=dict(value["target"]),
+            prepared_operation_hash=value["prepared_operation_hash"],
+            state=value["state"],
             normalized_outcome=(
-                str(value["normalized_outcome"])
+                value["normalized_outcome"]
                 if value["normalized_outcome"] is not None
                 else None
             ),
-            task_state=str(value["task_state"]),
-            terminal=bool(value["terminal"]),
-            created_at=str(value["created_at"]),
-            updated_at=str(value["updated_at"]),
-            claim_generation=int(value["claim_generation"]),
-            claim_expires_at=str(value["claim_expires_at"]),
+            task_state=value["task_state"],
+            terminal=require_bool(value["terminal"], field_name="terminal"),
+            created_at=value["created_at"],
+            updated_at=value["updated_at"],
+            claim_generation=require_int(
+                value["claim_generation"], field_name="claim_generation"
+            ),
+            claim_expires_at=value["claim_expires_at"],
             lock_tokens=[dict(item) for item in value["lock_tokens"]],
-            preflight_completed=bool(value["preflight_completed"]),
+            preflight_completed=require_bool(
+                value["preflight_completed"], field_name="preflight_completed"
+            ),
             dispatch_intent=(dict(value["dispatch_intent"]) if isinstance(value["dispatch_intent"], dict) else None),
-            dispatch_count=int(value["dispatch_count"]),
-            provider_response_received=bool(value["provider_response_received"]),
-            observation_attempts=int(value["observation_attempts"]),
-            verification_attempts=int(value["verification_attempts"]),
+            dispatch_count=require_int(
+                value["dispatch_count"], field_name="dispatch_count"
+            ),
+            provider_response_received=require_bool(
+                value["provider_response_received"],
+                field_name="provider_response_received",
+            ),
+            observation_attempts=require_int(
+                value["observation_attempts"],
+                field_name="observation_attempts",
+            ),
+            verification_attempts=require_int(
+                value["verification_attempts"],
+                field_name="verification_attempts",
+            ),
             evidence=dict(value["evidence"]),
             events=[dict(item) for item in value["events"]],
         )
