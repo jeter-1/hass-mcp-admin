@@ -138,6 +138,51 @@ INSTALLED_ADDONS = [
         "repository": "abcdef12",
     }
 ]
+DASHBOARDS = [
+    {
+        "id": "compatibility-fixture",
+        "url_path": "compatibility-fixture",
+        "title": "Compatibility Fixture",
+        "icon": "mdi:view-dashboard-outline",
+        "show_in_sidebar": True,
+        "require_admin": False,
+        "mode": "storage",
+    }
+]
+DASHBOARD_CONFIG = {
+    "title": "Compatibility Fixture",
+    "views": [
+        {
+            "title": "Overview",
+            "path": "overview",
+            "cards": [
+                {
+                    "type": "entity",
+                    "entity": "sun.sun",
+                    "name": "Synthetic Sun",
+                }
+            ],
+        }
+    ],
+}
+SERVICES = {
+    "automation": {
+        "reload": {
+            "name": "Reload",
+            "description": "Synthetic service metadata only.",
+            "fields": {},
+            "target": {},
+        }
+    },
+    "light": {
+        "turn_on": {
+            "name": "Turn on",
+            "description": "Synthetic service metadata only.",
+            "fields": {},
+            "target": {"entity": []},
+        }
+    },
+}
 
 
 class FixtureState:
@@ -226,18 +271,7 @@ async def api_history(request: web.Request) -> web.Response:
 
 async def api_services(_request: web.Request) -> web.Response:
     STATE.rest_reads["/api/services"] += 1
-    return web.json_response(
-        {
-            "light": {
-                "turn_on": {
-                    "name": "Turn on",
-                    "description": "Synthetic service metadata only.",
-                    "fields": {},
-                    "target": {"entity": []},
-                }
-            }
-        }
-    )
+    return web.json_response(SERVICES)
 
 
 async def api_automation(request: web.Request) -> web.Response:
@@ -271,6 +305,8 @@ def _result_for(message_type: str, request_data: dict[str, Any]) -> Any:
         return None
     if message_type == "get_states":
         return STATES
+    if message_type == "get_services":
+        return SERVICES
     if message_type == "config/entity_registry/list":
         return ENTITY_REGISTRY
     if message_type == "config/entity_registry/get":
@@ -285,8 +321,14 @@ def _result_for(message_type: str, request_data: dict[str, Any]) -> Any:
         return AREAS
     if message_type in {"config/floor_registry/list", "config/label_registry/list"}:
         return []
+    if message_type == "lovelace/dashboards/list":
+        return DASHBOARDS
+    if message_type == "lovelace/config":
+        url_path = request_data.get("url_path")
+        if url_path in {None, "compatibility-fixture"}:
+            return DASHBOARD_CONFIG
+        return None
     if message_type in {
-        "lovelace/dashboards/list",
         "config/category_registry/list",
         "config/entry_registry/list",
     }:

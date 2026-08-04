@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from copy import deepcopy
 from dataclasses import replace
 import json
@@ -49,6 +50,24 @@ from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
 
 def load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def raw_catalog_admission_comparison_lines(source: str) -> tuple[int, ...]:
+    """Find raw release-catalog comparisons while allowing evidence reads."""
+
+    lines: list[int] = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Compare):
+            continue
+        operands = (node.left, *node.comparators)
+        if any(
+            isinstance(item, ast.Attribute)
+            and item.attr == "catalog_fingerprint"
+            for operand in operands
+            for item in ast.walk(operand)
+        ):
+            lines.append(node.lineno)
+    return tuple(sorted(lines))
 
 
 def reviewed_tools(version: str) -> list[dict]:
@@ -188,6 +207,10 @@ class ReviewedCatalogValidatorTests(unittest.TestCase):
             standalone.normalized_catalog_fingerprint,
             addon.normalized_catalog_fingerprint,
         )
+        self.assertEqual(
+            addon.normalized_catalog_fingerprint,
+            "3bad86b86400807ceddf68805cf4ed86d1243f201104e18ed8d3c15e560a1d53",
+        )
 
     def test_identity_tool_set_and_contract_drift_fail_closed(self):
         tools = addon_8_tools()
@@ -196,6 +219,12 @@ class ReviewedCatalogValidatorTests(unittest.TestCase):
                 "unknown_patch",
                 tools,
                 {"upstream_version": "8.0.1"},
+                "upstream_version_mismatch",
+            ),
+            (
+                "unknown_minor",
+                tools,
+                {"upstream_version": "8.1.0"},
                 "upstream_version_mismatch",
             ),
             (
@@ -247,6 +276,126 @@ class ReviewedCatalogValidatorTests(unittest.TestCase):
                         result.expected_normalized_catalog_fingerprint,
                     )
 
+    def test_security_schema_output_and_policy_drift_fail_closed(self):
+        baseline = addon_8_tools()
+        target_index = next(
+            index
+            for index, tool in enumerate(baseline)
+            if tool["name"] == "ha_get_state"
+        )
+        candidates: dict[str, list[dict]] = {}
+
+        additional = deepcopy(baseline)
+        unreviewed = deepcopy(additional[0])
+        unreviewed["name"] = "ha_unreviewed_beta14"
+        additional.append(unreviewed)
+        candidates["additional_unreviewed_tool"] = additional
+
+        pinned = deepcopy(baseline)
+        pinned[target_index]["_meta"]["ha_mcp"]["pinned"] = not pinned[
+            target_index
+        ]["_meta"]["ha_mcp"]["pinned"]
+        candidates["pinned"] = pinned
+
+        exposed = deepcopy(baseline)
+        exposed[target_index]["_meta"]["ha_mcp"][
+            "llm_api_exposed"
+        ] = not exposed[target_index]["_meta"]["ha_mcp"][
+            "llm_api_exposed"
+        ]
+        candidates["llm_api_exposed"] = exposed
+
+        tags = deepcopy(baseline)
+        tags[target_index]["_meta"]["fastmcp"]["tags"].append(
+            "unreviewed"
+        )
+        candidates["fastmcp_tags"] = tags
+
+        annotations = deepcopy(baseline)
+        annotations[target_index]["annotations"][
+            "readOnlyHint"
+        ] = not annotations[target_index]["annotations"]["readOnlyHint"]
+        candidates["annotations"] = annotations
+
+        input_schema = deepcopy(baseline)
+        input_schema[target_index]["inputSchema"] = {
+            "type": "object",
+            "additionalProperties": True,
+        }
+        candidates["input_schema"] = input_schema
+
+        output_contract = deepcopy(baseline)
+        output_contract[target_index]["outputSchema"] = {
+            "type": "object",
+            "properties": {"unreviewed": {"type": "string"}},
+        }
+        candidates["output_contract"] = output_contract
+
+        policy_cases: dict[str, object] = {
+            "policy_not_object": "addon",
+            "policy_missing_key": {
+                "deployment": "addon",
+                "enabled": True,
+                "live": True,
+            },
+            "policy_extra_key": {
+                "deployment": "addon",
+                "enabled": True,
+                "live": True,
+                "rules": 0,
+                "unreviewed": False,
+            },
+            "policy_wrong_boolean": {
+                "deployment": "addon",
+                "enabled": 1,
+                "live": True,
+                "rules": 0,
+            },
+            "policy_wrong_rules_type": {
+                "deployment": "addon",
+                "enabled": True,
+                "live": True,
+                "rules": False,
+            },
+            "policy_rules_above_bound": {
+                "deployment": "addon",
+                "enabled": True,
+                "live": True,
+                "rules": 10_001,
+            },
+            "policy_unsupported_deployment": {
+                "deployment": "future",
+                "enabled": True,
+                "live": True,
+                "rules": 0,
+            },
+        }
+        for name, policy in policy_cases.items():
+            candidate = deepcopy(baseline)
+            candidate[target_index]["_meta"]["ha_mcp"][
+                "policy"
+            ] = policy
+            candidates[name] = candidate
+
+        missing_policy = deepcopy(baseline)
+        missing_policy[target_index]["_meta"]["ha_mcp"].pop("policy")
+        candidates["policy_missing"] = missing_policy
+
+        for name, tools in candidates.items():
+            with self.subTest(name=name):
+                result = validate("8.0.0", tools)
+                self.assertFalse(result.valid)
+                self.assertEqual(
+                    result.validation_status,
+                    "rejected_catalog_mismatch",
+                )
+                self.assertGreater(
+                    result.invalid_descriptor_count
+                    + result.additional_tool_count
+                    + sum(dict(result.component_mismatch_counts).values()),
+                    0,
+                )
+
     def test_reviewed_classification_and_runtime_model_are_fail_closed(self):
         registry = load_reviewed_upstream_release_registry()
         release = registry.by_version["8.0.0"]
@@ -281,6 +430,26 @@ class ReviewedCatalogValidatorTests(unittest.TestCase):
 
 
 class SpecialProviderCatalogAdmissionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_backup_accepts_each_exact_reviewed_deployment(self):
+        deployments = (
+            ("7.14.2", reviewed_tools("7.14.2")),
+            ("8.0.0-standalone", reviewed_tools("8.0.0")),
+            ("8.0.0-addon", addon_8_tools()),
+        )
+        for label, tools in deployments:
+            version = label.split("-")[0]
+            with self.subTest(deployment=label):
+                transport = CatalogTransport(version, tools)
+                provider = ReviewedOperationalBackupProvider()
+                provider._transport = transport
+                provider._state.configured = True
+
+                evidence = await provider.probe()
+
+                self.assertEqual(evidence.server_version, version)
+                self.assertEqual(provider.health_snapshot()["dispatch_count"], 0)
+                self.assertEqual(provider.health_snapshot()["fallback_count"], 0)
+
     async def test_backup_accepts_exact_addon_catalog_without_dispatch(self):
         transport = CatalogTransport("8.0.0", addon_8_tools())
         provider = ReviewedOperationalBackupProvider()
@@ -345,6 +514,23 @@ class SpecialProviderCatalogAdmissionTests(unittest.IsolatedAsyncioTestCase):
                     health["catalog_validation"]["observed_tool_count"],
                     78,
                 )
+                self.assertEqual(sum(health["dispatch_counts"].values()), 0)
+                self.assertEqual(health["fallback_count"], 0)
+
+    async def test_lifecycle_accepts_7_14_2_and_8_0_0_standalone_catalogs(self):
+        for version in ("7.14.2", "8.0.0"):
+            with self.subTest(version=version):
+                transport = CatalogTransport(
+                    version, reviewed_tools(version)
+                )
+                provider = ReviewedOperationalLifecycleProvider()
+                provider._transport = transport
+                provider._state.configured = True
+
+                evidence = await provider.probe("restart_addon")
+
+                self.assertEqual(evidence.server_version, version)
+                health = provider.health_snapshot()
                 self.assertEqual(sum(health["dispatch_counts"].values()), 0)
                 self.assertEqual(health["fallback_count"], 0)
 
@@ -587,6 +773,112 @@ class DashboardV3RuntimeAdmissionTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(arguments=arguments):
                 with self.assertRaises(DashboardTransportError):
                     validate_dashboard_read_arguments(arguments)
+
+
+class SourceAndExactAddonRuntimeGuardTests(unittest.TestCase):
+    def test_special_providers_use_shared_catalog_admission_not_raw_equality(self):
+        for relative in (
+            "hass_mcp_engineering_beta/ha_mcp_engineering/providers/operational_backup.py",
+            "hass_mcp_engineering_beta/ha_mcp_engineering/providers/operational_lifecycle.py",
+        ):
+            with self.subTest(path=relative):
+                source = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn("validate_reviewed_release_catalog(", source)
+                self.assertEqual(
+                    raw_catalog_admission_comparison_lines(source),
+                    (),
+                )
+
+    def test_raw_catalog_guard_allows_evidence_but_rejects_renamed_equality(self):
+        diagnostic_only = """
+reviewed_raw = selected_release.catalog_fingerprint
+report(reviewed_raw)
+"""
+        renamed_gate = """
+if actual_raw == selected_release.catalog_fingerprint:
+    admit()
+"""
+        self.assertEqual(
+            raw_catalog_admission_comparison_lines(diagnostic_only),
+            (),
+        )
+        self.assertEqual(
+            raw_catalog_admission_comparison_lines(renamed_gate),
+            (2,),
+        )
+
+    def test_dashboard_and_exception_group_guards_remain_model_aware(self):
+        dashboard = (
+            ROOT
+            / "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_contracts.py"
+        ).read_text(encoding="utf-8")
+        client = (
+            ROOT
+            / "hass_mcp_engineering_beta/ha_mcp_engineering/clients/mcp.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "runtime_policy_state_fingerprint_projection(policy)",
+            dashboard,
+        )
+        self.assertNotIn('"deployment": "standalone"', dashboard)
+        self.assertIn("_classified_transport_error", client)
+        self.assertIn("grouped_categories", client)
+
+    def test_distinct_immutable_addon_runtime_job_is_complete(self):
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text(
+            encoding="utf-8"
+        )
+        acceptance = (
+            ROOT / "scripts/exact_addon_runtime_acceptance.py"
+        ).read_text(encoding="utf-8")
+        fixture = (
+            ROOT / "scripts/fake_ha_read_gateway_contract_server.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("exact-addon-runtime-acceptance:", workflow)
+        self.assertIn(
+            "Exact ha-mcp 8.0.0 add-on runtime acceptance",
+            workflow,
+        )
+        self.assertIn(
+            "sha256:693ecd5c68f98e64111fbf58e02547a51b2168a942056684dbe262c550aff9cd",
+            workflow,
+        )
+        self.assertIn(
+            "sha256:65856752c37e4c1f9093060fbbc4a1a826cac1cbd6a76e856af5f5672a96c404",
+            workflow,
+        )
+        self.assertIn(
+            "sha256:150ee09078919a47db19639deaa8c27ec064390054e27b4e618f82eea9cf7f50",
+            workflow,
+        )
+        self.assertIn(
+            "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+            workflow,
+        )
+        self.assertIn(
+            "actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d",
+            workflow,
+        )
+        self.assertIn(
+            "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+            workflow,
+        )
+        self.assertIn(
+            "scripts/exact_addon_runtime_acceptance.py",
+            workflow,
+        )
+        for operation in (
+            "create_backup_plan",
+            "create_reload_plan",
+            "create_addon_restart_plan",
+            "create_home_assistant_restart_plan",
+        ):
+            self.assertIn(operation, acceptance)
+        self.assertNotIn("apply_change_plan", acceptance)
+        self.assertIn("EXPECTED_RAW_CATALOG_FINGERPRINT", acceptance)
+        self.assertIn("backup_dispatch_count == 0", acceptance)
+        self.assertIn("sum(lifecycle_dispatch_counts.values()) == 0", acceptance)
+        self.assertIn('"lovelace/config"', fixture)
 
 
 if __name__ == "__main__":

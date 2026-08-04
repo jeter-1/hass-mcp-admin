@@ -369,3 +369,156 @@ jobs:
             kill "$(cat "$RUNNER_TEMP/read-gateway-ha.pid")" >/dev/null 2>&1 || true
           fi
           sudo rm -rf "$RUNNER_TEMP/read-gateway-data"
+
+  exact-addon-runtime-acceptance:
+    name: Exact ha-mcp 8.0.0 add-on runtime acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ADDON_AMD64_IMAGE: ghcr.io/homeassistant-ai/ha-mcp-addon-amd64@sha256:693ecd5c68f98e64111fbf58e02547a51b2168a942056684dbe262c550aff9cd
+      ADDON_AMD64_INDEX_DIGEST: sha256:693ecd5c68f98e64111fbf58e02547a51b2168a942056684dbe262c550aff9cd
+      ADDON_AMD64_MANIFEST_DIGEST: sha256:65856752c37e4c1f9093060fbbc4a1a826cac1cbd6a76e856af5f5672a96c404
+      ADDON_ARM64_IMAGE: ghcr.io/homeassistant-ai/ha-mcp-addon-aarch64@sha256:150ee09078919a47db19639deaa8c27ec064390054e27b4e618f82eea9cf7f50
+      ADDON_ARM64_INDEX_DIGEST: sha256:150ee09078919a47db19639deaa8c27ec064390054e27b4e618f82eea9cf7f50
+      ADDON_ARM64_MANIFEST_DIGEST: sha256:a4bc83ed6f1a531d445e8107c77b7e7d5289d25510316dc6698d65383bf2fedb
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: hass_mcp_engineering_beta/requirements.txt
+      - name: Install exact add-on runtime acceptance dependencies
+        run: python -m pip install -r hass_mcp_engineering_beta/requirements.txt
+      - name: Verify immutable add-on indexes and platform manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          verify_index() {
+            local image="$1"
+            local expected_index="$2"
+            local expected_platform="$3"
+            local expected_manifest="$4"
+            local output="$5"
+            local resolved_index
+            resolved_index="$(
+              docker buildx imagetools inspect "$image" |
+                sed -nE 's/^Digest:[[:space:]]*(sha256:[0-9a-f]{64})$/\1/p' |
+                head -n 1
+            )"
+            test "$resolved_index" = "$expected_index"
+            docker buildx imagetools inspect "$image" --raw > "$output"
+            python3 - "$output" "$expected_platform" "$expected_manifest" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          expected_platform = sys.argv[2]
+          expected_digest = sys.argv[3]
+          observed = {}
+          for item in value.get("manifests", []):
+              platform = item.get("platform") or {}
+              os_name = platform.get("os")
+              architecture = platform.get("architecture")
+              if not isinstance(os_name, str) or not isinstance(
+                  architecture, str
+              ):
+                  continue
+              name = f"{os_name}/{architecture}"
+              variant = platform.get("variant")
+              if isinstance(variant, str) and variant:
+                  name += f"/{variant}"
+              observed[name] = item.get("digest")
+          if observed.get(expected_platform) != expected_digest:
+              raise SystemExit(
+                  "immutable add-on platform manifest did not match evidence"
+              )
+          PY
+          }
+          verify_index \
+            "$ADDON_AMD64_IMAGE" \
+            "$ADDON_AMD64_INDEX_DIGEST" \
+            linux/amd64 \
+            "$ADDON_AMD64_MANIFEST_DIGEST" \
+            "$RUNNER_TEMP/addon-amd64-index.json"
+          verify_index \
+            "$ADDON_ARM64_IMAGE" \
+            "$ADDON_ARM64_INDEX_DIGEST" \
+            linux/arm64 \
+            "$ADDON_ARM64_MANIFEST_DIGEST" \
+            "$RUNNER_TEMP/addon-arm64-index.json"
+      - name: Start synthetic Home Assistant contract fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/fake_ha_read_gateway_contract_server.py \
+            --port 18123 --upstream-version 8.0.0 \
+            > "$RUNNER_TEMP/addon-runtime-ha.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/addon-runtime-ha.pid"
+          for attempt in $(seq 1 30); do
+            curl --fail --silent http://127.0.0.1:18123/api/ >/dev/null && exit 0
+            sleep 1
+          done
+          exit 1
+      - name: Execute immutable ha-mcp 8.0.0 add-on runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull "$ADDON_AMD64_IMAGE"
+          test "$(
+            docker image inspect "$ADDON_AMD64_IMAGE" \
+              --format '{{index .Config.Labels "io.hass.version"}}'
+          )" = "8.0.0"
+          docker run --detach --rm --network host --read-only \
+            --name exact-addon-runtime-upstream \
+            --tmpfs /tmp \
+            --entrypoint /app/.venv/bin/ha-mcp-web \
+            -e ENABLE_TOOL_SECURITY_POLICIES=true \
+            -e HA_MCP_BUILD_VERSION=8.0.0 \
+            -e HA_MCP_CONFIG_DIR=/tmp/ha-mcp-config \
+            -e HA_MCP_DISABLE_SETTINGS_UI=1 \
+            -e HOME=/tmp/ha-mcp-home \
+            -e HOMEASSISTANT_TOKEN=synthetic-read-gateway-token \
+            -e HOMEASSISTANT_URL=http://127.0.0.1:18123 \
+            -e MCP_HOST=127.0.0.1 \
+            -e MCP_PORT=18087 \
+            -e MCP_SECRET_PATH=/beta14-synthetic/mcp \
+            -e SUPERVISOR_TOKEN=synthetic-read-gateway-token \
+            "$ADDON_AMD64_IMAGE"
+          for attempt in $(seq 1 60); do
+            status="$(curl --max-time 1 --silent --output /dev/null \
+              --write-out '%{http_code}' \
+              http://127.0.0.1:18087/beta14-synthetic/mcp || true)"
+            test "$status" != "000" && exit 0
+            sleep 1
+          done
+          exit 1
+      - name: Run planning-only exact add-on runtime acceptance
+        shell: bash
+        run: |
+          python scripts/exact_addon_runtime_acceptance.py \
+            --upstream-endpoint http://127.0.0.1:18087/beta14-synthetic/mcp \
+            --configured-upstream-endpoint http://abcdef12-ha-mcp:18087/beta14-synthetic/mcp \
+            --fixture-stats-url http://127.0.0.1:18123/__fixture__/stats \
+            --ha-url http://127.0.0.1:18123 \
+            --ha-token synthetic-read-gateway-token \
+            --expected-image-index-digest "$ADDON_AMD64_INDEX_DIGEST" \
+            --expected-image-manifest-digest "$ADDON_AMD64_MANIFEST_DIGEST" \
+            --output "$RUNNER_TEMP/exact-addon-runtime-result.json"
+      - name: Upload bounded exact add-on runtime evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: exact-ha-mcp-8.0.0-addon-runtime
+          path: ${{ runner.temp }}/exact-addon-runtime-result.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove disposable exact add-on runtime environment
+        if: always()
+        shell: bash
+        run: |
+          docker rm -f exact-addon-runtime-upstream >/dev/null 2>&1 || true
+          if test -f "$RUNNER_TEMP/addon-runtime-ha.pid"; then
+            kill "$(cat "$RUNNER_TEMP/addon-runtime-ha.pid")" >/dev/null 2>&1 || true
+          fi
