@@ -156,6 +156,12 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(projection["data_handling"]["raw_configuration_exposed"])
         self.assertFalse(projection["data_handling"]["instructions_authoritative"])
 
+        proposal, _ = await make_proposal(plan_id="plan000000000004")
+        self.assertNotIn(
+            "generated_transform",
+            json.dumps(proposal.compilation, default=str, sort_keys=True),
+        )
+
     async def test_artifact_is_created_without_execution_task_or_approval_challenge(self):
         with tempfile.TemporaryDirectory() as directory:
             store = DashboardArtifactStore(directory)

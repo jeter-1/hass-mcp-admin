@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from .constants import ATOMICITY_MODEL, SUPPORTED_UPSTREAM_VERSIONS
-from .errors import AtomicityGateError
-from .json_codec import engineering_sha256
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
+from .constants import ATOMICITY_MODEL, SUPPORTED_UPSTREAM_VERSIONS
+from .errors import AtomicityGateError
+from .json_codec import engineering_sha256
 from .models import AtomicityDecision, AtomicityStatus
 
 
@@ -69,10 +70,12 @@ def require_executable_atomicity(decision: AtomicityDecision) -> None:
 class NonAtomicInterleavingResult:
     phase: str
     conflict_rejected_before_save: bool
-    setter_saved: bool
+    modeled_setter_saved: bool
     external_write_overwritten: bool
     readback_detects_overwrite: bool
     final_configuration: dict[str, Any]
+    setter_invocation_count: int = 0
+    fixture_mutation_count: int = 0
 
 
 def simulate_non_atomic_interleaving(
@@ -84,30 +87,33 @@ def simulate_non_atomic_interleaving(
 ) -> NonAtomicInterleavingResult:
     """Model the exact separate ha-mcp read/check then HA save sequence."""
 
-    current = approved_preread
+    preread_snapshot = deepcopy(approved_preread)
+    approved_snapshot = deepcopy(approved_result)
+    external_snapshot = deepcopy(external_result)
+    current = preread_snapshot
     if phase == "before_preflight":
-        current = external_result
+        current = external_snapshot
         return NonAtomicInterleavingResult(
             phase, True, False, False, False, current
         )
     if phase == "after_preflight_before_hash_check":
-        current = external_result
+        current = external_snapshot
     hash_check_matches = engineering_sha256(current) == engineering_sha256(
-        approved_preread
+        preread_snapshot
     )
     if not hash_check_matches:
         return NonAtomicInterleavingResult(
             phase, True, False, False, False, current
         )
     if phase == "during_hash_check_save_gap":
-        current = external_result
-        current = approved_result
+        current = external_snapshot
+        current = approved_snapshot
         return NonAtomicInterleavingResult(
             phase, False, True, True, False, current
         )
-    current = approved_result
+    current = approved_snapshot
     if phase == "immediately_after_save":
-        current = external_result
+        current = external_snapshot
         return NonAtomicInterleavingResult(
             phase, False, True, False, True, current
         )

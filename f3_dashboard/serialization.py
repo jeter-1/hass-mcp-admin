@@ -65,8 +65,6 @@ def public_proposal_projection(proposal: DashboardUpdateProposal) -> dict[str, A
             "resulting_upstream_config_hash": proposal.compilation.resulting_upstream_config_hash,
             "resulting_size_bytes": proposal.compilation.resulting_size_bytes,
             "semantic_leaf_change_count": proposal.compilation.semantic_leaf_change_count,
-            "generated_transform_model": proposal.compilation.generated_transform_model,
-            "generated_transform_sha256": proposal.compilation.generated_transform_sha256,
         },
         "semantic_diff": semantic_diff_projection(proposal.semantic_diff),
         "risk": {

@@ -50,6 +50,12 @@ class DashboardPatchCompilerTests(unittest.TestCase):
         removed = self.compile(operation("remove", "/unknown_root_extension"))
         self.assertNotIn("unknown_root_extension", removed.resulting_configuration)
 
+    def test_compiler_produces_no_python_setter_realization(self):
+        compiled = self.compile(operation("replace", "/title", "Changed"))
+        self.assertFalse(hasattr(compiled, "generated_transform"))
+        self.assertFalse(hasattr(compiled, "generated_transform_model"))
+        self.assertFalse(hasattr(compiled, "generated_transform_sha256"))
+
     def test_valid_existing_list_replace_and_remove(self):
         replaced = self.compile(
             operation(

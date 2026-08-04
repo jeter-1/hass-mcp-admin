@@ -1,4 +1,4 @@
-"""Canonical JSON, hashing, and fixed Python-literal generation."""
+"""Canonical JSON validation, cloning, sizing, and hashing."""
 
 from __future__ import annotations
 
@@ -88,27 +88,3 @@ def serialized_size(value: Any, *, ensure_ascii: bool = False) -> int:
 def clone_json(value: Any) -> Any:
     validate_json_value(value)
     return deepcopy(value)
-
-
-def python_literal(value: Any) -> str:
-    """Return a deterministic Python literal for already-validated JSON data."""
-
-    validate_json_value(value)
-    if value is None:
-        return "None"
-    if value is True:
-        return "True"
-    if value is False:
-        return "False"
-    if isinstance(value, str):
-        return repr(value)
-    if isinstance(value, (int, float)):
-        return repr(value)
-    if isinstance(value, list):
-        return "[" + ",".join(python_literal(item) for item in value) + "]"
-    if isinstance(value, dict):
-        return "{" + ",".join(
-            f"{python_literal(key)}:{python_literal(value[key])}"
-            for key in sorted(value)
-        ) + "}"
-    raise PatchValidationError("Unsupported generated-transform value")

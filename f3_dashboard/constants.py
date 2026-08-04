@@ -7,7 +7,6 @@ import re
 
 RAW_EVIDENCE_MODEL = "f3-dashboard-raw-evidence-v1"
 PATCH_MODEL = "f3-dashboard-json-pointer-patch-v1"
-GENERATED_TRANSFORM_MODEL = "ha-mcp-dashboard-generated-transform-v1"
 SEMANTIC_DIFF_MODEL = "f3-dashboard-semantic-diff-v1"
 RISK_MODEL = "f3-dashboard-action-risk-v1"
 PROPOSAL_MODEL = "f3-dashboard-update-proposal-v1"

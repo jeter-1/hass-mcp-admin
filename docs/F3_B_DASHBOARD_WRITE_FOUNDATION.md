@@ -1,6 +1,6 @@
 # F3-B governed storage-dashboard write foundation
 
-Status: planning and verification foundation only; executable apply is blocked.
+Status: Beta 17 accepted planning/verification foundation; execution deferred.
 
 This document separates reviewed source facts, F3-B implementation decisions,
 unresolved integration requirements, and future work. It does not amend the
@@ -129,8 +129,10 @@ Engineering hash read succeeds
 The external edit has been overwritten, but the final state and readback look
 exactly correct. Post-write verification cannot detect this lost update.
 Accordingly, the selected atomicity mechanism is `none`, all planning
-admissions are non-executable, preflight rejects atomicity, and no transport or
-F3-A adapter is present.
+admissions are non-executable, and preflight rejects atomicity. No production
+transport or dashboard adapter exists. Beta 17 adds only a test adapter that
+conforms to the shipped F3-A contract and proves rejection before durable
+dispatch intent with zero setter invocations and zero fixture mutations.
 
 ## Implementation decisions
 
@@ -171,12 +173,11 @@ Values must be finite JSON data with string mapping keys; callables,
 executable objects, NaN, and infinity are rejected. The input configuration is
 never mutated.
 
-The canonical patch and generated fixed transform are each limited to 16 KiB;
-an individual value is limited to 8 KiB; configuration growth is limited to
-16 KiB. The compiler permits no caller-supplied Python. It emits only fixed
-index assignment or deletion statements from already validated paths and JSON
-values. Full replacement, move, copy, append, loops, selectors, and arbitrary
-provider arguments cannot be expressed.
+The canonical patch is limited to 16 KiB; an individual value is limited to
+8 KiB; configuration growth is limited to 16 KiB. Beta 17 removes the
+historical generated-Python projection entirely. The compiler produces only an
+in-memory JSON result for planning. Full replacement, move, copy, append,
+loops, selectors, and arbitrary provider arguments cannot be expressed.
 
 ### Semantic leaf bound
 
@@ -204,8 +205,7 @@ The proposal keeps these hashes distinct:
 - canonical patch SHA-256;
 - exact resulting configuration SHA-256;
 - resulting upstream-compatible 16-hex hash;
-- semantic-diff SHA-256; and
-- generated fixed-transform SHA-256.
+- semantic-diff SHA-256.
 
 The exact resulting hash is in the immutable proposal before any approval.
 Preflight compares both current hashes with the approved preread and never
@@ -272,8 +272,9 @@ atomicity rejection, and immutable proposal creation. It performs zero setter
 invocations, tasks, approval challenges, provider mutations, or physical
 actions. Its lock identities are the F3-0 set: exclusive
 `dashboard:<url_path>`, shared `home_assistant:core`, and shared
-`addon:<authoritative_slug>`. This package retains identities only; F3-A must
-apply scopes, modes, acquisition, fencing, and task ownership.
+`addon:<authoritative_slug>`. The foundation retains identities only. Beta 17
+tests their canonical scope/mode normalization and acquisition through F3-A;
+the production runtime does not instantiate a dashboard adapter.
 
 When requested by an internal caller, `f3-dashboard-write-artifact-v1` stores
 the exact private proposal in a caller-configured namespace. Publication uses
@@ -294,8 +295,9 @@ Fallback remains zero.
 The isolated preflight helper checks expiration, caller-layer approval
 validation, exact complete lock identities, F3-A fencing attestation, exact
 storage reread, both current hashes, and atomicity status. Lock ownership is
-not authorization. Since no atomicity mechanism or F3-A integration is
-available, every proposal is ineligible for dispatch.
+not authorization. The merged F3-A core is available in Beta 17, but cannot
+make the upstream save atomic or exclude external writers. Every dashboard
+proposal therefore remains ineligible for dispatch.
 
 Observation is exact reread only. Full target, storage mode, full
 configuration, Engineering hash, and upstream hash must equal the approved
@@ -314,22 +316,22 @@ rollback approval, or automatic compensation exists.
 
 ## Unresolved integration requirements
 
-1. The integration owner must resolve the mutating-argument contradiction:
-   compiler-generated `python_transform` is described by the repository F3-0
-   document but prohibited by this F3-B task, while upstream `config` is a
-   create-capable full-replacement path. F3-B constructs neither call shape.
+1. No setter realization is accepted. Generated `python_transform` is a
+   rejected F3-0 candidate, while upstream `config` is a create-capable
+   full-replacement path outside the bounded operation. F3-B constructs
+   neither call shape.
 2. An atomic Home Assistant compare-and-save, exact upstream transaction, or
    authoritative exclusion of every dashboard writer must be reviewed and
    proven before any executable adapter or transport can be added.
-3. F3-A must publish and identify a stable remote
-   `f3-operation-adapter-v1` executor, durable-intent, persistence, lock, and
-   fencing API. The F3-B branch currently has no F3-A dependency.
-4. F3-A integration must preserve the exact lock modes, one mutating invocation
-   maximum, no retry after intent, and reread-only recovery. Same-dashboard
-   exclusion and different-dashboard concurrency require its actual lock tests.
-5. Strict-BPS acquisition and expiry behavior must be integrated only at the
-   accepted F3-A pre-dispatch boundary; the receipt cannot be persisted or
-   treated as authorization/atomicity.
+3. Beta 17 ships one canonical `f3-operation-adapter-v1` declaration at
+   `ha_mcp_engineering.f3.contracts` and demonstrates the merged F3-A executor,
+   lock, persistence, and fencing APIs with a nonmutating dashboard deferral
+   adapter.
+4. Same-dashboard Engineering exclusion and different-dashboard concurrency
+   remain useful coordination properties, but they do not satisfy external
+   writer exclusion and cannot enable dispatch.
+5. Strict-BPS is source evidence only for this deferred operation. A future
+   receipt cannot be persisted or treated as authorization or atomicity.
 6. The integration owner must separately approve any plan-family extension,
    runtime import, public registration, tool-count change, central health hook,
    or governance policy mapping.
@@ -341,7 +343,8 @@ rollback approval, or automatic compensation exists.
 ## Future work, not implemented here
 
 - A source-backed atomic or all-writer-exclusion mechanism.
-- The F3-A `OperationAdapter` implementation and executor lifecycle.
+- A production dashboard `OperationAdapter`; Beta 17 includes only an
+  atomicity-blocked test adapter.
 - Public planning or apply registration.
 - External administrator approval integration.
 - Dashboard rollback as a separate governed operation.

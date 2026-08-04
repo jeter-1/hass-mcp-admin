@@ -126,9 +126,6 @@ class PatchCompilation:
     resulting_size_bytes: int
     configuration_growth_bytes: int
     semantic_leaf_change_count: int
-    generated_transform_model: str
-    generated_transform: str
-    generated_transform_sha256: str
 
 
 @dataclass(frozen=True)

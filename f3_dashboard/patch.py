@@ -8,7 +8,6 @@ from typing import Any, Iterable, Mapping
 
 from .constants import (
     CANONICAL_OPERATION_ID,
-    GENERATED_TRANSFORM_MODEL,
     MAX_CONFIG_GROWTH_BYTES,
     MAX_INDIVIDUAL_VALUE_BYTES,
     MAX_JSON_DEPTH,
@@ -27,7 +26,6 @@ from .json_codec import (
     canonical_json_bytes,
     clone_json,
     engineering_sha256,
-    python_literal,
     serialized_size,
     upstream_config_hash,
     validate_json_value,
@@ -182,27 +180,24 @@ def _list_index(token: str, *, length: int) -> int:
 
 def _resolve_parent(
     document: dict[str, Any], tokens: tuple[str, ...]
-) -> tuple[Any, str | int, tuple[str | int, ...]]:
+) -> tuple[Any, str | int]:
     current: Any = document
-    access: list[str | int] = []
     for token in tokens[:-1]:
         if isinstance(current, dict):
             if token not in current:
                 raise PatchCompilationError("Patch parent path does not exist")
             current = current[token]
-            access.append(token)
         elif isinstance(current, list):
             index = _list_index(token, length=len(current))
             current = current[index]
-            access.append(index)
         else:
             raise PatchCompilationError("Patch parent is not a collection")
     final_token = tokens[-1]
     if isinstance(current, dict):
-        return current, final_token, tuple((*access, final_token))
+        return current, final_token
     if isinstance(current, list):
         index = _list_index(final_token, length=len(current))
-        return current, index, tuple((*access, index))
+        return current, index
     raise PatchCompilationError("Patch target parent is not a collection")
 
 
@@ -265,19 +260,13 @@ def semantic_leaf_difference(
     return max(_leaf_weight(before, budget=budget), _leaf_weight(after, budget=budget))
 
 
-def _python_target(access: tuple[str | int, ...]) -> str:
-    return "config" + "".join(f"[{python_literal(token)}]" for token in access)
-
-
 def _apply_one(
     document: dict[str, Any], operation: PatchOperation
-) -> tuple[PatchEffect, str]:
-    parent, target, access = _resolve_parent(document, operation.tokens)
+) -> PatchEffect:
+    parent, target = _resolve_parent(document, operation.tokens)
     is_mapping = isinstance(parent, dict)
     present = target in parent if is_mapping else True
     previous = deepcopy(parent[target]) if present else None
-    target_expression = _python_target(access)
-
     if operation.operation is PatchKind.ADD:
         if not is_mapping:
             raise PatchCompilationError("List insertion and append are prohibited")
@@ -286,19 +275,15 @@ def _apply_one(
         proposed = clone_json(operation.value)
         leaf_count = _leaf_weight(proposed)
         parent[target] = proposed
-        statement = f"{target_expression}={python_literal(proposed)}"
-        return (
-            PatchEffect(
-                operation.operation_id,
-                operation.operation,
-                operation.path,
-                False,
-                None,
-                True,
-                deepcopy(proposed),
-                leaf_count,
-            ),
-            statement,
+        return PatchEffect(
+            operation.operation_id,
+            operation.operation,
+            operation.path,
+            False,
+            None,
+            True,
+            deepcopy(proposed),
+            leaf_count,
         )
 
     if not present:
@@ -307,35 +292,28 @@ def _apply_one(
         proposed = clone_json(operation.value)
         leaf_count = semantic_leaf_difference(previous, proposed)
         parent[target] = proposed
-        statement = f"{target_expression}={python_literal(proposed)}"
-        return (
-            PatchEffect(
-                operation.operation_id,
-                operation.operation,
-                operation.path,
-                True,
-                previous,
-                True,
-                deepcopy(proposed),
-                leaf_count,
-            ),
-            statement,
-        )
-
-    leaf_count = _leaf_weight(previous) + (1 if isinstance(parent, list) else 0)
-    del parent[target]
-    return (
-        PatchEffect(
+        return PatchEffect(
             operation.operation_id,
             operation.operation,
             operation.path,
             True,
             previous,
-            False,
-            None,
+            True,
+            deepcopy(proposed),
             leaf_count,
-        ),
-        f"del {target_expression}",
+        )
+
+    leaf_count = _leaf_weight(previous) + (1 if isinstance(parent, list) else 0)
+    del parent[target]
+    return PatchEffect(
+        operation.operation_id,
+        operation.operation,
+        operation.path,
+        True,
+        previous,
+        False,
+        None,
+        leaf_count,
     )
 
 
@@ -352,11 +330,8 @@ def compile_dashboard_patch(
     original = clone_json(configuration)
     result = clone_json(configuration)
     effects: list[PatchEffect] = []
-    statements: list[str] = []
     for operation in normalized:
-        effect, statement = _apply_one(result, operation)
-        effects.append(effect)
-        statements.append(statement)
+        effects.append(_apply_one(result, operation))
 
     if configuration != original:
         raise PatchCompilationError("Patch compilation mutated its input")
@@ -373,9 +348,6 @@ def compile_dashboard_patch(
 
     projection = patch_projection(normalized)
     patch_bytes = canonical_json_bytes(projection)
-    transform = ";".join(statements)
-    if len(transform.encode("utf-8")) > MAX_PATCH_BYTES:
-        raise PatchCompilationError("Generated transform exceeds the reviewed bound")
     return PatchCompilation(
         model=PATCH_MODEL,
         operations=normalized,
@@ -389,9 +361,6 @@ def compile_dashboard_patch(
         resulting_size_bytes=result_size,
         configuration_growth_bytes=growth,
         semantic_leaf_change_count=leaf_count,
-        generated_transform_model=GENERATED_TRANSFORM_MODEL,
-        generated_transform=transform,
-        generated_transform_sha256=hashlib.sha256(transform.encode("utf-8")).hexdigest(),
     )
 
 

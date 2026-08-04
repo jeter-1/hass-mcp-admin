@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from f3_contracts.operation_adapter import (
+from ha_mcp_engineering.f3.contracts import (
     F3_ADAPTER_CONTRACT_MODEL,
     AdapterCapabilityDescriptor,
     DispatchResult,

@@ -15,7 +15,7 @@ BETA_DIR = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(BETA_DIR))
 
-from f3_contracts.operation_adapter import (  # noqa: E402
+from ha_mcp_engineering.f3.contracts import (  # noqa: E402
     F3_ADAPTER_CONTRACT_MODEL,
     F3_MAX_MUTATING_PROVIDER_INVOCATIONS_PER_OPERATION,
     AdapterCapabilityDescriptor,
@@ -24,12 +24,17 @@ from f3_contracts.operation_adapter import (  # noqa: E402
     LockRequest,
     LockScope,
     NormalizedOperationOutcome,
+    ObservationResult,
     OperationAdapter,
     OperationAdapterPhase,
     OperationTarget,
+    PreflightResult,
     PreparedOperation,
     RecoveryContext,
+    VerificationResult,
 )
+import f3_contracts.operation_adapter as compatibility_contract  # noqa: E402
+import ha_mcp_engineering.f3.contracts as canonical_contract  # noqa: E402
 from ha_mcp_engineering.governance.models import (  # noqa: E402
     ChangeOperation,
 )
@@ -82,6 +87,12 @@ class F3ContractDeclarationTests(unittest.TestCase):
                 "cancelled_pre_dispatch",
             },
         )
+        self.assertEqual(
+            {value.value for value in LockScope}, {"resource", "provider"}
+        )
+        self.assertEqual(
+            {value.value for value in LockMode}, {"shared", "exclusive"}
+        )
 
     def test_adapter_protocol_methods_are_explicit(self):
         methods = {
@@ -121,6 +132,16 @@ class F3ContractDeclarationTests(unittest.TestCase):
         self.assertIn("context", recovery.parameters)
         self.assertEqual(
             recovery.parameters["context"].kind,
+            inspect.Parameter.KEYWORD_ONLY,
+        )
+        preflight = inspect.signature(OperationAdapter.preflight)
+        self.assertEqual(
+            preflight.parameters["acquired_locks"].kind,
+            inspect.Parameter.KEYWORD_ONLY,
+        )
+        rollback = inspect.signature(OperationAdapter.prepare_rollback)
+        self.assertEqual(
+            rollback.parameters["expected_current_fingerprint"].kind,
             inspect.Parameter.KEYWORD_ONLY,
         )
 
@@ -177,13 +198,19 @@ class F3ContractDeclarationTests(unittest.TestCase):
             prepared.operation = "unexpected"  # type: ignore[misc]
 
     def test_prepared_and_recovery_fields_are_stable(self):
-        self.assertEqual(
-            [field.name for field in fields(LockRequest)],
-            ["key", "scopes", "mode", "reason_codes"],
-        )
-        self.assertEqual(
-            [field.name for field in fields(PreparedOperation)],
-            [
+        expected_fields = {
+            OperationTarget: ["target_type", "target_id"],
+            LockRequest: ["key", "scopes", "mode", "reason_codes"],
+            AdapterCapabilityDescriptor: [
+                "adapter_id",
+                "contract_model",
+                "operation_family",
+                "supported_operations",
+                "rollback_supported",
+                "readback_recovery_supported",
+                "exact_provider_contract_required",
+            ],
+            PreparedOperation: [
                 "contract_model",
                 "adapter_id",
                 "operation",
@@ -199,21 +226,19 @@ class F3ContractDeclarationTests(unittest.TestCase):
                 "verification_contract_hash",
                 "rollback_available",
             ],
-        )
-        self.assertEqual(
-            [field.name for field in fields(RecoveryContext)],
-            [
-                "dispatch_intent_recorded",
-                "provider_invocation_may_have_occurred",
-                "provider_response_received",
-                "prior_observation_attempts",
-                "prior_verification_attempts",
-                "post_dispatch_deadline",
+            PreflightResult: [
+                "eligible",
+                "outcome",
+                "confirmed_target",
+                "observed_state_fingerprint",
+                "provider_contract",
+                "provider_operation",
+                "provider_arguments_hash",
+                "evidence_hash",
+                "diagnostic_codes",
+                "mismatch_fields",
             ],
-        )
-        self.assertEqual(
-            [field.name for field in fields(DispatchResult)],
-            [
+            DispatchResult: [
                 "outcome",
                 "dispatch_intent_recorded",
                 "mutating_invocation_count",
@@ -223,7 +248,40 @@ class F3ContractDeclarationTests(unittest.TestCase):
                 "response_evidence_hash",
                 "diagnostic_codes",
             ],
-        )
+            ObservationResult: [
+                "outcome",
+                "attempt_count",
+                "observation_complete",
+                "provider_reachable",
+                "target_reachable",
+                "readback_state_fingerprint",
+                "intended_result_observed",
+                "mismatch_fields",
+                "evidence_hash",
+                "diagnostic_codes",
+            ],
+            VerificationResult: [
+                "outcome",
+                "attempt_count",
+                "verified",
+                "resulting_state_fingerprint",
+                "mismatch_fields",
+                "evidence_hash",
+                "manual_review_reason_code",
+            ],
+            RecoveryContext: [
+                "dispatch_intent_recorded",
+                "provider_invocation_may_have_occurred",
+                "provider_response_received",
+                "prior_observation_attempts",
+                "prior_verification_attempts",
+                "post_dispatch_deadline",
+            ],
+        }
+        for model, expected in expected_fields.items():
+            with self.subTest(model=model.__name__):
+                self.assertEqual([field.name for field in fields(model)], expected)
+                self.assertTrue(model.__dataclass_params__.frozen)
 
     def test_persisted_vocabulary_and_public_registration_are_unchanged(self):
         self.assertEqual(TASK_SCHEMA_VERSION, 1)
@@ -261,9 +319,9 @@ class F3ContractDeclarationTests(unittest.TestCase):
         )
         self.assertEqual(len(registered_tools(get_registered_server())), 48)
 
-    def test_contract_has_only_standard_library_imports(self):
+    def test_canonical_contract_has_only_standard_library_imports(self):
         contract = (
-            ROOT / "f3_contracts" / "operation_adapter.py"
+            BETA_DIR / "ha_mcp_engineering" / "f3" / "contracts.py"
         )
         tree = ast.parse(contract.read_text(encoding="utf-8"))
         imported_roots = {
@@ -288,7 +346,60 @@ class F3ContractDeclarationTests(unittest.TestCase):
             set(sys.stdlib_module_names) | {"__future__"},
         )
 
-    def test_runtime_does_not_import_the_f3_contract(self):
+    def test_repository_root_facade_exports_canonical_objects_by_identity(self):
+        self.assertEqual(
+            compatibility_contract.__all__, canonical_contract.__all__
+        )
+        for name in canonical_contract.__all__:
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(compatibility_contract, name),
+                    getattr(canonical_contract, name),
+                )
+
+    def test_contract_model_has_one_runtime_definition(self):
+        models_source = (
+            BETA_DIR / "ha_mcp_engineering" / "f3" / "models.py"
+        ).read_text(encoding="utf-8")
+        facade_source = (
+            ROOT / "f3_contracts" / "operation_adapter.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn(
+            'F3_ADAPTER_CONTRACT_MODEL = "f3-operation-adapter-v1"',
+            models_source,
+        )
+        self.assertNotIn("class OperationAdapter", facade_source)
+        self.assertNotIn("class PreparedOperation", facade_source)
+        definitions = []
+        for path in ROOT.rglob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in tree.body:
+                if isinstance(node, ast.ClassDef) and node.name in {
+                    "OperationAdapter",
+                    "PreparedOperation",
+                }:
+                    definitions.append((path.relative_to(ROOT), node.name))
+        self.assertEqual(
+            definitions,
+            [
+                (
+                    Path(
+                        "hass_mcp_engineering_beta/ha_mcp_engineering/"
+                        "f3/contracts.py"
+                    ),
+                    "PreparedOperation",
+                ),
+                (
+                    Path(
+                        "hass_mcp_engineering_beta/ha_mcp_engineering/"
+                        "f3/contracts.py"
+                    ),
+                    "OperationAdapter",
+                ),
+            ],
+        )
+
+    def test_runtime_does_not_import_the_repository_root_facade(self):
         runtime = BETA_DIR / "ha_mcp_engineering"
         for path in sorted(runtime.rglob("*.py")):
             with self.subTest(path=path.relative_to(ROOT)):
@@ -308,12 +419,12 @@ class F3ContractDeclarationTests(unittest.TestCase):
             "F3_DASHBOARD_WRITE_CONTRACT.md": [
                 "## Required completion boundary",
                 "## Transformation representation",
-                "## Exact provider boundary",
+                "## Exact provider evidence boundary",
                 "## Explicit exclusions",
             ],
             "F3_PARALLEL_DEVELOPMENT_PLAN.md": [
                 "## F3-A — adapter and lock core",
-                "## F3-B — governed dashboard writes",
+                "## F3-B — canonical contracts and governed dashboard planning",
                 "## F3-C1 — configuration-adapter conformance",
                 "## F3-C2 — operational-adapter conformance",
                 "## F3-D — recovery, observability, and acceptance",

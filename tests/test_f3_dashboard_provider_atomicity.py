@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import replace
 import hashlib
 import json
@@ -192,14 +193,16 @@ class DashboardAtomicityGateTests(unittest.TestCase):
                 with self.assertRaises(AtomicityGateError):
                     require_executable_atomicity(decision)
 
-    def test_unchanged_dashboard_reaches_one_synthetic_save(self):
+    def test_unchanged_dashboard_models_save_without_fixture_mutation(self):
         result = simulate_non_atomic_interleaving(
             approved_preread=self.before,
             approved_result=self.approved,
             external_result=self.external,
             phase="unchanged",
         )
-        self.assertTrue(result.setter_saved)
+        self.assertTrue(result.modeled_setter_saved)
+        self.assertEqual(result.setter_invocation_count, 0)
+        self.assertEqual(result.fixture_mutation_count, 0)
         self.assertFalse(result.external_write_overwritten)
         self.assertEqual(result.final_configuration, self.approved)
 
@@ -213,19 +216,29 @@ class DashboardAtomicityGateTests(unittest.TestCase):
                     phase=phase,
                 )
                 self.assertTrue(result.conflict_rejected_before_save)
-                self.assertFalse(result.setter_saved)
+                self.assertFalse(result.modeled_setter_saved)
+                self.assertEqual(result.setter_invocation_count, 0)
+                self.assertEqual(result.fixture_mutation_count, 0)
 
     def test_external_writer_in_hash_check_save_gap_is_overwritten_undetectably(self):
+        fixture_snapshots = tuple(
+            deepcopy(item) for item in (self.before, self.approved, self.external)
+        )
         result = simulate_non_atomic_interleaving(
             approved_preread=self.before,
             approved_result=self.approved,
             external_result=self.external,
             phase="during_hash_check_save_gap",
         )
-        self.assertTrue(result.setter_saved)
+        self.assertTrue(result.modeled_setter_saved)
+        self.assertEqual(result.setter_invocation_count, 0)
+        self.assertEqual(result.fixture_mutation_count, 0)
         self.assertTrue(result.external_write_overwritten)
         self.assertFalse(result.readback_detects_overwrite)
         self.assertEqual(result.final_configuration, self.approved)
+        self.assertEqual(
+            (self.before, self.approved, self.external), fixture_snapshots
+        )
 
     def test_external_writer_immediately_after_save_yields_a_mismatch_not_lost_update_proof(self):
         result = simulate_non_atomic_interleaving(
@@ -234,7 +247,9 @@ class DashboardAtomicityGateTests(unittest.TestCase):
             external_result=self.external,
             phase="immediately_after_save",
         )
-        self.assertTrue(result.setter_saved)
+        self.assertTrue(result.modeled_setter_saved)
+        self.assertEqual(result.setter_invocation_count, 0)
+        self.assertEqual(result.fixture_mutation_count, 0)
         self.assertFalse(result.external_write_overwritten)
         self.assertTrue(result.readback_detects_overwrite)
         self.assertEqual(result.final_configuration, self.external)
@@ -251,6 +266,8 @@ class DashboardAtomicityGateTests(unittest.TestCase):
                 )
                 self.assertTrue(result.external_write_overwritten)
                 self.assertFalse(result.conflict_rejected_before_save)
+                self.assertEqual(result.setter_invocation_count, 0)
+                self.assertEqual(result.fixture_mutation_count, 0)
 
     def test_strict_bps_receipts_are_not_modeled_as_cas_or_writer_exclusion(self):
         decision = assess_atomicity("8.0.0")

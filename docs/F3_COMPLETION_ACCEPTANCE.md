@@ -1,6 +1,6 @@
 # F3 completion acceptance contract
 
-Status: Future F3 milestone gate; F3-0 supplies no runtime implementation
+Status: Future F3 milestone gate; amended by Beta 17 dashboard deferral
 
 F3 is complete only when every requirement below is demonstrated with
 deterministic tests and exact-release evidence. Documentation or a successful
@@ -22,8 +22,9 @@ provider response alone is not acceptance.
 
 ## Shared adapter execution
 
-- Every included configuration, operational, and dashboard adapter implements
-  the accepted `f3-operation-adapter-v1` lifecycle.
+- Every executable configuration or operational adapter implements the
+  accepted `f3-operation-adapter-v1` lifecycle. Dashboard execution is not an
+  included capability while the authoritative atomicity gate is unresolved.
 - Planning binds exact target, current fingerprint, proposed hash, policy,
   approval, effects, rollback capability, and verification contract.
 - Preflight runs under the complete acquired lock set and repeats exact
@@ -58,9 +59,9 @@ provider response alone is not acceptance.
   redispatch. An unresolved deadline/manual-review outcome becomes a durable
   target-conflict hold; it cannot silently release the target for another
   incompatible write.
-- Two writes to the same dashboard conflict.
-- Writes to separate dashboards may execute concurrently absent a broader
-  conflict.
+- Dashboard planning models the complete lock set, and test-only F3-A
+  conformance proves its normalization and pre-intent atomicity rejection.
+  These Engineering locks are not external-writer exclusion.
 - Home Assistant restart conflicts with configuration writes and reloads.
 - Exact add-on restart conflicts with operations that depend on that add-on.
 - Backup compatibility edges are evidence-backed rather than assumed.
@@ -74,8 +75,10 @@ provider response alone is not acceptance.
   during verification, and during separately authorized rollback.
 - Plan/task reconciliation repairs only from authoritative durable evidence and
   performs no provider mutation.
-- Backup, configuration, reload, add-on restart, Home Assistant restart, and
-  dashboard update have bounded readback/manual-review outcomes.
+- Backup, configuration, reload, add-on restart, and Home Assistant restart
+  have bounded readback/manual-review outcomes. Dashboard verification has
+  bounded outcomes only when supplied complete exact readback evidence; it is
+  not reached through a Beta 17 dispatch.
 - Post-dispatch deadlines are fixed at first intent and cannot be extended by
   restart or retry.
 - Storage corruption is quarantined and cannot create a replacement authority.
@@ -105,25 +108,20 @@ provider response alone is not acceptance.
 - A stale hash is rejected before durable intent or dispatch.
 - Before write enablement, exact-release evidence proves atomic compare/save or
   an exclusive mechanism covering all dashboard writers. A deterministic
-  interleaving test proves that the current non-atomic upstream sequence would
-  otherwise permit an undetectable lost update. Without that proof, F3-B stops
-  or obtains a separately authorized residual-risk policy decision that revises
-  this contract.
-- In the disposable synthetic apply lane, exactly one
-  `ha_config_set_dashboard` mutation attempt occurs.
+  interleaving test proves that the current non-atomic upstream sequence permits
+  an undetectable lost update. Without authoritative proof, dashboard execution
+  remains deferred; an Engineering-only lock or final reread is insufficient.
+- No dashboard transport or setter realization exists. Generated
+  `python_transform` and unrestricted full-configuration replacement are not
+  accepted alternatives.
 - The target cannot be created when missing.
-- Exact post-write reread verifies the full intended result and no unintended
-  field loss.
-- New upstream and Engineering hashes are durable.
-- A lost provider response is resolved by readback only.
-- Same-dashboard concurrency is rejected and different dashboards can proceed
-  independently.
-- F3-0, planning-only, and exact-release provider-planning lanes perform zero
+- Exact complete readback evidence can verify the full intended result and no
+  unintended field loss without claiming that a write occurred.
+- Resulting upstream and Engineering hashes are retained in immutable planning
+  evidence.
+- F3-0, planning-only, exact-release, and F3-A conformance lanes perform zero
   mutating dispatch, fixture mutation, approval grant, or physical action.
-- The separately identified disposable synthetic apply lane grants only its
-  synthetic administrator approval, invokes the setter exactly once, mutates
-  exactly one scoped fixture dashboard, and performs zero live, physical,
-  out-of-scope, or fallback action.
+- Dashboard-specific setter invocation and fixture mutation counts are zero.
 - Initial dashboard rollback remains unavailable. If later declared available,
   exact prior config is bounded/hash-bound and a separate stale-safe approved
   one-dispatch rollback is proven.
@@ -176,8 +174,7 @@ provider response alone is not acceptance.
   contract;
 - mutating provider dispatch and fixture mutation in exact-release planning:
   zero; and
-- the distinct disposable synthetic apply lane proves one setter invocation and
-  one scoped fixture mutation for the exact 7.14.2 contract.
+- dashboard setter invocation and fixture mutation remain zero.
 
 ## Exact `ha-mcp` 8.0.0 compatibility
 
@@ -198,8 +195,7 @@ provider response alone is not acceptance.
   contract;
 - mutating provider dispatch and fixture mutation in exact-release planning:
   zero; and
-- the distinct disposable synthetic apply lane proves one setter invocation and
-  one scoped fixture mutation for the exact 8.0.0 contract.
+- dashboard setter invocation and fixture mutation remain zero.
 
 ## Dashboard risk review
 
@@ -221,17 +217,17 @@ provider response alone is not acceptance.
 - Exact standalone-image 7.14.2 and 8.0.0 acceptance pass.
 - Existing exact immutable 8.0.0 read/provider-planning acceptance passes with
   zero mutation/dispatch.
-- A separately named disposable dashboard-write acceptance lane runs against
-  each exact release, makes exactly one reviewed setter invocation and one
-  scoped synthetic fixture mutation, then proves exact reread; it performs no
-  other mutation, provider dispatch, physical action, live action, or fallback.
+- Exact-release dashboard lanes perform planning and supplied-readback
+  verification only, with zero setter invocation, fixture mutation, provider
+  dispatch, physical action, live action, or fallback.
 - Real-Home-Assistant contract tests pass against the pinned disposable image.
 - Secret, protected-path, YAML, whitespace, and PowerShell checks pass.
 - Exact-head push and pull-request CI are green before review completion.
 
 ## Explicit non-goals
 
-F3 completion does not require dashboard creation/deletion/resources,
-cross-dashboard transactions, arbitrary transforms, multi-operation graph
-scheduling, or generalized compensation. Those require separate scope; graph
-execution and compensation remain F4.
+F3 completion does not require dashboard execution while authoritative
+external-writer protection is unavailable. It also excludes dashboard
+creation/deletion/resources, cross-dashboard transactions, arbitrary
+transforms, multi-operation graph scheduling, and generalized compensation.
+Those require separate scope; graph execution and compensation remain F4.
