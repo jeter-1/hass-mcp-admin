@@ -1,5 +1,22 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## 2.2.0-beta.14 special-provider admission evidence
+
+Backup and lifecycle health retain the exact selected compatibility entry,
+observed upstream name and version, protocol, release runtime model, expected
+and observed tool counts, reviewed standalone and observed raw catalog
+fingerprints, normalized aggregate identity, bounded component mismatch
+counts, and bounded changed tool/component names. Raw fingerprints remain
+diagnostic and do not replace the shared exact-release per-tool admission
+result. Dispatch and fallback counters remain explicit.
+
+Dashboard health retains its contract/attestation family, selected entry,
+attested and observed versions, input, security, and runtime expected/observed
+fingerprints, policy-projection model, normalized runtime fingerprint, bounded
+differing paths, and precise failure category without raw descriptor or policy
+values. Recognized nested transport errors keep a bounded category; only an
+unknown-only exception group is classified as `internal_error`.
+
 ## 2.2.0-beta.12 runtime-contract evidence
 
 A quarantined read reports compatibility aliases plus separate ordinary

@@ -1,6 +1,6 @@
 # Engineering 2.1 and 2.2 foundation roadmap
 
-Status: 2.1A and F2 accepted; exact 8.0.0 add-on admission correction in `2.2.0-beta.12`
+Status: 2.1A and F2 accepted; exact 8.0.0 special-provider correction in `2.2.0-beta.14`
 
 The required milestone order is:
 
@@ -158,6 +158,25 @@ state while retaining exact ordinary contracts and strict raw evidence.
 Unknown 8.x, both held reads, protocol, fallback, provider and governance
 boundaries remain unchanged. Delta-aware safety-reducing policy remains
 deferred beyond Beta 12.
+
+## 2.2.0-beta.13 dependency security remediation
+
+Beta 13 updates only the Engineering `aiohttp` and `cryptography` pins to
+stable security-fixed releases and retains strict dependency auditing. It
+changes no provider, admission, governance, protocol, held-tool, dispatch, or
+fallback boundary.
+
+## 2.2.0-beta.14 exact special-provider runtime admission
+
+Beta 14 retains the Beta 12 automatic-read model and Beta 13 security baseline
+while correcting the separate dashboard, backup, and lifecycle paths. Backup
+and lifecycle validate the complete exact release through the shared
+model-aware per-tool catalog validator; Dashboard v3 reuses the reviewed
+bounded policy projection while retaining its exact argument surface. Raw
+fingerprints remain diagnostics, typed dashboard failures remain precise, and
+an immutable add-on-runtime CI lane proves planning without dispatch. Unknown
+8.x, held reads, protocol, authorization, fallback, governance, and stable-v1
+boundaries do not change.
 
 Each operation must remain operation-specific. This roadmap does not authorize
 a generic administrator, arbitrary Supervisor command, service-call shortcut,

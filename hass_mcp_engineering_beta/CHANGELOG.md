@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.2.0-beta.14 - Exact special-provider runtime admission
+
+- Replace stale raw whole-catalog admission equality in the backup and
+  lifecycle providers with one exact-release, model-aware validator over all
+  78 reviewed tools. Raw standalone and add-on catalog fingerprints remain
+  bounded diagnostic evidence rather than authority.
+- Derive one deterministic normalized aggregate identity from sorted,
+  reviewed per-tool classification, schema, security annotation, output, and
+  release-model runtime results. Exact tool-set, protocol, release, model, and
+  accounting mismatches still fail closed.
+- Make Dashboard v3 reuse the reviewed four-key policy-state validator and
+  bounded projection for `deployment`, `enabled`, `live`, and `rules`, while
+  retaining exact coverage of every other security and argument surface.
+- Preserve typed dashboard contract categories through nested exception
+  groups with deterministic security-first precedence and bounded sanitized
+  diagnostics.
+- Execute the immutable 8.0.0 add-on runtime by reviewed digest in a distinct
+  CI job, reproduce the exact
+  `c61b0959e766f3900300dd4dd69a6d799fc113186d91983f21be69f1bc6b8768`
+  catalog and
+  `3bad86b86400807ceddf68805cf4ed86d1243f201104e18ed8d3c15e560a1d53`
+  normalized aggregate, and exercise automatic reads, dashboard reads, backup
+  planning, and lifecycle planning against a synthetic non-secret Home
+  Assistant boundary.
+- Preserve exact 7.14.2 78/26/74 and exact 8.0.0 78/24/72 accounting, the two
+  held 8.0.0 reads, protocol `2025-03-26`, provider arguments,
+  authority-v3/task-schema-1 governance, zero dispatch during planning,
+  `aiohttp==3.14.3`, `cryptography==50.0.0`, strict dependency auditing,
+  stable-v1.1.2, and zero fallback. Production acceptance remains pending.
+
 ## 2.2.0-beta.13 - Dependency security remediation
 
 - Advance the Engineering-only `aiohttp` pin from 3.14.2 to 3.14.3 and

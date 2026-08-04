@@ -1,5 +1,22 @@
 # HA MCP Engineering Server v2 Beta Architecture
 
+## 2.2.0-beta.14 special-provider model-aware admission
+
+The three special-provider failures left after Beta 12 are resolved without
+removing a gate. Backup and lifecycle share an exact-release full-catalog
+validator that validates all 78 per-tool reviewed contracts under the
+release-declared runtime model and hashes their sorted results as
+`ha-mcp-reviewed-normalized-catalog-v1`. Raw standalone/add-on catalog hashes
+remain diagnostic evidence rather than a second admission model.
+
+Dashboard v3 uses the same exact four-member policy-shape validator and
+bounded projection as operational v2 while retaining its separate exact
+argument and attestation contract. Recognized typed failures survive nested
+exception groups. A distinct immutable add-on-runtime CI lane exercises
+automatic reads, dashboard reads, and governed backup/lifecycle planning with
+zero dispatch and zero fallback. Beta 13's secure dependency pins and strict
+audit are preserved; production acceptance remains pending.
+
 ## 2.2.0-beta.12 exact ha-mcp 8.0.0 add-on admission
 
 Beta 12 separates exact 8.0.0 operational admission from raw catalog and
