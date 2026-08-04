@@ -1,4 +1,4 @@
-"""Exact-release dashboard setter admission and inert call projection."""
+"""Exact-release dashboard setter admission and inert planning binding."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from .models import (
     AtomicityDecision,
     PatchCompilation,
     ProviderAdmission,
-    ProviderCallProjection,
+    ProviderPlanningProjection,
     ProviderResponseEvidence,
     ProviderRuntimeEvidence,
 )
@@ -62,12 +62,10 @@ EXACT_CONTRACTS: Final = {
     ),
 }
 
-STABLE_ARGUMENT_NAMES = frozenset(
-    {"url_path", "config_hash", "python_transform", "return_screenshot", "MandatoryBPS"}
-)
-EPHEMERAL_ARGUMENT_NAMES = ("BestPracticeKey",)
+POTENTIAL_EPHEMERAL_ARGUMENT_NAMES = ("BestPracticeKey",)
 PROHIBITED_ARGUMENT_NAMES = (
     "config",
+    "python_transform",
     "title",
     "icon",
     "require_admin",
@@ -110,39 +108,43 @@ def build_provider_projection(
     url_path: str,
     current_config_hash: str,
     atomicity: AtomicityDecision,
-) -> ProviderCallProjection:
+) -> ProviderPlanningProjection:
     if not admission.admitted_for_planning:
         raise ProviderAdmissionError("Provider contract was not admitted")
     if not UPSTREAM_CONFIG_HASH.fullmatch(current_config_hash):
         raise ProviderAdmissionError("Current config_hash is malformed")
-    stable_arguments: dict[str, Any] = {
-        "url_path": url_path,
-        "config_hash": current_config_hash,
-        "python_transform": compilation.generated_transform,
-        "return_screenshot": False,
-        "MandatoryBPS": False,
+    binding: dict[str, Any] = {
+        "tool_name": TOOL_NAME,
+        "target_url_path": url_path,
+        "current_config_hash": current_config_hash,
+        "resulting_configuration_sha256": compilation.resulting_sha256,
+        "resulting_upstream_config_hash": compilation.resulting_upstream_config_hash,
+        "resulting_size_bytes": compilation.resulting_size_bytes,
     }
-    if set(stable_arguments) != STABLE_ARGUMENT_NAMES:
-        raise ProviderAdmissionError("Provider argument projection is not exact")
-    executable = True
-    blocked_reason = ""
+    if not SHA256.fullmatch(compilation.resulting_sha256):
+        raise ProviderAdmissionError("Resulting configuration hash is malformed")
+    executable = False
+    blocked_reasons = ["no_reviewed_mutating_argument_realization"]
     try:
         require_executable_atomicity(atomicity)
     except AtomicityGateError:
-        executable = False
-        blocked_reason = "atomicity_or_all_writer_exclusion_unproven"
-    return ProviderCallProjection(
+        blocked_reasons.append("atomicity_or_all_writer_exclusion_unproven")
+    return ProviderPlanningProjection(
         tool_name=TOOL_NAME,
-        stable_arguments=stable_arguments,
-        stable_arguments_sha256=engineering_sha256(stable_arguments),
-        ephemeral_argument_names=EPHEMERAL_ARGUMENT_NAMES,
+        target_url_path=url_path,
+        current_config_hash=current_config_hash,
+        resulting_configuration_sha256=compilation.resulting_sha256,
+        resulting_upstream_config_hash=compilation.resulting_upstream_config_hash,
+        resulting_size_bytes=compilation.resulting_size_bytes,
+        binding_sha256=engineering_sha256(binding),
+        potential_ephemeral_argument_names=POTENTIAL_EPHEMERAL_ARGUMENT_NAMES,
         prohibited_argument_names=PROHIBITED_ARGUMENT_NAMES,
         executable=executable,
-        blocked_reason=blocked_reason,
+        blocked_reason=";".join(blocked_reasons),
     )
 
 
-def require_executable_projection(projection: ProviderCallProjection) -> None:
+def require_executable_projection(projection: ProviderPlanningProjection) -> None:
     """Fail closed; this foundation intentionally has no dispatch method."""
 
     if not projection.executable:

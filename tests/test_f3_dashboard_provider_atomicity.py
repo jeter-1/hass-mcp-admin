@@ -26,7 +26,6 @@ from f3_dashboard.provider import (  # noqa: E402
     COMMON_INPUT_SCHEMA_FINGERPRINT,
     EXACT_CONTRACTS,
     PROHIBITED_ARGUMENT_NAMES,
-    STABLE_ARGUMENT_NAMES,
     admit_provider_contract,
     build_provider_projection,
     project_provider_response,
@@ -85,7 +84,7 @@ class DashboardProviderAdmissionTests(unittest.TestCase):
             with self.subTest(mutation=mutation), self.assertRaises(ProviderAdmissionError):
                 admit_provider_contract(mutation)
 
-    def test_projection_allowlist_is_exact_and_apply_remains_unreachable(self):
+    def test_projection_binds_result_without_a_mutating_argument_realization(self):
         config = load_dashboard()
         compilation = compile_dashboard_patch(
             config,
@@ -106,15 +105,30 @@ class DashboardProviderAdmissionTests(unittest.TestCase):
             current_config_hash=compilation.resulting_upstream_config_hash,
             atomicity=assess_atomicity("8.0.0"),
         )
-        self.assertEqual(set(projection.stable_arguments), STABLE_ARGUMENT_NAMES)
-        self.assertFalse(projection.stable_arguments["MandatoryBPS"])
-        self.assertFalse(projection.stable_arguments["return_screenshot"])
-        self.assertIsInstance(projection.stable_arguments["python_transform"], str)
+        self.assertEqual(projection.target_url_path, "synthetic-dashboard")
+        self.assertEqual(
+            projection.resulting_configuration_sha256, compilation.resulting_sha256
+        )
+        self.assertEqual(
+            projection.resulting_upstream_config_hash,
+            compilation.resulting_upstream_config_hash,
+        )
         self.assertFalse(projection.executable)
-        self.assertIn("BestPracticeKey", projection.ephemeral_argument_names)
+        self.assertIn(
+            "no_reviewed_mutating_argument_realization", projection.blocked_reason
+        )
+        self.assertIn("BestPracticeKey", projection.potential_ephemeral_argument_names)
         self.assertEqual(projection.prohibited_argument_names, PROHIBITED_ARGUMENT_NAMES)
         self.assertTrue(
-            {"config", "title", "icon", "require_admin", "show_in_sidebar", "view_path"}
+            {
+                "config",
+                "python_transform",
+                "title",
+                "icon",
+                "require_admin",
+                "show_in_sidebar",
+                "view_path",
+            }
             <= set(projection.prohibited_argument_names)
         )
         with self.assertRaises(AtomicityGateError):
@@ -126,6 +140,8 @@ class DashboardProviderAdmissionTests(unittest.TestCase):
         self.assertNotIn("def create_dashboard", source)
         self.assertNotIn("def delete_dashboard", source)
         self.assertNotIn("**kwargs", source)
+        self.assertNotIn('"python_transform": compilation', source)
+        self.assertNotIn('"config": compilation', source)
         self.assertNotIn("include_screenshot\": True", source)
         self.assertNotIn("return_screenshot\": True", source)
 

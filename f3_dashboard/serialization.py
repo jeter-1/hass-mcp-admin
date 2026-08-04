@@ -82,7 +82,7 @@ def public_proposal_projection(proposal: DashboardUpdateProposal) -> dict[str, A
             "exact_release": proposal.provider_admission.exact_release,
             "compatibility_entry": proposal.provider_admission.compatibility_entry,
             "provider_contract_hash": proposal.provider_admission.provider_contract_hash,
-            "stable_arguments_sha256": proposal.provider_projection.stable_arguments_sha256,
+            "planning_binding_sha256": proposal.provider_projection.binding_sha256,
             "executable": proposal.provider_projection.executable,
             "blocked_reason": proposal.provider_projection.blocked_reason,
         },

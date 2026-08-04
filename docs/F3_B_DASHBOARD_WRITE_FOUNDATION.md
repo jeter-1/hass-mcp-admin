@@ -241,23 +241,28 @@ Opaque custom-card action surfaces, templates/conditionals, and unknown action
 types use the fail-closed policy `manual_review_required`. The analyzer emits
 normalized evidence only and does not modify global governance policy tables.
 
-### Provider projection
+### Provider planning binding
 
-The planning-only wrapper admits exact 7.14.2 and 8.0.0 contracts. Its stable
-argument allowlist is exactly:
+The planning-only wrapper admits exact 7.14.2 and 8.0.0 contracts and binds the
+exact target, current upstream hash, exact resulting Engineering hash,
+resulting upstream-compatible hash, and resulting size. It deliberately does
+not construct a mutating upstream argument dictionary.
 
-- `url_path`;
-- current `config_hash`;
-- compiler-generated `python_transform`;
-- `return_screenshot=false`; and
-- `MandatoryBPS=false`, as frozen by F3-0 to omit attached guidance content
-  without weakening separately enforced strict acknowledgment.
+The accepted repository F3-0 document describes a compiler-generated
+`python_transform` realization, while the controlling F3-B task explicitly
+prohibits upstream `python_transform` and instead describes exact compiled
+configuration. Exact source shows that the latter uses the upstream full-config
+path, whose preread failure is non-fatal and whose missing-target path can
+create a dashboard. That conflicts with F3-0's prohibition on unrestricted
+full replacement and F3-B's prohibition on creation. F3-B therefore selects
+neither realization. Both `config` and `python_transform`, plus metadata,
+view/screenshot, resources, preferences, and arbitrary arguments, remain
+prohibited in this branch. This unresolved realization boundary is independent
+of, and additional to, the atomicity blocker.
 
-`BestPracticeKey` is the only named ephemeral argument and is never persisted.
-The projection prohibits full `config`, metadata fields, view/screenshot
-selection, resources, preferences, and arbitrary arguments. Exact source
-admits that a strict-BPS receipt might be required, but this foundation neither
-acquires nor dispatches one because apply is disabled.
+`BestPracticeKey` is retained only as a source-derived potential ephemeral
+field and is never acquired or persisted. This foundation does not acquire a
+strict-BPS receipt or dispatch a setter call.
 
 ### Planning, artifacts, and observability
 
@@ -309,22 +314,26 @@ rollback approval, or automatic compensation exists.
 
 ## Unresolved integration requirements
 
-1. An atomic Home Assistant compare-and-save, exact upstream transaction, or
+1. The integration owner must resolve the mutating-argument contradiction:
+   compiler-generated `python_transform` is described by the repository F3-0
+   document but prohibited by this F3-B task, while upstream `config` is a
+   create-capable full-replacement path. F3-B constructs neither call shape.
+2. An atomic Home Assistant compare-and-save, exact upstream transaction, or
    authoritative exclusion of every dashboard writer must be reviewed and
    proven before any executable adapter or transport can be added.
-2. F3-A must publish and identify a stable remote
+3. F3-A must publish and identify a stable remote
    `f3-operation-adapter-v1` executor, durable-intent, persistence, lock, and
    fencing API. The F3-B branch currently has no F3-A dependency.
-3. F3-A integration must preserve the exact lock modes, one mutating invocation
+4. F3-A integration must preserve the exact lock modes, one mutating invocation
    maximum, no retry after intent, and reread-only recovery. Same-dashboard
    exclusion and different-dashboard concurrency require its actual lock tests.
-4. Strict-BPS acquisition and expiry behavior must be integrated only at the
+5. Strict-BPS acquisition and expiry behavior must be integrated only at the
    accepted F3-A pre-dispatch boundary; the receipt cannot be persisted or
    treated as authorization/atomicity.
-5. The integration owner must separately approve any plan-family extension,
+6. The integration owner must separately approve any plan-family extension,
    runtime import, public registration, tool-count change, central health hook,
    or governance policy mapping.
-6. F3-D acceptance must rerun exact-release, concurrency, durable-intent,
+7. F3-D acceptance must rerun exact-release, concurrency, durable-intent,
    lost-response, process-reconstruction, architecture, packaging, and real-HA
    disposable tests at the exact integrated head. No real environment may be
    mutated by compatibility tests.

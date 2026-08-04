@@ -228,11 +228,15 @@ class ProviderAdmission:
 
 
 @dataclass(frozen=True)
-class ProviderCallProjection:
+class ProviderPlanningProjection:
     tool_name: str
-    stable_arguments: dict[str, Any]
-    stable_arguments_sha256: str
-    ephemeral_argument_names: tuple[str, ...]
+    target_url_path: str
+    current_config_hash: str
+    resulting_configuration_sha256: str
+    resulting_upstream_config_hash: str
+    resulting_size_bytes: int
+    binding_sha256: str
+    potential_ephemeral_argument_names: tuple[str, ...]
     prohibited_argument_names: tuple[str, ...]
     executable: bool
     blocked_reason: str
@@ -265,7 +269,7 @@ class DashboardUpdateProposal:
     semantic_diff: SemanticDiff
     risk: DashboardRiskEvidence
     provider_admission: ProviderAdmission
-    provider_projection: ProviderCallProjection
+    provider_projection: ProviderPlanningProjection
     atomicity: AtomicityDecision
     required_approval: str
     rollback_available: bool
