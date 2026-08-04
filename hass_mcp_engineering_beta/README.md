@@ -1,9 +1,11 @@
 # HA MCP Engineering Server Beta
 
 This directory contains the Engineering v2 add-on. Development version
-`2.2.0-beta.16` adds the runtime-inert F3-A shared adapter executor and durable
-cross-process lock core. No current adapter imports or instantiates the core,
-so provider behavior and public MCP registration remain unchanged. It
+`2.2.0-beta.17` ships the canonical runtime-inert F3 adapter contract and the
+governed dashboard planning/verification foundation. Dashboard execution is
+formally deferred: no setter, transport, public tool, persisted operation, or
+runtime route is added. No current adapter is activated, so provider behavior
+and public MCP registration remain unchanged. It
 preserves Beta 15 lifecycle response handling, Beta 13's `aiohttp` and
 `cryptography` security updates, Beta 14 model-aware catalog validation,
 bounded restart reconciliation, and exact 7.14.2 compatibility.
@@ -121,7 +123,7 @@ reboot and completeness defects, RC2dev14 established practical configuration
 plans, and RC2dev16 corrected delegated structured-error normalization without
 changing upstream admission or adding search behavior. Version `2.0.1`
 promoted the accepted RC1-dev2 behavior without a functional change. Development
-version `2.2.0-beta.16` retains governed controlled reload, exact add-on restart,
+version `2.2.0-beta.17` retains governed controlled reload, exact add-on restart,
 Home Assistant restart, readback-only reconciliation, and one durable execution
 task for each newly executed plan. It adds authority-version-3 policy and
 approval bundles without another tool, provider, resource, or fallback. Beta 9
@@ -144,10 +146,14 @@ exception groups, and adds immutable add-on-runtime acceptance.
 Beta 15 binds exact 8.0.0 lifecycle add-on detail to its reviewed structured
 response envelope and makes immutable runtime acceptance reproduce the live
 response cardinality without changing actions or dispatch.
-Beta 16 adds only the disconnected F3-A executor and durable locking
-foundation. Existing adapters, providers, startup, routing, health, public
-tools, Dashboard reads, and all write reachability remain unchanged until
-later separately reviewed conformance tracks integrate the core.
+Beta 16 added the disconnected F3-A executor and durable locking foundation.
+Beta 17 makes `ha_mcp_engineering.f3.contracts` its sole shipped adapter
+contract, preserves the inert dashboard planning and exact-verification work,
+and formally defers dashboard execution because no reviewed interface closes
+the external-writer lost-update race. Existing adapters, providers, startup,
+routing, health, public tools, Dashboard reads, and write reachability remain
+unchanged until later separately reviewed conformance tracks integrate the
+core.
 Beta 7 response truthfulness and current prohibited projection remain
 unchanged. Its
 update/recovery preflight,
@@ -159,8 +165,8 @@ retains
 exact reviewed 7.14.2 compatibility, reviewed 7.14.1 rollback compatibility,
 and the hardened MCP SDK boundary. Its changes, rollback, and acceptance
 requirements are recorded in
-[`../docs/V2_2_0_BETA16_RELEASE_NOTES.md`](../docs/V2_2_0_BETA16_RELEASE_NOTES.md),
-[`../docs/V2_2_0_BETA16_ACCEPTANCE.md`](../docs/V2_2_0_BETA16_ACCEPTANCE.md), and
+[`../docs/V2_2_0_BETA17_RELEASE_NOTES.md`](../docs/V2_2_0_BETA17_RELEASE_NOTES.md),
+[`../docs/V2_2_0_BETA17_ACCEPTANCE.md`](../docs/V2_2_0_BETA17_ACCEPTANCE.md), and
 [`../docs/OPERATIONAL_ADMINISTRATION.md`](../docs/OPERATIONAL_ADMINISTRATION.md).
 Determine
 exact advertised state from version metadata and `scripts/codex-context.py`.

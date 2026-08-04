@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.2.0-beta.17 - Canonical F3 contracts and dashboard deferral
+
+- Ship `ha_mcp_engineering.f3.contracts` as the sole runtime definition of
+  `f3-operation-adapter-v1`; retain repository-root `f3_contracts` only as an
+  object-identical compatibility and test facade.
+- Retain exact raw dashboard planning, bounded JSON Pointer compilation,
+  semantic diff, risk evidence, immutable artifacts, stale checks, and exact
+  verification while formally deferring executable dashboard mutation.
+- Prove through the merged F3-A executor that the complete dashboard lock set
+  normalizes and acquires atomically, then reject the unresolved external-writer
+  atomicity gate before durable dispatch intent with zero setter invocations
+  and zero dashboard-fixture mutations.
+- Add built-image import closure and repository-wide F3 import-boundary tests;
+  no shipped module depends on repository-root contracts or test support.
+- Add no MCP tool, persisted `update_dashboard` operation, provider transport,
+  fallback, task/plan schema change, current-route integration, rollback, or
+  production execution authority.
+- Preserve exact 7.14.2 78/26/74 and exact 8.0.0 78/24/72 accounting, held
+  tools `ha_search` and `ha_get_operation_status`, 48 Engineering-local tools,
+  `aiohttp==3.14.3`, `cryptography==50.0.0`, stable v1.1.2, and zero fallback.
+
 ## 2.2.0-beta.16 - F3-A durable execution infrastructure
 
 - Add the internal `f3-operation-adapter-v1` shared executor with exact
