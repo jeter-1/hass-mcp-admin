@@ -112,4 +112,3 @@ def python_literal(value: Any) -> str:
             for key in sorted(value)
         ) + "}"
     raise PatchValidationError("Unsupported generated-transform value")
-

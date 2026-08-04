@@ -213,4 +213,3 @@ def semantic_diff_projection(diff: SemanticDiff) -> dict[str, Any]:
         "semantic_diff_sha256": diff.semantic_diff_sha256,
         "serialized_size_bytes": diff.serialized_size_bytes,
     }
-

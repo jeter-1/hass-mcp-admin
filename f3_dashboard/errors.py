@@ -50,4 +50,3 @@ class PlanningError(DashboardFoundationError):
 
 class VerificationError(DashboardFoundationError):
     code = "dashboard_update_verification_failed"
-

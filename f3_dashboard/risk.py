@@ -345,4 +345,3 @@ def analyze_dashboard_risk(
         ),
         evidence_sha256=engineering_sha256(projection),
     )
-

@@ -102,4 +102,3 @@ class DashboardWriteObservability:
             "raw_dashboard_content_exposed": False,
             "fallback_count": counts["provider.fallback_count"],
         }
-

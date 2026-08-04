@@ -260,4 +260,3 @@ def verify_dashboard_observation(
         diagnostic_codes=("full_configuration_mismatch",),
         evidence_sha256=engineering_sha256(projection),
     )
-

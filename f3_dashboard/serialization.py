@@ -104,4 +104,3 @@ def public_proposal_projection(proposal: DashboardUpdateProposal) -> dict[str, A
             "raw_configuration_exposed": False,
         },
     }
-

@@ -433,4 +433,3 @@ def mismatch_paths(
             continue
         paths.append("/" + "/".join(_encode_token(item) for item in tokens) or "/")
     return tuple(paths)
-
