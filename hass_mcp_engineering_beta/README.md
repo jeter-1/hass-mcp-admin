@@ -4,7 +4,10 @@ This directory contains the Engineering v2 add-on. Development version
 `2.2.0-beta.18` adds runtime-inert F3-C1 configuration adapters for automation,
 script, `input_boolean`, and `input_number` create/update. Existing application,
 governance, provider-routing, and public MCP routes do not import or activate
-the adapters. It preserves Beta 15 lifecycle response handling, Beta 13's
+the adapters. The isolated one-operation path consumes the canonical Beta 17
+contract, executor, and durable lock model; multi-operation child ownership
+and route activation remain pending F3-D. It preserves Beta 15 lifecycle
+response handling, Beta 13's
 `aiohttp` and `cryptography` security updates, Beta 14 model-aware catalog
 validation, bounded restart reconciliation, and exact 7.14.2 compatibility.
 The 8.0.0 profile exposes 24 delegated reads and keeps `ha_search` and
@@ -151,8 +154,9 @@ and formally defers dashboard execution because no reviewed interface closes
 the external-writer lost-update race. Existing adapters, providers, startup,
 routing, health, public tools, Dashboard reads, and write reachability remain
 unchanged. Beta 18 adds only the disconnected F3-C1 configuration conformance
-package against those canonical contracts. Route activation and durable
-multi-operation ownership remain pending F3-D. Current provider behavior,
+package against those canonical contracts and the merged single-operation
+executor. Route activation and durable multi-operation ownership remain
+pending F3-D. Current provider behavior,
 public tools, task and plan schemas, F2 policy, and fallback remain unchanged.
 Beta 7 response truthfulness and current prohibited projection remain
 unchanged. Its

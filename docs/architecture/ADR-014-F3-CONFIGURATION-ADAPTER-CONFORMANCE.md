@@ -4,108 +4,142 @@ Status: Accepted for the runtime-inert F3-C1 foundation
 
 Date: 2026-08-04
 
-Contract base: `77d8f19b3dc12ec94eef134375ddcbd5baeb2670`
+Merged contract and executor base:
+`1815f7aabeb09eefeb86bbca1108c5cea537da5d` (`2.2.0-beta.17`)
 
 ## Context
 
-The current configuration implementation already plans, validates, classifies,
-applies, and reads back automation, script, `input_boolean`, and `input_number`
-resources. It uses fixed resource operations, but it is not expressed through
-the frozen `f3-operation-adapter-v1` lifecycle. In particular, configuration
-restart recovery cannot reconstruct a possibly dispatched operation through
-readback alone.
+The legacy configuration implementation plans, validates, classifies, applies,
+and reads back automation, script, `input_boolean`, and `input_number`
+resources through fixed direct Home Assistant gateways. Those routes remain
+authoritative until F3-D.
 
-F3-A owns the durable executor and lock records. Its remote branch was
-available while F3-C1 began, but its API had not been explicitly declared
-stable. F3-C1 therefore must implement the frozen adapter protocol without
-creating a competing executor, lock manager, task record, or persistence layer.
+Beta 17 ships the canonical `ha_mcp_engineering.f3.contracts` package, the
+`SharedOperationExecutor`, and durable locks and execution records. One F3
+record represents one exact prepared operation. It cannot represent several
+independent provider intents for a contract-v2 plan under one public task ID.
 
 ## Decision
 
-Add one shared `ConfigurationOperationAdapter` with four explicit resource
-strategies and eight closed capability identities. The package is a protected
-runtime module, but current application, governance, provider-routing, and tool
-registration modules do not import or instantiate it.
+Add one closed `ConfigurationOperationAdapter`, four explicit resource
+strategies, and eight create/update capability identities. Every shipped C1
+module consumes canonical objects from `ha_mcp_engineering.f3.contracts`; the
+repository-root `f3_contracts` facade is not a runtime dependency.
 
-Each prepared operation retains canonical JSON for the current and proposed
-configuration, exact planning hashes, risk and policy evidence, approval-bundle
-hash, exact provider descriptor, complete lock requirements, and exact
-verification contract. Configuration content is never evaluated by
-Engineering and is passed only to the existing reviewed
-`ConfigurationResourceGateway` contract.
+Each prepared operation binds canonical immutable configuration JSON, plan and
+operation identity, current and proposed hashes, risk and policy evidence,
+approval-bundle hash, a closed provider descriptor and argument hash, exact
+verification contract, and rollback unavailable.
 
-The lifecycle is:
+For one operation, the accepted lifecycle is:
 
-1. preparation consumes an existing immutable planned operation;
-2. preflight checks identity, policy snapshot, consumed approval, provider
-   admission, complete locks, current state, static validation, and the full
-   Home Assistant configuration check;
-3. dispatch rereads current state, invokes a supplied durable-intent callback,
-   and then calls the fixed gateway at most once;
-4. observation performs exact resource readback and the configuration check;
-5. verification compares normalized authoritative readback, identity, and the
-   proposed hash contract;
-6. recovery can only repeat observation after durable intent.
+1. the caller supplies an existing immutable planned operation;
+2. the merged executor acquires the complete durable lock set;
+3. adapter preflight validates immutable authority, admission, static and full
+   configuration validity, existence/absence, and the final authoritative
+   current-state fingerprint;
+4. the adapter calls the executor's irreversible `before_dispatch` callback;
+5. that callback idempotently consumes approval and commits durable intent;
+6. callback success is followed immediately by the one fixed gateway write;
+7. observation and verification use exact authoritative readback;
+8. every post-intent reconstruction is readback-only.
 
-Contract-v2 rollback remains unavailable. The historical contract-v1
-automation-update capability is declared, but the adapter cannot manufacture a
-rollback task or approval from the frozen protocol. Current rollback routing is
-unchanged; F3-D must bind a separately governed rollback operation later.
+Preflight neither requires nor claims consumed approval. It validates only
+immutable authorization evidence already bound into the prepared operation.
+There is no provider probe, mutable decision, stale reread, or unrelated await
+between successful `before_dispatch` return and the gateway write.
 
-## Identity and locks
+## Identity, authority, and locks
 
 Canonical target forms remain the current forms:
 
-- automation: bare internal ID; no `automation.` entity alias;
+- automation: bare internal ID; no `automation.` alias;
 - script: bare lowercase storage key; no `script.` prefix;
-- input boolean: full `input_boolean.<object_id>` entity ID;
-- input number: full `input_number.<object_id>` entity ID.
+- input boolean: exact `input_boolean.<object_id>` entity ID;
+- input number: exact `input_number.<object_id>` entity ID.
 
-Leading or trailing whitespace and invalid domains fail closed. Lock identity
-is case-insensitive without broadening public target acceptance. Resource locks
-are exclusive and use `automation:<id>`, `script:<id>`, or
-`helper:<entity_id>`. Every operation also requests shared
-`home_assistant:core`, so a later Home Assistant restart can request the same
-key exclusively.
+Whitespace variants, case aliases, invalid domains, friendly names, and fuzzy
+identities fail closed. Fixed provider arguments retain the exact REST path or
+WebSocket command in their hash; `provider_operation` is a closed canonical
+identifier accepted by the shared executor.
 
-A 1–8 operation sequence calculates and hash-binds the complete normalized
-lock union before dispatch. Duplicates union evidence, exclusive mode
-dominates, acquisition input is canonical bytewise order, and duplicate
-resource targets fail before acquisition. F3-A remains responsible for atomic
-durable acquisition, owner/attempt binding, fencing generations, renewal, and
-reverse release.
+Every operation requests three resource-scope locks:
+
+- one exclusive exact resource lock: `automation:<id>`, `script:<id>`, or
+  `helper:<entity_id>`;
+- one matching shared reload lock: `reload:automation`, `reload:script`,
+  `reload:input_boolean`, or `reload:input_number`;
+- shared `home_assistant:core`.
+
+Matching reload and later Home Assistant restart operations can request those
+same keys exclusively. Different exact resources remain compatible, and
+unrelated domains do not acquire each other's reload locks. C1 uses a direct
+Home Assistant gateway and acquires no `addon:ha_mcp` lock.
+
+## Ordered plan boundary
+
+The pure sequence model validates 1–8 immutable operations, declared order,
+earlier-only dependencies, unique operation IDs, unique exact targets, the
+complete normalized lock union, and deterministic child descriptors. Every
+descriptor retains the one public task ID and binds plan ID, operation ID, and
+a distinct deterministic attempt ID.
+
+C1 does not persist a child execution, dispatch a provider from the sequence
+model, manufacture public tasks, or pass several writes through one F3 record.
+Restart-position evidence describes only `not_started`, the current operation,
+later undispatched work, or a prior blocking outcome; it never authorizes
+redispatch.
+
+The remaining prerequisite is a shared durable child-execution and execution-
+ownership namespace:
+
+`one public task -> one ordered operation list -> one F3 child identity per operation`
+
+F3-D or a separately accepted prerequisite owns that namespace and the route
+switch.
+
+## Cancellation and rollback
+
+Task-wide cancellation is accepted only while every child is `not_started` and
+no durable intent exists. After any child has intent or may have dispatched,
+cancellation is rejected. Verified work stays represented, later work may stay
+undispatched, and no partial-cancellation state, rollback, or compensation is
+invented.
+
+All eight forward capability descriptors report `rollback_supported=false` and
+all prepared operations report `rollback_available=false`. Rollback preparation
+returns no operation and reaches no gateway write. Historical contract-v1
+automation rollback remains unchanged on the legacy route. Contract-v2 F3
+rollback requires a separately governed operation and an F3-D decision about
+migration, a reviewed lock bridge, or approved temporary disablement.
 
 ## External-writer limitation
 
 The reviewed Home Assistant REST and storage-helper operations expose no
 atomic compare-and-save, expected-hash enforcement, generation guard, or
-transaction receipt. The late authoritative preread rejects changes visible
-before durable intent and does not widen the existing stale-state window.
-An external writer can still race after that preread and before the provider
-save. Exact post-write readback detects a different final value but cannot
-prove that an intermediate external edit was not overwritten. This is an
-existing provider limitation, not compare-and-swap.
+transaction receipt. The final preflight read rejects changes visible before
+approval and intent. An external writer can still race after preflight and
+before the provider save. Exact readback detects a different final value but
+cannot prove an intermediate edit was not overwritten. This is an existing
+provider limitation, not compare-and-swap.
 
 ## Consequences
 
-- There is no new public tool, route, provider fallback, schema, task state, or
-  policy decision.
-- A provider success response is nonterminal until exact readback verifies.
-- Intent persistence failure causes zero gateway writes.
-- Once intent exists, timeout, disconnect, malformed response, or process loss
-  is possibly dispatched; reconstruction cannot redispatch that attempt.
-- Ordered plans stop on first failure, preserve verified earlier steps, leave
-  later steps undispatched, and perform no automatic compensation.
-- Metrics and events contain only closed labels, bounded diagnostic categories,
-  and identity/evidence hashes.
+- No public tool, runtime route, provider fallback, schema, task state, policy
+  decision, startup listener, coordinator, or persistence repository is added.
+- Provider success is nonterminal until exact readback verification.
+- Approval or intent failure invokes the gateway zero times.
+- Each operation attempt invokes the gateway at most once.
+- Once intent exists, recovery cannot redispatch that attempt.
+- Metrics and events contain only closed labels, bounded categories, and
+  identity/evidence hashes.
+- Current configuration, rollback, and cancellation routes remain unchanged.
 
 ## Deferred integration
 
-F3-D must integrate the exact stable F3-A executor API, replace no test-only
-authority with local equivalents, atomically acquire the complete lock set,
-persist the full intent record, validate fencing, reconstruct sequence
-position, bind duplicate apply and cancellation to durable tasks, and connect
-isolated observability to central health. It must also arrange packaging of the
-frozen contract or its accepted runtime successor. Route activation remains
-forbidden until F3-A, F3-B, F3-C1, and F3-C2 are accepted in the reserved release
-order.
+F3-D must add or consume the accepted child-execution ownership namespace,
+connect one public task to durable per-operation F3 records, coordinate the
+complete plan lock set, preserve duplicate-apply ownership, decide the legacy
+rollback bridge, integrate bounded health evidence, and activate routing only
+after all F3 tracks are accepted. It must not hide several writes behind one
+intent or create several public tasks.

@@ -2,13 +2,16 @@
 
 ## Source boundary
 
-- base: F3-0 head `77d8f19b3dc12ec94eef134375ddcbd5baeb2670`
-- pull-request base while F3-A is not explicitly stable:
-  `feature/f3-contract`
+- direct base: merged Beta 17 main
+  `1815f7aabeb09eefeb86bbca1108c5cea537da5d`
+- canonical F3 package: `ha_mcp_engineering.f3.contracts`
+- canonical executor and locks: merged Beta 17 F3-A
 - Engineering version: `2.2.0-beta.18`
 - stable version: `1.1.2`
 - adapter contract: `f3-operation-adapter-v1`
 - task schema: 1
+- configuration plan contract: 2
+- operational plan contract: 3
 - Engineering-local tools: 48
 - exact protocol: `2025-03-26`
 - secure pins: `aiohttp==3.14.3`, `cryptography==50.0.0`
@@ -20,67 +23,70 @@ responses.
 
 ## Required F3-C1 evidence
 
-1. Prove exact canonical identities and fixed provider descriptors for all
+1. Prove canonical shipped imports and image-equivalent import closure without
+   the repository root, tests, or compatibility facade.
+2. Prove exact canonical identities and fixed provider descriptors for all
    eight automation/script/input-boolean/input-number create/update paths.
-2. Prove immutable proposal content and exact preservation of current
-   fingerprint, proposed hash, risk evidence, F2 policy class, validation,
-   provider arguments, expected result, and rollback declaration.
-3. Prove every operation requests the exact exclusive resource lock and shared
-   `home_assistant:core`; complete multi-operation locks must normalize before
-   first dispatch.
-4. Prove consumed approval, policy snapshot, provider admission, plan expiry,
-   complete locks, identity, existence/absence, stale state, static validation,
-   and full configuration validation fail closed before intent.
-5. Prove intent persistence failure produces zero provider calls and each
-   eligible operation invokes its fixed gateway no more than once.
-6. Prove provider success remains nonterminal until exact resource identity,
-   normalized configuration, proposed hash contract, and configuration validity
-   verify through authoritative readback.
-7. Prove response loss and all specified process-loss boundaries reconstruct by
-   readback only, never redispatch, retain bounded evidence, and reach manual
-   review at the evidence deadline.
-8. Prove 1–8 ordered operation behavior, stop on first failure, exact recovery
-   position, partial application, duplicate-task reuse, pre-intent cancellation,
-   no compensation, and no implicit rollback.
-9. Prove same-resource Engineering operations conflict and document/test the
-   non-atomic external-writer window without claiming compare-and-swap.
-10. Prove metrics and events exclude configuration, sequences, secrets,
-    credentials, tokens, arbitrary responses, and provider error strings.
+3. Prove immutable planning equivalence: plan/operation identity, fingerprints,
+   hashes, risk/policy/approval evidence, effects, provider arguments,
+   validation, verification, rollback unavailable, and lock-set hash.
+4. Prove every capability requests exclusive exact resource, shared matching
+   reload-domain, and shared `home_assistant:core` locks, all resource scope,
+   with no `ha-mcp` add-on lock.
+5. Prove the merged executor orders locks, final preflight, idempotent approval
+   consumption, durable intent, and at most one fixed gateway mutation.
+6. Prove stale, target, admission, validation, lock-conflict, and pre-intent
+   cancellation refusals consume no approval; approval and intent failure call
+   the gateway zero times.
+7. Prove provider success is nonterminal until exact identity, normalized
+   configuration, resulting hash, and configuration validity verify.
+8. Prove response loss and process reconstruction retain `dispatch_count=1`,
+   gateway mutation count at most one, recovery mutation count zero, and the
+   unchanged evidence deadline.
+9. Prove the 1–8 sequence model creates deterministic child descriptors only,
+   persists and dispatches nothing, retains one public task, blocks later work
+   after an unresolved operation, and never authorizes redispatch.
+10. Prove cancellation succeeds only before the first intent, forward rollback
+    is unavailable for all eight capabilities, and legacy rollback routing is
+    unchanged.
+11. Prove matching reload/restart conflicts, permitted unrelated-resource
+    concurrency, and the documented non-atomic external-writer limitation.
+12. Prove bounded metrics/events and absence of arbitrary gateway operations,
+    service data, dynamic loading, fallback, physical-device actions, dashboard
+    setters, and runtime activation.
+
+## Multi-operation integration prerequisite
+
+Merged F3-A supports one durable execution record for one prepared operation.
+Beta 18 therefore does not claim executable multi-operation durability. F3-D
+or a separately accepted prerequisite must supply one durable child execution
+identity per ordered operation, bound to public task ID, plan ID, operation ID,
+and attempt ID, without creating multiple public tasks or hiding multiple
+writes behind one F3 intent.
 
 ## Runtime-isolation acceptance
 
-Require source and startup tests proving no module outside the isolated F3-C1
-package imports or instantiates it, no current apply or rollback route changes,
-no provider-routing or central-health integration, no new MCP tool, no current
-configuration dispatch through F3-C1, and an Engineering-local tool count of
-48. Task schema 1 and the current plan vocabulary must remain exact.
-
-## F3-A and delivery-order acceptance
-
-F3-A integration remains pending until its exact remote API commit is explicitly
-declared stable. F3-C1 must then rebase or incorporate that stable API, use the
-actual executor and lock records, retarget to `feature/f3-adapter-lock-core`, and
-rerun every validation on the exact new head. No local-only SHA or competing
-executor/lock/persistence implementation is acceptable.
-
-This branch may not merge before the reserved Beta 17 F3-B delivery unless the
-operator changes the fixed release order. Final route activation remains F3-D.
+Require source and startup tests proving current application, governance,
+task-recovery, provider-routing, capability, and tool-registration modules do
+not import or instantiate C1. Current create/apply/rollback/cancel routes stay
+legacy-authoritative. There is no startup listener, coordinator, repository,
+public tool, dashboard executor, or current C1 dispatch route.
 
 ## Compatibility and validation acceptance
 
-Exact 7.14.2 must remain 78 advertised tools, 26 delegated, zero held, 48 local,
-and 74 total. Exact 8.0.0 must remain 78 advertised, 24 delegated, exactly two
-held, 48 local, and 72 total. Held tools must remain exactly `ha_search` and
+Exact 7.14.2 remains 78 advertised, 26 delegated, zero held, 48 local, and 74
+total. Exact 8.0.0 remains 78 advertised, 24 delegated, exactly two held, 48
+local, and 72 total. Held tools remain exactly `ha_search` and
 `ha_get_operation_status`; missing, quarantine, unreviewed, automatic-read
-mismatch, and fallback counts must remain zero.
+mismatch, and fallback counts remain zero.
 
-Require compilation, YAML, focused F3-C1 and current configuration/rollback
-regressions, dashboard and operational-provider regressions, Fast, Full,
-exact-head Evidence, fresh `pip check`, strict `pip-audit` with no known
-vulnerabilities, stable and Engineering packaging, amd64/arm64/arm-v7 no-push
-builds, exact-image 7.14.1/7.14.2/8.0.0, immutable add-on runtime, disposable
-real-HA contracts, secret scan, protected-path validation, whitespace, and
-PowerShell parsing. Record every skip; unexplained skips fail acceptance.
+Require compilation, YAML, focused and all-F3 suites, configuration/rollback,
+dashboard and operational-provider regressions, Fast, Full, clean exact-head
+Evidence, image import closure, import boundaries, registry determinism, fresh
+`pip check`, strict audit with no known vulnerabilities, secret/protected-path/
+PowerShell/whitespace checks, stable and Engineering packaging, three no-push
+architectures, exact images, immutable add-on acceptance, disposable pinned HA
+contracts, and publication guards. Every skip must be explained.
 
 Nothing here authorizes publication, deployment, tagging, merging, adapter
 activation, or live system access.

@@ -5,15 +5,20 @@
 - Add internal `f3-operation-adapter-v1` configuration strategies for
   automation, script, `input_boolean`, and `input_number` create/update using
   existing normalization, validation, fingerprint, risk, and policy evidence.
-- Add exact configuration lock-set calculation, late stale-state preflight,
-  one-dispatch intent boundary, authoritative readback verification, bounded
-  observability, and readback-only process reconstruction.
-- Prove ordered 1–8 operation semantics, duplicate and cancellation decisions,
-  response/process loss, external-writer limitations, and migration
+- Consume the canonical shipped Beta 17 contract and executor API. Order exact
+  durable locks, final stale-state preflight, idempotent approval consumption,
+  durable intent, and one fixed gateway write.
+- Add exact resource, matching reload-domain, and Home Assistant restart locks;
+  authoritative readback verification; bounded observability; and readback-
+  only reconstruction.
+- Model ordered 1–8 operation plans as deterministic future child descriptors
+  without persistence or dispatch. Reject post-intent task cancellation and
+  declare all eight forward rollback capabilities unavailable.
+- Prove response/process loss, external-writer limitations, and migration
   equivalence through deterministic offline fixtures.
 - Keep the package disconnected from application startup, governance routes,
-  provider routing, and MCP registration. Canonical F3-A executor/lock
-  conformance is isolated; all runtime activation remains pending F3-D.
+  provider routing, and MCP registration. Single-operation F3-A executor/lock
+  conformance is isolated; durable child ownership and activation remain F3-D.
 - Preserve task schema 1, current plan vocabulary, F2 policy, approval
   authority, 48 Engineering-local tools, exact 7.14.2 and 8.0.0 accounting,
   secure dependency pins, stable v1.1.2, and zero fallback.

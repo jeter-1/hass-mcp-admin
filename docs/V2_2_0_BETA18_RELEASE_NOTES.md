@@ -2,70 +2,82 @@
 
 ## Release boundary
 
-Beta 18 adds internal, runtime-inert F3-C1 configuration adapters conforming to
-`f3-operation-adapter-v1`. Covered operations are create and update for
-automation, script, `input_boolean`, and `input_number` resources.
+Beta 18 adds internal, runtime-inert F3-C1 configuration adapters for create
+and update of automation, script, `input_boolean`, and `input_number`. It is
+based directly on merged Beta 17 main
+`1815f7aabeb09eefeb86bbca1108c5cea537da5d` and consumes the canonical shipped
+F3 contracts, executor, and durable lock model.
 
-The branch is based on the accepted F3-0 contract head
-`77d8f19b3dc12ec94eef134375ddcbd5baeb2670`. F3-A was remotely available but
-had not explicitly declared its executor/lock API stable when this track began,
-so exact F3-A binding is deliberately pending. F3-C1 creates no executor, lock
-manager, task persistence, or compatibility shim. The reserved Beta 17 F3-B
-delivery remains earlier in the fixed merge order.
+The current configuration routes remain legacy-authoritative. Beta 18 adds no
+executor, lock store, task repository, public tool, startup coordinator, or
+runtime route activation.
 
 ## Configuration conformance
 
-One shared configuration adapter uses explicit strategies for all four resource
-types. Eight closed capability identities bind exact existing gateway
-operations and arguments, resource-specific identity and validation rules,
-immutable proposed configuration, current fingerprints, proposed hashes, F2
-risk and policy evidence, exact readback, rollback declaration, and lock-set
-version.
+One closed adapter and four resource strategies expose eight exact capability
+identities. They bind existing direct Home Assistant configuration gateway
+operations, immutable plan evidence, exact target identity, normalized hashes,
+F2 policy and approval evidence, fixed provider arguments, exact readback, and
+rollback unavailable.
 
-Each operation requests an exclusive canonical resource lock and shared
-`home_assistant:core`. Bounded ordered plans calculate and bind the complete
-1–8 operation lock union before dispatch. F3-A will later own atomic durable
-acquisition, task/attempt ownership, fencing generations, renewal, and release.
+Every operation requests an exclusive exact resource lock, its matching shared
+`reload:<domain>` lock, and shared `home_assistant:core`, all resource scope.
+There is no `ha-mcp` add-on dependency lock. The merged executor proves atomic
+lock acquisition for a single operation.
 
-Preflight preserves existing validation and performs a late authoritative
-stale-state reread. A supplied durable-intent callback must complete before the
-adapter's sole fixed gateway write. Intent failure invokes the provider zero
-times. A provider response alone is not success: exact normalized resource
-identity, configuration readback, and full configuration validity are required.
+The lifecycle is locks, final preflight, idempotent approval consumption,
+durable intent, and one fixed gateway write. Preflight never claims consumed
+approval. The adapter calls the executor's irreversible callback immediately
+before the write, with no mutable decision or unrelated await between them.
+Approval or intent failure invokes the gateway zero times.
 
-After durable intent, recovery has no mutating path. Timeout, disconnect,
-malformed response, response loss, and process loss reconstruct through exact
-readback only. Deterministic fixtures prove a maximum adapter dispatch count of
-one and maximum simulated mutation count of one per operation attempt.
+Provider response is not verification. Exact normalized resource identity,
+configuration readback, resulting hash, and full configuration validity are
+required. Response loss and every post-intent reconstruction use readback only;
+the same attempt cannot redispatch.
 
-The source honestly retains the existing external-writer limitation: the
-reviewed Home Assistant operations have no atomic compare-and-save or expected
-generation. Late preread rejects stale changes observed before intent, and
-post-write verification detects a different final result, but cannot prove that
-an intermediate external edit was not overwritten.
+## Ordered-plan boundary
+
+The pure 1–8 operation model validates order, dependencies, unique IDs and
+targets, complete lock union, and deterministic future child descriptors. It
+persists nothing, calls no provider, retains one public task ID, and never
+authorizes redispatch from restart-position evidence.
+
+Merged F3-A has one execution record per exact prepared operation. Durable
+multi-operation execution therefore remains an F3-D prerequisite: one public
+task must own one ordered list and one child F3 identity per operation. Beta 18
+does not hide several writes behind one intent or manufacture public tasks.
+
+Task cancellation is accepted only before the first child intent. After any
+possible dispatch it is rejected; verified work remains represented and later
+work may remain undispatched without a partial-cancellation outcome.
+
+All eight forward capabilities declare rollback unsupported and unavailable.
+Historical contract-v1 automation rollback remains unchanged on the legacy
+route. Contract-v2 F3 rollback requires a separately governed future decision.
+
+## Known concurrency limit
+
+The reviewed Home Assistant operations have no compare-and-save or expected
+generation. Final preflight rejects changes already visible before approval
+and intent, and post-write readback detects a different final result. It cannot
+prove that an external edit inside the remaining preflight-to-save window was
+not overwritten.
 
 ## Runtime and compatibility preservation
 
-Current application startup, `ChangeGovernanceService`, apply and rollback
-routes, provider routing, central health, and public tool registration do not
-import, instantiate, or invoke F3-C1. Final executor integration and activation
-remain F3-D responsibilities.
+Beta 18 preserves:
 
-Beta 18 does not change:
-
-- public MCP tools or the 48 Engineering-local tool contract;
-- execution-task schema version 1, plan schema, F2 policy decisions, approval
-  authority, or automatic-read accounting;
-- current automation/configuration or rollback routes;
-- Dashboard v3 reads, backup, controlled reload, add-on restart, or Home
-  Assistant restart;
-- exact `ha-mcp` 7.14.2 accounting: 78 advertised, 26 delegated, zero held,
-  48 local, and 74 total;
-- exact `ha-mcp` 8.0.0 accounting: 78 advertised, 24 delegated, exactly two
-  held, 48 local, and 72 total;
+- no current F3 configuration route and no dashboard execution;
+- 25 canonical plus 23 Engineering-native tools, for 48 local tools;
+- task schema 1, configuration plan contract 2, operational plan contract 3;
+- exact 7.14.2 accounting: 78 advertised, 26 delegated, zero held, 48 local,
+  and 74 total;
+- exact 8.0.0 accounting: 78 advertised, 24 delegated, two held, 48 local, and
+  72 total;
 - held tools `ha_search` and `ha_get_operation_status`;
-- protocol `2025-03-26`, dependency pins `aiohttp==3.14.3` and
-  `cryptography==50.0.0`, stable v1.1.2, or zero fallback.
+- fallback zero, protocol `2025-03-26`, `aiohttp==3.14.3`,
+  `cryptography==50.0.0`, and stable v1.1.2.
 
-Nothing in this release authorizes deployment, publication, tagging, merge,
-production access, or runtime adapter activation.
+Nothing here authorizes deployment, publication, tagging, merge, production
+access, or runtime adapter activation.
