@@ -69,7 +69,7 @@ class DashboardRuntimeInvariantTests(unittest.TestCase):
             encoding="utf-8"
         )
         requirements = (BETA / "requirements.txt").read_text(encoding="utf-8")
-        self.assertIn('version: "2.2.0-beta.18"', beta_config)
+        self.assertIn('version: "2.2.0-beta.19"', beta_config)
         self.assertIn('version: "1.1.2"', stable_config)
         self.assertIn("aiohttp==3.14.3", requirements)
         self.assertIn("cryptography==50.0.0", requirements)
