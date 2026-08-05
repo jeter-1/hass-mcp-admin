@@ -347,11 +347,9 @@ jobs:
             exact-read-gateway-upstream \
             python - \
               --expected-version "$UPSTREAM_VERSION" \
-              --output /tmp/exact-image-sidecar-lifecycle-result.json \
-            < scripts/exact_image_sidecar_lifecycle_acceptance.py
-          docker cp \
-            exact-read-gateway-upstream:/tmp/exact-image-sidecar-lifecycle-result.json \
-            "$RUNNER_TEMP/exact-image-sidecar-lifecycle-result.json"
+              --output /dev/stdout \
+            < scripts/exact_image_sidecar_lifecycle_acceptance.py \
+            > "$RUNNER_TEMP/exact-image-sidecar-lifecycle-result.json"
       - name: Verify exact 8.1.0 custom-component worker shutdown
         if: matrix.upstream_version == '8.1.0'
         shell: bash

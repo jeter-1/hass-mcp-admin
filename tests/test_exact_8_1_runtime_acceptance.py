@@ -124,8 +124,17 @@ class ExactAddonProfileTests(unittest.TestCase):
             "< scripts/exact_image_sidecar_lifecycle_acceptance.py",
             workflow,
         )
+        self.assertIn("--output /dev/stdout", workflow)
+        self.assertIn(
+            '> "$RUNNER_TEMP/exact-image-sidecar-lifecycle-result.json"',
+            workflow,
+        )
         self.assertNotIn(
             "exact-read-gateway-upstream:/tmp/exact_image_sidecar_lifecycle_acceptance.py",
+            workflow,
+        )
+        self.assertNotIn(
+            "exact-read-gateway-upstream:/tmp/exact-image-sidecar-lifecycle-result.json",
             workflow,
         )
         self.assertIn(
