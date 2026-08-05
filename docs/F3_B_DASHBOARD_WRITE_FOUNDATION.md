@@ -190,6 +190,14 @@ list order remains semantic. Traversal is bounded to 48 levels and 10,000
 nodes. Replacing `/views` or any other broad subtree cannot collapse hundreds
 of changes into one reviewed operation.
 
+Equality is strict JSON-type-aware equality rather than Python equality.
+`true` differs from integer `1`, `false` differs from integer `0`, and integer
+`1` differs from floating `1.0`. Null equals only null; arrays require exact
+length, order, type, and recursive value equality; mappings require the same
+string-key set and recursive equality while ignoring key order. The same helper
+drives leaf counting, mismatch paths, untouched-field preservation, durable
+artifact readback, and exact verification.
+
 ### Preservation and hashes
 
 Compilation starts from a deep copy and modifies only the resolved declared
@@ -237,6 +245,16 @@ confirmation is recorded but does not reduce the classification. Existing
 unchanged actions do not become newly proposed risk merely because they were
 present in the preread.
 
+Each finding includes a deterministic `semantic_binding_sha256`. Its private
+hash input covers the complete inert action object, effective inherited
+card-level entity, action entity, complete target, service data/data, payload,
+navigation and URL destinations, confirmation, card type, template or
+conditional context, and inherited custom-card context. A classification tuple
+that stays unchanged does not hide a target, payload, template, destination,
+confirmation, or opaque custom-card semantic change. Public projections retain
+only bounded semantic/path hashes and sanitized category/reason evidence,
+never the bound path, action, service data, destination, or raw payload.
+
 Opaque custom-card action surfaces, templates/conditionals, and unknown action
 types use the fail-closed policy `manual_review_required`. The analyzer emits
 normalized evidence only and does not modify global governance policy tables.
@@ -259,6 +277,11 @@ neither realization. Both `config` and `python_transform`, plus metadata,
 view/screenshot, resources, preferences, and arbitrary arguments, remain
 prohibited in this branch. This unresolved realization boundary is independent
 of, and additional to, the atomicity blocker.
+
+The exact prohibited setter fields are `config`, `python_transform`, `title`,
+`icon`, `require_admin`, `show_in_sidebar`, `view_path`,
+`return_screenshot`, `resources`, and `preferences`. No screenshot route or
+transport is added.
 
 `BestPracticeKey` is retained only as a source-derived potential ephemeral
 field and is never acquired or persisted. This foundation does not acquire a
@@ -298,6 +321,16 @@ storage reread, both current hashes, and atomicity status. Lock ownership is
 not authorization. The merged F3-A core is available in Beta 17, but cannot
 make the upstream save atomic or exclude external writers. Every dashboard
 proposal therefore remains ineligible for dispatch.
+
+For future non-dashboard adapters, the shared F3 executor receives a
+caller-owned idempotent approval-consumption callback. It acquires complete
+locks, completes final adapter preflight, invokes that callback, commits F3
+durable intent with `dispatch_count=1`, and only then returns control for the
+one reviewed mutation. Approval and intent are separate durable writes. A loss
+between them retains the same F3 task, plan, operation, and attempt; retry
+repeats the idempotent callback and cannot fall back to legacy execution.
+Dashboard atomicity rejection occurs in preflight, so dashboard planning
+consumes no approval and reaches neither intent nor dispatch.
 
 Observation is exact reread only. Full target, storage mode, full
 configuration, Engineering hash, and upstream hash must equal the approved

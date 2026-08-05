@@ -41,9 +41,11 @@ Every F3 adapter exposes these phases while retaining provider-specific logic:
    stale-state comparison, configuration validation where required, target
    identity confirmation, lock calculation/acquisition, and dispatch
    eligibility. It performs no provider mutation.
-3. **Dispatch** persists approval consumption and a durable dispatch intent
-   before the mutating provider call, then invokes the exact mutating provider
-   operation at most once with exact reviewed arguments.
+3. **Dispatch** is sequenced by the shared executor. After complete locks and
+   final preflight, it invokes the caller-owned idempotent durable
+   approval-consumption callback, commits F3 durable dispatch intent, and only
+   then permits the adapter to invoke the exact mutating provider operation at
+   most once with exact reviewed arguments.
 4. **Observation** performs bounded exact readback, records attempts and
    recovery evidence, and never repeats the mutating provider call.
 5. **Verification** compares readback to the plan's exact intended result,
@@ -74,6 +76,7 @@ The declaration model in `ha_mcp_engineering.f3.contracts` is
 - canonical resource/provider lock request;
 - immutable prepared-operation hashes and expected effects;
 - bounded preflight, dispatch, observation, and verification results;
+- a caller-owned idempotent callback for durable approval consumption;
 - a callback that must durably record dispatch intent; and
 - explicit prepare, preflight, dispatch, observe, verify, recover, and
   prepare-rollback methods.
@@ -123,22 +126,37 @@ not report a pre-dispatch outcome after durable intent exists.
 
 ### Dispatch boundary
 
-The irreversible boundary is the successful durable `before_dispatch`
-callback. It occurs after exact provider/operation/argument admission and the
-final stale check, but before the mutating network/provider invocation.
+Approval remains caller/governance authority. The shared executor owns only
+the sequencing responsibility, and an adapter neither grants nor interprets
+approval. The executor receives an `ApprovalConsumptionRecorder`, an
+idempotent `Callable[[], Awaitable[None]]`, for the exact governed execution.
 
-The callback must persist, before returning:
+After execution claim, complete atomic lock acquisition, and successful final
+adapter preflight, the executor-created `before_dispatch` callback performs:
 
-- consumed approval bound to the exact plan hash;
-- task/plan transition to dispatching/applying;
-- exactly one attempt lineage;
-- dispatch request/intent identity and timestamp; and
-- the fixed maximum post-dispatch deadline.
+1. validate the current fenced lock handle;
+2. invoke the caller-owned durable approval-consumption callback;
+3. commit F3 durable dispatch intent and reserve `dispatch_count=1`; and
+4. return to the adapter, which immediately performs its reviewed mutation.
 
-If persistence fails, the mutating provider is not invoked. Once the callback
-returns, a crash before bytes reach the provider is nevertheless treated as
-possibly dispatched. Provider response loss, timeout, process loss, or
-reconnect never permits another mutating call. Resolution is readback only.
+The approval record and F3 intent are separate durable writes; this ADR does
+not claim a single storage transaction. Between their completion there is no
+provider probe, mutable policy decision, unrelated await, or adapter-controlled
+branch. Approval is never consumed for a lock conflict, lock-storage failure,
+cancellation accepted before intent, stale-state rejection, provider-admission
+rejection, target-identity rejection, or another failed preflight.
+
+If approval consumption fails, intent remains absent, `dispatch_count` remains
+zero, and provider mutation is unreachable. If approval is durably consumed
+but intent persistence fails, the same task, plan, operation, and attempt
+remain the only F3 execution authority. A reconstruction repeats the same
+idempotent approval callback and must not enter legacy execution. Provider
+invocation remains zero until intent succeeds. A process loss in this gap has
+the same reconstruction rule.
+
+Once intent commits, a crash before bytes reach the provider is nevertheless
+treated as possibly dispatched. Provider response loss, timeout, process loss,
+or reconnect never permits another mutating call. Resolution is readback only.
 
 Response evidence is bounded, sanitized, and truthful about whether a response
 was received. A response is not verification.
@@ -239,7 +257,10 @@ a new dispatch lineage.
 
 Recovery behavior is phase-specific:
 
-- before durable intent: revalidate or terminate pre-dispatch;
+- before approval consumption: revalidate or terminate pre-dispatch;
+- after approval consumption but before durable intent: retain the same F3
+  execution identity and idempotently retry approval consumption before a new
+  attempt to persist that one intent; provider invocation remains zero;
 - after durable intent and before known response: assume possible dispatch and
   observe;
 - after response: verify the target, not the response alone;

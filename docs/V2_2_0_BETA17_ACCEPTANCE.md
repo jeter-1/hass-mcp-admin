@@ -35,6 +35,29 @@ tagging, merging, runtime activation, or dashboard mutation.
    a fresh subprocess whose working directory and `sys.path` exclude the
    checkout.
 
+## Independent-review correction acceptance
+
+The corrected Beta 17 head must prove all four review corrections:
+
+1. `ApprovalConsumptionRecorder` is caller-owned and idempotent. The shared
+   executor invokes it only after complete locks and final preflight, then
+   commits F3 intent before adapter mutation. Lock/preflight/cancellation
+   failures consume no approval. Approval failure or intent failure invokes no
+   provider. Approval-consumed/intent-absent reconstruction retains the same
+   task, plan, operation, and attempt and repeats only the idempotent callback;
+   no legacy fallback exists.
+2. Every dashboard risk finding binds the complete effective action semantics
+   with a deterministic SHA-256, including effective card/action entity,
+   target, service data, payload, destinations, confirmation, templates,
+   conditionals, card type, and inherited opaque custom-card context. Public
+   projections expose only bounded sanitized fields and hashes.
+3. Dashboard semantic comparisons are JSON-type-aware: `true` differs from
+   `1`, `false` differs from `0`, and integer `1` differs from floating `1.0`.
+   The strict helper governs leaf counts, mismatch paths, preservation, and
+   exact verification, so typed changes cannot bypass the 16-leaf bound.
+4. The exact prohibited screenshot setter field is `return_screenshot`.
+   Screenshot transport remains absent.
+
 ## Dashboard foundation acceptance
 
 Retain exact storage identity and complete raw preread evidence, bounded
@@ -74,7 +97,10 @@ F3-A model, complete lock sets to acquire atomically, and fencing generations
 to remain enforced. Persistence failure before intent must invoke accepted
 synthetic mutations zero times. Every possible-intent recovery is observation
 only. Duplicate, cancellation, lease, reverse-release, manual-review, and all
-15 process-loss boundary tests remain required.
+15 original process-loss boundary tests remain required. The additional loss
+point after approval consumption and before intent must reconstruct under the
+same F3 authority with one idempotent consumption, zero pre-intent mutations,
+and no legacy fallback.
 
 The dashboard-specific conformance adapter must request exact
 `dashboard:<url_path>`, `home_assistant:core`, and `addon:<slug>` locks and then

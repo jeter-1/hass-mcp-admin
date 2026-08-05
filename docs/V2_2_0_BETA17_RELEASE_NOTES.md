@@ -6,6 +6,14 @@ Beta 17 establishes one packaged `f3-operation-adapter-v1` API and retains the
 runtime-inert dashboard planning and exact-verification foundation. It does not
 activate F3 in current runtime routes or add executable dashboard mutation.
 
+Independent review identified three High contract/semantic defects and one Low
+schema-name defect in the initial Beta 17 head. The corrected head adds the
+caller-owned idempotent approval-consumption callback after locked final
+preflight and before F3 intent, binds each risk finding to complete effective
+action semantics, applies strict JSON-type-aware equality to review bounds and
+verification, and corrects the screenshot exclusion to `return_screenshot`.
+These corrections do not activate the runtime or dashboard mutation.
+
 The authoritative declarations now live in
 `ha_mcp_engineering.f3.contracts`, which is copied into the Engineering image.
 The repository-root `f3_contracts` package remains only as a compatibility and
@@ -47,6 +55,13 @@ lock set. Preflight rejects before durable intent. Dashboard dispatch is
 unreachable, setter invocations are zero, and dashboard-fixture mutations are
 zero. Existing F3-A synthetic success/fault paths continue to prove their
 generic one-dispatch and no-blind-redispatch contract.
+
+Approval authority remains in caller/governance code; the executor owns the
+sequence. Approval consumption and F3 intent are separate durable writes, not
+one claimed transaction. If loss occurs after approval but before intent, the
+same F3 task/plan/operation/attempt repeats the idempotent approval callback;
+provider mutation remains zero until intent is durable, and no legacy fallback
+is available.
 
 ## Preserved behavior
 
