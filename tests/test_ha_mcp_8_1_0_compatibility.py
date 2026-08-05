@@ -331,7 +331,7 @@ def lifecycle_gateway(
         return SupervisorSelfAddonIdentity(
             slug="df26dea6_hass_mcp_engineering_beta",
             name="HA MCP Engineering Server Beta",
-            version="2.2.0-beta.21",
+            version="2.2.0-beta.22",
             repository="df26dea6",
         )
 
@@ -434,7 +434,7 @@ class ExactEightOneLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 for addon in transport.addons
                 if addon["slug"] == engineering_slug
             )
-            engineering_addon["version"] = "2.2.0-beta.21"
+            engineering_addon["version"] = "2.2.0-beta.22"
             self_restart_plan = await service.create_addon_restart_plan(
                 addon_slug=engineering_slug,
                 expiration_minutes=5,
