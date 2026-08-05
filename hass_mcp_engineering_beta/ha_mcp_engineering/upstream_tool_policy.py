@@ -32,6 +32,12 @@ _CAPTURE_RESOURCE = re.compile(
     r"(?:0|[1-9][0-9]{0,3})\."
     r"(?:0|[1-9][0-9]{0,3})\.json$"
 )
+_ARTIFACT_EVIDENCE_RESOURCE = re.compile(
+    r"^docs/evidence/upstream-read-compatibility/"
+    r"ha-mcp-(?:0|[1-9][0-9]{0,3})\."
+    r"(?:0|[1-9][0-9]{0,3})\."
+    r"(?:0|[1-9][0-9]{0,3})-contract-review\.json$"
+)
 MAX_RUNTIME_DESCRIPTION_BYTES = 8_192
 MAX_RUNTIME_ANNOTATION_TITLE_BYTES = 512
 _RUNTIME_DESCRIPTION_FINGERPRINT_DOMAIN = (
@@ -55,6 +61,19 @@ RUNTIME_POLICY_STATE_FINGERPRINT_MODEL_V1 = (
 )
 REVIEWED_NORMALIZED_CATALOG_FINGERPRINT_MODEL_V1 = (
     "ha-mcp-reviewed-normalized-catalog-v1"
+)
+STRICT_FULL_CONTRACT_FINGERPRINT_MODEL_V1 = (
+    "ha-mcp-strict-full-contract-v1"
+)
+EXACT_OCI_ARTIFACT_EVIDENCE_FORMAT_VERSION = 1
+EXACT_OCI_ARTIFACT_FAMILY = "official OCI images only"
+EXCLUDED_MISVERSIONED_RELEASE_ASSETS_8_1_0 = frozenset(
+    {
+        "ha-mcp-linux",
+        "ha-mcp-macos-arm64",
+        "ha-mcp-windows.exe",
+        "ha-mcp.mcpb",
+    }
 )
 RUNTIME_CONTRACT_FINGERPRINT_MODELS = frozenset(
     {
@@ -631,6 +650,8 @@ class ReviewedUpstreamRelease:
     addon_artifact_digests: tuple[
         tuple[str, tuple[tuple[str, str], ...]], ...
     ]
+    artifact_evidence_resource: str | None
+    artifact_evidence_sha256: str | None
     capture_resource: str
     capture_sha256: str
     capture_format_version: int
@@ -1361,6 +1382,8 @@ def _load_reviewed_release(
         "strict_full_contract_fingerprint",
         "strict_full_contract_fingerprint_model",
         "addon_artifact_digests",
+        "artifact_evidence_resource",
+        "artifact_evidence_sha256",
     }
     if (
         not isinstance(value, dict)
@@ -1464,6 +1487,8 @@ def _load_reviewed_release(
     strict_fingerprint = value.get("strict_full_contract_fingerprint")
     strict_model = value.get("strict_full_contract_fingerprint_model")
     addon_artifacts = value.get("addon_artifact_digests", {})
+    artifact_evidence_resource = value.get("artifact_evidence_resource")
+    artifact_evidence_sha256 = value.get("artifact_evidence_sha256")
     if (strict_fingerprint is None) != (strict_model is None):
         raise UpstreamToolPolicyError(
             "release_registry_strict_fingerprint_invalid"
@@ -1471,7 +1496,7 @@ def _load_reviewed_release(
     if strict_fingerprint is not None and (
         not isinstance(strict_fingerprint, str)
         or not _HEX_64.fullmatch(strict_fingerprint)
-        or strict_model != "ha-mcp-strict-full-contract-v1"
+        or strict_model != STRICT_FULL_CONTRACT_FINGERPRINT_MODEL_V1
     ):
         raise UpstreamToolPolicyError(
             "release_registry_strict_fingerprint_invalid"
@@ -1492,6 +1517,39 @@ def _load_reviewed_release(
     ):
         raise UpstreamToolPolicyError(
             "release_registry_addon_artifacts_invalid"
+        )
+    if runtime_model == RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2 and (
+        strict_fingerprint is None
+        or set(addon_artifacts) != {"linux/amd64", "linux/arm64"}
+    ):
+        raise UpstreamToolPolicyError(
+            "release_registry_release_identity_incomplete"
+        )
+    if (artifact_evidence_resource is None) != (
+        artifact_evidence_sha256 is None
+    ):
+        raise UpstreamToolPolicyError(
+            "release_registry_artifact_evidence_invalid"
+        )
+    if artifact_evidence_resource is not None and (
+        not isinstance(artifact_evidence_resource, str)
+        or not _ARTIFACT_EVIDENCE_RESOURCE.fullmatch(
+            artifact_evidence_resource
+        )
+        or artifact_evidence_resource
+        != (
+            "docs/evidence/upstream-read-compatibility/"
+            f"ha-mcp-{version}-contract-review.json"
+        )
+        or not isinstance(artifact_evidence_sha256, str)
+        or not _SHA256_DIGEST.fullmatch(artifact_evidence_sha256)
+    ):
+        raise UpstreamToolPolicyError(
+            "release_registry_artifact_evidence_invalid"
+        )
+    if version == "8.1.0" and artifact_evidence_resource is None:
+        raise UpstreamToolPolicyError(
+            "release_registry_release_identity_incomplete"
         )
     capture_resource = value["capture_resource"]
     if (
@@ -1695,6 +1753,8 @@ def _load_reviewed_release(
             (platform, tuple(sorted(item.items())))
             for platform, item in sorted(addon_artifacts.items())
         ),
+        artifact_evidence_resource=artifact_evidence_resource,
+        artifact_evidence_sha256=artifact_evidence_sha256,
         capture_resource=capture_resource,
         capture_sha256=capture_sha256,
         capture_format_version=value["capture_format_version"],
@@ -1891,6 +1951,244 @@ def _reviewed_capture(
     return capture_value, digest
 
 
+def _reviewed_artifact_evidence(
+    release: ReviewedUpstreamRelease,
+    *,
+    repository_root: Path,
+    capture_value: dict[str, Any],
+    verify_digest: bool,
+) -> tuple[dict[str, Any], str]:
+    """Bind exact OCI-only artifact identities to one reviewed release."""
+
+    if (
+        release.artifact_evidence_resource is None
+        or release.artifact_evidence_sha256 is None
+    ):
+        raise UpstreamToolPolicyError(
+            "reviewed_artifact_evidence_missing"
+        )
+    evidence_path = repository_root / release.artifact_evidence_resource
+    try:
+        raw = evidence_path.read_bytes()
+    except OSError as exc:
+        raise UpstreamToolPolicyError(
+            "reviewed_artifact_evidence_unreadable"
+        ) from exc
+    digest = "sha256:" + hashlib.sha256(raw).hexdigest()
+    if verify_digest and digest != release.artifact_evidence_sha256:
+        raise UpstreamToolPolicyError(
+            "reviewed_artifact_evidence_digest_mismatch"
+        )
+    evidence = _load_strict_json(
+        evidence_path,
+        error="reviewed_artifact_evidence_invalid",
+    )
+    if (
+        not isinstance(evidence, dict)
+        or set(evidence)
+        != {
+            "artifact_scope",
+            "changed_runtime_descriptors",
+            "classification_counts",
+            "dashboard",
+            "decision",
+            "held_tools",
+            "review_format_version",
+            "runtime_catalog",
+            "upstream",
+        }
+        or raw != canonical_json(evidence) + b"\n"
+    ):
+        raise UpstreamToolPolicyError(
+            "reviewed_artifact_evidence_fields_invalid"
+        )
+    artifact_scope = evidence["artifact_scope"]
+    runtime_catalog = evidence["runtime_catalog"]
+    upstream = evidence["upstream"]
+    dashboard = evidence["dashboard"]
+    if (
+        type(evidence["review_format_version"]) is not int
+        or evidence["review_format_version"]
+        != EXACT_OCI_ARTIFACT_EVIDENCE_FORMAT_VERSION
+        or not isinstance(artifact_scope, dict)
+        or set(artifact_scope)
+        != {
+            "addon_artifacts",
+            "admitted_artifact_family",
+            "excluded_release_assets",
+            "exclusion_reason",
+            "oci_image_revision_label",
+            "standalone_image_index_digest",
+            "standalone_platform_manifests",
+        }
+        or not isinstance(runtime_catalog, dict)
+        or set(runtime_catalog)
+        != {
+            "addon_raw_catalog_fingerprint",
+            "addon_strict_full_contract_fingerprint",
+            "advertised_tool_count",
+            "aggregate_fingerprint_model",
+            "controlling_evidence",
+            "normalized_aggregate_fingerprint",
+            "policy_only_standalone_addon_differences",
+            "runtime_contract_fingerprint_model",
+            "runtime_tool_order",
+            "standalone_raw_catalog_fingerprint",
+            "standalone_strict_full_contract_fingerprint",
+        }
+        or not isinstance(upstream, dict)
+        or set(upstream)
+        != {
+            "protocol_version",
+            "server_name",
+            "source_commit",
+            "source_tag",
+            "version",
+        }
+        or not isinstance(dashboard, dict)
+        or set(dashboard)
+        != {
+            "contract_family",
+            "descriptor_equal_to_8_0_0_standalone",
+            "runtime_fingerprint",
+        }
+    ):
+        raise UpstreamToolPolicyError(
+            "reviewed_artifact_evidence_model_invalid"
+        )
+    excluded_assets = artifact_scope["excluded_release_assets"]
+    classification_counts = evidence["classification_counts"]
+    held_tools = evidence["held_tools"]
+    expected_held_tools = sorted(
+        item.upstream_name
+        for item in release.policy.tools
+        if item.classification == "held_for_canary"
+    )
+    catalog_validation = validate_reviewed_release_catalog(
+        release,
+        observed_server_name=release.server_name,
+        observed_upstream_version=release.version,
+        observed_protocol_version=REVIEWED_UPSTREAM_PROTOCOL,
+        tools=capture_value["tools"],
+    )
+    runtime_tool_order = runtime_catalog["runtime_tool_order"]
+    captured_by_name = {
+        tool["name"]: tool for tool in capture_value["tools"]
+    }
+    if (
+        not isinstance(runtime_tool_order, list)
+        or len(runtime_tool_order) != len(captured_by_name)
+        or any(not isinstance(name, str) for name in runtime_tool_order)
+        or len(runtime_tool_order) != len(set(runtime_tool_order))
+        or set(runtime_tool_order) != set(captured_by_name)
+    ):
+        raise UpstreamToolPolicyError(
+            "reviewed_artifact_evidence_tool_order_invalid"
+        )
+    standalone_tools = [
+        captured_by_name[name] for name in runtime_tool_order
+    ]
+    addon_tools = json.loads(canonical_json(standalone_tools))
+    for tool in addon_tools:
+        policy_state = tool["_meta"]["ha_mcp"]["policy"]
+        policy_state.update(
+            {"deployment": "addon", "enabled": True, "live": True}
+        )
+    addon_catalog_validation = validate_reviewed_release_catalog(
+        release,
+        observed_server_name=release.server_name,
+        observed_upstream_version=release.version,
+        observed_protocol_version=REVIEWED_UPSTREAM_PROTOCOL,
+        tools=addon_tools,
+    )
+    if (
+        artifact_scope["admitted_artifact_family"]
+        != EXACT_OCI_ARTIFACT_FAMILY
+        or not isinstance(excluded_assets, list)
+        or len(excluded_assets)
+        != len(EXCLUDED_MISVERSIONED_RELEASE_ASSETS_8_1_0)
+        or set(excluded_assets)
+        != EXCLUDED_MISVERSIONED_RELEASE_ASSETS_8_1_0
+        or not isinstance(artifact_scope["exclusion_reason"], str)
+        or not artifact_scope["exclusion_reason"].strip()
+        or artifact_scope["standalone_image_index_digest"]
+        != release.image_index_digest
+        or artifact_scope["standalone_platform_manifests"]
+        != release.architecture_image_digests_by_platform
+        or artifact_scope["addon_artifacts"]
+        != release.addon_artifact_digests_by_platform
+        or artifact_scope["oci_image_revision_label"]
+        != release.image_revision
+        or upstream
+        != {
+            "protocol_version": REVIEWED_UPSTREAM_PROTOCOL,
+            "server_name": release.server_name,
+            "source_commit": release.source_commit,
+            "source_tag": release.release_tag,
+            "version": release.version,
+        }
+        or not isinstance(classification_counts, dict)
+        or any(
+            type(count) is not int or count < 0
+            for count in classification_counts.values()
+        )
+        or classification_counts != release.policy.classification_counts
+        or not isinstance(held_tools, list)
+        or any(not isinstance(name, str) for name in held_tools)
+        or held_tools != expected_held_tools
+        or type(runtime_catalog["advertised_tool_count"]) is not int
+        or runtime_catalog["advertised_tool_count"]
+        != release.advertised_tool_count
+        or runtime_catalog["runtime_contract_fingerprint_model"]
+        != release.runtime_contract_fingerprint_model
+        or runtime_catalog["aggregate_fingerprint_model"]
+        != REVIEWED_NORMALIZED_CATALOG_FINGERPRINT_MODEL_V1
+        or runtime_catalog["standalone_raw_catalog_fingerprint"]
+        != release.catalog_fingerprint
+        or runtime_catalog["standalone_strict_full_contract_fingerprint"]
+        != release.strict_full_contract_fingerprint
+        or schema_fingerprint({"tools": standalone_tools})
+        != release.strict_full_contract_fingerprint
+        or catalog_fingerprint(addon_tools)
+        != runtime_catalog["addon_raw_catalog_fingerprint"]
+        or schema_fingerprint({"tools": addon_tools})
+        != runtime_catalog["addon_strict_full_contract_fingerprint"]
+        or not catalog_validation.valid
+        or not addon_catalog_validation.valid
+        or runtime_catalog["normalized_aggregate_fingerprint"]
+        != catalog_validation.normalized_catalog_fingerprint
+        or runtime_catalog["normalized_aggregate_fingerprint"]
+        != addon_catalog_validation.normalized_catalog_fingerprint
+        or runtime_catalog["policy_only_standalone_addon_differences"]
+        != [
+            "/_meta/ha_mcp/policy/deployment",
+            "/_meta/ha_mcp/policy/enabled",
+            "/_meta/ha_mcp/policy/live",
+        ]
+        or runtime_catalog["controlling_evidence"]
+        != "exact immutable OCI runtime tools/list"
+        or any(
+            not isinstance(runtime_catalog[field], str)
+            or not _HEX_64.fullmatch(runtime_catalog[field])
+            for field in (
+                "addon_raw_catalog_fingerprint",
+                "addon_strict_full_contract_fingerprint",
+            )
+        )
+        or dashboard["contract_family"] != "ha_mcp_dashboard_read_v3"
+        or dashboard["descriptor_equal_to_8_0_0_standalone"] is not True
+        or not isinstance(dashboard["runtime_fingerprint"], str)
+        or not _HEX_64.fullmatch(dashboard["runtime_fingerprint"])
+        or not isinstance(evidence["changed_runtime_descriptors"], dict)
+        or not isinstance(evidence["decision"], str)
+        or not evidence["decision"].strip()
+    ):
+        raise UpstreamToolPolicyError(
+            "reviewed_artifact_evidence_identity_mismatch"
+        )
+    return evidence, digest
+
+
 def _dashboard_attestation_projection(attestation: Any) -> dict[str, Any]:
     return {
         "entry_id": attestation.entry_id,
@@ -2014,6 +2312,11 @@ def _dashboard_evidence(
             and attestation.catalog_fingerprint
             != release.catalog_fingerprint
         )
+        or (
+            release.artifact_evidence_sha256 is not None
+            and attestation.review_evidence_digest
+            != release.artifact_evidence_sha256
+        )
     ):
         raise UpstreamToolPolicyError(
             "release_registry_dashboard_attestation_mismatch"
@@ -2056,6 +2359,14 @@ def generated_reviewed_release_registry(
             repository_root=repository_root,
             verify_digest=False,
         )
+        artifact_evidence_digest: str | None = None
+        if release.artifact_evidence_resource is not None:
+            _, artifact_evidence_digest = _reviewed_artifact_evidence(
+                release,
+                repository_root=repository_root,
+                capture_value=capture_value,
+                verify_digest=False,
+            )
         contracts = reviewed_tool_contracts_from_capture(
             capture_value,
             release.policy,
@@ -2117,6 +2428,10 @@ def generated_reviewed_release_registry(
                 "reviewed_capture_policy_output_mismatch"
             )
         raw_release["capture_sha256"] = capture_digest
+        if artifact_evidence_digest is not None:
+            raw_release["artifact_evidence_sha256"] = (
+                artifact_evidence_digest
+            )
         raw_release["capture_format_version"] = capture_value[
             "capture_format_version"
         ]
@@ -2162,11 +2477,18 @@ def validate_reviewed_release_evidence(
     )
     registry = load_reviewed_upstream_release_registry(path)
     for release in registry.releases:
-        _reviewed_capture(
+        capture_value, _ = _reviewed_capture(
             release,
             repository_root=repository_root,
             verify_digest=True,
         )
+        if release.artifact_evidence_resource is not None:
+            _reviewed_artifact_evidence(
+                release,
+                repository_root=repository_root,
+                capture_value=capture_value,
+                verify_digest=True,
+            )
     generated = generated_reviewed_release_registry(
         path,
         repository_root=repository_root,

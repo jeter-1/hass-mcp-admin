@@ -55,12 +55,15 @@ CONTRACTS = BETA / "ha_mcp_engineering" / "providers" / "contracts"
 SEVEN_THIRTEEN = CONTRACTS / "ha_mcp_7_13_dashboard_read_v1.json"
 SEVEN_FOURTEEN = CONTRACTS / "ha_mcp_7_14_dashboard_read_v2.json"
 EIGHT_ZERO = CONTRACTS / "ha_mcp_8_0_dashboard_read_v3.json"
+EIGHT_ONE = CONTRACTS / "ha_mcp_8_1_dashboard_read_v3.json"
 
 
 def tool_for(version):
     path = (
         SEVEN_THIRTEEN
         if version == "7.13.0"
+        else EIGHT_ONE
+        if version == "8.1.0"
         else EIGHT_ZERO
         if version == "8.0.0"
         else SEVEN_FOURTEEN
@@ -159,7 +162,15 @@ class ContractFamilyTests(unittest.TestCase):
     def test_all_reviewed_versions_have_exact_builtin_attestations(self):
         entries = {item.upstream_version: item for item in load_attestations()}
         self.assertEqual(
-            set(entries), {"7.13.0", "7.14.0", "7.14.1", "7.14.2", "8.0.0"}
+            set(entries),
+            {
+                "7.13.0",
+                "7.14.0",
+                "7.14.1",
+                "7.14.2",
+                "8.0.0",
+                "8.1.0",
+            },
         )
         for version in entries:
             contract = normalize_runtime_contract(

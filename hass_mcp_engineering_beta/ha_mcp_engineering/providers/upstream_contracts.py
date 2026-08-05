@@ -194,7 +194,11 @@ COMPILED_CONTRACT_FAMILIES = {
 def expected_contract_family(upstream_version: str) -> str:
     """Select the exact compiled dashboard family for one reviewed release."""
 
-    return CONTRACT_FAMILY_V3 if upstream_version == "8.0.0" else CONTRACT_FAMILY
+    return (
+        CONTRACT_FAMILY_V3
+        if upstream_version in {"8.0.0", "8.1.0"}
+        else CONTRACT_FAMILY
+    )
 
 
 @dataclass(frozen=True)
