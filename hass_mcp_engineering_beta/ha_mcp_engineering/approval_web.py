@@ -9,8 +9,11 @@ Ingress peer and requires the documented Ingress path header.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from html import escape
+import hmac
 import re
+import secrets
 from typing import Any
 import unicodedata
 from urllib.parse import parse_qs
@@ -81,6 +84,7 @@ class IngressApprovalApplication:
         self.governance = governance
         self.allowed_peers = frozenset(allowed_peers)
         self.require_ingress_header = require_ingress_header
+        self._f3_csrf: dict[str, tuple[str, str, int, str, str]] = {}
 
     def create(self) -> Starlette:
         app = Starlette(
@@ -90,6 +94,9 @@ class IngressApprovalApplication:
                 Route("/plans/{plan_id}", self.review, methods=["GET"]),
                 Route("/plans/{plan_id}/approve", self.approve, methods=["POST"]),
                 Route("/plans/{plan_id}/reject", self.reject, methods=["POST"]),
+                Route("/f3", self.f3_inbox, methods=["GET"]),
+                Route("/f3/{child_id}", self.f3_review, methods=["GET"]),
+                Route("/f3/{child_id}/reconcile", self.f3_reconcile, methods=["POST"]),
             ],
         )
         app.add_middleware(_SecurityHeadersMiddleware)
@@ -190,6 +197,163 @@ class IngressApprovalApplication:
 
     async def reject(self, request: Request) -> Response:
         return await self._decide(request, "reject")
+
+    async def f3_inbox(self, request: Request) -> Response:
+        context = self._deny_unless_ingress(request)
+        if isinstance(context, Response):
+            return context
+        prefix, _principal = context
+        if _principal == DEFAULT_APPROVER_PRINCIPAL:
+            return self._response(
+                _page("Forbidden", "<p>An authenticated Home Assistant administrator identity is required.</p>"),
+                403,
+            )
+        runtime = self.governance.require().f3_runtime
+        if runtime is None:
+            return self._response(_page("F3 unavailable", "<p>F3 is not ready.</p>"), 503)
+        rows = []
+        for item in runtime.reconciliation_items():
+            child_id = _text(item["child_id"], 128)
+            rows.append(
+                '<li><a href="{}">{}</a> — {} — {}</li>'.format(
+                    escape(f"{prefix}/f3/{child_id}", quote=True),
+                    escape(child_id),
+                    escape(_text(item["operation_id"], 96)),
+                    escape(_text(item["normalized_outcome"] or item["state"], 96)),
+                )
+            )
+        content = "<p>No unresolved F3 executions or holds.</p>" if not rows else "<ul>" + "".join(rows) + "</ul>"
+        return self._response(_page("F3 reconciliation", content))
+
+    async def f3_review(self, request: Request) -> Response:
+        context = self._deny_unless_ingress(request)
+        if isinstance(context, Response):
+            return context
+        prefix, principal = context
+        if principal == DEFAULT_APPROVER_PRINCIPAL:
+            return self._response(
+                _page("Forbidden", "<p>An authenticated Home Assistant administrator identity is required.</p>"),
+                403,
+            )
+        runtime = self.governance.require().f3_runtime
+        if runtime is None:
+            return self._response(_page("F3 unavailable", "<p>F3 is not ready.</p>"), 503)
+        child_id = request.path_params["child_id"]
+        item = next(
+            (value for value in runtime.reconciliation_items() if value["child_id"] == child_id),
+            None,
+        )
+        if item is None:
+            return self._response(_page("F3 record unavailable", "<p>No unresolved record exists.</p>"), 404)
+        token = secrets.token_urlsafe(32)
+        hold_generation_binding = ",".join(
+            f"{value['key']}:{value['generation']}"
+            for value in item["hold_tokens"]
+        )
+        if len(self._f3_csrf) >= 128:
+            self._f3_csrf.pop(next(iter(self._f3_csrf)))
+        self._f3_csrf[child_id] = (
+            hashlib.sha256(token.encode()).hexdigest(),
+            principal,
+            item["record_generation"],
+            item["prepared_hash"],
+            hold_generation_binding,
+        )
+        rows = "".join(
+            f"<tr><th>{escape(label)}</th><td><code>{escape(_text(value, 1000))}</code></td></tr>"
+            for label, value in (
+                ("Public task", item["public_task_id"]),
+                ("Plan", item["plan_id"]),
+                ("Child", item["child_id"]),
+                ("Operation / ordinal", f"{item['operation_id']} / {item['ordinal']}"),
+                ("Target", item["target"]),
+                ("Prepared hash", item["prepared_hash"]),
+                ("State", item["state"]),
+                ("Outcome", item["normalized_outcome"]),
+                ("Intent", item["intent_timestamp"]),
+                ("Evidence deadline", item["evidence_deadline"]),
+                ("Dispatch count", item["dispatch_count"]),
+                ("Provider response", item["provider_response_received"]),
+                ("Observation / verification", f"{item['observation_count']} / {item['verification_count']}"),
+                ("Selective holds", item["selective_hold_keys"]),
+                ("Reason codes", item["reason_codes"]),
+                ("Current readback summary", item["last_readback_summary"]),
+                ("Last reconciliation", item["last_reconciliation_at"]),
+            )
+        )
+        hidden = "".join(
+            f'<input type="hidden" name="{name}" value="{escape(str(value or ""), quote=True)}">'
+            for name, value in (
+                ("csrf", token),
+                ("record_generation", item["record_generation"]),
+                ("prepared_hash", item["prepared_hash"]),
+                ("hold_generation_binding", hold_generation_binding),
+            )
+        )
+        action_url = escape(f"{prefix}/f3/{child_id}/reconcile", quote=True)
+        actions = (
+            "rerun_observation", "rerun_verification", "retain_hold",
+            "release_hold_after_verified_resolution",
+            "close_manual_review_unresolved", "create_governed_rollback_plan",
+        )
+        forms = "".join(
+            f'<form method="post" action="{action_url}">{hidden}'
+            f'<input type="hidden" name="action" value="{action}">'
+            f'<button type="submit">{escape(action.replace("_", " "))}</button></form>'
+            for action in actions
+        )
+        return self._response(_page("F3 reconciliation record", f"<table>{rows}</table>{forms}"))
+
+    async def f3_reconcile(self, request: Request) -> Response:
+        context = self._deny_unless_ingress(request)
+        if isinstance(context, Response):
+            return context
+        _prefix, principal = context
+        if principal == DEFAULT_APPROVER_PRINCIPAL:
+            return self._response(
+                _page("Forbidden", "<p>An authenticated Home Assistant administrator identity is required.</p>"),
+                403,
+            )
+        content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        if content_type != "application/x-www-form-urlencoded":
+            return self._response(_page("Invalid request", "<p>Unsupported content type.</p>"), 415)
+        try:
+            content_length = int(request.headers.get("content-length", "0"))
+            if not 1 <= content_length <= MAX_BODY_BYTES:
+                raise ValueError
+            raw = await asyncio.wait_for(request.body(), timeout=MAX_REQUEST_SECONDS)
+            if len(raw) > MAX_BODY_BYTES:
+                raise ValueError
+            parsed = parse_qs(raw.decode("utf-8", "strict"), keep_blank_values=True, max_num_fields=8)
+            one = lambda name: parsed.get(name, [""])[0]
+            child_id = request.path_params["child_id"]
+            binding = self._f3_csrf.pop(child_id, None)
+            supplied = hashlib.sha256(one("csrf")[:256].encode()).hexdigest()
+            if binding is None or binding[1] != principal or not hmac.compare_digest(binding[0], supplied):
+                raise ValueError
+            generation = int(one("record_generation"))
+            hold_generation_binding = one("hold_generation_binding")[:2048]
+            if (
+                generation,
+                one("prepared_hash"),
+                hold_generation_binding,
+            ) != binding[2:]:
+                raise ValueError
+            result = await self.governance.require().f3_runtime.reconcile_child(
+                child_id=child_id,
+                action=one("action")[:64],
+                record_generation=generation,
+                prepared_hash=one("prepared_hash")[:64],
+                hold_generation_binding=hold_generation_binding,
+                authorized_principal=principal,
+            )
+        except TimeoutError:
+            return self._response(_page("Request timeout", "<p>The bounded reconciliation request timed out.</p>"), 408)
+        except (UnicodeDecodeError, ValueError):
+            return self._response(_page("Invalid request", "<p>The bounded action is invalid or stale.</p>"), 400)
+        except GovernanceError as exc:
+            return self._response(_page("Reconciliation refused", f"<p>{escape(exc.safe_message)}</p>"), 409)
+        return self._response(_page("Reconciliation recorded", f"<p>{escape(_text(result.get('status'), 96))}</p>"))
 
     async def _decide(self, request: Request, decision: str) -> Response:
         context = self._deny_unless_ingress(request)

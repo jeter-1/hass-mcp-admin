@@ -615,10 +615,34 @@ class DurableLockStore:
         *,
         reason_code: str,
     ) -> None:
-        reason = bounded_codes((reason_code,))[0]
+        self.promote_selective_conflict_hold(
+            handle,
+            retained_keys=tuple(token.key for token in handle.tokens),
+            reason_code=reason_code,
+        )
 
-        def mutate(state: dict[str, Any]) -> tuple[None, bool]:
+    def promote_selective_conflict_hold(
+        self,
+        handle: LockHandle,
+        *,
+        retained_keys: Iterable[str],
+        reason_code: str,
+    ) -> tuple[LockToken, ...]:
+        """Atomically retain exact unresolved targets and release dependencies.
+
+        Conflict holds never expire.  The unchanged fencing generations bind
+        every later reconciliation decision to the exact acquired lock set.
+        """
+
+        reason = bounded_codes((reason_code,))[0]
+        retained = _bytewise(validate_lock_key(key) for key in retained_keys)
+        handle_keys = tuple(token.key for token in handle.tokens)
+        if not retained or any(key not in handle_keys for key in retained):
+            raise LockOwnershipError("selective conflict-hold keys are invalid")
+
+        def mutate(state: dict[str, Any]) -> tuple[tuple[LockToken, ...], bool]:
             records: list[LockRecord] = state["records"]
+            selected: list[LockRecord] = []
             for token in handle.tokens:
                 matches = [
                     item for item in records
@@ -626,16 +650,85 @@ class DurableLockStore:
                 ]
                 if len(matches) != 1 or not self._same_owner(matches[0], handle.owner):
                     raise LockOwnershipError("conflict-hold promotion was fenced")
-                record = matches[0]
+                selected.append(matches[0])
+            self._inject("during_selective_hold_promotion")
+            held: list[LockToken] = []
+            for token, record in zip(handle.tokens, selected, strict=True):
+                if token.key not in retained:
+                    records.remove(record)
+                    continue
                 record.conflict_hold = True
                 record.evidence_references = _bytewise(
                     (*record.evidence_references, reason)
                 )
                 if len(record.evidence_references) > 16:
                     raise LockOwnershipError("conflict-hold evidence bound exceeded")
-            return None, True
+                held.append(token)
+            return tuple(held), True
 
-        self._transact(mutate)
+        held = self._transact(mutate)
+        self.event_sink(
+            {
+                "event_type": "conflict_hold_created",
+                "task_id": handle.owner.task_id,
+                "attempt_id": handle.owner.attempt_id,
+                "owner_id": handle.owner.owner_id,
+                "reason_code": reason,
+                "conflict_hold": True,
+            }
+        )
+        return held
+
+    def release_conflict_hold(
+        self,
+        *,
+        owner: LockOwner,
+        tokens: Iterable[LockToken],
+        reason_code: str,
+    ) -> tuple[str, ...]:
+        """Release an exact, fencing-safe hold after governed reconciliation."""
+
+        owner.validate()
+        reason = bounded_codes((reason_code,))[0]
+        selected_tokens = tuple(tokens)
+        if not selected_tokens:
+            raise LockOwnershipError("conflict-hold release is empty")
+        for token in selected_tokens:
+            token.validate()
+
+        def mutate(state: dict[str, Any]) -> tuple[tuple[str, ...], bool]:
+            records: list[LockRecord] = state["records"]
+            selected: list[LockRecord] = []
+            for token in selected_tokens:
+                matches = [
+                    item
+                    for item in records
+                    if item.key == token.key
+                    and item.generation == token.generation
+                ]
+                if (
+                    len(matches) != 1
+                    or not self._same_owner(matches[0], owner)
+                    or not matches[0].conflict_hold
+                ):
+                    raise LockOwnershipError("conflict-hold release was fenced")
+                selected.append(matches[0])
+            self._inject("during_conflict_hold_release")
+            for record in selected:
+                records.remove(record)
+            return tuple(token.key for token in selected_tokens), True
+
+        released = self._transact(mutate)
+        self.event_sink(
+            {
+                "event_type": "conflict_hold_released",
+                "task_id": owner.task_id,
+                "attempt_id": owner.attempt_id,
+                "owner_id": owner.owner_id,
+                "reason_code": reason,
+            }
+        )
+        return released
 
     def expired_records(self, *, now: datetime | None = None) -> tuple[LockRecord, ...]:
         instant = now or utc_now()
