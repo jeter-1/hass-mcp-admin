@@ -9,6 +9,8 @@
   `e2152911c0f3581c38b6ef42e52a2dd221cd8d96`;
 - Beta 22 validated implementation head:
   `b956257f3328a59cd66dff7bc72f7454af12329d`;
+- clean-snapshot Evidence head:
+  `6366fdf6d000ab129bf6bdd1e25189a0476bdf9d`;
 - Engineering/stable versions: `2.2.0-beta.22` / `1.1.2`;
 - protocol: `2025-03-26`;
 - secure pins: `aiohttp==3.14.3` and `cryptography==50.0.0`; and
@@ -178,7 +180,9 @@ DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 /tmp/hass-mcp-pr70-pwsh/pwsh -NoLogo -No
 # Full passed: 1,934 discovered, 2 skipped, 0 failures; 183.134 seconds
 
 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 /tmp/hass-mcp-pr70-pwsh/pwsh -NoLogo -NoProfile -Command "& ./scripts/check.ps1 -Tier Evidence -PythonExecutable /tmp/hass-mcp-beta15-final-venv/bin/python -BaseRef 35a83f2d2065b488ccff3594c9e8a7a629f9dcb9 -AuthorizedProtectedPath @('hass_mcp_engineering_beta/ha_mcp_engineering/','hass_mcp_engineering_beta/config.yaml')"
-# Clean-snapshot result is recorded by the follow-up evidence commit.
+# Evidence passed at clean head 6366fdf6d000ab129bf6bdd1e25189a0476bdf9d:
+# 1,934 discovered, 2 skipped, 0 failures; suite step 184.284 seconds
+# (183.146 seconds reported by unittest).
 ```
 
 The first Full attempt discovered the same 1,934 tests and two skips but found
