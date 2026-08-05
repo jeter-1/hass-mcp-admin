@@ -19,11 +19,14 @@ from ha_mcp_engineering.f3.operational_models import (  # noqa: E402
     CONTROLLED_RELOAD,
     CREATE_FULL_BACKUP,
     OPERATIONAL_PLAN_CONTRACT_VERSION,
+    OPERATIONAL_PREPARED_AUTHORITY_MODEL,
     OPERATIONAL_PROVIDER_CONTRACT_MODEL,
     RESTART_ADDON,
     RESTART_HOME_ASSISTANT,
     SUPPORTED_OPERATIONS,
     canonical_json,
+    operational_prepared_authority_payload,
+    recompute_operational_prepared_hash,
     stable_hash,
 )
 from ha_mcp_engineering.f3.operational_observability import (  # noqa: E402
@@ -277,6 +280,87 @@ class ExactReleaseAndMigrationEquivalenceTests(unittest.IsolatedAsyncioTestCase)
             )
             self.assertGreaterEqual(prepared.evidence_deadline_seconds, 60)
             self.assertFalse(prepared.rollback_available)
+
+    async def test_prepared_authority_payload_binds_every_execution_surface(self):
+        context = make_context(self.root, CREATE_FULL_BACKUP)
+        prepared = await prepare_context(context)
+        payload = operational_prepared_authority_payload(prepared)
+        self.assertEqual(
+            payload["authority_model"],
+            OPERATIONAL_PREPARED_AUTHORITY_MODEL,
+        )
+        self.assertEqual(
+            set(payload),
+            {
+                "authority_model",
+                "adapter_contract",
+                "adapter_id",
+                "capability_id",
+                "operation",
+                "target",
+                "plan",
+                "state",
+                "authorization",
+                "provider",
+                "requested_name",
+                "baseline",
+                "reporting",
+                "verification",
+                "rollback_available",
+                "recovery",
+            },
+        )
+        self.assertEqual(
+            set(payload["plan"]),
+            {
+                "plan_id",
+                "plan_hash",
+                "plan_contract_version",
+                "plan_expires_at",
+                "public_task_id",
+                "child_execution_id",
+            },
+        )
+        self.assertEqual(
+            set(payload["authorization"]),
+            {
+                "risk_level",
+                "policy_class",
+                "risk_delta",
+                "physical_consequence",
+                "policy_decision_hash",
+                "approval_bundle_hash",
+            },
+        )
+        self.assertEqual(
+            set(payload["provider"]),
+            {
+                "provider_id",
+                "provider_contract",
+                "provider_operation",
+                "provider_arguments",
+                "provider_arguments_hash",
+                "provider_evidence",
+                "authoritative_provider_slug",
+                "provider_identity_evidence_hash",
+            },
+        )
+        self.assertEqual(
+            set(payload["verification"]),
+            {"model", "contract", "contract_hash"},
+        )
+        self.assertEqual(
+            set(payload["recovery"]),
+            {
+                "evidence_deadline_class",
+                "evidence_deadline_seconds",
+                "selective_hold_keys",
+            },
+        )
+        self.assertEqual(
+            recompute_operational_prepared_hash(prepared),
+            prepared.prepared_operation_hash,
+        )
 
     def test_normalized_outcomes_map_to_existing_task_states(self):
         self.assertEqual(

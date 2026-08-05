@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -17,10 +18,12 @@ from ha_mcp_engineering.f3.operational_adapter import (
     execute_operational,
     validate_execution_binding,
 )
+from ha_mcp_engineering.f3.contracts import RecoveryContext
 from ha_mcp_engineering.f3.operational_models import (
     CAPABILITY_IDENTITIES,
     CONTROLLED_RELOAD,
     CREATE_FULL_BACKUP,
+    OPERATIONAL_PREPARED_AUTHORITY_MODEL,
     OPERATIONAL_PROVIDER_CONTRACT_MODEL,
     PROVIDER_OPERATIONS,
     RELOAD_PROVIDER_TARGETS,
@@ -28,7 +31,12 @@ from ha_mcp_engineering.f3.operational_models import (
     RESTART_HOME_ASSISTANT,
     SUPPORTED_OPERATIONS,
     OperationalPreparationRequest,
+    canonical_json,
+    recompute_operational_prepared_hash,
+    stable_hash,
+    validate_prepared_operational_authority,
 )
+from ha_mcp_engineering.f3.persistence import DurableExecutionRepository
 from ha_mcp_engineering.governance.models import ApprovalState
 
 from tests.f3_operational_fixtures import (
@@ -92,6 +100,25 @@ class OperationalCapabilityAndPreparationTests(unittest.IsolatedAsyncioTestCase)
                 self.assertEqual(prepared.warnings, tuple(context.plan.warnings))
                 self.assertEqual(prepared.limitations, tuple(operational.limitations))
                 self.assertFalse(prepared.rollback_available)
+
+    async def test_prepare_uses_one_canonical_authority_payload_and_child_binding(self):
+        for operation in SUPPORTED_OPERATIONS:
+            with self.subTest(operation=operation):
+                context = make_context(self.root / operation, operation)
+                prepared = await prepare_context(context)
+                validate_prepared_operational_authority(prepared)
+                self.assertEqual(
+                    prepared.prepared_operation_hash,
+                    recompute_operational_prepared_hash(prepared),
+                )
+                self.assertEqual(
+                    context.authority.prepared_authority_model,
+                    OPERATIONAL_PREPARED_AUTHORITY_MODEL,
+                )
+                self.assertEqual(
+                    context.authority.prepared_operation_hash,
+                    prepared.prepared_operation_hash,
+                )
 
     async def test_exact_provider_arguments_are_the_only_reachable_shapes(self):
         expectations = {
@@ -191,6 +218,294 @@ class OperationalCapabilityAndPreparationTests(unittest.IsolatedAsyncioTestCase)
             await prepare_context(context)
         self.assertEqual(caught.exception.category, "approval_not_available")
         self.assertEqual(context.lifecycle.provider_dispatches, 0)
+
+
+class OperationalPreparedAuthorityIntegrityTests(
+    unittest.IsolatedAsyncioTestCase
+):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    @staticmethod
+    def _rehash(prepared):
+        return replace(
+            prepared,
+            prepared_operation_hash=recompute_operational_prepared_hash(
+                prepared
+            ),
+        )
+
+    async def test_stale_hash_tamper_matrix_rejects_before_claim_or_approval(self):
+        mutations = {
+            "requested_name": lambda p: replace(
+                p, requested_name="Changed Backup"
+            ),
+            "target_id": lambda p: replace(
+                p, target=replace(p.target, target_id="other_backup")
+            ),
+            "target_class": lambda p: replace(p, target_class="other"),
+            "provider_id": lambda p: replace(
+                p, provider_id="upstream_operational_lifecycle"
+            ),
+            "provider_operation": lambda p: replace(
+                p, provider_operation="ha_restart"
+            ),
+            "provider_arguments_json": lambda p: replace(
+                p,
+                provider_arguments_json=canonical_json(
+                    {
+                        "scope": "snapshot",
+                        "action": "create",
+                        "name": "Changed Backup",
+                    }
+                ),
+            ),
+            "provider_arguments_hash": lambda p: replace(
+                p, provider_arguments_hash="f" * 64
+            ),
+            "provider_evidence_json": lambda p: replace(
+                p,
+                provider_evidence_json=canonical_json(
+                    {**p.provider_evidence, "server_name": "tampered"}
+                ),
+            ),
+            "baseline_json": lambda p: replace(
+                p,
+                baseline_json=canonical_json(
+                    {**p.baseline, "tampered": True}
+                ),
+            ),
+            "verification_model": lambda p: replace(
+                p, verification_contract_model="unknown-verification-v1"
+            ),
+            "verification_contract_json": lambda p: replace(
+                p,
+                verification_contract_json=canonical_json(
+                    {
+                        **json.loads(p.verification_contract_json),
+                        "required": ["tampered"],
+                    }
+                ),
+            ),
+            "verification_contract_hash": lambda p: replace(
+                p, verification_contract_hash="f" * 64
+            ),
+            "expected_effect_codes": lambda p: replace(
+                p, expected_effects=("tampered_effect",)
+            ),
+            "policy_class": lambda p: replace(
+                p, policy_class="elevated_admin"
+            ),
+            "risk_delta": lambda p: replace(p, risk_delta="high"),
+            "physical_consequence": lambda p: replace(
+                p, physical_consequence="direct"
+            ),
+            "risk_level": lambda p: replace(p, risk_level="high"),
+            "selective_hold_key": lambda p: replace(
+                p, selective_hold_keys=("backup:other",)
+            ),
+            "evidence_deadline_seconds": lambda p: replace(
+                p, evidence_deadline_seconds=86_399
+            ),
+            "rollback_flag": lambda p: replace(
+                p, rollback_available=True
+            ),
+            "prepared_operation_hash": lambda p: replace(
+                p, prepared_operation_hash="f" * 64
+            ),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(field=name):
+                root = self.root / name
+                context = make_context(root, CREATE_FULL_BACKUP)
+                prepared = await prepare_context(context)
+                tampered = mutate(prepared)
+                with self.assertRaises(OperationalAdapterError) as caught:
+                    await execute_operational(
+                        make_executor(root, prepared=tampered),
+                        adapter=context.adapter,
+                        prepared=tampered,
+                        identity=execution_identity(),
+                        approval_consumption=context.approval.consume,
+                    )
+                self.assertEqual(
+                    caught.exception.category,
+                    "prepared_operation_integrity",
+                )
+                self.assertIsNone(DurableExecutionRepository(root).get(TASK_ID))
+                self.assertEqual(context.approval.callback_count, 0)
+                self.assertEqual(context.backup.provider_dispatches, 0)
+                self.assertEqual(context.backup.simulated_effects, 0)
+
+    async def test_recomputed_hash_tampering_hits_authoritative_child_binding(self):
+        cases = []
+
+        for name in ("requested_backup_name", "provider_arguments"):
+            root = self.root / name
+            context = make_context(root, CREATE_FULL_BACKUP)
+            prepared = await prepare_context(context)
+            requested_name = f"Changed {name}"
+            arguments_json = canonical_json(
+                {
+                    "scope": "snapshot",
+                    "action": "create",
+                    "name": requested_name,
+                }
+            )
+            changed = replace(
+                prepared,
+                requested_name=requested_name,
+                provider_arguments_json=arguments_json,
+                provider_arguments_hash=stable_hash(arguments_json),
+            )
+            cases.append((name, root, context, self._rehash(changed)))
+
+        root = self.root / "baseline"
+        context = make_context(root, CREATE_FULL_BACKUP)
+        prepared = await prepare_context(context)
+        changed = replace(
+            prepared,
+            baseline_json=canonical_json(
+                {**prepared.baseline, "external_change": "bounded"}
+            ),
+        )
+        cases.append(("baseline", root, context, self._rehash(changed)))
+
+        root = self.root / "verification_contract"
+        context = make_context(root, CREATE_FULL_BACKUP)
+        prepared = await prepare_context(context)
+        verification = json.loads(prepared.verification_contract_json)
+        verification["required"] = [
+            *verification["required"],
+            "additional_bounded_readback",
+        ]
+        verification_json = canonical_json(verification)
+        changed = replace(
+            prepared,
+            verification_contract_json=verification_json,
+            verification_contract_hash=stable_hash(verification_json),
+        )
+        cases.append(
+            ("verification_contract", root, context, self._rehash(changed))
+        )
+
+        root = self.root / "selective_hold"
+        context = make_context(root, CONTROLLED_RELOAD, target_id="automation")
+        await prepare_context(context)
+        foreign = make_context(
+            root / "foreign", CONTROLLED_RELOAD, target_id="script"
+        )
+        changed = await prepare_context(foreign)
+        cases.append(("selective_hold", root, context, changed))
+
+        root = self.root / "evidence_deadline"
+        context = make_context(root, CREATE_FULL_BACKUP)
+        await prepare_context(context)
+        foreign = make_context(root / "foreign", CONTROLLED_RELOAD)
+        changed = await prepare_context(foreign)
+        cases.append(("evidence_deadline", root, context, changed))
+
+        for name, root, context, tampered in cases:
+            with self.subTest(case=name):
+                validate_prepared_operational_authority(tampered)
+                self.assertEqual(
+                    tampered.prepared_operation_hash,
+                    recompute_operational_prepared_hash(tampered),
+                )
+                preflight = await context.adapter.preflight(
+                    tampered,
+                    acquired_locks=context.adapter.lock_requests(tampered),
+                )
+                self.assertFalse(preflight.eligible)
+                self.assertEqual(
+                    preflight.diagnostic_codes,
+                    ("prepared_operation_authority",),
+                )
+                self.assertIn(
+                    "prepared_operation_authority",
+                    preflight.mismatch_fields,
+                )
+                result = await execute_operational(
+                    make_executor(root, prepared=tampered),
+                    adapter=context.adapter,
+                    prepared=tampered,
+                    identity=execution_identity(),
+                    approval_consumption=context.approval.consume,
+                )
+                record = DurableExecutionRepository(root).get(TASK_ID)
+                self.assertEqual(result.outcome, "preflight_rejected")
+                self.assertEqual(result.dispatch_count, 0)
+                self.assertIsNotNone(record)
+                self.assertIsNone(record.dispatch_intent)
+                self.assertEqual(context.approval.callback_count, 0)
+                self.assertEqual(context.backup.provider_dispatches, 0)
+                self.assertEqual(context.lifecycle.provider_dispatches, 0)
+                self.assertEqual(context.backup.simulated_effects, 0)
+                self.assertEqual(context.lifecycle.simulated_effects, 0)
+
+    async def test_every_operational_boundary_revalidates_prepared_authority(self):
+        context = make_context(self.root, CREATE_FULL_BACKUP)
+        prepared = await prepare_context(context)
+        tampered = replace(
+            prepared,
+            baseline_json=canonical_json(
+                {**prepared.baseline, "tampered": True}
+            ),
+        )
+        callback_count = 0
+
+        async def before_dispatch() -> None:
+            nonlocal callback_count
+            callback_count += 1
+
+        with self.assertRaises(OperationalAdapterError):
+            context.adapter.lock_requests(tampered)
+        with self.assertRaises(OperationalAdapterError):
+            await context.adapter.preflight(tampered, acquired_locks=())
+        with self.assertRaises(OperationalAdapterError):
+            await context.adapter.dispatch(
+                tampered, None, before_dispatch=before_dispatch
+            )
+        with self.assertRaises(OperationalAdapterError):
+            await context.adapter.observe(tampered, None)
+        with self.assertRaises(OperationalAdapterError):
+            await context.adapter.verify(tampered, None)
+        with self.assertRaises(OperationalAdapterError):
+            await context.adapter.recover(
+                tampered,
+                context=RecoveryContext(
+                    dispatch_intent_recorded=True,
+                    provider_invocation_may_have_occurred=True,
+                    provider_response_received=False,
+                    prior_observation_attempts=0,
+                    prior_verification_attempts=0,
+                    post_dispatch_deadline=None,
+                ),
+            )
+        with self.assertRaises(OperationalAdapterError):
+            await context.adapter.prepare_rollback(
+                tampered, expected_current_fingerprint="f" * 64
+            )
+        with self.assertRaises(OperationalAdapterError):
+            validate_execution_binding(tampered, execution_identity())
+        with self.assertRaises(OperationalAdapterError):
+            await execute_operational(
+                make_executor(self.root, prepared=tampered),
+                adapter=context.adapter,
+                prepared=tampered,
+                identity=execution_identity(),
+                approval_consumption=context.approval.consume,
+            )
+        self.assertEqual(callback_count, 0)
+        self.assertEqual(context.approval.callback_count, 0)
+        self.assertEqual(context.evidence.read_count, 0)
+        self.assertEqual(context.backup.provider_dispatches, 0)
+        self.assertEqual(context.backup.simulated_effects, 0)
+        self.assertIsNone(DurableExecutionRepository(self.root).get(TASK_ID))
 
 
 class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
@@ -358,8 +673,8 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
         for field, value in fields.items():
             with self.subTest(field=field):
                 context = make_context(self.root / field, CREATE_FULL_BACKUP)
-                context.adapter.authority_reader = lambda _prepared, f=field, v=value, a=context.authority: replace(a, **{f: v})
                 prepared = await prepare_context(context)
+                context.adapter.authority_reader = lambda _prepared, f=field, v=value, a=context.authority: replace(a, **{f: v})
                 result = await context.adapter.preflight(
                     prepared,
                     acquired_locks=context.adapter.lock_requests(prepared),
@@ -371,10 +686,10 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
     async def test_elevated_acknowledgement_is_required_for_restarts(self):
         for operation in (RESTART_ADDON, RESTART_HOME_ASSISTANT):
             context = make_context(self.root / operation, operation)
+            prepared = await prepare_context(context)
             context.adapter.authority_reader = lambda _prepared, a=context.authority: replace(
                 a, elevated_acknowledgement_bound=False
             )
-            prepared = await prepare_context(context)
             result = await context.adapter.preflight(
                 prepared, acquired_locks=context.adapter.lock_requests(prepared)
             )
@@ -387,8 +702,8 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
     async def test_home_assistant_restart_requires_all_persistent_storage(self):
         for field in ("governance_storage_status", "audit_storage_status", "execution_task_storage_status"):
             context = make_context(self.root / field, RESTART_HOME_ASSISTANT)
-            context.adapter.authority_reader = lambda _prepared, f=field, a=context.authority: replace(a, **{f: "unhealthy"})
             prepared = await prepare_context(context)
+            context.adapter.authority_reader = lambda _prepared, f=field, a=context.authority: replace(a, **{f: "unhealthy"})
             result = await context.adapter.preflight(
                 prepared, acquired_locks=context.adapter.lock_requests(prepared)
             )
@@ -465,7 +780,7 @@ class OperationalExecutorIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 context = make_context(root, operation)
                 prepared = await prepare_context(context)
                 result = await execute_operational(
-                    make_executor(root),
+                    make_executor(root, prepared=prepared),
                     adapter=context.adapter,
                     prepared=prepared,
                     identity=execution_identity(), approval_consumption=context.approval.consume,
@@ -479,7 +794,7 @@ class OperationalExecutorIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_home_assistant_restart_recovers_outage_then_verifies(self):
         context = make_context(self.root, RESTART_HOME_ASSISTANT)
         prepared = await prepare_context(context)
-        executor = make_executor(self.root)
+        executor = make_executor(self.root, prepared=prepared)
         first = await execute_operational(
             executor,
             adapter=context.adapter,
@@ -514,7 +829,7 @@ class OperationalExecutorIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_terminal_duplicate_returns_existing_without_second_dispatch(self):
         context = make_context(self.root, CREATE_FULL_BACKUP)
         prepared = await prepare_context(context)
-        executor = make_executor(self.root)
+        executor = make_executor(self.root, prepared=prepared)
         first = await execute_operational(
             executor,
             adapter=context.adapter,

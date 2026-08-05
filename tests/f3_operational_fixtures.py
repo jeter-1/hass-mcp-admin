@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sys
@@ -33,6 +33,7 @@ from ha_mcp_engineering.f3.operational_models import (
     OperationalEvidenceProjection,
     OperationalPreparationRequest,
     OPERATIONAL_EVIDENCE_PROJECTION_MODEL,
+    OPERATIONAL_PREPARED_AUTHORITY_MODEL,
     stable_hash,
 )
 from ha_mcp_engineering.f3.persistence import DurableExecutionRepository
@@ -475,10 +476,16 @@ class SyntheticF3EvidenceSource:
             dispatch_intent_recorded=intent is not None,
             dispatch_count=(record.dispatch_count if record is not None else 0),
             intent_committed_at=(
-                intent.get("committed_at") if isinstance(intent, dict) else None
+                values.get("intent_committed_at")
+                if "intent_committed_at" in values
+                else intent.get("committed_at")
+                if isinstance(intent, dict)
+                else None
             ),
             evidence_deadline=(
-                intent.get("evidence_deadline")
+                values.get("evidence_deadline")
+                if "evidence_deadline" in values
+                else intent.get("evidence_deadline")
                 if isinstance(intent, dict)
                 else None
             ),
@@ -844,6 +851,8 @@ def make_context(
         operation=operation,
         target_type=plan.target_type,
         target_id=plan.target_id,
+        prepared_authority_model=OPERATIONAL_PREPARED_AUTHORITY_MODEL,
+        prepared_operation_hash="0" * 64,
         policy_decision_hash=POLICY_HASH,
         approval_bundle_hash=approval_hash,
         authorization_evidence_status="valid",
@@ -863,13 +872,15 @@ def make_context(
         authority_reader=lambda _prepared: authority,
         now=lambda: NOW,
     )
-    return FixtureContext(
+    context = FixtureContext(
         plan, backup, lifecycle, evidence, approval, adapter, authority, trace
     )
+    adapter.authority_reader = lambda _prepared: context.authority
+    return context
 
 
 async def prepare_context(context: FixtureContext):
-    return await context.adapter.prepare(
+    prepared = await context.adapter.prepare(
         OperationalPreparationRequest(
             plan=context.plan,
             expected_plan_hash=PLAN_HASH,
@@ -879,11 +890,18 @@ async def prepare_context(context: FixtureContext):
             provider_identity_evidence_hash=PROVIDER_IDENTITY_HASH,
         )
     )
+    context.authority = replace(
+        context.authority,
+        prepared_authority_model=OPERATIONAL_PREPARED_AUTHORITY_MODEL,
+        prepared_operation_hash=prepared.prepared_operation_hash,
+    )
+    return prepared
 
 
 def make_executor(
     root: Path,
     *,
+    prepared,
     now=lambda: NOW,
     execution_fault_hook=None,
     executor_fault_hook=None,
@@ -900,7 +918,9 @@ def make_executor(
             wait_timeout_seconds=0,
         ),
         executor_timing=ExecutorTiming(
-            post_dispatch_evidence_seconds=3600,
+            post_dispatch_evidence_seconds=(
+                prepared.evidence_deadline_seconds
+            ),
             claim_lease_seconds=60,
             max_observation_attempts=3,
             max_verification_attempts=3,
