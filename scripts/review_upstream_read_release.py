@@ -22,8 +22,12 @@ BETA = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA))
 
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
+    CLASSIFICATIONS,
+    EXACT_OCI_ARTIFACT_FAMILY,
+    EXCLUDED_MISVERSIONED_RELEASE_ASSETS_8_1_0,
     REVIEWED_CAPTURE_FORMAT_VERSION,
-    RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1,
+    RUNTIME_CONTRACT_FINGERPRINT_MODELS,
+    STRICT_FULL_CONTRACT_FINGERPRINT_MODEL_V1,
     ReviewedUpstreamReleaseRegistry,
     canonical_json,
     catalog_fingerprint,
@@ -85,6 +89,213 @@ def strict_load(path: Path) -> Any:
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(canonical_json(value) + b"\n")
+
+
+def _require_sha256_digest(value: str, *, field: str) -> str:
+    """Validate one exact OCI SHA-256 digest without accepting abbreviations."""
+
+    prefix = "sha256:"
+    payload = value.removeprefix(prefix)
+    if (
+        not value.startswith(prefix)
+        or len(payload) != 64
+        or any(character not in "0123456789abcdef" for character in payload)
+    ):
+        raise SystemExit(f"{field} must be an exact lowercase SHA-256 digest")
+    return value
+
+
+def _strict_full_contract_fingerprint(
+    *,
+    tools_response: Path,
+    normalized_capture: dict[str, Any],
+    model: str,
+) -> str:
+    """Derive the order-preserving strict descriptor evidence fingerprint."""
+
+    if model != STRICT_FULL_CONTRACT_FINGERPRINT_MODEL_V1:
+        raise SystemExit("unsupported strict full-contract fingerprint model")
+    response = strict_load(tools_response)
+    result = response.get("result") if isinstance(response, dict) else None
+    tools = result.get("tools") if isinstance(result, dict) else None
+    if not isinstance(tools, list) or not 1 <= len(tools) <= MAX_CATALOG_TOOLS:
+        raise SystemExit("strict tools/list response is malformed")
+    observed: dict[str, dict[str, Any]] = {}
+    for tool in tools:
+        name = tool.get("name") if isinstance(tool, dict) else None
+        if not isinstance(name, str) or not name or name in observed:
+            raise SystemExit(
+                "strict tools/list response contains an invalid or duplicate tool"
+            )
+        observed[name] = tool
+    captured_tools = normalized_capture.get("tools")
+    if not isinstance(captured_tools, list):
+        raise SystemExit("normalized capture tools are malformed")
+    captured: dict[str, dict[str, Any]] = {}
+    for tool in captured_tools:
+        name = tool.get("name") if isinstance(tool, dict) else None
+        if not isinstance(name, str) or not name or name in captured:
+            raise SystemExit(
+                "normalized capture contains an invalid or duplicate tool"
+            )
+        captured[name] = tool
+    if observed != captured:
+        raise SystemExit(
+            "strict tools/list response differs from the normalized capture"
+        )
+    return schema_fingerprint({"tools": tools})
+
+
+def _artifact_evidence_binding(
+    *,
+    path: Path | None,
+    version: str,
+    source_commit: str,
+    image_index_digest: str,
+    architecture_image_digests: dict[str, str],
+    addon_artifact_digests: dict[str, dict[str, str]],
+    image_revision: str,
+    capture_value: dict[str, Any],
+    strict_full_contract_fingerprint: str,
+    runtime_contract_fingerprint_model: str,
+    classification_counts: dict[str, int],
+    held_tools: set[str],
+) -> tuple[str | None, str | None]:
+    """Bind a candidate to the exact committed OCI-only review evidence."""
+
+    if path is None:
+        if version == "8.1.0":
+            raise SystemExit(
+                "exact 8.1.0 candidate requires artifact review evidence"
+            )
+        return None, None
+    expected_resource = (
+        "docs/evidence/upstream-read-compatibility/"
+        f"ha-mcp-{version}-contract-review.json"
+    )
+    expected_path = ROOT / expected_resource
+    if path.resolve() != expected_path.resolve():
+        raise SystemExit(
+            "artifact review evidence must use the exact committed resource"
+        )
+    raw = path.read_bytes()
+    evidence = strict_json(raw.decode("utf-8"))
+    if raw != canonical_json(evidence) + b"\n":
+        raise SystemExit("artifact review evidence must be canonical JSON")
+    if not isinstance(evidence, dict):
+        raise SystemExit("artifact review evidence is malformed")
+    artifact_scope = evidence.get("artifact_scope")
+    runtime_catalog = evidence.get("runtime_catalog")
+    upstream = evidence.get("upstream")
+    if not all(
+        isinstance(item, dict)
+        for item in (artifact_scope, runtime_catalog, upstream)
+    ):
+        raise SystemExit("artifact review evidence is malformed")
+    excluded_assets = artifact_scope.get("excluded_release_assets")
+    runtime_tool_order = runtime_catalog.get("runtime_tool_order")
+    captured_names = {
+        tool.get("name")
+        for tool in capture_value.get("tools", [])
+        if isinstance(tool, dict)
+    }
+    if (
+        artifact_scope.get("admitted_artifact_family")
+        != EXACT_OCI_ARTIFACT_FAMILY
+        or not isinstance(excluded_assets, list)
+        or len(excluded_assets)
+        != len(EXCLUDED_MISVERSIONED_RELEASE_ASSETS_8_1_0)
+        or set(excluded_assets)
+        != EXCLUDED_MISVERSIONED_RELEASE_ASSETS_8_1_0
+        or artifact_scope.get("standalone_image_index_digest")
+        != image_index_digest
+        or artifact_scope.get("standalone_platform_manifests")
+        != architecture_image_digests
+        or artifact_scope.get("addon_artifacts")
+        != addon_artifact_digests
+        or artifact_scope.get("oci_image_revision_label")
+        != image_revision
+        or upstream
+        != {
+            "protocol_version": "2025-03-26",
+            "server_name": "ha-mcp",
+            "source_commit": source_commit,
+            "source_tag": f"v{version}",
+            "version": version,
+        }
+        or evidence.get("classification_counts") != classification_counts
+        or evidence.get("held_tools") != sorted(held_tools)
+        or runtime_catalog.get("advertised_tool_count")
+        != capture_value.get("tool_count")
+        or runtime_catalog.get("standalone_raw_catalog_fingerprint")
+        != capture_value.get("catalog_fingerprint")
+        or runtime_catalog.get("standalone_strict_full_contract_fingerprint")
+        != strict_full_contract_fingerprint
+        or runtime_catalog.get("runtime_contract_fingerprint_model")
+        != runtime_contract_fingerprint_model
+        or not isinstance(runtime_tool_order, list)
+        or len(runtime_tool_order) != len(captured_names)
+        or len(runtime_tool_order) != len(set(runtime_tool_order))
+        or set(runtime_tool_order) != captured_names
+    ):
+        raise SystemExit(
+            "artifact review evidence does not match the candidate identity"
+        )
+    return (
+        expected_resource,
+        "sha256:" + hashlib.sha256(raw).hexdigest(),
+    )
+
+
+def _review_decisions_by_name(
+    value: Any,
+    *,
+    expected_names: set[str],
+) -> dict[str, dict[str, str]]:
+    """Require one explicit closed-vocabulary policy decision per tool."""
+
+    if not isinstance(value, list):
+        raise SystemExit("review decisions must be a JSON array")
+    decisions: dict[str, dict[str, str]] = {}
+    for raw in value:
+        if not isinstance(raw, dict):
+            raise SystemExit("every review decision must be a JSON object")
+        name = raw.get("tool_name")
+        classification = raw.get("policy_classification")
+        reason = raw.get("reason")
+        if not isinstance(name, str) or not name:
+            raise SystemExit("review decision tool_name is missing")
+        if name in decisions:
+            raise SystemExit(f"duplicate review decision for {name}")
+        if (
+            not isinstance(classification, str)
+            or classification not in CLASSIFICATIONS
+        ):
+            raise SystemExit(
+                f"review policy classification is unsupported for {name}"
+            )
+        try:
+            reason_bytes = (
+                reason.encode("utf-8") if isinstance(reason, str) else b""
+            )
+        except UnicodeEncodeError:
+            reason_bytes = b""
+        if (
+            not isinstance(reason, str)
+            or not reason.strip()
+            or not reason_bytes
+            or len(reason_bytes) > 1_000
+        ):
+            raise SystemExit(f"review reason is missing or invalid for {name}")
+        decisions[name] = {
+            "policy_classification": classification,
+            "reason": reason.strip(),
+        }
+    if set(decisions) != expected_names:
+        raise SystemExit(
+            "review decisions must account for every captured tool exactly"
+        )
+    return decisions
 
 
 def import_runtime_capture(
@@ -404,11 +615,7 @@ def comparison(
 def candidate_entry(args: argparse.Namespace) -> None:
     capture_value = strict_load(args.capture)
     policy = strict_load(args.base_policy)
-    decisions_value = (
-        strict_load(args.review_decisions)
-        if args.review_decisions is not None
-        else None
-    )
+    decisions_value = strict_load(args.review_decisions)
     if args.dashboard_status == "reviewed" and (
         not args.dashboard_entry_id
         or not args.dashboard_attestation_fingerprint
@@ -432,6 +639,57 @@ def candidate_entry(args: argparse.Namespace) -> None:
         raise SystemExit("capture version does not match candidate version")
     if capture_value["server_name"] != "ha-mcp":
         raise SystemExit("capture server identity is not ha-mcp")
+    if (
+        args.runtime_contract_fingerprint_model
+        not in RUNTIME_CONTRACT_FINGERPRINT_MODELS
+    ):
+        raise SystemExit("unsupported runtime contract fingerprint model")
+    image_index_digest = _require_sha256_digest(
+        args.image_index_digest,
+        field="standalone image index digest",
+    )
+    architecture_image_digests = {
+        "linux/amd64": _require_sha256_digest(
+            args.amd64_digest,
+            field="amd64 manifest digest",
+        ),
+        "linux/arm64": _require_sha256_digest(
+            args.arm64_digest,
+            field="arm64 manifest digest",
+        ),
+    }
+    if args.arm_v7_digest is not None:
+        architecture_image_digests["linux/arm/v7"] = _require_sha256_digest(
+            args.arm_v7_digest,
+            field="arm/v7 manifest digest",
+        )
+    addon_artifact_digests = {
+        "linux/amd64": {
+            "index_digest": _require_sha256_digest(
+                args.addon_amd64_index_digest,
+                field="add-on amd64 index digest",
+            ),
+            "image_manifest_digest": _require_sha256_digest(
+                args.addon_amd64_manifest_digest,
+                field="add-on amd64 image manifest digest",
+            ),
+        },
+        "linux/arm64": {
+            "index_digest": _require_sha256_digest(
+                args.addon_arm64_index_digest,
+                field="add-on arm64 index digest",
+            ),
+            "image_manifest_digest": _require_sha256_digest(
+                args.addon_arm64_manifest_digest,
+                field="add-on arm64 image manifest digest",
+            ),
+        },
+    }
+    strict_full_contract_fingerprint = _strict_full_contract_fingerprint(
+        tools_response=args.strict_tools_response,
+        normalized_capture=capture_value,
+        model=args.strict_full_contract_fingerprint_model,
+    )
     policy = deepcopy(policy)
     policy["reviewed_upstream_version"] = args.version
     policy["reviewed_source_tag"] = f"v{args.version}"
@@ -453,22 +711,22 @@ def candidate_entry(args: argparse.Namespace) -> None:
             "candidate catalog and base policy tool names differ; "
             "classify additions and removals before generation"
         )
-    decisions_by_name: dict[str, dict[str, Any]] = {}
-    if decisions_value is not None:
-        if not isinstance(decisions_value, list):
-            raise SystemExit("review decisions must be a JSON array")
-        decisions_by_name = {
-            item.get("tool_name"): item
-            for item in decisions_value
-            if isinstance(item, dict) and isinstance(item.get("tool_name"), str)
-        }
-        if set(decisions_by_name) != set(policy_by_name):
-            raise SystemExit(
-                "review decisions must account for every captured tool exactly"
-            )
-    held = set(args.held_tool)
-    if not held <= set(policy_by_name):
-        raise SystemExit("held tool is absent from the reviewed catalog")
+    decisions_by_name = _review_decisions_by_name(
+        decisions_value,
+        expected_names=set(policy_by_name),
+    )
+    held = {
+        name
+        for name, decision in decisions_by_name.items()
+        if decision["policy_classification"] == "held_for_canary"
+    }
+    requested_held = set(args.held_tool)
+    if len(requested_held) != len(args.held_tool):
+        raise SystemExit("held tools must not be duplicated")
+    if requested_held and requested_held != held:
+        raise SystemExit(
+            "held-tool arguments must exactly match explicit review decisions"
+        )
     for name, item in policy_by_name.items():
         observed = captured_by_name[name]
         item["input_schema_fingerprint"] = schema_fingerprint(
@@ -485,23 +743,40 @@ def candidate_entry(args: argparse.Namespace) -> None:
             "openWorldHint": annotations.get("openWorldHint") is True,
         }
         item["source_evidence"] = [
-            f"homeassistant-ai/ha-mcp@{args.source_commit}: exact v{args.version} source review",
+            f"homeassistant-ai/ha-mcp@{args.source_commit}: exact "
+            f"v{args.version} source review",
             f"Exact deterministic MCP tools/list capture for ha-mcp {args.version}",
         ]
-        if decisions_by_name:
-            decision = decisions_by_name[name]
-            disposition = decision.get("recommended_disposition")
-            if not isinstance(disposition, str) or not disposition:
-                raise SystemExit(f"review disposition missing for {name}")
-            item["reason"] = str(
-                decision.get("engineering_admission_impact") or disposition
-            )[:1000]
-        if name in held:
-            item["classification"] = "held_for_canary"
-            item["reason"] = (
-                "Exact 8.0.0 contract is reviewed, but changed runtime semantics "
-                "remain held for a later controlled production canary."
-            )
+        decision = decisions_by_name[name]
+        item["classification"] = decision["policy_classification"]
+        item["reason"] = decision["reason"]
+    classification_counts: dict[str, int] = {}
+    for item in policy_by_name.values():
+        classification = item["classification"]
+        classification_counts[classification] = (
+            classification_counts.get(classification, 0) + 1
+        )
+    (
+        artifact_evidence_resource,
+        artifact_evidence_sha256,
+    ) = _artifact_evidence_binding(
+        path=args.artifact_evidence,
+        version=args.version,
+        source_commit=args.source_commit,
+        image_index_digest=image_index_digest,
+        architecture_image_digests=architecture_image_digests,
+        addon_artifact_digests=addon_artifact_digests,
+        image_revision=args.image_revision,
+        capture_value=capture_value,
+        strict_full_contract_fingerprint=(
+            strict_full_contract_fingerprint
+        ),
+        runtime_contract_fingerprint_model=(
+            args.runtime_contract_fingerprint_model
+        ),
+        classification_counts=dict(sorted(classification_counts.items())),
+        held_tools=held,
+    )
     automatic_names = {
         name
         for name, item in policy_by_name.items()
@@ -546,7 +821,7 @@ def candidate_entry(args: argparse.Namespace) -> None:
         capture_value,
         reviewed_policy,
         runtime_contract_fingerprint_model=(
-            RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
+            args.runtime_contract_fingerprint_model
         ),
     )
     error_contract = schema_fingerprint(capture_value["error_shapes"])
@@ -564,7 +839,7 @@ def candidate_entry(args: argparse.Namespace) -> None:
     entry = {
         "entry_id": (
             f"ha-mcp-v{args.version}-"
-            f"{args.image_index_digest.removeprefix('sha256:')[:8]}"
+            f"{image_index_digest.removeprefix('sha256:')[:8]}"
         ),
         "approval_status": "candidate_unapproved",
         "server_name": "ha-mcp",
@@ -573,19 +848,23 @@ def candidate_entry(args: argparse.Namespace) -> None:
         "source_repository": "https://github.com/homeassistant-ai/ha-mcp",
         "release_tag": f"v{args.version}",
         "source_commit": args.source_commit,
-        "image_index_digest": args.image_index_digest,
-        "architecture_image_digests": {
-            "linux/amd64": args.amd64_digest,
-            "linux/arm64": args.arm64_digest,
-        },
+        "image_index_digest": image_index_digest,
+        "architecture_image_digests": architecture_image_digests,
         "image_revision": args.image_revision,
         "advertised_tool_count": capture_value["tool_count"],
         "catalog_fingerprint": capture_value[
             "catalog_fingerprint"
         ],
         "runtime_contract_fingerprint_model": (
-            RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
+            args.runtime_contract_fingerprint_model
         ),
+        "strict_full_contract_fingerprint": (
+            strict_full_contract_fingerprint
+        ),
+        "strict_full_contract_fingerprint_model": (
+            args.strict_full_contract_fingerprint_model
+        ),
+        "addon_artifact_digests": addon_artifact_digests,
         "capture_resource": capture_resource,
         "capture_sha256": capture_digest,
         "capture_format_version": capture_value[
@@ -594,8 +873,10 @@ def candidate_entry(args: argparse.Namespace) -> None:
         "policy_resource": args.output_policy.name,
         "policy_sha256": policy_digest,
         "review_provenance": [
-            "Exact official image capture against the repository synthetic read-only fixture.",
-            "Per-tool source and wire-contract review against ha-mcp 7.14.1.",
+            f"Exact official ha-mcp v{args.version} image capture against "
+            "the repository synthetic read-only fixture.",
+            f"Per-tool source and wire-contract review for exact ha-mcp "
+            f"v{args.version}.",
         ],
         "review_date": args.review_date,
         "dashboard_attestation": {
@@ -619,6 +900,9 @@ def candidate_entry(args: argparse.Namespace) -> None:
         ),
         "tool_contracts": contracts,
     }
+    if artifact_evidence_resource is not None:
+        entry["artifact_evidence_resource"] = artifact_evidence_resource
+        entry["artifact_evidence_sha256"] = artifact_evidence_sha256
     write_json(args.output_entry, entry)
 
 
@@ -725,9 +1009,26 @@ def parse_args() -> argparse.Namespace:
     candidate.add_argument("--image-index-digest", required=True)
     candidate.add_argument("--amd64-digest", required=True)
     candidate.add_argument("--arm64-digest", required=True)
+    candidate.add_argument("--arm-v7-digest")
+    candidate.add_argument("--addon-amd64-index-digest", required=True)
+    candidate.add_argument("--addon-amd64-manifest-digest", required=True)
+    candidate.add_argument("--addon-arm64-index-digest", required=True)
+    candidate.add_argument("--addon-arm64-manifest-digest", required=True)
+    candidate.add_argument("--artifact-evidence", type=Path)
     candidate.add_argument("--image-revision", required=True)
     candidate.add_argument("--review-date", required=True)
-    candidate.add_argument("--review-decisions", type=Path)
+    candidate.add_argument("--review-decisions", type=Path, required=True)
+    candidate.add_argument(
+        "--runtime-contract-fingerprint-model",
+        choices=tuple(sorted(RUNTIME_CONTRACT_FINGERPRINT_MODELS)),
+        required=True,
+    )
+    candidate.add_argument("--strict-tools-response", type=Path, required=True)
+    candidate.add_argument(
+        "--strict-full-contract-fingerprint-model",
+        choices=(STRICT_FULL_CONTRACT_FINGERPRINT_MODEL_V1,),
+        required=True,
+    )
     candidate.add_argument("--held-tool", action="append", default=[])
     candidate.add_argument(
         "--dashboard-status",
@@ -870,6 +1171,7 @@ def main() -> None:
                             "image_index_digest": (
                                 release.image_index_digest
                             ),
+                            "source_commit": release.source_commit,
                             "image_revision": release.image_revision,
                             "architecture_image_digests": (
                                 release
