@@ -51,6 +51,7 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "tests/test_f3_operational_invariants.py",
     "tests/test_f3_operational_recovery.py",
     "tests/test_f3_packaging_boundaries.py",
+    "tests/test_f3_runtime_integration.py",
 }
 
 
@@ -301,13 +302,15 @@ class F3ImportBoundaryTests(unittest.TestCase):
                 actual.add(path.relative_to(ROOT).as_posix())
         self.assertEqual(actual, ALLOWED_EXPLICIT_F3_IMPORTS)
 
-    def test_current_runtime_routes_remain_f3_inert(self):
+    def test_runtime_routes_use_only_the_reviewed_f3_integration_boundary(self):
         sensitive = {
             "application.py",
             "capabilities.py",
+            "governance/runtime.py",
             "governance/service.py",
             "governance/task_recovery.py",
             "providers/routing.py",
+            "routing.py",
             "tools/registry.py",
         }
         for relative in sorted(sensitive):
@@ -316,9 +319,46 @@ class F3ImportBoundaryTests(unittest.TestCase):
                 continue
             source = path.read_text(encoding="utf-8")
             with self.subTest(path=relative):
-                self.assertNotIn("ha_mcp_engineering.f3", source)
+                self.assertNotIn("from ..f3 import", source)
+                self.assertNotIn("from ..f3.", source)
+                self.assertNotIn("ha_mcp_engineering.f3.", source)
                 self.assertNotIn("f3_dashboard", source)
                 self.assertNotIn("f3_contracts", source)
+
+    def test_only_the_closed_integration_package_imports_f3_runtime_internals(self):
+        approved = {
+            "f3_runtime/registry.py",
+            "f3_runtime/repository.py",
+            "f3_runtime/runtime.py",
+        }
+        actual = set()
+        for path in sorted(RUNTIME.rglob("*.py")):
+            relative = path.relative_to(RUNTIME).as_posix()
+            if relative.startswith(("f3/", "f3_configuration/")):
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                direct_relative = (
+                    isinstance(node, ast.ImportFrom)
+                    and node.level == 2
+                    and node.module is not None
+                    and (node.module == "f3" or node.module.startswith("f3."))
+                )
+                direct_absolute = (
+                    isinstance(node, (ast.Import, ast.ImportFrom))
+                    and any(
+                        name == "ha_mcp_engineering.f3"
+                        or name.startswith("ha_mcp_engineering.f3.")
+                        for name in (
+                            [alias.name for alias in node.names]
+                            if isinstance(node, ast.Import)
+                            else [node.module or ""]
+                        )
+                    )
+                )
+                if direct_relative or direct_absolute:
+                    actual.add(relative)
+        self.assertEqual(actual, approved)
 
 
 if __name__ == "__main__":

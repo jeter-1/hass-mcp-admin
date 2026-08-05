@@ -34,7 +34,7 @@ from ha_mcp_engineering.version import SERVER_VERSION  # noqa: E402
 
 
 class F3AdapterIsolationTests(unittest.TestCase):
-    def test_current_routes_do_not_import_or_instantiate_f3_core(self):
+    def test_only_reviewed_adapter_and_integration_packages_import_f3_core(self):
         forbidden_modules = {
             "ha_mcp_engineering.f3",
             "f3.executor",
@@ -44,7 +44,7 @@ class F3AdapterIsolationTests(unittest.TestCase):
         for path in sorted(RUNTIME.rglob("*.py")):
             if any(
                 RUNTIME / package in path.parents
-                for package in ("f3", "f3_configuration")
+                for package in ("f3", "f3_configuration", "f3_runtime")
             ):
                 continue
             tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -95,8 +95,8 @@ class F3AdapterIsolationTests(unittest.TestCase):
         requirements = (
             BETA_DIR / "requirements.txt"
         ).read_text(encoding="utf-8").splitlines()
-        self.assertEqual(SERVER_VERSION, "2.2.0-beta.19")
-        self.assertEqual(beta_config["version"], "2.2.0-beta.19")
+        self.assertEqual(SERVER_VERSION, "2.2.0-beta.20")
+        self.assertEqual(beta_config["version"], "2.2.0-beta.20")
         self.assertEqual(stable_config["version"], "1.1.2")
         self.assertIn("aiohttp==3.14.3", requirements)
         self.assertIn("cryptography==50.0.0", requirements)
