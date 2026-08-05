@@ -1,17 +1,20 @@
 # HA MCP Engineering Server Beta
 
 This directory contains the Engineering v2 add-on. Development version
-`2.2.0-beta.20` activates the accepted F3 shared executor and durable locks for
-the existing governed configuration and operational routes. One closed
-registry, deterministic child authority, central recovery, selective holds,
-private reconciliation, and separately governed configuration rollback now
-form the execution boundary. Dashboard execution stays deferred and no public
-tool is added. It preserves Beta 15 lifecycle
-response handling, Beta 13's
-`aiohttp` and `cryptography` security updates, Beta 14 model-aware catalog
-validation, bounded restart reconciliation, and exact 7.14.2 compatibility.
-The 8.0.0 profile exposes 24 delegated reads and keeps `ha_search` and
-`ha_get_operation_status` held for a later production canary.
+`2.2.0-beta.21` adds exact reviewed `ha-mcp` 8.1.0 compatibility on top of the
+merged Beta 20 F3 runtime. The 8.1.0 profile admits 24 delegated reads, keeps
+`ha_search` and `ha_get_operation_status` held, reclassifies the expanded
+`ha_manage_hacs` write surface, and normalizes only the exact changed HACS read
+success envelope. Immutable OCI identities are reviewed; the stale-version
+release executables and MCPB are excluded.
+
+Beta 21 preserves Beta 20's closed 12-capability F3 registry, deterministic
+child authority, central recovery, selective holds, private reconciliation,
+and governed rollback. It also preserves Beta 15 lifecycle response handling,
+Beta 14 model-aware catalog validation, Beta 13's secure dependency pins,
+bounded restart reconciliation, and exact 7.14.2 and 8.0.0 compatibility. It
+does not change an F3 route, provider action, public tool, held tool, dashboard
+execution boundary, or fallback behavior.
 Its technical “Beta” display name, slug, image repository, and runtime
 identity remain unchanged to avoid a migration. Stable v1.1.2
 `hass_mcp_admin` source remains in the repository as operationally retired
@@ -28,8 +31,8 @@ initially pending, `/health` remains live but `/ready` and authenticated MCP
 traffic return HTTP 503; schema-caching clients therefore cannot retain that
 transient static-only catalog. Once the first stable or terminal reconciliation
 result is known, `/ready` reports the bounded ready state. If discovery
-establishes an exact compiled reviewed release entry (`ha-mcp` 7.14.2 or
-8.0.0), each release's reviewed pure reads are admitted independently by their
+establishes an exact compiled reviewed release entry (`ha-mcp` 7.14.2, 8.0.0,
+or 8.1.0), each release's reviewed pure reads are admitted independently by their
 exact input-schema fingerprint, exact bounded full-runtime-description
 fingerprint, exact runtime safety-annotation presence/value fingerprint,
 output-schema
@@ -43,7 +46,7 @@ Each read also requires its exact pinned generic object output-schema
 fingerprint; the fixed Engineering adapter, not that generic schema, owns
 sanitization, bounds, fallback refusal, and partial-data behavior.
 
-Exact 8.0.0 additionally uses a version-scoped operational runtime model for
+Exact 8.0.0 and 8.1.0 additionally use a version-scoped operational runtime model for
 the documented policy-state block. The object must retain its exact fields,
 JSON types, deployment allowlist, and bounded rule count before only its
 environment-dependent values are normalized. All other descriptor fields stay
@@ -51,8 +54,8 @@ exact. Raw operational-catalog and strict full-contract hashes remain separate
 diagnostic evidence, and malformed policy metadata remains quarantined.
 
 A complete reviewed 7.14.2 set adds 26 delegated reads for 74 registered tools.
-The exact 8.0.0 set adds 24 for 72 registered tools; its two held reads are
-accounted but never registered or callable. One missing or quarantined read
+The exact 8.0.0 and 8.1.0 sets each add 24 for 72 registered tools; their two
+held reads are accounted but never registered or callable. One missing or quarantined read
 leaves other matches available. A client that cached an earlier list must re-list or reconnect; the
 stateless transport does not broadcast `tools/list_changed`.
 
@@ -124,7 +127,7 @@ reboot and completeness defects, RC2dev14 established practical configuration
 plans, and RC2dev16 corrected delegated structured-error normalization without
 changing upstream admission or adding search behavior. Version `2.0.1`
 promoted the accepted RC1-dev2 behavior without a functional change. Development
-version `2.2.0-beta.20` retains governed controlled reload, exact add-on restart,
+version `2.2.0-beta.21` retains governed controlled reload, exact add-on restart,
 Home Assistant restart, readback-only reconciliation, and one durable execution
 task for each newly executed plan. It adds authority-version-3 policy and
 approval bundles without another tool, provider, resource, or fallback. Beta 9
@@ -172,6 +175,17 @@ administration, governed configuration rollback, and route activation. Issue
 #92 remains separate: dashboard execution stays unregistered because
 external-writer atomicity is not proven. Current public tools, task and plan
 schemas, F2 policy, and fallback remain unchanged.
+Version 2.2.0-beta.21 independently reviews exact `ha-mcp` 8.1.0. It uses the
+runtime 78-tool `tools/list` as catalog authority, delegates 24 reads, holds
+exactly two, and keeps every other classification blocked. It adds one exact
+8.1.0 HACS-read response projector because upstream moved `success` to the top
+level, while classifying the expanded `ha_manage_hacs` tool as persistent write
+and exposing none of its actions. Captured lifecycle add-on envelopes are
+unchanged from 8.0.0 and reuse the existing strict model. Exact-image evidence
+also covers the settings sidecar, shutdown cancellation, and provider
+disconnect/readmission. The complete source and artifact boundary is recorded
+in
+[`../docs/V2_2_0_BETA21_HA_MCP_8_1_0_ACCEPTANCE.md`](../docs/V2_2_0_BETA21_HA_MCP_8_1_0_ACCEPTANCE.md).
 Beta 7 response truthfulness and current prohibited projection remain
 unchanged. Its
 update/recovery preflight,
@@ -183,8 +197,8 @@ retains
 exact reviewed 7.14.2 compatibility, reviewed 7.14.1 rollback compatibility,
 and the hardened MCP SDK boundary. Its changes, rollback, and acceptance
 requirements are recorded in
-[`../docs/V2_2_0_BETA19_RELEASE_NOTES.md`](../docs/V2_2_0_BETA19_RELEASE_NOTES.md),
-[`../docs/V2_2_0_BETA19_ACCEPTANCE.md`](../docs/V2_2_0_BETA19_ACCEPTANCE.md), and
+[`../docs/V2_2_0_BETA21_RELEASE_NOTES.md`](../docs/V2_2_0_BETA21_RELEASE_NOTES.md),
+[`../docs/V2_2_0_BETA21_ACCEPTANCE.md`](../docs/V2_2_0_BETA21_ACCEPTANCE.md), and
 [`../docs/OPERATIONAL_ADMINISTRATION.md`](../docs/OPERATIONAL_ADMINISTRATION.md).
 Determine
 exact advertised state from version metadata and `scripts/codex-context.py`.

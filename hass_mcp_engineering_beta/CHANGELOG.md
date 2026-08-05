@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.2.0-beta.21 - Exact ha-mcp 8.1.0 compatibility
+
+- Add a separately reviewed exact 8.1.0 release entry for the immutable
+  standalone and Home Assistant add-on OCI identities. Exclude the GitHub
+  release executables and MCPB because their embedded application identity is
+  8.0.0.
+- Classify all 78 runtime-advertised tools: 24 automatic reads, two held, 13
+  mixed/wrapper-required, 33 persistent writes, four physical/high-risk
+  actions, one prohibited, and one unsupported. Keep `ha_search` and
+  `ha_get_operation_status` held and uncallable.
+- Bind exact 8.1.0 `ha_get_hacs_info` to a strict top-level-success response
+  projector. Reclassify the whole expanded `ha_manage_hacs` tool as persistent
+  write after upstream adds `remove`; expose no HACS write action.
+- Retain exact Dashboard and operational argument contracts. Reuse the existing
+  lifecycle structured-content model because captured 8.0.0 and 8.1.0 add-on
+  inventory/detail envelopes are byte-identical. Keep Supervisor inventory as
+  installed-version authority and reject the tagged tree's stale 8.0.0 value.
+- Add digest-pinned 8.1.0 standalone/add-on acceptance, complete delegated-read
+  exercise, stable/corrupt/loopback settings-sidecar checks, shutdown worker
+  cancellation, and Engineering disconnect/readmission evidence.
+- Preserve exact 7.14.2 78/26/74 and exact 8.0.0 78/24/72 accounting,
+  protocol `2025-03-26`, 48 Engineering-local tools, Dashboard and provider
+  boundaries, the activated F3 runtime, secure dependency pins, stable v1.1.2,
+  and zero fallback. Production canary acceptance remains separate.
+
 ## 2.2.0-beta.20 - F3 runtime integration and recovery
 
 - Activate the accepted shared executor and durable cross-process locks for

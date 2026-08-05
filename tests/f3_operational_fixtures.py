@@ -163,7 +163,7 @@ def provider_evidence(operation: str, *, version: str = "8.0.0") -> dict[str, An
 
 def runtime_baseline(version: str = "8.0.0") -> dict[str, Any]:
     return {
-        "server_version": "2.2.0-beta.19",
+        "server_version": "2.2.0-beta.21",
         "build_sha": "cca0d5e00d75398ec66bca0c9c2f568d11f7497e",
         "registered_tool_count": 72 if version == "8.0.0" else 74,
         "engineering_tool_count": 48,
