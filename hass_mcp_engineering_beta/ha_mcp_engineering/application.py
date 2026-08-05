@@ -136,6 +136,12 @@ def create_application(settings: Settings | None = None):
                 settings.upstream_dashboard_mcp_url
             )
         ),
+        execution_readiness=lambda: bool(
+            GOVERNANCE.require().f3_runtime
+            and GOVERNANCE.require().f3_runtime.health().get(
+                "execution_ready"
+            )
+        ),
     )
     UPSTREAM_OPERATIONAL_BACKUP.configure(settings)
     UPSTREAM_OPERATIONAL_LIFECYCLE.configure(settings)
@@ -295,20 +301,26 @@ async def _supervise_upstream_reconciliation(
     )
 
 
-async def _run_operational_reconciliation_pass(trigger: str) -> None:
-    """Run one isolated, bounded readback-only reconciliation pass."""
+async def _run_f3_recovery_pass(trigger: str, *, strict: bool = False) -> None:
+    """Run the one bounded F3 scheduler plus legacy read-only migration input."""
 
     logger = get_logger("operational_reconciliation")
     service = GOVERNANCE.service
     if service is None:
         return
     try:
+        if service.f3_runtime is not None:
+            await service.f3_runtime.recover_once(trigger)
+        elif strict:
+            raise RuntimeError("F3 runtime is not initialized")
         # Task rehydration validates durable authority and deadlines first.
-        # It performs no provider action. Existing operational reconciliation
-        # then uses the same readback-only plan verifier as an apply reconnect.
+        # Historical Beta 19 tasks remain under their original read-only
+        # authority; this compatibility input never claims an F3 child.
         await service.reconcile_execution_tasks(trigger=trigger)
         await service.reconcile_operational_plans(trigger=trigger)
     except Exception as exc:
+        if strict:
+            raise
         # A failed readback pass remains represented by the persisted
         # verification-required plan and is retried on the next pass.
         log_event(
@@ -323,19 +335,34 @@ async def _run_operational_reconciliation_pass(trigger: str) -> None:
         )
 
 
-async def _supervise_operational_reconciliation() -> None:
-    """Verify at startup, then retry pending readback every 30 seconds."""
+async def _supervise_f3_recovery(*, perform_startup: bool = True) -> None:
+    """Own the sole startup and 30-second periodic recovery cadence."""
 
-    await _run_operational_reconciliation_pass("startup")
+    if perform_startup:
+        await _run_f3_recovery_pass("startup")
     while True:
         await asyncio.sleep(30)
-        await _run_operational_reconciliation_pass("periodic")
+        await _run_f3_recovery_pass("periodic")
+
+
+# Compatibility call points for tests and external process supervisors. They
+# delegate into the same authority and never create another loop.
+async def _run_operational_reconciliation_pass(trigger: str) -> None:
+    await _run_f3_recovery_pass(trigger)
+
+
+async def _supervise_operational_reconciliation() -> None:
+    await _supervise_f3_recovery()
 
 
 async def _serve(settings: Settings) -> None:
     """Run distinct MCP and Ingress listeners in one supervised process."""
 
     gateway = create_application(settings)
+    # No public listener exists until stores, registry, ownership, and the
+    # initial cheap recovery pass have all succeeded.
+    if isinstance(gateway, AuthenticatedMcpGateway):
+        await _run_f3_recovery_pass("startup", strict=True)
 
     mcp_server = uvicorn.Server(
         uvicorn.Config(
@@ -366,8 +393,8 @@ async def _serve(settings: Settings) -> None:
         name="upstream-read-gateway-reconciliation",
     )
     operational_reconciliation_task = asyncio.create_task(
-        _supervise_operational_reconciliation(),
-        name="governed-operational-reconciliation",
+        _supervise_f3_recovery(perform_startup=False),
+        name="f3-central-recovery-coordinator",
     )
     registry_refresh_task = (
         asyncio.create_task(UPSTREAM_DASHBOARD.refresh_registry_at_startup())

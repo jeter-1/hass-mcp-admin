@@ -6,6 +6,7 @@ from collections import Counter
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import hashlib
 import inspect
 import json
 import re
@@ -558,6 +559,46 @@ class ReviewedOperationalLifecycleProvider:
             self._fail(_transport_category(exc.category), dispatched=False)
         except Exception:
             self._fail("provider_error", dispatched=False)
+
+    async def authoritative_provider_identity(self) -> dict[str, str]:
+        """Return one installed slug bound to this exact admitted MCP endpoint.
+
+        The candidate is accepted only after the existing full installed
+        inventory plus exact detail read prove the reviewed Supervisor-DNS
+        binding.  The returned hash contains no endpoint or credentials.
+        """
+
+        host = self._configured_endpoint_host
+        if not isinstance(host, str) or not host:
+            self._fail("upstream_addon_identity_unavailable", dispatched=False)
+        candidate = host.replace("-", "_")
+        detail = await self.get_addon(candidate)
+        identity = detail.get("upstream_addon_identity")
+        if (
+            not isinstance(identity, dict)
+            or identity.get("status") != "bound"
+            or identity.get("slug") != detail.get("slug")
+        ):
+            self._fail("upstream_addon_identity_unavailable", dispatched=False)
+        evidence = {
+            "slug": identity["slug"],
+            "name": identity.get("name"),
+            "installed_version": identity.get("installed_version"),
+            "repository": identity.get("repository"),
+            "identity_source": identity.get("identity_source"),
+            "admission_evidence": identity.get("admission_evidence"),
+        }
+        return {
+            "slug": str(identity["slug"]),
+            "evidence_hash": hashlib.sha256(
+                json.dumps(
+                    evidence,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=True,
+                ).encode("utf-8")
+            ).hexdigest(),
+        }
 
     async def _execute_observed_read(
         self,
