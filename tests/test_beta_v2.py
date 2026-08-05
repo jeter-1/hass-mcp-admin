@@ -218,17 +218,35 @@ class FakeGovernanceGateway:
             }
         }
 
-    async def get(self, automation_id):
+    async def get(self, *args):
         import copy
+        if len(args) == 1:
+            automation_id = args[0]
+        elif len(args) == 2 and args[0] == "automation":
+            automation_id = args[1]
+        else:
+            raise AssertionError("unexpected synthetic configuration read")
         return copy.deepcopy(self.configs.get(automation_id))
 
-    async def write(self, automation_id, config):
+    async def read(self, resource_type, resource_id):
+        return await self.get(resource_type, resource_id)
+
+    async def write(self, *args):
         import copy
+        if len(args) == 2:
+            automation_id, config = args
+        elif len(args) == 4 and args[:2] == ("update", "automation"):
+            _action, _resource_type, automation_id, config = args
+        else:
+            raise AssertionError("unexpected synthetic configuration write")
         self.configs[automation_id] = copy.deepcopy(config)
         return {"result": "ok"}
 
     async def validate(self):
         return {"result": "valid", "errors": None}
+
+    async def validate_all(self):
+        return await self.validate()
 
 
 class FakeDependencyService:
@@ -697,6 +715,11 @@ class BetaApplicationTests(unittest.TestCase):
         cls.tempdir = tempfile.TemporaryDirectory()
         settings = beta_settings(str(Path(cls.tempdir.name) / "audit.jsonl"))
         gateway = create_application(settings)
+        asyncio.run(
+            GOVERNANCE.require().f3_runtime.recover_once(
+                "synthetic-application-startup"
+            )
+        )
         cls.client_context = SameThreadAsgiTestClient(
             gateway,
             lifespan_app=gateway.app,
@@ -1334,7 +1357,14 @@ class BetaApplicationTests(unittest.TestCase):
         self.assertEqual(initialized.status_code, 200)
         service = GOVERNANCE.require()
         previous_gateway = service.gateway
-        service.gateway = FakeGovernanceGateway()
+        synthetic_gateway = FakeGovernanceGateway()
+        service.gateway = synthetic_gateway
+        previous_f3_gateways = []
+        for adapter in service.f3_runtime._configuration_adapters.values():
+            previous_f3_gateways.append(
+                (adapter, adapter.gateway.delegate._gateway)
+            )
+            adapter.gateway.delegate._gateway = synthetic_gateway
         try:
             proposed = {
                 "alias": "Governance fixture",
@@ -1420,24 +1450,27 @@ class BetaApplicationTests(unittest.TestCase):
             rollback_request = json.loads(rollback_request_call["result"]["content"][0]["text"])
             self.assertTrue(rollback_request["success"])
             rollback_hash = rollback_request["data"]["plan_hash"]
+            rollback_plan_id = rollback_request["data"]["rollback_plan_id"]
 
             _, approval_call = self.rpc(
                 "tools/call",
-                {"name": "approve_change_plan", "arguments": {"plan_id": plan_id, "expected_plan_hash": rollback_hash}},
+                {"name": "approve_change_plan", "arguments": {"plan_id": rollback_plan_id, "expected_plan_hash": rollback_hash}},
                 request_id="governance-rollback-approve-123",
             )
             rollback_approval = json.loads(approval_call["result"]["content"][0]["text"])
             self.assertTrue(rollback_approval["success"])
             rollback_pending = rollback_approval["data"]
             _, csrf = asyncio.run(
-                service.issue_external_csrf(plan_id, rollback_pending["challenge_id"])
+                service.issue_external_csrf(
+                    rollback_plan_id, rollback_pending["challenge_id"]
+                )
             )
             asyncio.run(
                 service.decide_external_approval(
-                    plan_id=plan_id,
+                    plan_id=rollback_plan_id,
                     challenge_id=rollback_pending["challenge_id"],
                     expected_plan_hash=rollback_hash,
-                    approval_kind="rollback",
+                    approval_kind="apply",
                     csrf_nonce=csrf,
                     decision="approve",
                     approver_principal="home_assistant_admin_ingress:integration-test",
@@ -1445,11 +1478,13 @@ class BetaApplicationTests(unittest.TestCase):
             )
             _, rollback_call = self.rpc(
                 "tools/call",
-                {"name": "rollback_change", "arguments": {"plan_id": plan_id, "expected_plan_hash": rollback_hash}},
+                {"name": "apply_change_plan", "arguments": {"plan_id": rollback_plan_id, "expected_plan_hash": rollback_hash}},
                 request_id="governance-rollback-apply-123",
             )
             self.assertTrue(json.loads(rollback_call["result"]["content"][0]["text"])["success"])
         finally:
+            for adapter, gateway in previous_f3_gateways:
+                adapter.gateway.delegate._gateway = gateway
             service.gateway = previous_gateway
 
     def test_governance_input_schemas_are_intentional(self):

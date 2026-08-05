@@ -1,14 +1,12 @@
 # HA MCP Engineering Server Beta
 
 This directory contains the Engineering v2 add-on. Development version
-`2.2.0-beta.19` adds runtime-inert F3-C2 operational adapters for governed full
-backup, controlled reload, exact add-on restart, and Home Assistant restart.
-Existing application, governance, provider-routing, and public MCP routes do
-not import or activate them. The isolated paths consume the canonical Beta 17
-contracts and accepted Beta 18 executor boundary; durable child ownership,
-production authority/evidence mapping, exact per-operation executor
-construction, the central coordinator, selective-hold administration, private
-reconciliation, rollback, and route activation remain F3-D. It preserves Beta 15 lifecycle
+`2.2.0-beta.20` activates the accepted F3 shared executor and durable locks for
+the existing governed configuration and operational routes. One closed
+registry, deterministic child authority, central recovery, selective holds,
+private reconciliation, and separately governed configuration rollback now
+form the execution boundary. Dashboard execution stays deferred and no public
+tool is added. It preserves Beta 15 lifecycle
 response handling, Beta 13's
 `aiohttp` and `cryptography` security updates, Beta 14 model-aware catalog
 validation, bounded restart reconciliation, and exact 7.14.2 compatibility.
@@ -126,7 +124,7 @@ reboot and completeness defects, RC2dev14 established practical configuration
 plans, and RC2dev16 corrected delegated structured-error normalization without
 changing upstream admission or adding search behavior. Version `2.0.1`
 promoted the accepted RC1-dev2 behavior without a functional change. Development
-version `2.2.0-beta.19` retains governed controlled reload, exact add-on restart,
+version `2.2.0-beta.20` retains governed controlled reload, exact add-on restart,
 Home Assistant restart, readback-only reconciliation, and one durable execution
 task for each newly executed plan. It adds authority-version-3 policy and
 approval bundles without another tool, provider, resource, or fallback. Beta 9
@@ -168,10 +166,12 @@ preflight. Executor timing is rejected before claim unless it exactly matches
 the operation's 86,400/900/1,800/1,800-second evidence duration; child evidence
 must preserve that exact intent-relative deadline through reconstruction. F3
 child records remain authoritative; deadline expiry is inclusive and enters
-manual review without automatically releasing selective holds. Coordinator,
-private reconciliation, hold administration, governed rollback, and issue #92
-remain separate. Current provider behavior,
-public tools, task and plan schemas, F2 policy, and fallback remain unchanged.
+manual review without automatically releasing selective holds. Beta 20 adds
+the sole central coordinator, private reconciliation, selective-hold
+administration, governed configuration rollback, and route activation. Issue
+#92 remains separate: dashboard execution stays unregistered because
+external-writer atomicity is not proven. Current public tools, task and plan
+schemas, F2 policy, and fallback remain unchanged.
 Beta 7 response truthfulness and current prohibited projection remain
 unchanged. Its
 update/recovery preflight,

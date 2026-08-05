@@ -1083,6 +1083,8 @@ class ChangeGovernanceService:
             repository.root,
             retention_days=repository.retention_days,
         )
+        # Set only by the reviewed central Beta 20 composition boundary.
+        self.f3_runtime: Any | None = None
         self.logger = get_logger("governance")
         self._plan_locks: dict[str, asyncio.Lock] = {}
         self._target_locks: dict[object, asyncio.Lock] = {}
@@ -2083,7 +2085,7 @@ class ChangeGovernanceService:
         )
 
     def _create_task_for_plan(
-        self, plan: ChangePlan, plan_hash: str
+        self, plan: ChangePlan, plan_hash: str, *, persist: bool = True
     ) -> ExecutionTask:
         timestamp = self._timestamp()
         task = new_execution_task(
@@ -2102,8 +2104,9 @@ class ChangeGovernanceService:
                 "execution_outcome": plan.execution_outcome,
             },
         )
-        self._save_task(task)
-        self._task_audit(task, "task_created", "success")
+        if persist:
+            self._save_task(task)
+            self._task_audit(task, "task_created", "success")
         return task
 
     def _resolve_task_for_apply(
@@ -2180,7 +2183,10 @@ class ChangeGovernanceService:
         return value
 
     def get_execution_task(self, task_id: str) -> dict[str, Any]:
-        return self._public_task(self._load_task(task_id))
+        task = self._load_task(task_id)
+        if self.f3_runtime is not None:
+            return self.f3_runtime.decorate_task(task)
+        return self._public_task(task)
 
     def list_execution_tasks(
         self,
@@ -2226,6 +2232,12 @@ class ChangeGovernanceService:
         )
         async with plan_lock:
             task = self._load_task(task_id)
+            if (
+                self.f3_runtime is not None
+                and task.legacy_projection.get("execution_authority")
+                == "f3_child_sequence"
+            ):
+                return await self.f3_runtime.cancel(task)
             if self._task_is_dispatched(task) or task.state not in {
                 ExecutionTaskState.CREATED,
                 ExecutionTaskState.PREFLIGHT,
@@ -5494,6 +5506,12 @@ class ChangeGovernanceService:
         plan_lock = self._plan_locks.setdefault(plan_id, asyncio.Lock())
         async with plan_lock:
             plan = self._load(plan_id)
+            if self.f3_runtime is not None and self.f3_runtime.should_route(plan):
+                return await self.f3_runtime.apply(plan, expected_plan_hash)
+            if self.f3_runtime is not None and self.f3_runtime.is_covered_plan(plan):
+                return self.f3_runtime.handle_legacy_apply(
+                    plan, expected_plan_hash
+                )
             task, reused = self._resolve_task_for_apply(
                 plan, expected_plan_hash
             )
@@ -10038,6 +10056,10 @@ class ChangeGovernanceService:
         plan_lock = self._plan_locks.setdefault(plan_id, asyncio.Lock())
         async with plan_lock:
             plan = self._load(plan_id)
+            if self.f3_runtime is not None:
+                return await self.f3_runtime.create_rollback_plan(
+                    plan, expected_plan_hash
+                )
             self._resolve_lifecycle(plan)
             if plan.status == PlanStatus.EXPIRED:
                 raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
@@ -10855,6 +10877,18 @@ class ChangeGovernanceService:
             "fallback_count": 0,
             "rollback_available": False,
         }
+        summary["f3"] = (
+            self.f3_runtime.health()
+            if self.f3_runtime is not None
+            else {
+                "f3_model": "f3-runtime-integration-v1",
+                "status": "unavailable",
+                "adapter_registry_status": "unavailable",
+                "registered_adapter_count": 0,
+                "activated_capability_count": 0,
+                "fallback_count": 0,
+            }
+        )
         return summary
 
 

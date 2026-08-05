@@ -330,13 +330,12 @@ async def apply_change_plan(plan_id: str, expected_plan_hash: str = "") -> str:
 
 
 async def rollback_change(plan_id: str, expected_plan_hash: str = "") -> str:
-    """Request rollback approval, or execute an explicitly approved update rollback.
+    """Create a separate governed reverse-update plan from exact evidence.
 
-    First call creates rollback_pending state and returns its plan hash. Request
-    approval for that exact hash, have a Home Assistant administrator approve
-    it through Ingress, then call rollback_change again with expected_plan_hash.
-    Create-automation rollback is unavailable because
-    governed deletion is intentionally outside this milestone.
+    The request performs no Home Assistant mutation. Approve and apply the
+    returned rollback plan through the ordinary governance tools. Creation and
+    operational rollback remain unavailable because deletion and generalized
+    compensation are outside this milestone.
     """
     return await run_structured(
         "rollback_change",

@@ -1,7 +1,7 @@
 # ADR-013: F3 operation-adapter, lock, and dispatch contract
 
-Status: Accepted F3-A core; amended by Beta 17 for canonical packaging and
-dashboard execution deferral
+Status: Accepted and activated for reviewed configuration and operational
+routes by Beta 20; dashboard execution remains deferred
 
 ## Context
 
@@ -26,6 +26,16 @@ durable persistence, and lock core. Beta 17 resolves the packaging boundary:
 `ha_mcp_engineering.f3.contracts` is the sole runtime definition, and the root
 package is only an object-identical compatibility/test facade. Existing plan
 and task schemas remain authoritative.
+
+Beta 20 closes the runtime-inert package boundary for the accepted C1 and C2
+families. Only the reviewed `ha_mcp_engineering.f3_runtime` composition package
+may import executor, lock, and persistence internals. It owns the closed
+registry, durable public-task/child ownership, startup and periodic recovery,
+selective holds, bounded observability, and the compatibility projection.
+Planning, policy, approval, operation-specific provider semantics, and
+verification remain with their accepted owners. Future imports remain subject
+to repository-wide boundary tests. F3-B dashboard infrastructure is still
+runtime-inert under the external-writer decision below.
 
 ## Decision
 

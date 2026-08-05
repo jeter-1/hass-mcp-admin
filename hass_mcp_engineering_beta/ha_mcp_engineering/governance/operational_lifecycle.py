@@ -914,6 +914,16 @@ class OperationalLifecycleGateway:
     def health_snapshot(self) -> dict[str, Any]:
         return self.provider.health_snapshot()
 
+    async def authoritative_provider_identity(self) -> dict[str, str]:
+        """Expose only the exact bounded provider-lock identity evidence."""
+
+        try:
+            return await self.provider.authoritative_provider_identity()
+        except Exception:
+            raise LifecycleGatewayError(
+                "upstream_addon_identity_unavailable"
+            ) from None
+
 
 def _runtime_identity_available(runtime: Any) -> bool:
     if not isinstance(runtime, dict):

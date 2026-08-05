@@ -10,6 +10,7 @@ import logging
 import re
 import threading
 import time
+from typing import Callable
 
 from .audit import (
     AUTH_FAILURE_EVENT,
@@ -166,6 +167,7 @@ class AuthenticatedMcpGateway:
         audit: AuditLogger,
         *,
         require_initial_catalog_reconciliation: bool = False,
+        execution_readiness: Callable[[], bool] | None = None,
     ):
         self.app = app
         self.settings = settings
@@ -178,6 +180,7 @@ class AuthenticatedMcpGateway:
             self._initial_catalog_reconciliation_required
         )
         self._catalog_readiness_lock = threading.Lock()
+        self._execution_readiness = execution_readiness
         self.clients: OrderedDict[str, TokenBucket] = OrderedDict()
         self.auth_failures: OrderedDict[str, TokenBucket] = OrderedDict()
         self._bucket_lock = threading.Lock()
@@ -203,14 +206,29 @@ class AuthenticatedMcpGateway:
     def catalog_readiness_state(self) -> dict[str, bool | str]:
         with self._catalog_readiness_lock:
             complete = self._initial_catalog_reconciliation_complete
-        return {
-            "ready": complete,
+        try:
+            execution_ready = (
+                True if self._execution_readiness is None
+                else bool(self._execution_readiness())
+            )
+        except Exception:
+            execution_ready = False
+        ready = complete and execution_ready
+        state: dict[str, bool | str] = {
+            "ready": ready,
             "initial_reconciliation_required": (
                 self._initial_catalog_reconciliation_required
             ),
             "initial_reconciliation_complete": complete,
-            "status": "ready" if complete else "initial_reconciliation_pending",
+            "status": (
+                "ready" if ready
+                else "initial_reconciliation_pending" if not complete
+                else "f3_execution_pending"
+            ),
         }
+        if self._execution_readiness is not None:
+            state["f3_execution_ready"] = execution_ready
+        return state
 
     async def _respond_catalog_readiness(self, send, request_id: str) -> None:
         state = self.catalog_readiness_state()

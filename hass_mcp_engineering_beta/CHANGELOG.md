@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.2.0-beta.20 - F3 runtime integration and recovery
+
+- Activate the accepted shared executor and durable cross-process locks for
+  eight governed configuration and four governed operational capabilities
+  through one closed 12-capability registry.
+- Bind one schema-1 task to deterministic durable children with journal
+  recovery, exact authority, duplicate prevention, and no legacy/F3 fallback.
+- Install one startup and 30-second periodic coordinator with bounded batches/
+  backoff, immutable deadlines, fenced transfer, and observation-only
+  post-intent recovery.
+- Add selective non-expiring holds and private authenticated, CSRF/hash/
+  generation-bound reconciliation without a public MCP tool.
+- Migrate supported configuration rollback to a separately approved reverse F3
+  update plan using the same locks, intent, fixed write, and exact readback.
+- Keep dashboard execution deferred and unreachable; add no dashboard planning
+  tool, setter, persisted operation, transform, or public tool-count change.
+- Preserve 48 Engineering-local tools, exact 7.14.2 78/26/74 and 8.0.0
+  78/24/72 accounting, task schema 1, plan contracts 2/3, F2 policy, approval
+  authority, secure pins, stable 1.1.2, and zero fallback.
+
 ## 2.2.0-beta.19 - F3-C2 operational-adapter conformance
 
 - Add runtime-inert strategies for governed full backup, controlled reload,

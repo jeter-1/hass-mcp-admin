@@ -24,9 +24,9 @@ from .task_storage import (
 class _RuntimeGovernanceGateway:
     """Expose both immutable v1 and bounded v2 governance contracts."""
 
-    def __init__(self, rest_client, websocket_client):
+    def __init__(self, rest_client, websocket_client, resources=None):
         self._legacy = AutomationGateway(rest_client)
-        self._resources = ConfigurationResourceGateway(
+        self._resources = resources or ConfigurationResourceGateway(
             rest_client, websocket_client
         )
 
@@ -115,14 +115,34 @@ class GovernanceRuntime:
                 if lifecycle_provider is not None
                 else None
             )
+            resource_gateway = ConfigurationResourceGateway(
+                rest_client, websocket_client
+            )
             self.service = ChangeGovernanceService(
                 repository,
-                _RuntimeGovernanceGateway(rest_client, websocket_client),
+                _RuntimeGovernanceGateway(
+                    rest_client, websocket_client, resource_gateway
+                ),
                 audit,
                 sensitive_values=(settings.access_secret, settings.ha_token),
                 operational_gateway=operational_gateway,
                 lifecycle_gateway=lifecycle_gateway,
                 task_repository=task_repository,
+            )
+            from ..f3_runtime.runtime import F3RuntimeIntegration
+
+            self.service.f3_runtime = F3RuntimeIntegration(
+                service=self.service,
+                storage_root=settings.governance_path,
+                configuration_gateway=resource_gateway,
+                backup_gateway=operational_gateway,
+                lifecycle_gateway=lifecycle_gateway,
+                provider_identity_reader=(
+                    lifecycle_gateway.authoritative_provider_identity
+                    if lifecycle_gateway is not None
+                    else self._unavailable_provider_identity
+                ),
+                retention_days=settings.governance_retention_days,
             )
             self.storage_error = None
         except ChangePlanStorageError:
@@ -138,6 +158,10 @@ class GovernanceRuntime:
             rest_client, websocket_client
         )
         return resources.validate_all
+
+    @staticmethod
+    async def _unavailable_provider_identity() -> dict[str, str]:
+        raise RuntimeError("operational provider identity is unavailable")
 
     def require(self) -> ChangeGovernanceService:
         if not self.service:

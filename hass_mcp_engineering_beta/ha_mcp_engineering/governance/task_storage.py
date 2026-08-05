@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from contextlib import contextmanager
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -37,6 +39,7 @@ class ExecutionTaskRepository:
         self.governance_root = Path(root)
         self.root = self.governance_root / TASK_NAMESPACE
         self.quarantine = self.root / "quarantine"
+        self.transaction_path = self.root / ".transaction.lock"
         self.retention_days = retention_days
         self.corruption_count = 0
         self.write_failures = 0
@@ -48,9 +51,29 @@ class ExecutionTaskRepository:
         try:
             self.root.mkdir(parents=True, exist_ok=True)
             self.quarantine.mkdir(parents=True, exist_ok=True)
+            self.transaction_path.touch(exist_ok=True)
         except OSError as exc:
             raise ExecutionTaskStorageError(
                 "Unable to initialize execution-task storage"
+            ) from exc
+
+    @contextmanager
+    def transaction(self):
+        """Serialize task ownership and event appends across processes."""
+
+        try:
+            with self._lock:
+                with open(self.transaction_path, "a+b") as handle:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                    try:
+                        yield
+                    finally:
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        except ExecutionTaskStorageError:
+            raise
+        except OSError as exc:
+            raise ExecutionTaskStorageError(
+                "Execution-task transaction failed"
             ) from exc
 
     def _path(
@@ -97,7 +120,7 @@ class ExecutionTaskRepository:
             task.to_dict(), sort_keys=True, separators=(",", ":")
         )
         try:
-            with self._lock:
+            with self.transaction():
                 self._require_unique(task)
                 previous = self._load(path, quarantine_corrupt=False)
                 if previous is not None:
@@ -109,8 +132,20 @@ class ExecutionTaskRepository:
                     os.fsync(handle.fileno())
                 self._inject("before_task_replace")
                 os.replace(temporary, path)
+                directory_fd = os.open(self.root, os.O_RDONLY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
                 self._inject("after_task_replace")
-        except ExecutionTaskStorageError:
+        except ExecutionTaskStorageError as exc:
+            if isinstance(exc.__cause__, OSError):
+                self.write_failures += 1
+                self.event_write_failures += 1
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass
             raise
         except OSError as exc:
             self.write_failures += 1
