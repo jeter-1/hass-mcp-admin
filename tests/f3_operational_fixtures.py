@@ -5,7 +5,6 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-import json
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -31,7 +30,9 @@ from ha_mcp_engineering.f3.operational_models import (
     RESTART_ADDON,
     RESTART_HOME_ASSISTANT,
     OperationalAuthoritySnapshot,
+    OperationalEvidenceProjection,
     OperationalPreparationRequest,
+    OPERATIONAL_EVIDENCE_PROJECTION_MODEL,
     stable_hash,
 )
 from ha_mcp_engineering.f3.persistence import DurableExecutionRepository
@@ -61,6 +62,7 @@ from ha_mcp_engineering.governance.operational_lifecycle import LifecycleGateway
 NOW = datetime(2026, 8, 4, 12, 0, tzinfo=timezone.utc)
 PROVIDER_SLUG = "local_ha_mcp"
 TASK_ID = "task-operational-1"
+PUBLIC_TASK_ID = "public-task-operational-1"
 PLAN_ID = "plan-operational-1"
 PLAN_HASH = "a" * 64
 POLICY_HASH = "b" * 64
@@ -161,7 +163,7 @@ def provider_evidence(operation: str, *, version: str = "8.0.0") -> dict[str, An
 def runtime_baseline(version: str = "8.0.0") -> dict[str, Any]:
     return {
         "server_version": "2.2.0-beta.19",
-        "build_sha": "9f51830907799d4a409bf230c11fe8fbe8c61ead",
+        "build_sha": "cca0d5e00d75398ec66bca0c9c2f568d11f7497e",
         "registered_tool_count": 72 if version == "8.0.0" else 74,
         "engineering_tool_count": 48,
         "delegated_tool_count": 24 if version == "8.0.0" else 26,
@@ -437,45 +439,107 @@ def make_plan(
     )
 
 
-class SyntheticDurableLedger:
-    """File-backed test fixture; production integration remains owned by F3-D."""
+class SyntheticF3EvidenceSource:
+    """Test projection of the canonical F3 child record.
 
-    def __init__(self, root: Path) -> None:
-        self.path = root / "synthetic-operational-ledger.json"
-        self.merge_failures = 0
+    The adapter receives only ``read``.  ``record_observation`` represents the
+    future coordinator writing the authoritative child evidence namespace and
+    is never called by shipped C2 code.
+    """
 
-    def _read(self) -> dict[str, Any]:
-        try:
-            value = json.loads(self.path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            return {}
-        if not isinstance(value, dict):
-            raise ValueError("synthetic ledger corrupt")
-        return value
+    def __init__(self, root: Path, trace: list[str]) -> None:
+        self.root = root
+        self.trace = trace
+        self.operation_evidence: dict[str, Any] = {}
+        self.corrupt = False
+        self.read_count = 0
 
-    def load(self, task_id: str) -> dict[str, Any]:
-        value = self._read().get(task_id, {})
-        if not isinstance(value, dict):
-            raise ValueError("synthetic task ledger corrupt")
-        return deepcopy(value)
+    def record_observation(self, **values: Any) -> None:
+        self.operation_evidence.update(deepcopy(values))
 
-    def merge(self, task_id: str, values: dict[str, Any]) -> None:
-        if self.merge_failures:
-            self.merge_failures -= 1
-            raise OSError("synthetic ledger persistence failure")
-        state = self._read()
-        record = state.setdefault(task_id, {})
-        record.update(deepcopy(values))
-        temporary = self.path.with_suffix(".tmp")
-        temporary.write_text(
-            json.dumps(state, sort_keys=True, separators=(",", ":")),
-            encoding="utf-8",
+    def read(self, operation) -> OperationalEvidenceProjection:
+        self.trace.append("evidence_read")
+        self.read_count += 1
+        if self.corrupt:
+            raise ValueError("synthetic authoritative evidence corrupt")
+        record = DurableExecutionRepository(self.root).get(
+            operation.child_execution_id
         )
-        temporary.replace(self.path)
+        intent = record.dispatch_intent if record is not None else None
+        values = self.operation_evidence
+        return OperationalEvidenceProjection(
+            source_model=OPERATIONAL_EVIDENCE_PROJECTION_MODEL,
+            public_task_id=operation.public_task_id,
+            child_execution_id=operation.child_execution_id,
+            plan_id=operation.plan_id,
+            dispatch_intent_recorded=intent is not None,
+            dispatch_count=(record.dispatch_count if record is not None else 0),
+            intent_committed_at=(
+                intent.get("committed_at") if isinstance(intent, dict) else None
+            ),
+            evidence_deadline=(
+                intent.get("evidence_deadline")
+                if isinstance(intent, dict)
+                else None
+            ),
+            provider_response_received=(
+                record.provider_response_received if record is not None else False
+            ),
+            provider_operation_id=values.get("provider_operation_id"),
+            provider_backup_id=values.get("provider_backup_id"),
+            outage_observed=values.get("outage_observed") is True,
+            reconnect_observed=values.get("reconnect_observed") is True,
+            provider_readmission_observed=(
+                values.get("provider_readmission_observed") is True
+            ),
+            observation_attempt_count=(
+                record.observation_attempts if record is not None else 0
+            ),
+            verification_attempt_count=(
+                record.verification_attempts if record is not None else 0
+            ),
+            restart_backoff_attempt_count=int(
+                values.get("restart_backoff_attempt_count", 0)
+            ),
+            next_eligible_observation_at=values.get(
+                "next_eligible_observation_at"
+            ),
+            manual_review_reason_code=(
+                record.evidence.get("manual_review_reason_code")
+                if record is not None
+                else None
+            ),
+            selective_hold_keys=tuple(values.get("selective_hold_keys", ())),
+            jsonl_authoritative=False,
+        )
+
+
+class SyntheticApprovalAuthority:
+    """Idempotent caller-owned authorization callback fixture."""
+
+    def __init__(self, trace: list[str]) -> None:
+        self.trace = trace
+        self.callback_count = 0
+        self.consumption_count = 0
+        self.fail = False
+
+    async def consume(self) -> None:
+        self.trace.append("approval")
+        self.callback_count += 1
+        if self.fail:
+            raise RuntimeError("synthetic approval consumption failed")
+        if self.consumption_count == 0:
+            self.consumption_count = 1
 
 
 class FakeBackupGateway:
-    def __init__(self, evidence: dict[str, Any], baseline: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        evidence: dict[str, Any],
+        baseline: dict[str, Any],
+        *,
+        trace: list[str],
+    ) -> None:
         self.evidence = deepcopy(evidence)
         self.baseline = deepcopy(baseline)
         self.behavior = "success"
@@ -483,6 +547,7 @@ class FakeBackupGateway:
         self.simulated_effects = 0
         self.inventory_reads = 0
         self.new_backup = False
+        self.trace = trace
 
     async def planning_evidence(self):
         self.inventory_reads += 1
@@ -492,6 +557,7 @@ class FakeBackupGateway:
 
     async def create_full_backup(self, name, *, before_dispatch):
         await before_dispatch()
+        self.trace.append("provider")
         self.provider_dispatches += 1
         if self.provider_dispatches > 1:
             raise AssertionError("backup dispatched more than once")
@@ -539,7 +605,15 @@ class FakeBackupGateway:
 
 
 class FakeLifecycleGateway:
-    def __init__(self, operation: str, evidence: dict[str, Any], baseline: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        operation: str,
+        evidence: dict[str, Any],
+        baseline: dict[str, Any],
+        *,
+        authoritative_evidence: SyntheticF3EvidenceSource,
+        trace: list[str],
+    ) -> None:
         self.operation = operation
         self.evidence = deepcopy(evidence)
         self.baseline = deepcopy(baseline)
@@ -548,6 +622,8 @@ class FakeLifecycleGateway:
         self.simulated_effects = 0
         self.observations = 0
         self.outage_observed = False
+        self.authoritative_evidence = authoritative_evidence
+        self.trace = trace
 
     async def planning_evidence(self, operation: str, target: str):
         if self.behavior == "provider_unavailable":
@@ -556,6 +632,7 @@ class FakeLifecycleGateway:
 
     async def _dispatch(self, *, before_dispatch):
         await before_dispatch()
+        self.trace.append("provider")
         self.provider_dispatches += 1
         if self.provider_dispatches > 1:
             raise AssertionError("lifecycle operation dispatched more than once")
@@ -644,6 +721,10 @@ class FakeLifecycleGateway:
             }
         if not authoritative_outage_observed:
             self.outage_observed = True
+            self.authoritative_evidence.record_observation(
+                outage_observed=True,
+                restart_backoff_attempt_count=1,
+            )
             return {
                 "status": "pending",
                 "mismatch_fields": ["home_assistant_recovery"],
@@ -655,6 +736,13 @@ class FakeLifecycleGateway:
                 },
             }
         verified = restart_dispatch_confirmed and self.simulated_effects == 1
+        if verified:
+            self.authoritative_evidence.record_observation(
+                outage_observed=True,
+                reconnect_observed=True,
+                provider_readmission_observed=True,
+                restart_backoff_attempt_count=2,
+            )
         return {
             "status": "verified" if verified else "pending",
             "mismatch_fields": [] if verified else ["restart_evidence"],
@@ -673,9 +761,11 @@ class FixtureContext:
     plan: ChangePlan
     backup: FakeBackupGateway
     lifecycle: FakeLifecycleGateway
-    ledger: SyntheticDurableLedger
+    evidence: SyntheticF3EvidenceSource
+    approval: SyntheticApprovalAuthority
     adapter: OperationalAdministrationAdapter
     authority: OperationalAuthoritySnapshot
+    trace: list[str]
 
 
 def make_context(
@@ -692,41 +782,90 @@ def make_context(
         version=version,
         target_class=target_class,
     )
+    trace: list[str] = []
     backup = FakeBackupGateway(
         provider_evidence(CREATE_FULL_BACKUP, version=version),
         baseline_for(CREATE_FULL_BACKUP, target_id="local_full_backup", version=version),
+        trace=trace,
     )
+    evidence = SyntheticF3EvidenceSource(root, trace)
     lifecycle = FakeLifecycleGateway(
         operation,
         provider_evidence(operation if operation != CREATE_FULL_BACKUP else CONTROLLED_RELOAD, version=version),
         deepcopy(plan.operational.baseline),
+        authoritative_evidence=evidence,
+        trace=trace,
     )
-    ledger = SyntheticDurableLedger(root)
+    approval = SyntheticApprovalAuthority(trace)
+    approval_hash = stable_hash(
+        {
+            "authority_version": plan.approval.authority_version,
+            "channel": plan.approval.channel,
+            "approver_principal": plan.approval.approver_principal,
+            "principal_separation_enforced": (
+                plan.approval.principal_separation_enforced
+            ),
+            "bound_plan_hash": plan.approval.bound_plan_hash,
+            "approval_kind": plan.approval.approval_kind,
+            "approval_expires_at": plan.approval.approval_expires_at,
+            "policy_decision_hash": plan.approval.policy_decision_hash,
+            "policy_class": plan.approval.policy_class,
+            "bundle_state": plan.approval.bundle_state,
+            "same_principal_confirmed": plan.approval.same_principal_confirmed,
+            "elevated": (
+                {
+                    "action_kind": (
+                        plan.approval.elevated_risk_acknowledgement.kind.value
+                    ),
+                    "state": (
+                        plan.approval.elevated_risk_acknowledgement.state.value
+                    ),
+                    "principal": (
+                        plan.approval.elevated_risk_acknowledgement.approver_principal
+                    ),
+                    "bound_plan_hash": (
+                        plan.approval.elevated_risk_acknowledgement.bound_plan_hash
+                    ),
+                    "policy_decision_hash": (
+                        plan.approval.elevated_risk_acknowledgement.policy_decision_hash
+                    ),
+                }
+                if plan.approval.elevated_risk_acknowledgement is not None
+                else None
+            ),
+        }
+    )
     authority = OperationalAuthoritySnapshot(
         plan_id=plan.plan_id,
         plan_hash=PLAN_HASH,
-        task_id=TASK_ID,
-        active_task_id=TASK_ID,
+        public_task_id=PUBLIC_TASK_ID,
+        child_execution_id=TASK_ID,
+        active_child_execution_id=TASK_ID,
         operation=operation,
         target_type=plan.target_type,
         target_id=plan.target_id,
         policy_decision_hash=POLICY_HASH,
-        approval_consumed=True,
-        elevated_acknowledgement_consumed=(
+        approval_bundle_hash=approval_hash,
+        authorization_evidence_status="valid",
+        elevated_acknowledgement_bound=(
             operation in {RESTART_ADDON, RESTART_HOME_ASSISTANT}
         ),
         governance_storage_status="healthy",
         audit_storage_status="healthy",
         execution_task_storage_status="healthy",
+        f3_execution_storage_status="healthy",
+        f3_lock_storage_status="healthy",
     )
     adapter = OperationalAdministrationAdapter(
         backup_gateway=backup,
         lifecycle_gateway=lifecycle,
-        recovery_ledger=ledger,
+        evidence_reader=evidence,
         authority_reader=lambda _prepared: authority,
         now=lambda: NOW,
     )
-    return FixtureContext(plan, backup, lifecycle, ledger, adapter, authority)
+    return FixtureContext(
+        plan, backup, lifecycle, evidence, approval, adapter, authority, trace
+    )
 
 
 async def prepare_context(context: FixtureContext):
@@ -734,7 +873,8 @@ async def prepare_context(context: FixtureContext):
         OperationalPreparationRequest(
             plan=context.plan,
             expected_plan_hash=PLAN_HASH,
-            task_id=TASK_ID,
+            public_task_id=PUBLIC_TASK_ID,
+            child_execution_id=TASK_ID,
             authoritative_provider_slug=PROVIDER_SLUG,
             provider_identity_evidence_hash=PROVIDER_IDENTITY_HASH,
         )

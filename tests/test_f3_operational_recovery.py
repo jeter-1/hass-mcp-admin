@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 import sys
@@ -12,7 +13,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
-from ha_mcp_engineering.f3.executor import SimulatedProcessLoss
+from ha_mcp_engineering.f3.executor import (
+    PreIntentRetryRequired,
+    SimulatedProcessLoss,
+)
 from ha_mcp_engineering.f3.operational_adapter import execute_operational
 from ha_mcp_engineering.f3.operational_models import (
     CONTROLLED_RELOAD,
@@ -66,14 +70,26 @@ class FailNthReplace:
                 raise OSError("synthetic intent persistence failure")
 
 
-async def execute_until_terminal(executor, context, prepared, *, maximum=5):
+class RecordIntentBoundary:
+    def __init__(self, trace: list[str]):
+        self.trace = trace
+
+    def __call__(self, stage: str) -> None:
+        if stage == "after_durable_intent_before_provider_invocation":
+            self.trace.append("intent")
+
+
+async def execute_until_terminal(
+    executor, context, prepared, *, maximum=5, owner_id="owner-1"
+):
     result = None
     for _ in range(maximum):
         result = await execute_operational(
             executor,
             adapter=context.adapter,
             prepared=prepared,
-            identity=execution_identity(),
+            identity=execution_identity(owner_id=owner_id),
+            approval_consumption=context.approval.consume,
         )
         if result.terminal:
             return result
@@ -87,6 +103,119 @@ class DurableBoundaryAndResponseLossTests(unittest.IsolatedAsyncioTestCase):
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
+
+    async def test_preflight_never_consumes_approval_for_any_operation(self):
+        for operation in (
+            CREATE_FULL_BACKUP,
+            CONTROLLED_RELOAD,
+            RESTART_ADDON,
+            RESTART_HOME_ASSISTANT,
+        ):
+            with self.subTest(operation=operation):
+                context = make_context(self.root / operation, operation)
+                prepared = await prepare_context(context)
+                result = await context.adapter.preflight(
+                    prepared,
+                    acquired_locks=context.adapter.lock_requests(prepared),
+                )
+                self.assertTrue(result.eligible)
+                self.assertEqual(context.approval.callback_count, 0)
+
+    async def test_provider_rejection_before_intent_consumes_no_approval(self):
+        for operation in (
+            CREATE_FULL_BACKUP,
+            CONTROLLED_RELOAD,
+            RESTART_ADDON,
+            RESTART_HOME_ASSISTANT,
+        ):
+            with self.subTest(operation=operation):
+                root = self.root / f"provider-{operation}"
+                context = make_context(root, operation)
+                gateway = (
+                    context.backup
+                    if operation == CREATE_FULL_BACKUP
+                    else context.lifecycle
+                )
+                gateway.behavior = "provider_unavailable"
+                prepared = await prepare_context(context)
+                result = await execute_operational(
+                    make_executor(root),
+                    adapter=context.adapter,
+                    prepared=prepared,
+                    identity=execution_identity(),
+                    approval_consumption=context.approval.consume,
+                )
+                self.assertEqual(
+                    result.outcome, "provider_unavailable_pre_dispatch"
+                )
+                self.assertEqual(context.approval.callback_count, 0)
+                self.assertEqual(gateway.provider_dispatches, 0)
+
+    async def test_approval_intent_provider_order_is_exact_for_all_operations(self):
+        for operation in (
+            CREATE_FULL_BACKUP,
+            CONTROLLED_RELOAD,
+            RESTART_ADDON,
+            RESTART_HOME_ASSISTANT,
+        ):
+            with self.subTest(operation=operation):
+                root = self.root / f"order-{operation}"
+                context = make_context(root, operation)
+                prepared = await prepare_context(context)
+                await execute_operational(
+                    make_executor(
+                        root,
+                        executor_fault_hook=RecordIntentBoundary(context.trace),
+                    ),
+                    adapter=context.adapter,
+                    prepared=prepared,
+                    identity=execution_identity(),
+                    approval_consumption=context.approval.consume,
+                )
+                boundary = [
+                    item
+                    for item in context.trace
+                    if item in {"approval", "intent", "provider"}
+                ]
+                self.assertEqual(boundary[:3], ["approval", "intent", "provider"])
+                self.assertNotIn(
+                    "evidence_read",
+                    context.trace[: context.trace.index("provider")],
+                )
+                gateway = (
+                    context.backup
+                    if operation == CREATE_FULL_BACKUP
+                    else context.lifecycle
+                )
+                self.assertEqual(gateway.provider_dispatches, 1)
+
+    async def test_approval_failure_invokes_provider_zero_times(self):
+        for operation in (
+            CREATE_FULL_BACKUP,
+            CONTROLLED_RELOAD,
+            RESTART_ADDON,
+            RESTART_HOME_ASSISTANT,
+        ):
+            with self.subTest(operation=operation):
+                root = self.root / f"approval-{operation}"
+                context = make_context(root, operation)
+                context.approval.fail = True
+                prepared = await prepare_context(context)
+                with self.assertRaises(PreIntentRetryRequired):
+                    await execute_operational(
+                        make_executor(root),
+                        adapter=context.adapter,
+                        prepared=prepared,
+                        identity=execution_identity(),
+                        approval_consumption=context.approval.consume,
+                    )
+                gateway = (
+                    context.backup
+                    if operation == CREATE_FULL_BACKUP
+                    else context.lifecycle
+                )
+                self.assertEqual(gateway.provider_dispatches, 0)
+                self.assertEqual(gateway.simulated_effects, 0)
 
     async def test_intent_persistence_failure_invokes_provider_zero_times(self):
         for operation in (
@@ -102,17 +231,28 @@ class DurableBoundaryAndResponseLossTests(unittest.IsolatedAsyncioTestCase):
                 executor = make_executor(
                     root, execution_fault_hook=FailNthReplace(4)
                 )
-                result = await execute_operational(
-                    executor,
-                    adapter=context.adapter,
-                    prepared=prepared,
-                    identity=execution_identity(),
-                )
+                with self.assertRaises(PreIntentRetryRequired):
+                    await execute_operational(
+                        executor,
+                        adapter=context.adapter,
+                        prepared=prepared,
+                        identity=execution_identity(),
+                        approval_consumption=context.approval.consume,
+                    )
                 gateway = context.backup if operation == CREATE_FULL_BACKUP else context.lifecycle
-                self.assertEqual(result.outcome, "failed_pre_dispatch")
-                self.assertEqual(result.dispatch_count, 0)
                 self.assertEqual(gateway.provider_dispatches, 0)
                 self.assertEqual(gateway.simulated_effects, 0)
+                self.assertEqual(context.approval.consumption_count, 1)
+                result = await execute_operational(
+                    make_executor(root),
+                    adapter=context.adapter,
+                    prepared=prepared,
+                    identity=execution_identity(owner_id="owner-2"),
+                    approval_consumption=context.approval.consume,
+                )
+                self.assertEqual(result.dispatch_count, 1)
+                self.assertEqual(gateway.provider_dispatches, 1)
+                self.assertEqual(context.approval.consumption_count, 1)
 
     async def test_backup_response_loss_before_effect_never_redispatches(self):
         context = make_context(self.root, CREATE_FULL_BACKUP)
@@ -134,14 +274,14 @@ class DurableBoundaryAndResponseLossTests(unittest.IsolatedAsyncioTestCase):
             make_executor(self.root),
             adapter=context.adapter,
             prepared=prepared,
-            identity=execution_identity(),
+            identity=execution_identity(), approval_consumption=context.approval.consume,
         )
         self.assertEqual(result.outcome, "succeeded_verified")
         self.assertFalse(result.provider_response_received)
         self.assertEqual(context.backup.provider_dispatches, 1)
         self.assertEqual(context.backup.simulated_effects, 1)
 
-    async def test_reload_lost_response_preserves_beta15_readiness_contract(self):
+    async def test_reload_lost_response_never_verifies_from_readiness_alone(self):
         for behavior in ("response_lost_before_effect", "response_lost_after_effect"):
             with self.subTest(behavior=behavior):
                 root = self.root / behavior
@@ -152,11 +292,14 @@ class DurableBoundaryAndResponseLossTests(unittest.IsolatedAsyncioTestCase):
                     make_executor(root),
                     adapter=context.adapter,
                     prepared=prepared,
-                    identity=execution_identity(),
+                    identity=execution_identity(), approval_consumption=context.approval.consume,
                 )
-                # Beta 15 verifies post-reload readiness and has no direct
-                # reload-effect signal.  F3-C2 preserves that limitation.
-                self.assertEqual(result.outcome, "succeeded_verified")
+                # Readiness is necessary but cannot prove that a reload
+                # occurred after a lost provider response.
+                self.assertIn(
+                    result.outcome,
+                    {"observing", "manual_review_required"},
+                )
                 self.assertEqual(context.lifecycle.provider_dispatches, 1)
                 self.assertLessEqual(context.lifecycle.simulated_effects, 1)
 
@@ -184,7 +327,7 @@ class DurableBoundaryAndResponseLossTests(unittest.IsolatedAsyncioTestCase):
             make_executor(self.root),
             adapter=context.adapter,
             prepared=prepared,
-            identity=execution_identity(),
+            identity=execution_identity(), approval_consumption=context.approval.consume,
         )
         self.assertEqual(result.outcome, "succeeded_verified")
         self.assertEqual(context.lifecycle.provider_dispatches, 1)
@@ -201,7 +344,7 @@ class DurableBoundaryAndResponseLossTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.dispatch_count, 1)
         self.assertEqual(context.lifecycle.provider_dispatches, 1)
         self.assertEqual(context.lifecycle.simulated_effects, 1)
-        self.assertTrue(context.ledger.load(TASK_ID).get("outage_observed"))
+        self.assertTrue(context.evidence.operation_evidence.get("outage_observed"))
 
     async def test_confirmed_provider_rejections_are_terminal_post_dispatch(self):
         for operation in (
@@ -219,7 +362,7 @@ class DurableBoundaryAndResponseLossTests(unittest.IsolatedAsyncioTestCase):
                 make_executor(root),
                 adapter=context.adapter,
                 prepared=prepared,
-                identity=execution_identity(),
+                identity=execution_identity(), approval_consumption=context.approval.consume,
             )
             self.assertEqual(result.outcome, "dispatch_failed_confirmed")
             self.assertEqual(result.dispatch_count, 1)
@@ -245,15 +388,15 @@ class OperationalProcessLossTests(unittest.IsolatedAsyncioTestCase):
                 make_executor(self.root, now=clock, executor_fault_hook=fault),
                 adapter=context.adapter,
                 prepared=prepared,
-                identity=execution_identity(),
+                identity=execution_identity(), approval_consumption=context.approval.consume,
             )
         self.assertEqual(context.backup.provider_dispatches, 0)
         clock.advance(61)
-        result = await execute_operational(
+        result = await execute_until_terminal(
             make_executor(self.root, now=clock),
-            adapter=context.adapter,
-            prepared=prepared,
-            identity=execution_identity(owner_id="owner-2"),
+            context,
+            prepared,
+            owner_id="owner-2",
         )
         self.assertEqual(result.outcome, "succeeded_verified")
         self.assertEqual(context.backup.provider_dispatches, 1)
@@ -268,14 +411,14 @@ class OperationalProcessLossTests(unittest.IsolatedAsyncioTestCase):
                 make_executor(self.root, now=clock, executor_fault_hook=fault),
                 adapter=context.adapter,
                 prepared=prepared,
-                identity=execution_identity(),
+                identity=execution_identity(), approval_consumption=context.approval.consume,
             )
         clock.advance(61)
-        result = await execute_operational(
+        result = await execute_until_terminal(
             make_executor(self.root, now=clock),
-            adapter=context.adapter,
-            prepared=prepared,
-            identity=execution_identity(owner_id="owner-2"),
+            context,
+            prepared,
+            owner_id="owner-2",
         )
         self.assertEqual(result.outcome, "succeeded_verified")
         self.assertEqual(context.lifecycle.provider_dispatches, 1)
@@ -290,7 +433,7 @@ class OperationalProcessLossTests(unittest.IsolatedAsyncioTestCase):
                 make_executor(self.root, now=clock, executor_fault_hook=fault),
                 adapter=context.adapter,
                 prepared=prepared,
-                identity=execution_identity(),
+                identity=execution_identity(), approval_consumption=context.approval.consume,
             )
         self.assertEqual(context.backup.provider_dispatches, 0)
         clock.advance(61)
@@ -312,15 +455,15 @@ class OperationalProcessLossTests(unittest.IsolatedAsyncioTestCase):
                 make_executor(self.root, now=clock, executor_fault_hook=fault),
                 adapter=context.adapter,
                 prepared=prepared,
-                identity=execution_identity(),
+                identity=execution_identity(), approval_consumption=context.approval.consume,
             )
         self.assertEqual(context.backup.provider_dispatches, 1)
         clock.advance(61)
-        result = await execute_operational(
+        result = await execute_until_terminal(
             make_executor(self.root, now=clock),
-            adapter=context.adapter,
-            prepared=prepared,
-            identity=execution_identity(owner_id="owner-2"),
+            context,
+            prepared,
+            owner_id="owner-2",
         )
         self.assertEqual(result.outcome, "succeeded_verified")
         self.assertEqual(context.backup.provider_dispatches, 1)
@@ -336,14 +479,14 @@ class OperationalProcessLossTests(unittest.IsolatedAsyncioTestCase):
                 make_executor(self.root, now=clock, executor_fault_hook=fault),
                 adapter=context.adapter,
                 prepared=prepared,
-                identity=execution_identity(),
+                identity=execution_identity(), approval_consumption=context.approval.consume,
             )
         clock.advance(61)
-        result = await execute_operational(
+        result = await execute_until_terminal(
             make_executor(self.root, now=clock),
-            adapter=context.adapter,
-            prepared=prepared,
-            identity=execution_identity(owner_id="owner-2"),
+            context,
+            prepared,
+            owner_id="owner-2",
         )
         self.assertEqual(result.outcome, "succeeded_verified")
         self.assertEqual(context.lifecycle.provider_dispatches, 1)
@@ -358,13 +501,13 @@ class OperationalProcessLossTests(unittest.IsolatedAsyncioTestCase):
                 executor,
                 adapter=context.adapter,
                 prepared=prepared,
-                identity=execution_identity(),
+                identity=execution_identity(), approval_consumption=context.approval.consume,
             )
         result = await execute_operational(
             make_executor(self.root),
             adapter=context.adapter,
             prepared=prepared,
-            identity=execution_identity(),
+            identity=execution_identity(), approval_consumption=context.approval.consume,
         )
         self.assertEqual(result.outcome, "succeeded_verified")
         self.assertEqual(context.backup.provider_dispatches, 1)
@@ -391,7 +534,7 @@ class OperationalCancellationAndHoldTests(unittest.IsolatedAsyncioTestCase):
                 executor,
                 adapter=context.adapter,
                 prepared=prepared,
-                identity=execution_identity(),
+                identity=execution_identity(), approval_consumption=context.approval.consume,
             )
         self.assertTrue(await executor.cancel(TASK_ID))
         self.assertEqual(context.lifecycle.provider_dispatches, 0)
@@ -409,7 +552,7 @@ class OperationalCancellationAndHoldTests(unittest.IsolatedAsyncioTestCase):
                 executor,
                 adapter=context.adapter,
                 prepared=prepared,
-                identity=execution_identity(),
+                identity=execution_identity(), approval_consumption=context.approval.consume,
             )
         self.assertFalse(await executor.cancel(TASK_ID))
         self.assertEqual(context.backup.provider_dispatches, 0)
@@ -423,11 +566,89 @@ class OperationalCancellationAndHoldTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.outcome, "manual_review_required")
         records = executor.lock_store.records()
         actual_holds = {record.key for record in records if record.conflict_hold}
-        declared_holds = set(prepared.manual_review_hold_keys)
+        declared_holds = set(prepared.selective_hold_keys)
         self.assertTrue(declared_holds < actual_holds)
         self.assertIn(f"addon:{PROVIDER_SLUG}", actual_holds)
         # F3-D must add selective promotion/release before activation.  F3-C2
         # does not patch or fork the accepted F3-A lock core.
+
+
+class OperationalEvidenceAuthorityTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    async def test_no_independent_operational_ledger_or_evidence_writer_remains(self):
+        runtime = ROOT / "hass_mcp_engineering_beta" / "ha_mcp_engineering" / "f3"
+        sources = "\n".join(
+            (runtime / name).read_text(encoding="utf-8")
+            for name in (
+                "operational_adapter.py",
+                "operational_models.py",
+                "operational_strategies.py",
+            )
+        )
+        self.assertNotIn("OperationalRecoveryLedger", sources)
+        self.assertNotIn("recovery_ledger", sources)
+        self.assertNotIn("evidence_reader.merge", sources)
+        self.assertNotIn("manual_review_hold_max_seconds", sources)
+
+    async def test_corrupt_authoritative_evidence_fails_closed_without_redispatch(self):
+        clock = MutableClock()
+        context = make_context(self.root, CREATE_FULL_BACKUP)
+        prepared = await prepare_context(context)
+        with self.assertRaises(SimulatedProcessLoss):
+            await execute_operational(
+                make_executor(
+                    self.root,
+                    now=clock,
+                    executor_fault_hook=RaiseAt(
+                        "after_durable_intent_before_provider_invocation"
+                    ),
+                ),
+                adapter=context.adapter,
+                prepared=prepared,
+                identity=execution_identity(),
+                approval_consumption=context.approval.consume,
+            )
+        context.evidence.corrupt = True
+        clock.advance(61)
+        result = await execute_until_terminal(
+            make_executor(self.root, now=clock),
+            context,
+            prepared,
+            owner_id="owner-2",
+        )
+        self.assertEqual(result.outcome, "manual_review_required")
+        self.assertEqual(result.dispatch_count, 1)
+        self.assertEqual(context.backup.provider_dispatches, 0)
+
+    async def test_jsonl_projection_can_never_be_execution_authority(self):
+        context = make_context(self.root, CREATE_FULL_BACKUP)
+        prepared = await prepare_context(context)
+        projection = context.evidence.read(prepared)
+        with self.assertRaisesRegex(ValueError, "JSONL"):
+            replace(projection, jsonl_authoritative=True).validate(prepared)
+
+    async def test_missing_optional_provider_ids_never_authorize_retry(self):
+        context = make_context(self.root, CREATE_FULL_BACKUP)
+        context.backup.behavior = "response_lost_after_effect"
+        prepared = await prepare_context(context)
+        result = await execute_operational(
+            make_executor(self.root),
+            adapter=context.adapter,
+            prepared=prepared,
+            identity=execution_identity(),
+            approval_consumption=context.approval.consume,
+        )
+        projection = context.evidence.read(prepared)
+        self.assertIsNone(projection.provider_operation_id)
+        self.assertIsNone(projection.provider_backup_id)
+        self.assertEqual(result.outcome, "succeeded_verified")
+        self.assertEqual(context.backup.provider_dispatches, 1)
 
 
 if __name__ == "__main__":

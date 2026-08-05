@@ -18,9 +18,13 @@ from ha_mcp_engineering.f3.operational_models import (  # noqa: E402
     CAPABILITY_IDENTITIES,
     CONTROLLED_RELOAD,
     CREATE_FULL_BACKUP,
+    OPERATIONAL_PLAN_CONTRACT_VERSION,
+    OPERATIONAL_PROVIDER_CONTRACT_MODEL,
     RESTART_ADDON,
     RESTART_HOME_ASSISTANT,
     SUPPORTED_OPERATIONS,
+    canonical_json,
+    stable_hash,
 )
 from ha_mcp_engineering.f3.operational_observability import (  # noqa: E402
     COMMON_COUNTERS,
@@ -34,6 +38,9 @@ from ha_mcp_engineering.tools import registered_tools  # noqa: E402
 from ha_mcp_engineering.tools.registry import get_registered_server  # noqa: E402
 
 from tests.f3_operational_fixtures import (  # noqa: E402
+    PLAN_HASH,
+    PUBLIC_TASK_ID,
+    TASK_ID,
     make_context,
     prepare_context,
 )
@@ -78,6 +85,30 @@ class RuntimeInertAndSchemaTests(unittest.TestCase):
     def test_public_tools_and_persisted_schema_vocabulary_are_unchanged(self):
         self.assertEqual(len(registered_tools(get_registered_server())), 48)
         self.assertEqual(TASK_SCHEMA_VERSION, 1)
+        service_tree = ast.parse(
+            (BETA / "ha_mcp_engineering/governance/service.py").read_text(
+                encoding="utf-8"
+            )
+        )
+        constants = {
+            node.targets[0].id: ast.literal_eval(node.value)
+            for node in service_tree.body
+            if isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id
+            in {
+                "CONFIGURATION_PLAN_CONTRACT_VERSION",
+                "OPERATIONAL_PLAN_CONTRACT_VERSION",
+            }
+        }
+        self.assertEqual(
+            constants,
+            {
+                "CONFIGURATION_PLAN_CONTRACT_VERSION": 2,
+                "OPERATIONAL_PLAN_CONTRACT_VERSION": 3,
+            },
+        )
         self.assertEqual(
             {item.value for item in ChangeOperation},
             {
@@ -162,9 +193,32 @@ class ExactReleaseAndMigrationEquivalenceTests(unittest.IsolatedAsyncioTestCase)
             plan = context.plan
             operational = plan.operational
             assert operational is not None
+            self.assertEqual(prepared.plan_id, plan.plan_id)
+            self.assertEqual(prepared.plan_hash, PLAN_HASH)
+            self.assertEqual(
+                prepared.plan_contract_version,
+                OPERATIONAL_PLAN_CONTRACT_VERSION,
+            )
+            self.assertEqual(prepared.public_task_id, PUBLIC_TASK_ID)
+            self.assertEqual(prepared.child_execution_id, TASK_ID)
             self.assertEqual(prepared.target.target_type, plan.target_type)
             self.assertEqual(prepared.target.target_id, plan.target_id)
             self.assertEqual(prepared.operation, plan.operation.value)
+            self.assertEqual(
+                prepared.capability_id, CAPABILITY_IDENTITIES[operation]
+            )
+            self.assertEqual(
+                prepared.current_state_fingerprint,
+                plan.current_state_fingerprint,
+            )
+            self.assertEqual(
+                prepared.normalized_proposed_hash,
+                plan.proposed_config_hash,
+            )
+            self.assertEqual(
+                prepared.policy_decision_hash,
+                plan.policy_decision.policy_decision_hash,
+            )
             self.assertEqual(prepared.policy_class, plan.policy_decision.policy_class.value)
             self.assertEqual(prepared.risk_delta, plan.policy_decision.risk_delta.value)
             self.assertEqual(
@@ -175,12 +229,53 @@ class ExactReleaseAndMigrationEquivalenceTests(unittest.IsolatedAsyncioTestCase)
             self.assertEqual(prepared.expected_effect_descriptions, tuple(operational.expected_effects))
             self.assertEqual(prepared.warnings, tuple(plan.warnings))
             self.assertEqual(prepared.limitations, tuple(operational.limitations))
+            self.assertEqual(prepared.provider_id, operational.provider)
+            self.assertEqual(
+                prepared.provider_contract_model,
+                OPERATIONAL_PROVIDER_CONTRACT_MODEL,
+            )
+            self.assertEqual(
+                prepared.provider_evidence,
+                operational.provider_capability_evidence,
+            )
+            self.assertEqual(prepared.baseline, operational.baseline)
+            self.assertEqual(
+                prepared.verification_contract_json,
+                canonical_json(operational.verification_contract),
+            )
+            self.assertEqual(
+                prepared.provider_arguments_hash,
+                stable_hash(prepared.provider_arguments_json),
+            )
             self.assertEqual(prepared.provider_operation, {
                 CREATE_FULL_BACKUP: "ha_manage_backup",
                 CONTROLLED_RELOAD: "ha_reload_core",
                 RESTART_ADDON: "ha_manage_addon",
                 RESTART_HOME_ASSISTANT: "ha_restart",
             }[operation])
+            requests = context.adapter.lock_requests(prepared)
+            lock_projection = [
+                {
+                    "key": request.key,
+                    "scopes": [scope.value for scope in request.scopes],
+                    "mode": request.mode.value,
+                    "reason_codes": list(request.reason_codes),
+                }
+                for request in requests
+            ]
+            self.assertEqual(
+                lock_projection,
+                sorted(
+                    lock_projection,
+                    key=lambda item: item["key"].encode("utf-8"),
+                ),
+            )
+            self.assertEqual(len(prepared.selective_hold_keys), 1)
+            self.assertIn(
+                prepared.selective_hold_keys[0],
+                {item["key"] for item in lock_projection},
+            )
+            self.assertGreaterEqual(prepared.evidence_deadline_seconds, 60)
             self.assertFalse(prepared.rollback_available)
 
     def test_normalized_outcomes_map_to_existing_task_states(self):

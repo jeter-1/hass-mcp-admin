@@ -29,16 +29,23 @@ from ha_mcp_engineering.f3.operational_models import (
     SUPPORTED_OPERATIONS,
     OperationalPreparationRequest,
 )
+from ha_mcp_engineering.governance.models import ApprovalState
 
 from tests.f3_operational_fixtures import (
     PLAN_HASH,
     PROVIDER_IDENTITY_HASH,
     PROVIDER_SLUG,
+    PUBLIC_TASK_ID,
     TASK_ID,
     execution_identity,
     make_context,
     make_executor,
     prepare_context,
+)
+from tests.f3_configuration_fixtures import (  # noqa: E402
+    SyntheticConfigurationGateway,
+    adapter_for as configuration_adapter_for,
+    proposal_for as configuration_proposal_for,
 )
 
 
@@ -160,7 +167,8 @@ class OperationalCapabilityAndPreparationTests(unittest.IsolatedAsyncioTestCase)
                 OperationalPreparationRequest(
                     plan=context.plan,
                     expected_plan_hash=PLAN_HASH,
-                    task_id=TASK_ID,
+                    public_task_id=PUBLIC_TASK_ID,
+                    child_execution_id=TASK_ID,
                     authoritative_provider_slug="https://addon.invalid",
                     provider_identity_evidence_hash=PROVIDER_IDENTITY_HASH,
                 )
@@ -173,7 +181,16 @@ class OperationalCapabilityAndPreparationTests(unittest.IsolatedAsyncioTestCase)
         self.assertEqual(context.plan.to_dict(), before)
         self.assertEqual(context.lifecycle.provider_dispatches, 0)
         self.assertEqual(context.lifecycle.simulated_effects, 0)
-        self.assertEqual(context.ledger.load(prepared.task_id), {})
+        self.assertEqual(context.evidence.read_count, 0)
+        self.assertEqual(context.approval.callback_count, 0)
+
+    async def test_consumed_public_approval_cannot_prepare_a_new_child(self):
+        context = make_context(self.root, RESTART_ADDON)
+        context.plan.approval.state = ApprovalState.CONSUMED
+        with self.assertRaises(OperationalAdapterError) as caught:
+            await prepare_context(context)
+        self.assertEqual(caught.exception.category, "approval_not_available")
+        self.assertEqual(context.lifecycle.provider_dispatches, 0)
 
 
 class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
@@ -212,7 +229,9 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
                 prepared = await prepare_context(context)
                 requests = context.adapter.lock_requests(prepared)
                 self.assertEqual([item.key for item in requests], sorted(keys))
-                self.assertEqual({item.key: item.mode for item in requests}, keys)
+                self.assertEqual(
+                    {item.key: item.mode.value for item in requests}, keys
+                )
 
     async def test_upstream_addon_restart_unions_provider_and_resource_lock(self):
         context = make_context(
@@ -225,14 +244,86 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
         request = {
             item.key: item for item in context.adapter.lock_requests(prepared)
         }[f"addon:{PROVIDER_SLUG}"]
-        self.assertEqual(request.mode, "exclusive")
-        self.assertEqual(request.scopes, ("provider", "resource"))
+        self.assertEqual(request.mode.value, "exclusive")
+        self.assertEqual(
+            tuple(scope.value for scope in request.scopes),
+            ("provider", "resource"),
+        )
         self.assertEqual(
             request.reason_codes,
             ("installed_addon_restart", "upstream_provider_dependency"),
         )
 
-    async def test_manual_review_holds_are_exact_and_bounded(self):
+    async def test_reload_keys_exactly_conflict_with_beta18_configuration_writes(self):
+        for domain in RELOAD_PROVIDER_TARGETS:
+            with self.subTest(domain=domain):
+                operational_context = make_context(
+                    self.root / domain,
+                    CONTROLLED_RELOAD,
+                    target_id=domain,
+                )
+                operational = await prepare_context(operational_context)
+                operational_reload = next(
+                    request
+                    for request in operational_context.adapter.lock_requests(
+                        operational
+                    )
+                    if request.key.startswith("reload:")
+                )
+                config_gateway = SyntheticConfigurationGateway()
+                config_adapter = configuration_adapter_for(
+                    domain, "create", config_gateway
+                )
+                configuration = await config_adapter.prepare(
+                    configuration_proposal_for(domain, "create")
+                )
+                config_reload = next(
+                    request
+                    for request in config_adapter.lock_requests(configuration)
+                    if request.key.startswith("reload:")
+                )
+                self.assertEqual(
+                    operational_reload.key, config_reload.key
+                )
+                self.assertEqual(operational_reload.mode.value, "exclusive")
+                self.assertEqual(config_reload.mode.value, "shared")
+
+    async def test_unrelated_reload_domains_and_addons_remain_compatible(self):
+        reload_keys = []
+        for domain in ("automation", "script"):
+            context = make_context(
+                self.root / f"reload-{domain}",
+                CONTROLLED_RELOAD,
+                target_id=domain,
+            )
+            prepared = await prepare_context(context)
+            reload_keys.append(
+                next(
+                    request.key
+                    for request in context.adapter.lock_requests(prepared)
+                    if request.key.startswith("reload:")
+                )
+            )
+        self.assertEqual(len(set(reload_keys)), 2)
+
+        addon_keys = []
+        for slug in ("local_one", "local_two"):
+            context = make_context(
+                self.root / f"addon-{slug}",
+                RESTART_ADDON,
+                target_id=slug,
+            )
+            prepared = await prepare_context(context)
+            addon_keys.append(
+                next(
+                    request.key
+                    for request in context.adapter.lock_requests(prepared)
+                    if request.mode.value == "exclusive"
+                )
+            )
+        self.assertEqual(len(set(addon_keys)), 2)
+
+    async def test_manual_review_holds_are_exact_and_deadlines_do_not_release(self):
         expected = {
             CREATE_FULL_BACKUP: (("backup:local_full_backup",), 86_400),
             CONTROLLED_RELOAD: (("reload:automation",), 900),
@@ -241,7 +332,10 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
         }
         for operation, value in expected.items():
             prepared = await prepare_context(make_context(self.root / operation, operation))
-            self.assertEqual((prepared.manual_review_hold_keys, prepared.manual_review_hold_max_seconds), value)
+            self.assertEqual(
+                (prepared.selective_hold_keys, prepared.evidence_deadline_seconds),
+                value,
+            )
 
     async def test_exact_acquired_lock_set_is_required(self):
         context = make_context(self.root, CREATE_FULL_BACKUP)
@@ -249,17 +343,17 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
         requests = context.adapter.lock_requests(prepared)
         result = await context.adapter.preflight(prepared, acquired_locks=requests[:-1])
         self.assertFalse(result.eligible)
-        self.assertEqual(result.outcome, "preflight_rejected")
+        self.assertEqual(result.outcome, "lock_conflict")
         self.assertEqual(result.mismatch_fields, ("lock_set",))
         self.assertEqual(context.backup.provider_dispatches, 0)
 
     async def test_authority_task_policy_approval_and_storage_matrix_rejects(self):
         fields = {
-            "task_id": "wrong-task",
+            "child_execution_id": "wrong-task",
             "plan_hash": "f" * 64,
-            "approval_consumed": False,
+            "authorization_evidence_status": "invalid",
             "execution_task_storage_status": "unhealthy",
-            "conflicting_execution_active": True,
+            "approval_bundle_hash": "f" * 64,
         }
         for field, value in fields.items():
             with self.subTest(field=field):
@@ -272,19 +366,23 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertFalse(result.eligible)
                 self.assertEqual(context.backup.provider_dispatches, 0)
+                self.assertEqual(context.approval.callback_count, 0)
 
     async def test_elevated_acknowledgement_is_required_for_restarts(self):
         for operation in (RESTART_ADDON, RESTART_HOME_ASSISTANT):
             context = make_context(self.root / operation, operation)
             context.adapter.authority_reader = lambda _prepared, a=context.authority: replace(
-                a, elevated_acknowledgement_consumed=False
+                a, elevated_acknowledgement_bound=False
             )
             prepared = await prepare_context(context)
             result = await context.adapter.preflight(
                 prepared, acquired_locks=context.adapter.lock_requests(prepared)
             )
             self.assertFalse(result.eligible)
-            self.assertIn("elevated_acknowledgement", result.mismatch_fields)
+            self.assertIn(
+                "elevated_acknowledgement_binding", result.mismatch_fields
+            )
+            self.assertEqual(context.approval.callback_count, 0)
 
     async def test_home_assistant_restart_requires_all_persistent_storage(self):
         for field in ("governance_storage_status", "audit_storage_status", "execution_task_storage_status"):
@@ -370,7 +468,7 @@ class OperationalExecutorIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     make_executor(root),
                     adapter=context.adapter,
                     prepared=prepared,
-                    identity=execution_identity(),
+                    identity=execution_identity(), approval_consumption=context.approval.consume,
                 )
                 gateway = context.backup if operation == CREATE_FULL_BACKUP else context.lifecycle
                 self.assertEqual(result.outcome, "succeeded_verified")
@@ -386,15 +484,20 @@ class OperationalExecutorIntegrationTests(unittest.IsolatedAsyncioTestCase):
             executor,
             adapter=context.adapter,
             prepared=prepared,
-            identity=execution_identity(),
+            identity=execution_identity(), approval_consumption=context.approval.consume,
         )
         self.assertEqual(first.outcome, "observing")
-        second = await execute_operational(
-            executor,
-            adapter=context.adapter,
-            prepared=prepared,
-            identity=execution_identity(),
-        )
+        second = first
+        for _ in range(4):
+            second = await execute_operational(
+                executor,
+                adapter=context.adapter,
+                prepared=prepared,
+                identity=execution_identity(),
+                approval_consumption=context.approval.consume,
+            )
+            if second.terminal:
+                break
         self.assertEqual(second.outcome, "succeeded_verified")
         self.assertEqual(context.lifecycle.provider_dispatches, 1)
         self.assertEqual(context.lifecycle.simulated_effects, 1)
@@ -413,10 +516,18 @@ class OperationalExecutorIntegrationTests(unittest.IsolatedAsyncioTestCase):
         prepared = await prepare_context(context)
         executor = make_executor(self.root)
         first = await execute_operational(
-            executor, adapter=context.adapter, prepared=prepared, identity=execution_identity()
+            executor,
+            adapter=context.adapter,
+            prepared=prepared,
+            identity=execution_identity(),
+            approval_consumption=context.approval.consume,
         )
         second = await execute_operational(
-            executor, adapter=context.adapter, prepared=prepared, identity=execution_identity()
+            executor,
+            adapter=context.adapter,
+            prepared=prepared,
+            identity=execution_identity(),
+            approval_consumption=context.approval.consume,
         )
         self.assertEqual(first.outcome, second.outcome)
         self.assertTrue(second.duplicate_execution)

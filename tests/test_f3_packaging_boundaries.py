@@ -20,6 +20,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 BETA_DIR = ROOT / "hass_mcp_engineering_beta"
 RUNTIME = BETA_DIR / "ha_mcp_engineering"
+sys.path.insert(0, str(BETA_DIR))
 
 ALLOWED_EXPLICIT_F3_IMPORTS = {
     "f3_contracts/operation_adapter.py",
@@ -41,6 +42,15 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/outcomes.py",
     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/sequence.py",
     "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/strategies.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3/operational_adapter.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3/operational_locks.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3/operational_models.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3/operational_strategies.py",
+    "tests/f3_operational_fixtures.py",
+    "tests/test_f3_operational_adapter.py",
+    "tests/test_f3_operational_invariants.py",
+    "tests/test_f3_operational_recovery.py",
+    "tests/test_f3_packaging_boundaries.py",
 }
 
 
@@ -116,6 +126,8 @@ class BuiltImageImportClosureTests(unittest.TestCase):
                     or name.startswith("f3_contracts.")
                     or name == "tests"
                     or name.startswith("tests.")
+                    or name == "f3_dashboard"
+                    or name.startswith("f3_dashboard.")
                 )
                 if forbidden_modules:
                     raise AssertionError(
@@ -151,7 +163,11 @@ class BuiltImageImportClosureTests(unittest.TestCase):
             self.assertIn(
                 "ha_mcp_engineering.f3_configuration.adapter", imported
             )
+            self.assertIn(
+                "ha_mcp_engineering.f3.operational_adapter", imported
+            )
             self.assertFalse((image_app / "f3_contracts").exists())
+            self.assertFalse((image_app / "f3_dashboard").exists())
 
     def test_every_declared_architecture_uses_the_same_package_copy(self):
         config = yaml.safe_load(
@@ -170,7 +186,11 @@ class BuiltImageImportClosureTests(unittest.TestCase):
             copies = {}
             for architecture in config["arch"]:
                 target = Path(temporary) / architecture / "ha_mcp_engineering"
-                shutil.copytree(RUNTIME, target)
+                shutil.copytree(
+                    RUNTIME,
+                    target,
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+                )
                 digest = hashlib.sha256()
                 for path in sorted(target.rglob("*.py")):
                     digest.update(path.relative_to(target).as_posix().encode())
@@ -198,6 +218,59 @@ class BuiltImageImportClosureTests(unittest.TestCase):
                 "strategies.py",
             },
         )
+
+    def test_c2_shipped_sources_use_canonical_objects_by_identity(self):
+        from ha_mcp_engineering.f3 import contracts
+        from ha_mcp_engineering.f3 import operational_models
+
+        canonical_names = (
+            "F3_ADAPTER_CONTRACT_MODEL",
+            "AdapterCapabilityDescriptor",
+            "DispatchResult",
+            "LockMode",
+            "LockRequest",
+            "LockScope",
+            "NormalizedOperationOutcome",
+            "ObservationResult",
+            "OperationTarget",
+            "PreflightResult",
+            "PreparedOperation",
+            "RecoveryContext",
+            "VerificationResult",
+        )
+        for name in canonical_names:
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(operational_models, name),
+                    getattr(contracts, name),
+                )
+
+        c2_files = {
+            "operational_adapter.py",
+            "operational_locks.py",
+            "operational_models.py",
+            "operational_strategies.py",
+        }
+        importers = set()
+        duplicate_names = set(canonical_names) - {"F3_ADAPTER_CONTRACT_MODEL"}
+        for name in c2_files:
+            path = RUNTIME / "f3" / name
+            source = path.read_text(encoding="utf-8")
+            self.assertNotIn("f3_contracts", source)
+            self.assertNotIn("f3_dashboard", source)
+            tree = ast.parse(source)
+            declared = {
+                node.name
+                for node in tree.body
+                if isinstance(node, (ast.ClassDef, ast.FunctionDef))
+            }
+            self.assertFalse(declared & duplicate_names)
+            if any(
+                value == "ha_mcp_engineering.f3.contracts"
+                for value in _imports(path)
+            ):
+                importers.add(name)
+        self.assertEqual(importers, c2_files)
 
 
 class F3ImportBoundaryTests(unittest.TestCase):
