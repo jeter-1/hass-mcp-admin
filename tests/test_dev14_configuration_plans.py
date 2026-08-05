@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 
 
@@ -25,16 +26,17 @@ from ha_mcp_engineering.governance.models import (  # noqa: E402
     StepExecutionStatus,
 )
 from ha_mcp_engineering.governance.normalize import stable_hash  # noqa: E402
+from ha_mcp_engineering.governance.semantic_projection import (  # noqa: E402
+    build_semantic_projection,
+    projection_hash,
+)
 from ha_mcp_engineering.governance.resources import (  # noqa: E402
     ConfigurationMutationCompletedUnexpectedlyError,
     ConfigurationMutationNotDispatchedError,
     normalize_resource_config,
     resource_fingerprint,
 )
-from ha_mcp_engineering.governance.service import (  # noqa: E402
-    ChangeGovernanceService,
-    _configuration_approval_projection,
-)
+from ha_mcp_engineering.governance.service import ChangeGovernanceService  # noqa: E402
 from ha_mcp_engineering.governance.storage import (  # noqa: E402
     ChangePlanRepository,
 )
@@ -910,7 +912,7 @@ class PlanCreationTests(ConfigurationPlanTestCase):
         self.assertFalse(self.audit_path.exists())
         self.assertNotIn(raw_secret, self.persisted_artifact_text())
 
-    async def test_review_projection_is_bounded_and_contains_no_configs(self):
+    async def test_review_projection_is_complete_and_contains_no_raw_configs(self):
         created = await self.create_hvac_plan()
         _pending, review, _granted = await self.approve(created)
         self.assertEqual(review["operation_count"], 3)
@@ -918,12 +920,18 @@ class PlanCreationTests(ConfigurationPlanTestCase):
         encoded = json.dumps(review, sort_keys=True).lower()
         self.assertNotIn("proposed_config", encoded)
         self.assertNotIn("current_config", encoded)
-        self.assertIn("climate.set_temperature", encoded)
-        self.assertIn("climate.downstairs", encoded)
-        self.assertIn("data.temperature", encoded)
+        self.assertIn("/sequence/0/data/temperature", encoded)
+        self.assertIn("input_number.hvac_target", encoded)
         self.assertTrue(
             all(
-                item["semantic_projection"]["status"] == "complete"
+                item["semantic_projection"]["projection_complete"] is True
+                for item in review["operation_summaries"]
+            )
+        )
+        self.assertTrue(
+            all(
+                item["semantic_projection_hash"]
+                == item["semantic_projection"]["binding"]["projection_hash"]
                 for item in review["operation_summaries"]
             )
         )
@@ -962,21 +970,15 @@ class PlanCreationTests(ConfigurationPlanTestCase):
         second_html = _render_review("", second_review, "second-csrf")
         self.assertNotEqual(first_projection, second_projection)
         self.assertNotEqual(first_html, second_html)
-        self.assertIn("climate.set_temperature", first_html)
-        self.assertIn("climate.downstairs", first_html)
-        self.assertIn("data.temperature", first_html)
+        self.assertIn("/sequence/0/data/temperature", first_html)
+        self.assertIn("input_number.hvac_target", first_html)
         self.assertIn("climate.set_humidity", second_html)
-        self.assertIn("data.entity_id=climate.upstairs", second_html)
-        self.assertIn("data.humidity", second_html)
-        self.assertIn("data.humidity=45", second_html)
-        self.assertEqual(
-            len(first_projection["actions"]),
-            1,
-        )
-        self.assertEqual(
-            len(second_projection["actions"]),
-            1,
-        )
+        self.assertIn("climate.upstairs", second_html)
+        self.assertIn("/sequence/0/data/humidity", second_html)
+        self.assertIn("45", second_html)
+        self.assertGreater(len(second_projection["changes"]), 2)
+        self.assertTrue(first_projection["projection_complete"])
+        self.assertTrue(second_projection["projection_complete"])
 
     def test_semantic_projection_redacts_secret_like_action_data(self):
         proposed = copy.deepcopy(PROPOSED_SCRIPT)
@@ -993,19 +995,36 @@ class PlanCreationTests(ConfigurationPlanTestCase):
                 },
             }
         ]
-        projection = _configuration_approval_projection(
-            "script",
-            proposed,
+        operation = SimpleNamespace(
+            normalized_current_config=copy.deepcopy(CURRENT_SCRIPT),
+            normalized_proposed_config=copy.deepcopy(proposed),
+            proposed_config=copy.deepcopy(proposed),
+            proposed_config_hash=stable_hash(proposed),
+            current_state_fingerprint=stable_hash(CURRENT_SCRIPT),
+            action="update",
+            order=0,
+            operation_id="redacted_script",
+            resource_type="script",
+            helper_type=None,
+            target_id="redacted_script",
+            risk=SimpleNamespace(level=SimpleNamespace(value="medium")),
+        )
+        projection, digest = build_semantic_projection(
+            operation,
+            policy_class="elevated_admin",
+            physical_impact="direct",
             known_secrets=("dev14-approval-secret-value",),
         )
         encoded = json.dumps(projection, sort_keys=True)
 
         self.assertNotIn("dev14-approval-secret-value", encoded)
         self.assertNotIn("dev14-client-secret-value", encoded)
-        self.assertIn("[REDACTED:token]", encoded)
+        self.assertIn('"state": "redacted"', encoded)
+        self.assertIn('"token"', encoded)
         self.assertNotIn("proposed_config", encoded)
-        self.assertTrue(projection["redaction_applied"])
-        self.assertEqual(projection["status"], "incomplete")
+        self.assertGreaterEqual(projection["redacted_change_count"], 2)
+        self.assertTrue(projection["projection_complete"])
+        self.assertEqual(projection["binding"]["projection_hash"], digest)
 
     async def test_same_count_trigger_and_condition_changes_are_visible(self):
         first_operations = hvac_operations()
@@ -1068,21 +1087,13 @@ class PlanCreationTests(ConfigurationPlanTestCase):
         second_html = _render_review(
             "", second_review, "second-control-csrf"
         )
-        self.assertEqual(len(first_projection["controls"]), 2)
-        self.assertEqual(len(second_projection["controls"]), 2)
-        self.assertNotEqual(
-            first_projection["controls"],
-            second_projection["controls"],
-        )
-        self.assertIn("Automation triggers and conditions", first_html)
-        self.assertIn(
-            "entity_id=input_boolean.hvac_override",
-            first_html,
-        )
-        self.assertIn("entity_id=input_boolean.guest_mode", first_html)
-        self.assertIn("entity_id=input_boolean.away_mode", second_html)
-        self.assertIn("entity_id=input_boolean.window_open", second_html)
-        self.assertIn("state=on", second_html)
+        self.assertNotEqual(first_projection["changes"], second_projection["changes"])
+        self.assertIn("/condition/0/entity_id", first_html)
+        self.assertIn("input_boolean.guest_mode", first_html)
+        self.assertIn("/trigger/0/entity_id", second_html)
+        self.assertIn("input_boolean.away_mode", second_html)
+        self.assertIn("input_boolean.window_open", second_html)
+        self.assertIn("&quot;on&quot;", second_html)
 
     async def test_choose_conditions_are_explicit_and_distinguishable(self):
         async def review_for(entity_id, state):
@@ -1140,16 +1151,16 @@ class PlanCreationTests(ConfigurationPlanTestCase):
         away_html = _render_review("", away_review, "away-csrf")
         guest_html = _render_review("", guest_review, "guest-csrf")
 
-        self.assertEqual(away_projection["status"], "complete")
-        self.assertEqual(guest_projection["status"], "complete")
+        self.assertTrue(away_projection["projection_complete"])
+        self.assertTrue(guest_projection["projection_complete"])
         self.assertNotEqual(away_projection, guest_projection)
-        self.assertIn("choose_condition", away_html)
-        self.assertIn("entity_id=input_boolean.away_mode", away_html)
-        self.assertIn("state=on", away_html)
-        self.assertIn("entity_id=input_boolean.guest_mode", guest_html)
-        self.assertIn("state=off", guest_html)
+        self.assertIn("/sequence/0/choose/0/conditions/0/entity_id", away_html)
+        self.assertIn("input_boolean.away_mode", away_html)
+        self.assertIn("&quot;on&quot;", away_html)
+        self.assertIn("input_boolean.guest_mode", guest_html)
+        self.assertIn("&quot;off&quot;", guest_html)
 
-    async def test_long_same_prefix_values_are_incomplete_and_refused(self):
+    async def test_long_same_prefix_values_are_complete_and_distinct(self):
         projections = []
         for suffix in ("first", "second"):
             operation = copy.deepcopy(hvac_operations()[1])
@@ -1162,7 +1173,7 @@ class PlanCreationTests(ConfigurationPlanTestCase):
             ]
             created = await self.service.create_configuration_plan(
                 title=f"Long value {suffix}",
-                description="Truncation must disable informed approval",
+                description="Long values retain exact review meaning",
                 operations=[operation],
             )
             pending = self.service.approve(
@@ -1177,31 +1188,25 @@ class PlanCreationTests(ConfigurationPlanTestCase):
             html = _render_review("", review, csrf)
             projections.append(projection)
 
-            self.assertEqual(projection["status"], "incomplete")
-            self.assertTrue(projection["truncation_applied"])
-            self.assertIn("Approval is disabled", html)
-            self.assertNotIn("Approve exact plan", html)
-            with self.assertRaises(GovernanceError) as raised:
-                await self.service.decide_external_approval(
-                    plan_id=created["plan_id"],
-                    challenge_id=pending["challenge_id"],
-                    expected_plan_hash=created["plan_hash"],
-                    approval_kind="apply",
-                    csrf_nonce=csrf,
-                    decision="approve",
-                    approver_principal=(
-                        "home_assistant_admin_ingress:dev14-reviewer"
-                    ),
-                )
-            self.assertEqual(
-                raised.exception.code,
-                ErrorCode.EXTERNAL_APPROVAL_INVALID,
+            self.assertTrue(projection["projection_complete"])
+            self.assertIn(("x" * 200) + suffix, html)
+            self.assertIn("Inspect complete value", html)
+            self.assertIn("Approve exact plan", html)
+            granted = await self.service.decide_external_approval(
+                plan_id=created["plan_id"],
+                challenge_id=pending["challenge_id"],
+                expected_plan_hash=created["plan_hash"],
+                approval_kind="apply",
+                approval_action=pending["approval_action"],
+                csrf_nonce=csrf,
+                decision="approve",
+                approver_principal=(
+                    "home_assistant_admin_ingress:dev14-reviewer"
+                ),
             )
+            self.assertIn(granted["status"], {"approved", "approval_pending"})
 
-        self.assertFalse(
-            projections[0]["status"] == "complete"
-            and projections[0] == projections[1]
-        )
+        self.assertNotEqual(projections[0], projections[1])
 
     async def test_repeat_wait_and_variables_are_explicit(self):
         operation = copy.deepcopy(hvac_operations()[1])
@@ -1268,17 +1273,17 @@ class PlanCreationTests(ConfigurationPlanTestCase):
         ]
         encoded = json.dumps(projection, sort_keys=True)
 
-        self.assertEqual(projection["status"], "complete")
-        self.assertIn("variables.target_light", encoded)
-        self.assertIn("variables.repeat_count", encoded)
-        self.assertIn("repeat.count", encoded)
-        self.assertIn("if_condition", encoded)
+        self.assertTrue(projection["projection_complete"])
+        self.assertIn("/variables/target_light", encoded)
+        self.assertIn("/sequence/0/variables/repeat_count", encoded)
+        self.assertIn("/sequence/1/repeat/count", encoded)
+        self.assertIn("/sequence/2/if/0/entity_id", encoded)
         self.assertIn("input_boolean.hvac_override", encoded)
-        self.assertIn("wait_trigger", encoded)
+        self.assertIn("/sequence/3/wait_for_trigger/0/entity_id", encoded)
         self.assertIn("binary_sensor.hvac_ready", encoded)
-        self.assertIn("timeout.seconds", encoded)
+        self.assertIn("/sequence/3/timeout/seconds", encoded)
 
-    async def test_unsupported_nested_construct_refuses_approval(self):
+    async def test_deterministic_nested_construct_is_fully_projected(self):
         operation = copy.deepcopy(hvac_operations()[1])
         operation["depends_on"] = []
         operation["proposed_config"]["sequence"] = [
@@ -1294,7 +1299,7 @@ class PlanCreationTests(ConfigurationPlanTestCase):
         ]
         created = await self.service.create_configuration_plan(
             title="Unsupported nested construct",
-            description="Unrepresented semantics must fail closed",
+            description="Deterministic nested semantics remain visible",
             operations=[operation],
         )
         pending = self.service.approve(
@@ -1308,28 +1313,12 @@ class PlanCreationTests(ConfigurationPlanTestCase):
         ]
         html = _render_review("", review, csrf)
 
-        self.assertEqual(projection["status"], "incomplete")
-        self.assertNotIn("light.hidden", json.dumps(review))
-        self.assertIn("Approval is disabled", html)
-        self.assertNotIn("Approve exact plan", html)
-        with self.assertRaises(GovernanceError) as raised:
-            await self.service.decide_external_approval(
-                plan_id=created["plan_id"],
-                challenge_id=pending["challenge_id"],
-                expected_plan_hash=created["plan_hash"],
-                approval_kind="apply",
-                csrf_nonce=csrf,
-                decision="approve",
-                approver_principal=(
-                    "home_assistant_admin_ingress:dev14-reviewer"
-                ),
-            )
-        self.assertEqual(
-            raised.exception.code,
-            ErrorCode.EXTERNAL_APPROVAL_INVALID,
-        )
+        self.assertTrue(projection["projection_complete"])
+        self.assertIn("light.hidden", json.dumps(review))
+        self.assertIn("/sequence/0/unsupported_nested/0/target/entity_id", html)
+        self.assertIn("Approve exact plan", html)
 
-    async def test_over_bound_semantic_projection_cannot_be_approved(self):
+    async def test_more_than_sixteen_semantic_actions_remain_approvable(self):
         operation = copy.deepcopy(hvac_operations()[1])
         operation["depends_on"] = []
         operation["proposed_config"]["sequence"] = [
@@ -1341,8 +1330,8 @@ class PlanCreationTests(ConfigurationPlanTestCase):
             for index in range(17)
         ]
         created = await self.service.create_configuration_plan(
-            title="Over-bound semantic projection",
-            description="The approval decision must fail closed",
+            title="Complete multi-action semantic projection",
+            description="No arbitrary projection-entry limit",
             operations=[operation],
         )
         pending = self.service.approve(
@@ -1353,30 +1342,11 @@ class PlanCreationTests(ConfigurationPlanTestCase):
         )
         html = _render_review("", review, csrf)
 
-        self.assertEqual(
-            review["operation_summaries"][0]["semantic_projection"][
-                "status"
-            ],
-            "incomplete",
-        )
-        self.assertIn("Approval is disabled", html)
-        self.assertNotIn("Approve exact plan", html)
-        with self.assertRaises(GovernanceError) as raised:
-            await self.service.decide_external_approval(
-                plan_id=created["plan_id"],
-                challenge_id=pending["challenge_id"],
-                expected_plan_hash=created["plan_hash"],
-                approval_kind="apply",
-                csrf_nonce=csrf,
-                decision="approve",
-                approver_principal=(
-                    "home_assistant_admin_ingress:dev14-reviewer"
-                ),
-            )
-        self.assertEqual(
-            raised.exception.code,
-            ErrorCode.EXTERNAL_APPROVAL_INVALID,
-        )
+        projection = review["operation_summaries"][0]["semantic_projection"]
+        self.assertTrue(projection["projection_complete"])
+        self.assertGreater(len(projection["changes"]), 16)
+        self.assertIn("climate.zone_16", html)
+        self.assertIn("Approve exact plan", html)
 
 
 class ApplyTests(ConfigurationPlanTestCase):
@@ -2898,6 +2868,77 @@ class RestartRecoveryTests(ConfigurationPlanTestCase):
         self.assertEqual(self.gateway.calls, [])
 
 
+def approval_render_operation(
+    *,
+    complete=True,
+    before=None,
+    after=None,
+    redacted=False,
+):
+    before_snapshot = (
+        {"state": "redacted", "categories": ["token"]}
+        if redacted
+        else {"state": "absent"}
+        if before is None
+        else {"state": "value", "value": before}
+    )
+    after_snapshot = (
+        {"state": "redacted", "categories": ["token"]}
+        if redacted
+        else {"state": "value", "value": after or "HVAC target"}
+    )
+    projection = {
+        "projection_schema_version": 1,
+        "projection_complete": complete,
+        "operation_index": 0,
+        "operation_id": "create_helper",
+        "operation_type": "create",
+        "resource": {
+            "resource_type": "helper",
+            "resource_subtype": "input_number",
+            "target_id": "input_number.hvac_target",
+        },
+        "risk": {
+            "risk_classification": "medium",
+            "policy_classification": "standard_admin",
+            "physical_impact_classification": "indirect",
+        },
+        "changes": [
+            {
+                "change_index": 0,
+                "path": "/name",
+                "change_type": (
+                    "modified" if redacted or before is not None else "added"
+                ),
+                "before": before_snapshot,
+                "after": after_snapshot,
+                "sensitive_value_redacted": redacted,
+            }
+        ],
+        "redacted_change_count": int(redacted),
+        "binding": {
+            "current_state_fingerprint": "c" * 64,
+            "prepared_config_hash": "d" * 64,
+            "raw_prepared_config_hash": "e" * 64,
+            "normalized_prepared_config_hash": "f" * 64,
+        },
+    }
+    digest = projection_hash(projection)
+    projection["binding"]["projection_hash"] = digest
+    return {
+        "operation_id": "create_helper",
+        "order": 0,
+        "action": "create",
+        "resource_type": "helper",
+        "helper_type": "input_number",
+        "target_id": "input_number.hvac_target",
+        "depends_on": [],
+        "risk_level": "medium",
+        "semantic_projection": projection,
+        "semantic_projection_hash": digest,
+    }
+
+
 class ApprovalRenderingTests(unittest.TestCase):
     def test_ordered_review_is_visible_non_atomic_and_config_free(self):
         review = {
@@ -2910,37 +2951,7 @@ class ApprovalRenderingTests(unittest.TestCase):
             "risk_level": "medium",
             "expires_at": "2026-07-23T13:00:00+00:00",
             "challenge_expires_at": "2026-07-23T12:15:00+00:00",
-            "operation_summaries": [
-                {
-                    "operation_id": "create_helper",
-                    "order": 0,
-                    "action": "create",
-                    "resource_type": "helper",
-                    "helper_type": "input_number",
-                    "target_id": "input_number.hvac_target",
-                    "depends_on": [],
-                    "risk_level": "medium",
-                    "semantic_projection": {
-                        "status": "complete",
-                        "metadata": [
-                            {
-                                "field": "name",
-                                "value": "HVAC target",
-                            }
-                        ],
-                        "actions": [],
-                        "controls": [],
-                        "redaction_applied": False,
-                    },
-                    "changed_fields": [
-                        {
-                            "field": "name",
-                            "before": "",
-                            "after": "HVAC target",
-                        }
-                    ],
-                }
-            ],
+            "operation_summaries": [approval_render_operation()],
         }
         html = _render_review(
             "/api/hassio_ingress/dev14fixture", review, "csrf-value"
@@ -2948,7 +2959,7 @@ class ApprovalRenderingTests(unittest.TestCase):
         self.assertIn("Ordered configuration operations", html)
         self.assertIn("non-atomic", html)
         self.assertIn("input_number.hvac_target", html)
-        self.assertIn("Semantic approval detail", html)
+        self.assertIn("Authoritative semantic approval projection", html)
         self.assertIn("HVAC target", html)
         self.assertIn("Approve exact plan", html)
         self.assertNotIn("proposed_config", html)
@@ -2959,54 +2970,28 @@ class ApprovalRenderingTests(unittest.TestCase):
             "plan_id": "a" * 32,
             "plan_hash": "b" * 64,
             "operation_summaries": [
-                {
-                    "operation_id": "update_script",
-                    "order": 0,
-                    "action": "update",
-                    "resource_type": "script",
-                    "target_id": "bounded_script",
-                    "semantic_projection": {
-                        "status": "incomplete",
-                        "metadata": [],
-                        "actions": [],
-                        "controls": [],
-                    },
-                }
+                approval_render_operation(complete=False)
             ],
         }
         html = _render_review("", review, "csrf-value")
-        self.assertIn("semantic operation projection is incomplete", html)
+        self.assertIn("identity is incomplete or malformed", html)
         self.assertIn("Approval is disabled", html)
         self.assertNotIn("Approve exact plan", html)
         self.assertIn("Reject plan", html)
 
-    def test_redacted_semantic_projection_disables_approval(self):
+    def test_redacted_semantic_projection_is_safe_and_approvable(self):
         review = {
             "plan_id": "a" * 32,
             "plan_hash": "b" * 64,
             "operation_summaries": [
-                {
-                    "operation_id": "update_script",
-                    "order": 0,
-                    "action": "update",
-                    "resource_type": "script",
-                    "target_id": "bounded_script",
-                    "semantic_projection": {
-                        "status": "complete",
-                        "metadata": [],
-                        "actions": [],
-                        "controls": [],
-                        "redaction_applied": True,
-                    },
-                }
+                approval_render_operation(redacted=True)
             ],
         }
         html = _render_review("", review, "csrf-value")
-        self.assertIn(
-            "semantic operation projection is incomplete", html
-        )
-        self.assertIn("Approval is disabled", html)
-        self.assertNotIn("Approve exact plan", html)
+        self.assertIn("Protected value changed", html)
+        self.assertIn("token", html)
+        self.assertNotIn("synthetic-secret", html)
+        self.assertIn("Approve exact plan", html)
         self.assertIn("Reject plan", html)
 
     def test_oversized_projection_disables_approval(self):
