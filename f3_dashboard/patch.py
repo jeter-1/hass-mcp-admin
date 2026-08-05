@@ -27,6 +27,7 @@ from .json_codec import (
     clone_json,
     engineering_sha256,
     serialized_size,
+    strict_json_equal,
     upstream_config_hash,
     validate_json_value,
 )
@@ -232,7 +233,7 @@ def semantic_leaf_difference(
     budget[0] -= 1
     if budget[0] < 0 or depth > MAX_JSON_DEPTH:
         raise PatchCompilationError("Semantic difference traversal exceeds its bound")
-    if before == after:
+    if strict_json_equal(before, after):
         return 0
     if isinstance(before, dict) and isinstance(after, dict):
         count = 0
@@ -333,7 +334,7 @@ def compile_dashboard_patch(
     for operation in normalized:
         effects.append(_apply_one(result, operation))
 
-    if configuration != original:
+    if not strict_json_equal(configuration, original):
         raise PatchCompilationError("Patch compilation mutated its input")
     leaf_count = sum(effect.leaf_change_count for effect in effects)
     if leaf_count > MAX_SEMANTIC_LEAF_CHANGES:
@@ -381,7 +382,7 @@ def mismatch_paths(
         if visited > MAX_JSON_NODES:
             paths.append("/<traversal-bound>")
             break
-        if left == right:
+        if strict_json_equal(left, right):
             continue
         if isinstance(left, dict) and isinstance(right, dict):
             for key in sorted(set(left) | set(right), reverse=True):

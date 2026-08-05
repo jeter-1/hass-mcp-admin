@@ -23,6 +23,7 @@ from f3_dashboard.artifact_store import (  # noqa: E402
 from f3_dashboard.errors import ArtifactStorageError  # noqa: E402
 from f3_dashboard.json_codec import engineering_sha256, upstream_config_hash  # noqa: E402
 from f3_dashboard.models import VerificationOutcome  # noqa: E402
+from f3_dashboard.patch import mismatch_paths  # noqa: E402
 from f3_dashboard.observability import DashboardWriteObservability  # noqa: E402
 from f3_dashboard.serialization import proposal_hash  # noqa: E402
 from f3_dashboard.verification import (  # noqa: E402
@@ -216,6 +217,42 @@ class DashboardVerificationTests(unittest.IsolatedAsyncioTestCase):
             "/unknown_root_extension/nested/preserve", outcome.mismatch_paths
         )
         self.assertNotIn("external value", json.dumps(outcome.diagnostic_codes))
+
+    async def test_typed_json_mismatches_are_reported_and_cannot_verify(self):
+        result = json.loads(
+            json.dumps(self.proposal.compilation.resulting_configuration)
+        )
+        unknown = result["views"][0]["sections"][0]["cards"][0][
+            "unknown_future_field"
+        ]
+        unknown["keep_false"] = 0
+        unknown["keep_zero"] = 0.0
+        outcome = verify_dashboard_observation(
+            self.proposal, make_preread(result)
+        )
+        self.assertEqual(
+            outcome.outcome, VerificationOutcome.VERIFICATION_MISMATCH
+        )
+        self.assertFalse(outcome.verified)
+        self.assertFalse(outcome.untouched_fields_preserved)
+        self.assertIn(
+            "/views/0/sections/0/cards/0/unknown_future_field/keep_false",
+            outcome.mismatch_paths,
+        )
+        self.assertIn(
+            "/views/0/sections/0/cards/0/unknown_future_field/keep_zero",
+            outcome.mismatch_paths,
+        )
+
+    async def test_mismatch_paths_use_strict_json_types(self):
+        self.assertEqual(
+            mismatch_paths({"value": True}, {"value": 1}, limit=4),
+            ("/value",),
+        )
+        self.assertEqual(
+            mismatch_paths({"value": 1}, {"value": 1.0}, limit=4),
+            ("/value",),
+        )
 
     async def test_missing_or_partial_reread_requires_manual_review(self):
         missing = verify_dashboard_observation(self.proposal, None)

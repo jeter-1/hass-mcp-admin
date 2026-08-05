@@ -75,6 +75,51 @@ def engineering_sha256(value: Any) -> str:
     return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
 
 
+def strict_json_equal(
+    left: Any,
+    right: Any,
+    *,
+    max_depth: int = MAX_JSON_DEPTH,
+    max_nodes: int = MAX_JSON_NODES,
+) -> bool:
+    """Compare JSON recursively by exact JSON/Python type and value."""
+
+    validate_json_value(left, max_depth=max_depth, max_nodes=max_nodes)
+    validate_json_value(right, max_depth=max_depth, max_nodes=max_nodes)
+    remaining = max_nodes
+    stack: list[tuple[Any, Any, int]] = [(left, right, 0)]
+    while stack:
+        current_left, current_right, depth = stack.pop()
+        remaining -= 1
+        if remaining < 0:
+            raise PatchValidationError("JSON equality node limit exceeded")
+        if depth > max_depth:
+            raise PatchValidationError("JSON equality depth limit exceeded")
+        if type(current_left) is not type(current_right):
+            return False
+        if isinstance(current_left, dict):
+            if current_left.keys() != current_right.keys():
+                return False
+            stack.extend(
+                (current_left[key], current_right[key], depth + 1)
+                for key in reversed(tuple(current_left))
+            )
+            continue
+        if isinstance(current_left, list):
+            if len(current_left) != len(current_right):
+                return False
+            stack.extend(
+                (left_item, right_item, depth + 1)
+                for left_item, right_item in reversed(
+                    tuple(zip(current_left, current_right, strict=True))
+                )
+            )
+            continue
+        if current_left != current_right:
+            return False
+    return True
+
+
 def upstream_config_hash(value: Any) -> str:
     return hashlib.sha256(
         canonical_json_bytes(value, ensure_ascii=True)

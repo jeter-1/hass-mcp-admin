@@ -17,7 +17,7 @@ from .constants import (
     MAX_ARTIFACT_BYTES,
 )
 from .errors import ArtifactStorageError
-from .json_codec import canonical_json_bytes, engineering_sha256
+from .json_codec import canonical_json_bytes, engineering_sha256, strict_json_equal
 from .models import DashboardArtifactRecord, DashboardUpdateProposal
 from .serialization import private_proposal_projection, proposal_hash
 
@@ -117,7 +117,23 @@ class DashboardArtifactStore:
                 temporary.unlink(missing_ok=True)
                 raise ArtifactStorageError("Atomic dashboard artifact write failed") from exc
         persisted = self.get(proposal.plan_id)
-        if persisted is None or persisted != record:
+        if persisted is None or not strict_json_equal(
+            persisted.payload, record.payload
+        ) or (
+            persisted.schema,
+            persisted.plan_id,
+            persisted.created_at,
+            persisted.expires_at,
+            persisted.proposal_sha256,
+            persisted.payload_sha256,
+        ) != (
+            record.schema,
+            record.plan_id,
+            record.created_at,
+            record.expires_at,
+            record.proposal_sha256,
+            record.payload_sha256,
+        ):
             raise ArtifactStorageError("Dashboard artifact durable readback drifted")
         return persisted
 

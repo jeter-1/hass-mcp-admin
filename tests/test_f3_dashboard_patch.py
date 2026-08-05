@@ -19,7 +19,11 @@ from f3_dashboard.constants import (  # noqa: E402
     MAX_POINTER_DEPTH,
 )
 from f3_dashboard.errors import PatchCompilationError, PatchValidationError  # noqa: E402
-from f3_dashboard.json_codec import canonical_json_bytes  # noqa: E402
+from f3_dashboard.json_codec import (  # noqa: E402
+    canonical_json_bytes,
+    engineering_sha256,
+    strict_json_equal,
+)
 from f3_dashboard.patch import (  # noqa: E402
     compile_dashboard_patch,
     parse_pointer,
@@ -194,6 +198,49 @@ class DashboardPatchCompilerTests(unittest.TestCase):
             semantic_leaf_difference({"a": 1, "b": 2}, {"b": 2, "a": 1}),
             0,
         )
+
+    def test_strict_json_equality_distinguishes_boolean_integer_and_float(self):
+        cases = ((True, 1), (False, 0), (1, 1.0))
+        for before, after in cases:
+            with self.subTest(before=before, after=after):
+                self.assertFalse(strict_json_equal(before, after))
+                self.assertEqual(semantic_leaf_difference(before, after), 1)
+                self.assertNotEqual(
+                    engineering_sha256(before), engineering_sha256(after)
+                )
+        self.assertTrue(
+            strict_json_equal(
+                {"a": [True, 1, 1.0]}, {"a": [True, 1, 1.0]}
+            )
+        )
+        self.assertTrue(strict_json_equal({"a": 1, "b": 2}, {"b": 2, "a": 1}))
+
+    def test_nested_typed_changes_are_counted(self):
+        self.assertEqual(
+            semantic_leaf_difference(
+                {"nested": [True, {"value": 1}]},
+                {"nested": [1, {"value": 1.0}]},
+            ),
+            2,
+        )
+
+    def test_seventeen_boolean_number_changes_exceed_leaf_bound(self):
+        for before_value, after_value in ((True, 1), (False, 0)):
+            before = {
+                "values": {
+                    f"item_{index}": before_value for index in range(17)
+                }
+            }
+            after = {
+                f"item_{index}": after_value for index in range(17)
+            }
+            with self.subTest(before_value=before_value), self.assertRaisesRegex(
+                PatchCompilationError, "16-leaf"
+            ):
+                compile_dashboard_patch(
+                    before,
+                    [operation("replace", "/values", after)],
+                )
 
     def test_unknown_fields_falsey_values_and_order_are_preserved(self):
         original = deepcopy(self.config)

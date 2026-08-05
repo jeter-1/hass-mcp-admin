@@ -7,7 +7,7 @@ from typing import Any
 
 from .constants import MAX_DIFF_MISMATCH_PATHS, VERIFICATION_MODEL
 from .errors import RawEvidenceError, VerificationError
-from .json_codec import engineering_sha256
+from .json_codec import engineering_sha256, strict_json_equal
 from .models import (
     AtomicityStatus,
     DashboardPreflight,
@@ -190,7 +190,7 @@ def verify_dashboard_observation(
 
     expected = proposal.compilation.resulting_configuration
     observed_config = evidence.configuration
-    if observed_config == expected and (
+    if strict_json_equal(observed_config, expected) and (
         evidence.engineering_config_sha256 == proposal.compilation.resulting_sha256
         and evidence.upstream_config_hash
         == proposal.compilation.resulting_upstream_config_hash
