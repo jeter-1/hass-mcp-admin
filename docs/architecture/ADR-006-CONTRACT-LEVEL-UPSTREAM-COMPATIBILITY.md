@@ -1,6 +1,6 @@
 # ADR-006: Contract-level upstream compatibility admission
 
-Status: accepted for Dev15; amended for 2.0.1-rc1-dev2
+Status: accepted for Dev15; amended for 2.0.1-rc1-dev2 and 2.2.0-beta.21
 
 ## Supersession
 
@@ -46,7 +46,8 @@ contract boundary.
 
 Server identity, supported MCP protocol, and exact reviewed release-entry
 authority remain global prerequisites. The compiled generic-read registry
-currently authorizes exact `ha-mcp` 7.14.1 and 7.14.2 entries. A different server name,
+currently authorizes exact `ha-mcp` 7.14.1, 7.14.2, 8.0.0, and reviewed
+immutable-OCI 8.1.0 entries. A different server name,
 malformed discovery response, unsupported protocol, unreviewed patch/minor/
 major/prerelease/downgrade, or transport failure cannot be repaired by a
 matching self-advertised tool name or schema.
@@ -76,7 +77,8 @@ cannot become compatibility authority.
 
 ### Generic automatic reads
 
-Each of the 26 reviewed `automatic_read` entries is evaluated independently.
+Each release's reviewed `automatic_read` entries is evaluated independently
+(26 for 7.14.x and 24 for 8.0.0/8.1.0).
 Admission requires the exact upstream tool name and the complete
 dispatch-relevant contract owned by Engineering, including:
 
@@ -111,8 +113,8 @@ hints, malformed titles, a missing or false `readOnlyHint`, and a true
 Engineering's published annotations remain a separate, stricter binary-owned
 policy and are not used as a substitute for the reviewed upstream wire shape.
 
-The pinned release declares the same generic object output schema for all 26
-reads. Its canonical fingerprint is stored for every read and must match at
+The pinned releases declare the reviewed generic object output schema for
+their automatic reads. Its canonical fingerprint is stored for every read and must match at
 discovery and immediately before dispatch. This generic schema is evidence of
 wire compatibility only; the binary-owned behavior adapter defines what
 Engineering consumes and how partial, bounded, sanitized output is reported.
@@ -213,7 +215,8 @@ The generic gateway reports one bounded aggregate compatibility state:
   obtained.
 
 Unreviewed additions and known blocked tools are counted separately. They do
-not change `exact` to `partial` when all 26 reviewed reads still match.
+not change `exact` to `partial` when all automatic reads reviewed for the exact
+selected release still match.
 
 Health and capability output distinguish at least:
 

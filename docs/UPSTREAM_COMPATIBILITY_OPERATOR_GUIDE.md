@@ -11,7 +11,9 @@ runtime decision is
    `observed_upstream_server_version`, `observed_protocol_version`, and
    `observed_identity_status`. The endpoint must identify as `ha-mcp`, match an
    explicit reviewed release entry, and negotiate the supported MCP protocol.
-   The compiled registry currently authorizes exact 7.14.1 and 7.14.2 entries.
+   The compiled registry currently authorizes exact 7.14.1, 7.14.2, 8.0.0,
+   and reviewed immutable-OCI 8.1.0 entries. The 8.1.0 release-page
+   executables and MCPB are excluded because they report 8.0.0 at runtime.
    Identity, unreviewed-version, malformed-version, or protocol failure is
    global and must not be worked around with a self-advertised schema match.
 2. Read `get_server_health.upstream_read_gateway`.
@@ -42,9 +44,11 @@ runtime decision is
 7. Require zero generic writes, arbitrary forwarding, direct-HA fallback, and
    provider fallback.
 
-With 41 static tools, all 26 reviewed reads produce 67 registered tools. One
-missing or quarantined read produces 66. Additional blocked or unreviewed tools
-do not increase the registered count.
+With 48 static tools, the exact 7.14.x 26-read profile produces 74 registered
+tools. The exact 8.0.0 and 8.1.0 24-read profiles produce 72 and hold exactly
+`ha_search` and `ha_get_operation_status`. One missing or quarantined read
+reduces the corresponding total by one. Additional blocked, held, or
+unreviewed tools do not increase the registered count.
 
 Interpret `compatibility_status` as follows:
 
@@ -183,8 +187,9 @@ contract check is evidence for review; it cannot authorize its own release.
 The compiled registry is source-controlled and contains human-owned policy; it
 does not fetch policy or automatically track an upstream latest tag.
 
-Rolling between reviewed 7.14.1 and 7.14.2 triggers fresh discovery and atomic
-route replacement in the same Engineering image. Unknown releases admit no
+Rolling between reviewed 7.14.1, 7.14.2, 8.0.0, and the exact immutable-OCI
+8.1.0 profile triggers fresh discovery and atomic route replacement in the
+same Engineering image. Unknown releases admit no
 delegated reads. An exact reviewed release may still expose a safe exact subset:
 changed reads are quarantined, new tools remain unreviewed, removed tools are
 reported, and write or mixed classifications remain blocked. A full-catalog
@@ -204,6 +209,21 @@ Engineering before treating those delegated-read failures as a connector
 defect. Do not claim that a live artifact digest or source revision was verified
 from MCP discovery; deployment artifact verification remains an operator
 responsibility.
+
+For exact 8.1.0, treat MCP `tools/list` as catalog authority. Source-only,
+conditional, hidden, and nonadvertised declarations are review diagnostics,
+not additional runtime tools. Require 78 unique advertised names and complete
+classification. `ha_manage_hacs` is one persistent-write tool because its
+8.1.0 action enum includes `remove`; none of its actions is an Engineering
+route. `ha_get_hacs_info` alone uses the exact top-level-success response model.
+
+Lifecycle installed-version binding uses Supervisor's endpoint-bound installed
+add-on inventory, not the source tag's add-on `config.yaml`. The 8.1.0 tag
+contains a stale 8.0.0 add-on version while the published add-on metadata,
+image label/package, and MCP initialize identity are 8.1.0. Any disagreement
+must fail before restart plan persistence. Controlled reload and Home Assistant
+restart do not consume that inventory; do not infer a wider impact without a
+focused test.
 
 ## Dashboard exact-attestation path
 
