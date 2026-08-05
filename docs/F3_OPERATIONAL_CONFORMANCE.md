@@ -38,6 +38,26 @@ and rollback unavailability. Missing, consumed, stale, incomplete, ambiguous,
 or prohibited plan evidence requires a new plan; it is never filled from
 mutable current state.
 
+## Prepared-operation authority integrity
+
+`f3-operational-prepared-authority-v1` identifies one deterministic canonical
+payload for the complete prepared operation. The payload binds the F3
+contract, adapter/capability/operation and exact target, plan/public-task/child
+identities and expiry, current/proposed hashes, risk and policy evidence,
+provider identity/contract/operation/arguments/admission evidence, baseline,
+effects/warnings/limitations, verification model and contract, rollback
+unavailability, exact evidence duration, and selective hold. Mutable dispatch,
+response, observation, verification, and reconciliation results are excluded.
+
+Preparation and later integrity checks call the same pure payload builder and
+hash function. Every adapter entry point revalidates closed derived fields and
+recomputes the hash before using the operation. Final preflight additionally
+compares it with an expected hash stored independently in the authoritative F3
+child authority snapshot. A caller that alters fields and supplies a matching
+new checksum therefore cannot replace the child-bound authority. Either stale
+or recomputed-hash corruption fails before approval, intent, provider I/O, or
+hold selection.
+
 ## Closed capabilities
 
 One `OperationalAdministrationAdapter` delegates to four strategies:
@@ -86,6 +106,12 @@ write, sleep, retry, or branching callback before network mutation. Lock,
 expiry, policy, provider, target, baseline, configuration, approval-callback,
 and intent failures therefore invoke the provider zero times. An
 approval-success/intent-failure retry reuses the same idempotent authority.
+
+Before the merged executor may claim a child, the C2 binding verifies that its
+configured `post_dispatch_evidence_seconds` is an integer exactly equal to the
+prepared operation: backup 86,400 seconds, reload 900 seconds, add-on restart
+1,800 seconds, and Home Assistant restart 1,800 seconds. It never mutates or
+rounds executor timing and rejects shorter, longer, or generic timing.
 
 ## Provider admission
 
@@ -157,6 +183,15 @@ raw responses, inventories, metadata, endpoints, configuration, credentials,
 URLs, and exception text. Missing optional provider IDs never authorize retry;
 corrupt or contradictory evidence fails closed to manual review.
 
+When intent exists, the projection parses its timezone-aware timestamps and
+requires the durable deadline to equal the intent commit instant plus the
+exact prepared duration. Reconstruction requires canonical `RecoveryContext`
+to name that same instant. Formatting differences are normalized to UTC, but
+rounding, shortening, extension, replacement, or omission is rejected without
+redispatch. The deadline comparison is inclusive: an unproven result remains
+observing before the threshold and enters manual review at the threshold.
+Expiry never releases a selective hold.
+
 ## Operation-specific lifecycle
 
 Backup preflight requires fresh exact admission, readable bounded baseline
@@ -214,5 +249,6 @@ into authoritative child records, activate one central startup/periodic
 coordinator, add selective hold promotion and authenticated release through the
 private Ingress reconciliation surface, implement separately governed rollback
 Option A where approved, and migrate runtime routes. It must also prove sibling
-lock edges, legacy restart reconciliation migration, and exact-head validation.
-Issue #92 remains separate.
+lock edges, legacy restart reconciliation migration, construct/select the exact
+per-operation executor timing, bind the production authority reader to the
+durable child, and complete exact-head validation. Issue #92 remains separate.

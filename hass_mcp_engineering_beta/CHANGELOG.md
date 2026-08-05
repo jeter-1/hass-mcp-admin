@@ -11,6 +11,17 @@
   mutation, and post-intent reconstruction readback-only. Operation evidence
   is a bounded projection of the authoritative F3 child record; C2 adds no
   independent recovery ledger.
+- Correct independent rereview findings by deterministically binding every
+  prepared target, plan, policy, provider, argument, baseline, verification,
+  reporting, recovery, deadline, and hold field under
+  `f3-operational-prepared-authority-v1`. Recompute that authority at every
+  adapter boundary and compare it with the durable child's independently stored
+  expected hash during final preflight.
+- Require the merged executor's configured evidence duration to match the exact
+  prepared operation before claim: 86,400 seconds for backup, 900 for reload,
+  and 1,800 for either restart. Require durable child evidence and recovery to
+  preserve the exact UTC intent/deadline delta; expiry is inclusive, enters
+  manual review, and never releases a hold automatically.
 - Bind exact resource, Home Assistant core, and reviewed provider locks,
   including the Beta 18 `reload:<domain>` conflict key. Manual-review holds
   select only the affected resource key and never expire automatically;

@@ -20,11 +20,28 @@ merged executor commits intent before the single provider mutation. Once intent
 exists, cancellation and redispatch are prohibited; recovery is observation
 and verification only.
 
+The immutable prepared authority uses
+`f3-operational-prepared-authority-v1`. One pure canonical payload builder
+binds every execution-relevant plan, target, policy, provider, argument,
+baseline, verification, reporting, deadline, and hold field. Preparation and
+all adapter boundaries recompute that payload; final preflight also compares
+the result with an independently stored expected hash in the durable child
+authority snapshot. Recomputing a changed caller object cannot grant it new
+authority.
+
 The F3 child record and its bounded operation-evidence namespace are the sole
 execution authority. C2 exposes only a frozen read-only projection. JSONL and
 events are secondary audit evidence. No operation-specific ledger, task store,
 coordinator, or background worker is created, and no operation evidence write
 may occur between intent and provider mutation.
+
+Before claim, C2 requires the merged executor's configured evidence duration
+to equal the exact prepared operation duration. The child evidence projection
+then requires normalized UTC deadline equality with intent commit time plus
+that duration, and canonical recovery context must name the same instant.
+Shortening, extension, rounding, omission, or replacement fails closed without
+redispatch. Deadline comparison is inclusive; expiry changes the outcome to
+manual review but cannot release a hold.
 
 Only the affected resource key may be promoted for manual review. Observation
 and escalation deadlines change outcomes but never release holds. Verified
@@ -42,7 +59,8 @@ readiness is insufficient. Add-on restart requires evidence beyond unchanged
 running state. HA restart requires persisted outage/reconnect evidence. These
 cases reach manual review without redispatch.
 
-F3-D must implement authoritative child evidence mapping, one central startup
-and periodic coordinator, selective hold administration, the private
-reconciliation surface, governed rollback Option A where approved, and runtime
-route migration. Issue #92 and dashboard execution remain outside this ADR.
+F3-D must implement production authority-reader and child-evidence mapping,
+exact per-operation executor construction, one central startup and periodic
+coordinator, selective hold administration, the private reconciliation
+surface, governed rollback Option A where approved, and runtime route
+migration. Issue #92 and dashboard execution remain outside this ADR.

@@ -15,12 +15,29 @@ order: complete durable locks, final mutable-state preflight, caller-owned
 idempotent authorization consumption, durable intent, then one reviewed
 provider mutation. C2 performs no evidence write between intent and provider.
 
+Independent rereview corrections add
+`f3-operational-prepared-authority-v1`, one canonical payload used both to
+create and revalidate the prepared hash. Every execution-relevant target,
+plan, policy, provider, argument, baseline, reporting, verification, recovery,
+hold, and deadline field is bound at every adapter boundary. Final preflight
+also compares the recomputed value with the authoritative durable child hash,
+so a caller-supplied recomputed checksum cannot replace the stored authority.
+Tampering fails before approval, intent, or provider invocation.
+
 The former independent operational recovery ledger is removed. C2 defines
 only a frozen bounded read-only projection that F3-D must map from the
 authoritative child execution record. JSONL remains secondary audit evidence;
 corrupt or contradictory projections fail closed and missing optional provider
 IDs never allow retry. Post-intent recovery is readback-only with one reserved
 dispatch and an immutable intent-relative deadline.
+
+The executor binding now rejects any configured duration other than the exact
+prepared value before execution claim: 86,400 seconds for backup, 900 for
+reload, and 1,800 for either restart. The evidence projection normalizes UTC
+timestamps and requires durable deadline equality with intent time plus that
+duration. Reconstruction cannot shorten, extend, round, or replace it. The
+threshold is inclusive: unresolved evidence enters manual review exactly at
+deadline, while selective holds remain non-expiring.
 
 Exact complete lock sets now use canonical lock objects. Reload takes the same
 exclusive `reload:<domain>` key that Beta 18 configuration writes take shared.
@@ -52,9 +69,10 @@ exact 8.0.0 78/24/72 accounting, held tools `ha_search` and
 `ha_get_operation_status`, `aiohttp==3.14.3`, `cryptography==50.0.0`, stable
 v1.1.2, and zero fallback.
 
-F3-D still owns durable child execution, authoritative operation-evidence
-mapping, one central reconciliation coordinator, selective hold promotion and
-release, private authenticated manual reconciliation, governed rollback Option
-A, and runtime route migration. Issue #92 remains separate. This source
+F3-D still owns durable child execution, production authority-reader and
+operation-evidence mapping, exact per-operation executor construction, one
+central reconciliation coordinator, selective hold promotion and release,
+private authenticated manual reconciliation, governed rollback Option A, and
+runtime route migration. Issue #92 remains separate. This source
 declaration authorizes no merge, tag, release, image, attestation, provenance,
 deployment, production access, or live operational action.

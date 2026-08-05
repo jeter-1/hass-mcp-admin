@@ -6,8 +6,9 @@ backup, controlled reload, exact add-on restart, and Home Assistant restart.
 Existing application, governance, provider-routing, and public MCP routes do
 not import or activate them. The isolated paths consume the canonical Beta 17
 contracts and accepted Beta 18 executor boundary; durable child ownership,
-the central coordinator, selective-hold administration, private reconciliation,
-rollback, and route activation remain F3-D. It preserves Beta 15 lifecycle
+production authority/evidence mapping, exact per-operation executor
+construction, the central coordinator, selective-hold administration, private
+reconciliation, rollback, and route activation remain F3-D. It preserves Beta 15 lifecycle
 response handling, Beta 13's
 `aiohttp` and `cryptography` security updates, Beta 14 model-aware catalog
 validation, bounded restart reconciliation, and exact 7.14.2 compatibility.
@@ -161,9 +162,15 @@ pending F3-D. Beta 19 layers disconnected F3-C2 operational conformance on the
 exact merged Beta 18 base. It consumes canonical F3 objects, places final
 locked preflight before caller-owned approval consumption, and keeps durable
 intent adjacent to the one provider mutation with no intervening evidence
-write. F3 child records remain authoritative; selective manual-review holds
-never expire automatically, and coordinator, private reconciliation, hold
-administration, governed rollback, and issue #92 remain separate. Current provider behavior,
+write. One canonical prepared-authority payload is rehashed at every adapter
+boundary and compared with the durable child's expected hash during final
+preflight. Executor timing is rejected before claim unless it exactly matches
+the operation's 86,400/900/1,800/1,800-second evidence duration; child evidence
+must preserve that exact intent-relative deadline through reconstruction. F3
+child records remain authoritative; deadline expiry is inclusive and enters
+manual review without automatically releasing selective holds. Coordinator,
+private reconciliation, hold administration, governed rollback, and issue #92
+remain separate. Current provider behavior,
 public tools, task and plan schemas, F2 policy, and fallback remain unchanged.
 Beta 7 response truthfulness and current prohibited projection remain
 unchanged. Its
