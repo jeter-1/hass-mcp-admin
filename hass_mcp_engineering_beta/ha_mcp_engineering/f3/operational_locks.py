@@ -16,14 +16,6 @@ from .operational_models import (
 )
 
 
-EVIDENCE_DEADLINE_SECONDS = {
-    CREATE_FULL_BACKUP: 86_400,
-    CONTROLLED_RELOAD: 900,
-    RESTART_ADDON: 1_800,
-    RESTART_HOME_ASSISTANT: 1_800,
-}
-
-
 def normalize_operational_lock_requests(
     requests: Iterable[LockRequest],
 ) -> tuple[LockRequest, ...]:
@@ -126,26 +118,3 @@ class OperationalLockSetCalculator:
         elif operation.operation != RESTART_HOME_ASSISTANT:
             raise ValueError("unknown operational lock model")
         return normalize_operational_lock_requests(requests)
-
-
-def operational_escalation_policy(
-    operation: str, target_id: str
-) -> tuple[tuple[str, ...], int]:
-    """Return affected-only hold keys and the evidence/escalation deadline.
-
-    The duration never releases a hold.  Deadline expiry changes the outcome
-    to manual review; a promoted hold remains until verified resolution or a
-    future authenticated F3-D reconciliation action.
-    """
-
-    if operation == CREATE_FULL_BACKUP:
-        keys = ("backup:local_full_backup",)
-    elif operation == CONTROLLED_RELOAD:
-        keys = (f"reload:{target_id}",)
-    elif operation == RESTART_ADDON:
-        keys = (f"addon:{target_id}",)
-    elif operation == RESTART_HOME_ASSISTANT:
-        keys = ("home_assistant:core",)
-    else:
-        raise ValueError("unknown operational hold model")
-    return keys, EVIDENCE_DEADLINE_SECONDS[operation]

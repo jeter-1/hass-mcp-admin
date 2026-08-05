@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
 
@@ -23,10 +24,7 @@ from ha_mcp_engineering.f3.locks import (
 )
 
 from ..governance.models import ApprovalState, ChangePlan, PlanStatus
-from .operational_locks import (
-    OperationalLockSetCalculator,
-    operational_escalation_policy,
-)
+from .operational_locks import OperationalLockSetCalculator
 from .operational_models import (
     CAPABILITY_IDENTITIES,
     CONTROLLED_RELOAD,
@@ -34,6 +32,7 @@ from .operational_models import (
     EXPECTED_EFFECT_CODES,
     OPERATIONAL_ADAPTER_ID,
     OPERATIONAL_PLAN_CONTRACT_VERSION,
+    OPERATIONAL_PREPARED_AUTHORITY_MODEL,
     OPERATIONAL_PROVIDER_CONTRACT_MODEL,
     POLICY_EXPECTATIONS,
     PROVIDER_OPERATIONS,
@@ -49,8 +48,11 @@ from .operational_models import (
     OperationalPreparationRequest,
     PreparedOperationalOperation,
     canonical_json,
+    operational_escalation_policy,
     provider_arguments,
+    recompute_operational_prepared_hash,
     stable_hash,
+    validate_prepared_operational_authority,
 )
 from .operational_observability import (
     OperationalEventRecorder,
@@ -115,6 +117,35 @@ def _approval_bundle_hash(plan: ChangePlan) -> str:
             ),
         }
     )
+
+
+def _validate_prepared(
+    operation: PreparedOperationalOperation,
+) -> None:
+    try:
+        validate_prepared_operational_authority(operation)
+    except (AttributeError, TypeError, ValueError):
+        raise OperationalAdapterError("prepared_operation_integrity") from None
+
+
+def validate_operational_executor_timing(
+    executor: Any,
+    prepared: PreparedOperationalOperation,
+) -> None:
+    """Require exact operation timing before the executor claims a child."""
+
+    _validate_prepared(prepared)
+    try:
+        duration = executor.executor_timing.post_dispatch_evidence_seconds
+    except AttributeError:
+        raise OperationalAdapterError(
+            "executor_evidence_deadline_mismatch"
+        ) from None
+    if (
+        type(duration) is not int
+        or duration != prepared.evidence_deadline_seconds
+    ):
+        raise OperationalAdapterError("executor_evidence_deadline_mismatch")
 
 
 class OperationalAdministrationAdapter:
@@ -261,37 +292,6 @@ class OperationalAdministrationAdapter:
             operation, plan.target_id
         )
         approval_hash = _approval_bundle_hash(plan)
-        prepared_payload = {
-            "contract_model": F3_ADAPTER_CONTRACT_MODEL,
-            "adapter_id": OPERATIONAL_ADAPTER_ID,
-            "capability_id": strategy.capability.capability_id,
-            "operation": operation,
-            "target": {
-                "target_type": plan.target_type,
-                "target_id": plan.target_id,
-            },
-            "plan_id": plan.plan_id,
-            "plan_hash": proposal.expected_plan_hash,
-            "plan_contract_version": plan.contract_version,
-            "public_task_id": proposal.public_task_id,
-            "child_execution_id": proposal.child_execution_id,
-            "current_state_fingerprint": plan.current_state_fingerprint,
-            "normalized_proposed_hash": plan.proposed_config_hash,
-            "policy_decision_hash": policy.policy_decision_hash,
-            "approval_bundle_hash": approval_hash,
-            "provider": operational.provider,
-            "provider_evidence": operational.provider_capability_evidence,
-            "provider_operation": PROVIDER_OPERATIONS[operation],
-            "provider_arguments": arguments,
-            "provider_slug": proposal.authoritative_provider_slug,
-            "provider_identity_evidence_hash": (
-                proposal.provider_identity_evidence_hash
-            ),
-            "verification_contract": operational.verification_contract,
-            "rollback_available": operational.rollback_available,
-            "selective_hold_keys": hold_keys,
-            "evidence_deadline_seconds": evidence_seconds,
-        }
         prepared = PreparedOperationalOperation(
             contract_model=F3_ADAPTER_CONTRACT_MODEL,
             adapter_id=OPERATIONAL_ADAPTER_ID,
@@ -299,7 +299,7 @@ class OperationalAdministrationAdapter:
             target=OperationTarget(plan.target_type, plan.target_id),
             current_state_fingerprint=plan.current_state_fingerprint,
             normalized_proposed_hash=plan.proposed_config_hash,
-            prepared_operation_hash=stable_hash(prepared_payload),
+            prepared_operation_hash="0" * 64,
             risk_level=_enum_value(plan.risk.level),
             policy_decision_hash=policy.policy_decision_hash,
             approval_bundle_hash=approval_hash,
@@ -338,7 +338,13 @@ class OperationalAdministrationAdapter:
             evidence_deadline_seconds=evidence_seconds,
             selective_hold_keys=hold_keys,
         )
-        prepared.validate()
+        prepared = replace(
+            prepared,
+            prepared_operation_hash=recompute_operational_prepared_hash(
+                prepared
+            ),
+        )
+        _validate_prepared(prepared)
         self.metrics.increment(operation, "preparations")
         self.events.emit(
             {
@@ -355,6 +361,7 @@ class OperationalAdministrationAdapter:
     def lock_requests(
         self, operation: PreparedOperationalOperation
     ) -> tuple[Any, ...]:
+        _validate_prepared(operation)
         self._strategy(operation.operation)
         return self.lock_calculator.calculate(operation)
 
@@ -415,6 +422,13 @@ class OperationalAdministrationAdapter:
             ),
         }
         mismatches = [name for name, values in pairs.items() if values[0] != values[1]]
+        if (
+            authority.prepared_authority_model
+            != OPERATIONAL_PREPARED_AUTHORITY_MODEL
+            or authority.prepared_operation_hash
+            != prepared.prepared_operation_hash
+        ):
+            mismatches.append("prepared_operation_authority")
         if authority.authorization_evidence_status != "valid":
             mismatches.append("authorization_evidence")
         if (
@@ -444,7 +458,7 @@ class OperationalAdministrationAdapter:
         *,
         acquired_locks: tuple[Any, ...],
     ) -> PreflightResult:
-        operation.validate()
+        _validate_prepared(operation)
         strategy = self._strategy(operation.operation)
         self.metrics.increment(operation.operation, "preflight_attempts")
         expected_locks = self.lock_requests(operation)
@@ -480,10 +494,15 @@ class OperationalAdministrationAdapter:
         except (TypeError, ValueError):
             mismatches.append("plan_expiration")
         if mismatches:
+            category = (
+                "prepared_operation_authority"
+                if "prepared_operation_authority" in mismatches
+                else "authority_preflight_rejected"
+            )
             return self._preflight_rejection(
                 operation,
                 outcome=NormalizedOperationOutcome.PREFLIGHT_REJECTED,
-                code="authority_preflight_rejected",
+                code=category,
                 mismatch_fields=tuple(sorted(set(mismatches))),
             )
         eligible, category, mismatch_fields, fresh = await strategy.preflight_evidence(
@@ -573,6 +592,7 @@ class OperationalAdministrationAdapter:
         *,
         before_dispatch: DispatchIntentRecorder,
     ) -> DispatchResult:
+        _validate_prepared(operation)
         if (
             preflight.eligible is not True
             or preflight.confirmed_target != operation.target
@@ -698,6 +718,7 @@ class OperationalAdministrationAdapter:
         operation: PreparedOperationalOperation,
         dispatch: DispatchResult | None,
     ) -> ObservationResult:
+        _validate_prepared(operation)
         return await self._observe(
             operation,
             provider_response_received=(
@@ -713,6 +734,7 @@ class OperationalAdministrationAdapter:
         operation: PreparedOperationalOperation,
         observation: ObservationResult,
     ) -> VerificationResult:
+        _validate_prepared(operation)
         outcome_value = _enum_value(observation.outcome)
         if (
             outcome_value == NormalizedOperationOutcome.MANUAL_REVIEW_REQUIRED.value
@@ -754,6 +776,7 @@ class OperationalAdministrationAdapter:
         *,
         context: RecoveryContext,
     ) -> ObservationResult:
+        _validate_prepared(operation)
         # The merged executor currently supplies its validated internal
         # recovery view structurally.  Normalize it immediately into the sole
         # shipped canonical contract object before using any field.
@@ -789,14 +812,19 @@ class OperationalAdministrationAdapter:
                 ),
                 reason="recovery_evidence_corrupt",
             )
+        try:
+            recovery_deadline_matches = (
+                canonical_context.post_dispatch_deadline is not None
+                and evidence.evidence_deadline is not None
+                and _parse_aware(canonical_context.post_dispatch_deadline)
+                == _parse_aware(evidence.evidence_deadline)
+            )
+        except (TypeError, ValueError):
+            recovery_deadline_matches = False
         if (
             evidence.dispatch_count != 1
             or not evidence.dispatch_intent_recorded
-            or (
-                canonical_context.post_dispatch_deadline is not None
-                and canonical_context.post_dispatch_deadline
-                != evidence.evidence_deadline
-            )
+            or not recovery_deadline_matches
         ):
             return self._manual_observation(
                 operation,
@@ -851,7 +879,7 @@ class OperationalAdministrationAdapter:
         *,
         expected_current_fingerprint: str,
     ) -> None:
-        operation.validate()
+        _validate_prepared(operation)
         del expected_current_fingerprint
         return None
 
@@ -861,7 +889,7 @@ def validate_execution_binding(
 ) -> None:
     """Bind the future child identity to one approved public task and plan."""
 
-    prepared.validate()
+    _validate_prepared(prepared)
     if (
         getattr(identity, "task_id", None) != prepared.child_execution_id
         or getattr(identity, "plan_id", None) != prepared.plan_id
@@ -879,7 +907,9 @@ async def execute_operational(
 ) -> Any:
     """Narrow binding helper; the merged executor remains sole authority."""
 
+    _validate_prepared(prepared)
     validate_execution_binding(prepared, identity)
+    validate_operational_executor_timing(executor, prepared)
     return await executor.execute(
         adapter=adapter,
         prepared=prepared,

@@ -9,7 +9,7 @@ or an independent execution authority.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import re
@@ -39,6 +39,9 @@ OPERATIONAL_PROVIDER_CONTRACT_MODEL = (
 OPERATIONAL_PLAN_CONTRACT_VERSION = 3
 OPERATIONAL_EVIDENCE_PROJECTION_MODEL = (
     "f3-authoritative-operational-child-evidence-v1"
+)
+OPERATIONAL_PREPARED_AUTHORITY_MODEL = (
+    "f3-operational-prepared-authority-v1"
 )
 
 CREATE_FULL_BACKUP = "create_full_backup"
@@ -81,6 +84,13 @@ PROVIDER_OPERATIONS = {
     RESTART_HOME_ASSISTANT: "ha_restart",
 }
 
+PROVIDER_IDENTITIES = {
+    CREATE_FULL_BACKUP: "upstream_operational_backup",
+    CONTROLLED_RELOAD: "upstream_operational_lifecycle",
+    RESTART_ADDON: "upstream_operational_lifecycle",
+    RESTART_HOME_ASSISTANT: "upstream_operational_lifecycle",
+}
+
 VERIFICATION_MODELS = {
     CREATE_FULL_BACKUP: "f3-full-backup-exact-readback-v1",
     CONTROLLED_RELOAD: "f3-controlled-reload-effect-readback-v1",
@@ -107,6 +117,20 @@ POLICY_EXPECTATIONS = {
     CONTROLLED_RELOAD: ("standard_admin", "moderate", "indirect"),
     RESTART_ADDON: ("elevated_admin", "high", "indirect"),
     RESTART_HOME_ASSISTANT: ("elevated_admin", "high", "indirect"),
+}
+
+RISK_LEVEL_EXPECTATIONS = {
+    CREATE_FULL_BACKUP: "medium",
+    CONTROLLED_RELOAD: "medium",
+    RESTART_ADDON: "high",
+    RESTART_HOME_ASSISTANT: "high",
+}
+
+EVIDENCE_DEADLINE_SECONDS = {
+    CREATE_FULL_BACKUP: 86_400,
+    CONTROLLED_RELOAD: 900,
+    RESTART_ADDON: 1_800,
+    RESTART_HOME_ASSISTANT: 1_800,
 }
 
 RELOAD_PROVIDER_TARGETS = {
@@ -199,6 +223,10 @@ class OperationalCapabilityDescriptor(AdapterCapabilityDescriptor):
             raise ValueError("adapter identity is invalid")
         if self.target_class != TARGET_CLASSES[operation]:
             raise ValueError("target class is invalid")
+        if self.provider != PROVIDER_IDENTITIES[operation]:
+            raise ValueError("provider identity is invalid")
+        if self.provider_contract_model != OPERATIONAL_PROVIDER_CONTRACT_MODEL:
+            raise ValueError("provider contract is invalid")
         if self.provider_operation != PROVIDER_OPERATIONS[operation]:
             raise ValueError("provider operation is invalid")
         if self.verification_contract_model != VERIFICATION_MODELS[operation]:
@@ -251,6 +279,8 @@ class OperationalAuthoritySnapshot:
     operation: str
     target_type: str
     target_id: str
+    prepared_authority_model: str
+    prepared_operation_hash: str
     policy_decision_hash: str
     approval_bundle_hash: str
     authorization_evidence_status: str
@@ -297,63 +327,7 @@ class PreparedOperationalOperation(PreparedOperation):
     selective_hold_keys: tuple[str, ...]
 
     def validate(self) -> None:
-        if self.contract_model != F3_ADAPTER_CONTRACT_MODEL:
-            raise ValueError("prepared adapter model is invalid")
-        if self.adapter_id != OPERATIONAL_ADAPTER_ID:
-            raise ValueError("prepared adapter identity is invalid")
-        if self.operation not in SUPPORTED_OPERATIONS:
-            raise ValueError("prepared operation is unsupported")
-        _require_identifier(self.target.target_type, field_name="target_type")
-        _require_identifier(self.target.target_id, field_name="target_id")
-        if self.target.target_type != TARGET_TYPES[self.operation]:
-            raise ValueError("prepared target type is invalid")
-        if self.capability_id != CAPABILITY_IDENTITIES[self.operation]:
-            raise ValueError("prepared capability identity is invalid")
-        if self.target_class != TARGET_CLASSES[self.operation]:
-            raise ValueError("prepared target class is invalid")
-        for name in (
-            "current_state_fingerprint",
-            "normalized_proposed_hash",
-            "prepared_operation_hash",
-            "policy_decision_hash",
-            "approval_bundle_hash",
-            "verification_contract_hash",
-            "provider_arguments_hash",
-            "provider_identity_evidence_hash",
-        ):
-            _require_sha256(getattr(self, name), field_name=name)
-        for name in (
-            "plan_id",
-            "public_task_id",
-            "child_execution_id",
-        ):
-            _require_identifier(getattr(self, name), field_name=name)
-        if self.plan_contract_version != OPERATIONAL_PLAN_CONTRACT_VERSION:
-            raise ValueError("operational plan contract is unsupported")
-        _parse_aware(self.plan_expires_at, field_name="plan_expires_at")
-        if not _SLUG.fullmatch(self.authoritative_provider_slug):
-            raise ValueError("prepared provider slug is invalid")
-        if self.provider_operation != PROVIDER_OPERATIONS[self.operation]:
-            raise ValueError("prepared provider operation is invalid")
-        if self.provider_contract_model != OPERATIONAL_PROVIDER_CONTRACT_MODEL:
-            raise ValueError("prepared provider contract is invalid")
-        if self.verification_contract_model != VERIFICATION_MODELS[self.operation]:
-            raise ValueError("prepared verification model is invalid")
-        if self.rollback_available:
-            raise ValueError("operational rollback is not available")
-        decoded_object(self.provider_arguments_json, field_name="provider_arguments")
-        decoded_object(self.provider_evidence_json, field_name="provider_evidence")
-        decoded_object(self.baseline_json, field_name="baseline")
-        decoded_object(
-            self.verification_contract_json,
-            field_name="verification_contract",
-        )
-        if stable_hash(self.provider_arguments_json) != self.provider_arguments_hash:
-            raise ValueError("provider argument hash is invalid")
-        if len(self.selective_hold_keys) != 1:
-            raise ValueError("exactly one affected-resource hold is required")
-        if not 60 <= self.evidence_deadline_seconds <= 86_400:
-            raise ValueError("evidence deadline is invalid")
+        validate_prepared_operational_authority(self)
 
     @property
     def provider_arguments(self) -> dict[str, Any]:
@@ -404,6 +378,7 @@ class OperationalEvidenceProjection:
     jsonl_authoritative: bool = False
 
     def validate(self, operation: PreparedOperationalOperation) -> None:
+        validate_prepared_operational_authority(operation)
         if self.source_model != OPERATIONAL_EVIDENCE_PROJECTION_MODEL:
             raise ValueError("operational evidence source is not authoritative")
         if (
@@ -423,8 +398,13 @@ class OperationalEvidenceProjection:
             deadline = _parse_aware(
                 self.evidence_deadline, field_name="evidence_deadline"
             )
-            if deadline <= committed:
-                raise ValueError("evidence deadline does not follow intent")
+            expected_deadline = committed + timedelta(
+                seconds=operation.evidence_deadline_seconds
+            )
+            if deadline != expected_deadline:
+                raise ValueError(
+                    "evidence deadline does not match the prepared operation"
+                )
         elif any(
             value is not None
             for value in (self.intent_committed_at, self.evidence_deadline)
@@ -483,6 +463,280 @@ def provider_arguments(
     raise ValueError("unknown operational operation")
 
 
+def operational_escalation_policy(
+    operation: str, target_id: str
+) -> tuple[tuple[str, ...], int]:
+    """Return the exact affected hold and non-releasing evidence threshold."""
+
+    if operation == CREATE_FULL_BACKUP:
+        if target_id != "local_full_backup":
+            raise ValueError("backup target is invalid")
+        keys = ("backup:local_full_backup",)
+    elif operation == CONTROLLED_RELOAD:
+        if target_id not in RELOAD_PROVIDER_TARGETS:
+            raise ValueError("reload target is invalid")
+        keys = (f"reload:{target_id}",)
+    elif operation == RESTART_ADDON:
+        if not _SLUG.fullmatch(target_id):
+            raise ValueError("add-on target is invalid")
+        keys = (f"addon:{target_id}",)
+    elif operation == RESTART_HOME_ASSISTANT:
+        if target_id != "core":
+            raise ValueError("Home Assistant target is invalid")
+        keys = ("home_assistant:core",)
+    else:
+        raise ValueError("unknown operational hold model")
+    return keys, EVIDENCE_DEADLINE_SECONDS[operation]
+
+
+def operational_prepared_authority_payload(
+    operation: PreparedOperationalOperation,
+) -> dict[str, Any]:
+    """Build the one canonical immutable operational authority payload.
+
+    Mutable provider results and observation, verification, or reconciliation
+    counters are deliberately absent.  Both preparation and every later
+    integrity check hash this exact function's result.
+    """
+
+    return {
+        "authority_model": OPERATIONAL_PREPARED_AUTHORITY_MODEL,
+        "adapter_contract": operation.contract_model,
+        "adapter_id": operation.adapter_id,
+        "capability_id": operation.capability_id,
+        "operation": operation.operation,
+        "target": {
+            "target_type": operation.target.target_type,
+            "target_id": operation.target.target_id,
+            "target_class": operation.target_class,
+        },
+        "plan": {
+            "plan_id": operation.plan_id,
+            "plan_hash": operation.plan_hash,
+            "plan_contract_version": operation.plan_contract_version,
+            "plan_expires_at": operation.plan_expires_at,
+            "public_task_id": operation.public_task_id,
+            "child_execution_id": operation.child_execution_id,
+        },
+        "state": {
+            "current_state_fingerprint": operation.current_state_fingerprint,
+            "normalized_proposed_hash": operation.normalized_proposed_hash,
+        },
+        "authorization": {
+            "risk_level": operation.risk_level,
+            "policy_class": operation.policy_class,
+            "risk_delta": operation.risk_delta,
+            "physical_consequence": operation.physical_consequence,
+            "policy_decision_hash": operation.policy_decision_hash,
+            "approval_bundle_hash": operation.approval_bundle_hash,
+        },
+        "provider": {
+            "provider_id": operation.provider_id,
+            "provider_contract": operation.provider_contract_model,
+            "provider_operation": operation.provider_operation,
+            "provider_arguments": operation.provider_arguments,
+            "provider_arguments_hash": operation.provider_arguments_hash,
+            "provider_evidence": operation.provider_evidence,
+            "authoritative_provider_slug": (
+                operation.authoritative_provider_slug
+            ),
+            "provider_identity_evidence_hash": (
+                operation.provider_identity_evidence_hash
+            ),
+        },
+        "requested_name": operation.requested_name,
+        "baseline": operation.baseline,
+        "reporting": {
+            "expected_effect_codes": list(operation.expected_effects),
+            "expected_effect_descriptions": list(
+                operation.expected_effect_descriptions
+            ),
+            "warnings": list(operation.warnings),
+            "limitations": list(operation.limitations),
+        },
+        "verification": {
+            "model": operation.verification_contract_model,
+            "contract": decoded_object(
+                operation.verification_contract_json,
+                field_name="verification_contract",
+            ),
+            "contract_hash": operation.verification_contract_hash,
+        },
+        "rollback_available": operation.rollback_available,
+        "recovery": {
+            "evidence_deadline_class": operation.evidence_deadline_class,
+            "evidence_deadline_seconds": operation.evidence_deadline_seconds,
+            "selective_hold_keys": list(operation.selective_hold_keys),
+        },
+    }
+
+
+def recompute_operational_prepared_hash(
+    operation: PreparedOperationalOperation,
+) -> str:
+    """Recompute the canonical prepared authority checksum."""
+
+    return stable_hash(operational_prepared_authority_payload(operation))
+
+
+def _require_text_tuple(value: Any, *, field_name: str) -> None:
+    if not isinstance(value, tuple) or any(
+        not isinstance(item, str) for item in value
+    ):
+        raise ValueError(f"{field_name} is invalid")
+
+
+def validate_prepared_operational_authority(
+    operation: PreparedOperationalOperation,
+) -> None:
+    """Fail closed unless every immutable operational authority field agrees."""
+
+    if not isinstance(operation, PreparedOperationalOperation):
+        raise ValueError("prepared operation type is invalid")
+    if operation.operation not in SUPPORTED_OPERATIONS:
+        raise ValueError("prepared operation is unsupported")
+    expected_operation = operation.operation
+    if operation.contract_model != F3_ADAPTER_CONTRACT_MODEL:
+        raise ValueError("prepared adapter model is invalid")
+    if operation.adapter_id != OPERATIONAL_ADAPTER_ID:
+        raise ValueError("prepared adapter identity is invalid")
+    if not isinstance(operation.target, OperationTarget):
+        raise ValueError("prepared target type is invalid")
+    _require_identifier(operation.target.target_type, field_name="target_type")
+    _require_identifier(operation.target.target_id, field_name="target_id")
+    if operation.target.target_type != TARGET_TYPES[expected_operation]:
+        raise ValueError("prepared target type is invalid")
+    if operation.capability_id != CAPABILITY_IDENTITIES[expected_operation]:
+        raise ValueError("prepared capability identity is invalid")
+    if operation.target_class != TARGET_CLASSES[expected_operation]:
+        raise ValueError("prepared target class is invalid")
+    operational_escalation_policy(
+        expected_operation, operation.target.target_id
+    )
+
+    for name in (
+        "current_state_fingerprint",
+        "normalized_proposed_hash",
+        "prepared_operation_hash",
+        "plan_hash",
+        "policy_decision_hash",
+        "approval_bundle_hash",
+        "verification_contract_hash",
+        "provider_arguments_hash",
+        "provider_identity_evidence_hash",
+    ):
+        _require_sha256(getattr(operation, name), field_name=name)
+    for name in ("plan_id", "public_task_id", "child_execution_id"):
+        _require_identifier(getattr(operation, name), field_name=name)
+    if (
+        type(operation.plan_contract_version) is not int
+        or operation.plan_contract_version != OPERATIONAL_PLAN_CONTRACT_VERSION
+    ):
+        raise ValueError("operational plan contract is unsupported")
+    _parse_aware(operation.plan_expires_at, field_name="plan_expires_at")
+
+    expected_policy = POLICY_EXPECTATIONS[expected_operation]
+    if (
+        operation.policy_class,
+        operation.risk_delta,
+        operation.physical_consequence,
+    ) != expected_policy:
+        raise ValueError("prepared policy expectation is invalid")
+    if operation.risk_level != RISK_LEVEL_EXPECTATIONS[expected_operation]:
+        raise ValueError("prepared risk level is invalid")
+
+    if operation.provider_id != PROVIDER_IDENTITIES[expected_operation]:
+        raise ValueError("prepared provider identity is invalid")
+    if operation.provider_contract_model != OPERATIONAL_PROVIDER_CONTRACT_MODEL:
+        raise ValueError("prepared provider contract is invalid")
+    if operation.provider_operation != PROVIDER_OPERATIONS[expected_operation]:
+        raise ValueError("prepared provider operation is invalid")
+    if not _SLUG.fullmatch(operation.authoritative_provider_slug):
+        raise ValueError("prepared provider slug is invalid")
+    if not isinstance(operation.requested_name, str) or len(
+        operation.requested_name
+    ) > 255:
+        raise ValueError("prepared requested name is invalid")
+
+    expected_arguments = provider_arguments(
+        expected_operation,
+        operation.target.target_id,
+        operation.requested_name,
+    )
+    decoded_arguments = decoded_object(
+        operation.provider_arguments_json, field_name="provider_arguments"
+    )
+    if decoded_arguments != expected_arguments or (
+        canonical_json(expected_arguments) != operation.provider_arguments_json
+    ):
+        raise ValueError("prepared provider arguments are invalid")
+    if stable_hash(operation.provider_arguments_json) != (
+        operation.provider_arguments_hash
+    ):
+        raise ValueError("provider argument hash is invalid")
+    provider_evidence = decoded_object(
+        operation.provider_evidence_json, field_name="provider_evidence"
+    )
+    if provider_evidence.get("provider") != operation.provider_id:
+        raise ValueError("prepared provider evidence is invalid")
+    decoded_object(operation.baseline_json, field_name="baseline")
+
+    if operation.expected_effects != EXPECTED_EFFECT_CODES[expected_operation]:
+        raise ValueError("prepared effect codes are invalid")
+    for name in (
+        "expected_effect_descriptions",
+        "warnings",
+        "limitations",
+    ):
+        _require_text_tuple(getattr(operation, name), field_name=name)
+
+    if operation.verification_contract_model != VERIFICATION_MODELS[
+        expected_operation
+    ]:
+        raise ValueError("prepared verification model is invalid")
+    verification = decoded_object(
+        operation.verification_contract_json,
+        field_name="verification_contract",
+    )
+    if (
+        verification.get("version") != 1
+        or verification.get("no_blind_redispatch") is not True
+        or not isinstance(verification.get("required"), list)
+        or not verification["required"]
+        or (
+            "operation" in verification
+            and verification["operation"] != expected_operation
+        )
+    ):
+        raise ValueError("prepared verification contract is invalid")
+    if stable_hash(operation.verification_contract_json) != (
+        operation.verification_contract_hash
+    ):
+        raise ValueError("verification contract hash is invalid")
+
+    hold_keys, evidence_seconds = operational_escalation_policy(
+        expected_operation, operation.target.target_id
+    )
+    if operation.evidence_deadline_class != EVIDENCE_DEADLINE_CLASSES[
+        expected_operation
+    ]:
+        raise ValueError("evidence deadline class is invalid")
+    if (
+        type(operation.evidence_deadline_seconds) is not int
+        or operation.evidence_deadline_seconds != evidence_seconds
+    ):
+        raise ValueError("evidence deadline is invalid")
+    if operation.selective_hold_keys != hold_keys:
+        raise ValueError("manual-review hold selection is invalid")
+    if operation.rollback_available is not False:
+        raise ValueError("operational rollback is not available")
+
+    if recompute_operational_prepared_hash(operation) != (
+        operation.prepared_operation_hash
+    ):
+        raise ValueError("prepared operation hash is invalid")
+
+
 __all__ = [
     "AdapterCapabilityDescriptor",
     "DispatchResult",
@@ -503,4 +757,9 @@ __all__ = [
     "PreparedOperationalOperation",
     "OperationalEvidenceProjection",
     "OperationalEvidenceReader",
+    "OPERATIONAL_PREPARED_AUTHORITY_MODEL",
+    "operational_prepared_authority_payload",
+    "recompute_operational_prepared_hash",
+    "validate_prepared_operational_authority",
+    "operational_escalation_policy",
 ]
