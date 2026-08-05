@@ -19,6 +19,7 @@ from ha_mcp_engineering.f3_configuration.adapter import (
 from ha_mcp_engineering.f3_configuration.gateway import (
     ExistingConfigurationGatewayBridge,
 )
+from ha_mcp_engineering.f3_configuration.locks import lock_set_hash
 from ha_mcp_engineering.f3_configuration.migration import (
     proposal_from_configuration_operation,
 )
@@ -205,13 +206,14 @@ class MigrationEquivalenceTests(unittest.IsolatedAsyncioTestCase):
                     operation, plan = _operation_and_plan(
                         resource_type, action, target_id, config
                     )
+                    expected_plan_hash = stable_hash(plan.to_dict())
+                    approval_bundle_hash = "c" * 64
                     proposal = proposal_from_configuration_operation(
                         plan,
                         operation,
                         task_id="f3c1migrationtask",
-                        plan_hash=stable_hash(plan.to_dict()),
-                        approval_bundle_hash="c" * 64,
-                        approval_consumed=True,
+                        plan_hash=expected_plan_hash,
+                        approval_bundle_hash=approval_bundle_hash,
                         provider_admitted=True,
                         policy_snapshot_valid=True,
                     )
@@ -225,6 +227,13 @@ class MigrationEquivalenceTests(unittest.IsolatedAsyncioTestCase):
                     )
                     prepared = await adapter.prepare(proposal)
 
+                    self.assertEqual(prepared.plan_id, plan.plan_id)
+                    self.assertEqual(prepared.plan_hash, expected_plan_hash)
+                    self.assertEqual(
+                        prepared.operation_id, operation.operation_id
+                    )
+                    self.assertEqual(prepared.resource_type, resource_type)
+                    self.assertEqual(prepared.action, action)
                     self.assertEqual(prepared.target.target_id, target_id)
                     self.assertEqual(
                         normalize_resource_config(
@@ -249,6 +258,46 @@ class MigrationEquivalenceTests(unittest.IsolatedAsyncioTestCase):
                         prepared.policy_decision_hash,
                         plan.policy_decision.policy_decision_hash,
                     )
+                    self.assertEqual(
+                        prepared.approval_bundle_hash,
+                        approval_bundle_hash,
+                    )
+                    self.assertEqual(
+                        prepared.risk_evidence_hash,
+                        proposal.risk_evidence_hash,
+                    )
+                    self.assertEqual(
+                        prepared.expected_effects,
+                        (
+                            "configuration_resource_created"
+                            if action == "create"
+                            else "configuration_resource_updated",
+                        ),
+                    )
+                    self.assertEqual(
+                        prepared.provider_descriptor.arguments_hash,
+                        adapter.strategy.provider_descriptor(
+                            target_id, config
+                        ).arguments_hash,
+                    )
+                    self.assertEqual(
+                        prepared.provider_descriptor.operation,
+                        adapter.strategy.provider_descriptor(
+                            target_id, config
+                        ).operation,
+                    )
+                    self.assertEqual(
+                        adapter.capabilities.validation_contract,
+                        "existing_configuration_validation_v1",
+                    )
+                    self.assertEqual(
+                        prepared.verification_contract_model,
+                        adapter.capabilities.verification_contract,
+                    )
+                    self.assertEqual(
+                        len(lock_set_hash(adapter.lock_requests(prepared))),
+                        64,
+                    )
                     valid, errors, _warnings = validate_resource(
                         resource_type, target_id, config
                     )
@@ -269,7 +318,6 @@ class MigrationEquivalenceTests(unittest.IsolatedAsyncioTestCase):
                         task_id="f3c1providertask",
                         plan_hash=stable_hash(plan.to_dict()),
                         approval_bundle_hash="c" * 64,
-                        approval_consumed=True,
                         provider_admitted=True,
                         policy_snapshot_valid=True,
                     )
@@ -307,6 +355,26 @@ class MigrationEquivalenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(errors)
         with self.assertRaises(ValueError):
             ConfigurationOperationAdapter("scene", "create", gateway=object())
+
+    def test_incomplete_or_nonmember_historical_projection_requires_new_plan(self):
+        operation, plan = _operation_and_plan(
+            "automation", "update", "f3_inert_automation", AUTOMATION
+        )
+        kwargs = {
+            "task_id": "f3c1incomplete",
+            "plan_hash": stable_hash(plan.to_dict()),
+            "approval_bundle_hash": "c" * 64,
+            "provider_admitted": True,
+            "policy_snapshot_valid": True,
+        }
+        copied_operation = copy.deepcopy(operation)
+        with self.assertRaisesRegex(ValueError, "exact plan member"):
+            proposal_from_configuration_operation(
+                plan, copied_operation, **kwargs
+            )
+        plan.policy_decision = None
+        with self.assertRaisesRegex(ValueError, "no F2 policy decision"):
+            proposal_from_configuration_operation(plan, operation, **kwargs)
 
 
 if __name__ == "__main__":

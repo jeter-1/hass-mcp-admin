@@ -11,7 +11,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
-from f3_contracts.operation_adapter import NormalizedOperationOutcome
+from ha_mcp_engineering.f3.contracts import NormalizedOperationOutcome
 from ha_mcp_engineering.f3_configuration.strategies import strategy_for
 
 from tests.f3_configuration_fixtures import (

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -29,6 +30,17 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "tests/test_f3_execution_persistence.py",
     "tests/test_f3_fault_injection.py",
     "tests/test_f3_lock_manager.py",
+    "tests/f3_configuration_fixtures.py",
+    "tests/test_f3_configuration_identity.py",
+    "tests/test_f3_configuration_lifecycle.py",
+    "tests/test_f3_configuration_resources.py",
+    "tests/test_f3_configuration_sequence.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/adapter.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/locks.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/models.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/outcomes.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/sequence.py",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/strategies.py",
 }
 
 
@@ -136,6 +148,9 @@ class BuiltImageImportClosureTests(unittest.TestCase):
             imported = set(json.loads(completed.stdout))
             self.assertEqual(imported, _source_module_names())
             self.assertIn("ha_mcp_engineering.f3.contracts", imported)
+            self.assertIn(
+                "ha_mcp_engineering.f3_configuration.adapter", imported
+            )
             self.assertFalse((image_app / "f3_contracts").exists())
 
     def test_every_declared_architecture_uses_the_same_package_copy(self):
@@ -151,6 +166,38 @@ class BuiltImageImportClosureTests(unittest.TestCase):
             1,
         )
         self.assertNotIn("TARGETARCH", dockerfile)
+        with tempfile.TemporaryDirectory() as temporary:
+            copies = {}
+            for architecture in config["arch"]:
+                target = Path(temporary) / architecture / "ha_mcp_engineering"
+                shutil.copytree(RUNTIME, target)
+                digest = hashlib.sha256()
+                for path in sorted(target.rglob("*.py")):
+                    digest.update(path.relative_to(target).as_posix().encode())
+                    digest.update(path.read_bytes())
+                copies[architecture] = digest.hexdigest()
+            self.assertEqual(len(set(copies.values())), 1, copies)
+
+    def test_c1_shipped_sources_use_only_the_canonical_contract(self):
+        c1 = RUNTIME / "f3_configuration"
+        importers = set()
+        for path in sorted(c1.rglob("*.py")):
+            source = path.read_text(encoding="utf-8")
+            self.assertNotIn("f3_contracts", source)
+            imported = _imports(path)
+            if any(name.endswith("f3.contracts") for name in imported):
+                importers.add(path.name)
+        self.assertEqual(
+            importers,
+            {
+                "adapter.py",
+                "locks.py",
+                "models.py",
+                "outcomes.py",
+                "sequence.py",
+                "strategies.py",
+            },
+        )
 
 
 class F3ImportBoundaryTests(unittest.TestCase):

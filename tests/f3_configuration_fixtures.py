@@ -13,7 +13,7 @@ from typing import Any, Callable
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
-from f3_contracts.operation_adapter import RecoveryContext
+from ha_mcp_engineering.f3.contracts import RecoveryContext
 from ha_mcp_engineering.errors import HomeAssistantApiError
 from ha_mcp_engineering.f3_configuration.adapter import (
     ConfigurationOperationAdapter,
@@ -225,7 +225,6 @@ def proposal_for(
     task_id: str = "b" * 32,
     current_config: dict[str, Any] | None | object = ...,
     proposed_config: dict[str, Any] | None = None,
-    approval_consumed: bool = True,
     policy_snapshot_valid: bool = True,
     provider_admitted: bool = True,
 ) -> ConfigurationOperationProposal:
@@ -268,7 +267,6 @@ def proposal_for(
         policy_decision_hash="3" * 64,
         approval_bundle_hash="4" * 64,
         plan_expires_at=FIXED_DEADLINE,
-        approval_consumed=approval_consumed,
         policy_snapshot_valid=policy_snapshot_valid,
         provider_admitted=provider_admitted,
         rollback_available=strategy.rollback_available(2),

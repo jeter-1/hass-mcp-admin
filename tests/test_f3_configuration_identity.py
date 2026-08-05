@@ -5,13 +5,22 @@ from __future__ import annotations
 from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
-from f3_contracts.operation_adapter import LockMode, LockRequest, LockScope
+from ha_mcp_engineering.f3.contracts import (
+    AdapterCapabilityDescriptor,
+    LockMode,
+    LockRequest,
+    LockScope,
+    PreparedOperation,
+)
+from ha_mcp_engineering.f3.locks import DurableLockStore, LockConflict
+from ha_mcp_engineering.f3.models import LockOwner, LockTiming
 from ha_mcp_engineering.f3_configuration.locks import (
     complete_configuration_lock_set,
     lock_set_hash,
@@ -61,9 +70,9 @@ class CapabilityIdentityTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertTrue(descriptor.readback_recovery_supported)
                 self.assertTrue(descriptor.exact_provider_contract_required)
-                self.assertEqual(
-                    descriptor.rollback_supported,
-                    resource_type == "automation" and action == "update",
+                self.assertFalse(descriptor.rollback_supported)
+                self.assertIsInstance(
+                    descriptor, AdapterCapabilityDescriptor
                 )
                 if resource_type in {"automation", "script"}:
                     self.assertEqual(
@@ -116,7 +125,6 @@ class CapabilityIdentityTests(unittest.IsolatedAsyncioTestCase):
         adapter = adapter_for("automation", "update", gateway)
         prepared = await adapter.prepare(proposal)
         for altered in (
-            replace(prepared, approval_consumed=False),
             replace(prepared, policy_snapshot_valid=False),
             replace(prepared, provider_admitted=False),
             replace(prepared, expected_effects=("unreviewed_effect",)),
@@ -132,6 +140,38 @@ class CapabilityIdentityTests(unittest.IsolatedAsyncioTestCase):
                     result.diagnostic_codes,
                 )
                 self.assertEqual(gateway.counters.dispatches, 0)
+        self.assertIsInstance(prepared, PreparedOperation)
+
+    async def test_all_forward_operations_have_no_executable_rollback(self):
+        for resource_type, action in CAPABILITY_IDENTITIES:
+            with self.subTest(resource_type=resource_type, action=action):
+                gateway = SyntheticConfigurationGateway()
+                adapter = adapter_for(resource_type, action, gateway)
+                prepared = await adapter.prepare(
+                    proposal_for(resource_type, action)
+                )
+                self.assertFalse(adapter.capabilities.rollback_supported)
+                self.assertFalse(prepared.rollback_available)
+                rollback = await adapter.prepare_rollback(
+                    prepared,
+                    expected_current_fingerprint=(
+                        prepared.normalized_proposed_hash
+                    ),
+                )
+                self.assertIsNone(rollback)
+                self.assertEqual(gateway.counters.dispatches, 0)
+                self.assertEqual(gateway.counters.simulated_mutations, 0)
+
+    async def test_proposal_cannot_assert_unavailable_rollback_authority(self):
+        proposal = replace(
+            proposal_for("automation", "update"),
+            rollback_available=True,
+        )
+        adapter = adapter_for(
+            "automation", "update", SyntheticConfigurationGateway()
+        )
+        with self.assertRaisesRegex(ValueError, "rollback is unavailable"):
+            await adapter.prepare(proposal)
 
 
 class CanonicalIdentityTests(unittest.IsolatedAsyncioTestCase):
@@ -209,7 +249,10 @@ class ProviderDescriptorTests(unittest.IsolatedAsyncioTestCase):
                     )
                     path = f"/config/{resource_type}/config/{target_id(resource_type)}"
                     self.assertEqual(descriptor.transport, "home_assistant_rest")
-                    self.assertEqual(descriptor.operation, f"POST {path}")
+                    self.assertEqual(
+                        descriptor.operation,
+                        f"{resource_type}_configuration_write",
+                    )
                     self.assertEqual(descriptor.argument_names, ("body", "method", "path"))
                     self.assertEqual(
                         descriptor.arguments_hash,
@@ -233,7 +276,9 @@ class ProviderDescriptorTests(unittest.IsolatedAsyncioTestCase):
                         payload[id_field] = target_id(resource_type).split(".", 1)[1]
                     payload.update(config)
                     self.assertEqual(descriptor.transport, "home_assistant_websocket")
-                    self.assertEqual(descriptor.operation, f"{resource_type}/{action}")
+                    self.assertEqual(
+                        descriptor.operation, f"{resource_type}_{action}"
+                    )
                     self.assertEqual(descriptor.arguments_hash, stable_hash(payload))
                     self.assertNotIn("service", descriptor.argument_names)
                     self.assertNotIn("delete", descriptor.argument_names)
@@ -247,25 +292,41 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
             gateway.states[(resource_type, proposal.target_id)] = proposal.current_config()
         return await adapter_for(resource_type, action, gateway).prepare(proposal)
 
-    async def test_each_operation_has_exclusive_resource_and_shared_core_lock(self):
+    async def test_each_operation_has_exact_resource_reload_and_core_locks(self):
         expected = {
-            "automation": "automation:porch_light",
-            "script": "script:notify_house",
-            "input_boolean": "helper:input_boolean.vacation_mode",
-            "input_number": "helper:input_number.target_temperature",
+            "automation": ("automation:porch_light", "reload:automation"),
+            "script": ("script:notify_house", "reload:script"),
+            "input_boolean": (
+                "helper:input_boolean.vacation_mode",
+                "reload:input_boolean",
+            ),
+            "input_number": (
+                "helper:input_number.target_temperature",
+                "reload:input_number",
+            ),
         }
-        for resource_type, key in expected.items():
+        for resource_type, (key, reload_key) in expected.items():
             with self.subTest(resource_type=resource_type):
                 prepared = await self._prepared(resource_type, "create")
                 locks = operation_lock_requests(prepared)
                 by_key = {lock.key: lock for lock in locks}
-                self.assertEqual(set(by_key), {key, "home_assistant:core"})
+                self.assertEqual(
+                    set(by_key),
+                    {key, reload_key, "home_assistant:core"},
+                )
                 self.assertEqual(by_key[key].mode, LockMode.EXCLUSIVE)
+                self.assertEqual(by_key[reload_key].mode, LockMode.SHARED)
                 self.assertEqual(by_key["home_assistant:core"].mode, LockMode.SHARED)
                 self.assertEqual(by_key[key].scopes, (LockScope.RESOURCE,))
                 self.assertEqual(
+                    by_key[reload_key].scopes, (LockScope.RESOURCE,)
+                )
+                self.assertEqual(
                     by_key["home_assistant:core"].scopes,
-                    (LockScope.PROVIDER,),
+                    (LockScope.RESOURCE,),
+                )
+                self.assertFalse(
+                    any(lock.key.startswith("addon:") for lock in locks)
                 )
 
     async def test_complete_multi_operation_lock_set_is_atomic_input_order_independent(self):
@@ -351,6 +412,121 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
             first_locks["home_assistant:core"].mode,
             LockMode.SHARED,
         )
+        self.assertNotIn("reload:automation", different_locks)
+        self.assertIn("reload:script", different_locks)
+
+    async def test_matching_reload_and_restart_exclusive_locks_conflict_atomically(self):
+        timing = LockTiming(60, 10, 0)
+        expected_reload = {
+            "automation": "reload:automation",
+            "script": "reload:script",
+            "input_boolean": "reload:input_boolean",
+            "input_number": "reload:input_number",
+        }
+        for resource_type, reload_key in expected_reload.items():
+            with self.subTest(resource_type=resource_type):
+                with tempfile.TemporaryDirectory() as temporary:
+                    store = DurableLockStore(temporary)
+                    blocker = store.acquire_once(
+                        (
+                            LockRequest(
+                                reload_key,
+                                (LockScope.RESOURCE,),
+                                LockMode.EXCLUSIVE,
+                                ("matching_reload_execution",),
+                            ),
+                        ),
+                        owner=LockOwner(
+                            "reload-owner",
+                            "reload-task",
+                            "reload-plan",
+                            "reload-operation",
+                            "reload-attempt",
+                        ),
+                        timing=timing,
+                    )
+                    prepared = await self._prepared(resource_type, "create")
+                    with self.assertRaises(LockConflict):
+                        store.acquire_once(
+                            operation_lock_requests(prepared),
+                            owner=LockOwner(
+                                "config-owner",
+                                "config-task",
+                                "config-plan",
+                                "config-operation",
+                                "config-attempt",
+                            ),
+                            timing=timing,
+                        )
+                    self.assertEqual(len(store.records()), 1)
+                    store.release(blocker)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            store = DurableLockStore(temporary)
+            blocker = store.acquire_once(
+                (
+                    LockRequest(
+                        "home_assistant:core",
+                        (LockScope.RESOURCE,),
+                        LockMode.EXCLUSIVE,
+                        ("home_assistant_restart",),
+                    ),
+                ),
+                owner=LockOwner(
+                    "restart-owner",
+                    "restart-task",
+                    "restart-plan",
+                    "restart-operation",
+                    "restart-attempt",
+                ),
+                timing=timing,
+            )
+            prepared = await self._prepared("automation", "create")
+            with self.assertRaises(LockConflict):
+                store.acquire_once(
+                    operation_lock_requests(prepared),
+                    owner=LockOwner(
+                        "config-owner",
+                        "config-task",
+                        "config-plan",
+                        "config-operation",
+                        "config-attempt",
+                    ),
+                    timing=timing,
+                )
+            self.assertEqual(len(store.records()), 1)
+            store.release(blocker)
+
+    async def test_different_exact_resources_remain_lock_compatible(self):
+        timing = LockTiming(60, 10, 0)
+        first = await self._prepared("automation", "create")
+        proposal = replace(
+            proposal_for("automation", "create"),
+            target_id="porch_light_two",
+            operation_id="step_two",
+        )
+        second = await adapter_for(
+            "automation", "create", SyntheticConfigurationGateway()
+        ).prepare(proposal)
+        with tempfile.TemporaryDirectory() as temporary:
+            store = DurableLockStore(temporary)
+            first_handle = store.acquire_once(
+                operation_lock_requests(first),
+                owner=LockOwner(
+                    "owner-one", "task-one", "plan-one", "op-one", "attempt-one"
+                ),
+                timing=timing,
+            )
+            second_handle = store.acquire_once(
+                operation_lock_requests(second),
+                owner=LockOwner(
+                    "owner-two", "task-two", "plan-two", "op-two", "attempt-two"
+                ),
+                timing=timing,
+            )
+            self.assertEqual(len(store.records()), 6)
+            store.release(second_handle)
+            store.release(first_handle)
 
 
 if __name__ == "__main__":
