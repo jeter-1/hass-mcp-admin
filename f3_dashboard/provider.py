@@ -71,7 +71,7 @@ PROHIBITED_ARGUMENT_NAMES = (
     "require_admin",
     "show_in_sidebar",
     "view_path",
-    "include_screenshot",
+    "return_screenshot",
     "resources",
     "preferences",
 )

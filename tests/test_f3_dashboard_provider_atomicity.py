@@ -120,7 +120,8 @@ class DashboardProviderAdmissionTests(unittest.TestCase):
         )
         self.assertIn("BestPracticeKey", projection.potential_ephemeral_argument_names)
         self.assertEqual(projection.prohibited_argument_names, PROHIBITED_ARGUMENT_NAMES)
-        self.assertTrue(
+        self.assertEqual(
+            set(PROHIBITED_ARGUMENT_NAMES),
             {
                 "config",
                 "python_transform",
@@ -129,8 +130,10 @@ class DashboardProviderAdmissionTests(unittest.TestCase):
                 "require_admin",
                 "show_in_sidebar",
                 "view_path",
-            }
-            <= set(projection.prohibited_argument_names)
+                "return_screenshot",
+                "resources",
+                "preferences",
+            },
         )
         with self.assertRaises(AtomicityGateError):
             require_executable_projection(projection)
@@ -143,7 +146,6 @@ class DashboardProviderAdmissionTests(unittest.TestCase):
         self.assertNotIn("**kwargs", source)
         self.assertNotIn('"python_transform": compilation', source)
         self.assertNotIn('"config": compilation', source)
-        self.assertNotIn("include_screenshot\": True", source)
         self.assertNotIn("return_screenshot\": True", source)
 
     def test_provider_response_is_bounded_evidence_not_verification(self):
