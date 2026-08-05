@@ -342,15 +342,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker cp \
-            scripts/exact_image_sidecar_lifecycle_acceptance.py \
-            exact-read-gateway-upstream:/tmp/exact_image_sidecar_lifecycle_acceptance.py
-          docker exec \
+          docker exec -i \
             --env HA_MCP_DISABLE_SETTINGS_UI=false \
             exact-read-gateway-upstream \
-            python /tmp/exact_image_sidecar_lifecycle_acceptance.py \
+            python - \
               --expected-version "$UPSTREAM_VERSION" \
-              --output /tmp/exact-image-sidecar-lifecycle-result.json
+              --output /tmp/exact-image-sidecar-lifecycle-result.json \
+            < scripts/exact_image_sidecar_lifecycle_acceptance.py
           docker cp \
             exact-read-gateway-upstream:/tmp/exact-image-sidecar-lifecycle-result.json \
             "$RUNNER_TEMP/exact-image-sidecar-lifecycle-result.json"

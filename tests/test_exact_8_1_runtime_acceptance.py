@@ -119,6 +119,15 @@ class ExactAddonProfileTests(unittest.TestCase):
         self.assertIn('if: matrix.upstream_version == \'8.1.0\'', workflow)
         self.assertIn("exact_image_readmission_acceptance.py", workflow)
         self.assertIn("exact_image_sidecar_lifecycle_acceptance.py", workflow)
+        self.assertIn("docker exec -i", workflow)
+        self.assertIn(
+            "< scripts/exact_image_sidecar_lifecycle_acceptance.py",
+            workflow,
+        )
+        self.assertNotIn(
+            "exact-read-gateway-upstream:/tmp/exact_image_sidecar_lifecycle_acceptance.py",
+            workflow,
+        )
         self.assertIn(
             "exact_custom_component_shutdown_acceptance.py", workflow
         )

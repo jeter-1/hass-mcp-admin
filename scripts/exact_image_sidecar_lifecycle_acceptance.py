@@ -1,6 +1,6 @@
 """Bounded lifecycle acceptance for the immutable ha-mcp 8.1 image.
 
-This script is copied into and executed by the digest-pinned standalone image.
+This script is streamed into and executed by the digest-pinned standalone image.
 It exercises the packaged stdio settings sidecar without printing its secret
 URL, then checks the packaged CLI's bounded pending-task cleanup paths.
 """
