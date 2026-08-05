@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import json
 from typing import Any
 
-from f3_contracts.operation_adapter import (
+from ha_mcp_engineering.f3.contracts import (
     AdapterCapabilityDescriptor,
     DispatchResult,
     ObservationResult,
@@ -93,11 +93,9 @@ class ConfigurationOperationProposal:
     policy_decision_hash: str
     approval_bundle_hash: str
     plan_expires_at: str
-    approval_consumed: bool
     policy_snapshot_valid: bool
     provider_admitted: bool
     rollback_available: bool
-    rollback_approval_bundle_hash: str | None = None
 
     @classmethod
     def from_configs(
@@ -124,11 +122,9 @@ class ConfigurationOperationProposal:
         policy_decision_hash: str,
         approval_bundle_hash: str,
         plan_expires_at: str,
-        approval_consumed: bool,
         policy_snapshot_valid: bool,
         provider_admitted: bool,
         rollback_available: bool,
-        rollback_approval_bundle_hash: str | None = None,
     ) -> "ConfigurationOperationProposal":
         return cls(
             plan_id=plan_id,
@@ -156,11 +152,9 @@ class ConfigurationOperationProposal:
             policy_decision_hash=policy_decision_hash,
             approval_bundle_hash=approval_bundle_hash,
             plan_expires_at=plan_expires_at,
-            approval_consumed=approval_consumed,
             policy_snapshot_valid=policy_snapshot_valid,
             provider_admitted=provider_admitted,
             rollback_available=rollback_available,
-            rollback_approval_bundle_hash=rollback_approval_bundle_hash,
         )
 
     def current_config(self) -> dict[str, Any] | None:
@@ -194,10 +188,8 @@ class PreparedConfigurationOperation(PreparedOperation):
     risk_evidence_hash: str
     policy_class: str
     plan_expires_at: str
-    approval_consumed: bool
     policy_snapshot_valid: bool
     provider_admitted: bool
-    rollback_approval_bundle_hash: str | None = None
 
     def current_config(self) -> dict[str, Any] | None:
         return decode_config(self.current_configuration_json)

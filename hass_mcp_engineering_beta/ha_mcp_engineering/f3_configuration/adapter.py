@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
-from f3_contracts.operation_adapter import (
+from ha_mcp_engineering.f3.contracts import (
+    DispatchIntentRecorder,
     F3_ADAPTER_CONTRACT_MODEL,
     NormalizedOperationOutcome,
     OperationTarget,
     RecoveryContext,
+)
+from ha_mcp_engineering.f3.locks import (
+    normalize_lock_requests as normalize_durable_lock_requests,
 )
 
 from ..errors import EngineeringServerError
@@ -41,9 +45,6 @@ from .observability import (
     NullConfigurationEventSink,
 )
 from .strategies import ConfigurationStrategy, strategy_for
-
-
-DispatchIntentRecorder = Callable[[], Awaitable[None]]
 
 
 class ConfigurationGateway(Protocol):
@@ -132,10 +133,8 @@ class ConfigurationOperationAdapter:
             raise ValueError("proposed configuration hash is inconsistent")
         if self.strategy.fingerprint(current) != proposal.current_state_fingerprint:
             raise ValueError("current-state fingerprint is inconsistent")
-        if proposal.rollback_available != self.strategy.rollback_available(
-            proposal.plan_contract_version
-        ):
-            raise ValueError("rollback declaration does not match existing behavior")
+        if proposal.rollback_available:
+            raise ValueError("forward configuration rollback is unavailable")
 
         provider = self.strategy.provider_descriptor(target_id, proposed)
         verification_payload = {
@@ -187,15 +186,11 @@ class ConfigurationOperationAdapter:
             "policy_decision_hash": proposal.policy_decision_hash,
             "approval_bundle_hash": proposal.approval_bundle_hash,
             "plan_expires_at": proposal.plan_expires_at,
-            "approval_consumed": proposal.approval_consumed,
             "policy_snapshot_valid": proposal.policy_snapshot_valid,
             "provider_admitted": proposal.provider_admitted,
             "expected_effects": [expected_effect],
             "verification_contract_hash": verification_hash,
             "rollback_available": proposal.rollback_available,
-            "rollback_approval_bundle_hash": (
-                proposal.rollback_approval_bundle_hash
-            ),
         }
         prepared = PreparedConfigurationOperation(
             contract_model=F3_ADAPTER_CONTRACT_MODEL,
@@ -234,12 +229,8 @@ class ConfigurationOperationAdapter:
             risk_evidence_hash=proposal.risk_evidence_hash,
             policy_class=proposal.policy_class,
             plan_expires_at=proposal.plan_expires_at,
-            approval_consumed=proposal.approval_consumed,
             policy_snapshot_valid=proposal.policy_snapshot_valid,
             provider_admitted=proposal.provider_admitted,
-            rollback_approval_bundle_hash=(
-                proposal.rollback_approval_bundle_hash
-            ),
         )
         self._emit("planning", target_id, "prepared", ())
         return prepared
@@ -265,7 +256,12 @@ class ConfigurationOperationAdapter:
             )
         required_locks = operation_lock_requests(operation)
         try:
-            normalized_acquired = normalize_lock_requests(acquired_locks)
+            normalized_acquired = normalize_durable_lock_requests(
+                acquired_locks
+            )
+            normalized_required = normalize_durable_lock_requests(
+                required_locks
+            )
         except (TypeError, ValueError):
             self._increment("lock_conflicts")
             return self._preflight_rejected(
@@ -273,16 +269,12 @@ class ConfigurationOperationAdapter:
                 ("lock_set_invalid",),
                 outcome=NormalizedOperationOutcome.LOCK_CONFLICT,
             )
-        if normalized_acquired != required_locks:
+        if normalized_acquired != normalized_required:
             self._increment("lock_conflicts")
             return self._preflight_rejected(
                 operation,
                 ("complete_lock_set_not_held",),
                 outcome=NormalizedOperationOutcome.LOCK_CONFLICT,
-            )
-        if not operation.approval_consumed:
-            return self._preflight_rejected(
-                operation, ("approval_not_consumed",)
             )
         if not operation.policy_snapshot_valid:
             return self._preflight_rejected(
@@ -320,6 +312,20 @@ class ConfigurationOperationAdapter:
                 operation, ("proposed_hash_mismatch",)
             )
 
+        validation_status = await self._configuration_check_status()
+        if validation_status != "valid":
+            self._increment("validation_failures")
+            return self._preflight_rejected(
+                operation,
+                (
+                    "configuration_validation_unavailable"
+                    if validation_status == "unavailable"
+                    else "configuration_validation_failed"
+                ),
+            )
+        # This is the final authoritative mutable-state decision.  The shared
+        # executor consumes approval only after this preflight returns and
+        # before it commits durable intent through ``before_dispatch``.
         state, state_code = await self._authoritative_state(operation)
         if state_code != "state_matches_plan":
             if state_code in {
@@ -340,18 +346,6 @@ class ConfigurationOperationAdapter:
             )
             return self._preflight_rejected(
                 operation, (state_code,), outcome=outcome
-            )
-
-        validation_status = await self._configuration_check_status()
-        if validation_status != "valid":
-            self._increment("validation_failures")
-            return self._preflight_rejected(
-                operation,
-                (
-                    "configuration_validation_unavailable"
-                    if validation_status == "unavailable"
-                    else "configuration_validation_failed"
-                ),
             )
         provider = operation.provider_descriptor
         evidence_hash = stable_hash(
@@ -416,28 +410,7 @@ class ConfigurationOperationAdapter:
                 provider_mutation_count=0,
             )
 
-        # This exact reread is deliberately later than preflight and directly
-        # precedes the durable-intent callback.  The Home Assistant APIs do not
-        # offer compare-and-save, so an external writer can still race after
-        # this read; exact readback detects many but not all lost updates.
-        _state, state_code = await self._authoritative_state(operation)
-        if state_code != "state_matches_plan":
-            if state_code in {
-                "stale_target_state",
-                "resource_identity_mismatch",
-            }:
-                self._increment("stale_rejections")
-            return self._dispatch_result(
-                operation,
-                NormalizedOperationOutcome.PREFLIGHT_REJECTED,
-                intent=False,
-                invocation_count=0,
-                may_have_dispatched=False,
-                response_received=False,
-                codes=(state_code,),
-                provider_mutation_count=0,
-            )
-
+        proposed_config = operation.proposed_config()
         try:
             await before_dispatch()
         except Exception:
@@ -453,27 +426,29 @@ class ConfigurationOperationAdapter:
                 provider_mutation_count=0,
             )
 
-        self._increment("intents_committed")
-        self._increment("dispatch_attempts")
         try:
             await self.gateway.write(
                 operation.action,
                 operation.resource_type,
                 operation.target.target_id,
-                operation.proposed_config(),
+                proposed_config,
             )
         except ConfigurationMutationNotDispatchedError:
+            self._increment("intents_committed")
+            self._increment("dispatch_attempts")
             return self._dispatch_result(
                 operation,
                 NormalizedOperationOutcome.DISPATCH_FAILED_CONFIRMED,
                 intent=True,
                 invocation_count=1,
-                may_have_dispatched=False,
+                may_have_dispatched=True,
                 response_received=False,
                 codes=("provider_confirmed_no_mutation",),
                 provider_mutation_count=0,
             )
         except ConfigurationMutationCompletedUnexpectedlyError:
+            self._increment("intents_committed")
+            self._increment("dispatch_attempts")
             self._increment("responses_received")
             return self._dispatch_result(
                 operation,
@@ -486,6 +461,8 @@ class ConfigurationOperationAdapter:
                 provider_mutation_count=1,
             )
         except Exception as exc:
+            self._increment("intents_committed")
+            self._increment("dispatch_attempts")
             response_received = bool(
                 isinstance(exc, EngineeringServerError)
                 and exc.details.get("provider_response_received") is True
@@ -505,7 +482,7 @@ class ConfigurationOperationAdapter:
                 ),
                 intent=True,
                 invocation_count=1,
-                may_have_dispatched=not confirmed_no_mutation,
+                may_have_dispatched=True,
                 response_received=response_received,
                 codes=(
                     "provider_confirmed_no_mutation"
@@ -515,6 +492,8 @@ class ConfigurationOperationAdapter:
                 provider_mutation_count=(0 if confirmed_no_mutation else None),
             )
 
+        self._increment("intents_committed")
+        self._increment("dispatch_attempts")
         self._increment("responses_received")
         return self._dispatch_result(
             operation,
@@ -633,17 +612,7 @@ class ConfigurationOperationAdapter:
         """Fail closed until a distinct rollback task/approval is supplied."""
 
         self._require_operation(operation)
-        if (
-            not operation.rollback_available
-            or operation.current_configuration_json is None
-            or operation.rollback_approval_bundle_hash is None
-            or expected_current_fingerprint
-            != operation.normalized_proposed_hash
-        ):
-            return None
-        # The frozen method does not carry a new task/attempt identity.  F3-C1
-        # therefore declares the legacy capability but leaves creation of the
-        # separately approved rollback operation to F3-D integration.
+        del expected_current_fingerprint
         return None
 
     async def _authoritative_state(
@@ -1017,10 +986,8 @@ class ConfigurationOperationAdapter:
             operation.current_state_fingerprint
         ):
             raise ValueError("prepared current fingerprint is inconsistent")
-        if operation.rollback_available != self.strategy.rollback_available(
-            operation.plan_contract_version
-        ):
-            raise ValueError("prepared rollback declaration is inconsistent")
+        if operation.rollback_available:
+            raise ValueError("prepared forward rollback must be unavailable")
         provider = self.strategy.provider_descriptor(
             canonical_target, proposed
         )
@@ -1078,15 +1045,11 @@ class ConfigurationOperationAdapter:
             "policy_decision_hash": operation.policy_decision_hash,
             "approval_bundle_hash": operation.approval_bundle_hash,
             "plan_expires_at": operation.plan_expires_at,
-            "approval_consumed": operation.approval_consumed,
             "policy_snapshot_valid": operation.policy_snapshot_valid,
             "provider_admitted": operation.provider_admitted,
             "expected_effects": [expected_effect],
             "verification_contract_hash": verification_hash,
             "rollback_available": operation.rollback_available,
-            "rollback_approval_bundle_hash": (
-                operation.rollback_approval_bundle_hash
-            ),
         }
         if stable_hash(prepared_payload) != operation.prepared_operation_hash:
             raise ValueError("prepared operation hash is inconsistent")

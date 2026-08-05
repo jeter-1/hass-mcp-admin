@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
-from f3_contracts.operation_adapter import F3_ADAPTER_CONTRACT_MODEL
+from ha_mcp_engineering.f3.contracts import F3_ADAPTER_CONTRACT_MODEL
 
 from ..governance.normalize import stable_hash
 from ..governance.resources import (
@@ -60,9 +60,7 @@ class ConfigurationStrategy(ABC):
             contract_model=F3_ADAPTER_CONTRACT_MODEL,
             operation_family="configuration_change",
             supported_operations=(self.capability_identity,),
-            rollback_supported=(
-                self.resource_type == "automation" and self.action == "update"
-            ),
+            rollback_supported=False,
             readback_recovery_supported=True,
             exact_provider_contract_required=True,
             capability_identity=self.capability_identity,
@@ -125,13 +123,10 @@ class ConfigurationStrategy(ABC):
         return resource_fingerprint(self.resource_type, config)
 
     def rollback_available(self, plan_contract_version: int) -> bool:
-        """Mirror existing availability without granting rollback authority."""
+        """Forward F3-C1 capabilities never imply executable rollback."""
 
-        return bool(
-            plan_contract_version == 1
-            and self.resource_type == "automation"
-            and self.action == "update"
-        )
+        del plan_contract_version
+        return False
 
     def provider_descriptor(
         self,
@@ -187,7 +182,8 @@ class _RestConfigurationStrategy(ConfigurationStrategy):
         return ("body", "method", "path")
 
     def provider_operation(self, target_id: str) -> str:
-        return f"POST /config/{self.resource_type}/config/{target_id}"
+        del target_id
+        return f"{self.resource_type}_configuration_write"
 
     def provider_payload(
         self, target_id: str, proposed_config: dict[str, Any]
@@ -228,7 +224,8 @@ class _HelperConfigurationStrategy(ConfigurationStrategy):
         return tuple(sorted(values, key=lambda item: item.encode("utf-8")))
 
     def provider_operation(self, target_id: str) -> str:
-        return f"{self.resource_type}/{self.action}"
+        del target_id
+        return f"{self.resource_type}_{self.action}"
 
     def provider_payload(
         self, target_id: str, proposed_config: dict[str, Any]

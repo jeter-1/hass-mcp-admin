@@ -20,7 +20,6 @@ def proposal_from_configuration_operation(
     task_id: str,
     plan_hash: str,
     approval_bundle_hash: str,
-    approval_consumed: bool,
     provider_admitted: bool,
     policy_snapshot_valid: bool,
 ) -> ConfigurationOperationProposal:
@@ -73,7 +72,6 @@ def proposal_from_configuration_operation(
         policy_decision_hash=plan.policy_decision.policy_decision_hash,
         approval_bundle_hash=approval_bundle_hash,
         plan_expires_at=plan.expires_at,
-        approval_consumed=approval_consumed,
         policy_snapshot_valid=policy_snapshot_valid,
         provider_admitted=provider_admitted,
         rollback_available=False,
@@ -86,7 +84,6 @@ def proposal_from_legacy_automation_plan(
     task_id: str,
     plan_hash: str,
     approval_bundle_hash: str,
-    approval_consumed: bool,
     provider_admitted: bool,
     policy_snapshot_valid: bool,
 ) -> ConfigurationOperationProposal:
@@ -126,10 +123,9 @@ def proposal_from_legacy_automation_plan(
         policy_decision_hash=plan.policy_decision.policy_decision_hash,
         approval_bundle_hash=approval_bundle_hash,
         plan_expires_at=plan.expires_at,
-        approval_consumed=approval_consumed,
         policy_snapshot_valid=policy_snapshot_valid,
         provider_admitted=provider_admitted,
-        rollback_available=(action == "update"),
+        rollback_available=False,
     )
 
 

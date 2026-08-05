@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
-from f3_contracts.operation_adapter import LockMode, LockRequest, LockScope
+from ha_mcp_engineering.f3.contracts import LockMode, LockRequest, LockScope
 
 from ..governance.normalize import stable_hash
 from .models import PreparedConfigurationOperation
@@ -35,7 +35,16 @@ def resource_lock_key(resource_type: str, target_id: str) -> str:
 def operation_lock_requests(
     operation: PreparedConfigurationOperation,
 ) -> tuple[LockRequest, ...]:
-    """Return resource mutation plus Home Assistant availability dependency."""
+    """Return the exact resource, matching reload, and core lock graph."""
+
+    reload_key = {
+        "automation": "reload:automation",
+        "script": "reload:script",
+        "input_boolean": "reload:input_boolean",
+        "input_number": "reload:input_number",
+    }.get(operation.resource_type)
+    if reload_key is None:
+        raise ValueError("configuration resource type has no reload lock")
 
     return normalize_lock_requests(
         (
@@ -48,8 +57,14 @@ def operation_lock_requests(
                 reason_codes=("configuration_target_mutation",),
             ),
             LockRequest(
+                key=reload_key,
+                scopes=(LockScope.RESOURCE,),
+                mode=LockMode.SHARED,
+                reason_codes=("matching_configuration_reload_dependency",),
+            ),
+            LockRequest(
                 key="home_assistant:core",
-                scopes=(LockScope.PROVIDER,),
+                scopes=(LockScope.RESOURCE,),
                 mode=LockMode.SHARED,
                 reason_codes=("home_assistant_availability_dependency",),
             ),

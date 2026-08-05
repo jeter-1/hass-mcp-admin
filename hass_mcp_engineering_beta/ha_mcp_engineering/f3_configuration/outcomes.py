@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from f3_contracts.operation_adapter import NormalizedOperationOutcome
+from ha_mcp_engineering.f3.contracts import NormalizedOperationOutcome
 
 
 @dataclass(frozen=True)
