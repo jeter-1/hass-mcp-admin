@@ -430,6 +430,26 @@ class F3ContractDeclarationTests(unittest.TestCase):
                     path.read_text(encoding="utf-8"),
                 )
 
+    def test_runtime_inert_f3_configuration_uses_canonical_contract(self):
+        runtime = BETA_DIR / "ha_mcp_engineering"
+        importers = {
+            path.relative_to(runtime).as_posix()
+            for path in sorted(runtime.rglob("*.py"))
+            if "ha_mcp_engineering.f3.contracts"
+            in path.read_text(encoding="utf-8")
+        }
+        self.assertGreaterEqual(
+            importers,
+            {
+                "f3_configuration/adapter.py",
+                "f3_configuration/locks.py",
+                "f3_configuration/models.py",
+                "f3_configuration/outcomes.py",
+                "f3_configuration/sequence.py",
+                "f3_configuration/strategies.py",
+            },
+        )
+
     def test_required_contract_documents_have_distinct_boundaries(self):
         documents = {
             "F3_CURRENT_STATE_INVENTORY.md": [

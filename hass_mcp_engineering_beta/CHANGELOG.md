@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.2.0-beta.18 - F3-C1 configuration-adapter conformance
+
+- Add internal `f3-operation-adapter-v1` configuration strategies for
+  automation, script, `input_boolean`, and `input_number` create/update using
+  existing normalization, validation, fingerprint, risk, and policy evidence.
+- Consume the canonical shipped Beta 17 contract and executor API. Order exact
+  durable locks, final stale-state preflight, idempotent approval consumption,
+  durable intent, and one fixed gateway write.
+- Add exact resource, matching reload-domain, and Home Assistant restart locks;
+  authoritative readback verification; bounded observability; and readback-
+  only reconstruction.
+- Model ordered 1–8 operation plans as deterministic future child descriptors
+  without persistence or dispatch. Reject post-intent task cancellation and
+  declare all eight forward rollback capabilities unavailable.
+- Prove response/process loss, external-writer limitations, and migration
+  equivalence through deterministic offline fixtures.
+- Keep the package disconnected from application startup, governance routes,
+  provider routing, and MCP registration. Single-operation F3-A executor/lock
+  conformance is isolated; durable child ownership and activation remain F3-D.
+- Preserve task schema 1, current plan vocabulary, F2 policy, approval
+  authority, 48 Engineering-local tools, exact 7.14.2 and 8.0.0 accounting,
+  secure dependency pins, stable v1.1.2, and zero fallback.
+
 ## 2.2.0-beta.17 - Canonical F3 contracts and dashboard deferral
 
 - Ship `ha_mcp_engineering.f3.contracts` as the sole runtime definition of
