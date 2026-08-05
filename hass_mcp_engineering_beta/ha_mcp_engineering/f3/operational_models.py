@@ -1,27 +1,45 @@
 """Closed value models for runtime-inert F3 operational adapters.
 
-These models intentionally mirror the declaration-only
-``f3-operation-adapter-v1`` shapes without importing the repository-level
-repository-level declaration package into the Engineering add-on. F3-A consumes the
-objects structurally.  No model in this module is a public or persisted plan
-or task schema.
+Canonical adapter objects come only from :mod:`ha_mcp_engineering.f3.contracts`.
+The additional frozen objects below bind existing operational-plan evidence to
+one future public-task/child-execution pair without defining a persisted schema
+or an independent execution authority.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import hashlib
 import json
 import re
-from typing import Any
+from typing import Any, Protocol
+
+from ha_mcp_engineering.f3.contracts import (
+    AdapterCapabilityDescriptor,
+    DispatchResult,
+    F3_ADAPTER_CONTRACT_MODEL,
+    LockMode,
+    LockRequest,
+    LockScope,
+    NormalizedOperationOutcome,
+    ObservationResult,
+    OperationTarget,
+    PreflightResult,
+    PreparedOperation,
+    RecoveryContext,
+    VerificationResult,
+)
 
 
-F3_ADAPTER_CONTRACT_MODEL = "f3-operation-adapter-v1"
 OPERATIONAL_ADAPTER_ID = "operational_administration"
 OPERATIONAL_PROVIDER_CONTRACT_MODEL = (
     "ha-mcp-operational-tool-descriptor-v2"
 )
 OPERATIONAL_PLAN_CONTRACT_VERSION = 3
+OPERATIONAL_EVIDENCE_PROJECTION_MODEL = (
+    "f3-authoritative-operational-child-evidence-v1"
+)
 
 CREATE_FULL_BACKUP = "create_full_backup"
 CONTROLLED_RELOAD = "controlled_reload"
@@ -65,9 +83,9 @@ PROVIDER_OPERATIONS = {
 
 VERIFICATION_MODELS = {
     CREATE_FULL_BACKUP: "f3-full-backup-exact-readback-v1",
-    CONTROLLED_RELOAD: "f3-controlled-reload-readiness-v1",
+    CONTROLLED_RELOAD: "f3-controlled-reload-effect-readback-v1",
     RESTART_ADDON: "f3-addon-restart-exact-readback-v1",
-    RESTART_HOME_ASSISTANT: "f3-home-assistant-restart-recovery-v1",
+    RESTART_HOME_ASSISTANT: "f3-home-assistant-restart-outage-recovery-v1",
 }
 
 EVIDENCE_DEADLINE_CLASSES = {
@@ -101,6 +119,7 @@ RELOAD_PROVIDER_TARGETS = {
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 _SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,127}$")
 _SHA256 = re.compile(r"^[a-f0-9]{64}$")
+_EVIDENCE_CODE = re.compile(r"^[a-z][a-z0-9_]{0,95}$")
 
 
 def canonical_json(value: Any) -> str:
@@ -140,84 +159,73 @@ def _require_sha256(value: str, *, field_name: str) -> None:
         raise ValueError(f"{field_name} is invalid")
 
 
-@dataclass(frozen=True)
-class OperationTarget:
-    target_type: str
-    target_id: str
-
-    def validate(self) -> None:
-        _require_identifier(self.target_type, field_name="target_type")
-        _require_identifier(self.target_id, field_name="target_id")
-
-
-@dataclass(frozen=True)
-class LockRequest:
-    key: str
-    scopes: tuple[str, ...]
-    mode: str
-    reason_codes: tuple[str, ...]
+def _parse_aware(value: str, *, field_name: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} is invalid") from exc
+    if parsed.tzinfo is None:
+        raise ValueError(f"{field_name} is not timezone-aware")
+    return parsed.astimezone(timezone.utc)
 
 
 @dataclass(frozen=True)
-class AdapterCapabilityDescriptor:
-    """Shared descriptor consumed structurally by the F3-A executor."""
+class OperationalCapabilityDescriptor(AdapterCapabilityDescriptor):
+    """Exact operation-specific binding layered on the canonical descriptor."""
 
-    adapter_id: str = OPERATIONAL_ADAPTER_ID
-    contract_model: str = F3_ADAPTER_CONTRACT_MODEL
-    operation_family: str = "operational_administration"
-    supported_operations: tuple[str, ...] = SUPPORTED_OPERATIONS
-    rollback_supported: bool = False
-    readback_recovery_supported: bool = True
-    exact_provider_contract_required: bool = True
-
-
-@dataclass(frozen=True)
-class OperationalCapabilityDescriptor:
     capability_id: str
-    contract_model: str
-    operation: str
     target_class: str
     provider: str
     provider_contract_model: str
     provider_operation: str
     argument_surface: tuple[str, ...]
     verification_contract_model: str
-    rollback_supported: bool
     recovery_supported: bool
     evidence_deadline_class: str
     manual_review_hold_model: str
     limitations: tuple[str, ...]
 
     def validate(self) -> None:
-        if self.operation not in SUPPORTED_OPERATIONS:
+        if len(self.supported_operations) != 1:
+            raise ValueError("operational capability must bind one operation")
+        operation = self.supported_operations[0]
+        if operation not in SUPPORTED_OPERATIONS:
             raise ValueError("unknown operational capability")
-        if self.capability_id != CAPABILITY_IDENTITIES[self.operation]:
+        if self.capability_id != CAPABILITY_IDENTITIES[operation]:
             raise ValueError("capability identity is not canonical")
         if self.contract_model != F3_ADAPTER_CONTRACT_MODEL:
             raise ValueError("adapter contract model is invalid")
-        if self.target_class != TARGET_CLASSES[self.operation]:
+        if self.adapter_id != OPERATIONAL_ADAPTER_ID:
+            raise ValueError("adapter identity is invalid")
+        if self.target_class != TARGET_CLASSES[operation]:
             raise ValueError("target class is invalid")
-        if self.provider_operation != PROVIDER_OPERATIONS[self.operation]:
+        if self.provider_operation != PROVIDER_OPERATIONS[operation]:
             raise ValueError("provider operation is invalid")
-        if self.verification_contract_model != VERIFICATION_MODELS[self.operation]:
+        if self.verification_contract_model != VERIFICATION_MODELS[operation]:
             raise ValueError("verification model is invalid")
         if self.rollback_supported or not self.recovery_supported:
             raise ValueError("operational recovery declaration is invalid")
 
+    @property
+    def operation(self) -> str:
+        return self.supported_operations[0]
+
 
 @dataclass(frozen=True)
 class OperationalPreparationRequest:
-    """Existing approved-plan material supplied after public planning."""
+    """Existing immutable approved-plan material supplied before F3 execution."""
 
     plan: Any
     expected_plan_hash: str
-    task_id: str
+    public_task_id: str
+    child_execution_id: str
     authoritative_provider_slug: str
     provider_identity_evidence_hash: str
 
     def validate(self) -> None:
         _require_sha256(self.expected_plan_hash, field_name="expected_plan_hash")
-        _require_identifier(self.task_id, field_name="task_id")
+        _require_identifier(self.public_task_id, field_name="public_task_id")
+        _require_identifier(self.child_execution_id, field_name="child_execution_id")
         if not _SLUG.fullmatch(self.authoritative_provider_slug):
             raise ValueError("authoritative provider slug is invalid")
         _require_sha256(
@@ -228,47 +236,44 @@ class OperationalPreparationRequest:
 
 @dataclass(frozen=True)
 class OperationalAuthoritySnapshot:
-    """Caller-owned authorization/task/storage facts reread during preflight."""
+    """Caller-owned plan, child, authorization, and storage evidence.
+
+    This snapshot deliberately contains no ``approval_consumed`` field.
+    Consumption is the shared executor caller's idempotent callback and occurs
+    only after this final locked preflight succeeds.
+    """
 
     plan_id: str
     plan_hash: str
-    task_id: str
-    active_task_id: str
+    public_task_id: str
+    child_execution_id: str
+    active_child_execution_id: str
     operation: str
     target_type: str
     target_id: str
     policy_decision_hash: str
-    approval_consumed: bool
-    elevated_acknowledgement_consumed: bool
+    approval_bundle_hash: str
+    authorization_evidence_status: str
+    elevated_acknowledgement_bound: bool
     governance_storage_status: str
     audit_storage_status: str
     execution_task_storage_status: str
-    conflicting_execution_active: bool = False
+    f3_execution_storage_status: str
+    f3_lock_storage_status: str
+    restart_reconciliation_compatible: bool = True
 
 
 @dataclass(frozen=True)
-class PreparedOperationalOperation:
-    """Immutable, exact operational plan projection consumed by F3-A."""
+class PreparedOperationalOperation(PreparedOperation):
+    """Canonical prepared operation plus immutable operational-plan evidence."""
 
-    contract_model: str
-    adapter_id: str
-    operation: str
-    target: OperationTarget
-    current_state_fingerprint: str
-    normalized_proposed_hash: str
-    prepared_operation_hash: str
-    risk_level: str
-    policy_decision_hash: str
-    approval_bundle_hash: str
-    expected_effects: tuple[str, ...]
-    verification_contract_model: str
-    verification_contract_hash: str
-    rollback_available: bool
     capability_id: str
     target_class: str
     plan_id: str
     plan_hash: str
-    task_id: str
+    plan_contract_version: int
+    public_task_id: str
+    child_execution_id: str
     plan_expires_at: str
     requested_name: str
     provider_id: str
@@ -288,8 +293,8 @@ class PreparedOperationalOperation:
     limitations: tuple[str, ...]
     verification_contract_json: str
     evidence_deadline_class: str
-    manual_review_hold_keys: tuple[str, ...]
-    manual_review_hold_max_seconds: int
+    evidence_deadline_seconds: int
+    selective_hold_keys: tuple[str, ...]
 
     def validate(self) -> None:
         if self.contract_model != F3_ADAPTER_CONTRACT_MODEL:
@@ -298,7 +303,8 @@ class PreparedOperationalOperation:
             raise ValueError("prepared adapter identity is invalid")
         if self.operation not in SUPPORTED_OPERATIONS:
             raise ValueError("prepared operation is unsupported")
-        self.target.validate()
+        _require_identifier(self.target.target_type, field_name="target_type")
+        _require_identifier(self.target.target_id, field_name="target_id")
         if self.target.target_type != TARGET_TYPES[self.operation]:
             raise ValueError("prepared target type is invalid")
         if self.capability_id != CAPABILITY_IDENTITIES[self.operation]:
@@ -316,8 +322,15 @@ class PreparedOperationalOperation:
             "provider_identity_evidence_hash",
         ):
             _require_sha256(getattr(self, name), field_name=name)
-        _require_identifier(self.plan_id, field_name="plan_id")
-        _require_identifier(self.task_id, field_name="task_id")
+        for name in (
+            "plan_id",
+            "public_task_id",
+            "child_execution_id",
+        ):
+            _require_identifier(getattr(self, name), field_name=name)
+        if self.plan_contract_version != OPERATIONAL_PLAN_CONTRACT_VERSION:
+            raise ValueError("operational plan contract is unsupported")
+        _parse_aware(self.plan_expires_at, field_name="plan_expires_at")
         if not _SLUG.fullmatch(self.authoritative_provider_slug):
             raise ValueError("prepared provider slug is invalid")
         if self.provider_operation != PROVIDER_OPERATIONS[self.operation]:
@@ -337,10 +350,10 @@ class PreparedOperationalOperation:
         )
         if stable_hash(self.provider_arguments_json) != self.provider_arguments_hash:
             raise ValueError("provider argument hash is invalid")
-        if not self.manual_review_hold_keys:
-            raise ValueError("manual-review hold set is empty")
-        if not 60 <= self.manual_review_hold_max_seconds <= 86_400:
-            raise ValueError("manual-review hold bound is invalid")
+        if len(self.selective_hold_keys) != 1:
+            raise ValueError("exactly one affected-resource hold is required")
+        if not 60 <= self.evidence_deadline_seconds <= 86_400:
+            raise ValueError("evidence deadline is invalid")
 
     @property
     def provider_arguments(self) -> dict[str, Any]:
@@ -360,59 +373,97 @@ class PreparedOperationalOperation:
 
 
 @dataclass(frozen=True)
-class PreflightResult:
-    eligible: bool
-    outcome: str | None
-    confirmed_target: OperationTarget | None
-    observed_state_fingerprint: str | None
-    provider_contract: str | None
-    provider_operation: str | None
-    provider_arguments_hash: str | None
-    evidence_hash: str | None
-    diagnostic_codes: tuple[str, ...] = ()
-    mismatch_fields: tuple[str, ...] = ()
+class OperationalEvidenceProjection:
+    """Read-only bounded view of one authoritative durable F3 child record.
 
+    F3-C2 supplies only this type and reader boundary.  F3-D must map it from
+    the canonical child record and its operation-evidence namespace; JSONL,
+    audit events, and provider output can never create execution authority.
+    """
 
-@dataclass(frozen=True)
-class DispatchResult:
-    outcome: str
+    source_model: str
+    public_task_id: str
+    child_execution_id: str
+    plan_id: str
     dispatch_intent_recorded: bool
-    mutating_invocation_count: int
-    may_have_dispatched: bool
+    dispatch_count: int
+    intent_committed_at: str | None
+    evidence_deadline: str | None
     provider_response_received: bool
     provider_operation_id: str | None = None
-    response_evidence_hash: str | None = None
-    diagnostic_codes: tuple[str, ...] = ()
     provider_backup_id: str | None = None
-
-
-@dataclass(frozen=True)
-class ObservationResult:
-    outcome: str
-    attempt_count: int
-    observation_complete: bool
-    provider_reachable: bool | None
-    target_reachable: bool | None
-    readback_state_fingerprint: str | None
-    intended_result_observed: bool | None
-    mismatch_fields: tuple[str, ...] = ()
-    evidence_hash: str | None = None
-    diagnostic_codes: tuple[str, ...] = ()
-    verification_status: str = "pending"
-
-
-@dataclass(frozen=True)
-class VerificationResult:
-    outcome: str
-    attempt_count: int
-    verified: bool | None
-    resulting_state_fingerprint: str | None
-    mismatch_fields: tuple[str, ...] = ()
-    evidence_hash: str | None = None
+    outage_observed: bool = False
+    reconnect_observed: bool = False
+    provider_readmission_observed: bool = False
+    observation_attempt_count: int = 0
+    verification_attempt_count: int = 0
+    restart_backoff_attempt_count: int = 0
+    next_eligible_observation_at: str | None = None
     manual_review_reason_code: str | None = None
+    selective_hold_keys: tuple[str, ...] = ()
+    jsonl_authoritative: bool = False
+
+    def validate(self, operation: PreparedOperationalOperation) -> None:
+        if self.source_model != OPERATIONAL_EVIDENCE_PROJECTION_MODEL:
+            raise ValueError("operational evidence source is not authoritative")
+        if (
+            self.public_task_id != operation.public_task_id
+            or self.child_execution_id != operation.child_execution_id
+            or self.plan_id != operation.plan_id
+        ):
+            raise ValueError("operational evidence identity is inconsistent")
+        if self.dispatch_count not in {0, 1}:
+            raise ValueError("operational dispatch count is invalid")
+        if self.dispatch_intent_recorded:
+            if self.dispatch_count != 1:
+                raise ValueError("durable intent must reserve one dispatch")
+            committed = _parse_aware(
+                self.intent_committed_at, field_name="intent_committed_at"
+            )
+            deadline = _parse_aware(
+                self.evidence_deadline, field_name="evidence_deadline"
+            )
+            if deadline <= committed:
+                raise ValueError("evidence deadline does not follow intent")
+        elif any(
+            value is not None
+            for value in (self.intent_committed_at, self.evidence_deadline)
+        ) or self.dispatch_count:
+            raise ValueError("pre-intent evidence contradicts dispatch state")
+        for name in (
+            "observation_attempt_count",
+            "verification_attempt_count",
+            "restart_backoff_attempt_count",
+        ):
+            value = getattr(self, name)
+            if type(value) is not int or not 0 <= value <= 32:
+                raise ValueError(f"{name} is invalid")
+        if self.next_eligible_observation_at is not None:
+            _parse_aware(
+                self.next_eligible_observation_at,
+                field_name="next_eligible_observation_at",
+            )
+        if self.manual_review_reason_code is not None and not _EVIDENCE_CODE.fullmatch(
+            self.manual_review_reason_code
+        ):
+            raise ValueError("manual-review reason is invalid")
+        if self.selective_hold_keys not in {(), operation.selective_hold_keys}:
+            raise ValueError("manual-review hold selection is invalid")
+        if self.jsonl_authoritative:
+            raise ValueError("JSONL evidence cannot be authoritative")
 
 
-def provider_arguments(operation: str, target_id: str, requested_name: str) -> dict[str, Any]:
+class OperationalEvidenceReader(Protocol):
+    """Read-only port that F3-D must back with the authoritative child record."""
+
+    def read(
+        self, operation: PreparedOperationalOperation
+    ) -> OperationalEvidenceProjection: ...
+
+
+def provider_arguments(
+    operation: str, target_id: str, requested_name: str
+) -> dict[str, Any]:
     if operation == CREATE_FULL_BACKUP:
         return {"scope": "snapshot", "action": "create", "name": requested_name}
     if operation == CONTROLLED_RELOAD:
@@ -430,3 +481,26 @@ def provider_arguments(operation: str, target_id: str, requested_name: str) -> d
             raise ValueError("Home Assistant target is invalid")
         return {"confirm": True}
     raise ValueError("unknown operational operation")
+
+
+__all__ = [
+    "AdapterCapabilityDescriptor",
+    "DispatchResult",
+    "F3_ADAPTER_CONTRACT_MODEL",
+    "LockMode",
+    "LockRequest",
+    "LockScope",
+    "NormalizedOperationOutcome",
+    "ObservationResult",
+    "OperationTarget",
+    "PreflightResult",
+    "PreparedOperation",
+    "RecoveryContext",
+    "VerificationResult",
+    "OperationalCapabilityDescriptor",
+    "OperationalPreparationRequest",
+    "OperationalAuthoritySnapshot",
+    "PreparedOperationalOperation",
+    "OperationalEvidenceProjection",
+    "OperationalEvidenceReader",
+]

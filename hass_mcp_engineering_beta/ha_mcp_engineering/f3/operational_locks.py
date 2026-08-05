@@ -1,27 +1,73 @@
-"""Complete canonical lock-set calculation for F3 operational adapters."""
+"""Pure complete lock graph for runtime-inert F3 operational adapters."""
 
 from __future__ import annotations
 
-from .locks import normalize_lock_requests
+from collections.abc import Iterable
+
+from ha_mcp_engineering.f3.contracts import LockMode, LockRequest, LockScope
+
+from .models import validate_lock_key
 from .operational_models import (
     CONTROLLED_RELOAD,
     CREATE_FULL_BACKUP,
     RESTART_ADDON,
     RESTART_HOME_ASSISTANT,
-    LockRequest,
     PreparedOperationalOperation,
 )
 
 
-class OperationalLockSetCalculator:
-    """Calculate resource and provider dependencies before durable intent.
+EVIDENCE_DEADLINE_SECONDS = {
+    CREATE_FULL_BACKUP: 86_400,
+    CONTROLLED_RELOAD: 900,
+    RESTART_ADDON: 1_800,
+    RESTART_HOME_ASSISTANT: 1_800,
+}
 
-    All four operations depend on connected Home Assistant and the exact
-    admitted ha-mcp add-on.  Home Assistant Core and the provider are shared
-    dependencies except when the operation mutates that exact resource.  The
-    F3-A normalizer unions a provider/resource duplicate and applies exclusive
-    dominance, which is required when restarting the ha-mcp add-on itself.
-    """
+
+def normalize_operational_lock_requests(
+    requests: Iterable[LockRequest],
+) -> tuple[LockRequest, ...]:
+    """Union canonical evidence, apply exclusive dominance, and byte-sort."""
+
+    merged: dict[str, tuple[set[LockScope], LockMode, set[str]]] = {}
+    for request in requests:
+        validate_lock_key(request.key)
+        if not request.scopes or not request.reason_codes:
+            raise ValueError("lock evidence must not be empty")
+        if any(not isinstance(scope, LockScope) for scope in request.scopes):
+            raise ValueError("lock scope is invalid")
+        if not isinstance(request.mode, LockMode):
+            raise ValueError("lock mode is invalid")
+        scopes, mode, reasons = merged.get(
+            request.key, (set(), LockMode.SHARED, set())
+        )
+        scopes.update(request.scopes)
+        reasons.update(request.reason_codes)
+        if request.mode == LockMode.EXCLUSIVE:
+            mode = LockMode.EXCLUSIVE
+        merged[request.key] = scopes, mode, reasons
+    if not merged:
+        raise ValueError("complete operational lock set is empty")
+    return tuple(
+        LockRequest(
+            key=key,
+            scopes=tuple(
+                sorted(
+                    merged[key][0],
+                    key=lambda scope: scope.value.encode("utf-8"),
+                )
+            ),
+            mode=merged[key][1],
+            reason_codes=tuple(
+                sorted(merged[key][2], key=lambda code: code.encode("utf-8"))
+            ),
+        )
+        for key in sorted(merged, key=lambda value: value.encode("utf-8"))
+    )
+
+
+class OperationalLockSetCalculator:
+    """Calculate every target and dependency key before final preflight."""
 
     def calculate(
         self, operation: PreparedOperationalOperation
@@ -31,11 +77,11 @@ class OperationalLockSetCalculator:
         requests: list[LockRequest] = [
             LockRequest(
                 key="home_assistant:core",
-                scopes=("resource",),
+                scopes=(LockScope.RESOURCE,),
                 mode=(
-                    "exclusive"
+                    LockMode.EXCLUSIVE
                     if operation.operation == RESTART_HOME_ASSISTANT
-                    else "shared"
+                    else LockMode.SHARED
                 ),
                 reason_codes=(
                     "home_assistant_core_mutation"
@@ -45,8 +91,8 @@ class OperationalLockSetCalculator:
             ),
             LockRequest(
                 key=provider_key,
-                scopes=("provider",),
-                mode="shared",
+                scopes=(LockScope.PROVIDER,),
+                mode=LockMode.SHARED,
                 reason_codes=("upstream_provider_dependency",),
             ),
         ]
@@ -54,8 +100,8 @@ class OperationalLockSetCalculator:
             requests.append(
                 LockRequest(
                     key="backup:local_full_backup",
-                    scopes=("resource",),
-                    mode="exclusive",
+                    scopes=(LockScope.RESOURCE,),
+                    mode=LockMode.EXCLUSIVE,
                     reason_codes=("full_backup_mutation",),
                 )
             )
@@ -63,8 +109,8 @@ class OperationalLockSetCalculator:
             requests.append(
                 LockRequest(
                     key=f"reload:{operation.target.target_id}",
-                    scopes=("resource",),
-                    mode="exclusive",
+                    scopes=(LockScope.RESOURCE,),
+                    mode=LockMode.EXCLUSIVE,
                     reason_codes=("configuration_domain_reload",),
                 )
             )
@@ -72,42 +118,34 @@ class OperationalLockSetCalculator:
             requests.append(
                 LockRequest(
                     key=f"addon:{operation.target.target_id}",
-                    scopes=("resource",),
-                    mode="exclusive",
+                    scopes=(LockScope.RESOURCE,),
+                    mode=LockMode.EXCLUSIVE,
                     reason_codes=("installed_addon_restart",),
                 )
             )
         elif operation.operation != RESTART_HOME_ASSISTANT:
             raise ValueError("unknown operational lock model")
-
-        normalized = normalize_lock_requests(requests)
-        return tuple(
-            LockRequest(
-                key=item.key,
-                scopes=item.scopes,
-                mode=item.mode,
-                reason_codes=item.reason_codes,
-            )
-            for item in normalized
-        )
+        return normalize_operational_lock_requests(requests)
 
 
-def exact_manual_review_hold(
+def operational_escalation_policy(
     operation: str, target_id: str
 ) -> tuple[tuple[str, ...], int]:
-    """Declare the exact target hold and bounded F3-D handoff policy.
+    """Return affected-only hold keys and the evidence/escalation deadline.
 
-    F3-A currently promotes every held key at once.  This declaration is used
-    by conformance tests and is intentionally not presented as activated until
-    F3-D adds selective hold promotion/release to the shared integration.
+    The duration never releases a hold.  Deadline expiry changes the outcome
+    to manual review; a promoted hold remains until verified resolution or a
+    future authenticated F3-D reconciliation action.
     """
 
     if operation == CREATE_FULL_BACKUP:
-        return ("backup:local_full_backup",), 86_400
-    if operation == CONTROLLED_RELOAD:
-        return (f"reload:{target_id}",), 900
-    if operation == RESTART_ADDON:
-        return (f"addon:{target_id}",), 1_800
-    if operation == RESTART_HOME_ASSISTANT:
-        return ("home_assistant:core",), 1_800
-    raise ValueError("unknown operational hold model")
+        keys = ("backup:local_full_backup",)
+    elif operation == CONTROLLED_RELOAD:
+        keys = (f"reload:{target_id}",)
+    elif operation == RESTART_ADDON:
+        keys = (f"addon:{target_id}",)
+    elif operation == RESTART_HOME_ASSISTANT:
+        keys = ("home_assistant:core",)
+    else:
+        raise ValueError("unknown operational hold model")
+    return keys, EVIDENCE_DEADLINE_SECONDS[operation]

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable, Protocol
+from typing import Any, Awaitable, Callable
+
+from ha_mcp_engineering.f3.contracts import F3_ADAPTER_CONTRACT_MODEL
 
 from ..governance.operational import (
     BackupAdministrationGateway,
@@ -19,7 +21,6 @@ from .operational_models import (
     CONTROLLED_RELOAD,
     CREATE_FULL_BACKUP,
     EVIDENCE_DEADLINE_CLASSES,
-    F3_ADAPTER_CONTRACT_MODEL,
     OPERATIONAL_PROVIDER_CONTRACT_MODEL,
     PROVIDER_OPERATIONS,
     RESTART_ADDON,
@@ -27,19 +28,12 @@ from .operational_models import (
     TARGET_CLASSES,
     VERIFICATION_MODELS,
     OperationalCapabilityDescriptor,
+    OperationalEvidenceProjection,
     PreparedOperationalOperation,
     canonical_json,
     stable_hash,
 )
 from .operational_observability import OperationalMetrics
-
-
-class OperationalRecoveryLedger(Protocol):
-    """Operation-evidence port supplied by F3-D's durable integration."""
-
-    def load(self, task_id: str) -> dict[str, Any]: ...
-
-    def merge(self, task_id: str, values: dict[str, Any]) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -123,9 +117,14 @@ def _capability(
     limitations: tuple[str, ...],
 ) -> OperationalCapabilityDescriptor:
     value = OperationalCapabilityDescriptor(
-        capability_id=CAPABILITY_IDENTITIES[operation],
+        adapter_id="operational_administration",
         contract_model=F3_ADAPTER_CONTRACT_MODEL,
-        operation=operation,
+        operation_family="operational_administration",
+        supported_operations=(operation,),
+        rollback_supported=False,
+        readback_recovery_supported=True,
+        exact_provider_contract_required=True,
+        capability_id=CAPABILITY_IDENTITIES[operation],
         target_class=TARGET_CLASSES[operation],
         provider=(
             "upstream_operational_backup"
@@ -136,7 +135,6 @@ def _capability(
         provider_operation=PROVIDER_OPERATIONS[operation],
         argument_surface=argument_surface,
         verification_contract_model=VERIFICATION_MODELS[operation],
-        rollback_supported=False,
         recovery_supported=True,
         evidence_deadline_class=EVIDENCE_DEADLINE_CLASSES[operation],
         manual_review_hold_model="f3-operational-target-hold-v1",
@@ -153,10 +151,8 @@ class OperationalStrategy:
     def __init__(
         self,
         *,
-        ledger: OperationalRecoveryLedger,
         metrics: OperationalMetrics,
     ) -> None:
-        self.ledger = ledger
         self.metrics = metrics
 
     async def preflight_evidence(
@@ -178,6 +174,7 @@ class OperationalStrategy:
         *,
         provider_response_received: bool,
         recovering: bool,
+        evidence: OperationalEvidenceProjection,
     ) -> StrategyObservation:
         raise NotImplementedError
 
@@ -198,10 +195,9 @@ class FullBackupOperationStrategy(OperationalStrategy):
         self,
         gateway: BackupAdministrationGateway,
         *,
-        ledger: OperationalRecoveryLedger,
         metrics: OperationalMetrics,
     ) -> None:
-        super().__init__(ledger=ledger, metrics=metrics)
+        super().__init__(metrics=metrics)
         self.gateway = gateway
 
     async def preflight_evidence(self, prepared):
@@ -270,9 +266,16 @@ class FullBackupOperationStrategy(OperationalStrategy):
             provider_backup_id=result.backup_id,
         )
 
-    async def observe(self, prepared, *, provider_response_received, recovering):
-        durable = self.ledger.load(prepared.task_id)
-        started_at = durable.get("apply_started_at")
+    async def observe(
+        self,
+        prepared,
+        *,
+        provider_response_received,
+        recovering,
+        evidence,
+    ):
+        del provider_response_received, recovering
+        started_at = evidence.intent_committed_at
         if not isinstance(started_at, str):
             return StrategyObservation(
                 status="manual_review",
@@ -289,13 +292,13 @@ class FullBackupOperationStrategy(OperationalStrategy):
                 baseline_ids=list(prepared.baseline.get("backup_ids") or ()),
                 apply_started_at=started_at,
                 backup_id=(
-                    durable.get("provider_backup_id")
-                    if isinstance(durable.get("provider_backup_id"), str)
+                    evidence.provider_backup_id
+                    if isinstance(evidence.provider_backup_id, str)
                     else None
                 ),
                 operation_id=(
-                    durable.get("provider_operation_id")
-                    if isinstance(durable.get("provider_operation_id"), str)
+                    evidence.provider_operation_id
+                    if isinstance(evidence.provider_operation_id, str)
                     else None
                 ),
             )
@@ -331,8 +334,8 @@ class ControlledReloadOperationStrategy(OperationalStrategy):
         limitations=("direct_reload_effect_signal_unavailable",),
     )
 
-    def __init__(self, gateway: OperationalLifecycleGateway, *, ledger, metrics):
-        super().__init__(ledger=ledger, metrics=metrics)
+    def __init__(self, gateway: OperationalLifecycleGateway, *, metrics):
+        super().__init__(metrics=metrics)
         self.gateway = gateway
 
     async def preflight_evidence(self, prepared):
@@ -392,7 +395,15 @@ class ControlledReloadOperationStrategy(OperationalStrategy):
             response_evidence_hash=stable_hash(result.response),
         )
 
-    async def observe(self, prepared, *, provider_response_received, recovering):
+    async def observe(
+        self,
+        prepared,
+        *,
+        provider_response_received,
+        recovering,
+        evidence,
+    ):
+        del recovering, evidence
         self.metrics.increment(self.operation, "configuration_checks")
         self.metrics.increment(self.operation, "service_checks")
         self.metrics.increment(self.operation, "domain_inventory_reads")
@@ -408,6 +419,23 @@ class ControlledReloadOperationStrategy(OperationalStrategy):
                 target_reachable=None,
             )
         status, mismatch, evidence_hash = _bounded_result(result)
+        result_evidence = result.get("evidence") if isinstance(result, dict) else None
+        independent_effect = bool(
+            isinstance(result_evidence, dict)
+            and result_evidence.get("reload_effect_observed") is True
+        )
+        if status == "verified" and not (
+            provider_response_received or independent_effect
+        ):
+            status = "pending"
+            mismatch = ("reload_effect_evidence",)
+            evidence_hash = stable_hash(
+                {
+                    "status": "pending",
+                    "provider_response_received": False,
+                    "reload_effect_observed": False,
+                }
+            )
         return StrategyObservation(
             status=status,
             mismatch_fields=mismatch,
@@ -426,8 +454,8 @@ class AddonRestartOperationStrategy(OperationalStrategy):
         limitations=("restart_signal_depends_on_target_class",),
     )
 
-    def __init__(self, gateway: OperationalLifecycleGateway, *, ledger, metrics):
-        super().__init__(ledger=ledger, metrics=metrics)
+    def __init__(self, gateway: OperationalLifecycleGateway, *, metrics):
+        super().__init__(metrics=metrics)
         self.gateway = gateway
 
     async def preflight_evidence(self, prepared):
@@ -508,7 +536,15 @@ class AddonRestartOperationStrategy(OperationalStrategy):
             response_evidence_hash=stable_hash(result.response),
         )
 
-    async def observe(self, prepared, *, provider_response_received, recovering):
+    async def observe(
+        self,
+        prepared,
+        *,
+        provider_response_received,
+        recovering,
+        evidence,
+    ):
+        del recovering, evidence
         try:
             result = await self.gateway.verify_addon_restart(
                 prepared.target.target_id,
@@ -550,8 +586,8 @@ class HomeAssistantRestartOperationStrategy(OperationalStrategy):
         limitations=("outage_evidence_is_time_bounded",),
     )
 
-    def __init__(self, gateway: OperationalLifecycleGateway, *, ledger, metrics):
-        super().__init__(ledger=ledger, metrics=metrics)
+    def __init__(self, gateway: OperationalLifecycleGateway, *, metrics):
+        super().__init__(metrics=metrics)
         self.gateway = gateway
 
     async def preflight_evidence(self, prepared):
@@ -630,9 +666,16 @@ class HomeAssistantRestartOperationStrategy(OperationalStrategy):
             response_evidence_hash=stable_hash(result.response),
         )
 
-    async def observe(self, prepared, *, provider_response_received, recovering):
-        durable = self.ledger.load(prepared.task_id)
-        outage = durable.get("outage_observed") is True
+    async def observe(
+        self,
+        prepared,
+        *,
+        provider_response_received,
+        recovering,
+        evidence,
+    ):
+        del recovering
+        outage = evidence.outage_observed
         self.metrics.increment(self.operation, "expensive_probes")
         try:
             result = await self.gateway.verify_home_assistant_restart(
@@ -640,11 +683,7 @@ class HomeAssistantRestartOperationStrategy(OperationalStrategy):
                 restart_dispatch_confirmed=provider_response_received,
                 authoritative_outage_observed=outage,
                 outage_observation_window_open=not outage,
-                outage_observation_deadline=(
-                    durable.get("outage_observation_deadline")
-                    if isinstance(durable.get("outage_observation_deadline"), str)
-                    else None
-                ),
+                outage_observation_deadline=evidence.evidence_deadline,
             )
         except LifecycleGatewayError as exc:
             return StrategyObservation(
@@ -655,22 +694,19 @@ class HomeAssistantRestartOperationStrategy(OperationalStrategy):
                 provider_reachable=False,
                 target_reachable=False,
             )
-        evidence = result.get("evidence") if isinstance(result, dict) else None
-        if isinstance(evidence, dict):
-            updates: dict[str, Any] = {}
-            if evidence.get("outage_observed") is True:
-                updates["outage_observed"] = True
-                observed_at = evidence.get("outage_observed_at")
-                if isinstance(observed_at, str):
-                    updates["outage_observed_at"] = observed_at
-            if evidence.get("home_assistant_reconnected") is True:
-                updates["home_assistant_reconnected"] = True
-                reconnected_at = evidence.get("reconnected_at")
-                if isinstance(reconnected_at, str):
-                    updates["reconnected_at"] = reconnected_at
-            if updates:
-                self.ledger.merge(prepared.task_id, updates)
         status, mismatch, evidence_hash = _bounded_result(result)
+        if status == "verified" and not (
+            evidence.outage_observed and evidence.reconnect_observed
+        ):
+            status = "pending"
+            mismatch = ("persisted_outage_reconnect_evidence",)
+            evidence_hash = stable_hash(
+                {
+                    "status": "pending",
+                    "outage_observed": evidence.outage_observed,
+                    "reconnect_observed": evidence.reconnect_observed,
+                }
+            )
         return StrategyObservation(
             status=status,
             mismatch_fields=mismatch,
@@ -685,21 +721,20 @@ def default_strategies(
     *,
     backup_gateway: BackupAdministrationGateway,
     lifecycle_gateway: OperationalLifecycleGateway,
-    ledger: OperationalRecoveryLedger,
     metrics: OperationalMetrics,
 ) -> dict[str, OperationalStrategy]:
     strategies: tuple[OperationalStrategy, ...] = (
         FullBackupOperationStrategy(
-            backup_gateway, ledger=ledger, metrics=metrics
+            backup_gateway, metrics=metrics
         ),
         ControlledReloadOperationStrategy(
-            lifecycle_gateway, ledger=ledger, metrics=metrics
+            lifecycle_gateway, metrics=metrics
         ),
         AddonRestartOperationStrategy(
-            lifecycle_gateway, ledger=ledger, metrics=metrics
+            lifecycle_gateway, metrics=metrics
         ),
         HomeAssistantRestartOperationStrategy(
-            lifecycle_gateway, ledger=ledger, metrics=metrics
+            lifecycle_gateway, metrics=metrics
         ),
     )
     return {strategy.operation: strategy for strategy in strategies}

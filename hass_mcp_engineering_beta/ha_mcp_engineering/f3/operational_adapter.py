@@ -3,20 +3,35 @@
 from __future__ import annotations
 
 import inspect
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
+
+from ha_mcp_engineering.f3.contracts import (
+    AdapterCapabilityDescriptor,
+    DispatchIntentRecorder,
+    DispatchResult,
+    F3_ADAPTER_CONTRACT_MODEL,
+    NormalizedOperationOutcome,
+    ObservationResult,
+    OperationTarget,
+    PreflightResult,
+    RecoveryContext,
+    VerificationResult,
+)
+from ha_mcp_engineering.f3.locks import (
+    normalize_lock_requests as normalize_durable_lock_requests,
+)
 
 from ..governance.models import ApprovalState, ChangePlan, PlanStatus
 from .operational_locks import (
     OperationalLockSetCalculator,
-    exact_manual_review_hold,
+    operational_escalation_policy,
 )
 from .operational_models import (
     CAPABILITY_IDENTITIES,
     CONTROLLED_RELOAD,
     CREATE_FULL_BACKUP,
     EXPECTED_EFFECT_CODES,
-    F3_ADAPTER_CONTRACT_MODEL,
     OPERATIONAL_ADAPTER_ID,
     OPERATIONAL_PLAN_CONTRACT_VERSION,
     OPERATIONAL_PROVIDER_CONTRACT_MODEL,
@@ -28,15 +43,11 @@ from .operational_models import (
     TARGET_CLASSES,
     TARGET_TYPES,
     VERIFICATION_MODELS,
-    AdapterCapabilityDescriptor,
-    DispatchResult,
-    ObservationResult,
-    OperationTarget,
     OperationalAuthoritySnapshot,
+    OperationalEvidenceProjection,
+    OperationalEvidenceReader,
     OperationalPreparationRequest,
-    PreflightResult,
     PreparedOperationalOperation,
-    VerificationResult,
     canonical_json,
     provider_arguments,
     stable_hash,
@@ -45,11 +56,7 @@ from .operational_observability import (
     OperationalEventRecorder,
     OperationalMetrics,
 )
-from .operational_strategies import (
-    OperationalRecoveryLedger,
-    OperationalStrategy,
-    default_strategies,
-)
+from .operational_strategies import OperationalStrategy, default_strategies
 
 
 AuthorityReader = Callable[
@@ -110,31 +117,31 @@ def _approval_bundle_hash(plan: ChangePlan) -> str:
     )
 
 
-def _lock_signature(values: tuple[Any, ...]) -> tuple[tuple[Any, ...], ...]:
-    result = []
-    for value in values:
-        result.append(
-            (
-                str(getattr(value, "key")),
-                tuple(str(item) for item in getattr(value, "scopes")),
-                _enum_value(getattr(value, "mode")),
-                tuple(str(item) for item in getattr(value, "reason_codes")),
-            )
-        )
-    return tuple(result)
-
-
 class OperationalAdministrationAdapter:
-    """One shared adapter with four exact operation-specific strategies."""
+    """One closed adapter delegating to four exact strategies.
 
-    capabilities = AdapterCapabilityDescriptor()
+    The merged executor owns claims, durable locks, approval consumption,
+    intent, duplicate handling, cancellation, and reconstruction cadence.  The
+    injected evidence reader is read-only and must be backed by that same F3
+    child record when F3-D activates this package.
+    """
+
+    capabilities = AdapterCapabilityDescriptor(
+        adapter_id=OPERATIONAL_ADAPTER_ID,
+        contract_model=F3_ADAPTER_CONTRACT_MODEL,
+        operation_family="operational_administration",
+        supported_operations=SUPPORTED_OPERATIONS,
+        rollback_supported=False,
+        readback_recovery_supported=True,
+        exact_provider_contract_required=True,
+    )
 
     def __init__(
         self,
         *,
         backup_gateway: Any,
         lifecycle_gateway: Any,
-        recovery_ledger: OperationalRecoveryLedger,
+        evidence_reader: OperationalEvidenceReader,
         authority_reader: AuthorityReader,
         metrics: OperationalMetrics | None = None,
         events: OperationalEventRecorder | None = None,
@@ -144,14 +151,13 @@ class OperationalAdministrationAdapter:
     ) -> None:
         self.metrics = metrics or OperationalMetrics()
         self.events = events or OperationalEventRecorder()
-        self.recovery_ledger = recovery_ledger
+        self.evidence_reader = evidence_reader
         self.authority_reader = authority_reader
         self.lock_calculator = lock_calculator or OperationalLockSetCalculator()
         self.now = now
         self.strategies = strategies or default_strategies(
             backup_gateway=backup_gateway,
             lifecycle_gateway=lifecycle_gateway,
-            ledger=recovery_ledger,
             metrics=self.metrics,
         )
         if tuple(sorted(self.strategies)) != tuple(sorted(SUPPORTED_OPERATIONS)):
@@ -192,27 +198,31 @@ class OperationalAdministrationAdapter:
             or plan.plan_family != "operational_administration"
         ):
             raise OperationalAdapterError("operational_plan_contract_mismatch")
-        if plan.status not in {PlanStatus.APPROVED, PlanStatus.APPLYING}:
+        # New execution preparation requires still-available bound authority.
+        # A consumed public approval can only reconstruct its existing durable
+        # child record and cannot authorize preparation of another attempt.
+        if plan.status is not PlanStatus.APPROVED:
             raise OperationalAdapterError("plan_not_approved")
-        if plan.approval.state not in {ApprovalState.APPROVED, ApprovalState.CONSUMED}:
+        if plan.approval.state is not ApprovalState.APPROVED:
             raise OperationalAdapterError("approval_not_available")
         if (
             plan.approval.bound_plan_hash != proposal.expected_plan_hash
+            or plan.policy_decision is None
             or plan.approval.policy_decision_hash
-            != (
-                plan.policy_decision.policy_decision_hash
-                if plan.policy_decision is not None
-                else None
-            )
+            != plan.policy_decision.policy_decision_hash
         ):
             raise OperationalAdapterError("approval_hash_mismatch")
-        if plan.policy_decision is None:
-            raise OperationalAdapterError("policy_snapshot_missing")
         expected_target_type = TARGET_TYPES[operation]
         if (
             plan.target_type != expected_target_type
-            or (operation == CREATE_FULL_BACKUP and plan.target_id != "local_full_backup")
-            or (operation == RESTART_HOME_ASSISTANT and plan.target_id != "core")
+            or (
+                operation == CREATE_FULL_BACKUP
+                and plan.target_id != "local_full_backup"
+            )
+            or (
+                operation == RESTART_HOME_ASSISTANT
+                and plan.target_id != "core"
+            )
         ):
             raise OperationalAdapterError("target_identity_mismatch")
         policy = plan.policy_decision
@@ -225,6 +235,14 @@ class OperationalAdministrationAdapter:
             raise OperationalAdapterError("policy_snapshot_mismatch")
         if operational.provider != strategy.capability.provider:
             raise OperationalAdapterError("provider_identity_mismatch")
+        elevated = plan.approval.elevated_risk_acknowledgement
+        if policy_values[0] == "elevated_admin" and not (
+            elevated is not None
+            and elevated.state is ApprovalState.APPROVED
+            and elevated.bound_plan_hash == proposal.expected_plan_hash
+            and elevated.policy_decision_hash == policy.policy_decision_hash
+        ):
+            raise OperationalAdapterError("elevated_authorization_not_bound")
         try:
             expires = _parse_aware(plan.expires_at)
         except (TypeError, ValueError):
@@ -239,9 +257,10 @@ class OperationalAdministrationAdapter:
         provider_json = canonical_json(operational.provider_capability_evidence)
         baseline_json = canonical_json(operational.baseline)
         verification_json = canonical_json(operational.verification_contract)
-        hold_keys, hold_seconds = exact_manual_review_hold(
+        hold_keys, evidence_seconds = operational_escalation_policy(
             operation, plan.target_id
         )
+        approval_hash = _approval_bundle_hash(plan)
         prepared_payload = {
             "contract_model": F3_ADAPTER_CONTRACT_MODEL,
             "adapter_id": OPERATIONAL_ADAPTER_ID,
@@ -253,20 +272,25 @@ class OperationalAdministrationAdapter:
             },
             "plan_id": plan.plan_id,
             "plan_hash": proposal.expected_plan_hash,
-            "task_id": proposal.task_id,
+            "plan_contract_version": plan.contract_version,
+            "public_task_id": proposal.public_task_id,
+            "child_execution_id": proposal.child_execution_id,
             "current_state_fingerprint": plan.current_state_fingerprint,
             "normalized_proposed_hash": plan.proposed_config_hash,
             "policy_decision_hash": policy.policy_decision_hash,
-            "approval_bundle_hash": _approval_bundle_hash(plan),
+            "approval_bundle_hash": approval_hash,
             "provider": operational.provider,
             "provider_evidence": operational.provider_capability_evidence,
             "provider_operation": PROVIDER_OPERATIONS[operation],
             "provider_arguments": arguments,
             "provider_slug": proposal.authoritative_provider_slug,
-            "provider_identity_evidence_hash": proposal.provider_identity_evidence_hash,
+            "provider_identity_evidence_hash": (
+                proposal.provider_identity_evidence_hash
+            ),
             "verification_contract": operational.verification_contract,
             "rollback_available": operational.rollback_available,
-            "manual_review_hold_keys": hold_keys,
+            "selective_hold_keys": hold_keys,
+            "evidence_deadline_seconds": evidence_seconds,
         }
         prepared = PreparedOperationalOperation(
             contract_model=F3_ADAPTER_CONTRACT_MODEL,
@@ -278,7 +302,7 @@ class OperationalAdministrationAdapter:
             prepared_operation_hash=stable_hash(prepared_payload),
             risk_level=_enum_value(plan.risk.level),
             policy_decision_hash=policy.policy_decision_hash,
-            approval_bundle_hash=_approval_bundle_hash(plan),
+            approval_bundle_hash=approval_hash,
             expected_effects=EXPECTED_EFFECT_CODES[operation],
             verification_contract_model=VERIFICATION_MODELS[operation],
             verification_contract_hash=stable_hash(verification_json),
@@ -287,7 +311,9 @@ class OperationalAdministrationAdapter:
             target_class=TARGET_CLASSES[operation],
             plan_id=plan.plan_id,
             plan_hash=proposal.expected_plan_hash,
-            task_id=proposal.task_id,
+            plan_contract_version=plan.contract_version,
+            public_task_id=proposal.public_task_id,
+            child_execution_id=proposal.child_execution_id,
             plan_expires_at=plan.expires_at,
             requested_name=operational.requested_name,
             provider_id=operational.provider,
@@ -298,7 +324,9 @@ class OperationalAdministrationAdapter:
             provider_evidence_json=provider_json,
             baseline_json=baseline_json,
             authoritative_provider_slug=proposal.authoritative_provider_slug,
-            provider_identity_evidence_hash=proposal.provider_identity_evidence_hash,
+            provider_identity_evidence_hash=(
+                proposal.provider_identity_evidence_hash
+            ),
             policy_class=policy_values[0],
             risk_delta=policy_values[1],
             physical_consequence=policy_values[2],
@@ -307,8 +335,8 @@ class OperationalAdministrationAdapter:
             limitations=tuple(operational.limitations),
             verification_contract_json=verification_json,
             evidence_deadline_class=strategy.capability.evidence_deadline_class,
-            manual_review_hold_keys=hold_keys,
-            manual_review_hold_max_seconds=hold_seconds,
+            evidence_deadline_seconds=evidence_seconds,
+            selective_hold_keys=hold_keys,
         )
         prepared.validate()
         self.metrics.increment(operation, "preparations")
@@ -317,7 +345,7 @@ class OperationalAdministrationAdapter:
                 "event_type": "operation_prepared",
                 "operation": operation,
                 "capability_id": prepared.capability_id,
-                "task_id": prepared.task_id,
+                "task_id": prepared.public_task_id,
                 "plan_id": prepared.plan_id,
                 "target_type": prepared.target.target_type,
             }
@@ -340,17 +368,40 @@ class OperationalAdministrationAdapter:
             raise OperationalAdapterError("authority_snapshot_invalid")
         return result
 
+    async def _read_evidence(
+        self, operation: PreparedOperationalOperation
+    ) -> OperationalEvidenceProjection:
+        result = self.evidence_reader.read(operation)
+        if inspect.isawaitable(result):
+            result = await result
+        if not isinstance(result, OperationalEvidenceProjection):
+            raise OperationalAdapterError("recovery_evidence_corrupt")
+        try:
+            result.validate(operation)
+        except (TypeError, ValueError):
+            raise OperationalAdapterError("recovery_evidence_corrupt") from None
+        return result
+
     @staticmethod
     def _authority_mismatches(
         prepared: PreparedOperationalOperation,
         authority: OperationalAuthoritySnapshot,
     ) -> tuple[str, ...]:
-        mismatches = []
         pairs = {
             "plan_identity": (authority.plan_id, prepared.plan_id),
             "plan_hash": (authority.plan_hash, prepared.plan_hash),
-            "task_identity": (authority.task_id, prepared.task_id),
-            "active_task_identity": (authority.active_task_id, prepared.task_id),
+            "public_task_identity": (
+                authority.public_task_id,
+                prepared.public_task_id,
+            ),
+            "child_execution_identity": (
+                authority.child_execution_id,
+                prepared.child_execution_id,
+            ),
+            "active_child_execution_identity": (
+                authority.active_child_execution_id,
+                prepared.child_execution_id,
+            ),
             "operation_identity": (authority.operation, prepared.operation),
             "target_type": (authority.target_type, prepared.target.target_type),
             "target_identity": (authority.target_id, prepared.target.target_id),
@@ -358,24 +409,33 @@ class OperationalAdministrationAdapter:
                 authority.policy_decision_hash,
                 prepared.policy_decision_hash,
             ),
+            "approval_bundle": (
+                authority.approval_bundle_hash,
+                prepared.approval_bundle_hash,
+            ),
         }
-        mismatches.extend(name for name, values in pairs.items() if values[0] != values[1])
-        if not authority.approval_consumed:
-            mismatches.append("approval_consumption")
+        mismatches = [name for name, values in pairs.items() if values[0] != values[1]]
+        if authority.authorization_evidence_status != "valid":
+            mismatches.append("authorization_evidence")
         if (
             prepared.policy_class == "elevated_admin"
-            and not authority.elevated_acknowledgement_consumed
+            and not authority.elevated_acknowledgement_bound
         ):
-            mismatches.append("elevated_acknowledgement")
-        if authority.conflicting_execution_active:
-            mismatches.append("conflicting_execution")
-        if authority.execution_task_storage_status != "healthy":
-            mismatches.append("execution_task_storage")
+            mismatches.append("elevated_acknowledgement_binding")
+        for field, value in (
+            ("execution_task_storage", authority.execution_task_storage_status),
+            ("f3_execution_storage", authority.f3_execution_storage_status),
+            ("f3_lock_storage", authority.f3_lock_storage_status),
+        ):
+            if value != "healthy":
+                mismatches.append(field)
         if prepared.operation == RESTART_HOME_ASSISTANT:
             if authority.governance_storage_status != "healthy":
                 mismatches.append("governance_storage")
             if authority.audit_storage_status != "healthy":
                 mismatches.append("audit_storage")
+            if not authority.restart_reconciliation_compatible:
+                mismatches.append("restart_reconciliation")
         return tuple(sorted(set(mismatches)))
 
     async def preflight(
@@ -388,88 +448,67 @@ class OperationalAdministrationAdapter:
         strategy = self._strategy(operation.operation)
         self.metrics.increment(operation.operation, "preflight_attempts")
         expected_locks = self.lock_requests(operation)
-        if _lock_signature(acquired_locks) != _lock_signature(expected_locks):
+        try:
+            acquired = normalize_durable_lock_requests(acquired_locks)
+            expected = normalize_durable_lock_requests(expected_locks)
+        except (TypeError, ValueError):
+            acquired = ()
+            expected = ("invalid",)
+        if acquired != expected:
             self.metrics.increment(operation.operation, "preflight_rejections")
-            return PreflightResult(
-                eligible=False,
-                outcome="preflight_rejected",
-                confirmed_target=operation.target,
-                observed_state_fingerprint=None,
-                provider_contract=None,
-                provider_operation=None,
-                provider_arguments_hash=None,
-                evidence_hash=stable_hash({"reason": "lock_set_mismatch"}),
-                diagnostic_codes=("lock_set_mismatch",),
+            self.metrics.increment(operation.operation, "lock_conflicts")
+            return self._preflight_rejection(
+                operation,
+                outcome=NormalizedOperationOutcome.LOCK_CONFLICT,
+                code="complete_lock_set_not_held",
                 mismatch_fields=("lock_set",),
             )
         try:
             authority = await self._read_authority(operation)
         except OperationalAdapterError as exc:
-            self.metrics.increment(operation.operation, "preflight_rejections")
-            return PreflightResult(
-                eligible=False,
-                outcome="failed_pre_dispatch",
-                confirmed_target=operation.target,
-                observed_state_fingerprint=None,
-                provider_contract=None,
-                provider_operation=None,
-                provider_arguments_hash=None,
-                evidence_hash=stable_hash({"category": exc.category}),
-                diagnostic_codes=("authority_unavailable",),
+            return self._preflight_rejection(
+                operation,
+                outcome=NormalizedOperationOutcome.FAILED_PRE_DISPATCH,
+                code=exc.category,
             )
         mismatches = list(self._authority_mismatches(operation, authority))
         try:
-            if _parse_aware(operation.plan_expires_at) <= self.now().astimezone(timezone.utc):
+            if _parse_aware(operation.plan_expires_at) <= self.now().astimezone(
+                timezone.utc
+            ):
                 mismatches.append("plan_expiration")
         except (TypeError, ValueError):
             mismatches.append("plan_expiration")
         if mismatches:
-            self.metrics.increment(operation.operation, "preflight_rejections")
-            if "conflicting_execution" in mismatches:
-                self.metrics.increment(operation.operation, "lock_conflicts")
-            return PreflightResult(
-                eligible=False,
-                outcome="preflight_rejected",
-                confirmed_target=operation.target,
-                observed_state_fingerprint=None,
-                provider_contract=None,
-                provider_operation=None,
-                provider_arguments_hash=None,
-                evidence_hash=stable_hash({"mismatch_fields": sorted(mismatches)}),
-                diagnostic_codes=("authority_preflight_rejected",),
+            return self._preflight_rejection(
+                operation,
+                outcome=NormalizedOperationOutcome.PREFLIGHT_REJECTED,
+                code="authority_preflight_rejected",
                 mismatch_fields=tuple(sorted(set(mismatches))),
             )
         eligible, category, mismatch_fields, fresh = await strategy.preflight_evidence(
             operation
         )
         if not eligible:
-            self.metrics.increment(operation.operation, "preflight_rejections")
             if category in {
                 "provider_unavailable",
                 "provider_timeout",
                 "exact_contract_mismatch",
                 "unsupported_protocol_version",
             }:
-                self.metrics.increment(operation.operation, "provider_admission_failures")
+                self.metrics.increment(
+                    operation.operation, "provider_admission_failures"
+                )
             if category == "stale_baseline":
                 self.metrics.increment(operation.operation, "stale_state_failures")
-            outcome = (
-                "provider_unavailable_pre_dispatch"
-                if category in {"provider_unavailable", "provider_timeout"}
-                else "preflight_rejected"
-            )
-            return PreflightResult(
-                eligible=False,
-                outcome=outcome,
-                confirmed_target=operation.target,
-                observed_state_fingerprint=None,
-                provider_contract=None,
-                provider_operation=None,
-                provider_arguments_hash=None,
-                evidence_hash=stable_hash(
-                    {"category": category, "mismatch_fields": list(mismatch_fields)}
+            return self._preflight_rejection(
+                operation,
+                outcome=(
+                    NormalizedOperationOutcome.PROVIDER_UNAVAILABLE_PRE_DISPATCH
+                    if category in {"provider_unavailable", "provider_timeout"}
+                    else NormalizedOperationOutcome.PREFLIGHT_REJECTED
                 ),
-                diagnostic_codes=(category,),
+                code=category,
                 mismatch_fields=mismatch_fields,
             )
         assert isinstance(fresh, dict)
@@ -491,13 +530,40 @@ class OperationalAdministrationAdapter:
                 {
                     "authority": {
                         "plan_id": authority.plan_id,
-                        "task_id": authority.task_id,
+                        "public_task_id": authority.public_task_id,
+                        "child_execution_id": authority.child_execution_id,
                         "policy_decision_hash": authority.policy_decision_hash,
+                        "approval_bundle_hash": authority.approval_bundle_hash,
                     },
                     "provider": fresh.get("provider"),
                     "baseline": fresh_baseline,
                 }
             ),
+            diagnostic_codes=("final_locked_preflight_complete",),
+        )
+
+    def _preflight_rejection(
+        self,
+        operation: PreparedOperationalOperation,
+        *,
+        outcome: NormalizedOperationOutcome,
+        code: str,
+        mismatch_fields: tuple[str, ...] = (),
+    ) -> PreflightResult:
+        self.metrics.increment(operation.operation, "preflight_rejections")
+        return PreflightResult(
+            eligible=False,
+            outcome=outcome,
+            confirmed_target=operation.target,
+            observed_state_fingerprint=None,
+            provider_contract=None,
+            provider_operation=None,
+            provider_arguments_hash=None,
+            evidence_hash=stable_hash(
+                {"category": code, "mismatch_fields": list(mismatch_fields)}
+            ),
+            diagnostic_codes=(code,),
+            mismatch_fields=mismatch_fields,
         )
 
     async def dispatch(
@@ -505,70 +571,38 @@ class OperationalAdministrationAdapter:
         operation: PreparedOperationalOperation,
         preflight: PreflightResult,
         *,
-        before_dispatch: Callable[[], Awaitable[None]],
+        before_dispatch: DispatchIntentRecorder,
     ) -> DispatchResult:
         if (
             preflight.eligible is not True
+            or preflight.confirmed_target != operation.target
             or preflight.provider_operation != operation.provider_operation
             or preflight.provider_arguments_hash != operation.provider_arguments_hash
         ):
             raise OperationalAdapterError("invalid_dispatch_preflight")
         strategy = self._strategy(operation.operation)
-        callback_count = 0
-
-        async def guarded_before_dispatch() -> None:
-            nonlocal callback_count
-            if callback_count:
-                raise OperationalAdapterError("duplicate_dispatch_intent")
-            await before_dispatch()
-            callback_count = 1
-            committed_at = self.now().astimezone(timezone.utc)
-            ledger_values: dict[str, Any] = {
-                "apply_started_at": committed_at.isoformat(),
-                "provider_response_received": False,
-                "dispatch_count": 1,
-            }
-            if operation.operation == RESTART_HOME_ASSISTANT:
-                ledger_values["outage_observation_deadline"] = (
-                    committed_at + timedelta(seconds=180)
-                ).isoformat()
-            self.recovery_ledger.merge(operation.task_id, ledger_values)
-            self.metrics.increment(operation.operation, "intents_committed")
-            self.metrics.increment(operation.operation, "dispatch_attempts")
-
+        # The reviewed gateway owns the narrow final-boundary callback.  C2
+        # performs no probe, policy decision, evidence write, or other callback
+        # after it succeeds and before the provider's sole network mutation.
         result = await strategy.dispatch(
-            operation, before_dispatch=guarded_before_dispatch
+            operation, before_dispatch=before_dispatch
         )
-        if callback_count != 1:
-            raise OperationalAdapterError("dispatch_without_durable_intent")
-        self.recovery_ledger.merge(
-            operation.task_id,
-            {
-                "provider_response_received": result.response_received,
-                **(
-                    {"provider_operation_id": result.provider_operation_id}
-                    if result.provider_operation_id is not None
-                    else {}
-                ),
-                **(
-                    {"provider_backup_id": result.provider_backup_id}
-                    if result.provider_backup_id is not None
-                    else {}
-                ),
-            },
-        )
+        self.metrics.increment(operation.operation, "intents_committed")
+        self.metrics.increment(operation.operation, "dispatch_attempts")
         if result.response_received:
             self.metrics.increment(operation.operation, "responses_received")
         else:
             self.metrics.increment(operation.operation, "responses_lost")
         if result.confirmed_failure:
-            self.metrics.increment(operation.operation, "confirmed_dispatch_failures")
-            outcome = "dispatch_failed_confirmed"
+            self.metrics.increment(
+                operation.operation, "confirmed_dispatch_failures"
+            )
+            outcome = NormalizedOperationOutcome.DISPATCH_FAILED_CONFIRMED
         elif not result.response_received:
             self.metrics.increment(operation.operation, "indeterminate_dispatches")
-            outcome = "dispatch_indeterminate"
+            outcome = NormalizedOperationOutcome.DISPATCH_INDETERMINATE
         else:
-            outcome = "observing"
+            outcome = NormalizedOperationOutcome.OBSERVING
         return DispatchResult(
             outcome=outcome,
             dispatch_intent_recorded=True,
@@ -578,17 +612,7 @@ class OperationalAdministrationAdapter:
             provider_operation_id=result.provider_operation_id,
             response_evidence_hash=result.response_evidence_hash,
             diagnostic_codes=(result.diagnostic_code,),
-            provider_backup_id=result.provider_backup_id,
         )
-
-    def _next_ledger_count(self, task_id: str, field: str) -> int:
-        durable = self.recovery_ledger.load(task_id)
-        prior = durable.get(field, 0)
-        if type(prior) is not int or prior < 0:
-            raise OperationalAdapterError("recovery_evidence_corrupt")
-        current = prior + 1
-        self.recovery_ledger.merge(task_id, {field: current})
-        return current
 
     async def _observe(
         self,
@@ -596,31 +620,60 @@ class OperationalAdministrationAdapter:
         *,
         provider_response_received: bool,
         recovering: bool,
+        minimum_attempt: int = 1,
     ) -> ObservationResult:
+        try:
+            evidence = await self._read_evidence(operation)
+        except OperationalAdapterError:
+            return self._manual_observation(
+                operation,
+                attempt_count=minimum_attempt,
+                reason="recovery_evidence_corrupt",
+            )
+        if not evidence.dispatch_intent_recorded or evidence.dispatch_count != 1:
+            return self._manual_observation(
+                operation,
+                attempt_count=max(
+                    minimum_attempt, evidence.observation_attempt_count + 1
+                ),
+                reason="dispatch_lineage_missing",
+            )
+        attempt = max(
+            minimum_attempt, evidence.observation_attempt_count + 1
+        )
         strategy = self._strategy(operation.operation)
-        attempt = self._next_ledger_count(operation.task_id, "observation_count")
         observation = await strategy.observe(
             operation,
-            provider_response_received=provider_response_received,
+            provider_response_received=(
+                provider_response_received
+                or evidence.provider_response_received
+            ),
             recovering=recovering,
+            evidence=evidence,
         )
         self.metrics.increment(operation.operation, "observations")
         status = observation.status
+        if status == "pending" and self._deadline_expired(
+            evidence.evidence_deadline
+        ):
+            status = "manual_review"
+            self.metrics.increment(
+                operation.operation, "manual_review_transitions"
+            )
         if status == "verified":
-            outcome = "observing"
+            outcome = NormalizedOperationOutcome.OBSERVING
             complete = True
-            intended = True
+            intended: bool | None = True
         elif status == "failed":
-            outcome = "verification_mismatch"
+            outcome = NormalizedOperationOutcome.VERIFICATION_MISMATCH
             complete = True
             intended = False
         elif status == "manual_review":
-            outcome = "manual_review_required"
+            outcome = NormalizedOperationOutcome.MANUAL_REVIEW_REQUIRED
             complete = False
             intended = None
-            self.metrics.increment(operation.operation, "manual_review_transitions")
         else:
-            outcome = "observing"
+            outcome = NormalizedOperationOutcome.OBSERVING
             complete = False
             intended = None
         return ObservationResult(
@@ -633,8 +686,11 @@ class OperationalAdministrationAdapter:
             intended_result_observed=intended,
             mismatch_fields=observation.mismatch_fields,
             evidence_hash=observation.evidence_hash,
-            diagnostic_codes=observation.diagnostic_codes,
-            verification_status=status,
+            diagnostic_codes=(
+                "evidence_deadline_expired"
+                if status == "manual_review"
+                else observation.diagnostic_codes[0]
+            ,),
         )
 
     async def observe(
@@ -642,15 +698,13 @@ class OperationalAdministrationAdapter:
         operation: PreparedOperationalOperation,
         dispatch: DispatchResult | None,
     ) -> ObservationResult:
-        durable = self.recovery_ledger.load(operation.task_id)
-        received = (
-            dispatch.provider_response_received
-            if dispatch is not None
-            else durable.get("provider_response_received") is True
-        )
         return await self._observe(
             operation,
-            provider_response_received=received,
+            provider_response_received=(
+                dispatch.provider_response_received
+                if dispatch is not None
+                else False
+            ),
             recovering=False,
         )
 
@@ -659,29 +713,34 @@ class OperationalAdministrationAdapter:
         operation: PreparedOperationalOperation,
         observation: ObservationResult,
     ) -> VerificationResult:
-        attempt = self._next_ledger_count(operation.task_id, "verification_count")
-        if observation.verification_status == "verified":
+        outcome_value = _enum_value(observation.outcome)
+        if (
+            outcome_value == NormalizedOperationOutcome.MANUAL_REVIEW_REQUIRED.value
+        ):
+            outcome = NormalizedOperationOutcome.MANUAL_REVIEW_REQUIRED
+            verified: bool | None = None
+            reason = "operational_evidence_unavailable"
+        elif observation.observation_complete and (
+            observation.intended_result_observed is True
+        ):
             self.metrics.increment(operation.operation, "verification_successes")
-            outcome = "succeeded_verified"
-            verified: bool | None = True
+            outcome = NormalizedOperationOutcome.SUCCEEDED_VERIFIED
+            verified = True
             reason = None
-        elif observation.verification_status == "failed":
+        elif observation.observation_complete and (
+            observation.intended_result_observed is False
+        ):
             self.metrics.increment(operation.operation, "verification_mismatches")
-            outcome = "verification_mismatch"
+            outcome = NormalizedOperationOutcome.VERIFICATION_MISMATCH
             verified = False
             reason = None
-        elif observation.verification_status == "manual_review":
-            self.metrics.increment(operation.operation, "manual_review_transitions")
-            outcome = "manual_review_required"
-            verified = None
-            reason = "operational_evidence_unavailable"
         else:
-            outcome = "observing"
+            outcome = NormalizedOperationOutcome.OBSERVING
             verified = None
             reason = None
         return VerificationResult(
             outcome=outcome,
-            attempt_count=attempt,
+            attempt_count=observation.attempt_count,
             verified=verified,
             resulting_state_fingerprint=observation.readback_state_fingerprint,
             mismatch_fields=observation.mismatch_fields,
@@ -693,27 +752,98 @@ class OperationalAdministrationAdapter:
         self,
         operation: PreparedOperationalOperation,
         *,
-        context: Any,
+        context: RecoveryContext,
     ) -> ObservationResult:
+        # The merged executor currently supplies its validated internal
+        # recovery view structurally.  Normalize it immediately into the sole
+        # shipped canonical contract object before using any field.
+        try:
+            canonical_context = RecoveryContext(
+                dispatch_intent_recorded=context.dispatch_intent_recorded,
+                provider_invocation_may_have_occurred=(
+                    context.provider_invocation_may_have_occurred
+                ),
+                provider_response_received=context.provider_response_received,
+                prior_observation_attempts=context.prior_observation_attempts,
+                prior_verification_attempts=context.prior_verification_attempts,
+                post_dispatch_deadline=context.post_dispatch_deadline,
+            )
+        except (AttributeError, TypeError):
+            raise OperationalAdapterError("recovery_context_invalid")
         if (
-            getattr(context, "dispatch_intent_recorded", None) is not True
-            or getattr(context, "provider_invocation_may_have_occurred", None)
-            is not True
+            not canonical_context.dispatch_intent_recorded
+            or not canonical_context.provider_invocation_may_have_occurred
         ):
             raise OperationalAdapterError("recovery_without_dispatch_intent")
-        durable = self.recovery_ledger.load(operation.task_id)
-        if durable.get("dispatch_count") != 1:
-            raise OperationalAdapterError("recovery_dispatch_lineage_invalid")
         self.metrics.increment(operation.operation, "reconciliations")
-        self.metrics.increment(operation.operation, "blind_redispatch_preventions")
+        self.metrics.increment(
+            operation.operation, "blind_redispatch_preventions"
+        )
+        try:
+            evidence = await self._read_evidence(operation)
+        except OperationalAdapterError:
+            return self._manual_observation(
+                operation,
+                attempt_count=max(
+                    1, canonical_context.prior_observation_attempts + 1
+                ),
+                reason="recovery_evidence_corrupt",
+            )
+        if (
+            evidence.dispatch_count != 1
+            or not evidence.dispatch_intent_recorded
+            or (
+                canonical_context.post_dispatch_deadline is not None
+                and canonical_context.post_dispatch_deadline
+                != evidence.evidence_deadline
+            )
+        ):
+            return self._manual_observation(
+                operation,
+                attempt_count=max(
+                    1, canonical_context.prior_observation_attempts + 1
+                ),
+                reason="recovery_dispatch_lineage_invalid",
+            )
         return await self._observe(
             operation,
             provider_response_received=(
-                getattr(context, "provider_response_received", False) is True
-                or durable.get("provider_response_received") is True
+                canonical_context.provider_response_received
+                or evidence.provider_response_received
             ),
             recovering=True,
+            minimum_attempt=max(
+                1, canonical_context.prior_observation_attempts + 1
+            ),
         )
+
+    def _manual_observation(
+        self,
+        operation: PreparedOperationalOperation,
+        *,
+        attempt_count: int,
+        reason: str,
+    ) -> ObservationResult:
+        self.metrics.increment(operation.operation, "manual_review_transitions")
+        return ObservationResult(
+            outcome=NormalizedOperationOutcome.MANUAL_REVIEW_REQUIRED,
+            attempt_count=attempt_count,
+            observation_complete=False,
+            provider_reachable=None,
+            target_reachable=None,
+            readback_state_fingerprint=None,
+            intended_result_observed=None,
+            evidence_hash=stable_hash({"reason": reason}),
+            diagnostic_codes=(reason,),
+        )
+
+    def _deadline_expired(self, value: str | None) -> bool:
+        if value is None:
+            return False
+        try:
+            return self.now().astimezone(timezone.utc) >= _parse_aware(value)
+        except (TypeError, ValueError):
+            return True
 
     async def prepare_rollback(
         self,
@@ -722,17 +852,18 @@ class OperationalAdministrationAdapter:
         expected_current_fingerprint: str,
     ) -> None:
         operation.validate()
+        del expected_current_fingerprint
         return None
 
 
 def validate_execution_binding(
     prepared: PreparedOperationalOperation, identity: Any
 ) -> None:
-    """Bind F3-A execution identity to the approved prepared operation."""
+    """Bind the future child identity to one approved public task and plan."""
 
     prepared.validate()
     if (
-        getattr(identity, "task_id", None) != prepared.task_id
+        getattr(identity, "task_id", None) != prepared.child_execution_id
         or getattr(identity, "plan_id", None) != prepared.plan_id
     ):
         raise OperationalAdapterError("execution_identity_mismatch")
@@ -744,12 +875,14 @@ async def execute_operational(
     adapter: OperationalAdministrationAdapter,
     prepared: PreparedOperationalOperation,
     identity: Any,
+    approval_consumption: Callable[[], Awaitable[None]],
 ) -> Any:
-    """Narrow binding helper; F3-A remains the only executor and intent owner."""
+    """Narrow binding helper; the merged executor remains sole authority."""
 
     validate_execution_binding(prepared, identity)
     return await executor.execute(
         adapter=adapter,
         prepared=prepared,
         identity=identity,
+        approval_consumption=approval_consumption,
     )
