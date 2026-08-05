@@ -42,6 +42,25 @@ class SyntheticProcessLoss(BaseException):
 
 
 @dataclass
+class SyntheticApprovalRecorder:
+    """Idempotent caller-owned approval recorder with no external effects."""
+
+    failures_remaining: int = 0
+    invocations: int = 0
+    consumptions: int = 0
+    consumed: bool = False
+
+    async def __call__(self) -> None:
+        self.invocations += 1
+        if self.failures_remaining:
+            self.failures_remaining -= 1
+            raise SyntheticProviderError("synthetic approval persistence failure")
+        if not self.consumed:
+            self.consumed = True
+            self.consumptions += 1
+
+
+@dataclass
 class SyntheticCounters:
     prepare_invocations: int = 0
     preflight_invocations: int = 0

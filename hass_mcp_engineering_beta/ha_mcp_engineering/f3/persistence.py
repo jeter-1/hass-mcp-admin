@@ -311,6 +311,7 @@ class DurableExecutionRepository:
             record.claim_expires_at = claim_expiry
             record.state = "planning"
             record.task_state = "preflight"
+            record.normalized_outcome = None
             append_execution_event(
                 record, event_type="execution_reclaimed", occurred_at=now_text
             )
@@ -676,6 +677,50 @@ class DurableExecutionRepository:
                 event_type="execution_claim_yielded",
                 occurred_at=now_text,
                 diagnostic_codes=("observation_resume_allowed",),
+            )
+
+        return self.mutate_claimed(
+            task_id,
+            owner_id=owner_id,
+            claim_generation=claim_generation,
+            mutator=update,
+        )
+
+    def record_pre_intent_retry(
+        self,
+        task_id: str,
+        *,
+        owner_id: str,
+        claim_generation: int,
+        diagnostic_code: str,
+        now: datetime | None = None,
+    ) -> ExecutionRecord:
+        """Yield one F3-owned attempt after an irreversible-boundary failure."""
+        now_text = timestamp(now or utc_now())
+        codes = bounded_diagnostics((diagnostic_code,))
+
+        def update(record: ExecutionRecord) -> None:
+            if record.terminal:
+                raise ExecutionStorageError(
+                    "terminal execution cannot be retried before intent"
+                )
+            if record.dispatch_intent is not None or record.dispatch_count:
+                raise BlindRedispatchProhibited(
+                    "post-intent execution cannot return to pre-intent retry"
+                )
+            if not record.preflight_completed or not record.lock_tokens:
+                raise ExecutionStorageError(
+                    "pre-intent retry requires completed locked preflight"
+                )
+            record.normalized_outcome = None
+            record.state = "preflight"
+            record.task_state = "preflight"
+            record.claim_expires_at = now_text
+            append_execution_event(
+                record,
+                event_type="pre_intent_retry_required",
+                occurred_at=now_text,
+                diagnostic_codes=codes,
             )
 
         return self.mutate_claimed(

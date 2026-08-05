@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import FrozenInstanceError, fields
 import ast
+from collections.abc import Awaitable, Callable
 import inspect
 from pathlib import Path
 import sys
@@ -16,6 +17,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(BETA_DIR))
 
 from ha_mcp_engineering.f3.contracts import (  # noqa: E402
+    ApprovalConsumptionRecorder,
     F3_ADAPTER_CONTRACT_MODEL,
     F3_MAX_MUTATING_PROVIDER_INVOCATIONS_PER_OPERATION,
     AdapterCapabilityDescriptor,
@@ -33,6 +35,7 @@ from ha_mcp_engineering.f3.contracts import (  # noqa: E402
     RecoveryContext,
     VerificationResult,
 )
+from ha_mcp_engineering.f3.executor import SharedOperationExecutor  # noqa: E402
 import f3_contracts.operation_adapter as compatibility_contract  # noqa: E402
 import ha_mcp_engineering.f3.contracts as canonical_contract  # noqa: E402
 from ha_mcp_engineering.governance.models import (  # noqa: E402
@@ -143,6 +146,25 @@ class F3ContractDeclarationTests(unittest.TestCase):
         self.assertEqual(
             rollback.parameters["expected_current_fingerprint"].kind,
             inspect.Parameter.KEYWORD_ONLY,
+        )
+
+    def test_approval_consumption_callback_is_caller_owned_and_keyword_only(self):
+        self.assertEqual(
+            ApprovalConsumptionRecorder,
+            Callable[[], Awaitable[None]],
+        )
+        self.assertIn(
+            "ApprovalConsumptionRecorder", canonical_contract.__all__
+        )
+        execute = inspect.signature(SharedOperationExecutor.execute)
+        self.assertIn("approval_consumption", execute.parameters)
+        self.assertEqual(
+            execute.parameters["approval_consumption"].kind,
+            inspect.Parameter.KEYWORD_ONLY,
+        )
+        self.assertNotIn(
+            "approval_consumption",
+            inspect.signature(OperationAdapter.dispatch).parameters,
         )
 
     def test_declarations_are_frozen_value_objects(self):

@@ -196,6 +196,10 @@ class DashboardExecutorConformanceTests(unittest.IsolatedAsyncioTestCase):
             executor_timing=ExecutorTiming(120, 60, 3, 3),
             now=lambda: datetime(2026, 8, 4, 12, 0, tzinfo=timezone.utc),
         )
+        self.approval_invocations = 0
+
+    async def consume_approval(self) -> None:
+        self.approval_invocations += 1
 
     def test_dashboard_lock_set_normalizes_to_f3_a_model(self):
         adapter = AtomicityBlockedDashboardAdapter()
@@ -222,6 +226,7 @@ class DashboardExecutorConformanceTests(unittest.IsolatedAsyncioTestCase):
                 request_id="request-dashboard-deferral",
                 owner_id="owner-dashboard-deferral",
             ),
+            approval_consumption=self.consume_approval,
         )
         record = self.executions.get("task-dashboard-deferral")
         self.assertIsNotNone(record)
@@ -234,6 +239,7 @@ class DashboardExecutorConformanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(adapter.dispatch_invocations, 0)
         self.assertEqual(adapter.setter_invocations, 0)
         self.assertEqual(adapter.fixture_mutations, 0)
+        self.assertEqual(self.approval_invocations, 0)
         self.assertEqual(self.locks.records(), ())
 
 

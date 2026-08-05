@@ -184,6 +184,7 @@ class RecoveryContext:
     post_dispatch_deadline: str | None
 
 
+ApprovalConsumptionRecorder: TypeAlias = Callable[[], Awaitable[None]]
 DispatchIntentRecorder: TypeAlias = Callable[[], Awaitable[None]]
 ProposalT = TypeVar("ProposalT", contravariant=True)
 PreparedT = TypeVar("PreparedT", bound=PreparedOperation)
@@ -286,6 +287,7 @@ __all__ = [
     "ObservationResult",
     "VerificationResult",
     "RecoveryContext",
+    "ApprovalConsumptionRecorder",
     "DispatchIntentRecorder",
     "OperationAdapter",
 ]

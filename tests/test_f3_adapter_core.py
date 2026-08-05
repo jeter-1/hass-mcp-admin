@@ -19,6 +19,7 @@ from ha_mcp_engineering.f3.contracts import (  # noqa: E402
     NormalizedOperationOutcome,
 )
 from ha_mcp_engineering.f3.executor import (  # noqa: E402
+    PreIntentRetryRequired,
     SharedOperationExecutor,
     SimulatedProcessLoss,
 )
@@ -38,6 +39,7 @@ from ha_mcp_engineering.f3.persistence import (  # noqa: E402
     DurableExecutionRepository,
 )
 from tests.f3_synthetic_adapter import (  # noqa: E402
+    SyntheticApprovalRecorder,
     SyntheticBehavior,
     SyntheticOperationAdapter,
     prepared_dashboard_operation,
@@ -96,6 +98,7 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
             metrics=self.metrics,
             event_sink=self.events.emit,
         )
+        self.approval = SyntheticApprovalRecorder()
 
     def executor(self, *, fault_hook=None) -> SharedOperationExecutor:
         return SharedOperationExecutor(
@@ -118,12 +121,14 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
         executor: SharedOperationExecutor | None = None,
         identity: ExecutionIdentity | None = None,
         adapter: SyntheticOperationAdapter | None = None,
+        approval: SyntheticApprovalRecorder | None = None,
     ):
         adapter = adapter or SyntheticOperationAdapter(behavior)
         result = await (executor or self.executor()).execute(
             adapter=adapter,
             prepared=prepared_dashboard_operation(),
             identity=identity or _identity(),
+            approval_consumption=approval or self.approval,
         )
         return adapter, result
 
@@ -137,6 +142,8 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(adapter.counters.simulated_mutations, 1)
         self.assertEqual(adapter.counters.observation_invocations, 1)
         self.assertEqual(adapter.counters.verification_invocations, 1)
+        self.assertEqual(self.approval.invocations, 1)
+        self.assertEqual(self.approval.consumptions, 1)
         self.assertEqual(self.locks.records(), ())
 
     async def test_stale_preflight_rejects_before_dispatch_and_releases(self):
@@ -146,6 +153,7 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.outcome, "preflight_rejected")
         self.assertEqual(adapter.counters.dispatch_invocations, 0)
         self.assertEqual(adapter.counters.simulated_mutations, 0)
+        self.assertEqual(self.approval.invocations, 0)
         self.assertEqual(self.locks.records(), ())
 
     async def test_provider_unavailable_preflight_is_pre_dispatch(self):
@@ -157,6 +165,7 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.dispatch_count, 0)
         self.assertEqual(adapter.counters.dispatch_invocations, 0)
+        self.assertEqual(self.approval.invocations, 0)
 
     async def test_lock_conflict_prevents_preflight_and_dispatch(self):
         blocker = self.locks.acquire_once(
@@ -179,6 +188,40 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.outcome, "lock_conflict")
         self.assertEqual(adapter.counters.preflight_invocations, 0)
         self.assertEqual(adapter.counters.dispatch_invocations, 0)
+        self.assertEqual(self.approval.invocations, 0)
+        self.locks.release(blocker)
+
+    async def test_lock_timeout_consumes_no_approval(self):
+        blocker = self.locks.acquire_once(
+            (SyntheticOperationAdapter().lock_requests(
+                prepared_dashboard_operation()
+            )[0],),
+            owner=LockOwner(
+                "owner-blocker",
+                "task-blocker",
+                "plan-blocker",
+                "update_dashboard",
+                "attempt-blocker",
+            ),
+            timing=LOCK_TIMING,
+            now=self.clock.now(),
+        )
+        executor = SharedOperationExecutor(
+            lock_store=self.locks,
+            execution_repository=self.executions,
+            lock_timing=LockTiming(60, 10, 2),
+            executor_timing=EXECUTOR_TIMING,
+            metrics=self.metrics,
+            event_sink=self.events.emit,
+            now=self.clock.now,
+            monotonic=self.clock.monotonic,
+            sleep=self.clock.sleep,
+        )
+        adapter, result = await self.run_adapter(executor=executor)
+        self.assertEqual(result.outcome, "lock_conflict")
+        self.assertEqual(adapter.counters.preflight_invocations, 0)
+        self.assertEqual(adapter.counters.dispatch_invocations, 0)
+        self.assertEqual(self.approval.invocations, 0)
         self.locks.release(blocker)
 
     async def test_confirmed_dispatch_failure_is_terminal_without_mutation(self):
@@ -264,11 +307,49 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(item.conflict_hold for item in self.locks.records()))
         self.assertEqual(adapter.counters.dispatch_invocations, 1)
 
-    async def test_intent_persistence_failure_invokes_provider_zero_times(self):
-        def fail(stage: str) -> None:
-            if stage == "before_durable_intent_persistence":
-                raise OSError("synthetic intent persistence failure")
+    async def test_approval_failure_is_retryable_and_invokes_provider_zero_times(self):
+        approval = SyntheticApprovalRecorder(failures_remaining=1)
+        adapter = SyntheticOperationAdapter()
+        with self.assertRaises(PreIntentRetryRequired) as raised:
+            await self.executor().execute(
+                adapter=adapter,
+                prepared=prepared_dashboard_operation(),
+                identity=_identity(),
+                approval_consumption=approval,
+            )
+        record = self.executions.get("task-synthetic")
+        self.assertIsNotNone(record)
+        assert record is not None
+        self.assertEqual(
+            raised.exception.diagnostic_code,
+            "approval_consumption_failed",
+        )
+        self.assertIsNone(record.dispatch_intent)
+        self.assertEqual(
+            record.events[-1]["event_type"], "pre_intent_retry_required"
+        )
+        self.assertEqual(
+            record.events[-1]["diagnostic_codes"],
+            ["approval_consumption_failed"],
+        )
+        self.assertEqual(approval.invocations, 1)
+        self.assertEqual(approval.consumptions, 0)
+        self.assertEqual(adapter.counters.dispatch_invocations, 0)
+        self.assertEqual(adapter.counters.simulated_mutations, 0)
 
+    async def test_intent_persistence_failure_retries_same_f3_identity(self):
+        class FailOnce:
+            triggered = False
+
+            def __call__(self, stage: str) -> None:
+                if (
+                    stage == "before_durable_intent_persistence"
+                    and not self.triggered
+                ):
+                    self.triggered = True
+                    raise OSError("synthetic intent persistence failure")
+
+        fail = FailOnce()
         executions = DurableExecutionRepository(
             self.temporary.name,
             metrics=self.metrics,
@@ -287,12 +368,78 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
             sleep=self.clock.sleep,
         )
         adapter = SyntheticOperationAdapter()
-        result = await executor.execute(
+        identity = _identity()
+        with self.assertRaises(PreIntentRetryRequired) as raised:
+            await executor.execute(
+                adapter=adapter,
+                prepared=prepared_dashboard_operation(),
+                identity=identity,
+                approval_consumption=self.approval,
+            )
+        durable = executions.get(identity.task_id)
+        self.assertIsNotNone(durable)
+        assert durable is not None
+        self.assertEqual(
+            raised.exception.diagnostic_code,
+            "approval_consumed_intent_not_recorded",
+        )
+        self.assertEqual(durable.dispatch_count, 0)
+        self.assertIsNone(durable.dispatch_intent)
+        self.assertEqual(
+            durable.events[-1]["diagnostic_codes"],
+            ["approval_consumed_intent_not_recorded"],
+        )
+        self.assertEqual(durable.execution_identity().task_id, identity.task_id)
+        self.assertEqual(durable.execution_identity().plan_id, identity.plan_id)
+        self.assertEqual(durable.execution_identity().attempt_id, identity.attempt_id)
+        self.assertEqual(self.approval.invocations, 1)
+        self.assertEqual(self.approval.consumptions, 1)
+        self.assertEqual(adapter.counters.dispatch_invocations, 0)
+        self.assertEqual(adapter.counters.simulated_mutations, 0)
+        second = await executor.execute(
             adapter=adapter,
             prepared=prepared_dashboard_operation(),
-            identity=_identity(),
+            identity=identity,
+            approval_consumption=self.approval,
         )
-        self.assertEqual(result.outcome, "failed_pre_dispatch")
+        self.assertEqual(second.outcome, "succeeded_verified")
+        self.assertEqual(self.approval.invocations, 2)
+        self.assertEqual(self.approval.consumptions, 1)
+        self.assertEqual(adapter.counters.dispatch_invocations, 1)
+        self.assertEqual(adapter.counters.simulated_mutations, 1)
+
+    async def test_intent_persistence_failure_invokes_provider_zero_times(self):
+        def fail_always(stage: str) -> None:
+            if stage == "before_durable_intent_persistence":
+                raise OSError("synthetic intent persistence failure")
+
+        executions = DurableExecutionRepository(
+            self.temporary.name,
+            metrics=self.metrics,
+            event_sink=self.events.emit,
+            fault_hook=fail_always,
+        )
+        executor = SharedOperationExecutor(
+            lock_store=self.locks,
+            execution_repository=executions,
+            lock_timing=LOCK_TIMING,
+            executor_timing=EXECUTOR_TIMING,
+            metrics=self.metrics,
+            event_sink=self.events.emit,
+            now=self.clock.now,
+            monotonic=self.clock.monotonic,
+            sleep=self.clock.sleep,
+        )
+        adapter = SyntheticOperationAdapter()
+        with self.assertRaises(PreIntentRetryRequired):
+            await executor.execute(
+                adapter=adapter,
+                prepared=prepared_dashboard_operation(),
+                identity=_identity(),
+                approval_consumption=self.approval,
+            )
+        self.assertEqual(self.approval.invocations, 1)
+        self.assertEqual(self.approval.consumptions, 1)
         self.assertEqual(adapter.counters.dispatch_invocations, 0)
         self.assertEqual(adapter.counters.simulated_mutations, 0)
         self.assertEqual(self.locks.records(), ())
@@ -308,6 +455,7 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
                 adapter=adapter,
                 prepared=prepared_dashboard_operation(),
                 identity=_identity(),
+                approval_consumption=self.approval,
             )
         durable = self.executions.get("task-synthetic")
         self.assertIsNotNone(durable)
@@ -322,6 +470,7 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
             identity=_identity(
                 owner="owner-recovery", request="request-recovery"
             ),
+            approval_consumption=self.approval,
         )
         self.assertEqual(recovered.outcome, "verification_mismatch")
         self.assertEqual(adapter.counters.dispatch_invocations, 0)
@@ -339,6 +488,7 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
                 adapter=adapter,
                 prepared=prepared_dashboard_operation(),
                 identity=_identity(),
+                approval_consumption=self.approval,
             )
         first_generations = tuple(
             item.generation for item in self.locks.records()
@@ -352,6 +502,7 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
             identity=_identity(
                 owner="owner-recovery", request="request-recovery"
             ),
+            approval_consumption=self.approval,
         )
         self.assertEqual(result.outcome, "succeeded_verified")
         self.assertEqual(adapter.counters.preflight_invocations, 2)
@@ -383,6 +534,7 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
             identity=_identity(
                 owner="owner-duplicate", request="request-duplicate"
             ),
+            approval_consumption=self.approval,
         )
         self.assertTrue(result.duplicate_execution)
         self.assertEqual(result.dispatch_count, 0)
@@ -396,11 +548,13 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
             adapter=adapter,
             prepared=prepared_dashboard_operation(),
             identity=_identity(),
+            approval_consumption=self.approval,
         )
         second = await executor.execute(
             adapter=adapter,
             prepared=prepared_dashboard_operation(),
             identity=_identity(request="request-second"),
+            approval_consumption=self.approval,
         )
         self.assertEqual(first.outcome, second.outcome)
         self.assertTrue(second.duplicate_execution)
@@ -417,6 +571,7 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
                 adapter=SyntheticOperationAdapter(),
                 prepared=prepared_dashboard_operation(),
                 identity=_identity(),
+                approval_consumption=self.approval,
             )
         self.assertTrue(await executor.cancel("task-synthetic"))
         record = self.executions.get("task-synthetic")
@@ -424,6 +579,23 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
         assert record is not None
         self.assertEqual(record.normalized_outcome, "cancelled_pre_dispatch")
         self.assertEqual(record.dispatch_count, 0)
+        self.assertEqual(self.approval.invocations, 0)
+
+    async def test_cancellation_after_preflight_still_precedes_approval(self):
+        def cancel_after_preflight(stage: str) -> None:
+            if stage == "after_preflight_before_durable_intent":
+                self.executions.cancel("task-synthetic", now=self.clock.now())
+
+        adapter, result = await self.run_adapter(
+            executor=self.executor(fault_hook=cancel_after_preflight)
+        )
+        self.assertEqual(result.outcome, "cancelled_pre_dispatch")
+        self.assertTrue(result.terminal)
+        self.assertEqual(result.dispatch_count, 0)
+        self.assertEqual(self.approval.invocations, 0)
+        self.assertEqual(adapter.counters.dispatch_invocations, 0)
+        self.assertEqual(adapter.counters.simulated_mutations, 0)
+        self.assertEqual(self.locks.records(), ())
 
     async def test_cancel_after_intent_is_rejected(self):
         def lose(stage: str) -> None:
@@ -436,6 +608,7 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
                 adapter=SyntheticOperationAdapter(),
                 prepared=prepared_dashboard_operation(),
                 identity=_identity(),
+                approval_consumption=self.approval,
             )
         self.assertFalse(await executor.cancel("task-synthetic"))
 
@@ -452,6 +625,7 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
                 adapter=adapter,
                 prepared=prepared_dashboard_operation(),
                 identity=_identity(),
+                approval_consumption=self.approval,
             )
         self.clock.advance(61)
         result = await self.executor().execute(
@@ -460,6 +634,7 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
             identity=_identity(
                 owner="owner-recovery", request="request-recovery"
             ),
+            approval_consumption=self.approval,
         )
         self.assertEqual(result.outcome, "manual_review_required")
         self.assertEqual(adapter.counters.dispatch_invocations, 0)
