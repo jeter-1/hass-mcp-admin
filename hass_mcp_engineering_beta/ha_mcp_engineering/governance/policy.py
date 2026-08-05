@@ -104,9 +104,10 @@ def _risk_services(operation: ConfigurationOperation) -> set[str]:
     }
 
 
-def _configuration_operation_policy(
+def configuration_operation_policy(
     operation: ConfigurationOperation,
 ) -> OperationPolicyClassification:
+    """Classify one operation for both policy and approval review."""
     triggers = _risk_triggers(operation)
     safety_critical_services = _risk_services(operation)
     risk_delta = _risk_delta(operation.risk.level)
@@ -229,7 +230,7 @@ def _single_plan_policy(
                 ),
             )
         return tuple(
-            _configuration_operation_policy(operation)
+            configuration_operation_policy(operation)
             for operation in plan.operations
         )
     if plan.operation in {
@@ -258,7 +259,7 @@ def _single_plan_policy(
             risk=plan.risk,
             warnings=plan.warnings,
         )
-        return (_configuration_operation_policy(synthetic),)
+        return (configuration_operation_policy(synthetic),)
     return (
         OperationPolicyClassification(
             ApprovalPolicyClass.PROHIBITED,
@@ -330,6 +331,15 @@ def policy_subject_payload(plan: ChangePlan) -> dict[str, Any]:
                 key=lambda item: stable_hash(item),
             ),
             "risk_warnings": sorted(set(operation.risk.warnings)),
+            **(
+                {
+                    "semantic_projection_hash": (
+                        operation.semantic_projection_hash
+                    )
+                }
+                if operation.semantic_projection_hash is not None
+                else {}
+            ),
         }
         for operation in sorted(plan.operations, key=lambda item: item.order)
     ]

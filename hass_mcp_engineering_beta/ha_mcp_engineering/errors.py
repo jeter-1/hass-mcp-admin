@@ -49,6 +49,9 @@ class ErrorCode(str, Enum):
     AUTOMATION_APPLY_FAILED = "automation_apply_failed"
     AUTOMATION_VERIFICATION_FAILED = "automation_verification_failed"
     CONFIGURATION_VALIDATION_FAILED = "configuration_validation_failed"
+    CONFIGURATION_PROJECTION_UNREVIEWABLE = (
+        "configuration_projection_unreviewable"
+    )
     CONFIGURATION_APPLY_FAILED = "configuration_apply_failed"
     CONFIGURATION_VERIFICATION_FAILED = "configuration_verification_failed"
     CONFIGURATION_PARTIAL_FAILURE = "configuration_partial_failure"
@@ -238,6 +241,17 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
     ErrorCode.AUTOMATION_APPLY_FAILED: ErrorDefinition("Home Assistant could not apply the automation change.", False, 502, "internal_error"),
     ErrorCode.AUTOMATION_VERIFICATION_FAILED: ErrorDefinition("The stored automation did not match the approved configuration.", False, 409, "internal_error"),
     ErrorCode.CONFIGURATION_VALIDATION_FAILED: ErrorDefinition("The proposed configuration operation failed validation.", False, 422, "invalid_params"),
+    ErrorCode.CONFIGURATION_PROJECTION_UNREVIEWABLE: ErrorDefinition(
+        "The proposed configuration cannot be represented by a complete, trustworthy approval review.",
+        False,
+        422,
+        "invalid_params",
+        safe_detail_fields=(
+            "resource_id",
+            "operation_id",
+            "projection_error",
+        ),
+    ),
     ErrorCode.CONFIGURATION_APPLY_FAILED: ErrorDefinition("Home Assistant could not apply the configuration operation.", False, 502, "internal_error"),
     ErrorCode.CONFIGURATION_VERIFICATION_FAILED: ErrorDefinition("The stored resource did not match the approved configuration.", False, 409, "internal_error"),
     ErrorCode.CONFIGURATION_PARTIAL_FAILURE: ErrorDefinition("The ordered configuration plan stopped after a write attempt left the overall result partial or uncertain.", False, 409, "internal_error"),
