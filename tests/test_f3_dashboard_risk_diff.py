@@ -39,6 +39,40 @@ class DashboardRiskTests(unittest.TestCase):
         risk = analyze_dashboard_risk(self.current, compilation.resulting_configuration)
         return compilation, risk
 
+    def action_change(
+        self,
+        current_action,
+        proposed_action,
+        *,
+        card_type: str = "button",
+        current_extra: dict | None = None,
+        proposed_extra: dict | None = None,
+    ):
+        current_card = {
+            "type": card_type,
+            "entity": "lock.synthetic_front",
+            "tap_action": current_action,
+            **(current_extra or {}),
+        }
+        proposed_card = {
+            "type": card_type,
+            "entity": "lock.synthetic_front",
+            "tap_action": proposed_action,
+            **(proposed_extra or current_extra or {}),
+        }
+        current = {"views": [{"cards": [current_card]}]}
+        proposed = {"views": [{"cards": [proposed_card]}]}
+        return analyze_dashboard_risk(current, proposed)
+
+    @staticmethod
+    def changed_for(risk, reason_code: str):
+        return [
+            finding
+            for finding in risk.findings
+            if finding.reason_code == reason_code
+            and finding.introduced_or_changed
+        ]
+
     def test_existing_instruction_like_and_action_content_remains_inert_data(self):
         risk = analyze_dashboard_risk(self.current, deepcopy(self.current))
         self.assertEqual(risk.disposition, RiskDisposition.STANDARD_REVIEW)
@@ -123,6 +157,145 @@ class DashboardRiskTests(unittest.TestCase):
         self.assertIn(
             RiskCategory.UNKNOWN,
             {item.category for item in risk.findings if item.introduced_or_changed},
+        )
+
+    def test_same_lock_service_with_changed_target_is_detected(self):
+        current = {
+            "action": "perform-action",
+            "perform_action": "lock.unlock",
+            "target": {"entity_id": "lock.synthetic_front"},
+        }
+        proposed = deepcopy(current)
+        proposed["target"]["entity_id"] = "lock.synthetic_back"
+        risk = self.action_change(current, proposed)
+        changed = self.changed_for(
+            risk, "service_is_high_consequence_action"
+        )
+        self.assertTrue(changed)
+        self.assertEqual(risk.disposition, RiskDisposition.ELEVATED_REVIEW)
+
+    def test_same_service_with_changed_service_data_is_detected(self):
+        current = {
+            "action": "perform-action",
+            "perform_action": "light.turn_on",
+            "service_data": {"brightness": 10},
+        }
+        proposed = deepcopy(current)
+        proposed["service_data"]["brightness"] = 20
+        risk = self.action_change(current, proposed)
+        self.assertTrue(
+            self.changed_for(risk, "frontend_service_action")
+        )
+        self.assertEqual(risk.disposition, RiskDisposition.ELEVATED_REVIEW)
+
+    def test_changed_template_expression_remains_manual_review(self):
+        current = {
+            "action": "perform-action",
+            "perform_action": "light.turn_on",
+            "data": {"brightness": "{{ old_value }}"},
+        }
+        proposed = deepcopy(current)
+        proposed["data"]["brightness"] = "{{ new_value }}"
+        risk = self.action_change(current, proposed)
+        self.assertTrue(
+            self.changed_for(
+                risk, "action_contains_conditional_or_template_data"
+            )
+        )
+        self.assertTrue(risk.manual_review_required)
+
+    def test_changed_fire_dom_event_payload_remains_manual_review(self):
+        current = {"action": "fire-dom-event", "payload": {"value": 1}}
+        proposed = {"action": "fire-dom-event", "payload": {"value": 2}}
+        risk = self.action_change(current, proposed)
+        self.assertTrue(
+            self.changed_for(risk, "frontend_custom_dom_event_action")
+        )
+        self.assertTrue(risk.manual_review_required)
+
+    def test_changed_navigation_and_url_destinations_are_detected(self):
+        cases = (
+            (
+                {"action": "navigate", "navigation_path": "/old"},
+                {"action": "navigate", "navigation_path": "/new"},
+            ),
+            (
+                {"action": "url", "url_path": "https://old.invalid"},
+                {"action": "url", "url_path": "https://new.invalid"},
+            ),
+        )
+        for current, proposed in cases:
+            with self.subTest(action=current["action"]):
+                risk = self.action_change(current, proposed)
+                self.assertTrue(
+                    self.changed_for(risk, "frontend_navigation_action")
+                )
+
+    def test_changed_custom_card_nested_content_remains_manual_review(self):
+        action = {"action": "fire-dom-event", "payload": {"value": 1}}
+        risk = self.action_change(
+            action,
+            deepcopy(action),
+            card_type="custom:synthetic-card",
+            current_extra={"custom_options": {"nested_action": {"mode": "old"}}},
+            proposed_extra={"custom_options": {"nested_action": {"mode": "new"}}},
+        )
+        self.assertTrue(
+            self.changed_for(
+                risk, "custom_card_may_reinterpret_action_schema"
+            )
+        )
+        self.assertTrue(risk.manual_review_required)
+
+    def test_changed_confirmation_content_is_detected(self):
+        current = {
+            "action": "perform-action",
+            "perform_action": "lock.unlock",
+            "confirmation": {
+                "text": "Old confirmation",
+                "exemptions": [{"user": "synthetic-a"}],
+            },
+        }
+        proposed = deepcopy(current)
+        proposed["confirmation"] = {
+            "text": "New confirmation",
+            "exemptions": [{"user": "synthetic-b"}],
+        }
+        risk = self.action_change(current, proposed)
+        self.assertTrue(
+            self.changed_for(
+                risk, "frontend_confirmation_present_but_not_authority"
+            )
+        )
+
+    def test_unchanged_complete_action_semantics_reuse_binding(self):
+        action = {
+            "action": "perform-action",
+            "perform_action": "lock.unlock",
+            "target": {
+                "entity_id": "lock.synthetic_front",
+                "device_id": "synthetic-device",
+            },
+            "data": {"code": "inert"},
+        }
+        reordered = {
+            "data": {"code": "inert"},
+            "target": {
+                "device_id": "synthetic-device",
+                "entity_id": "lock.synthetic_front",
+            },
+            "perform_action": "lock.unlock",
+            "action": "perform-action",
+        }
+        risk = self.action_change(action, reordered)
+        self.assertFalse(
+            any(finding.introduced_or_changed for finding in risk.findings)
+        )
+        self.assertTrue(
+            all(
+                len(finding.semantic_binding_sha256) == 64
+                for finding in risk.findings
+            )
         )
 
 

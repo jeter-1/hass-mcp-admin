@@ -74,14 +74,77 @@ def _contains_template(value: Any) -> bool:
     return False
 
 
+def _semantic_binding(
+    action: Any,
+    *,
+    card_type: str | None,
+    card_entity: Any,
+    custom_card: bool,
+    conditional: bool,
+    custom_card_configuration: Any,
+    conditional_configuration: Any,
+) -> str:
+    action_mapping = action if isinstance(action, dict) else {}
+
+    def field(name: str) -> dict[str, Any]:
+        return {
+            "present": name in action_mapping,
+            "value": action_mapping.get(name),
+        }
+
+    effective_entity = (
+        action_mapping["entity"]
+        if "entity" in action_mapping
+        else card_entity
+    )
+    projection = {
+        "model": "f3-dashboard-action-semantic-binding-v1",
+        "data_role": "untrusted_data",
+        "complete_action": action,
+        "card_type": card_type,
+        "effective_card_entity": card_entity,
+        "action_entity": field("entity"),
+        "effective_entity": effective_entity,
+        "target": field("target"),
+        "service_data": field("service_data"),
+        "data": field("data"),
+        "payload": field("payload"),
+        "navigation_path": field("navigation_path"),
+        "url_path": field("url_path"),
+        "url": field("url"),
+        "confirmation": field("confirmation"),
+        "custom_card_semantics_inherited": custom_card,
+        "conditional_semantics_inherited": conditional,
+        "custom_card_configuration": (
+            custom_card_configuration if custom_card else None
+        ),
+        "conditional_configuration": (
+            conditional_configuration if conditional else None
+        ),
+    }
+    return engineering_sha256(projection)
+
+
 def _action_findings(
     action: Any,
     *,
     path: str,
     card_entity: Any,
+    card_type: str | None,
     custom_card: bool,
     conditional: bool,
+    custom_card_configuration: Any,
+    conditional_configuration: Any,
 ) -> list[RiskFinding]:
+    binding = _semantic_binding(
+        action,
+        card_type=card_type,
+        card_entity=card_entity,
+        custom_card=custom_card,
+        conditional=conditional,
+        custom_card_configuration=custom_card_configuration,
+        conditional_configuration=conditional_configuration,
+    )
     if not isinstance(action, dict):
         return [
             RiskFinding(
@@ -91,6 +154,7 @@ def _action_findings(
                 None,
                 _entity_domain(card_entity),
                 False,
+                binding,
                 False,
                 "action_shape_not_object",
             )
@@ -112,6 +176,7 @@ def _action_findings(
                 service,
                 domain,
                 confirmation,
+                binding,
                 False,
                 "custom_card_may_reinterpret_action_schema",
             )
@@ -125,6 +190,7 @@ def _action_findings(
                 service,
                 domain,
                 confirmation,
+                binding,
                 False,
                 "action_contains_conditional_or_template_data",
             )
@@ -138,6 +204,7 @@ def _action_findings(
                 service,
                 domain,
                 True,
+                binding,
                 False,
                 "frontend_confirmation_present_but_not_authority",
             )
@@ -193,6 +260,7 @@ def _action_findings(
             service,
             domain,
             confirmation,
+            binding,
             False,
             reason,
         )
@@ -203,30 +271,75 @@ def _action_findings(
 def _scan(configuration: dict[str, Any]) -> list[RiskFinding]:
     validate_json_value(configuration)
     findings: list[RiskFinding] = []
-    stack: list[tuple[Any, tuple[str, ...], bool, bool]] = [
-        (configuration, (), False, False)
+    stack: list[
+        tuple[
+            Any,
+            tuple[str, ...],
+            bool,
+            bool,
+            str | None,
+            Any,
+            Any,
+            Any,
+        ]
+    ] = [
+        (configuration, (), False, False, None, None, None, None)
     ]
     visited = 0
     while stack:
-        value, tokens, inherited_custom, inherited_conditional = stack.pop()
+        (
+            value,
+            tokens,
+            inherited_custom,
+            inherited_conditional,
+            inherited_card_type,
+            inherited_card_entity,
+            inherited_custom_configuration,
+            inherited_conditional_configuration,
+        ) = stack.pop()
         visited += 1
         if visited > MAX_JSON_NODES or len(tokens) > MAX_JSON_DEPTH:
             raise RiskAnalysisError("Dashboard risk traversal exceeds its reviewed bound")
         if isinstance(value, list):
             for index in range(len(value) - 1, -1, -1):
                 stack.append(
-                    (value[index], (*tokens, str(index)), inherited_custom, inherited_conditional)
+                    (
+                        value[index],
+                        (*tokens, str(index)),
+                        inherited_custom,
+                        inherited_conditional,
+                        inherited_card_type,
+                        inherited_card_entity,
+                        inherited_custom_configuration,
+                        inherited_conditional_configuration,
+                    )
                 )
             continue
         if not isinstance(value, dict):
             continue
 
-        card_type = value.get("type")
-        custom = inherited_custom or (
-            isinstance(card_type, str) and card_type.startswith("custom:")
+        declared_card_type = value.get("type")
+        card_type = (
+            declared_card_type
+            if isinstance(declared_card_type, str)
+            else inherited_card_type
         )
-        conditional = inherited_conditional or card_type == "conditional"
-        card_entity = value.get("entity")
+        custom = inherited_custom or (
+            isinstance(declared_card_type, str)
+            and declared_card_type.startswith("custom:")
+        )
+        conditional = (
+            inherited_conditional or declared_card_type == "conditional"
+        )
+        card_entity = (
+            value["entity"] if "entity" in value else inherited_card_entity
+        )
+        custom_configuration = inherited_custom_configuration
+        if custom and not inherited_custom:
+            custom_configuration = value
+        conditional_configuration = inherited_conditional_configuration
+        if conditional and not inherited_conditional:
+            conditional_configuration = value
         action_keys = [key for key in _ACTION_KEYS if key in value]
         for key in sorted(action_keys):
             findings.extend(
@@ -234,13 +347,36 @@ def _scan(configuration: dict[str, Any]) -> list[RiskFinding]:
                     value[key],
                     path=_pointer((*tokens, key)),
                     card_entity=card_entity,
+                    card_type=card_type,
                     custom_card=custom,
                     conditional=conditional,
+                    custom_card_configuration=custom_configuration,
+                    conditional_configuration=conditional_configuration,
                 )
             )
 
         domain = _entity_domain(card_entity)
+        context_binding: str | None = None
+        if domain in _HIGH_ENTITY_DOMAINS and (
+            (not action_keys and "features" not in value)
+            or "features" in value
+        ):
+            context_binding = engineering_sha256(
+                {
+                    "model": "f3-dashboard-card-semantic-binding-v1",
+                    "data_role": "untrusted_data",
+                    "card_type": card_type,
+                    "card_entity": card_entity,
+                    "features": value.get("features"),
+                    "custom_card_semantics_inherited": custom,
+                    "conditional_semantics_inherited": conditional,
+                    "custom_card_configuration": custom_configuration,
+                    "conditional_configuration": conditional_configuration,
+                }
+            )
         if domain in _HIGH_ENTITY_DOMAINS and not action_keys and "features" not in value:
+            if context_binding is None:
+                raise RiskAnalysisError("Dashboard risk binding was not calculated")
             findings.append(
                 RiskFinding(
                     RiskCategory.DISPLAY_ONLY,
@@ -249,11 +385,14 @@ def _scan(configuration: dict[str, Any]) -> list[RiskFinding]:
                     None,
                     domain,
                     False,
+                    context_binding,
                     False,
                     "high_consequence_entity_is_display_only",
                 )
             )
         if "features" in value and domain in _HIGH_ENTITY_DOMAINS:
+            if context_binding is None:
+                raise RiskAnalysisError("Dashboard risk binding was not calculated")
             findings.append(
                 RiskFinding(
                     RiskCategory.UNKNOWN,
@@ -262,13 +401,25 @@ def _scan(configuration: dict[str, Any]) -> list[RiskFinding]:
                     None,
                     domain,
                     False,
+                    context_binding,
                     False,
                     "interactive_feature_effect_requires_manual_review",
                 )
             )
 
         for key, item in reversed(tuple(value.items())):
-            stack.append((item, (*tokens, key), custom, conditional))
+            stack.append(
+                (
+                    item,
+                    (*tokens, key),
+                    custom,
+                    conditional,
+                    card_type,
+                    card_entity,
+                    custom_configuration,
+                    conditional_configuration,
+                )
+            )
     if len(findings) > MAX_RISK_FINDINGS:
         raise RiskAnalysisError("Dashboard risk findings exceed the complete review bound")
     return findings
@@ -282,6 +433,7 @@ def _identity(finding: RiskFinding) -> tuple[Any, ...]:
         finding.service,
         finding.entity_domain,
         finding.confirmation_present,
+        finding.semantic_binding_sha256,
         finding.reason_code,
     )
 
@@ -294,6 +446,7 @@ def _projection(finding: RiskFinding) -> dict[str, Any]:
         "service": finding.service,
         "entity_domain": finding.entity_domain,
         "confirmation_present": finding.confirmation_present,
+        "semantic_binding_sha256": finding.semantic_binding_sha256,
         "introduced_or_changed": finding.introduced_or_changed,
         "reason_code": finding.reason_code,
     }

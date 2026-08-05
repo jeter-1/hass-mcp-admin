@@ -155,6 +155,18 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Synthetic inert text", encoded)
         self.assertFalse(projection["data_handling"]["raw_configuration_exposed"])
         self.assertFalse(projection["data_handling"]["instructions_authoritative"])
+        self.assertTrue(projection["risk"]["findings"])
+        for finding in projection["risk"]["findings"]:
+            self.assertRegex(
+                finding["semantic_binding_sha256"], r"^[0-9a-f]{64}$"
+            )
+            self.assertNotIn("target", finding)
+            self.assertNotIn("service_data", finding)
+            self.assertNotIn("payload", finding)
+            self.assertNotIn("path", finding)
+            self.assertNotIn("action", finding)
+            self.assertNotIn("service", finding)
+            self.assertRegex(finding["path_sha256"], r"^[0-9a-f]{64}$")
 
         proposal, _ = await make_proposal(plan_id="plan000000000004")
         self.assertNotIn(

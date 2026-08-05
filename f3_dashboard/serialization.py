@@ -74,6 +74,18 @@ def public_proposal_projection(proposal: DashboardUpdateProposal) -> dict[str, A
             "opaque_custom_action_count": proposal.risk.opaque_custom_action_count,
             "high_consequence_action_count": proposal.risk.high_consequence_action_count,
             "destructive_admin_action_count": proposal.risk.destructive_admin_action_count,
+            "findings": [
+                {
+                    "category": finding.category.value,
+                    "path_sha256": engineering_sha256(finding.path),
+                    "confirmation_present": finding.confirmation_present,
+                    "semantic_binding_sha256": finding.semantic_binding_sha256,
+                    "introduced_or_changed": finding.introduced_or_changed,
+                    "reason_code": finding.reason_code,
+                }
+                for finding in proposal.risk.findings
+            ],
+            "finding_count": len(proposal.risk.findings),
             "evidence_sha256": proposal.risk.evidence_sha256,
         },
         "provider": {

@@ -172,6 +172,7 @@ class RiskFinding:
     service: str | None
     entity_domain: str | None
     confirmation_present: bool
+    semantic_binding_sha256: str
     introduced_or_changed: bool
     reason_code: str
 
