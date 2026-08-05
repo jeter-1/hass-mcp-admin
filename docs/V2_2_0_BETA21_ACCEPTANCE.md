@@ -2,9 +2,11 @@
 
 ## Source and release boundary
 
-- direct base: merged Beta 19 main
-  `51943e11cc5290b1bf8db75474982193463044f5`;
-- Engineering version: `2.2.0-beta.21`; Beta 20 remains reserved for F3-D;
+- direct base: merged Beta 20 main
+  `e2152911c0f3581c38b6ef42e52a2dd221cd8d96` with tree
+  `7236119b1aeb975f6b13a477572d84fbabedb3ab`;
+- Engineering version: `2.2.0-beta.21`, following the merged F3-D Beta 20
+  release;
 - stable version: `1.1.2`;
 - secure pins: `aiohttp==3.14.3` and `cryptography==50.0.0`;
 - exact upstream release: `homeassistant-ai/ha-mcp` 8.1.0 at tag target
@@ -15,6 +17,39 @@
   [the exact 8.1.0 review](evidence/upstream-read-compatibility/ha-mcp-8.1.0-review.md);
 - compatibility outcome: C; and
 - fallback: 0.
+
+## Beta 20 restack evidence
+
+PR #94 was originally prepared on merged Beta 19
+`51943e11cc5290b1bf8db75474982193463044f5` at exact head
+`b0ce98bc376dde2f7764616d7cee2e342719b881` and tree
+`ccdec8b2f7820bc1d259f459ca5d70f5b89d0a25`. After PR #93 merged through the
+protected merge-commit path, its exact Beta 20 merge identity was verified as
+`e2152911c0f3581c38b6ef42e52a2dd221cd8d96`, with first parent
+`51943e11cc5290b1bf8db75474982193463044f5`, second parent
+`8b2c9231b9037862debcd6b4b3506830941891df`, and a tree exactly equal to the
+accepted PR #93 head tree.
+
+The eight Beta 21 commits were rebased directly onto that merge. The
+implementation head before this evidence-only documentation commit is
+`b89ccbbf22ef2bb9283965b8f25c7da4248af968`, with tree
+`f8e1306fe07734aa23958d3a0d5f58a6440fa330`. Seven commits retained identical
+patch IDs. The release declaration commit changed only to integrate the merged
+Beta 20 release notes, version lineage, and F3 import-boundary allowlist while
+preserving Beta 21 metadata. The changed-path set is identical to the original
+eight-commit range. The local recovery reference
+`refs/backup/pr94-pre-beta20-restack-20260805T204314Z` preserves the original
+head and was not pushed.
+
+The restacked local Full gate passed 1,916 tests with two expected skips and
+zero failures. Focused validation passed 47 F3 runtime tests, 31
+compatibility/registry tests, 17 exact-runtime tests, 23 HACS/catalog tests,
+and 129 lifecycle/provider regression tests. Registry generation was
+byte-identical across two runs and matched the checked-in registry at SHA-256
+`163582e160398892ef8541e9f0c7e97de2b4e8c25301dcc867e0067a8a617035`.
+Fresh dependency checking passed, and strict audit reported no known
+vulnerabilities. Exact-head Evidence and CI remain release gates after this
+document is committed.
 
 The GitHub release executables and MCPB are excluded because their embedded
 application identity is 8.0.0. A mutable version tag, release-page membership,

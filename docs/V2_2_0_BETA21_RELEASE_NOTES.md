@@ -1,9 +1,12 @@
 # HA MCP Engineering Server 2.2.0-beta.21 release notes
 
 Beta 21 performs a complete exact-release review of `ha-mcp` 8.1.0 and adds a
-narrow compatibility entry for its reviewed immutable OCI runtimes. Beta 20
-remains reserved for F3-D; this branch is based directly on merged Beta 19 main
-`51943e11cc5290b1bf8db75474982193463044f5`.
+narrow compatibility entry for its reviewed immutable OCI runtimes. This
+release is based directly on the merged F3-D Beta 20 merge commit
+`e2152911c0f3581c38b6ef42e52a2dd221cd8d96`. It preserves Beta 20's activated
+12-capability F3 registry, shared executor and durable-lock boundary, central
+recovery coordinator, selective conflict holds, governed configuration
+rollback, and dashboard-execution exclusion.
 
 The controlling runtime catalog remains 78 tools. Engineering admits 24 exact
 automatic reads, holds exactly `ha_search` and

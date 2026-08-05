@@ -5,6 +5,9 @@ This document freezes the upstream-specific acceptance contract for the exact
 [V2_2_0_BETA21_ACCEPTANCE.md](V2_2_0_BETA21_ACCEPTANCE.md), and the complete
 source/artifact findings remain in
 [ha-mcp-8.1.0-review.md](evidence/upstream-read-compatibility/ha-mcp-8.1.0-review.md).
+This contract is carried on merged Beta 20 main
+`e2152911c0f3581c38b6ef42e52a2dd221cd8d96`; it does not replace, disable, or
+bypass the activated F3 runtime boundaries from that release.
 
 ## Immutable identities
 
