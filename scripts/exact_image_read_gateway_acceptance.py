@@ -159,10 +159,6 @@ DELEGATED_READ_CALLS = {
         "start_time": "24h",
         "limit": 5,
     },
-    "ha_get_operation_status": {
-        "operation_id": ["synthetic-missing-operation"],
-        "timeout_seconds": 0,
-    },
     "ha_get_overview": {
         "detail_level": "minimal",
         "domains": ["sun"],
@@ -182,6 +178,19 @@ UPSTREAM_ADDON_INVENTORY_ARGUMENTS = {
     "include_stats": False,
 }
 UPSTREAM_ERROR_CALLS = {
+    "missing_operation": {
+        "tool": "ha_get_operation_status",
+        "reviewed_versions": ("7.14.1", "7.14.2"),
+        "arguments": {
+            "operation_id": ["synthetic-missing-operation"],
+            "timeout_seconds": 0,
+        },
+        "upstream_code": "RESOURCE_NOT_FOUND",
+        "public_code": "provider_error",
+        "failure_category": "upstream_error",
+        "retryable": True,
+        "fixture_counter": None,
+    },
     "provider_failure": {
         "tool": "ha_get_state",
         "arguments": {
@@ -821,6 +830,12 @@ async def inspect_upstream(
                 "pinned upstream add-on inventory identity was incomplete",
             )
             for name, expected in UPSTREAM_ERROR_CALLS.items():
+                reviewed_versions = expected.get("reviewed_versions")
+                if (
+                    reviewed_versions is not None
+                    and expected_upstream_version not in reviewed_versions
+                ):
+                    continue
                 result = await session.call_tool(
                     expected["tool"],
                     expected["arguments"],
@@ -878,15 +893,22 @@ async def inspect_engineering(
         for name, arguments in DELEGATED_READ_CALLS.items()
         if name in automatic
     }
-    require(
-        set(delegated_read_calls) == automatic,
-        "the exact-image harness does not exercise every admitted read",
-    )
     error_call_contracts = {
         name: expected
         for name, expected in UPSTREAM_ERROR_CALLS.items()
         if expected["tool"] in automatic
+        and (
+            expected.get("reviewed_versions") is None
+            or expected_upstream_version in expected["reviewed_versions"]
+        )
     }
+    expected_error_tools = {
+        expected["tool"] for expected in error_call_contracts.values()
+    }
+    require(
+        set(delegated_read_calls) | expected_error_tools == automatic,
+        "the exact-image harness does not exercise every admitted read",
+    )
     partial_search_enabled = "ha_search" in automatic
     expected_operational_error_calls = sum(
         1

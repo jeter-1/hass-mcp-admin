@@ -117,15 +117,15 @@ class ExactImageDiagnosticTests(unittest.TestCase):
             + len(acceptance.UPSTREAM_ERROR_CALLS)
         )
 
-        self.assertEqual(acceptance.EXPECTED_OPERATIONAL_ERROR_CALLS, 1)
+        self.assertEqual(acceptance.EXPECTED_OPERATIONAL_ERROR_CALLS, 2)
         self.assertEqual(
             acceptance.expected_successful_delegated_calls(total_calls),
-            total_calls - 1,
+            total_calls - 2,
         )
         self.assertEqual(
             acceptance.EXPECTED_OUTCOME_CATEGORY_COUNTS,
             {
-                "upstream_error": 1,
+                "upstream_error": 2,
                 "invalid_request": 1,
                 "entity_not_found": 2,
                 "automation_not_found": 1,

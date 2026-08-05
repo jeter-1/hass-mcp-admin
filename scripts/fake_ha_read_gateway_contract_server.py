@@ -829,7 +829,7 @@ def main() -> None:
     application.router.add_get(
         "/core/api/config/script/config/{script_id}", api_script
     )
-    application.router.add_get("/core/api/websocket", websocket)
+    application.router.add_get("/core/websocket", websocket)
     application.router.add_get("/__fixture__/stats", fixture_stats)
     web.run_app(application, host="127.0.0.1", port=args.port, print=None)
 

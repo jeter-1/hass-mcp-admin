@@ -304,6 +304,8 @@ jobs:
             '  "access_secret": "synthetic-engineering-access-secret",' \
             '  "audit_enabled": true,' \
             '  "prewarm_enabled": false,' \
+            '  "rate_limit_per_minute": 600,' \
+            '  "rate_limit_burst": 100,' \
             '  "upstream_trust_registry_enabled": false' \
             '}' > "$RUNNER_TEMP/read-gateway-data/options.json"
           docker run --detach --rm --network host \

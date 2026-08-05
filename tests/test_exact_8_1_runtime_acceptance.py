@@ -149,6 +149,8 @@ class ExactAddonProfileTests(unittest.TestCase):
         self.assertIn(
             "exact-image-sidecar-lifecycle-result.json", workflow
         )
+        self.assertIn('"rate_limit_per_minute": 600', workflow)
+        self.assertIn('"rate_limit_burst": 100', workflow)
         self.assertNotIn(
             "--entrypoint /app/.venv/bin/ha-mcp-web", workflow
         )
@@ -191,9 +193,21 @@ class ExactAddonProfileTests(unittest.TestCase):
                     if entry["classification"] == "automatic_read"
                 }
                 self.assertEqual(len(automatic), expected_counts[version])
+                error_arguments = {
+                    expected["tool"]: expected["arguments"]
+                    for expected in gateway_acceptance.UPSTREAM_ERROR_CALLS.values()
+                    if expected["tool"] in automatic
+                    and (
+                        expected.get("reviewed_versions") is None
+                        or version in expected["reviewed_versions"]
+                    )
+                }
+                exercised = (
+                    set(gateway_acceptance.DELEGATED_READ_CALLS)
+                    | set(error_arguments)
+                )
                 self.assertEqual(
-                    automatic
-                    & set(gateway_acceptance.DELEGATED_READ_CALLS),
+                    automatic & exercised,
                     automatic,
                 )
                 catalog = json.loads(
@@ -210,10 +224,42 @@ class ExactAddonProfileTests(unittest.TestCase):
                     for descriptor in catalog["tools"]
                 }
                 for name in automatic:
+                    arguments = gateway_acceptance.DELEGATED_READ_CALLS.get(
+                        name, error_arguments.get(name)
+                    )
+                    self.assertIsNotNone(arguments)
                     validate(
-                        instance=gateway_acceptance.DELEGATED_READ_CALLS[name],
+                        instance=arguments,
                         schema=descriptors[name]["inputSchema"],
                     )
+
+    def test_missing_operation_is_an_exact_fail_closed_read_case(self):
+        expected = gateway_acceptance.UPSTREAM_ERROR_CALLS["missing_operation"]
+
+        self.assertEqual(expected["tool"], "ha_get_operation_status")
+        self.assertEqual(
+            expected["reviewed_versions"], ("7.14.1", "7.14.2")
+        )
+        self.assertEqual(expected["upstream_code"], "RESOURCE_NOT_FOUND")
+        self.assertEqual(expected["public_code"], "provider_error")
+        self.assertEqual(expected["failure_category"], "upstream_error")
+        self.assertTrue(expected["retryable"])
+        self.assertNotIn(
+            "ha_get_operation_status", gateway_acceptance.DELEGATED_READ_CALLS
+        )
+
+    def test_supervisor_core_websocket_route_matches_addon_startup(self):
+        source = (
+            ROOT / "scripts/fake_ha_read_gateway_contract_server.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            'application.router.add_get("/core/websocket", websocket)', source
+        )
+        self.assertNotIn(
+            'application.router.add_get("/core/api/websocket", websocket)',
+            source,
+        )
 
     def test_exact_image_lifecycle_harness_covers_bounded_runtime_properties(self):
         source = (
