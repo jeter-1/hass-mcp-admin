@@ -222,6 +222,48 @@ class DurableExecutionRepositoryTests(unittest.TestCase):
         with self.assertRaises(BlindRedispatchProhibited):
             self.repository.commit_dispatch_intent(**arguments)
 
+    def test_pre_intent_retry_preserves_operation_identity_without_intent(self):
+        claim = self.claim()
+        record = self.repository.get("task-persistence")
+        assert record is not None
+        record.lock_tokens = [
+            {
+                "key": "dashboard:overview",
+                "generation": 1,
+                "mode": "exclusive",
+                "owner_id": "owner-primary",
+            }
+        ]
+        record.preflight_completed = True
+        self.repository._write_unlocked(record)
+        retryable = self.repository.record_pre_intent_retry(
+            "task-persistence",
+            owner_id="owner-primary",
+            claim_generation=claim.claim_generation,
+            diagnostic_code="approval_consumed_intent_not_recorded",
+            now=NOW,
+        )
+        self.assertFalse(retryable.terminal)
+        self.assertIsNone(retryable.dispatch_intent)
+        self.assertEqual(retryable.dispatch_count, 0)
+        self.assertEqual(retryable.execution_identity().task_id, "task-persistence")
+        self.assertEqual(retryable.execution_identity().plan_id, "plan-persistence")
+        self.assertEqual(
+            retryable.execution_identity().attempt_id, "attempt-persistence"
+        )
+        self.assertEqual(
+            retryable.events[-1]["event_type"], "pre_intent_retry_required"
+        )
+        reclaimed = self.repository.claim(
+            identity=_identity(request="request-retry"),
+            prepared=self.prepared,
+            timing=TIMING,
+            now=NOW,
+        )
+        self.assertFalse(reclaimed.created)
+        self.assertEqual(reclaimed.claim_generation, 2)
+        self.assertIsNone(reclaimed.record.normalized_outcome)
+
     def test_cleanup_removes_only_old_terminal_records(self):
         claim = self.claim()
         self.repository.terminalize_pre_dispatch(

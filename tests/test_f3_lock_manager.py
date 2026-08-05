@@ -21,7 +21,7 @@ BETA_DIR = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(BETA_DIR))
 
-from f3_contracts.operation_adapter import (  # noqa: E402
+from ha_mcp_engineering.f3.contracts import (  # noqa: E402
     LockMode,
     LockRequest,
     LockScope,

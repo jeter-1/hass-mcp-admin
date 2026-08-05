@@ -1,6 +1,7 @@
 # ADR-013: F3 operation-adapter, lock, and dispatch contract
 
-Status: Proposed for F3; declaration-only in F3-0
+Status: Accepted F3-A core; amended by Beta 17 for canonical packaging and
+dashboard execution deferral
 
 ## Context
 
@@ -19,13 +20,12 @@ This decision inherits rather than supersedes:
 - ADR-012 (policy, risk, and elevated approval) for policy and external
   approval authority.
 
-F3-0 introduces a declaration-only protocol in
-`f3_contracts/operation_adapter.py`. It is repository-level architecture code,
-not part of the Beta 15 add-on package, and no runtime module imports it. This
-placement is deliberate: every Engineering package change is release-sensitive,
-while F3-0 must not bump or republish Beta 15. The existing plan and task
-schemas remain authoritative until later separately reviewed F3 implementation
-branches adopt and package the contract.
+F3-0 introduced a declaration-only protocol in
+`f3_contracts/operation_adapter.py`. F3-A then shipped the isolated executor,
+durable persistence, and lock core. Beta 17 resolves the packaging boundary:
+`ha_mcp_engineering.f3.contracts` is the sole runtime definition, and the root
+package is only an object-identical compatibility/test facade. Existing plan
+and task schemas remain authoritative.
 
 ## Decision
 
@@ -41,9 +41,11 @@ Every F3 adapter exposes these phases while retaining provider-specific logic:
    stale-state comparison, configuration validation where required, target
    identity confirmation, lock calculation/acquisition, and dispatch
    eligibility. It performs no provider mutation.
-3. **Dispatch** persists approval consumption and a durable dispatch intent
-   before the mutating provider call, then invokes the exact mutating provider
-   operation at most once with exact reviewed arguments.
+3. **Dispatch** is sequenced by the shared executor. After complete locks and
+   final preflight, it invokes the caller-owned idempotent durable
+   approval-consumption callback, commits F3 durable dispatch intent, and only
+   then permits the adapter to invoke the exact mutating provider operation at
+   most once with exact reviewed arguments.
 4. **Observation** performs bounded exact readback, records attempts and
    recovery evidence, and never repeats the mutating provider call.
 5. **Verification** compares readback to the plan's exact intended result,
@@ -64,9 +66,9 @@ identity, and readback observations are non-mutating calls with separate
 bounded attempt accounting. F4 retains graph execution and generalized
 compensation.
 
-### Frozen declarations
+### Canonical shipped declarations
 
-The declaration model in `f3_contracts/operation_adapter.py` is
+The declaration model in `ha_mcp_engineering.f3.contracts` is
 `f3-operation-adapter-v1`. It defines:
 
 - exact operation target identity;
@@ -74,11 +76,32 @@ The declaration model in `f3_contracts/operation_adapter.py` is
 - canonical resource/provider lock request;
 - immutable prepared-operation hashes and expected effects;
 - bounded preflight, dispatch, observation, and verification results;
+- a caller-owned idempotent callback for durable approval consumption;
 - a callback that must durably record dispatch intent; and
 - explicit prepare, preflight, dispatch, observe, verify, recover, and
   prepare-rollback methods.
 
-The declarations are not serialized and do not add a public operation.
+The declarations are not serialized and do not add a public operation. No
+shipped module depends on repository-root `f3_contracts`; that facade re-exports
+the exact canonical class, enum, protocol, and constant objects for historical
+tests and specification compatibility.
+
+### Dashboard execution deferral
+
+F3-B's exact source review and deterministic interleaving prove that the
+reviewed dashboard hash check and save are separate. An Engineering lock cannot
+exclude Home Assistant UI users, integrations, automations, or other clients,
+and a final exact reread cannot reveal an external edit already overwritten by
+the approved result.
+
+Beta 17 therefore retains dashboard planning, patch compilation, semantic
+diff, risk evidence, immutable artifacts, stale-state validation, and exact
+verification while accepting no dashboard setter realization. Generated
+`python_transform` is rejected, unrestricted full-configuration replacement
+is not a workaround, and no public tool or persisted `update_dashboard`
+operation is added. Reconsideration requires reviewed atomic compare-and-save,
+expected-hash enforcement at the authoritative save boundary, or authoritative
+exclusion of all dashboard writers.
 
 ### Normalized outcomes
 
@@ -103,22 +126,37 @@ not report a pre-dispatch outcome after durable intent exists.
 
 ### Dispatch boundary
 
-The irreversible boundary is the successful durable `before_dispatch`
-callback. It occurs after exact provider/operation/argument admission and the
-final stale check, but before the mutating network/provider invocation.
+Approval remains caller/governance authority. The shared executor owns only
+the sequencing responsibility, and an adapter neither grants nor interprets
+approval. The executor receives an `ApprovalConsumptionRecorder`, an
+idempotent `Callable[[], Awaitable[None]]`, for the exact governed execution.
 
-The callback must persist, before returning:
+After execution claim, complete atomic lock acquisition, and successful final
+adapter preflight, the executor-created `before_dispatch` callback performs:
 
-- consumed approval bound to the exact plan hash;
-- task/plan transition to dispatching/applying;
-- exactly one attempt lineage;
-- dispatch request/intent identity and timestamp; and
-- the fixed maximum post-dispatch deadline.
+1. validate the current fenced lock handle;
+2. invoke the caller-owned durable approval-consumption callback;
+3. commit F3 durable dispatch intent and reserve `dispatch_count=1`; and
+4. return to the adapter, which immediately performs its reviewed mutation.
 
-If persistence fails, the mutating provider is not invoked. Once the callback
-returns, a crash before bytes reach the provider is nevertheless treated as
-possibly dispatched. Provider response loss, timeout, process loss, or
-reconnect never permits another mutating call. Resolution is readback only.
+The approval record and F3 intent are separate durable writes; this ADR does
+not claim a single storage transaction. Between their completion there is no
+provider probe, mutable policy decision, unrelated await, or adapter-controlled
+branch. Approval is never consumed for a lock conflict, lock-storage failure,
+cancellation accepted before intent, stale-state rejection, provider-admission
+rejection, target-identity rejection, or another failed preflight.
+
+If approval consumption fails, intent remains absent, `dispatch_count` remains
+zero, and provider mutation is unreachable. If approval is durably consumed
+but intent persistence fails, the same task, plan, operation, and attempt
+remain the only F3 execution authority. A reconstruction repeats the same
+idempotent approval callback and must not enter legacy execution. Provider
+invocation remains zero until intent succeeds. A process loss in this gap has
+the same reconstruction rule.
+
+Once intent commits, a crash before bytes reach the provider is nevertheless
+treated as possibly dispatched. Provider response loss, timeout, process loss,
+or reconnect never permits another mutating call. Resolution is readback only.
 
 Response evidence is bounded, sanitized, and truthful about whether a response
 was received. A response is not verification.
@@ -186,14 +224,12 @@ timeout is zero. F3 retains fail-fast as the default. Any future bounded wait
 must be explicit, task-visible, cancellable, and separately reviewed before
 making reserved `waiting_for_lock` reachable.
 
-The current implementation has no leases. The F3 lock interface must require an
-explicit positive lease duration and shorter positive renewal interval before a
-durable lock manager can start. It must fail closed when either is absent or
-`renewal_interval >= lease_duration`. Exact numeric lease and renewal defaults
-are intentionally unresolved until F3-A measures the 1,860-second backup and
-restart/recovery paths; F3-0 does not invent unsafe values. A lease is bound to
+At F3-0 the current runtime had no leases. F3-A now provides explicit positive
+lease duration and a shorter positive renewal interval, failing closed when
+either is invalid or `renewal_interval >= lease_duration`. A lease is bound to
 task ID, plan ID, owner/process identity, operation, canonical keys, acquisition
-time, expiry, and renewal sequence.
+time, expiry, and fencing generation. Adapter-specific production timing and
+activation remain separately reviewed integration decisions.
 
 A pre-dispatch terminal outcome releases every lock. A terminal outcome with an
 exactly verified target state releases every lock. Post-dispatch indeterminate
@@ -221,7 +257,10 @@ a new dispatch lineage.
 
 Recovery behavior is phase-specific:
 
-- before durable intent: revalidate or terminate pre-dispatch;
+- before approval consumption: revalidate or terminate pre-dispatch;
+- after approval consumption but before durable intent: retain the same F3
+  execution identity and idempotently retry approval consumption before a new
+  attempt to persist that one intent; provider invocation remains zero;
 - after durable intent and before known response: assume possible dispatch and
   observe;
 - after response: verify the target, not the response alone;
@@ -248,12 +287,12 @@ multi-operation rollback graphs remain F4.
 
 ## Consequences
 
-- Later branches compile against one stable declaration vocabulary while
-  existing runtime remains unchanged in F3-0.
+- Later branches compile against one shipped stable declaration vocabulary
+  while current production routes remain disconnected until F3-D activation.
 - Operation-specific admission, arguments, verification, and recovery remain
   visible rather than hidden by a generic dispatcher.
-- Durable locks and cross-operation conflicts require real implementation and
-  migration work in F3-A; documentation alone does not claim those guarantees.
+- Durable locks and cross-operation conflicts are implemented and tested in
+  F3-A; adapter migration and runtime activation remain later work.
 - Persisted schemas remain compatible because normalized outcomes are mapped,
   not serialized over existing states.
 
@@ -272,9 +311,8 @@ multi-operation rollback graphs remain F4.
 
 ## Explicit unresolved implementation decisions
 
-F3-A must supply evidence and tests before choosing numeric lease/renewal
-defaults, bounded wait support, backup conflict edges, and cross-file plan/task
-transaction strategy. F3-D must close backup restart reconciliation,
-configuration readback recovery, and phase-by-phase process-loss acceptance.
-These decisions may not weaken the frozen dispatch, identity, or no-redispatch
-rules.
+F3-D must close backup restart reconciliation, configuration readback recovery,
+adapter activation, and phase-by-phase process-loss acceptance. Dashboard
+execution remains excluded unless the independently reviewed atomicity gate is
+resolved. These decisions may not weaken the frozen dispatch, identity,
+external-writer, or no-redispatch rules.

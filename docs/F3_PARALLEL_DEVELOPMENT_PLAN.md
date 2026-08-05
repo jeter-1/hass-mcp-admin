@@ -1,17 +1,19 @@
 # F3 parallel-development plan
 
-Status: Frozen work-package boundaries after F3-0 acceptance
+Status: Beta 17 release-train order after merged F3-A
 
 ## Baseline and rule of engagement
 
-Every F3 branch starts from the accepted F3-0 contract commit, preserves Beta
-15 exact-release behavior and secure dependencies, and owns only the files in
-its package below. A track may develop in parallel but may not merge before its
-listed dependencies.
+F3-A / Beta 16 is merged. F3-B / Beta 17 restacks directly on that accepted
+mainline and must merge before F3-C1 / Beta 18 (PR #90), which in turn must
+merge before F3-C2 / Beta 19 (PR #91). F3-D / Beta 20 owns later activation and
+integration. Every branch preserves exact-release behavior and secure
+dependencies and may not merge before its listed dependencies.
 
-The contract documents and `f3_contracts/operation_adapter.py` are shared review
-boundaries. Tracks propose contract changes back through the integration owner;
-they do not silently fork names, outcomes, dispatch semantics, or lock keys.
+The contract documents and `ha_mcp_engineering.f3.contracts` are shared review
+boundaries. Repository-root `f3_contracts` is a compatibility/test facade, not
+another definition. Tracks propose contract changes through the integration
+owner; they do not fork names, outcomes, dispatch semantics, or lock keys.
 
 Paths beginning with `ha_mcp_engineering/` or `config.yaml` are relative to
 `hass_mcp_engineering_beta/`. Abbreviated runtime paths beginning with
@@ -25,26 +27,27 @@ F4 retains multi-operation graph execution and generalized compensation.
 ## Dependency graph
 
 ```text
-F3-0 contract freeze
+F3-A / Beta 16 (merged)
         |
         v
-F3-A adapter and lock core
-   |          |          |
-   v          v          v
- F3-B       F3-C1      F3-C2
-   \          |          /
-    \         |         /
-     v        v        v
- F3-D recovery, observability, acceptance
+F3-B / Beta 17 (canonical contracts and dashboard deferral)
+        |
+        v
+F3-C1 / Beta 18 (PR #90)
+        |
+        v
+F3-C2 / Beta 19 (PR #91)
+        |
+        v
+F3-D / Beta 20 (activation and integration)
         |
         v
  final F3 integration and release
 ```
 
-F3-B, F3-C1, F3-C2, and F3-D may build fixtures and adapters in parallel after
-F3-0 is accepted. B/C1/C2 rebase on accepted F3-A before merge. F3-D may develop
-fault-injection and acceptance harnesses in parallel but merges after the
-adapters it verifies.
+Branches may retain parallel development work, but the accepted merge order is
+Beta 16, Beta 17, Beta 18, Beta 19, then Beta 20. A later branch cannot use its
+own green result as evidence for an unmerged dependency.
 
 ## F3-A — adapter and lock core
 
@@ -92,25 +95,23 @@ changes provider arguments, creates fallback, makes a reserved state reachable
 without migration review, or cannot justify lease/renewal values against long
 backup/restart operations.
 
-## F3-B — governed dashboard writes
+## F3-B — canonical contracts and governed dashboard planning
 
 - Branch: `feature/f3-dashboard-writes`
 - Worktree: `/home/josh/worktrees/hass-mcp-f3-dashboard-writes`
-- Depends on: accepted F3-0 declarations; accepted F3-A before merge
-- Merge prerequisite: exact setter evidence, dashboard risk-policy review, and
-  safe bounds/compiler proof
+- Depends on: merged F3-A / Beta 16
+- Merge prerequisite: canonical packaging, dashboard risk-policy review, safe
+  planning bounds/compiler proof, and formal execution deferral
 
 ### Ownership
 
-Prefer isolated new files:
+F3-B retains isolated planning and verification files:
 
 - `governance/dashboard_operations.py`
 - `governance/dashboard_transform.py`
-- `providers/upstream_dashboard_write.py`
-- `tools/dashboard_write.py`
 - `tests/test_f3_dashboard_transform.py`
 - `tests/test_f3_dashboard_write.py`
-- synthetic exact-release dashboard-write fixtures
+- synthetic exact-release dashboard planning/readback fixtures
 
 F3-B avoids changing these current read files unless an independently reviewed
 shared extraction is unavoidable:
@@ -128,21 +129,23 @@ registry changes, and CI are integration-owner files.
 - exact complete internal raw read and explicit storage-mode identity;
 - `f3-dashboard-json-pointer-patch-v1` validation and bounded semantic diff;
 - unknown-field preservation and exact result hash binding;
-- administrator approval and the complete dashboard/resource/provider lock set;
+- complete dashboard/resource/provider lock identities and nonmutating F3-A
+  conformance;
 - stale-hash rejection before durable intent;
-- one exact setter invocation through a deterministic generated transform;
-- exact reread, no unintended field loss, and new hashes after atomic
-  compare/save or all-writer exclusion has been proven;
-- readback-only response-loss recovery;
+- formal rejection before durable intent because atomic compare/save or
+  all-writer exclusion has not been proven;
+- exact verification from supplied complete readback evidence;
 - no initial rollback capability unless the separately reviewed retention gate
   is satisfied;
 - negative reachability for creation, deletion, resources, preferences,
   screenshots, metadata, arbitrary Python, services, and fallback.
 
-F3-B stops on unknown upstream behavior, unsafe transform compilation,
-unbounded config/diff persistence, ambiguous selector behavior, unreviewed risk
-policy, inability to prevent create-on-missing, failure to close the demonstrated
-non-atomic lost-update window, or any physical/direct-service reachability.
+F3-B accepts no setter realization. Generated `python_transform` and
+full-configuration replacement are rejected; Engineering locks and final
+reread do not close the demonstrated lost-update window. It stops on unbounded
+config/diff persistence, ambiguous selector behavior, unreviewed risk policy,
+any public/runtime dispatch reachability, or any physical/direct-service
+reachability.
 
 ## F3-C1 — configuration-adapter conformance
 
@@ -249,10 +252,11 @@ The integration owner handles any required edits to:
 - bounded diagnostics and audit attribution;
 - exact-release accounting and provider-planning lanes with zero mutating
   dispatch, fixture mutation, and fallback;
-- a distinctly named disposable dashboard-write apply lane for exact 7.14.2 and
-  8.0.0, each proving exactly one setter invocation, one scoped fixture
-  mutation, exact reread, and zero other/live/physical/fallback action; and
-- full milestone harness including the governed dashboard write.
+- dashboard planning and exact readback-verification lanes for exact 7.14.2 and
+  8.0.0, each proving zero setter invocation, zero fixture mutation, and zero
+  live/physical/fallback action; and
+- full milestone harness retaining formal dashboard execution deferral unless
+  the authoritative atomicity gate is independently resolved.
 
 F3-D stops if recovery can dispatch, evidence is unbounded, manual review can be
 silently cleared, storage corruption is hidden, expected dispatch/mutation
@@ -293,13 +297,12 @@ release independently unless the operator assigns a release boundary.
 
 ## Merge sequence
 
-1. Merge F3-0 after contract review.
-2. Implement and merge F3-A.
-3. Rebase F3-B, F3-C1, and F3-C2 onto accepted F3-A and merge them in any
-   independently green order.
-4. Rebase and merge F3-D after the adapters it verifies.
-5. Run an integration-only branch for central registration, health, CI,
-   documentation reconciliation, versioning, and release acceptance.
+1. F3-0 contract freeze (accepted).
+2. F3-A / Beta 16 (merged).
+3. F3-B / Beta 17 (this branch).
+4. F3-C1 / Beta 18 (PR #90, blocked until Beta 17 merges).
+5. F3-C2 / Beta 19 (PR #91, blocked until Beta 18 merges).
+6. F3-D / Beta 20 activation and integration.
 
 Each merge re-runs complete task/schema/tool-count and exact-release invariants.
 No track may use a passing neighbor branch as evidence until that neighbor is
@@ -310,6 +313,6 @@ accepted on the common base.
 Stop the F3 merge train on runtime contract drift, schema migration without
 authority, newly reachable arbitrary/write/fallback paths, inconsistent shared
 file edits, changed exact-release accounting, unstable locks, possible double
-dispatch, provider mutation in planning-only fixtures, any mutation outside the
-single scoped dashboard in the disposable apply lane, unbounded diagnostics,
+dispatch, provider mutation in planning-only fixtures, any dashboard setter or
+fixture mutation, unbounded diagnostics,
 stable-v1 changes, or unresolved Critical/High review findings.

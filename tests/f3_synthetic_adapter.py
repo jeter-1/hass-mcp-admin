@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from f3_contracts.operation_adapter import (
+from ha_mcp_engineering.f3.contracts import (
     F3_ADAPTER_CONTRACT_MODEL,
     AdapterCapabilityDescriptor,
     DispatchResult,
@@ -39,6 +39,25 @@ class SyntheticResponseLost(SyntheticProviderError):
 
 class SyntheticProcessLoss(BaseException):
     pass
+
+
+@dataclass
+class SyntheticApprovalRecorder:
+    """Idempotent caller-owned approval recorder with no external effects."""
+
+    failures_remaining: int = 0
+    invocations: int = 0
+    consumptions: int = 0
+    consumed: bool = False
+
+    async def __call__(self) -> None:
+        self.invocations += 1
+        if self.failures_remaining:
+            self.failures_remaining -= 1
+            raise SyntheticProviderError("synthetic approval persistence failure")
+        if not self.consumed:
+            self.consumed = True
+            self.consumptions += 1
 
 
 @dataclass

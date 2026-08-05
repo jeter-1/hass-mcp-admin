@@ -8,6 +8,7 @@ from datetime import datetime
 import time
 from typing import Any, Callable
 
+from .contracts import ApprovalConsumptionRecorder
 from .locks import (
     DurableLockError,
     DurableLockStore,
@@ -61,6 +62,14 @@ class PreparedOperationInvalid(OperationExecutorError):
 
 class AdapterContractViolation(OperationExecutorError):
     pass
+
+
+class PreIntentRetryRequired(OperationExecutorError):
+    """The same F3 execution must retry without provider invocation."""
+
+    def __init__(self, diagnostic_code: str):
+        super().__init__("F3 pre-intent persistence requires idempotent retry")
+        self.diagnostic_code = diagnostic_code
 
 
 class SimulatedProcessLoss(BaseException):
@@ -127,10 +136,11 @@ class _LeaseRenewer:
 class SharedOperationExecutor:
     """Execute one exact prepared operation without generic forwarding.
 
-    The caller has already consumed its public authorization workflow.  This
-    core still requires adapter-specific preflight, held durable locks, and a
-    committed durable intent before the adapter may invoke its one reviewed
-    mutating provider operation.
+    The caller retains authorization authority and supplies an idempotent
+    durable approval-consumption callback.  This core sequences that callback
+    only after adapter-specific preflight and held durable locks, and before a
+    committed durable intent permits the adapter's one reviewed mutating
+    provider operation.
     """
 
     def __init__(
@@ -311,6 +321,7 @@ class SharedOperationExecutor:
         adapter: object,
         prepared: object,
         identity: ExecutionIdentity,
+        approval_consumption: ApprovalConsumptionRecorder,
     ) -> ExecutorResult:
         identity.validate()
         self.validate_prepared_operation(adapter, prepared)
@@ -319,7 +330,10 @@ class SharedOperationExecutor:
         )
         async with local_lock:
             return await self._execute_locked(
-                adapter=adapter, prepared=prepared, identity=identity
+                adapter=adapter,
+                prepared=prepared,
+                identity=identity,
+                approval_consumption=approval_consumption,
             )
 
     async def _execute_locked(
@@ -328,6 +342,7 @@ class SharedOperationExecutor:
         adapter: object,
         prepared: object,
         identity: ExecutionIdentity,
+        approval_consumption: ApprovalConsumptionRecorder,
     ) -> ExecutorResult:
         self.metrics.increment("executions_started")
         try:
@@ -457,10 +472,34 @@ class SharedOperationExecutor:
             return self._result(record)
 
         dispatch_metric_recorded = False
+        irreversible_boundary_invoked = False
+        approval_consumption_started = False
+        approval_consumption_succeeded = False
 
         async def before_dispatch() -> None:
+            nonlocal irreversible_boundary_invoked
+            nonlocal approval_consumption_started
+            nonlocal approval_consumption_succeeded
             nonlocal dispatch_metric_recorded
+            if irreversible_boundary_invoked:
+                raise AdapterContractViolation(
+                    "irreversible dispatch callback was invoked more than once"
+                )
+            irreversible_boundary_invoked = True
+            current = self.execution_repository.get(identity.task_id)
+            if current is None:
+                raise ExecutionStorageError("execution record disappeared")
+            if current.terminal:
+                raise ExecutionStorageError(
+                    "terminal execution cannot consume approval"
+                )
             self.lock_store.validate_handle(handle, now=self.now())
+            approval_consumption_started = True
+            await approval_consumption()
+            approval_consumption_succeeded = True
+            self._inject(
+                "after_approval_consumption_before_durable_intent"
+            )
             self.execution_repository.commit_dispatch_intent(
                 identity.task_id,
                 owner_id=identity.owner_id,
@@ -529,15 +568,36 @@ class SharedOperationExecutor:
                 self._release_safely(handle)
                 raise OperationExecutorError("execution record disappeared")
             if persisted.dispatch_intent is None:
-                self.metrics.increment("durable_intent_failures")
-                record = self._terminal_pre_dispatch(
-                    claim,
-                    identity,
-                    outcome="failed_pre_dispatch",
-                    code="durable_intent_failed",
+                if approval_consumption_succeeded:
+                    self.metrics.increment("durable_intent_failures")
+                if persisted.terminal:
+                    self._release_safely(handle)
+                    return self._result(persisted)
+                code = (
+                    "approval_consumed_intent_not_recorded"
+                    if approval_consumption_succeeded
+                    else "approval_consumption_failed"
+                    if approval_consumption_started
+                    else "adapter_failed_before_irreversible_boundary"
+                )
+                if not approval_consumption_started:
+                    record = self._terminal_pre_dispatch(
+                        claim,
+                        identity,
+                        outcome="failed_pre_dispatch",
+                        code=code,
+                    )
+                    self._release_safely(handle)
+                    return self._result(record)
+                self.execution_repository.record_pre_intent_retry(
+                    identity.task_id,
+                    owner_id=identity.owner_id,
+                    claim_generation=claim.claim_generation,
+                    diagnostic_code=code,
+                    now=self.now(),
                 )
                 self._release_safely(handle)
-                return self._result(record)
+                raise PreIntentRetryRequired(code)
             if not dispatch_metric_recorded:
                 self.metrics.increment("durable_intents_committed")
                 self.metrics.increment("dispatch_attempts")

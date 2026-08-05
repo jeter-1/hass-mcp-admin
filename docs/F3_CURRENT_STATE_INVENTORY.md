@@ -1,6 +1,7 @@
 # F3 current-state execution inventory
 
-Status: F3-0 source inventory at `2.2.0-beta.15`
+Status: Historical F3-0 source inventory at `2.2.0-beta.15`, with Beta 17
+disposition
 
 Source boundary: `8d30c6499cafc24783a09a982c19aff55e0a2084`
 
@@ -10,6 +11,22 @@ remains governed by [Change governance](CHANGE_GOVERNANCE.md),
 [Operational administration](OPERATIONAL_ADMINISTRATION.md),
 [ADR-007](architecture/ADR-007-GOVERNED-OPERATIONAL-ADMINISTRATION.md), and
 [ADR-008](architecture/ADR-008-DURABLE-EXECUTION-TASKS.md).
+
+## Beta 17 disposition
+
+F3-A is merged and provides the runtime-inert executor, durable persistence,
+and fenced lock core. Beta 17 makes
+`ha_mcp_engineering.f3.contracts` the sole shipped definition of
+`f3-operation-adapter-v1`; repository-root `f3_contracts` is an object-identical
+compatibility facade only.
+
+F3-B retains the dashboard planning and exact-verification foundation but
+formally defers execution. The reviewed interfaces do not provide atomic
+compare-and-save, expected-hash enforcement at the authoritative save
+boundary, or exclusion of all external dashboard writers. Engineering locks
+coordinate Engineering operations only, and final reread does not repair the
+lost-update race. No dashboard setter, public tool, persisted operation,
+dispatch route, or rollback is accepted.
 
 ## Inventory method and boundaries
 
@@ -23,9 +40,10 @@ contract. It does not change plan schema, task schema, public tools, provider
 routing, tool accounting, policy, approval, locking, dispatch, recovery, or
 fallback behavior.
 
-The contract declarations live in `f3_contracts/operation_adapter.py`, outside
-the Engineering add-on package. Beta 15 neither imports nor packages them.
-F3-A owns the later release-sensitive runtime adoption.
+At this historical boundary the contract declarations lived in
+`f3_contracts/operation_adapter.py`, outside the Engineering add-on package.
+Beta 17 supersedes that packaging arrangement with the canonical shipped
+module described above.
 
 ## Configuration adapters
 
@@ -119,7 +137,7 @@ It is an adapter/executor projection only; persisted strings are unchanged.
 
 | Source and symbol | Current responsibility | Current protection | Gap / F3 owner |
 |---|---|---|---|
-| `tools/dashboard.py::list_dashboards`, `get_dashboard_config` | Two public read-only dashboard tools | No setter registration | Preserve unchanged; F3-B adds a separate governed write path |
+| `tools/dashboard.py::list_dashboards`, `get_dashboard_config` | Two public read-only dashboard tools | No setter registration | Preserve unchanged; F3-B adds inert planning and verification only |
 | `providers/upstream_dashboard.py::UpstreamDashboardProvider` | Exact constrained `ha_config_get_dashboard` list/get | Canonical path, no screenshot/preferences, exact v2/v3 attestation | Public output may be sanitized/truncated while hashes cover raw config; not safe as write input |
 | `providers/upstream_contracts.py` | 7.14.2 Dashboard v2 and 8.0.0 Dashboard v3 admission | Protocol 2025-03-26 and exact reviewed descriptors | Write admission needs its own exact constrained contract; F3-B |
 | `clients/mcp.py::execute_dashboard_read` | Bounded MCP transport and exact read arguments | Full catalog/descriptor admission before read | No write route; retain |
@@ -164,10 +182,11 @@ size is recorded separately. The setter has no hard write-size cap; its full
 replacement path only warns at 10,000 bytes. These are not safe durable
 snapshot/rollback limits.
 
-Generated-transform success returns `success`, action, exact path,
+As reviewed source evidence, generated-transform success returns `success`, action, exact path,
 `write_committed`, `post_write_verified`, optional new `config_hash`, and an
-optional post-save-read warning. It also echoes `python_expression`, which a
-future Engineering provider must discard rather than persist or expose. Current
+optional post-save-read warning. It also echoes `python_expression`. Beta 17
+rejects generated transform as a setter realization; the planning foundation
+does not persist or expose the expression. Current
 upstream errors distinguish missing/conflicting hash, strict-BPS
 acknowledgment, transform validation, and save failure. After durable intent,
 transport timeout or invalid response remains indeterminate; a provider
@@ -178,25 +197,30 @@ These facts are frozen into the separate
 
 ## Demonstrated F3 gaps
 
-1. No shared adapter interface or normalized outcome projection exists.
-2. Target locks are in-memory equality locks, not durable task-bound leases.
+1. F3-A now supplies the shared adapter core, normalized outcomes, and Beta 17
+   canonical shipped contract API; production adapters are not yet migrated.
+2. F3-A now supplies durable task-bound fenced leases; current production
+   operations still use their existing locks until later activation.
 3. The cross-operation conflict graph is incomplete.
 4. Configuration restart recovery does not resume readback-only verification.
 5. Backup is absent from the background operational readback reconciler.
 6. Plan and task persistence require reconciliation across separate files.
 7. Lock ownership, conflicts, renewal, recovery, and audit evidence are not
    observable in bounded detail.
-8. There is no governed dashboard-write path or complete internal dashboard
-   read suitable for planning.
-9. Dashboard risk review, declarative transformation, safe size bounds, and
-   rollback availability require explicit implementation decisions.
+8. F3-B supplies an inert complete internal dashboard read and governed
+   planning path, but execution is formally deferred by the external-writer
+   atomicity blocker.
+9. Dashboard risk review, declarative transformation, and safe artifact bounds
+   are implemented; rollback and executable mutation remain unavailable.
 
 F4 retains multi-operation graph scheduling and generalized compensation.
 
 ## Ownership map
 
-- F3-A: adapter executor, lock manager, normalized outcomes, durable boundary.
-- F3-B: governed dashboard update and its exact constrained provider.
+- F3-A: merged adapter executor, lock manager, normalized outcomes, durable
+  boundary.
+- F3-B: canonical shipped contracts plus dashboard planning/verification and
+  formal execution deferral; no constrained setter is accepted.
 - F3-C1: configuration adapter conformance without behavior expansion.
 - F3-C2: backup and lifecycle conformance preserving Beta 15 contracts.
 - F3-D: process-loss recovery, bounded observability, and acceptance harness.

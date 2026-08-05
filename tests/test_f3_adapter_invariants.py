@@ -92,8 +92,8 @@ class F3AdapterIsolationTests(unittest.TestCase):
         requirements = (
             BETA_DIR / "requirements.txt"
         ).read_text(encoding="utf-8").splitlines()
-        self.assertEqual(SERVER_VERSION, "2.2.0-beta.16")
-        self.assertEqual(beta_config["version"], "2.2.0-beta.16")
+        self.assertEqual(SERVER_VERSION, "2.2.0-beta.17")
+        self.assertEqual(beta_config["version"], "2.2.0-beta.17")
         self.assertEqual(stable_config["version"], "1.1.2")
         self.assertIn("aiohttp==3.14.3", requirements)
         self.assertIn("cryptography==50.0.0", requirements)

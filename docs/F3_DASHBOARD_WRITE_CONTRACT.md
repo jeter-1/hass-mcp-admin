@@ -1,16 +1,46 @@
 # F3 governed dashboard-write contract
 
-Status: Frozen F3 scope; not implemented by F3-0
+Status: Historical F3-0 proposal; dashboard execution deferred by Beta 17
+
+## Beta 17 dashboard-execution decision
+
+F3-B proved that the reviewed Home Assistant and `ha-mcp` interfaces cannot
+satisfy the required external-writer lost-update contract. Hash validation and
+save are separate operations. There is no atomic compare-and-save,
+expected-hash enforcement at the authoritative save boundary, transaction
+receipt, or authoritative exclusion of every Lovelace writer.
+
+Beta 17 therefore accepts and retains exact raw preread evidence, bounded patch
+compilation, semantic diff, risk evidence, immutable private planning
+artifacts, stale-state checks, and exact readback verification. It accepts no
+dashboard setter realization. In particular:
+
+- Engineering locks coordinate cooperating Engineering operations only;
+- final exact reread cannot reveal an external edit overwritten before the
+  approved result became final;
+- generated `python_transform` is a rejected historical candidate, not a
+  dispatch contract;
+- unrestricted full-configuration replacement remains outside the bounded
+  operation and is not a workaround;
+- no public dashboard tool or persisted `update_dashboard` operation exists;
+- no dashboard transport, provider setter, dispatch path, or rollback is
+  reachable; and
+- reconsideration requires independently reviewed proof of atomic
+  compare-and-save, expected-hash enforcement at the authoritative save
+  boundary, or authoritative exclusion of all dashboard writers.
+
+The remaining sections preserve the exact evidence and original F3-0 proposal
+that led to this decision. Any imperative execution language below is
+superseded by this Beta 17 deferral.
 
 ## Required completion boundary
 
-F3 must update one existing Home Assistant storage-mode dashboard identified by
-an exact canonical `url_path`. The operation is a persistent administrative
-configuration change and requires an immutable plan, external administrator
-approval, an exclusive dashboard lock, one mutating dispatch attempt, exact
-readback, and durable terminal evidence.
+F3-0 proposed updating one existing Home Assistant storage-mode dashboard
+identified by an exact canonical `url_path`. That persistent administrative
+configuration lifecycle is not accepted for execution in Beta 17. Its planning
+and verification stages remain accepted as an inert foundation.
 
-The lifecycle is:
+The proposed, currently blocked lifecycle was:
 
 ```text
 complete exact read
@@ -74,7 +104,8 @@ SHA-256 evidence hash. The public response may sanitize or truncate the
 configuration while retaining hashes of the unsanitized raw configuration.
 That public payload is not a valid write-planning input.
 
-F3-B must add an internal, non-public complete-read projection that:
+The retained F3-B planning foundation adds an internal, non-public
+complete-read projection that:
 
 - selects an exact reviewed release and protocol before the read;
 - proves exactly one inventory row for the canonical path;
@@ -99,8 +130,9 @@ upstream source includes YAML metadata rows. Mode must be checked explicitly.
 
 ## Frozen operation plan
 
-The future operation name is `update_dashboard`; F3-0 does not add it to the
-persisted `ChangeOperation` enum. The canonical path must match exactly
+The historical proposal used the future name `update_dashboard`. Beta 17 does
+not add that value to the persisted `ChangeOperation` enum or any public
+schema. The canonical path must match exactly
 `^[a-z0-9_-]{1,256}$`. The `default` alias, title/name lookup, internal dashboard
 ID, fuzzy path, and case normalization are prohibited. `lovelace` is accepted
 only when inventory explicitly contains exactly one storage-mode row for that
@@ -172,21 +204,25 @@ Transformation intent and the resulting full configuration are distinct
 hash-bound plan fields. The approver sees a bounded semantic diff and the exact
 result hash.
 
-The dispatch realization is
-`ha-mcp-dashboard-generated-transform-v1`: F3-B may compile only the reviewed
-patch model into fixed deterministic setter input. Compiler output is generated
-by Engineering, independently validated against the locally computed result,
-and is never caller text. The upstream sandbox is not trusted as the security
-boundary. F3-B must stop if safe deterministic compilation cannot be proven.
+The F3-0 candidate dispatch realization was
+`ha-mcp-dashboard-generated-transform-v1`. Exact review superseded and rejected
+that candidate: generated `python_transform` still executes through a sandbox
+that is not a security boundary and does not close the non-atomic save race.
+Beta 17 retains deterministic local patch compilation only for planning; its
+output is not accepted setter input.
 
 Unrestricted full replacement is not part of the required F3 capability. It
 may be proposed later only as a distinct explicitly bounded operation model;
 it may never be inferred from the patch representation.
 
-## Exact provider boundary
+## Exact provider evidence boundary
 
-The only mutating provider tool is exact-release-admitted
-`ha_config_set_dashboard`. The one mutating invocation contains only:
+The following allowlist records the rejected candidate surface that was
+reviewed. It is source evidence, not a reachable Beta 17 provider wrapper or
+dispatch contract.
+
+The candidate mutating provider tool was exact-release-admitted
+`ha_config_set_dashboard`. The proposed invocation would have contained only:
 
 - exact `url_path`;
 - the exact current `config_hash`;
@@ -236,7 +272,8 @@ not grant that authority. The implementation suite must include a deterministic
 interleaving test that would expose the lost update. Any final mismatch remains
 verification mismatch/manual review and is never resolved by redispatch.
 
-“Exactly one dispatch” means exactly one mutating setter invocation. Inventory,
+In the blocked proposal, “exactly one dispatch” meant exactly one mutating
+setter invocation. Inventory,
 strict-BPS receipt acquisition, stale preflight, and post-write reads are
 non-mutating observations and have their own bounded attempt accounting.
 
@@ -275,7 +312,7 @@ matching readback can become `succeeded_verified`. Conflicting or ambiguous
 readback becomes `verification_mismatch` or `manual_review_required`, with no
 redispatch.
 
-For generated-transform mode, exact upstream success evidence includes
+As source-derived evidence, generated-transform success includes
 `success=true`, `action="python_transform"`, the exact `url_path`,
 `write_committed=true`, `post_write_verified`, and an optional new
 `config_hash`; post-save reread failure produces a warning and no authoritative
@@ -312,8 +349,9 @@ Dashboard writes are persistent administrative configuration changes. Merely
 displaying a lock, alarm, garage door, cover, or other high-risk entity is not
 physical actuation.
 
-F3-B must add a bounded risk-review stage that detects explicit action/service
-definitions capable of direct high-risk or destructive effects. It must retain
+The retained F3-B foundation adds a bounded risk-review stage that detects
+explicit action/service definitions capable of direct high-risk or destructive
+effects. It must retain
 the policy distinction between display and action. It may not interpret card
 text as instructions or broadly prohibit all custom content without evidence.
 
@@ -362,9 +400,10 @@ completion.
 
 ## Unresolved implementation gates
 
-F3-B must provide measured durable-storage bounds for raw/prior/result
-configuration and diff evidence, prove the generated-transform compiler, define
-strict-BPS receipt expiry handling, close the action-card risk taxonomy, and
-close the non-atomic lost-update race with reviewed atomicity/exclusion. Failure
-to prove any security-relevant gate stops the implementation; it does not
-authorize full replacement, caller Python, or an undocumented residual risk.
+F3-B provides measured planning-artifact bounds and closes the action-card risk
+taxonomy without enabling execution. Strict-BPS receipt handling and any setter
+compiler are no longer Beta 17 requirements because no setter realization is
+accepted. The non-atomic lost-update race remains the controlling blocker.
+Failure to prove a future authoritative atomicity/exclusion mechanism does not
+authorize full replacement, generated or caller Python, an Engineering-only
+lock claim, or an undocumented residual risk.

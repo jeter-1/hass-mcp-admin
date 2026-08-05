@@ -29,6 +29,7 @@ from ha_mcp_engineering.f3.persistence import (  # noqa: E402
     DurableExecutionRepository,
 )
 from tests.f3_synthetic_adapter import (  # noqa: E402
+    SyntheticApprovalRecorder,
     SyntheticBehavior,
     SyntheticOperationAdapter,
     SyntheticProcessLoss,
@@ -75,6 +76,7 @@ class FaultInjectionMatrixTests(unittest.IsolatedAsyncioTestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.clock = FakeClock()
+        self.approval = SyntheticApprovalRecorder()
 
     @staticmethod
     def identity(
@@ -166,6 +168,7 @@ class FaultInjectionMatrixTests(unittest.IsolatedAsyncioTestCase):
                 adapter=adapter,
                 prepared=prepared_dashboard_operation(),
                 identity=self.identity(),
+                approval_consumption=self.approval,
             )
         report = self.report(locks, executions, adapter)
         self.assertLessEqual(report["dispatch_count"], 1)
@@ -188,6 +191,7 @@ class FaultInjectionMatrixTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report["durable_lock_state"], "none")
         self.assertEqual(report["dispatch_count"], 0)
         self.assertEqual(adapter.counters.dispatch_invocations, 0)
+        self.assertEqual(self.approval.invocations, 0)
 
     async def test_02_process_loss_during_atomic_multi_lock_acquisition(self):
         _, _, adapter, report = await self.execute_with_loss(
@@ -196,6 +200,7 @@ class FaultInjectionMatrixTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report["durable_lock_state"], "none")
         self.assertEqual(report["dispatch_count"], 0)
         self.assertEqual(adapter.counters.preflight_invocations, 0)
+        self.assertEqual(self.approval.invocations, 0)
 
     async def test_03_process_loss_after_locks_before_preflight(self):
         _, _, adapter, report = await self.execute_with_loss(
@@ -204,6 +209,7 @@ class FaultInjectionMatrixTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report["durable_task_state"], "preflight")
         self.assertEqual(report["durable_lock_state"], "held")
         self.assertEqual(adapter.counters.preflight_invocations, 0)
+        self.assertEqual(self.approval.invocations, 0)
 
     async def test_04_process_loss_after_preflight_before_intent(self):
         _, executions, adapter, report = await self.execute_with_loss(
@@ -216,6 +222,58 @@ class FaultInjectionMatrixTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(record.dispatch_intent)
         self.assertEqual(report["dispatch_count"], 0)
         self.assertEqual(adapter.counters.preflight_invocations, 1)
+        self.assertEqual(self.approval.invocations, 0)
+
+    async def test_04b_process_loss_after_approval_before_intent_reconstructs(self):
+        locks, executions, adapter, report = await self.execute_with_loss(
+            executor_stage="after_approval_consumption_before_durable_intent"
+        )
+        record = executions.get("task-fault-matrix")
+        self.assertIsNotNone(record)
+        assert record is not None
+        self.assertIsNone(record.dispatch_intent)
+        self.assertEqual(report["dispatch_count"], 0)
+        self.assertEqual(adapter.counters.dispatch_invocations, 0)
+        self.assertEqual(adapter.counters.simulated_mutations, 0)
+        self.assertEqual(self.approval.invocations, 1)
+        self.assertEqual(self.approval.consumptions, 1)
+
+        self.clock.advance(121)
+        recovered_executor = SharedOperationExecutor(
+            lock_store=locks,
+            execution_repository=executions,
+            lock_timing=LOCK_TIMING,
+            executor_timing=EXECUTOR_TIMING,
+            now=self.clock.now,
+            monotonic=self.clock.monotonic,
+            sleep=self.clock.sleep,
+        )
+        result = await recovered_executor.execute(
+            adapter=adapter,
+            prepared=prepared_dashboard_operation(),
+            identity=self.identity(
+                owner="owner-recovery", request="request-recovery"
+            ),
+            approval_consumption=self.approval,
+        )
+        self.assertEqual(result.outcome, "succeeded_verified")
+        self.assertEqual(self.approval.invocations, 2)
+        self.assertEqual(self.approval.consumptions, 1)
+        self.assertEqual(adapter.counters.dispatch_invocations, 1)
+        self.assertEqual(adapter.counters.simulated_mutations, 1)
+        recovered = executions.get("task-fault-matrix")
+        self.assertIsNotNone(recovered)
+        assert recovered is not None
+        self.assertTrue(
+            all(
+                "fallback" not in event["event_type"]
+                and all(
+                    "fallback" not in code
+                    for code in event["diagnostic_codes"]
+                )
+                for event in recovered.events
+            )
+        )
 
     async def test_05_process_loss_during_durable_intent_persistence(self):
         _, executions, adapter, report = await self.execute_with_loss(
@@ -228,6 +286,8 @@ class FaultInjectionMatrixTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report["dispatch_count"], 0)
         self.assertEqual(adapter.counters.dispatch_invocations, 0)
         self.assertEqual(adapter.counters.simulated_mutations, 0)
+        self.assertEqual(self.approval.invocations, 1)
+        self.assertEqual(self.approval.consumptions, 1)
 
     async def test_06_process_loss_after_intent_before_provider(self):
         _, executions, adapter, report = await self.execute_with_loss(
@@ -250,6 +310,7 @@ class FaultInjectionMatrixTests(unittest.IsolatedAsyncioTestCase):
             adapter=adapter,
             prepared=prepared_dashboard_operation(),
             identity=self.identity(),
+            approval_consumption=self.approval,
         )
         report = self.report(locks, executions, adapter)
         self.assertEqual(result.outcome, "verification_mismatch")
@@ -266,6 +327,7 @@ class FaultInjectionMatrixTests(unittest.IsolatedAsyncioTestCase):
             adapter=adapter,
             prepared=prepared_dashboard_operation(),
             identity=self.identity(),
+            approval_consumption=self.approval,
         )
         report = self.report(locks, executions, adapter)
         self.assertEqual(result.outcome, "succeeded_verified")
@@ -294,6 +356,7 @@ class FaultInjectionMatrixTests(unittest.IsolatedAsyncioTestCase):
                 adapter=adapter,
                 prepared=prepared_dashboard_operation(),
                 identity=self.identity(),
+                approval_consumption=self.approval,
             )
         report = self.report(locks, executions, adapter)
         self.assertEqual(report["dispatch_count"], 1)
@@ -322,6 +385,7 @@ class FaultInjectionMatrixTests(unittest.IsolatedAsyncioTestCase):
                 adapter=adapter,
                 prepared=prepared_dashboard_operation(),
                 identity=self.identity(),
+                approval_consumption=self.approval,
             )
         report = self.report(locks, executions, adapter)
         self.assertEqual(report["dispatch_count"], 1)
@@ -373,6 +437,7 @@ class FaultInjectionMatrixTests(unittest.IsolatedAsyncioTestCase):
                 adapter=adapter,
                 prepared=prepared_dashboard_operation(),
                 identity=self.identity(),
+                approval_consumption=self.approval,
             )
         self.assertEqual(adapter.counters.dispatch_invocations, 1)
         self.assertEqual(len(locks.records()), 3)
@@ -390,6 +455,7 @@ class FaultInjectionMatrixTests(unittest.IsolatedAsyncioTestCase):
             adapter=adapter,
             prepared=prepared_dashboard_operation(),
             identity=self.identity(request="request-recovery"),
+            approval_consumption=self.approval,
         )
         self.assertEqual(result.outcome, "succeeded_verified")
         self.assertEqual(adapter.counters.dispatch_invocations, 1)

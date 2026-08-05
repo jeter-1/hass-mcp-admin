@@ -7,8 +7,9 @@ from datetime import datetime, timezone
 import re
 from typing import Any
 
+from .contracts import F3_ADAPTER_CONTRACT_MODEL
 
-F3_ADAPTER_CONTRACT_MODEL = "f3-operation-adapter-v1"
+
 LOCK_RECORD_SCHEMA_VERSION = 1
 LOCK_STATE_SCHEMA_VERSION = 1
 EXECUTION_RECORD_SCHEMA_VERSION = 1
