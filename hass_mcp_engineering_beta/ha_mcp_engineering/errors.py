@@ -247,6 +247,7 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
         422,
         "invalid_params",
         safe_detail_fields=(
+            "endpoint_category",
             "resource_id",
             "operation_id",
             "projection_error",

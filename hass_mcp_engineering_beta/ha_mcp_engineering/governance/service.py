@@ -9036,8 +9036,6 @@ class ChangeGovernanceService:
     def _approval_requirement_error(
         self, plan: ChangePlan, approval_kind: str
     ) -> ErrorCode | None:
-        if self._configuration_projection_error(plan) is not None:
-            return ErrorCode.CONFIGURATION_PROJECTION_UNREVIEWABLE
         if plan.policy_decision is None:
             return ErrorCode.POLICY_SNAPSHOT_REQUIRED
         if not policy_snapshot_matches(plan):
@@ -9047,6 +9045,11 @@ class ChangeGovernanceService:
             == ApprovalPolicyClass.PROHIBITED
         ):
             return ErrorCode.PROHIBITED_CHANGE
+        # Preserve the stronger historical prohibition outcome. Every other
+        # contract-v2 configuration record must carry a complete Beta 22
+        # projection before dispatch approval can be considered.
+        if self._configuration_projection_error(plan) is not None:
+            return ErrorCode.CONFIGURATION_PROJECTION_UNREVIEWABLE
         approval = plan.approval
         try:
             unexpired = bool(
