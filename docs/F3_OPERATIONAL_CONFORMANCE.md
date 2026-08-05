@@ -1,256 +1,218 @@
-# F3-C2 operational adapter conformance
+# F3-C2 operational-adapter conformance
 
-## Status and boundary
+## Accepted source and activation boundary
 
-F3-C2 adds runtime-inert implementations of `f3-operation-adapter-v1` for the
-four existing operational-administration plan families. It is stacked on the
-published F3-A Beta 16 executor and durable-lock API. The modules are not
-imported by application startup, `ChangeGovernanceService`, current provider
-routing, or public tool registration. F3-D remains the only activation point.
+Beta 19 is based directly on merged Beta 18 main
+`cca0d5e00d75398ec66bca0c9c2f568d11f7497e`. It adds runtime-inert
+conformance for `create_full_backup`, `controlled_reload`, `restart_addon`,
+and `restart_home_assistant`. Application startup, governance service routes,
+provider routing, task recovery, restart reconciliation, tool registration,
+and public planning/apply/cancel/rollback routes do not import or instantiate
+the package.
 
-The adapters accept approved existing operational plans. They do not create a
-second planning shape, consume approval, create execution tasks, or authorize
-dispatch. The F3-A caller owns approval consumption, exact execution identity,
-atomic lock acquisition, fencing, durable intent, duplicate execution,
-cancellation, deadlines, terminal state, and process reconstruction.
+The implementation consumes the sole shipped canonical contract package,
+`ha_mcp_engineering.f3.contracts`. Operational code does not redefine core F3
+targets, locks, capability descriptors, prepared-operation bases, results,
+outcomes, or recovery context. The built-image closure has no dependency on
+repository-root `f3_contracts`, `f3_dashboard`, or `tests`.
 
-No capability in this track provides rollback. Restore, deletion, download,
-partial backup, retention changes, arbitrary reloads or service data, add-on
-start/stop/install/uninstall/update/options/proxy actions, restart variants,
-shutdown, host reboot, and fallback remain unreachable.
+Legacy operational planning and execution remain authoritative until F3-D.
+Beta 19 creates no coordinator, background worker, private reconciliation
+surface, hold-release authority, rollback route, dashboard execution, public
+tool, or issue #92 helper-state execution.
 
-## Current Beta 15 operational inventory
+## Existing operational inventory
 
-| Operation | Plan and provider contract | Policy | Current dispatch and verification | Current recovery gap |
-| --- | --- | --- | --- | --- |
-| `create_full_backup` | `create_backup_plan`; target `backup:local_full_backup`; `upstream_operational_backup`; exact `ha_manage_backup` with `scope=snapshot`, `action=create`, and the planned name | standard administration, moderate risk delta, indirect physical consequence | applies through the current operational path; persists `before_dispatch`; reads operation state and inventory; requires a new exact-name backup outside the baseline with completed state, readable metadata, bounded creation time, and nonzero size when present | recovery is operation-specific and not yet governed by the shared F3 executor/locks; an ambiguous missing response must never create a second backup |
-| `controlled_reload` | `create_reload_plan`; target one of `automation`, `script`, `input_boolean`, `input_number`; `upstream_operational_lifecycle`; exact `ha_reload_core` plural target | standard administration, moderate risk delta, indirect physical consequence | requires full configuration validation, exact service availability, and readable domain inventory; dispatches one reload; verifies connection, post-reload configuration, service, and inventory | a lost response has no authoritative direct effect signal; readback can prove readiness but cannot always prove the reload happened |
-| `restart_addon` | `create_addon_restart_plan`; exact installed slug; `upstream_operational_lifecycle`; `ha_manage_addon` with only `action=restart` and exact slug | elevated administration, high risk delta, indirect physical consequence | binds one inventory/detail match, exact version/name/repository and upstream endpoint when applicable; verifies unchanged identity, running recovery, and evidence beyond an old running state | ordinary add-ons may lack a durable restart signal; the upstream add-on can use exact admission loss/restoration or process evidence |
-| `restart_home_assistant` | `create_home_assistant_restart_plan`; target `home_assistant:core`; `upstream_operational_lifecycle`; exact `ha_restart(confirm=true)` | elevated administration, high risk delta, indirect physical consequence | requires valid configuration, exact HA/runtime/tool/storage/provider baseline; Beta 11 reconciliation persists immutable deadlines/backoff and uses a cheap eligibility gate before bounded expensive probes | existing reconciliation is specialized; F3 activation must preserve all of its durable evidence and must not reset the evidence window or redispatch |
+| Operation | Existing exact contract | Policy and consequence | Verification limitation |
+| --- | --- | --- | --- |
+| `create_full_backup` | `ha_manage_backup(scope=snapshot, action=create, name=<planned>)` through `upstream_operational_backup` | standard administration; moderate risk delta; indirect consequence | recorder is excluded; archive integrity, restore, download, deletion, and retention are not validated or exposed |
+| `controlled_reload` | `ha_reload_core(target=<reviewed plural>)` for automation, script, input-boolean, or input-number only | standard administration; moderate risk delta; indirect consequence | valid readiness after a lost response cannot prove that reload occurred |
+| `restart_addon` | `ha_manage_addon(slug=<planned installed slug>, action=restart)` through `upstream_operational_lifecycle` | elevated administration; high risk delta; indirect consequence | unchanged running state is not restart evidence |
+| `restart_home_assistant` | `ha_restart(confirm=true)` through `upstream_operational_lifecycle` | elevated administration; high risk delta; indirect consequence | current reachability or a provider response alone is not restart evidence |
 
-All four plan families preserve immutable plan hashes, authority-v3 policy and
-approval bundles, expiration, baseline evidence, public projections, warnings,
-limitations, and the current provider descriptors. Planning remains read-only
-and creates no task or approval challenge.
+Preparation is a read-only projection of an exact operational plan contract 3.
+It preserves plan ID/hash, policy-decision and approval-bundle hashes, target,
+baseline, provider identity/contract, exact operation and argument hash, risk,
+physical consequence, effects, warnings, limitations, verification contract,
+and rollback unavailability. Missing, consumed, stale, incomplete, ambiguous,
+or prohibited plan evidence requires a new plan; it is never filled from
+mutable current state.
 
-## Adapter architecture
+## Closed capabilities
 
-`OperationalAdministrationAdapter` implements the shared lifecycle through
-four explicit strategies:
+One `OperationalAdministrationAdapter` delegates to four strategies:
 
-- `FullBackupOperationStrategy`
-- `ControlledReloadOperationStrategy`
-- `AddonRestartOperationStrategy`
-- `HomeAssistantRestartOperationStrategy`
-
-Preparation copies only hash-bound plan facts into an immutable prepared
-operation and rejects unknown operations before preflight. It binds the exact
-capability, operation, target, policy snapshot, effect, provider descriptor,
-arguments, verification contract, deadline class, warnings, limitations,
-provider slug, and provider-identity evidence hash. Provider responses cannot
-select an operation, target, or argument.
-
-The internal capability identities are:
-
-| Capability | Exact operation | Exact target class |
+| Strategy | Capability identity | Target class |
 | --- | --- | --- |
-| `create_full_home_assistant_backup` | `create_full_backup` | `local_full_backup` |
-| `reload_home_assistant_configuration_domain` | `controlled_reload` | `home_assistant_configuration_domain` |
-| `restart_installed_home_assistant_addon` | `restart_addon` | `installed_home_assistant_addon` |
-| `restart_home_assistant_core` | `restart_home_assistant` | `home_assistant_core` |
+| `FullBackupOperationStrategy` | `create_full_home_assistant_backup` | `local_full_backup` |
+| `ControlledReloadOperationStrategy` | `reload_home_assistant_configuration_domain` | `home_assistant_configuration_domain` |
+| `AddonRestartOperationStrategy` | `restart_installed_home_assistant_addon` | `installed_home_assistant_addon` |
+| `HomeAssistantRestartOperationStrategy` | `restart_home_assistant_core` | `home_assistant_core` |
 
-Each capability binds the adapter contract, provider and provider operation,
-closed argument surface, exact-release/provider contract, verification model,
-readback recovery, no rollback, evidence-deadline class, and manual-review
-policy. Unknown capability identities fail closed.
+Unknown operations, capabilities, targets, providers, releases, protocols,
+arguments, response models, and action variants fail closed. No dynamic import,
+arbitrary forwarding, fallback, restore/delete/download/retention operation,
+unsupported reload, add-on lifecycle variant, shutdown, or host restart is
+reachable. All four capabilities declare rollback unsupported and unavailable;
+future rollback is a separate governed F3 operation with its own approval.
+
+## Public-task and authorization boundary
+
+The prepared identity binds one existing public task to one future durable F3
+child execution. Operational plans are single-operation today, but the two
+identities remain distinct so F3-D can adopt the approved child model without
+reinterpreting plan intent.
+
+The accepted ordering is:
+
+1. claim the durable child and atomically acquire its complete lock set;
+2. run final authoritative operation-specific preflight;
+3. invoke the caller-owned idempotent complete-authorization callback;
+4. commit canonical durable F3 dispatch intent; and
+5. invoke the one reviewed provider mutation.
+
+Preparation requires a bound, available approval bundle and bound elevated
+acknowledgement where applicable. Preflight validates their hashes and current
+validity but has no `approval_consumed` or
+`elevated_acknowledgement_consumed` requirement. A consumed approval cannot
+prepare a new child. Reconstruction starts from the existing durable child and
+prepared evidence rather than reparsing consumed public authority.
+
+The merged executor owns approval consumption and intent. The adapter passes
+its callback directly to the existing narrow gateway/provider final boundary.
+After that callback succeeds, C2 performs no probe, inventory read, policy or
+approval decision, target resolution, baseline check, operation-evidence
+write, sleep, retry, or branching callback before network mutation. Lock,
+expiry, policy, provider, target, baseline, configuration, approval-callback,
+and intent failures therefore invoke the provider zero times. An
+approval-success/intent-failure retry reuses the same idempotent authority.
 
 ## Provider admission
 
-The strategies reuse the existing backup and lifecycle gateways and compare a
-fresh post-lock provider descriptor with the hash-bound plan descriptor. Exact
-`ha-mcp` 7.14.2 and 8.0.0 with protocol `2025-03-26` remain the only current
-admitted releases. Admission preserves full 78-tool normalized catalog
-validation, `ha-mcp-reviewed-normalized-catalog-v1`,
-`ha-mcp-operational-tool-descriptor-v2`, and zero fallback. Raw catalog hashes
-remain diagnostics, not authority.
+All strategies reuse the reviewed Beta 15 backup and lifecycle gateways. Final
+preflight compares fresh evidence with the hash-bound plan descriptor. Only
+exact `ha-mcp` 7.14.2 and 8.0.0 with protocol `2025-03-26`, complete normalized
+78-tool catalog admission, the exact per-tool operational descriptor, and the
+reviewed aggregate/runtime fingerprint models are admitted. Raw catalog hashes
+remain diagnostic only. Unknown release/protocol/tool contracts fail closed.
 
-Exact 7.14.2 retains its reviewed bounded legacy lifecycle response. Exact
-8.0.0 retains `ha-mcp-lifecycle-addon-structured-content-v1` inside
-`mcp-direct-structured-content-v1`. F3-C2 neither accepts the structured model
-for another release nor raises the generic text-result bound.
+Exact 7.14.2 keeps its bounded legacy add-on response contract. Exact 8.0.0
+keeps `ha-mcp-lifecycle-addon-structured-content-v1` inside
+`mcp-direct-structured-content-v1`, including the large live-equivalent detail.
+Structured acceptance and generic text limits are not broadened.
 
-## Lock-set decisions
+## Complete lock graph
 
-The complete resource/provider union is calculated before F3-A acquisition.
-F3-A normalizes duplicate keys, unions evidence, applies exclusive dominance,
-sorts bytewise, acquires atomically, persists generations, and releases in
-reverse order.
+All requests are canonical `LockRequest` objects using `LockMode` and
+`LockScope`. Duplicate keys union scopes/reasons, exclusive mode dominates,
+and keys are bytewise ordered before merged F3-A atomically acquires and fences
+the full set.
 
-| Operation | Complete F3-C2 lock set | Required conflicts and residual integration edges |
-| --- | --- | --- |
-| Backup | exclusive `backup:local_full_backup`; shared `home_assistant:core`; shared provider `addon:<exact-provider-slug>` | conflicts with another Engineering backup, provider restart, and HA restart. F3-D must add the sibling configuration/dashboard side when those operations require stable backup/HA state. External UI/client backups remain observable rather than lock-prevented. |
-| Reload | exclusive `reload:<exact-domain>`; shared `home_assistant:core`; shared provider `addon:<exact-provider-slug>` | same-domain reload, HA restart, and provider restart conflict. Different domains may proceed concurrently because their exact services and readback are independent; F3-D must make configuration writes take the incompatible domain/core keys. |
-| Add-on restart | exclusive `addon:<exact-slug>`; shared `home_assistant:core`; shared provider `addon:<exact-provider-slug>` | same add-on operation and HA restart conflict. When the target is the provider add-on, resource/provider evidence is unioned into one exclusive key. F3-D must make every operation depending on that provider take its provider key. |
-| HA restart | exclusive `home_assistant:core`; shared provider `addon:<exact-provider-slug>` | conflicts with every operation requiring stable HA availability. F3-D must wire configuration, Dashboard write, dependency refresh, and other sibling adapters to the core lock; F3-C2 does not edit those tracks. |
+| Operation | Exact complete set |
+| --- | --- |
+| full backup | exclusive resource `backup:local_full_backup`; shared resource `home_assistant:core`; shared provider `addon:<authoritative-provider-slug>` |
+| controlled reload | exclusive resource `reload:<domain>`; shared resource `home_assistant:core`; shared provider `addon:<authoritative-provider-slug>` |
+| add-on restart | exclusive resource `addon:<target-slug>`; shared resource `home_assistant:core`; shared provider `addon:<authoritative-provider-slug>` |
+| HA restart | exclusive resource `home_assistant:core`; shared provider `addon:<authoritative-provider-slug>` |
 
-Locks are exclusion evidence only. They never authorize dispatch. Preflight
-validates that the exact acquired set matches the calculated set; F3-A validates
-ownership and fencing immediately before the atomic intent transaction.
+The reload key exactly matches Beta 18 configuration writes' shared
+`reload:<domain>` key. Different reload domains and unrelated add-ons remain
+compatible. HA restart conflicts with every cooperating shared-core operation.
+When restarting the provider, its resource/provider scopes union into one
+exclusive key. Locks exclude cooperating Engineering actors only; external UI,
+Supervisor, host, update, and other-client races remain observable limitations.
 
-### Manual-review holds
+## Selective non-expiring manual-review holds
 
-The operation declarations identify only the evidence-sensitive target lock:
+Only the affected resource key is eligible for promotion:
 
-- backup: `backup:local_full_backup`, at most 24 hours;
-- reload: exact `reload:<domain>`, at most 15 minutes;
-- add-on restart: exact `addon:<slug>`, at most 30 minutes;
-- HA restart: `home_assistant:core`, at most 30 minutes.
+- backup: `backup:local_full_backup`;
+- reload: `reload:<domain>`;
+- add-on restart: `addon:<target-slug>`; and
+- HA restart: `home_assistant:core`.
 
-Unrelated provider/dependency locks should release at the transition. The
-accepted F3-A Beta 16 API can currently promote only the complete acquired
-handle and does not implement a bounded selective hold. F3-C2 does not fork or
-patch that API. Therefore activation is blocked until F3-D provides an accepted
-selective hold/release operation with bounded expiry, then binds these declared
-sets and transitions. Current F3-C2 tests explicitly demonstrate this gap.
+Provider and core dependency keys release unless they are the same unioned
+target key. The provisional 24-hour, 15-minute, 30-minute, and 30-minute values
+are evidence-observation/administrative-escalation deadlines, never automatic
+hold-release timers. Deadline expiry yields `manual_review_required`; a
+promoted affected key stays held until verified resolution or explicit future
+authenticated reconciliation. No adapter method can promote or release a
+hold. The accepted shared core currently promotes a complete handle, so
+selective promotion/release remains an explicit F3-D activation dependency.
 
-## Preflight
+## Authoritative operational evidence
 
-After caller-owned approval consumption and F3-A lock acquisition, shared
-preflight rereads exact plan/task/operation/target/policy identity, active-task
-identity, approval and elevated acknowledgement, plan expiry, task storage,
-conflicting execution, and the complete lock set. HA restart additionally
-requires healthy governance and audit storage.
+Canonical F3 child records are authoritative. C2 removed the independent
+operational recovery ledger and defines only a frozen, read-only bounded
+`OperationalEvidenceProjection`. F3-D must map that view from the child record
+and its operation evidence namespace. It cannot create another task or record.
+JSONL and audit events remain secondary evidence and cannot reconstruct
+authority.
 
-Each strategy then performs the current authoritative planning reads again:
+The projection permits only bound IDs, intent time, immutable deadline,
+dispatch count, response truth, optional provider IDs, outage/reconnect/
+readmission predicates, bounded observation/verification counts, restart
+backoff eligibility, manual-review reason, and selective hold keys. It excludes
+raw responses, inventories, metadata, endpoints, configuration, credentials,
+URLs, and exception text. Missing optional provider IDs never authorize retry;
+corrupt or contradictory evidence fails closed to manual review.
 
-- backup rereads exact admission, idle operation state, readable inventory,
-  and unchanged baseline identifiers;
-- reload reruns full configuration validation and rereads the exact service
-  and domain inventory;
-- add-on restart requires exactly one complete installed match and rereads
-  exact slug/name/version/repository/endpoint identity plus running state;
-- HA restart rereads explicit configuration validity, HA and Engineering
-  identity, tool accounting, all persistent storage health, exact admission,
-  dependency recovery expectations, and zero fallback.
+## Operation-specific lifecycle
 
-No preread updates the plan. Stale, malformed, ambiguous, unavailable,
-unhealthy, or unknown-release evidence rejects before intent and invokes the
-provider zero times.
+Backup preflight requires fresh exact admission, readable bounded baseline
+identifiers, idle operation state, exact name, and unchanged inventory. It
+verifies a completed new ID outside the approved baseline, exact name, creation
+time bounded from authoritative intent time, readable metadata/post-inventory,
+optional exact provider ID binding, and positive size when reported. A lost
+response may verify from independent inventory; ambiguity never redispatches.
 
-## Dispatch, observation, and verification
+Reload preflight reruns full configuration validation and rereads the exact
+service/domain inventory and baseline under the matching exclusive lock.
+Provider acknowledgement plus valid post-readiness may verify. After a lost
+response, unchanged connection, configuration, service, and inventory are only
+readiness; without an independently reviewed reload-effect signal the child
+stays observing and reaches manual review at its immutable deadline.
 
-F3-A atomically commits task/plan/operation/target/capability/attempt/request,
-provider operation and argument hash, lock keys and fencing generations,
-baseline fingerprint, UTC intent time, immutable evidence deadline,
-`possibly_dispatched=true`, and `dispatch_count=1` before it calls the adapter's
-provider boundary. Intent failure makes zero provider calls. Each attempt has a
-maximum of one adapter dispatch, one provider mutation, and one simulated
-effect. No strategy contains a provider retry loop.
+Add-on restart preflight binds exactly one installed slug/name/version/
+repository/endpoint/target-class match in an acceptable running state plus
+exact admission. Verification requires unchanged identity, recovered running
+state, and reviewed effect evidence such as provider acknowledgement plus
+recovery, process identity change, or exact provider readmission. An unchanged
+running state after response loss is insufficient.
 
-Once intent exists, timeout, disconnect, crash, malformed response, or response
-loss is possibly dispatched. Recovery loads the same lineage and calls only
-observation and verification. It never invokes dispatch, resets a deadline, or
-creates another attempt.
+HA restart preflight requires valid full configuration, exact HA and
+Engineering runtime/build/tool identities, healthy governance/audit/task/F3
+execution/F3 lock storage, exact admission, dependency-recovery expectations,
+compatible legacy restart reconciliation, the exclusive core lock, and zero
+fallback. Verification preserves Beta 11's persisted outage/reconnect
+predicate, immutable intent-relative deadline, durable bounded backoff, cheap
+eligibility gate, bounded expensive probes, identity/storage/catalog/
+admission/dependency/configuration recovery, and no redispatch. Provider
+response or current reachability alone is insufficient.
 
-Backup requires a new identifier outside the approved baseline, completed
-operation, readable exact-name metadata, bounded creation time, and nonzero
-size when reported. A missing backup remains observing until the deadline and
-then requires manual review; archive integrity and recorder inclusion are not
-claimed.
+## Recovery, duplicate, cancellation, and observability
 
-Reload requires provider completion evidence when available plus connected HA,
-valid post-reload full configuration, exact service availability, readable
-domain inventory, and stable identity. With a lost response, those reads may
-establish readiness but cannot manufacture a dispatch signal; ambiguity moves
-to manual review without another reload.
+Intent reserves `dispatch_count=1` before possible network I/O. Every timeout,
+disconnect, crash, malformed/lost response, or crash immediately after intent
+is possibly dispatched. Post-intent execution calls only canonical
+`RecoveryContext`, the evidence projection, observation, and verification. It
+never moves a deadline forward, invokes a strategy retry loop, or dispatches.
 
-Add-on restart requires unchanged exact identity, restored running state, and
-restart evidence beyond an old running state. Existing gateway evidence may be
-a process identity change, provider acknowledgement, or exact upstream
-readmission. Missing evidence before the deadline moves to manual review.
+Merged executor identity/claim behavior owns active and terminal duplicates;
+no C2 duplicate subsystem exists. Cancellation is accepted only pre-intent and
+is rejected after possible dispatch. It is not rollback and cannot release a
+manual-review hold. Canonical `NormalizedOperationOutcome` values map to
+existing task-schema-1 states; C2 adds no persisted state.
 
-HA restart preserves Beta 11's outage/reconnect evidence, exact HA and
-Engineering identity, tool catalog, governance/audit/task storage, exact
-upstream readmission, dependency-index recovery, post-restart configuration,
-immutable deadline, persisted backoff, cheap eligibility gate, and bounded
-expensive probes. A reconstructed attempt cannot redispatch.
+Metrics and events use closed counters, bounded identifiers/hashes/categories,
+and no provider content. Central health registration remains F3-D.
 
-## Duplicate execution and cancellation
+## Remaining F3-D dependencies
 
-F3-A task/plan/operation/target identity is validated before the executor claim.
-An active duplicate reports the existing task; a terminal duplicate returns
-its result. Neither acquires a second lock set, creates a second task, extends a
-deadline, or dispatches. Corrupt or unrelated identity fails closed.
-
-Cancellation is permitted only before durable intent and yields
-`cancelled_pre_dispatch` with safe lock release and zero dispatch. Once intent
-exists, cancellation is rejected because it cannot erase a possible external
-effect. Cancellation is not rollback.
-
-## External concurrency and residual races
-
-F3 locks exclude cooperating Engineering executions, not all writers.
-
-- An external backup, inventory change, or already-active provider operation
-  observed before intent rejects or stales preflight. After intent it is
-  distinguished through baseline identifiers and bounded verification; an
-  unresolved attribution requires manual review.
-- External reload, configuration mutation, HA restart, or service removal
-  observed before intent rejects. Post-intent drift becomes verification
-  mismatch or manual review; verification does not prevent the external act.
-- Supervisor UI restart/stop/start/update can change add-on state, version,
-  repository, slug, or endpoint. Pre-intent drift rejects; post-intent identity
-  drift fails verification and never triggers redispatch.
-- UI/Supervisor HA restart, HA update, host restart, or simultaneous provider
-  disruption can overlap an intended HA restart. Pre-intent identity/storage
-  drift rejects. Post-intent outage and recovery evidence may remain
-  unattributable and therefore requires manual review.
-
-F3-C2 does not claim all-writer exclusion. Fresh rereads occur while locks are
-held and as close as the shared F3-A boundary permits, so this conformance track
-does not intentionally widen the current preread-to-dispatch race.
-
-## Outcome and observability model
-
-The adapter returns the frozen normalized outcomes and lets F3-A map them to
-execution-task schema version 1. Provider unavailability, contract mismatch,
-missing or ambiguous target, invalid response, confirmed rejection, response
-loss, indeterminate dispatch, verification mismatch/deadline, lock conflict,
-stale baseline, invalid configuration, storage failure, and manual review stay
-distinct bounded categories.
-
-Per-operation metrics use a closed counter vocabulary for preparation,
-preflight, admission, locks, intent, dispatch, response, observation,
-verification, duplicate prevention, cancellation, recovery, and fallback,
-with operation-specific backup/reload/add-on/HA counters. Events accept only a
-closed set of bounded classifications, identifiers, hashes, and counts. Raw
-provider responses, inventories, URLs, exception strings, tokens, and metadata
-are never emitted. Central health integration remains reserved for F3-D.
-
-## Migration equivalence and activation requirements
-
-Synthetic equivalence tests compare approved Beta 15 plan projections with the
-prepared F3 operations. Target, operation, policy class, risk delta, physical
-consequence, provider admission, baseline, exact provider operation and
-arguments, verification contract, warnings, limitations, and no-rollback
-declaration remain identical. Differences are limited to F3 capability
-identity, complete durable locks, durable intent/fencing, bounded recovery, and
-normalized terminal outcomes.
-
-F3-D must, before activation:
-
-1. supply the production durable operation-evidence ledger by extending the
-   existing execution-task/event persistence without changing task schema 1;
-2. add accepted selective, bounded conflict-hold promotion/release to F3-A and
-   bind the declared operation-specific hold policy;
-3. wire sibling configuration/dashboard/dependency conflict edges without
-   weakening their own boundaries;
-4. preserve current planning and public routing while replacing only the
-   approved apply/reconciliation internals;
-5. prove exact durable-lineage migration for active restart reconciliation,
-   immutable Beta 11 deadlines/backoff, duplicate apply, and recovery; and
-6. rerun exact-release, architecture, immutable add-on, disposable real-HA,
-   packaging, security, Full, Evidence, and exact-head CI gates.
-
-Until those requirements are accepted, the package remains runtime-inert and
-the draft PR is not eligible to merge or activate.
+F3-D must supply durable public-task/child ownership, map operation evidence
+into authoritative child records, activate one central startup/periodic
+coordinator, add selective hold promotion and authenticated release through the
+private Ingress reconciliation surface, implement separately governed rollback
+Option A where approved, and migrate runtime routes. It must also prove sibling
+lock edges, legacy restart reconciliation migration, and exact-head validation.
+Issue #92 remains separate.

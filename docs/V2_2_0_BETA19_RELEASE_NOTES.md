@@ -1,92 +1,60 @@
 # HA MCP Engineering Server 2.2.0-beta.19 release notes
 
-## Release boundary
+Beta 19 is based directly on merged Beta 18 main
+`cca0d5e00d75398ec66bca0c9c2f568d11f7497e`. It adds runtime-inert F3
+operational-adapter conformance for governed full backup, controlled reload,
+exact installed add-on restart, and Home Assistant restart. It does not
+activate an adapter or change a current planning, approval, apply,
+cancellation, rollback, restart-reconciliation, provider-routing, or public MCP
+route.
 
-Beta 19 introduces internal F3-C2 operational adapters for the four existing
-governed operations: full backup, controlled reload, exact installed add-on
-restart, and Home Assistant restart. They implement
-`f3-operation-adapter-v1` through the F3-A Beta 16 shared executor, durable
-atomic locks, fencing, intent, deadlines, duplicate handling, cancellation,
-and readback-only recovery.
+The operational modules now consume the sole shipped canonical
+`ha_mcp_engineering.f3.contracts` objects. They bind one existing public task
+to one future durable child execution and use the merged executor's accepted
+order: complete durable locks, final mutable-state preflight, caller-owned
+idempotent authorization consumption, durable intent, then one reviewed
+provider mutation. C2 performs no evidence write between intent and provider.
 
-The package is runtime-inert. Application startup, `ChangeGovernanceService`,
-the four current planning routes, `apply_change_plan`, current restart
-reconciliation, provider routing, and public MCP registration do not import or
-instantiate it. F3-D remains the only activation milestone.
+The former independent operational recovery ledger is removed. C2 defines
+only a frozen bounded read-only projection that F3-D must map from the
+authoritative child execution record. JSONL remains secondary audit evidence;
+corrupt or contradictory projections fail closed and missing optional provider
+IDs never allow retry. Post-intent recovery is readback-only with one reserved
+dispatch and an immutable intent-relative deadline.
 
-## Preserved operational contracts
+Exact complete lock sets now use canonical lock objects. Reload takes the same
+exclusive `reload:<domain>` key that Beta 18 configuration writes take shared.
+All operations bind shared core/provider dependencies as applicable; HA
+restart takes the core exclusively; provider self-restart unions provider and
+resource scopes with exclusive dominance. Only the affected resource key is a
+future manual-review hold candidate. Evidence/escalation deadlines do not
+automatically release holds; selective promotion and authenticated release
+remain F3-D.
 
-- full backup calls exact reviewed `ha_manage_backup` snapshot/create arguments
-  and retains the recorder and archive-integrity limitations;
-- reload calls exact `ha_reload_core` for only automation, script,
-  input-boolean, or input-number configuration;
-- add-on restart calls only `ha_manage_addon(action=restart, slug=<exact>)`;
-- Home Assistant restart calls only `ha_restart(confirm=true)`.
+Verification is intentionally conservative after response loss. Reload
+readiness alone cannot prove a reload. An add-on's unchanged running state
+cannot prove restart. Home Assistant requires persisted outage/reconnect and
+full identity/storage/catalog/admission/dependency/configuration recovery.
+Backup may verify from a completed exact-name new identifier outside the
+approved baseline and bounded from authoritative intent time. Recorder
+inclusion and archive integrity remain unsupported.
 
-F2 policy classes, risk deltas, physical consequences, approval authority,
-plan hashes/projections, baseline evidence, warnings, verification contracts,
-and no-rollback declarations remain unchanged. Planning creates no execution
-task, approval challenge, or provider mutation.
+Exact `ha-mcp` 7.14.2 and 8.0.0 admission, protocol `2025-03-26`, normalized
+78-tool catalog checks, reviewed operational descriptors/fingerprint models,
+the 7.14.2 legacy lifecycle response, and the 8.0.0 structured-content model
+remain unchanged. Unknown releases and fallback fail closed; generic response
+bounds are unchanged.
 
-## Provider compatibility
+Beta 19 preserves 48 Engineering-local tools, task schema 1, configuration
+plan contract 2, operational plan contract 3, F2 policy outcomes, approval
+authority, dashboard-execution deferral, exact 7.14.2 78/26/74 accounting,
+exact 8.0.0 78/24/72 accounting, held tools `ha_search` and
+`ha_get_operation_status`, `aiohttp==3.14.3`, `cryptography==50.0.0`, stable
+v1.1.2, and zero fallback.
 
-The strategies wrap the existing Beta 15 gateways. Exact `ha-mcp` 7.14.2 and
-8.0.0 remain bound to protocol `2025-03-26`, full 78-tool normalized catalog
-admission, `ha-mcp-reviewed-normalized-catalog-v1`, and
-`ha-mcp-operational-tool-descriptor-v2` with zero fallback.
-
-7.14.2 retains its reviewed legacy lifecycle response. 8.0.0 retains
-`ha-mcp-lifecycle-addon-structured-content-v1` with the
-`mcp-direct-structured-content-v1` envelope, including large add-on detail.
-Unknown releases, protocols, response models, envelopes, partial inventories,
-and identity drift fail closed. The generic text-result bound is unchanged.
-
-## F3 lifecycle and recovery
-
-Each prepared operation binds exact operation/target/capability/provider,
-argument hash, policy and approval evidence, baseline, verification, deadline,
-and limitations. Its complete resource/provider lock union is acquired
-atomically through F3-A before post-lock authoritative preflight.
-
-F3-A durably commits dispatch lineage, request, provider operation and argument
-hash, lock fencing, baseline fingerprint, immutable UTC evidence deadline,
-`possibly_dispatched=true`, and `dispatch_count=1` before the provider call.
-Persistence failure calls the provider zero times. Once intent exists, every
-timeout, disconnect, crash, malformed response, or lost response is possibly
-dispatched; process reconstruction performs observation and verification only.
-The maximum adapter dispatch, provider mutation, and synthetic effect are each
-one per attempt.
-
-Operation-specific readback preserves exact backup creation evidence,
-post-reload readiness, add-on identity plus restart evidence beyond old running
-state, and Beta 11 bounded HA outage/reconnect/runtime/storage/admission/
-dependency recovery. Ambiguous post-dispatch evidence reaches manual review
-without redispatch.
-
-## Remaining F3-D work
-
-The F3-C2 descriptors declare exact bounded target-only conflict holds. F3-A
-Beta 16 can currently promote only an entire acquired handle, so F3-D must add
-or accept selective bounded hold promotion/release before activation. F3-D must
-also bind the operation evidence port to existing durable task/event storage
-without changing execution-task schema 1, add sibling conflict edges, and
-prove migration of active restart reconciliation.
-
-## Unchanged compatibility and authority
-
-Beta 19 does not change:
-
-- the 48 Engineering-local tools or public registration;
-- execution-task schema version 1 or plan schemas;
-- current operational, configuration, or Dashboard routes;
-- exact 7.14.2 accounting of 78 advertised, 26 delegated, zero held, 48 local,
-  and 74 total;
-- exact 8.0.0 accounting of 78 advertised, 24 delegated, two held, 48 local,
-  and 72 total;
-- held tools `ha_search` and `ha_get_operation_status`;
-- protocol support, policy outcomes, automatic-read accounting, or fallback;
-- `aiohttp==3.14.3`, `cryptography==50.0.0`, or stable v1.1.2.
-
-This declaration authorizes no deployment, publication, production access,
-live operational action, adapter activation, merge, or release-sequence change.
-F3-C2 remains ordered after accepted Beta 17 and Beta 18 delivery.
+F3-D still owns durable child execution, authoritative operation-evidence
+mapping, one central reconciliation coordinator, selective hold promotion and
+release, private authenticated manual reconciliation, governed rollback Option
+A, and runtime route migration. Issue #92 remains separate. This source
+declaration authorizes no merge, tag, release, image, attestation, provenance,
+deployment, production access, or live operational action.

@@ -2,84 +2,83 @@
 
 ## Source boundary
 
-- stacked base: F3-A head `9f51830907799d4a409bf230c11fe8fbe8c61ead`
-- F3-0 dependency: `77d8f19b3dc12ec94eef134375ddcbd5baeb2670`
-- Engineering version: `2.2.0-beta.19`
-- stable version: `1.1.2`
-- adapter contract: `f3-operation-adapter-v1`
-- task schema: 1
-- Engineering-local tools: 48
-- exact protocol: `2025-03-26`
-- secure pins: `aiohttp==3.14.3`, `cryptography==50.0.0`
-- fallback: 0
+- direct base: merged Beta 18 main
+  `cca0d5e00d75398ec66bca0c9c2f568d11f7497e`;
+- Engineering version: `2.2.0-beta.19`;
+- stable version: `1.1.2`;
+- canonical adapter contract: `ha_mcp_engineering.f3.contracts`, model
+  `f3-operation-adapter-v1`;
+- operational plan contract: 3; configuration plan contract: 2; task schema: 1;
+- protocol: `2025-03-26`;
+- Engineering-local tools: 48;
+- secure pins: `aiohttp==3.14.3`, `cryptography==50.0.0`; and
+- fallback: 0.
 
-No source or CI validation may access production Home Assistant, HAOS,
-Supervisor, credentials, tokens, deployed MCP endpoints, or live providers.
+Production Home Assistant, HAOS, Supervisor, deployed MCP endpoints,
+credentials, tokens, and live providers must not be accessed.
 
-## Required operational conformance evidence
+## Required conformance evidence
 
-1. Preserve approved Beta 15 plan target, operation, policy, risk, effect,
-   provider admission, baseline, exact arguments, verification, warning,
-   limitation, and rollback projections for all four operations.
-2. Reject unknown capability, operation, target, argument, release, protocol,
-   lifecycle response, fallback, and unsupported operational action before
-   intent with zero provider dispatches and effects.
-3. Prove canonical complete resource/provider lock sets use only F3-A atomic
-   acquisition, ownership, fencing, durable generation, reverse release, and
-   reconstruction behavior.
-4. Prove exact authoritative preflight after locks, including fresh backup,
-   configuration, service, add-on identity, HA/runtime/storage, and admission
-   reads appropriate to each operation.
-5. Prove F3-A durable intent commits before the only provider call, intent
-   failure calls the provider zero times, and every possibly dispatched
-   reconstruction is observation/verification only.
-6. Exercise response loss before and after effects plus required process-loss
-   boundaries, duplicate apply, pre-intent cancellation, post-intent refusal,
-   evidence deadline, manual review, and no blind redispatch.
-7. Prove backup exact readback, reload post-readiness, add-on restart evidence
-   beyond an old running state, and Beta 11 bounded HA restart reconciliation.
-8. Prove bounded metrics/events never expose provider responses, inventory,
-   metadata, URLs, secrets, tokens, or raw exception strings.
+Acceptance requires all of the following:
 
-Every attempt must have at most one adapter dispatch, one provider mutation,
-and one synthetic effect. Every pre-dispatch rejection must have all three at
-zero.
+1. All shipped C2 modules consume canonical F3 objects by identity and import
+   from an isolated image-equivalent package tree without `f3_contracts`,
+   `f3_dashboard`, `tests`, or checkout-root dependencies.
+2. Exact capability, target, provider operation, fixed arguments, policy,
+   risk, physical consequence, baseline, warnings, limitations, verification,
+   and rollback-unavailable projections match current operational plan inputs.
+3. Complete canonical lock sets match the graph in
+   `F3_OPERATIONAL_CONFORMANCE.md`, including exact Beta 18 reload conflicts,
+   provider self-restart union, exclusive dominance, and allowed unrelated
+   domain/add-on concurrency.
+4. Final locked preflight precedes caller-owned idempotent approval
+   consumption. Preflight never requires consumed approval. Approval precedes
+   durable intent; durable intent precedes the only provider mutation; no C2
+   evidence access or write occurs between intent and provider.
+5. Lock, expiry, policy, provider, target/baseline, configuration, approval,
+   and intent failures call the provider zero times. Retry reuses one consumed
+   authorization authority. Every attempt has at most one provider invocation
+   and one synthetic effect.
+6. Canonical F3 child records remain authoritative. No independent ledger,
+   task store, JSON authority, or operation worker exists. The read-only
+   evidence projection is bounded; missing optional IDs cannot authorize a
+   retry; corrupt/contradictory evidence fails closed.
+7. Lost-response reload cannot verify from readiness alone; add-on restart
+   cannot verify from unchanged running state; HA restart requires persisted
+   outage/reconnect evidence; backup may verify from an independently proven
+   exact new inventory record.
+8. Post-intent process reconstruction is observation/verification only,
+   preserves the immutable deadline and dispatch count, and never redispatches.
+9. Manual-review selection includes only the affected resource key. Timing is
+   observation/escalation only; holds never expire automatically and C2 has no
+   release authority.
+10. Runtime-inert, current-route, tool-count, provider-routing, configuration,
+    dashboard deferral, schema, stable-v1, exact-release, response-model,
+    sanitization, and zero-fallback invariants remain unchanged.
 
-## Runtime-isolation acceptance
+## Compatibility
 
-Require source tests proving application startup and current governance,
-provider, and reconciliation modules do not import or instantiate F3-C2. The
-four planning routes and operational apply route must remain unchanged. No
-public tool, health field, plan/task schema, provider route, automatic-read
-entry, configuration route, Dashboard read, or stable-v1 source may change.
+Exact 7.14.2 remains 78 advertised, 26 delegated, zero held, 48 local, and 74
+total. Exact 8.0.0 remains 78 advertised, 24 delegated, two held, 48 local, and
+72 total. Held tools remain exactly `ha_search` and
+`ha_get_operation_status`. Exact legacy 7.14.2 and structured 8.0.0 add-on
+response models, including the 71,986-byte live-equivalent fixture, must pass
+without widening structured acceptance or generic response bounds.
 
-Activation is blocked until F3-D supplies accepted production task/evidence
-binding and selective bounded manual-review conflict holds. The draft must
-remain stacked on F3-A, dependent on PR #87, and unmerged until accepted Beta
-17 and Beta 18 delivery unless the operator changes the sequence.
+## Validation and activation gate
 
-## Compatibility acceptance
+Require focused canonical/adapter/lock/approval/evidence/recovery tests, every
+`test_f3*.py`, operational/provider/restart regressions, compilation, YAML,
+Fast, Full, clean exact-head Evidence, import/package boundaries, deterministic
+registry regeneration, fresh `pip check`, strict audit with no known
+vulnerabilities, secret/protected-path/PowerShell/whitespace gates, stable and
+Engineering packaging, no-push architecture builds, exact-image acceptance,
+immutable add-on acceptance, disposable pinned-HA contracts, publication
+guards, and fully green exact-head CI. Every skip requires explanation.
 
-Exact 7.14.2 remains 78 advertised tools, 26 delegated, zero held, 48 local,
-and 74 total. Exact 8.0.0 remains 78 advertised, 24 delegated, exactly two
-held, 48 local, and 72 total. The held set stays exactly `ha_search` and
-`ha_get_operation_status`. Require zero missing, quarantine, unreviewed,
-automatic-read mismatch, or fallback counts.
-
-Exact 7.14.2 legacy lifecycle decoding and exact 8.0.0 structured add-on detail,
-including the 71,986-byte live-equivalent fixture, must pass without broadening
-unknown-release structured acceptance or the generic text bound.
-
-## Validation tiers
-
-Require compilation, YAML, F3-0/F3-A and F3-C2 focused suites, current provider
-and restart regressions, migration equivalence, runtime-inert/schema/tool
-invariants, Fast, Full, exact-head Evidence, fresh `pip check`, strict
-`pip-audit` with no known vulnerabilities, stable and Engineering packaging,
-amd64/arm64/arm-v7 no-push builds, exact-image 7.14.1/7.14.2/8.0.0, immutable
-add-on runtime, disposable real-HA contracts, secret scan, protected paths,
-whitespace, and PowerShell parsing. Every skip must be explained.
-
-Nothing in this document authorizes publication, deployment, tagging, merging,
-activation, live operational actions, production access, or a release-order
-change.
+Beta 19 remains ineligible for activation until F3-D provides durable child
+ownership, authoritative operation-evidence mapping, the central coordinator,
+selective hold administration, private authenticated reconciliation, governed
+rollback Option A, and route migration. Issue #92 remains separate. This
+document authorizes no merge, tag, publication, image, deployment, live action,
+production access, or readiness-state change.
