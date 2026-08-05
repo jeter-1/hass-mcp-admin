@@ -112,7 +112,7 @@ class ApplicationCatalogReadinessTests(unittest.IsolatedAsyncioTestCase):
 class ExactImageDiagnosticTests(unittest.TestCase):
     def test_operational_errors_are_excluded_from_success_accounting(self):
         total_calls = (
-            len(acceptance.REPRESENTATIVE_CALLS)
+            len(acceptance.DELEGATED_READ_CALLS)
             + 1
             + len(acceptance.UPSTREAM_ERROR_CALLS)
         )

@@ -55,6 +55,51 @@ STATES = [
             "user_id": None,
         },
     },
+    {
+        "entity_id": "calendar.fixture",
+        "state": "on",
+        "attributes": {"friendly_name": "Fixture Calendar"},
+        "last_changed": NOW,
+        "last_reported": NOW,
+        "last_updated": NOW,
+        "context": {
+            "id": "fixture-calendar-context",
+            "parent_id": None,
+            "user_id": None,
+        },
+    },
+    {
+        "entity_id": "scene.gateway_fixture",
+        "state": "scening",
+        "attributes": {
+            "friendly_name": "Gateway Fixture Scene",
+            "id": "gateway_fixture",
+        },
+        "last_changed": NOW,
+        "last_reported": NOW,
+        "last_updated": NOW,
+        "context": {
+            "id": "fixture-scene-context",
+            "parent_id": None,
+            "user_id": None,
+        },
+    },
+    {
+        "entity_id": "script.gateway_fixture",
+        "state": "off",
+        "attributes": {
+            "friendly_name": "Gateway Fixture Script",
+            "last_triggered": None,
+        },
+        "last_changed": NOW,
+        "last_reported": NOW,
+        "last_updated": NOW,
+        "context": {
+            "id": "fixture-script-context",
+            "parent_id": None,
+            "user_id": None,
+        },
+    },
 ]
 ENTITY_REGISTRY = [
     {
@@ -96,6 +141,32 @@ ENTITY_REGISTRY = [
         "labels": [],
         "aliases": [],
     },
+    {
+        "entity_id": "scene.gateway_fixture",
+        "unique_id": "gateway_fixture",
+        "platform": "homeassistant",
+        "name": None,
+        "original_name": "Gateway Fixture Scene",
+        "device_id": None,
+        "area_id": None,
+        "disabled_by": None,
+        "hidden_by": None,
+        "labels": [],
+        "aliases": [],
+    },
+    {
+        "entity_id": "script.gateway_fixture",
+        "unique_id": "gateway_fixture",
+        "platform": "script",
+        "name": None,
+        "original_name": "Gateway Fixture Script",
+        "device_id": None,
+        "area_id": None,
+        "disabled_by": None,
+        "hidden_by": None,
+        "labels": [],
+        "aliases": [],
+    },
 ]
 DEVICE_REGISTRY = [
     {
@@ -128,6 +199,24 @@ AUTOMATION = {
     "conditions": [],
     "actions": [],
 }
+SCENE = {
+    "id": "gateway_fixture",
+    "name": "Gateway Fixture Scene",
+    "entities": {"sun.sun": {"state": "above_horizon"}},
+}
+SCRIPT = {
+    "alias": "Gateway Fixture Script",
+    "description": "Synthetic read-only acceptance script.",
+    "mode": "single",
+    "sequence": [],
+}
+CALENDAR_EVENTS = [
+    {
+        "summary": "Synthetic calendar event",
+        "start": {"dateTime": NOW},
+        "end": {"dateTime": "2026-07-21T13:00:00+00:00"},
+    }
+]
 INSTALLED_ADDONS = [
     {
         "slug": "abcdef12_ha_mcp",
@@ -186,6 +275,21 @@ SERVICES = {
         }
     },
 }
+HACS_REPOSITORIES = [
+    {
+        "id": "441028036",
+        "name": "Mushroom",
+        "full_name": "piitaya/lovelace-mushroom",
+        "description": "Synthetic HACS read-contract fixture.",
+        "category": "plugin",
+        "authors": ["fixture-author"],
+        "stars": 123,
+        "downloads": 456,
+        "installed": True,
+        "installed_version": "4.0.0",
+        "available_version": "4.1.0",
+    }
+]
 
 
 class FixtureState:
@@ -286,11 +390,46 @@ async def api_automation(request: web.Request) -> web.Response:
     return web.json_response(AUTOMATION)
 
 
+async def api_calendar(request: web.Request) -> web.Response:
+    STATE.rest_reads["/api/calendars/{entity_id}"] += 1
+    if request.match_info["entity_id"] != "calendar.fixture":
+        return web.json_response({"message": "Not found."}, status=404)
+    return web.json_response(CALENDAR_EVENTS)
+
+
+async def api_scene(request: web.Request) -> web.Response:
+    STATE.rest_reads["/api/config/scene/config/{id}"] += 1
+    if request.match_info["scene_id"] != "gateway_fixture":
+        return web.json_response({"message": "Not found."}, status=404)
+    return web.json_response(SCENE)
+
+
+async def api_script(request: web.Request) -> web.Response:
+    STATE.rest_reads["/api/config/script/config/{id}"] += 1
+    if request.match_info["script_id"] != "gateway_fixture":
+        return web.json_response({"message": "Not found."}, status=404)
+    return web.json_response(SCRIPT)
+
+
 async def fixture_stats(_request: web.Request) -> web.Response:
     return web.json_response(STATE.snapshot())
 
 
 def _result_for(message_type: str, request_data: dict[str, Any]) -> Any:
+    if message_type == "hacs/info":
+        return {"version": "2.0.5"}
+    if message_type == "hacs/repositories/list":
+        return HACS_REPOSITORIES
+    if message_type == "hacs/repository/info":
+        repository_id = str(request_data.get("repository_id", ""))
+        return next(
+            (
+                item
+                for item in HACS_REPOSITORIES
+                if str(item.get("id")) == repository_id
+            ),
+            None,
+        )
     if message_type == "supervisor/api":
         endpoint = request_data.get("endpoint")
         if endpoint == "/addons":
@@ -339,6 +478,35 @@ def _result_for(message_type: str, request_data: dict[str, Any]) -> Any:
         "config/entry_registry/list",
     }:
         return []
+    if message_type in {
+        "config/label_registry/list",
+        "input_boolean/list",
+        "lovelace/resources",
+        "zone/list",
+    }:
+        return []
+    if message_type == "render_template":
+        return "2"
+    if message_type == "trace/list":
+        return [
+            {
+                "run_id": "fixture-trace",
+                "timestamp": NOW,
+                "state": "stopped",
+                "trigger": "synthetic",
+            }
+        ]
+    if message_type == "blueprint/list":
+        return {}
+    if message_type == "homeassistant/expose_entity/list":
+        return {
+            "exposed_entities": {
+                "sun.sun": {
+                    "conversation": True,
+                    "assist": True,
+                }
+            }
+        }
     if message_type == "history/history_during_period":
         return {
             entity_id: [
@@ -382,7 +550,7 @@ def _result_for(message_type: str, request_data: dict[str, Any]) -> Any:
 
 def _addon_detail(addon: dict[str, Any]) -> dict[str, Any]:
     detail = deepcopy(addon)
-    if ADDON_DETAIL_PROFILE != "live-8.0.0":
+    if ADDON_DETAIL_PROFILE not in {"live-8.0.0", "live-8.1.0"}:
         return detail
     detail.update(
         {
@@ -422,7 +590,7 @@ def _addon_detail(addon: dict[str, Any]) -> dict[str, Any]:
                 )
             },
             "url": "https://example.invalid/synthetic-addon",
-            "version_latest": "8.0.0",
+            "version_latest": addon["version"],
         }
     )
     payload = {"success": True, "addon": detail}
@@ -517,6 +685,24 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
         request_id = request_data.get("id")
         message_type = str(request_data.get("type", ""))
         lowered = message_type.lower()
+        if message_type == "render_template":
+            STATE.websocket_reads[message_type] += 1
+            await ws.send_json(
+                {
+                    "id": request_id,
+                    "type": "result",
+                    "success": True,
+                    "result": None,
+                }
+            )
+            await ws.send_json(
+                {
+                    "id": request_id,
+                    "type": "event",
+                    "event": {"result": "2", "listeners": {}},
+                }
+            )
+            continue
         if message_type == "backup/generate":
             generated = _generate_backup(request_data)
             if generated is None:
@@ -576,22 +762,22 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=18123)
     parser.add_argument(
         "--upstream-version",
-        choices=("7.14.1", "7.14.2", "8.0.0"),
+        choices=("7.14.1", "7.14.2", "8.0.0", "8.1.0"),
         required=True,
     )
     parser.add_argument(
         "--addon-detail-profile",
-        choices=("compact", "live-8.0.0"),
+        choices=("compact", "live-8.0.0", "live-8.1.0"),
         default="compact",
     )
     args = parser.parse_args()
     global ADDON_DETAIL_PROFILE
     ADDON_DETAIL_PROFILE = args.addon_detail_profile
-    if (
-        ADDON_DETAIL_PROFILE == "live-8.0.0"
-        and args.upstream_version != "8.0.0"
+    if ADDON_DETAIL_PROFILE.startswith("live-") and (
+        ADDON_DETAIL_PROFILE.removeprefix("live-")
+        != args.upstream_version
     ):
-        parser.error("live-8.0.0 detail requires upstream version 8.0.0")
+        parser.error("live add-on detail profile must match upstream version")
     INSTALLED_ADDONS[0]["version"] = args.upstream_version
     application = web.Application(middlewares=[read_only_guard])
     application.router.add_get("/api/", api_root)
@@ -604,7 +790,46 @@ def main() -> None:
     application.router.add_get(
         "/api/config/automation/config/{automation_id}", api_automation
     )
+    application.router.add_get(
+        "/api/calendars/{entity_id}", api_calendar
+    )
+    application.router.add_get(
+        "/api/config/scene/config/{scene_id}", api_scene
+    )
+    application.router.add_get(
+        "/api/config/script/config/{script_id}", api_script
+    )
     application.router.add_get("/api/websocket", websocket)
+    # The immutable add-on's packaged /start.py intentionally rewrites the
+    # Home Assistant URL to Supervisor's /core proxy.  Serve the same bounded
+    # synthetic contract there so CI exercises the real add-on startup path.
+    application.router.add_get("/core/api/", api_root)
+    application.router.add_get("/core/api/config", api_config)
+    application.router.add_get("/core/api/states", api_states)
+    application.router.add_get(
+        "/core/api/states/{entity_id}", api_state
+    )
+    application.router.add_get(
+        "/core/api/history/period", api_history
+    )
+    application.router.add_get(
+        "/core/api/history/period/{entity_id}", api_history
+    )
+    application.router.add_get("/core/api/services", api_services)
+    application.router.add_get(
+        "/core/api/config/automation/config/{automation_id}",
+        api_automation,
+    )
+    application.router.add_get(
+        "/core/api/calendars/{entity_id}", api_calendar
+    )
+    application.router.add_get(
+        "/core/api/config/scene/config/{scene_id}", api_scene
+    )
+    application.router.add_get(
+        "/core/api/config/script/config/{script_id}", api_script
+    )
+    application.router.add_get("/core/api/websocket", websocket)
     application.router.add_get("/__fixture__/stats", fixture_stats)
     web.run_app(application, host="127.0.0.1", port=args.port, print=None)
 

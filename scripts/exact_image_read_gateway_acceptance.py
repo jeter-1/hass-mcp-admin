@@ -111,19 +111,71 @@ EXPECTED_STOCK_COUNTS_BY_VERSION = {
         "prohibited": 1,
         "unsupported": 1,
     },
+    "8.1.0": {
+        "automatic_read": 24,
+        "held_for_canary": 2,
+        "mixed_or_requires_wrapper": 13,
+        "persistent_write": 33,
+        "physical_or_high_risk_action": 4,
+        "prohibited": 1,
+        "unsupported": 1,
+    },
 }
-REPRESENTATIVE_CALLS = {
-    "ha_search": {"domain_filter": "sun", "limit": 5},
-    "ha_get_state": {"entity_id": "sun.sun"},
+DELEGATED_READ_CALLS = {
+    "ha_config_get_automation": {"identifier": "gateway_fixture"},
+    "ha_config_get_calendar_events": {
+        "entity_id": "calendar.fixture",
+        "start": "2026-07-21T00:00:00+00:00",
+        "end": "2026-07-22T00:00:00+00:00",
+        "max_results": 5,
+    },
+    "ha_config_get_category": {"scope": "automation"},
+    "ha_config_get_label": {},
+    "ha_config_get_scene": {"scene_id": "gateway_fixture"},
+    "ha_config_get_script": {"script_id": "gateway_fixture"},
+    "ha_config_list_dashboard_resources": {"limit": 5},
+    "ha_config_list_groups": {"limit": 5},
+    "ha_config_list_helpers": {
+        "helper_type": "input_boolean",
+        "limit": 5,
+    },
+    "ha_eval_template": {"template": "{{ 1 + 1 }}"},
+    "ha_get_automation_traces": {
+        "automation_id": "automation.gateway_fixture",
+        "limit": 5,
+    },
+    "ha_get_blueprint": {"domain": "automation"},
+    "ha_get_device": {"limit": 5},
     "ha_get_entity": {"entity_id": "sun.sun"},
+    "ha_get_entity_exposure": {"entity_id": "sun.sun"},
+    "ha_get_hacs_info": {
+        "action": "search",
+        "query": "mushroom",
+        "installed_only": True,
+        "max_results": 5,
+    },
     "ha_get_history": {
         "entity_ids": "sun.sun",
         "start_time": "24h",
         "limit": 5,
     },
-    "ha_config_get_automation": {"identifier": "gateway_fixture"},
-    "ha_get_device": {"limit": 5},
+    "ha_get_operation_status": {
+        "operation_id": ["synthetic-missing-operation"],
+        "timeout_seconds": 0,
+    },
+    "ha_get_overview": {
+        "detail_level": "minimal",
+        "domains": ["sun"],
+        "limit": 5,
+        "include_notifications": False,
+    },
+    "ha_get_skill_guide": {},
+    "ha_get_state": {"entity_id": "sun.sun"},
+    "ha_get_todo": {},
+    "ha_get_zone": {},
+    "ha_list_floors_areas": {},
     "ha_list_services": {"limit": 5},
+    "ha_search": {"domain_filter": "sun", "limit": 5},
 }
 UPSTREAM_ADDON_INVENTORY_ARGUMENTS = {
     "source": "installed",
@@ -821,11 +873,15 @@ async def inspect_engineering(
         for entry in policy.tools
         if entry.classification == "held_for_canary"
     }
-    representative_calls = {
+    delegated_read_calls = {
         name: arguments
-        for name, arguments in REPRESENTATIVE_CALLS.items()
+        for name, arguments in DELEGATED_READ_CALLS.items()
         if name in automatic
     }
+    require(
+        set(delegated_read_calls) == automatic,
+        "the exact-image harness does not exercise every admitted read",
+    )
     error_call_contracts = {
         name: expected
         for name, expected in UPSTREAM_ERROR_CALLS.items()
@@ -920,7 +976,7 @@ async def inspect_engineering(
             require(bool(routing_before), "provider-routing metrics missing before calls")
 
             calls: dict[str, dict[str, Any]] = {}
-            for name, arguments in representative_calls.items():
+            for name, arguments in delegated_read_calls.items():
                 result = await session.call_tool(name, arguments)
                 value = decode_tool_result(result)
                 require(value.get("success") is True, f"{name} did not succeed: {value.get('error_code')}")
@@ -1222,7 +1278,7 @@ async def inspect_engineering(
                 "a delegated read used the direct Home Assistant provider",
             )
             expected_delegated_calls = (
-                len(representative_calls)
+                len(delegated_read_calls)
                 + int(partial_search_enabled)
                 + len(error_call_contracts)
             )
@@ -1428,7 +1484,7 @@ async def inspect_engineering(
         "engineering_tool_count": len(base_names | automatic),
         "base_engineering_tool_count": len(base_names),
         "dynamic_tool_count": len(automatic),
-        "representative_calls": calls,
+        "delegated_read_calls": calls,
         "error_calls": error_calls,
         "error_counter_snapshots": {
             "provider_routing_before": routing_before_errors,

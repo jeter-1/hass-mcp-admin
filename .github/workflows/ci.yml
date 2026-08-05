@@ -191,6 +191,7 @@ jobs:
       UPSTREAM_IMAGE: ${{ matrix.upstream_image }}
       UPSTREAM_VERSION: ${{ matrix.upstream_version }}
       EXPECTED_IMAGE_INDEX_DIGEST: ${{ matrix.image_index_digest }}
+      EXPECTED_SOURCE_COMMIT: ${{ matrix.source_commit }}
       EXPECTED_IMAGE_REVISION: ${{ matrix.image_revision }}
       EXPECTED_ARCHITECTURE_IMAGE_DIGESTS: ${{ toJSON(matrix.architecture_image_digests) }}
       ENGINEERING_ACCESS_SECRET: synthetic-engineering-access-secret
@@ -268,7 +269,7 @@ jobs:
             docker image inspect "$UPSTREAM_IMAGE" \
               --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'
           )" = "$EXPECTED_IMAGE_REVISION"
-          docker run --detach --rm --network host --name exact-read-gateway-upstream \
+          docker run --detach --network host --name exact-read-gateway-upstream \
             --read-only --tmpfs /tmp --tmpfs /home/mcpuser/.ha-mcp \
             -e HOMEASSISTANT_URL=http://127.0.0.1:18123 \
             -e HOMEASSISTANT_TOKEN=synthetic-read-gateway-token \
@@ -334,6 +335,61 @@ jobs:
             --ha-url http://127.0.0.1:18123 \
             --ha-token synthetic-read-gateway-token \
             --output "$RUNNER_TEMP/exact-image-read-gateway-result.json"
+      - name: Verify exact 8.1.0 stdio lifecycle
+        if: matrix.upstream_version == '8.1.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker cp \
+            scripts/exact_image_sidecar_lifecycle_acceptance.py \
+            exact-read-gateway-upstream:/tmp/exact_image_sidecar_lifecycle_acceptance.py
+          docker exec \
+            --env HA_MCP_DISABLE_SETTINGS_UI=false \
+            exact-read-gateway-upstream \
+            python /tmp/exact_image_sidecar_lifecycle_acceptance.py \
+              --expected-version "$UPSTREAM_VERSION" \
+              --output /tmp/exact-image-sidecar-lifecycle-result.json
+          docker cp \
+            exact-read-gateway-upstream:/tmp/exact-image-sidecar-lifecycle-result.json \
+            "$RUNNER_TEMP/exact-image-sidecar-lifecycle-result.json"
+      - name: Verify exact 8.1.0 custom-component worker shutdown
+        if: matrix.upstream_version == '8.1.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_commit="$EXPECTED_SOURCE_COMMIT"
+          source_sha256=d1ea2b571e5737c59e459d155163ae750228c2e455796e38f848c543720ba108
+          test "$source_commit" = 0683f5ff34e5c71f35bce08d1cedcdee3c0a60b2
+          test "$EXPECTED_IMAGE_REVISION" = 6213fc8047171a2731af6299f9bcecd73e96fcad
+          test "$EXPECTED_IMAGE_REVISION" != "$source_commit"
+          curl --fail --location --proto '=https' --tlsv1.2 --max-time 60 \
+            "https://raw.githubusercontent.com/homeassistant-ai/ha-mcp/${source_commit}/custom_components/ha_mcp_tools/embedded_server.py" \
+            --output "$RUNNER_TEMP/reviewed-embedded-server.py"
+          printf '%s  %s\n' \
+            "$source_sha256" "$RUNNER_TEMP/reviewed-embedded-server.py" |
+            sha256sum --check --strict
+          python scripts/exact_custom_component_shutdown_acceptance.py \
+            --source "$RUNNER_TEMP/reviewed-embedded-server.py" \
+            --expected-source-sha256 "$source_sha256" \
+            --expected-source-commit "$source_commit" \
+            --output "$RUNNER_TEMP/exact-custom-component-shutdown-result.json"
+      - name: Verify exact 8.1.0 disconnect and readmission
+        if: matrix.upstream_version == '8.1.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker stop --time 10 exact-read-gateway-upstream
+          python scripts/exact_image_readmission_acceptance.py \
+            --engineering-endpoint "http://127.0.0.1:18100/${ENGINEERING_ACCESS_SECRET}/mcp" \
+            --expected-upstream-version "$UPSTREAM_VERSION" \
+            --phase disconnected \
+            --output "$RUNNER_TEMP/exact-image-disconnected-result.json"
+          docker start exact-read-gateway-upstream
+          python scripts/exact_image_readmission_acceptance.py \
+            --engineering-endpoint "http://127.0.0.1:18100/${ENGINEERING_ACCESS_SECRET}/mcp" \
+            --expected-upstream-version "$UPSTREAM_VERSION" \
+            --phase readmitted \
+            --output "$RUNNER_TEMP/exact-image-readmitted-result.json"
       - name: Verify deterministic upstream contract capture
         if: always()
         shell: bash
@@ -352,12 +408,24 @@ jobs:
             "docs/evidence/upstream-read-compatibility/ha-mcp-${UPSTREAM_VERSION}.json"
       - name: Upload bounded exact-image result
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: exact-image-read-gateway-${{ matrix.upstream_version }}
           path: |
             ${{ runner.temp }}/exact-image-read-gateway-result.json
             ${{ runner.temp }}/upstream-contract-capture-1.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload bounded 8.1 lifecycle evidence
+        if: always() && matrix.upstream_version == '8.1.0'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: exact-image-readmission-${{ matrix.upstream_version }}
+          path: |
+            ${{ runner.temp }}/exact-image-sidecar-lifecycle-result.json
+            ${{ runner.temp }}/exact-custom-component-shutdown-result.json
+            ${{ runner.temp }}/exact-image-disconnected-result.json
+            ${{ runner.temp }}/exact-image-readmitted-result.json
           if-no-files-found: error
           retention-days: 14
       - name: Remove disposable exact-image environment
@@ -371,16 +439,37 @@ jobs:
           sudo rm -rf "$RUNNER_TEMP/read-gateway-data"
 
   exact-addon-runtime-acceptance:
-    name: Exact ha-mcp 8.0.0 add-on runtime acceptance
+    name: Exact ha-mcp ${{ matrix.upstream_version }} add-on runtime acceptance
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - upstream_version: "8.0.0"
+            addon_detail_profile: live-8.0.0
+            secret_path: /beta14-synthetic/mcp
+            addon_amd64_index_digest: sha256:693ecd5c68f98e64111fbf58e02547a51b2168a942056684dbe262c550aff9cd
+            addon_amd64_manifest_digest: sha256:65856752c37e4c1f9093060fbbc4a1a826cac1cbd6a76e856af5f5672a96c404
+            addon_arm64_index_digest: sha256:150ee09078919a47db19639deaa8c27ec064390054e27b4e618f82eea9cf7f50
+            addon_arm64_manifest_digest: sha256:a4bc83ed6f1a531d445e8107c77b7e7d5289d25510316dc6698d65383bf2fedb
+          - upstream_version: "8.1.0"
+            addon_detail_profile: live-8.1.0
+            secret_path: /beta21-synthetic/mcp
+            addon_amd64_index_digest: sha256:2744a11c90f7a66e61fabe8166d058191d236094393c50d976978407c039d45d
+            addon_amd64_manifest_digest: sha256:f415b72351d79414a3133c227622633d9c190a3f4f6b849eed93ac524ac1c2d5
+            addon_arm64_index_digest: sha256:71bd08ac7ab4272bc226b91d299929949fa24b674e164121566bc1d84666e273
+            addon_arm64_manifest_digest: sha256:2dad5c7f8afcfb8c5624d82a7d9c322fc70351d32d9697e07a162ec7015250b0
     env:
-      ADDON_AMD64_IMAGE: ghcr.io/homeassistant-ai/ha-mcp-addon-amd64@sha256:693ecd5c68f98e64111fbf58e02547a51b2168a942056684dbe262c550aff9cd
-      ADDON_AMD64_INDEX_DIGEST: sha256:693ecd5c68f98e64111fbf58e02547a51b2168a942056684dbe262c550aff9cd
-      ADDON_AMD64_MANIFEST_DIGEST: sha256:65856752c37e4c1f9093060fbbc4a1a826cac1cbd6a76e856af5f5672a96c404
-      ADDON_ARM64_IMAGE: ghcr.io/homeassistant-ai/ha-mcp-addon-aarch64@sha256:150ee09078919a47db19639deaa8c27ec064390054e27b4e618f82eea9cf7f50
-      ADDON_ARM64_INDEX_DIGEST: sha256:150ee09078919a47db19639deaa8c27ec064390054e27b4e618f82eea9cf7f50
-      ADDON_ARM64_MANIFEST_DIGEST: sha256:a4bc83ed6f1a531d445e8107c77b7e7d5289d25510316dc6698d65383bf2fedb
+      UPSTREAM_VERSION: ${{ matrix.upstream_version }}
+      ADDON_DETAIL_PROFILE: ${{ matrix.addon_detail_profile }}
+      MCP_SECRET_PATH: ${{ matrix.secret_path }}
+      ADDON_AMD64_IMAGE: ghcr.io/homeassistant-ai/ha-mcp-addon-amd64@${{ matrix.addon_amd64_index_digest }}
+      ADDON_AMD64_INDEX_DIGEST: ${{ matrix.addon_amd64_index_digest }}
+      ADDON_AMD64_MANIFEST_DIGEST: ${{ matrix.addon_amd64_manifest_digest }}
+      ADDON_ARM64_IMAGE: ghcr.io/homeassistant-ai/ha-mcp-addon-aarch64@${{ matrix.addon_arm64_index_digest }}
+      ADDON_ARM64_INDEX_DIGEST: ${{ matrix.addon_arm64_index_digest }}
+      ADDON_ARM64_MANIFEST_DIGEST: ${{ matrix.addon_arm64_manifest_digest }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
@@ -452,67 +541,141 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/fake_ha_read_gateway_contract_server.py \
-            --port 18123 --upstream-version 8.0.0 \
-            --addon-detail-profile live-8.0.0 \
+          sudo "$(command -v python)" \
+            scripts/fake_ha_read_gateway_contract_server.py \
+            --port 80 --upstream-version "$UPSTREAM_VERSION" \
+            --addon-detail-profile "$ADDON_DETAIL_PROFILE" \
             > "$RUNNER_TEMP/addon-runtime-ha.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/addon-runtime-ha.pid"
           for attempt in $(seq 1 30); do
-            curl --fail --silent http://127.0.0.1:18123/api/ >/dev/null && exit 0
+            curl --fail --silent http://127.0.0.1/api/ >/dev/null && exit 0
             sleep 1
           done
           exit 1
-      - name: Execute immutable ha-mcp 8.0.0 add-on runtime
+      - name: Execute immutable ha-mcp add-on runtime
         shell: bash
         run: |
           set -euo pipefail
           docker pull "$ADDON_AMD64_IMAGE"
-          test "$(
+          observed_label_version="$(
             docker image inspect "$ADDON_AMD64_IMAGE" \
               --format '{{index .Config.Labels "io.hass.version"}}'
-          )" = "8.0.0"
-          docker run --detach --rm --network host --read-only \
+          )"
+          observed_default_command="$(
+            docker image inspect "$ADDON_AMD64_IMAGE" \
+              --format '{{json .Config.Cmd}}'
+          )"
+          observed_build_version="$(
+            docker image inspect "$ADDON_AMD64_IMAGE" \
+              --format '{{range .Config.Env}}{{println .}}{{end}}' |
+              sed -n 's/^HA_MCP_BUILD_VERSION=//p'
+          )"
+          test "$observed_label_version" = "$UPSTREAM_VERSION"
+          test "$observed_build_version" = "$UPSTREAM_VERSION"
+          test "$observed_default_command" = '["python3","/start.py"]'
+          install -d -m 0700 "$RUNNER_TEMP/exact-addon-data"
+          jq -n --arg secret_path "$MCP_SECRET_PATH" '{
+            backup_hint: "normal",
+            secret_path: $secret_path,
+            enable_tool_search: false,
+            tool_search_max_results: 5,
+            enable_tool_security_policies: true,
+            read_only_mode: false,
+            enable_mandatory_bps: true,
+            enable_strict_mandatory_bps: true,
+            disabled_tools: "",
+            pinned_tools: "",
+            enable_auto_backup: true,
+            auto_backup_throttle_minutes: 0,
+            auto_backup_retain_per_entity: 100,
+            enable_snapshot_delete: false,
+            snapshot_delete_min_age_days: 7,
+            verify_ssl: true
+          }' > "$RUNNER_TEMP/exact-addon-data/options.json"
+          docker run --detach --network host --read-only \
             --name exact-addon-runtime-upstream \
+            --add-host supervisor:127.0.0.1 \
+            --volume "$RUNNER_TEMP/exact-addon-data:/data" \
             --tmpfs /tmp \
-            --entrypoint /app/.venv/bin/ha-mcp-web \
-            -e ENABLE_TOOL_SECURITY_POLICIES=true \
-            -e HA_MCP_BUILD_VERSION=8.0.0 \
-            -e HA_MCP_CONFIG_DIR=/tmp/ha-mcp-config \
-            -e HA_MCP_DISABLE_SETTINGS_UI=1 \
-            -e HOME=/tmp/ha-mcp-home \
-            -e HOMEASSISTANT_TOKEN=synthetic-read-gateway-token \
-            -e HOMEASSISTANT_URL=http://127.0.0.1:18123 \
             -e MCP_HOST=127.0.0.1 \
-            -e MCP_PORT=18087 \
-            -e MCP_SECRET_PATH=/beta14-synthetic/mcp \
             -e SUPERVISOR_TOKEN=synthetic-read-gateway-token \
             "$ADDON_AMD64_IMAGE"
           for attempt in $(seq 1 60); do
             status="$(curl --max-time 1 --silent --output /dev/null \
               --write-out '%{http_code}' \
-              http://127.0.0.1:18087/beta14-synthetic/mcp || true)"
-            test "$status" != "000" && exit 0
+              "http://127.0.0.1:9583${MCP_SECRET_PATH}" || true)"
+            if test "$status" != "000"; then
+              break
+            fi
             sleep 1
           done
-          exit 1
+          test "$status" != "000"
+          observed_package_version="$(
+            docker exec exact-addon-runtime-upstream \
+              /app/.venv/bin/python -c \
+              'from importlib.metadata import version; print(version("ha-mcp"))'
+          )"
+          test "$observed_package_version" = "$UPSTREAM_VERSION"
+          jq -n \
+            --arg expected_version "$UPSTREAM_VERSION" \
+            --arg label_version "$observed_label_version" \
+            --arg build_version "$observed_build_version" \
+            --arg package_version "$observed_package_version" \
+            --arg default_command "$observed_default_command" \
+            '{
+              result: "PASS",
+              expected_version: $expected_version,
+              image_label_version: $label_version,
+              baked_build_version: $build_version,
+              package_version: $package_version,
+              default_command: $default_command,
+              injected_build_version: false,
+              default_addon_startup: true
+            }' > "$RUNNER_TEMP/exact-addon-runtime-identity.json"
       - name: Run planning-only exact add-on runtime acceptance
         shell: bash
         run: |
           python scripts/exact_addon_runtime_acceptance.py \
-            --upstream-endpoint http://127.0.0.1:18087/beta14-synthetic/mcp \
-            --configured-upstream-endpoint http://abcdef12-ha-mcp:18087/beta14-synthetic/mcp \
-            --fixture-stats-url http://127.0.0.1:18123/__fixture__/stats \
-            --ha-url http://127.0.0.1:18123 \
+            --upstream-endpoint "http://127.0.0.1:9583${MCP_SECRET_PATH}" \
+            --configured-upstream-endpoint "http://abcdef12-ha-mcp:9583${MCP_SECRET_PATH}" \
+            --fixture-stats-url http://127.0.0.1/__fixture__/stats \
+            --ha-url http://127.0.0.1 \
             --ha-token synthetic-read-gateway-token \
             --expected-image-index-digest "$ADDON_AMD64_INDEX_DIGEST" \
             --expected-image-manifest-digest "$ADDON_AMD64_MANIFEST_DIGEST" \
+            --expected-upstream-version "$UPSTREAM_VERSION" \
             --output "$RUNNER_TEMP/exact-addon-runtime-result.json"
+      - name: Stop immutable add-on runtime gracefully
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! docker inspect exact-addon-runtime-upstream >/dev/null 2>&1; then
+            jq -n '{result:"FAIL",reason:"container_missing"}' \
+              > "$RUNNER_TEMP/exact-addon-runtime-shutdown.json"
+            exit 1
+          fi
+          docker stop --time 20 exact-addon-runtime-upstream >/dev/null
+          exit_code="$(
+            docker inspect exact-addon-runtime-upstream \
+              --format '{{.State.ExitCode}}'
+          )"
+          jq -n --argjson exit_code "$exit_code" '{
+            result: (if $exit_code == 0 then "PASS" else "FAIL" end),
+            graceful_stop_requested: true,
+            exit_code: $exit_code,
+            container_running: false
+          }' > "$RUNNER_TEMP/exact-addon-runtime-shutdown.json"
+          test "$exit_code" = 0
       - name: Upload bounded exact add-on runtime evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: exact-ha-mcp-8.0.0-addon-runtime
-          path: ${{ runner.temp }}/exact-addon-runtime-result.json
+          name: exact-ha-mcp-${{ matrix.upstream_version }}-addon-runtime
+          path: |
+            ${{ runner.temp }}/exact-addon-runtime-identity.json
+            ${{ runner.temp }}/exact-addon-runtime-result.json
+            ${{ runner.temp }}/exact-addon-runtime-shutdown.json
           if-no-files-found: error
           retention-days: 14
       - name: Remove disposable exact add-on runtime environment
@@ -521,5 +684,6 @@ jobs:
         run: |
           docker rm -f exact-addon-runtime-upstream >/dev/null 2>&1 || true
           if test -f "$RUNNER_TEMP/addon-runtime-ha.pid"; then
-            kill "$(cat "$RUNNER_TEMP/addon-runtime-ha.pid")" >/dev/null 2>&1 || true
+            sudo kill "$(cat "$RUNNER_TEMP/addon-runtime-ha.pid")" >/dev/null 2>&1 || true
           fi
+          sudo rm -rf "$RUNNER_TEMP/exact-addon-data"
