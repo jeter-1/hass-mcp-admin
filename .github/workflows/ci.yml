@@ -120,10 +120,29 @@ jobs:
 
   real-ha-contract-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lane: ha-2026-7-2
+            ha_version: "2026.7.2"
+            ha_image: "ghcr.io/home-assistant/home-assistant:2026.7.2@sha256:1476924357b46e80735c13e94232ba5c853cac052e9df4bb28d50fa56348097b"
+          - lane: ha-2026-8-0
+            ha_version: "2026.8.0"
+            ha_image: "ghcr.io/home-assistant/home-assistant:2026.8.0@sha256:a21689ef0510df9760ee11bab4d6b2fef3ed5c1a29ed9c3224271597a23729eb"
     env:
-      HA_CONTRACT_VERSION: "2026.7.2"
-      HA_CONTRACT_IMAGE: "ghcr.io/home-assistant/home-assistant:2026.7.2@sha256:1476924357b46e80735c13e94232ba5c853cac052e9df4bb28d50fa56348097b"
+      HA_CONTRACT_LANE: ${{ matrix.lane }}
+      HA_CONTRACT_VERSION: ${{ matrix.ha_version }}
+      HA_CONTRACT_IMAGE: ${{ matrix.ha_image }}
+      HA_FIXTURE_WRITER_IMAGE: "ghcr.io/home-assistant/home-assistant:2026.7.2@sha256:1476924357b46e80735c13e94232ba5c853cac052e9df4bb28d50fa56348097b"
+      REAL_HA_EXPECTED_VERSION: ${{ matrix.ha_version }}
+      REAL_HA_UPSTREAM_IMAGE: "ghcr.io/homeassistant-ai/ha-mcp:8.1.1@sha256:e1d76a6ee54e26054a13a6c04089824b76d4d370246239591a02a2e4445ad2c9"
+      REAL_HA_UPSTREAM_VERSION: "8.1.1"
+      REAL_HA_UPSTREAM_CONTAINER: beta25-real-ha-upstream-${{ matrix.lane }}
+      REAL_HA_UPSTREAM_PORT: "18086"
+      HA_WRITER_CONTAINER: beta25-real-ha-writer-${{ matrix.lane }}
+      HA_CONTRACT_CONTAINER: beta25-real-ha-${{ matrix.lane }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -133,37 +152,110 @@ jobs:
           cache-dependency-path: hass_mcp_engineering_beta/requirements.txt
       - name: Install Engineering client dependencies
         run: python -m pip install -r hass_mcp_engineering_beta/requirements.txt
-      - name: Start disposable pinned Home Assistant Core
+      - name: Prepare exact source and disposable migration configuration
         shell: bash
         run: |
           set -euo pipefail
-          contract_dir="$RUNNER_TEMP/beta25-real-ha"
-          mkdir -p "$contract_dir"
+          source_archive="$RUNNER_TEMP/ha-mcp-v8.1.1-source.tar.gz"
+          source_parent="$RUNNER_TEMP/ha-mcp-v8.1.1-source"
+          source_root="$source_parent/ha-mcp-8.1.1"
+          contract_dir="$RUNNER_TEMP/beta25-real-ha-$HA_CONTRACT_LANE"
+          device_fixture="$contract_dir/beta23-device-fixture.json"
+          token_file="$RUNNER_TEMP/beta25-real-ha-$HA_CONTRACT_LANE.token"
+          {
+            echo "REAL_HA_CONTRACT_DIR=$contract_dir"
+            echo "REAL_HA_DEVICE_FIXTURE=$device_fixture"
+            echo "REAL_HA_TOKEN_FILE=$token_file"
+          } >> "$GITHUB_ENV"
+          mkdir -p "$source_parent" "$contract_dir/custom_components"
+          curl --fail --location --proto '=https' --tlsv1.2 --max-time 120 \
+            https://codeload.github.com/homeassistant-ai/ha-mcp/tar.gz/refs/tags/v8.1.1 \
+            --output "$source_archive"
+          printf '%s  %s\n' \
+            bc631f50d3efd22234430891bbf66f55bbcd1cdea775e2eb7ae1b41b5feabe79 \
+            "$source_archive" | sha256sum --check --strict
+          tar -xzf "$source_archive" -C "$source_parent"
+          python scripts/verify_ha_mcp_8_1_1_packaging.py \
+            --source-root "$source_root" \
+            --output "$RUNNER_TEMP/ha-mcp-8.1.1-packaging-$HA_CONTRACT_LANE.json"
+          cp -R \
+            tests/fixtures/real_ha_device_migration/custom_components/beta23_device_fixture \
+            "$contract_dir/custom_components/"
+          cp -R "$source_root/custom_components/ha_mcp_tools" \
+            "$contract_dir/custom_components/"
           printf '%s\n' \
             'default_config:' \
             'automation: !include automations.yaml' \
+            'http:' \
+            '  server_port: 8123' \
             'input_boolean: {}' \
             'input_number: {}' \
             'script: !include scripts.yaml' \
             > "$contract_dir/configuration.yaml"
           : > "$contract_dir/automations.yaml"
           : > "$contract_dir/scripts.yaml"
+      - name: Persist migration fixture with exact Home Assistant 2026.7.2
+        shell: bash
+        env:
+          REAL_HA_URL: http://127.0.0.1:18123
+        run: |
+          set -euo pipefail
+          docker pull "$HA_FIXTURE_WRITER_IMAGE"
+          docker run -d --name "$HA_WRITER_CONTAINER" -p 18123:8123 \
+            -v "$REAL_HA_CONTRACT_DIR:/config" "$HA_FIXTURE_WRITER_IMAGE"
+          python scripts/real_ha_contract_tests.py --prepare-migration-fixture
+          docker stop --time 30 "$HA_WRITER_CONTAINER"
+          docker rm "$HA_WRITER_CONTAINER"
+      - name: Start disposable exact target Home Assistant Core
+        shell: bash
+        run: |
+          set -euo pipefail
           docker pull "$HA_CONTRACT_IMAGE"
-          docker run -d --name beta25-real-ha -p 8123:8123 \
-            -v "$contract_dir:/config" "$HA_CONTRACT_IMAGE"
+          docker run -d --name "$HA_CONTRACT_CONTAINER" -p 8123:8123 \
+            -v "$REAL_HA_CONTRACT_DIR:/config" "$HA_CONTRACT_IMAGE"
           echo "HA contract version: $HA_CONTRACT_VERSION"
           docker image inspect "$HA_CONTRACT_IMAGE" \
             --format='HA contract image digest: {{index .RepoDigests 0}}'
+      - name: Verify exact ha-mcp 8.1.1 packaging inside disposable Home Assistant
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_root="$RUNNER_TEMP/ha-mcp-v8.1.1-source/ha-mcp-8.1.1"
+          docker pull "$REAL_HA_UPSTREAM_IMAGE"
+          docker cp "$source_root" \
+            "$HA_CONTRACT_CONTAINER:/tmp/ha-mcp-8.1.1-source"
+          docker cp scripts/disposable_ha_websockets_probe.py \
+            "$HA_CONTRACT_CONTAINER:/tmp/disposable_ha_websockets_probe.py"
+          docker exec "$HA_CONTRACT_CONTAINER" python \
+            /tmp/disposable_ha_websockets_probe.py \
+            --source-root /tmp/ha-mcp-8.1.1-source \
+            --output /tmp/ha-mcp-8.1.1-disposable-ha.json
+          docker cp \
+            "$HA_CONTRACT_CONTAINER:/tmp/ha-mcp-8.1.1-disposable-ha.json" \
+            "$RUNNER_TEMP/ha-mcp-8.1.1-disposable-$HA_CONTRACT_LANE.json"
       - name: Run real Home Assistant contracts
         env:
           REAL_HA_URL: http://127.0.0.1:8123
         run: python scripts/real_ha_contract_tests.py
+      - name: Upload bounded disposable Home Assistant packaging evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ha-mcp-8.1.1-disposable-${{ matrix.lane }}
+          path: |
+            ${{ runner.temp }}/ha-mcp-8.1.1-packaging-${{ matrix.lane }}.json
+            ${{ runner.temp }}/ha-mcp-8.1.1-disposable-${{ matrix.lane }}.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Sanitize and remove disposable Home Assistant
         if: always()
         shell: bash
         run: |
-          docker rm -f beta25-real-ha >/dev/null 2>&1 || true
-          sudo rm -rf "$RUNNER_TEMP/beta25-real-ha"
+          docker rm -f "$REAL_HA_UPSTREAM_CONTAINER" >/dev/null 2>&1 || true
+          docker rm -f "$HA_CONTRACT_CONTAINER" >/dev/null 2>&1 || true
+          docker rm -f "$HA_WRITER_CONTAINER" >/dev/null 2>&1 || true
+          rm -f "$REAL_HA_TOKEN_FILE"
+          sudo rm -rf "$REAL_HA_CONTRACT_DIR"
 
   prepare_exact_image_matrix:
     runs-on: ubuntu-latest
@@ -277,13 +369,21 @@ jobs:
             -e MCP_SECRET_PATH=/synthetic-upstream-secret/mcp \
             -e HA_MCP_DISABLE_SETTINGS_UI=true \
             "$UPSTREAM_IMAGE" ha-mcp-web
+          status="000"
           for attempt in $(seq 1 60); do
             status="$(curl --max-time 1 --silent --output /dev/null --write-out '%{http_code}' \
               http://127.0.0.1:18086/synthetic-upstream-secret/mcp || true)"
-            test "$status" != "000" && exit 0
+            if test "$status" != "000"; then
+              break
+            fi
             sleep 1
           done
-          exit 1
+          test "$status" != "000"
+          observed_package_version="$(
+            docker exec exact-read-gateway-upstream python -c \
+              'from importlib.metadata import version; print(version("ha-mcp"))'
+          )"
+          test "$observed_package_version" = "$UPSTREAM_VERSION"
       - name: Build and start Engineering through its production discovery path
         shell: bash
         run: |
@@ -337,8 +437,8 @@ jobs:
             --ha-url http://127.0.0.1:18123 \
             --ha-token synthetic-read-gateway-token \
             --output "$RUNNER_TEMP/exact-image-read-gateway-result.json"
-      - name: Verify exact 8.1.0 stdio lifecycle
-        if: matrix.upstream_version == '8.1.0'
+      - name: Verify exact 8.1 stdio lifecycle
+        if: matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1'
         shell: bash
         run: |
           set -euo pipefail
@@ -371,8 +471,8 @@ jobs:
             --expected-source-sha256 "$source_sha256" \
             --expected-source-commit "$source_commit" \
             --output "$RUNNER_TEMP/exact-custom-component-shutdown-result.json"
-      - name: Verify exact 8.1.0 disconnect and readmission
-        if: matrix.upstream_version == '8.1.0'
+      - name: Verify exact 8.1 disconnect and readmission
+        if: matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1'
         shell: bash
         run: |
           set -euo pipefail
@@ -415,7 +515,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Upload bounded 8.1 lifecycle evidence
-        if: always() && matrix.upstream_version == '8.1.0'
+        if: always() && (matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1')
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: exact-image-readmission-${{ matrix.upstream_version }}
@@ -458,6 +558,13 @@ jobs:
             addon_amd64_manifest_digest: sha256:f415b72351d79414a3133c227622633d9c190a3f4f6b849eed93ac524ac1c2d5
             addon_arm64_index_digest: sha256:71bd08ac7ab4272bc226b91d299929949fa24b674e164121566bc1d84666e273
             addon_arm64_manifest_digest: sha256:2dad5c7f8afcfb8c5624d82a7d9c322fc70351d32d9697e07a162ec7015250b0
+          - upstream_version: "8.1.1"
+            addon_detail_profile: live-8.1.1
+            secret_path: /beta23-synthetic/mcp
+            addon_amd64_index_digest: sha256:f5186360a6cdf66ce9a7f94f1096609ca966d4c159dedcca1b562fd0ccf7e429
+            addon_amd64_manifest_digest: sha256:9b051abf89667209dcc3f3d77614e0b914b69b4aa20350637569193eea23e7f2
+            addon_arm64_index_digest: sha256:013ce6faff9b197634a346d5654854859d40aab1a1b1a9423f5e9e77ca38c176
+            addon_arm64_manifest_digest: sha256:8a14c856be38d621ee99807fde76406b7cabf99935fa2869686aaf205fed71fb
     env:
       UPSTREAM_VERSION: ${{ matrix.upstream_version }}
       ADDON_DETAIL_PROFILE: ${{ matrix.addon_detail_profile }}
@@ -643,6 +750,19 @@ jobs:
             --expected-image-manifest-digest "$ADDON_AMD64_MANIFEST_DIGEST" \
             --expected-upstream-version "$UPSTREAM_VERSION" \
             --output "$RUNNER_TEMP/exact-addon-runtime-result.json"
+      - name: Verify deterministic exact add-on catalog capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/review_upstream_read_release.py capture \
+            --endpoint "http://127.0.0.1:9583${MCP_SECRET_PATH}" \
+            --output "$RUNNER_TEMP/exact-addon-contract-capture-1.json"
+          python scripts/review_upstream_read_release.py capture \
+            --endpoint "http://127.0.0.1:9583${MCP_SECRET_PATH}" \
+            --output "$RUNNER_TEMP/exact-addon-contract-capture-2.json"
+          cmp \
+            "$RUNNER_TEMP/exact-addon-contract-capture-1.json" \
+            "$RUNNER_TEMP/exact-addon-contract-capture-2.json"
       - name: Stop immutable add-on runtime gracefully
         if: always()
         shell: bash
@@ -674,6 +794,7 @@ jobs:
             ${{ runner.temp }}/exact-addon-runtime-identity.json
             ${{ runner.temp }}/exact-addon-runtime-result.json
             ${{ runner.temp }}/exact-addon-runtime-shutdown.json
+            ${{ runner.temp }}/exact-addon-contract-capture-1.json
           if-no-files-found: error
           retention-days: 14
       - name: Remove disposable exact add-on runtime environment

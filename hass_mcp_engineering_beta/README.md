@@ -1,14 +1,16 @@
 # HA MCP Engineering Server Beta
 
-This directory contains the Engineering v2 add-on. Development version
-`2.2.0-beta.22` makes every governed configuration plan completely reviewable
-before external approval while preserving Beta 21's exact reviewed `ha-mcp`
-8.1.0 compatibility on top of the merged Beta 20 F3 runtime. The 8.1.0 profile
-admits 24 delegated reads, keeps
-`ha_search` and `ha_get_operation_status` held, reclassifies the expanded
-`ha_manage_hacs` write surface, and normalizes only the exact changed HACS read
-success envelope. Immutable OCI identities are reviewed; the stale-version
-release executables and MCPB are excluded.
+This directory contains the Engineering v2 add-on. The currently advertised
+version remains `2.2.0-beta.22`; staged version `2.2.0-beta.23` adds an
+evidence-bound compatibility-family compiler and exact reviewed `ha-mcp` 8.1.1
+authority without weakening Beta 22 approval review or Beta 20 F3 behavior.
+The exact 8.1.0 and 8.1.1 profiles each admit 24 delegated reads, keep
+`ha_search` and `ha_get_operation_status` held, retain the expanded
+`ha_manage_hacs` surface as a persistent write, and normalize only the exact
+changed HACS read success envelope. Every 8.1.1 artifact, policy, provider
+disposition, and family decision is exact and digest-bound. Release families
+are review-time comparison policy only: unlisted 8.1.x patches, 8.2.x,
+prereleases, and unrelated servers remain unavailable.
 
 Beta 22 persists a versioned complete before/after semantic projection, binds
 its digest through plan/policy authority into the unchanged F3 prepared hash,
@@ -17,7 +19,8 @@ values remain inspectable, protected values use field-aware redaction, and
 historical plans without a trustworthy projection remain audit-readable but
 cannot be approved or dispatched.
 
-Beta 22 preserves Beta 21's exact upstream admission and Beta 20's closed
+Beta 23 preserves Beta 22's complete projections, Beta 21's exact 8.1.0
+upstream admission, and Beta 20's closed
 12-capability F3 registry, deterministic
 child authority, central recovery, selective holds, private reconciliation,
 and governed rollback. It also preserves Beta 15 lifecycle response handling,
@@ -42,7 +45,7 @@ traffic return HTTP 503; schema-caching clients therefore cannot retain that
 transient static-only catalog. Once the first stable or terminal reconciliation
 result is known, `/ready` reports the bounded ready state. If discovery
 establishes an exact compiled reviewed release entry (`ha-mcp` 7.14.2, 8.0.0,
-or 8.1.0), each release's reviewed pure reads are admitted independently by their
+8.1.0, or 8.1.1), each release's reviewed pure reads are admitted independently by their
 exact input-schema fingerprint, exact bounded full-runtime-description
 fingerprint, exact runtime safety-annotation presence/value fingerprint,
 output-schema
@@ -56,7 +59,7 @@ Each read also requires its exact pinned generic object output-schema
 fingerprint; the fixed Engineering adapter, not that generic schema, owns
 sanitization, bounds, fallback refusal, and partial-data behavior.
 
-Exact 8.0.0 and 8.1.0 additionally use a version-scoped operational runtime model for
+Exact 8.0.0, 8.1.0, and 8.1.1 additionally use a version-scoped operational runtime model for
 the documented policy-state block. The object must retain its exact fields,
 JSON types, deployment allowlist, and bounded rule count before only its
 environment-dependent values are normalized. All other descriptor fields stay
@@ -64,7 +67,7 @@ exact. Raw operational-catalog and strict full-contract hashes remain separate
 diagnostic evidence, and malformed policy metadata remains quarantined.
 
 A complete reviewed 7.14.2 set adds 26 delegated reads for 74 registered tools.
-The exact 8.0.0 and 8.1.0 sets each add 24 for 72 registered tools; their two
+The exact 8.0.0, 8.1.0, and 8.1.1 sets each add 24 for 72 registered tools; their two
 held reads are accounted but never registered or callable. One missing or quarantined read
 leaves other matches available. A client that cached an earlier list must re-list or reconnect; the
 stateless transport does not broadcast `tools/list_changed`.

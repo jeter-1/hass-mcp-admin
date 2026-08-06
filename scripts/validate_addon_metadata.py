@@ -24,7 +24,6 @@ BETA_NAME = "HA MCP Engineering Server Beta"
 PRODUCTION_VERSION = "1.1.2"
 BETA_VERSION = "2.2.0-beta.22"
 BETA_IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
-FINAL_RC3_VERSION = "2.0.0-rc.3"
 NEXT_VERSION_PATH = Path(".release/next-version")
 NON_RELEASE_BETA_PATHS = frozenset({"hass_mcp_engineering_beta/AGENTS.md"})
 PRODUCTION_PORT = 8099
@@ -59,6 +58,10 @@ EXPECTED_BETA_SCHEMA = {
 SEMVER = re.compile(
     r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)"
     r"(?:-(?P<prerelease>[0-9A-Za-z.-]+))?$"
+)
+SEQUENCED_DEVELOPMENT_VERSION = re.compile(
+    r"^(?P<core>(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))-"
+    r"(?P<channel>beta\.|rc2-dev)(?P<sequence>[1-9]\d*)$"
 )
 REGISTRY_TAG_NOT_FOUND = re.compile(
     r"manifest unknown|no such manifest|"
@@ -153,9 +156,18 @@ def staged_release_version(repo_root: Path, advertised_version: str) -> str | No
         raise MetadataValidationError(
             "Staged release version must be newer than advertised metadata"
         )
-    if not version_key(candidate) < version_key(FINAL_RC3_VERSION):
+    current_match = SEQUENCED_DEVELOPMENT_VERSION.fullmatch(advertised_version)
+    candidate_match = SEQUENCED_DEVELOPMENT_VERSION.fullmatch(candidate)
+    if (
+        current_match is None
+        or candidate_match is None
+        or candidate_match["core"] != current_match["core"]
+        or candidate_match["channel"] != current_match["channel"]
+        or int(candidate_match["sequence"])
+        != int(current_match["sequence"]) + 1
+    ):
         raise MetadataValidationError(
-            "Staged development version must remain below final RC3"
+            "Staged release must be the next version in the active development sequence"
         )
     return candidate
 

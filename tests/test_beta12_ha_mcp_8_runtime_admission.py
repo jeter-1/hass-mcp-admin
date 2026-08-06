@@ -166,7 +166,7 @@ class Beta12ReproductionDiagnosticsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unknown_8_x_versions_do_not_inherit_trust(self):
         tools = reconstruct_live_addon_tools()
-        for version in ("8.0.1", "8.1.1", "8.2.0"):
+        for version in ("8.0.1", "8.1.2", "8.2.0"):
             with self.subTest(version=version):
                 gateway, target = await self.gateway_for(
                     tools, version=version

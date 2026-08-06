@@ -92,13 +92,18 @@ to match. A catalog fingerprint remains unrelated-tool observability and is
 never a required-tool compatibility gate.
 
 The compiled generic/provider release registry separately binds exact runtime
-authority. Its reviewed 8.1.0 entry records the tag target, standalone index
+authority. Its reviewed 8.1.0 and 8.1.1 entries record the tag target, standalone index
 and platform manifests, add-on index/image manifests, strict full-contract
 fingerprint, full 78-tool policy, and release-declared runtime model. Its raw
 standalone catalog fingerprint is diagnostic; complete per-tool semantic
 validation remains authoritative. The entry excludes release-page executables
 and MCPB that advertise 8.0.0 and cannot inherit 8.1.0 trust from their asset
 names.
+
+The 8.1.1 entry additionally binds the review-time compatibility-family
+decision described by
+[`ADR-007`](architecture/ADR-007-COMPATIBILITY-FAMILY-ADMISSION.md). That family
+record is not signed wildcard authority and cannot admit an unlisted release.
 
 The source tag's Home Assistant add-on `config.yaml` also remains diagnostic
 build input. For operational lifecycle identity, Supervisor's exact

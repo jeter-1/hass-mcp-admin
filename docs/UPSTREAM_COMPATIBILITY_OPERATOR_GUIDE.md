@@ -12,7 +12,7 @@ runtime decision is
    `observed_identity_status`. The endpoint must identify as `ha-mcp`, match an
    explicit reviewed release entry, and negotiate the supported MCP protocol.
    The compiled registry currently authorizes exact 7.14.1, 7.14.2, 8.0.0,
-   and reviewed immutable-OCI 8.1.0 entries. The 8.1.0 release-page
+   and reviewed immutable-OCI 8.1.0 and 8.1.1 entries. Release-page
    executables and MCPB are excluded because they report 8.0.0 at runtime.
    Identity, unreviewed-version, malformed-version, or protocol failure is
    global and must not be worked around with a self-advertised schema match.
@@ -45,10 +45,10 @@ runtime decision is
    provider fallback.
 
 With 48 static tools, the exact 7.14.x 26-read profile produces 74 registered
-tools. The exact 8.0.0 and 8.1.0 24-read profiles produce 72 and hold exactly
-`ha_search` and `ha_get_operation_status`. One missing or quarantined read
-reduces the corresponding total by one. Additional blocked, held, or
-unreviewed tools do not increase the registered count.
+tools. The exact 8.0.0, 8.1.0, and 8.1.1 24-read profiles each produce 72 and
+hold exactly `ha_search` and `ha_get_operation_status`. One missing or
+quarantined read reduces the corresponding total by one. Additional blocked,
+held, or unreviewed tools do not increase the registered count.
 
 Interpret `compatibility_status` as follows:
 
@@ -104,6 +104,20 @@ duplicate unreviewed descriptors cannot authorize a route and do not block an
 exact selected target. Periodic or event-triggered catalog reconciliation
 records them only as bounded, redacted unreviewed anomalies. It never exposes
 them or infers policy from their contents.
+
+### Exact Home Assistant response adapters
+
+Response adapters require exact upstream and Home Assistant version authority;
+they never inherit through a version range. The current reviewed adapter is
+`ha-get-device-composite-ha-2026.8-v1`. It applies only to upstream 8.1.0 or
+8.1.1 on exact Core 2026.8.0 when `ha_get_device(device_id=<old composite id>)`
+returns the proven incoherent empty entity join for a multi-entry synthesized
+device. It reads Core's composite-split map and entity registry, restores only
+the entity membership fields, and reports its identifier in response metadata.
+Malformed split or registry evidence fails closed. A complete upstream result,
+a non-composite device, another Core version, or another upstream release is
+returned without adaptation. This is a reviewed response repair, not provider
+fallback; `fallback=none` and `fallback_occurred=false` remain authoritative.
 
 ## Recovery versus incompatibility
 
@@ -168,17 +182,23 @@ release merely because a new version is available. Use this sequence:
    description, annotation, output, runtime, policy, delegation, and dashboard
    change. A generated `candidate` entry is deliberately marked unapproved and
    cannot become runtime authority without a separately reviewed source change.
-4. Add the complete reviewed release entry, exact per-tool policy, immutable
+4. For a candidate covered by a reviewed family, use
+   `scripts/admit_upstream_compatibility_family.py` with two byte-identical
+   captures and every exact immutable identity. The command has no latest,
+   range, wildcard, or self-discovery mode. Review its drift classification and
+   canonical decision. Unknown drift rejects; material drift requires explicit
+   human handling or selective holds.
+5. Add the complete reviewed release entry, exact per-tool policy, immutable
    source/image evidence, and an exact dashboard attestation or explicit
    quarantine. Run `validate`; never edit fingerprints merely to satisfy it.
-5. Upgrade `ha-mcp` only after the target has applicable exact reviewed
+6. Upgrade `ha-mcp` only after the target has applicable exact reviewed
    authority and its disposable contract evidence passes. Retain the exact
    prior image as the rollback target.
-6. Let Engineering reconcile the live catalog without restarting it.
-7. Verify the observed identity, selected registry entry, source/image
+7. Let Engineering reconcile the live catalog without restarting it.
+8. Verify the observed identity, selected registry entry, source/image
    evidence, generic matched/missing/quarantined counts,
    delegated tool count, dashboard status, and zero-write/fallback invariants.
-8. Roll back `ha-mcp` if the required subset is not compatible or the result
+9. Roll back `ha-mcp` if the required subset is not compatible or the result
    differs from the disposable review.
 
 An unattended update gate may proceed only when the target already has
@@ -188,7 +208,7 @@ The compiled registry is source-controlled and contains human-owned policy; it
 does not fetch policy or automatically track an upstream latest tag.
 
 Rolling between reviewed 7.14.1, 7.14.2, 8.0.0, and the exact immutable-OCI
-8.1.0 profile triggers fresh discovery and atomic route replacement in the
+8.1.0 or 8.1.1 profile triggers fresh discovery and atomic route replacement in the
 same Engineering image. Unknown releases admit no
 delegated reads. An exact reviewed release may still expose a safe exact subset:
 changed reads are quarantined, new tools remain unreviewed, removed tools are
@@ -210,7 +230,7 @@ defect. Do not claim that a live artifact digest or source revision was verified
 from MCP discovery; deployment artifact verification remains an operator
 responsibility.
 
-For exact 8.1.0, treat MCP `tools/list` as catalog authority. Source-only,
+For exact 8.1.0 and 8.1.1, treat MCP `tools/list` as catalog authority. Source-only,
 conditional, hidden, and nonadvertised declarations are review diagnostics,
 not additional runtime tools. Require 78 unique advertised names and complete
 classification. `ha_manage_hacs` is one persistent-write tool because its
@@ -224,6 +244,10 @@ image label/package, and MCP initialize identity are 8.1.0. Any disagreement
 must fail before restart plan persistence. Controlled reload and Home Assistant
 restart do not consume that inventory; do not infer a wider impact without a
 focused test.
+
+For 8.1.1, the tagged add-on value is stale at 8.1.0 while the published add-on
+package, labels, MCP initialize identity, and Supervisor inventory are exact
+8.1.1.
 
 ## Dashboard exact-attestation path
 

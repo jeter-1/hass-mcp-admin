@@ -34,6 +34,7 @@ custom_component_shutdown = _load_script(
     "exact_custom_component_shutdown_acceptance"
 )
 fixture = _load_script("fake_ha_read_gateway_contract_server")
+packaging_acceptance = _load_script("verify_ha_mcp_8_1_1_packaging")
 
 
 class ExactAddonProfileTests(unittest.TestCase):
@@ -44,7 +45,8 @@ class ExactAddonProfileTests(unittest.TestCase):
 
     def test_exact_profiles_retain_8_0_and_bind_all_8_1_identities(self):
         self.assertEqual(
-            set(addon_acceptance.EXACT_ADDON_PROFILES), {"8.0.0", "8.1.0"}
+            set(addon_acceptance.EXACT_ADDON_PROFILES),
+            {"8.0.0", "8.1.0", "8.1.1"},
         )
 
         addon_acceptance._select_exact_addon_profile("8.1.0")
@@ -69,12 +71,40 @@ class ExactAddonProfileTests(unittest.TestCase):
             addon_acceptance.EXPECTED_ADDON_DETAIL_PROFILE, "live-8.1.0"
         )
 
+        addon_acceptance._select_exact_addon_profile("8.1.1")
+        self.assertEqual(
+            addon_acceptance.EXPECTED_ENTRY_ID,
+            "ha-mcp-v8.1.1-e1d76a6e",
+        )
+        self.assertEqual(
+            addon_acceptance.EXPECTED_NORMALIZED_CATALOG_FINGERPRINT,
+            "d652dc34b263d325d3b074dda436646d132b7e05018011934fea9d4460bc29f4",
+        )
+
     def test_unknown_addon_acceptance_profile_fails_closed(self):
         with self.assertRaises(addon_acceptance.AcceptanceFailure):
-            addon_acceptance._select_exact_addon_profile("8.1.1")
+            addon_acceptance._select_exact_addon_profile("8.1.2")
+
+    def test_packaging_probe_has_no_third_party_requirement_parser(self):
+        cases = {
+            "websockets==17.0": "websockets",
+            "HTTPX[socks]==0.28.1": "httpx",
+            "python_dotenv>=1; python_version >= '3.13'": "python-dotenv",
+            "example.package @ https://example.invalid/package.whl": (
+                "example-package"
+            ),
+        }
+        for requirement, expected in cases.items():
+            with self.subTest(requirement=requirement):
+                self.assertEqual(
+                    packaging_acceptance.canonical_dependency_name(requirement),
+                    expected,
+                )
+        with self.assertRaises(packaging_acceptance.PackagingAcceptanceFailure):
+            packaging_acceptance.canonical_dependency_name("@ invalid")
 
     def test_live_profiles_preserve_exact_identity_and_detail_bound(self):
-        for version in ("8.0.0", "8.1.0"):
+        for version in ("8.0.0", "8.1.0", "8.1.1"):
             with self.subTest(version=version):
                 fixture.ADDON_DETAIL_PROFILE = f"live-{version}"
                 fixture.INSTALLED_ADDONS[0]["version"] = version
@@ -105,7 +135,7 @@ class ExactAddonProfileTests(unittest.TestCase):
             )
         )
 
-    def test_workflow_pins_both_exact_addon_release_profiles(self):
+    def test_workflow_pins_all_exact_addon_release_profiles(self):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         for value in (
             "sha256:693ecd5c68f98e64111fbf58e02547a51b2168a942056684dbe262c550aff9cd",
@@ -114,9 +144,17 @@ class ExactAddonProfileTests(unittest.TestCase):
             "sha256:f415b72351d79414a3133c227622633d9c190a3f4f6b849eed93ac524ac1c2d5",
             "sha256:71bd08ac7ab4272bc226b91d299929949fa24b674e164121566bc1d84666e273",
             "sha256:2dad5c7f8afcfb8c5624d82a7d9c322fc70351d32d9697e07a162ec7015250b0",
+            "sha256:f5186360a6cdf66ce9a7f94f1096609ca966d4c159dedcca1b562fd0ccf7e429",
+            "sha256:9b051abf89667209dcc3f3d77614e0b914b69b4aa20350637569193eea23e7f2",
+            "sha256:013ce6faff9b197634a346d5654854859d40aab1a1b1a9423f5e9e77ca38c176",
+            "sha256:8a14c856be38d621ee99807fde76406b7cabf99935fa2869686aaf205fed71fb",
         ):
             self.assertIn(value, workflow)
-        self.assertIn('if: matrix.upstream_version == \'8.1.0\'', workflow)
+        self.assertIn(
+            "matrix.upstream_version == '8.1.0' || "
+            "matrix.upstream_version == '8.1.1'",
+            workflow,
+        )
         self.assertIn("exact_image_readmission_acceptance.py", workflow)
         self.assertIn("exact_image_sidecar_lifecycle_acceptance.py", workflow)
         self.assertIn("docker exec -i", workflow)
@@ -177,9 +215,19 @@ class ExactAddonProfileTests(unittest.TestCase):
         )
         self.assertIn('["python3","/start.py"]', workflow)
         self.assertIn("default_addon_startup: true", workflow)
+        self.assertEqual(
+            workflow.count("exact-addon-contract-capture-1.json"), 3
+        )
+        self.assertIn("exact-addon-contract-capture-2.json", workflow)
+        self.assertIn(
+            'print(version("ha-mcp"))',
+            workflow,
+        )
         self.assertIn("docker stop --time 20", workflow)
         self.assertIn(
-            "always() && matrix.upstream_version == '8.1.0'", workflow
+            "always() && (matrix.upstream_version == '8.1.0' || "
+            "matrix.upstream_version == '8.1.1')",
+            workflow,
         )
         self.assertNotIn("--delete-branch", workflow)
 
@@ -189,12 +237,14 @@ class ExactAddonProfileTests(unittest.TestCase):
             "7.14.2": "upstream_tool_policy_7_14_2.json",
             "8.0.0": "upstream_tool_policy_8_0_0.json",
             "8.1.0": "upstream_tool_policy_8_1_0.json",
+            "8.1.1": "upstream_tool_policy_8_1_1.json",
         }
         expected_counts = {
             "7.14.1": 26,
             "7.14.2": 26,
             "8.0.0": 24,
             "8.1.0": 24,
+            "8.1.1": 24,
         }
         for version, filename in policy_paths.items():
             with self.subTest(version=version):

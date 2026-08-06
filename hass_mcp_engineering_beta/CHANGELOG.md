@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.2.0-beta.23 - Evidence-bound compatibility-family admission
+
+- Add a strict review-time compatibility-family compiler that emits one exact
+  runtime entry only after two deterministic captures and immutable source,
+  standalone, add-on, policy, provider, and decision evidence agree. Runtime
+  authority remains exact-entry-only; no wildcard, latest, or semver inheritance
+  exists.
+- Admit exact `ha-mcp` 8.1.1 at `ha-mcp-v8.1.1-e1d76a6e`. Preserve all 78
+  8.1.0 tool contracts and classifications, 24 automatic reads, two held reads,
+  provider contracts, complete accounting, and zero fallback.
+- Add selective automatic-read and provider holds, exact release-specific
+  revocation with historical audit visibility, explicit descriptor-normalization
+  rules, and strict family-decision/digest validation.
+- Verify the 8.1.1 private `websockets==17.0.1` tree and scoped custom-component
+  packaging against disposable pinned Home Assistant without importing or
+  replacing its shared websocket distribution.
+- Preserve Beta 22 approval review, Beta 20 F3 behavior, stable 1.1.2, public
+  tools, task schema 1, approval authority 3, and exact 8.1.0 behavior.
+
 ## 2.2.0-beta.22 - Complete approval review correctness
 
 - Persist a deterministic, versioned semantic projection for every supported

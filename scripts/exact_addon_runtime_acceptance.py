@@ -126,6 +126,19 @@ EXACT_ADDON_PROFILES = {
         ),
         "addon_detail_profile": "live-8.1.0",
     },
+    "8.1.1": {
+        "entry_id": "ha-mcp-v8.1.1-e1d76a6e",
+        "raw_catalog_fingerprint": (
+            "6b5cd123cc60ff6668c2ff4dd1f9cedbe6a7a21fe43fe00471cd46611d4406d7"
+        ),
+        "normalized_catalog_fingerprint": (
+            "d652dc34b263d325d3b074dda436646d132b7e05018011934fea9d4460bc29f4"
+        ),
+        "dashboard_runtime_fingerprint": (
+            "fb7f3789c8c020d8636a96b85a207635e94eefe9e0944c8814de59aba17e532e"
+        ),
+        "addon_detail_profile": "live-8.1.1",
+    },
 }
 
 

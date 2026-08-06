@@ -1178,7 +1178,7 @@ def main() -> None:
                                 .architecture_image_digests_by_platform
                             ),
                         }
-                        for release in registry.releases
+                        for release in registry.by_version.values()
                     ]
                 },
                 sort_keys=True,

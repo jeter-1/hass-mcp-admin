@@ -1,6 +1,7 @@
 # ADR-006: Contract-level upstream compatibility admission
 
-Status: accepted for Dev15; amended for 2.0.1-rc1-dev2 and 2.2.0-beta.21
+Status: accepted for Dev15; amended for 2.0.1-rc1-dev2, 2.2.0-beta.21,
+and 2.2.0-beta.23
 
 ## Supersession
 
@@ -47,7 +48,7 @@ contract boundary.
 Server identity, supported MCP protocol, and exact reviewed release-entry
 authority remain global prerequisites. The compiled generic-read registry
 currently authorizes exact `ha-mcp` 7.14.1, 7.14.2, 8.0.0, and reviewed
-immutable-OCI 8.1.0 entries. A different server name,
+immutable-OCI 8.1.0 and 8.1.1 entries. A different server name,
 malformed discovery response, unsupported protocol, unreviewed patch/minor/
 major/prerelease/downgrade, or transport failure cannot be repaired by a
 matching self-advertised tool name or schema.
@@ -68,6 +69,11 @@ data cannot authorize itself. The same Engineering image can switch between
 compiled entries after fresh reconciliation; this is not automatic tracking of
 upstream latest and is separate from dashboard-only signed attestations.
 
+[`ADR-007`](ADR-007-COMPATIBILITY-FAMILY-ADMISSION.md) adds a review-time fast
+path for generating an exact entry when an exact patch release has only
+reviewed nonsemantic drift. It does not change this exact-entry runtime
+prerequisite or the per-tool admission boundary below.
+
 Health retains the bounded observation separately in
 `observed_upstream_server_name`, `observed_upstream_server_version`,
 `observed_protocol_version`, and `observed_identity_status`. The status is
@@ -77,8 +83,8 @@ cannot become compatibility authority.
 
 ### Generic automatic reads
 
-Each release's reviewed `automatic_read` entries is evaluated independently
-(26 for 7.14.x and 24 for 8.0.0/8.1.0).
+Each release's reviewed `automatic_read` entries are evaluated independently
+(26 for 7.14.x and 24 for 8.0.0/8.1.0/8.1.1).
 Admission requires the exact upstream tool name and the complete
 dispatch-relevant contract owned by Engineering, including:
 

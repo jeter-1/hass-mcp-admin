@@ -245,8 +245,8 @@ class ExactEightOneRegistryTests(unittest.IsolatedAsyncioTestCase):
                 runtime_references.append(path.relative_to(ROOT).as_posix())
         self.assertEqual(runtime_references, [])
 
-    async def test_unknown_8_1_1_does_not_inherit_exact_release_trust(self):
-        transport = FakeTransport(capture(VERSION)["tools"], version="8.1.1")
+    async def test_unknown_8_1_2_does_not_inherit_exact_release_trust(self):
+        transport = FakeTransport(capture(VERSION)["tools"], version="8.1.2")
         gateway = UpstreamReadGateway()
         gateway.configure(
             settings(),
