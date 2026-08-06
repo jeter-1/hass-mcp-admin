@@ -550,7 +550,11 @@ def _result_for(message_type: str, request_data: dict[str, Any]) -> Any:
 
 def _addon_detail(addon: dict[str, Any]) -> dict[str, Any]:
     detail = deepcopy(addon)
-    if ADDON_DETAIL_PROFILE not in {"live-8.0.0", "live-8.1.0"}:
+    if ADDON_DETAIL_PROFILE not in {
+        "live-8.0.0",
+        "live-8.1.0",
+        "live-8.1.1",
+    }:
         return detail
     detail.update(
         {
@@ -762,12 +766,12 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=18123)
     parser.add_argument(
         "--upstream-version",
-        choices=("7.14.1", "7.14.2", "8.0.0", "8.1.0"),
+        choices=("7.14.1", "7.14.2", "8.0.0", "8.1.0", "8.1.1"),
         required=True,
     )
     parser.add_argument(
         "--addon-detail-profile",
-        choices=("compact", "live-8.0.0", "live-8.1.0"),
+        choices=("compact", "live-8.0.0", "live-8.1.0", "live-8.1.1"),
         default="compact",
     )
     args = parser.parse_args()
