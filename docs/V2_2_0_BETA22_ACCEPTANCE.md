@@ -89,6 +89,16 @@ documented Windows-only skip, exact base `bc150bd2...`, and explicit authority
 for the inherited Engineering runtime/version paths plus the publication
 workflow.
 
+The complete protected-path Full gate then passed at release-correction
+implementation head `5fe56c68134cc229af504b1ce91aaf131a018b93`:
+1,939 tests discovered, two documented skips, zero failures, and all metadata,
+dependency-consistency, YAML, PowerShell, secret-pattern, and whitespace checks
+passed. The first sandboxed attempt reported six errors because the desktop
+sandbox denied creation of temporary loopback HTTP test servers. An otherwise
+identical permission-corrected run at the same commit executed those cases and
+passed; this was an execution-environment restriction, not a product or test
+failure.
+
 This correction does not change Engineering runtime behavior, stable 1.1.2,
 Beta 22's advertised version, public tools, schemas, policy, dispatch, or
 Home Assistant compatibility. It deliberately changes the accepted PR head,
