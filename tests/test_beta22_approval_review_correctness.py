@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import copy
 import hashlib
 import json
@@ -39,6 +40,7 @@ from ha_mcp_engineering.governance.semantic_projection import (  # noqa: E402
     SemanticProjectionError,
     build_semantic_projection,
     canonical_projection_bytes,
+    validate_semantic_projection,
 )
 
 from tests.test_dev14_configuration_plans import (  # noqa: E402
@@ -525,6 +527,48 @@ class Beta22TamperAndHistoricalTests(ConfigurationPlanTestCase):
         self.service._bind_new_plan_policy(plan)
         return plan
 
+    async def test_projection_risk_validation_uses_authoritative_policy_values(self):
+        created = await self.service.create_configuration_plan(
+            title="Authoritative policy validation",
+            description="Projection values cannot control validation inputs",
+            operations=[helper_create_operation(0)],
+        )
+        plan = self.repository.get(created["plan_id"])
+        authoritative = (
+            plan.policy_decision.policy_class.value,
+            plan.policy_decision.physical_consequence.value,
+        )
+        projection_risk = plan.operations[0].semantic_projection["risk"]
+        projection_risk["policy_classification"] = (
+            "projection-controlled-policy"
+        )
+        projection_risk["physical_impact_classification"] = (
+            "projection-controlled-physical-impact"
+        )
+        observed: list[tuple[str, str]] = []
+
+        def capture_validation(operation, **kwargs):
+            observed.append(
+                (kwargs["policy_class"], kwargs["physical_impact"])
+            )
+            return validate_semantic_projection(operation, **kwargs)
+
+        with patch(
+            "ha_mcp_engineering.governance.service.validate_semantic_projection",
+            side_effect=capture_validation,
+        ):
+            reason = self.service._configuration_projection_error(plan)
+
+        self.assertEqual(reason, "projection_risk_mismatch")
+        self.assertEqual(observed, [authoritative])
+        self.assertNotEqual(
+            observed[0],
+            (
+                projection_risk["policy_classification"],
+                projection_risk["physical_impact_classification"],
+            ),
+        )
+
     async def test_authoritative_material_tampering_fails_closed(self):
         mutations = {
             "target": lambda plan: setattr(
@@ -701,6 +745,51 @@ class Beta22TamperAndHistoricalTests(ConfigurationPlanTestCase):
 
 
 class Beta22ObservationEvidenceTests(unittest.TestCase):
+    def test_semantic_before_after_values_bypass_summary_clipping(self):
+        source_path = (
+            ROOT
+            / "hass_mcp_engineering_beta"
+            / "ha_mcp_engineering"
+            / "approval_web.py"
+        )
+        tree = ast.parse(source_path.read_text(encoding="utf-8"))
+        renderer = next(
+            node
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == "_render_complete_semantic_projection"
+        )
+        summary_calls = [
+            node
+            for node in ast.walk(renderer)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "_summary_scalar"
+        ]
+        rendered_snapshot_fields = []
+        for node in ast.walk(renderer):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "_render_projection_snapshot"
+                and len(node.args) == 1
+            ):
+                continue
+            source = node.args[0]
+            if (
+                isinstance(source, ast.Call)
+                and isinstance(source.func, ast.Attribute)
+                and isinstance(source.func.value, ast.Name)
+                and source.func.value.id == "change"
+                and source.func.attr == "get"
+                and source.args
+                and isinstance(source.args[0], ast.Constant)
+            ):
+                rendered_snapshot_fields.append(source.args[0].value)
+
+        self.assertEqual(summary_calls, [])
+        self.assertCountEqual(rendered_snapshot_fields, ["before", "after"])
+
     def test_ha_set_integration_schema_diff_is_exact_and_reproducible(self):
         evidence_path = (
             ROOT
