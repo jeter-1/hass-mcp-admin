@@ -1149,8 +1149,16 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertIn("input_number: {}", startup_script)
         self.assertIn("beta23_device_fixture", startup_script)
         self.assertIn("custom_components/ha_mcp_tools", startup_script)
+        self.assertNotIn("runner.temp", str(job["env"]))
+        self.assertIn('>> "$GITHUB_ENV"', startup_script)
+        for variable in (
+            "REAL_HA_CONTRACT_DIR",
+            "REAL_HA_DEVICE_FIXTURE",
+            "REAL_HA_TOKEN_FILE",
+        ):
+            self.assertIn(f'echo "{variable}=', startup_script)
         self.assertIn(
-            ': > "$REAL_HA_CONTRACT_DIR/scripts.yaml"',
+            ': > "$contract_dir/scripts.yaml"',
             startup_script,
         )
         writer = next(

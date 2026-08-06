@@ -137,9 +137,6 @@ jobs:
       HA_CONTRACT_IMAGE: ${{ matrix.ha_image }}
       HA_FIXTURE_WRITER_IMAGE: "ghcr.io/home-assistant/home-assistant:2026.7.2@sha256:1476924357b46e80735c13e94232ba5c853cac052e9df4bb28d50fa56348097b"
       REAL_HA_EXPECTED_VERSION: ${{ matrix.ha_version }}
-      REAL_HA_CONTRACT_DIR: ${{ runner.temp }}/beta25-real-ha-${{ matrix.lane }}
-      REAL_HA_DEVICE_FIXTURE: ${{ runner.temp }}/beta25-real-ha-${{ matrix.lane }}/beta23-device-fixture.json
-      REAL_HA_TOKEN_FILE: ${{ runner.temp }}/beta25-real-ha-${{ matrix.lane }}.token
       REAL_HA_UPSTREAM_IMAGE: "ghcr.io/homeassistant-ai/ha-mcp:8.1.1@sha256:e1d76a6ee54e26054a13a6c04089824b76d4d370246239591a02a2e4445ad2c9"
       REAL_HA_UPSTREAM_VERSION: "8.1.1"
       REAL_HA_UPSTREAM_CONTAINER: beta25-real-ha-upstream-${{ matrix.lane }}
@@ -162,7 +159,15 @@ jobs:
           source_archive="$RUNNER_TEMP/ha-mcp-v8.1.1-source.tar.gz"
           source_parent="$RUNNER_TEMP/ha-mcp-v8.1.1-source"
           source_root="$source_parent/ha-mcp-8.1.1"
-          mkdir -p "$source_parent" "$REAL_HA_CONTRACT_DIR/custom_components"
+          contract_dir="$RUNNER_TEMP/beta25-real-ha-$HA_CONTRACT_LANE"
+          device_fixture="$contract_dir/beta23-device-fixture.json"
+          token_file="$RUNNER_TEMP/beta25-real-ha-$HA_CONTRACT_LANE.token"
+          {
+            echo "REAL_HA_CONTRACT_DIR=$contract_dir"
+            echo "REAL_HA_DEVICE_FIXTURE=$device_fixture"
+            echo "REAL_HA_TOKEN_FILE=$token_file"
+          } >> "$GITHUB_ENV"
+          mkdir -p "$source_parent" "$contract_dir/custom_components"
           curl --fail --location --proto '=https' --tlsv1.2 --max-time 120 \
             https://codeload.github.com/homeassistant-ai/ha-mcp/tar.gz/refs/tags/v8.1.1 \
             --output "$source_archive"
@@ -175,9 +180,9 @@ jobs:
             --output "$RUNNER_TEMP/ha-mcp-8.1.1-packaging-$HA_CONTRACT_LANE.json"
           cp -R \
             tests/fixtures/real_ha_device_migration/custom_components/beta23_device_fixture \
-            "$REAL_HA_CONTRACT_DIR/custom_components/"
+            "$contract_dir/custom_components/"
           cp -R "$source_root/custom_components/ha_mcp_tools" \
-            "$REAL_HA_CONTRACT_DIR/custom_components/"
+            "$contract_dir/custom_components/"
           printf '%s\n' \
             'default_config:' \
             'automation: !include automations.yaml' \
@@ -186,9 +191,9 @@ jobs:
             'input_boolean: {}' \
             'input_number: {}' \
             'script: !include scripts.yaml' \
-            > "$REAL_HA_CONTRACT_DIR/configuration.yaml"
-          : > "$REAL_HA_CONTRACT_DIR/automations.yaml"
-          : > "$REAL_HA_CONTRACT_DIR/scripts.yaml"
+            > "$contract_dir/configuration.yaml"
+          : > "$contract_dir/automations.yaml"
+          : > "$contract_dir/scripts.yaml"
       - name: Persist migration fixture with exact Home Assistant 2026.7.2
         shell: bash
         env:
