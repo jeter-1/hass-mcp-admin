@@ -99,8 +99,12 @@ def copy_tracked_source(repo_root: Path, destination: Path) -> None:
         shutil.copy2(source, target, follow_symlinks=False)
 
 
-def validate(repo_root: Path, python_executable: str) -> str:
+def validate(repo_root: Path, python_executable: str) -> tuple[str, bool]:
     promotion = load_promotion_module(repo_root)
+    if not (repo_root / promotion.NEXT_VERSION_PATH).exists():
+        advertised = promotion.advertised_version(repo_root)
+        promotion.validate_document_authority(repo_root, advertised)
+        return advertised, False
     current, candidate = promotion.validate_candidate(repo_root)
     environment = os.environ.copy()
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -194,7 +198,7 @@ def validate(repo_root: Path, python_executable: str) -> str:
             cwd=snapshot,
             environment=environment,
         )
-    return candidate
+    return candidate, True
 
 
 def parse_args(argv: list[str] | None = None):
@@ -211,11 +215,17 @@ def parse_args(argv: list[str] | None = None):
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
-        candidate = validate(args.repo_root.resolve(), args.python_executable)
+        version, materialized = validate(
+            args.repo_root.resolve(),
+            args.python_executable,
+        )
     except Exception as exc:
         print(f"Promotion candidate validation failed: {exc}", file=sys.stderr)
         return 1
-    print(f"Validated isolated promotion candidate {candidate}.")
+    if materialized:
+        print(f"Validated isolated promotion candidate {version}.")
+    else:
+        print(f"Validated exact advertised release {version}; no staged candidate.")
     return 0
 
 
