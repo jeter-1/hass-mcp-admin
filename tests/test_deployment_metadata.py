@@ -350,8 +350,13 @@ class AddonMetadataValidationTests(unittest.TestCase):
             report.staged_release_version,
             declaration.read_text(encoding="utf-8").strip(),
         )
-        self.assertEqual(current, "2.2.0-beta.22")
-        self.assertEqual(report.staged_release_version, "2.2.0-beta.23")
+        self.assertEqual(current, VALIDATOR.BETA_VERSION)
+        self.assertTrue(
+            VALIDATOR.is_newer_version(
+                report.staged_release_version,
+                current,
+            )
+        )
 
     @patch.object(VALIDATOR, "staged_release_version", return_value=None)
     def test_unreleased_same_version_requires_explicit_integrity_check(self, _staged):

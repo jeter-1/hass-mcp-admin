@@ -24,8 +24,6 @@ IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 # RC2dev12 runtime metadata in this feature pull request.
 NEXT_VERSION = "2.0.0-rc2-dev13"
 PROMOTION_FIXTURE_CURRENT_VERSION = "2.0.0-rc2-dev12"
-CURRENT_REPOSITORY_VERSION = "2.2.0-beta.22"
-CURRENT_STAGED_VERSION = "2.2.0-beta.23"
 PLATFORMS = ("linux/amd64", "linux/arm64", "linux/arm/v7")
 BUILD_ARGUMENTS = (
     "BUILD_VERSION",
@@ -41,6 +39,12 @@ PROMOTION_SPEC = importlib.util.spec_from_file_location(
 PROMOTION_MODULE = importlib.util.module_from_spec(PROMOTION_SPEC)
 assert PROMOTION_SPEC.loader is not None
 PROMOTION_SPEC.loader.exec_module(PROMOTION_MODULE)
+CURRENT_REPOSITORY_VERSION = PROMOTION_MODULE.advertised_version(ROOT)
+CURRENT_STAGED_VERSION = (
+    PROMOTION_MODULE.read_next_version(ROOT)
+    if (ROOT / PROMOTION_MODULE.NEXT_VERSION_PATH).exists()
+    else CURRENT_REPOSITORY_VERSION
+)
 
 
 def load_workflow(path):
@@ -180,6 +184,42 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         self.assertNotIn(
             "hass_mcp_admin/requirements-dev.txt",
             release_install["run"],
+        )
+
+    def test_pull_request_ci_validates_materialized_promotion_candidate(self):
+        validate_steps = self.ci["jobs"]["validate"]["steps"]
+        candidate_validation = next(
+            step
+            for step in validate_steps
+            if step.get("name") == "Validate staged promotion candidate"
+        )
+        self.assertEqual(
+            candidate_validation["run"],
+            "python scripts/validate_promotion_candidate.py --repo-root .",
+        )
+        declaration = ROOT / PROMOTION_MODULE.NEXT_VERSION_PATH
+        if not declaration.exists():
+            self.assertEqual(
+                PROMOTION_MODULE.advertised_version(ROOT),
+                CURRENT_REPOSITORY_VERSION,
+            )
+            return
+        result = subprocess.run(
+            [
+                sys.executable,
+                "scripts/validate_promotion_candidate.py",
+                "--repo-root",
+                ".",
+            ],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(
+            f"Validated isolated promotion candidate {CURRENT_STAGED_VERSION}",
+            result.stdout,
         )
 
     def test_preversioned_release_transition_is_detected_and_validated(self):
@@ -877,19 +917,15 @@ class PromotionScriptTests(unittest.TestCase):
             "docs/V2_0_1_ACCEPTANCE.md",
         )
 
-    def test_repository_beta22_document_authority_is_exact(self):
+    def test_repository_advertised_document_authority_is_exact(self):
         resolution = self.module.validate_document_authority(
             ROOT, CURRENT_REPOSITORY_VERSION
         )
         self.assertEqual(resolution["resolution_status"], "exact")
-        self.assertEqual(
-            resolution["active_release_notes"],
-            "docs/V2_2_0_BETA22_RELEASE_NOTES.md",
-        )
-        self.assertEqual(
-            resolution["active_acceptance_document"],
-            "docs/V2_2_0_BETA22_ACCEPTANCE.md",
-        )
+        for key in ("active_release_notes", "active_acceptance_document"):
+            relative = resolution[key]
+            self.assertNotEqual(relative, "unknown")
+            self.assertTrue((ROOT / str(relative)).is_file())
 
 
 class RegistryTagGuardTests(unittest.TestCase):

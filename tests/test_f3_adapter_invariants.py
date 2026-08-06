@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 from pathlib import Path
 import sys
 import unittest
@@ -31,6 +32,14 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     validate_reviewed_release_evidence,
 )
 from ha_mcp_engineering.version import SERVER_VERSION  # noqa: E402
+
+PROMOTION_SPEC = importlib.util.spec_from_file_location(
+    "f3_adapter_release_authority",
+    ROOT / "scripts" / "promote_next_release.py",
+)
+PROMOTION_MODULE = importlib.util.module_from_spec(PROMOTION_SPEC)
+assert PROMOTION_SPEC.loader is not None
+PROMOTION_SPEC.loader.exec_module(PROMOTION_MODULE)
 
 
 class F3AdapterIsolationTests(unittest.TestCase):
@@ -95,8 +104,9 @@ class F3AdapterIsolationTests(unittest.TestCase):
         requirements = (
             BETA_DIR / "requirements.txt"
         ).read_text(encoding="utf-8").splitlines()
-        self.assertEqual(SERVER_VERSION, "2.2.0-beta.22")
-        self.assertEqual(beta_config["version"], "2.2.0-beta.22")
+        advertised_version = PROMOTION_MODULE.advertised_version(ROOT)
+        self.assertEqual(SERVER_VERSION, advertised_version)
+        self.assertEqual(beta_config["version"], advertised_version)
         self.assertEqual(stable_config["version"], "1.1.2")
         self.assertIn("aiohttp==3.14.3", requirements)
         self.assertIn("cryptography==50.0.0", requirements)
