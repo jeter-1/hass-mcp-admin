@@ -34,6 +34,7 @@ custom_component_shutdown = _load_script(
     "exact_custom_component_shutdown_acceptance"
 )
 fixture = _load_script("fake_ha_read_gateway_contract_server")
+packaging_acceptance = _load_script("verify_ha_mcp_8_1_1_packaging")
 
 
 class ExactAddonProfileTests(unittest.TestCase):
@@ -83,6 +84,24 @@ class ExactAddonProfileTests(unittest.TestCase):
     def test_unknown_addon_acceptance_profile_fails_closed(self):
         with self.assertRaises(addon_acceptance.AcceptanceFailure):
             addon_acceptance._select_exact_addon_profile("8.1.2")
+
+    def test_packaging_probe_has_no_third_party_requirement_parser(self):
+        cases = {
+            "websockets==17.0": "websockets",
+            "HTTPX[socks]==0.28.1": "httpx",
+            "python_dotenv>=1; python_version >= '3.13'": "python-dotenv",
+            "example.package @ https://example.invalid/package.whl": (
+                "example-package"
+            ),
+        }
+        for requirement, expected in cases.items():
+            with self.subTest(requirement=requirement):
+                self.assertEqual(
+                    packaging_acceptance.canonical_dependency_name(requirement),
+                    expected,
+                )
+        with self.assertRaises(packaging_acceptance.PackagingAcceptanceFailure):
+            packaging_acceptance.canonical_dependency_name("@ invalid")
 
     def test_live_profiles_preserve_exact_identity_and_detail_bound(self):
         for version in ("8.0.0", "8.1.0", "8.1.1"):

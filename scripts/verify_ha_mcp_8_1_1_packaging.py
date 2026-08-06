@@ -9,9 +9,6 @@ from pathlib import Path
 import re
 import tomllib
 
-from packaging.requirements import Requirement
-from packaging.utils import canonicalize_name
-
 
 EXPECTED_VERSION = "8.1.1"
 EXPECTED_VENDOR_VERSION = "17.0.1"
@@ -23,6 +20,7 @@ _SHARED_IMPORT = re.compile(
     r"^\s*(?:import websockets\b|from websockets(?:\.|\s+import\b))",
     re.MULTILINE,
 )
+_DEPENDENCY_NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 
 
 class PackagingAcceptanceFailure(RuntimeError):
@@ -36,6 +34,13 @@ def require(condition: bool, message: str) -> None:
 
 def file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def canonical_dependency_name(value: object) -> str:
+    require(isinstance(value, str), "dependency record is not text")
+    matched = _DEPENDENCY_NAME.match(value)
+    require(matched is not None, "dependency name is malformed")
+    return re.sub(r"[-_.]+", "-", matched.group(1)).lower()
 
 
 def verify_manifest(vendor_root: Path) -> int:
@@ -69,7 +74,7 @@ def verify_source(source_root: Path) -> dict[str, object]:
     pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     require(pyproject["project"]["version"] == EXPECTED_VERSION, "version changed")
     dependency_names = {
-        canonicalize_name(Requirement(item).name)
+        canonical_dependency_name(item)
         for item in pyproject["project"]["dependencies"]
     }
     require("websockets" not in dependency_names, "shared dependency declared")
