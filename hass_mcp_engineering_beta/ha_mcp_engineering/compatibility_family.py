@@ -686,6 +686,7 @@ def validate_family_admission_binding(
     release: dict[str, Any],
     releases_by_entry_id: dict[str, dict[str, Any]],
     registry_path: Path,
+    repository_root: Path,
 ) -> dict[str, Any]:
     """Bind one exact compiled release to its reviewed family decision."""
 
@@ -712,7 +713,7 @@ def validate_family_admission_binding(
     version = release.get("version")
     if not isinstance(version, str) or not family.candidate_is_eligible(version):
         raise CompatibilityFamilyError("family_admission_candidate_ineligible")
-    decision_path = registry_path.parents[2] / binding.decision_resource
+    decision_path = repository_root / binding.decision_resource
     if sha256_resource(decision_path) != binding.decision_sha256:
         raise CompatibilityFamilyError("family_admission_decision_digest_mismatch")
     decision = load_strict_json(

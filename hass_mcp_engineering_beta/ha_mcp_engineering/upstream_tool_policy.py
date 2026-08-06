@@ -1369,10 +1369,27 @@ def load_reviewed_upstream_release_registry(
         raise UpstreamToolPolicyError(
             "release_registry_default_version_revoked"
         )
+    return ReviewedUpstreamReleaseRegistry(
+        registry_format_version=value["registry_format_version"],
+        default_version=default_version,
+        releases=releases,
+    )
+
+
+def _validate_registry_family_admission_evidence(
+    *,
+    raw_registry: dict[str, Any],
+    registry: ReviewedUpstreamReleaseRegistry,
+    registry_path: Path,
+    repository_root: Path,
+) -> None:
+    """Verify review-time family resources outside the packaged runtime."""
+
+    raw_releases = raw_registry["releases"]
     raw_by_entry_id = {
         item["entry_id"]: item for item in raw_releases
     }
-    for raw_release, release in zip(raw_releases, releases, strict=True):
+    for raw_release, release in zip(raw_releases, registry.releases, strict=True):
         if release.family_admission is None:
             continue
         try:
@@ -1384,17 +1401,13 @@ def load_reviewed_upstream_release_registry(
                 release.family_admission,
                 release=raw_release,
                 releases_by_entry_id=raw_by_entry_id,
-                registry_path=path,
+                registry_path=registry_path,
+                repository_root=repository_root,
             )
         except Exception as exc:
             raise UpstreamToolPolicyError(
                 "release_registry_family_admission_invalid"
             ) from exc
-    return ReviewedUpstreamReleaseRegistry(
-        registry_format_version=value["registry_format_version"],
-        default_version=default_version,
-        releases=releases,
-    )
 
 
 def _load_reviewed_release(
@@ -2488,6 +2501,12 @@ def generated_reviewed_release_registry(
         raise UpstreamToolPolicyError(
             "release_registry_document_fields_invalid"
         )
+    _validate_registry_family_admission_evidence(
+        raw_registry=raw_registry,
+        registry=registry,
+        registry_path=path,
+        repository_root=repository_root,
+    )
     generated = json.loads(canonical_json(raw_registry))
     raw_by_version = {
         item["version"]: item for item in generated["releases"]

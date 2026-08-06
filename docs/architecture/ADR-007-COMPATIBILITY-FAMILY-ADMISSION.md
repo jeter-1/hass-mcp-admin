@@ -35,6 +35,13 @@ whether the review-time compiler may compare a candidate. They never authorize
 8.1.x, latest, an unlisted patch, or another server. Candidate evidence cannot
 authorize itself.
 
+Repository validation verifies the family policy and decision resources before
+the compiled registry can be accepted. The packaged runtime intentionally does
+not read those review-only documents; it consumes the resulting exact registry
+entry, including its bound decision digest and provider dispositions. This keeps
+the review-time compiler outside the production image without weakening exact
+runtime selection.
+
 ## Drift decisions
 
 Automatic admission is limited to reviewed nonsemantic categories: immutable

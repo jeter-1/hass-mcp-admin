@@ -33,12 +33,14 @@ Supervisor inventory is the lifecycle authority.
 
 ## Contract and family decision
 
-The two retained canonical captures are byte-identical at
-`sha256:caf501fc5c511de9cf8bd4639e615fcb3cf2cb244123ee4a9b2440e1933792ea`.
+The two retained canonical captures from a healthy synthetic Home Assistant are
+byte-identical at
+`sha256:05532d94eedd3c39791763e06084eed073f8fd6df313dfe7322d880f8f99cf45`.
 They identify `ha-mcp` 8.1.1, protocol `2025-03-26`, and 78 unique tools. The
-raw catalog fingerprint is identical to 8.1.0. Complete deterministic comparison
-reports 78 unchanged tools, zero changed schemas, annotations, descriptors,
-classifications, response envelopes, provider contracts, or unknown drift.
+raw catalog fingerprint and exact error-envelope shapes are identical to 8.1.0.
+Complete deterministic comparison reports 78 unchanged tools, zero changed
+schemas, annotations, descriptors, classifications, response envelopes,
+provider contracts, or unknown drift.
 
 The release-note item that names the 409 host sentence is confined to the
 settings-UI locale documentation and tests for

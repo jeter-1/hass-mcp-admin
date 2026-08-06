@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from ha_mcp_engineering.compatibility_family import (
     CompatibilityFamilyError,
@@ -318,7 +319,10 @@ class CompatibilityFamilyAdmissionTests(unittest.TestCase):
                 UpstreamToolPolicyError,
                 "release_registry_family_admission_invalid",
             ):
-                load_reviewed_upstream_release_registry(temporary)
+                validate_reviewed_release_evidence(
+                    temporary,
+                    repository_root=ROOT,
+                )
         finally:
             temporary.unlink(missing_ok=True)
 
@@ -339,9 +343,23 @@ class CompatibilityFamilyAdmissionTests(unittest.TestCase):
                 UpstreamToolPolicyError,
                 "release_registry_family_admission_invalid",
             ):
-                load_reviewed_upstream_release_registry(temporary)
+                validate_reviewed_release_evidence(
+                    temporary,
+                    repository_root=ROOT,
+                )
         finally:
             temporary.unlink(missing_ok=True)
+
+    def test_packaged_runtime_load_does_not_read_review_time_evidence(self) -> None:
+        with patch(
+            "ha_mcp_engineering.compatibility_family.sha256_resource",
+            side_effect=AssertionError("runtime reached review-time evidence"),
+        ):
+            registry = load_reviewed_upstream_release_registry()
+        self.assertEqual(
+            registry.by_version["8.1.1"].entry_id,
+            "ha-mcp-v8.1.1-e1d76a6e",
+        )
 
     def test_exact_evidence_and_complete_accounting_validate(self) -> None:
         registry = validate_reviewed_release_evidence(
