@@ -1240,6 +1240,8 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             '"service": "turn_on"',
             '"service": "turn_off"',
             '/states/{entity_id}',
+            "primary_config_entry_id",
+            "primary_id",
             "device_id",
             "composite_device_id",
             "direct_automation_reference",

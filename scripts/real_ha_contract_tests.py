@@ -898,6 +898,9 @@ async def prepare_migration_fixture() -> None:
                 "writer_version": "2026.7.2",
                 "old_composite_device_id": old_device_id,
                 "config_entry_ids": sorted(config_entry_ids),
+                "primary_config_entry_id": composite.get(
+                    "primary_config_entry"
+                ),
                 "entity_ids": entity_ids,
                 "automation_id": MIGRATION_AUTOMATION_ID,
             },
@@ -2215,6 +2218,10 @@ async def _run_device_migration_contract(
     old_device_id = str(fixture["old_composite_device_id"])
     entity_ids = [str(item) for item in fixture["entity_ids"]]
     config_entry_ids = {str(item) for item in fixture["config_entry_ids"]}
+    primary_config_entry_id = fixture.get("primary_config_entry_id")
+    assert primary_config_entry_id is None or isinstance(
+        primary_config_entry_id, str
+    )
     assert len(entity_ids) == 2
     assert len(config_entry_ids) == 2
 
@@ -2238,6 +2245,10 @@ async def _run_device_migration_contract(
             if isinstance(item, dict) and item.get("id") == old_device_id
         )
         assert set(composite.get("config_entries", ())) == config_entry_ids
+        assert (
+            composite.get("primary_config_entry")
+            == primary_config_entry_id
+        )
     else:
         assert EXPECTED_HA_VERSION == "2026.8.0"
         assert not any(
@@ -2253,7 +2264,6 @@ async def _run_device_migration_contract(
             str(item) for item in split_contract.get("split_ids", ())
         }
         assert len(expected_device_ids) == 2
-        assert split_contract.get("primary_id") in expected_device_ids
         splits = [
             item
             for item in devices
@@ -2267,6 +2277,15 @@ async def _run_device_migration_contract(
             for item in splits
         )
         assert {str(item["id"]) for item in splits} == expected_device_ids
+        expected_primary_id = next(
+            (
+                item["id"]
+                for item in splits
+                if item.get("config_entry_id") == primary_config_entry_id
+            ),
+            None,
+        )
+        assert split_contract.get("primary_id") == expected_primary_id
     assert {str(item.get("device_id")) for item in fixture_entities} == expected_device_ids
 
     component_lookup = await websocket.command(
