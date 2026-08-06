@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 from pathlib import Path
 import sys
 import unittest
@@ -21,6 +22,14 @@ from ha_mcp_engineering.governance.service import (  # noqa: E402
 from ha_mcp_engineering.governance.task_models import TASK_SCHEMA_VERSION  # noqa: E402
 from ha_mcp_engineering.tools import registered_tools  # noqa: E402
 from ha_mcp_engineering.tools.registry import get_registered_server  # noqa: E402
+
+PROMOTION_SPEC = importlib.util.spec_from_file_location(
+    "f3_dashboard_release_authority",
+    ROOT / "scripts" / "promote_next_release.py",
+)
+PROMOTION_MODULE = importlib.util.module_from_spec(PROMOTION_SPEC)
+assert PROMOTION_SPEC.loader is not None
+PROMOTION_SPEC.loader.exec_module(PROMOTION_MODULE)
 
 
 class DashboardRuntimeInvariantTests(unittest.TestCase):
@@ -69,7 +78,8 @@ class DashboardRuntimeInvariantTests(unittest.TestCase):
             encoding="utf-8"
         )
         requirements = (BETA / "requirements.txt").read_text(encoding="utf-8")
-        self.assertIn('version: "2.2.0-beta.22"', beta_config)
+        advertised_version = PROMOTION_MODULE.advertised_version(ROOT)
+        self.assertIn(f'version: "{advertised_version}"', beta_config)
         self.assertIn('version: "1.1.2"', stable_config)
         self.assertIn("aiohttp==3.14.3", requirements)
         self.assertIn("cryptography==50.0.0", requirements)

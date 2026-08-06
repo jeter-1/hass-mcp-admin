@@ -66,13 +66,19 @@ def authoritative_versions(repo_root: Path) -> dict[Path, str]:
     return versions
 
 
-def validate_candidate(repo_root: Path) -> tuple[str, str]:
-    candidate = read_next_version(repo_root)
+def advertised_version(repo_root: Path) -> str:
+    """Return the one exact version shared by all advertised authorities."""
+
     versions = authoritative_versions(repo_root)
     advertised = set(versions.values())
     if len(advertised) != 1:
         raise PromotionError("Advertised add-on, runtime, and validator versions differ")
-    current = advertised.pop()
+    return advertised.pop()
+
+
+def validate_candidate(repo_root: Path) -> tuple[str, str]:
+    candidate = read_next_version(repo_root)
+    current = advertised_version(repo_root)
     try:
         current_version = AwesomeVersion(current)
         candidate_version = AwesomeVersion(candidate)
