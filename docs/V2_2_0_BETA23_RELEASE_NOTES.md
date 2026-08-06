@@ -21,6 +21,19 @@ Assistant probe verifies that vendored
 `websockets==17.0.1` loads from the private tree without importing, replacing,
 or declaring the shared Home Assistant package.
 
+The disposable Home Assistant gate is now an independent two-lane matrix
+(`fail-fast: false`): the preserved exact 2026.7.2 image and exact 2026.8.0.
+Exact 2026.7.2 first writes a genuine multi-config-entry device for each lane.
+The target boot then
+proves the baseline remains composite or, on 2026.8.0, splits into two owned
+devices while its old ID continues to resolve for direct service targets,
+Core's composite mapping, exact `ha_mcp_tools/device_get`, and public
+`ha_get_device`. Live dependency indexing and impact analysis verify the
+migrated entity/device relationships and persisted automation reference. The
+same matrix also checks the 2026.8 one-time `http:` YAML storage migration and
+runs every existing REST, WebSocket, configuration, validation, trace, and
+cleanup client contract in both lanes.
+
 Registry format 3 adds exact family-decision binding, provider dispositions,
 source tag/tree/archive identity, and per-release revocation. Revoked entries remain
 auditable but cannot authorize runtime use. Historical entries retain their

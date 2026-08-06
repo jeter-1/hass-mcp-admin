@@ -7,6 +7,7 @@ clients rather than the deployed Home Assistant environment.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import copy
 import json
@@ -18,6 +19,8 @@ import tempfile
 from typing import Any
 
 import aiohttp
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +29,17 @@ sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 from ha_mcp_engineering.clients import (  # noqa: E402
     HomeAssistantRestClient,
     HomeAssistantWebSocketClient,
+)
+from ha_mcp_engineering.dependency.index import DependencyIndex  # noqa: E402
+from ha_mcp_engineering.dependency.provider import (  # noqa: E402
+    DirectHaDependencyProvider,
+)
+from ha_mcp_engineering.dependency.service import (  # noqa: E402
+    EntityDependencyAnalysisService,
+)
+from ha_mcp_engineering.impact.provider import DirectHaImpactProvider  # noqa: E402
+from ha_mcp_engineering.impact.service import (  # noqa: E402
+    ChangeImpactAnalysisService,
 )
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
@@ -55,8 +69,28 @@ from ha_mcp_engineering.request_context import (  # noqa: E402
 from ha_mcp_engineering.trace_normalization import fetch_normalized_trace_list  # noqa: E402
 
 
+def _environment_path(name: str) -> Path | None:
+    """Return one explicitly configured path without treating cwd as a value."""
+
+    value = os.environ.get(name, "").strip()
+    return Path(value) if value else None
+
+
 HA_URL = os.environ.get("REAL_HA_URL", "http://127.0.0.1:8123").rstrip("/")
 CLIENT_ID = f"{HA_URL}/"
+EXPECTED_HA_VERSION = os.environ.get("REAL_HA_EXPECTED_VERSION", "2026.7.2")
+CONTRACT_DIR = _environment_path("REAL_HA_CONTRACT_DIR")
+DEVICE_FIXTURE_PATH = _environment_path("REAL_HA_DEVICE_FIXTURE")
+TOKEN_PATH = _environment_path("REAL_HA_TOKEN_FILE")
+UPSTREAM_IMAGE = os.environ.get("REAL_HA_UPSTREAM_IMAGE", "")
+UPSTREAM_VERSION = os.environ.get("REAL_HA_UPSTREAM_VERSION", "8.1.1")
+UPSTREAM_CONTAINER = os.environ.get(
+    "REAL_HA_UPSTREAM_CONTAINER", "beta23-real-ha-upstream"
+)
+UPSTREAM_PORT = int(os.environ.get("REAL_HA_UPSTREAM_PORT", "18086"))
+UPSTREAM_SECRET_PATH = "/beta23-real-ha-mcp"
+MIGRATION_AUTOMATION_ID = "beta23_composite_device_reference"
+FIXTURE_PLATFORM = "beta23_device_fixture"
 RESOURCE_ORDER = (
     "input_boolean",
     "input_number",
@@ -716,6 +750,193 @@ async def wait_for_runtime_ready(rest: HomeAssistantRestClient) -> dict:
             pass
         await asyncio.sleep(1)
     raise RuntimeError("Disposable Home Assistant did not finish required integration setup")
+
+
+async def _advance_config_flow(
+    session: aiohttp.ClientSession,
+    token: str,
+    handler: str,
+    inputs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Complete one supported config flow using only authenticated Core APIs."""
+
+    result = await _json_request(
+        session,
+        "POST",
+        "/api/config/config_entries/flow",
+        json_body={"handler": handler, "show_advanced_options": False},
+        token=token,
+    )
+    for user_input in inputs:
+        if result.get("type") not in {"form", "menu"}:
+            raise RuntimeError("Disposable Home Assistant config flow ended early")
+        flow_id = result.get("flow_id")
+        if not isinstance(flow_id, str) or not flow_id:
+            raise RuntimeError("Disposable Home Assistant config flow omitted its id")
+        result = await _json_request(
+            session,
+            "POST",
+            f"/api/config/config_entries/flow/{flow_id}",
+            json_body=user_input,
+            token=token,
+        )
+    if result.get("type") != "create_entry":
+        raise RuntimeError("Disposable Home Assistant config entry was not created")
+    return result
+
+
+async def _wait_for_writer_fixture(
+    websocket: HomeAssistantWebSocketClient,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Wait until both writer-owned entities share one pre-2026.8 device."""
+
+    for _ in range(60):
+        entities = await websocket.command(
+            {"type": "config/entity_registry/list"}
+        )
+        fixture_entities = [
+            item
+            for item in entities
+            if isinstance(item, dict) and item.get("platform") == FIXTURE_PLATFORM
+        ]
+        device_ids = {
+            item.get("device_id") for item in fixture_entities if item.get("device_id")
+        }
+        if len(fixture_entities) == 2 and len(device_ids) == 1:
+            devices = await websocket.command(
+                {"type": "config/device_registry/list"}
+            )
+            return fixture_entities, devices
+        await asyncio.sleep(1)
+    raise RuntimeError("The exact 2026.7.2 writer did not create one composite device")
+
+
+async def prepare_migration_fixture() -> None:
+    """Use exact HA 2026.7.2 to persist the historical upgrade fixture."""
+
+    if DEVICE_FIXTURE_PATH is None or TOKEN_PATH is None:
+        raise RuntimeError("Fixture and token paths are required in preparation mode")
+    token = await bootstrap_disposable_admin()
+    configured = settings(token)
+    rest = HomeAssistantRestClient(configured)
+    websocket = HomeAssistantWebSocketClient(configured)
+    await wait_for_runtime_ready(rest)
+
+    timeout = aiohttp.ClientTimeout(total=30)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        for slot in ("a", "b"):
+            await _advance_config_flow(
+                session,
+                token,
+                FIXTURE_PLATFORM,
+                [{"slot": slot}],
+            )
+        await _advance_config_flow(
+            session,
+            token,
+            "ha_mcp_tools",
+            [{"next_step_id": "tools"}, {}],
+        )
+
+    fixture_entities, devices = await _wait_for_writer_fixture(websocket)
+    old_device_id = str(fixture_entities[0]["device_id"])
+    composite = next(
+        (
+            item
+            for item in devices
+            if isinstance(item, dict) and item.get("id") == old_device_id
+        ),
+        None,
+    )
+    if not isinstance(composite, dict):
+        raise RuntimeError("The historical composite device was not enumerable")
+    config_entry_ids = {
+        str(item.get("config_entry_id"))
+        for item in fixture_entities
+        if item.get("config_entry_id")
+    }
+    if len(config_entry_ids) != 2 or set(composite.get("config_entries", ())) != config_entry_ids:
+        raise RuntimeError("The writer did not bind both config entries to one device")
+
+    entity_ids = sorted(str(item["entity_id"]) for item in fixture_entities)
+    automation = {
+        "id": MIGRATION_AUTOMATION_ID,
+        "alias": "Beta 23 composite device reference",
+        "description": "Event-only disposable direct-device reference fixture",
+        "trigger": [
+            {
+                "platform": "event",
+                "event_type": "beta23_composite_contract_never_fired",
+            }
+        ],
+        "condition": [],
+        "action": [
+            {
+                "service": "homeassistant.update_entity",
+                "target": {"device_id": old_device_id},
+            },
+            {
+                "event": "beta23_composite_contract_observed",
+                "event_data": {"entity_id": entity_ids[0]},
+            },
+        ],
+        "mode": "single",
+    }
+    await rest.request(
+        "POST",
+        f"/config/automation/config/{MIGRATION_AUTOMATION_ID}",
+        automation,
+    )
+    await rest.request("POST", "/services/automation/reload", {})
+
+    DEVICE_FIXTURE_PATH.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "writer_version": "2026.7.2",
+                "old_composite_device_id": old_device_id,
+                "config_entry_ids": sorted(config_entry_ids),
+                "entity_ids": entity_ids,
+                "automation_id": MIGRATION_AUTOMATION_ID,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    TOKEN_PATH.write_text(token, encoding="utf-8")
+    TOKEN_PATH.chmod(0o600)
+    # Registry stores use delayed writes. Keep the exact writer alive long
+    # enough to persist through its own storage layer before graceful shutdown.
+    await asyncio.sleep(12)
+
+
+def _load_prepared_token() -> str:
+    """Load the ephemeral token retained only for this disposable upgrade."""
+
+    if TOKEN_PATH is None or not TOKEN_PATH.is_file():
+        raise RuntimeError("The disposable writer token is unavailable")
+    token = TOKEN_PATH.read_text(encoding="utf-8").strip()
+    if not token:
+        raise RuntimeError("The disposable writer token is empty")
+    return token
+
+
+def _load_device_fixture() -> dict[str, Any]:
+    """Read the bounded, non-secret migration marker produced by 2026.7.2."""
+
+    if DEVICE_FIXTURE_PATH is None or not DEVICE_FIXTURE_PATH.is_file():
+        raise RuntimeError("The disposable device migration marker is unavailable")
+    value = json.loads(DEVICE_FIXTURE_PATH.read_text(encoding="utf-8"))
+    if (
+        not isinstance(value, dict)
+        or value.get("schema_version") != 1
+        or value.get("writer_version") != "2026.7.2"
+        or value.get("automation_id") != MIGRATION_AUTOMATION_ID
+    ):
+        raise RuntimeError("The disposable device migration marker is invalid")
+    return value
 
 
 class _ObservedConfigurationGateway:
@@ -1809,6 +2030,302 @@ async def _run_direct_update_contract(
         )
 
 
+def _assert_http_configuration_contract() -> None:
+    """Prove the 2026.8 YAML-to-storage assumption without changing ports."""
+
+    if CONTRACT_DIR is None:
+        raise RuntimeError("The disposable Home Assistant config path is required")
+    storage_path = CONTRACT_DIR / ".storage" / "http"
+    if EXPECTED_HA_VERSION == "2026.7.2":
+        assert not storage_path.exists()
+        return
+    assert EXPECTED_HA_VERSION == "2026.8.0"
+    assert storage_path.is_file()
+    stored = json.loads(storage_path.read_text(encoding="utf-8"))
+    assert stored.get("version") == 2
+    data = stored.get("data")
+    assert isinstance(data, dict)
+    assert data.get("yaml_migration_done") is True
+    assert data.get("pending") is None
+    stable = data.get("stable")
+    assert isinstance(stable, dict)
+    assert stable.get("server_port") == 8123
+    assert stable.get("error") is None
+
+
+def _decode_tool_result(result: Any) -> dict[str, Any]:
+    """Decode one bounded exact-upstream MCP tool response."""
+
+    structured = getattr(result, "structuredContent", None)
+    if isinstance(structured, dict) and "result" not in structured:
+        return structured
+    for item in getattr(result, "content", ()):
+        text = getattr(item, "text", None)
+        if not isinstance(text, str) or len(text.encode("utf-8")) > 100_000:
+            continue
+        try:
+            value = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            return value
+    raise RuntimeError("Exact upstream ha_get_device returned no bounded object")
+
+
+async def _docker_command(*arguments: str, allow_failure: bool = False) -> str:
+    """Run one bounded Docker command without exposing arguments or stderr."""
+
+    process = await asyncio.create_subprocess_exec(
+        "docker",
+        *arguments,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, _stderr = await asyncio.wait_for(process.communicate(), timeout=120)
+    except TimeoutError:
+        process.kill()
+        await process.communicate()
+        raise RuntimeError("A bounded disposable Docker operation timed out")
+    if process.returncode != 0 and not allow_failure:
+        raise RuntimeError("A bounded disposable Docker operation failed")
+    return stdout.decode("utf-8", errors="replace")[:256]
+
+
+async def _start_exact_upstream(token: str) -> None:
+    """Start exact ha-mcp 8.1.1 against only the disposable HA instance."""
+
+    if not UPSTREAM_IMAGE:
+        raise RuntimeError("The exact upstream image identity is required")
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        prefix="beta23-real-ha-upstream-",
+        suffix=".env",
+        delete=False,
+    ) as handle:
+        environment_path = Path(handle.name)
+        handle.write(f"HOMEASSISTANT_URL={HA_URL}\n")
+        handle.write(f"HOMEASSISTANT_TOKEN={token}\n")
+        handle.write("MCP_HOST=127.0.0.1\n")
+        handle.write(f"MCP_PORT={UPSTREAM_PORT}\n")
+        handle.write(f"MCP_SECRET_PATH={UPSTREAM_SECRET_PATH}\n")
+        handle.write("HA_MCP_DISABLE_SETTINGS_UI=true\n")
+    environment_path.chmod(0o600)
+    try:
+        await _docker_command(
+            "run",
+            "--detach",
+            "--network",
+            "host",
+            "--name",
+            UPSTREAM_CONTAINER,
+            "--read-only",
+            "--tmpfs",
+            "/tmp",
+            "--tmpfs",
+            "/home/mcpuser/.ha-mcp",
+            "--env-file",
+            str(environment_path),
+            UPSTREAM_IMAGE,
+            "ha-mcp-web",
+        )
+    finally:
+        environment_path.unlink(missing_ok=True)
+
+
+async def _remove_exact_upstream() -> None:
+    """Remove only the named disposable exact-upstream container."""
+
+    await _docker_command("rm", "-f", UPSTREAM_CONTAINER, allow_failure=True)
+
+
+async def _call_exact_upstream_get_device(device_id: str) -> dict[str, Any]:
+    """Call public ha_get_device by the pre-migration composite ID."""
+
+    endpoint = f"http://127.0.0.1:{UPSTREAM_PORT}{UPSTREAM_SECRET_PATH}"
+    for _ in range(60):
+        try:
+            async with streamablehttp_client(endpoint) as (
+                read_stream,
+                write_stream,
+                _session_id,
+            ):
+                async with ClientSession(read_stream, write_stream) as session:
+                    initialized = await session.initialize()
+                    assert initialized.serverInfo.name == "ha-mcp"
+                    assert initialized.serverInfo.version == UPSTREAM_VERSION
+                    return _decode_tool_result(
+                        await session.call_tool(
+                            "ha_get_device",
+                            {"device_id": device_id},
+                        )
+                    )
+        except Exception:
+            await asyncio.sleep(1)
+    raise RuntimeError("Exact upstream ha_get_device did not become available")
+
+
+def _contains_exact_value(value: Any, key: str, expected: str) -> bool:
+    """Return whether a nested configuration contains one exact key/value."""
+
+    if isinstance(value, dict):
+        return value.get(key) == expected or any(
+            _contains_exact_value(item, key, expected) for item in value.values()
+        )
+    if isinstance(value, list):
+        return any(_contains_exact_value(item, key, expected) for item in value)
+    return False
+
+
+async def _run_device_migration_contract(
+    rest: HomeAssistantRestClient,
+    websocket: HomeAssistantWebSocketClient,
+    token: str,
+) -> None:
+    """Exercise registry, upstream lookup, dependency, and impact compatibility."""
+
+    fixture = _load_device_fixture()
+    old_device_id = str(fixture["old_composite_device_id"])
+    entity_ids = [str(item) for item in fixture["entity_ids"]]
+    config_entry_ids = {str(item) for item in fixture["config_entry_ids"]}
+    assert len(entity_ids) == 2
+    assert len(config_entry_ids) == 2
+
+    devices = await websocket.command({"type": "config/device_registry/list"})
+    entities = await websocket.command({"type": "config/entity_registry/list"})
+    fixture_entities = [
+        item
+        for item in entities
+        if isinstance(item, dict) and item.get("entity_id") in entity_ids
+    ]
+    assert len(fixture_entities) == 2
+    assert {
+        str(item.get("config_entry_id")) for item in fixture_entities
+    } == config_entry_ids
+
+    if EXPECTED_HA_VERSION == "2026.7.2":
+        expected_device_ids = {old_device_id}
+        composite = next(
+            item
+            for item in devices
+            if isinstance(item, dict) and item.get("id") == old_device_id
+        )
+        assert set(composite.get("config_entries", ())) == config_entry_ids
+    else:
+        assert EXPECTED_HA_VERSION == "2026.8.0"
+        assert not any(
+            isinstance(item, dict) and item.get("id") == old_device_id
+            for item in devices
+        )
+        composite_splits = await websocket.command(
+            {"type": "config/device_registry/list_composite_splits"}
+        )
+        split_contract = composite_splits.get(old_device_id)
+        assert isinstance(split_contract, dict)
+        expected_device_ids = {
+            str(item) for item in split_contract.get("split_ids", ())
+        }
+        assert len(expected_device_ids) == 2
+        assert split_contract.get("primary_id") in expected_device_ids
+        splits = [
+            item
+            for item in devices
+            if isinstance(item, dict)
+            and item.get("id") in expected_device_ids
+        ]
+        assert len(splits) == 2
+        assert {str(item.get("config_entry_id")) for item in splits} == config_entry_ids
+        assert all(
+            set(item.get("config_entries", ())) == {item.get("config_entry_id")}
+            for item in splits
+        )
+        assert {str(item["id"]) for item in splits} == expected_device_ids
+    assert {str(item.get("device_id")) for item in fixture_entities} == expected_device_ids
+
+    component_lookup = await websocket.command(
+        {
+            "type": "ha_mcp_tools/device_get",
+            "device_id": old_device_id,
+            "include_entities": True,
+        }
+    )
+    component_device = component_lookup.get("device")
+    assert isinstance(component_device, dict)
+    assert component_device.get("id") == old_device_id
+    assert {
+        str(item.get("entity_id"))
+        for item in component_lookup.get("entities", ())
+        if isinstance(item, dict)
+    } == set(entity_ids)
+
+    automation = await rest.request(
+        "GET", f"/config/automation/config/{MIGRATION_AUTOMATION_ID}"
+    )
+    assert _contains_exact_value(automation, "device_id", old_device_id)
+    assert _contains_exact_value(automation, "entity_id", entity_ids[0])
+    await websocket.command(
+        {
+            "type": "call_service",
+            "domain": "homeassistant",
+            "service": "update_entity",
+            "target": {"device_id": old_device_id},
+        }
+    )
+
+    await _start_exact_upstream(token)
+    upstream_lookup = await _call_exact_upstream_get_device(old_device_id)
+    assert upstream_lookup.get("success") is True
+    assert upstream_lookup.get("queried_by") == "device_id"
+    upstream_device = upstream_lookup.get("device")
+    assert isinstance(upstream_device, dict)
+    assert upstream_device.get("device_id") == old_device_id
+    assert upstream_lookup.get("entity_count") == 2
+    assert {
+        str(item.get("entity_id"))
+        for item in upstream_lookup.get("entities", ())
+        if isinstance(item, dict)
+    } == set(entity_ids)
+
+    index = DependencyIndex(
+        DirectHaDependencyProvider(rest, websocket),
+        soft_ttl_seconds=60,
+        hard_ttl_seconds=120,
+    )
+    dependency = await EntityDependencyAnalysisService(index).analyze(
+        entity_id=entity_ids[0],
+        detail_level="evidence",
+        source_types=["automation"],
+        refresh_index=True,
+    )
+    assert dependency.data["target"]["device_id"] in expected_device_ids
+    assert dependency.data["overview"]["dependency_status"] == "referenced"
+    assert any(
+        item.get("source_id") == MIGRATION_AUTOMATION_ID
+        for item in dependency.data["findings"]
+    )
+
+    impact = await ChangeImpactAnalysisService(
+        DirectHaImpactProvider(
+            index,
+            rest,
+            websocket,
+            ha_token=token,
+        )
+    ).analyze(
+        entity_id=entity_ids[0],
+        operation="disable_entity",
+        include_indirect=False,
+        source_types=["automation"],
+        detail_level="evidence",
+    )
+    assert impact.data["target_entity_summary"]["device_id"] in expected_device_ids
+    rules = {item["rule_id"] for item in impact.data["findings"]}
+    assert "direct_automation_reference" in rules
+    assert "device_registry_relationship" in rules
+    assert "disable_runtime_availability_risk" in rules
+
+
 async def _cleanup_configuration_resources(
     gateway: ConfigurationResourceGateway,
 ) -> None:
@@ -1842,7 +2359,11 @@ async def run_contracts() -> None:
     cleanup_succeeded: bool | None = None
     cleanup_failure: BaseException | None = None
     try:
-        token = await bootstrap_disposable_admin()
+        token = (
+            _load_prepared_token()
+            if TOKEN_PATH is not None
+            else await bootstrap_disposable_admin()
+        )
         configured = settings(token)
         rest = HomeAssistantRestClient(configured)
         websocket = HomeAssistantWebSocketClient(configured)
@@ -1850,6 +2371,12 @@ async def run_contracts() -> None:
         legacy_automation_gateway = AutomationGateway(rest)
         phase = "runtime_readiness"
         await wait_for_runtime_ready(rest)
+
+        phase = "http_configuration_migration"
+        _assert_http_configuration_contract()
+
+        phase = "device_registry_migration_and_analysis"
+        await _run_device_migration_contract(rest, websocket, token)
 
         phase = "fresh_resource_preflight"
         for resource_type in RESOURCE_ORDER:
@@ -1880,7 +2407,7 @@ async def run_contracts() -> None:
         phase = "rest_and_websocket_inventory"
         runtime_config = await rest.request("GET", "/config")
         assert isinstance(runtime_config, dict)
-        assert runtime_config.get("version") == "2026.7.2"
+        assert runtime_config.get("version") == EXPECTED_HA_VERSION
         states = await rest.request("GET", "/states")
         assert isinstance(states, list)
         websocket_states = await websocket.command({"type": "get_states"})
@@ -1954,6 +2481,12 @@ async def run_contracts() -> None:
     except Exception as exc:
         failure = exc
     finally:
+        try:
+            await _remove_exact_upstream()
+        except Exception as upstream_cleanup_error:
+            if failure is None:
+                phase = "exact_upstream_cleanup"
+                failure = upstream_cleanup_error
         if gateway is not None:
             cleanup_attempted = True
             try:
@@ -1976,9 +2509,25 @@ async def run_contracts() -> None:
         raise failure
 
 
-def main() -> int:
+def _parse_args(arguments: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run disposable Home Assistant compatibility contracts."
+    )
+    parser.add_argument(
+        "--prepare-migration-fixture",
+        action="store_true",
+        help="Persist the fixture through exact Home Assistant 2026.7.2.",
+    )
+    return parser.parse_args(arguments)
+
+
+def main(arguments: list[str] | None = None) -> int:
+    parsed = _parse_args([] if arguments is None else arguments)
     try:
-        asyncio.run(run_contracts())
+        if parsed.prepare_migration_fixture:
+            asyncio.run(prepare_migration_fixture())
+        else:
+            asyncio.run(run_contracts())
     except Exception as exc:
         # Client exceptions and these selected fields are intentionally safe;
         # never print response bodies, paths, tokens, or onboarding values.
@@ -2027,9 +2576,14 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-    print("Real Home Assistant 2026.7.2 contract assertions passed.")
+    if parsed.prepare_migration_fixture:
+        print("Exact Home Assistant 2026.7.2 migration fixture prepared.")
+    else:
+        print(
+            f"Real Home Assistant {EXPECTED_HA_VERSION} contract assertions passed."
+        )
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

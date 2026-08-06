@@ -3,6 +3,7 @@ import copy
 from contextlib import redirect_stderr
 import importlib.util
 import io
+import json
 from pathlib import Path
 import re
 from types import SimpleNamespace
@@ -16,6 +17,14 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = ROOT / "scripts" / "real_ha_contract_tests.py"
 CI_PATH = ROOT / ".github" / "workflows" / "ci.yml"
 PUBLISH_PATH = ROOT / ".github" / "workflows" / "publish-rc-image.yml"
+DEVICE_FIXTURE_ROOT = (
+    ROOT
+    / "tests"
+    / "fixtures"
+    / "real_ha_device_migration"
+    / "custom_components"
+    / "beta23_device_fixture"
+)
 RESOURCE_TYPES = {
     "automation",
     "script",
@@ -1070,9 +1079,48 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
     def setUpClass(cls):
         cls.ci = load_workflow(CI_PATH)
         cls.publish = load_workflow(PUBLISH_PATH)
+        cls.source = CONTRACT_PATH.read_text(encoding="utf-8")
+        tree = ast.parse(cls.source, filename=str(CONTRACT_PATH))
+        cls.functions = {
+            node.name: node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
 
     def test_real_ha_job_runs_contract_runner_and_always_destroys_config(self):
         job = self.ci["jobs"]["real-ha-contract-tests"]
+        self.assertFalse(job["strategy"]["fail-fast"])
+        matrix = job["strategy"]["matrix"]["include"]
+        self.assertEqual(
+            matrix,
+            [
+                {
+                    "lane": "ha-2026-7-2",
+                    "ha_version": "2026.7.2",
+                    "ha_image": (
+                        "ghcr.io/home-assistant/home-assistant:2026.7.2@"
+                        "sha256:1476924357b46e80735c13e94232ba5c853cac052e9df4bb28d50fa56348097b"
+                    ),
+                },
+                {
+                    "lane": "ha-2026-8-0",
+                    "ha_version": "2026.8.0",
+                    "ha_image": (
+                        "ghcr.io/home-assistant/home-assistant:2026.8.0@"
+                        "sha256:a21689ef0510df9760ee11bab4d6b2fef3ed5c1a29ed9c3224271597a23729eb"
+                    ),
+                },
+            ],
+        )
+        self.assertEqual(job["env"]["HA_CONTRACT_VERSION"], "${{ matrix.ha_version }}")
+        self.assertEqual(job["env"]["HA_CONTRACT_IMAGE"], "${{ matrix.ha_image }}")
+        self.assertEqual(
+            job["env"]["HA_FIXTURE_WRITER_IMAGE"], matrix[0]["ha_image"]
+        )
+        self.assertRegex(
+            job["env"]["REAL_HA_UPSTREAM_IMAGE"],
+            r"^ghcr\.io/homeassistant-ai/ha-mcp:8\.1\.1@sha256:[0-9a-f]{64}$",
+        )
         scripts = [
             str(step["run"])
             for step in job["steps"]
@@ -1084,23 +1132,44 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
                 for script in scripts
             )
         )
-        startup = next(
+        preparation = next(
             step
             for step in job["steps"]
             if step.get("name")
-            == "Start disposable pinned Home Assistant Core"
+            == "Prepare exact source and disposable migration configuration"
         )
-        startup_script = str(startup["run"])
+        startup_script = str(preparation["run"])
         self.assertIn(
             "script: !include scripts.yaml",
             startup_script,
         )
+        self.assertIn("'http:'", startup_script)
+        self.assertIn("'  server_port: 8123'", startup_script)
         self.assertIn("input_boolean: {}", startup_script)
         self.assertIn("input_number: {}", startup_script)
+        self.assertIn("beta23_device_fixture", startup_script)
+        self.assertIn("custom_components/ha_mcp_tools", startup_script)
         self.assertIn(
-            ': > "$contract_dir/scripts.yaml"',
+            ': > "$REAL_HA_CONTRACT_DIR/scripts.yaml"',
             startup_script,
         )
+        writer = next(
+            step
+            for step in job["steps"]
+            if step.get("name")
+            == "Persist migration fixture with exact Home Assistant 2026.7.2"
+        )
+        writer_script = str(writer["run"])
+        self.assertIn("$HA_FIXTURE_WRITER_IMAGE", writer_script)
+        self.assertIn("--prepare-migration-fixture", writer_script)
+        self.assertIn('docker stop --time 30 "$HA_WRITER_CONTAINER"', writer_script)
+        target = next(
+            step
+            for step in job["steps"]
+            if step.get("name")
+            == "Start disposable exact target Home Assistant Core"
+        )
+        self.assertIn("$HA_CONTRACT_IMAGE", str(target["run"]))
         cleanup = next(
             step
             for step in job["steps"]
@@ -1109,15 +1178,62 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         )
         self.assertEqual(cleanup["if"], "always()")
         cleanup_script = str(cleanup["run"])
-        self.assertIn("docker rm -f", cleanup_script)
-        self.assertIn(
-            'sudo rm -rf "$RUNNER_TEMP/beta25-real-ha"', cleanup_script
+        for container in (
+            "REAL_HA_UPSTREAM_CONTAINER",
+            "HA_CONTRACT_CONTAINER",
+            "HA_WRITER_CONTAINER",
+        ):
+            self.assertIn(f'"${container}"', cleanup_script)
+        self.assertIn('rm -f "$REAL_HA_TOKEN_FILE"', cleanup_script)
+        self.assertIn('sudo rm -rf "$REAL_HA_CONTRACT_DIR"', cleanup_script)
+        self.assertFalse(any(step.get("continue-on-error") for step in job["steps"]))
+
+    def test_real_ha_device_fixture_is_a_normal_two_entry_entity_platform(self):
+        self.assertEqual(
+            {
+                path.name
+                for path in DEVICE_FIXTURE_ROOT.iterdir()
+                if path.name != "__pycache__"
+            },
+            {"__init__.py", "config_flow.py", "manifest.json", "sensor.py"},
         )
-        self.assertEqual(job["env"]["HA_CONTRACT_VERSION"], "2026.7.2")
-        self.assertRegex(
-            job["env"]["HA_CONTRACT_IMAGE"],
-            r"^ghcr\.io/home-assistant/home-assistant:2026\.7\.2@sha256:"
-            r"[0-9a-f]{64}$",
+        manifest = json.loads(
+            (DEVICE_FIXTURE_ROOT / "manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertTrue(manifest["config_flow"])
+        sensor_source = (DEVICE_FIXTURE_ROOT / "sensor.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("class Beta23DeviceFixtureSensor(SensorEntity)", sensor_source)
+        self.assertIn("identifiers={SHARED_IDENTIFIER}", sensor_source)
+
+    def test_real_ha_contract_covers_migration_lookup_dependency_and_impact(self):
+        runner = self.functions["_run_device_migration_contract"]
+        call_names = {call_name(call) for call in calls_under(runner)}
+        self.assertTrue(
+            {
+                "EntityDependencyAnalysisService",
+                "DirectHaDependencyProvider",
+                "DirectHaImpactProvider",
+                "ChangeImpactAnalysisService",
+                "_call_exact_upstream_get_device",
+            }.issubset(call_names)
+        )
+        source = ast.get_source_segment(self.source, runner) or ""
+        for contract in (
+            "config/device_registry/list",
+            "config/device_registry/list_composite_splits",
+            "config/entity_registry/list",
+            "ha_mcp_tools/device_get",
+            "device_id",
+            "composite_device_id",
+            "direct_automation_reference",
+            "device_registry_relationship",
+        ):
+            self.assertIn(contract, source)
+        self.assertIn(
+            "_assert_http_configuration_contract",
+            {call_name(call) for call in calls_under(self.functions["run_contracts"])},
         )
 
     def test_validate_job_regenerates_every_beta6_compatibility_fixture(self):

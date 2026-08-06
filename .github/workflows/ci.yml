@@ -120,10 +120,32 @@ jobs:
 
   real-ha-contract-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lane: ha-2026-7-2
+            ha_version: "2026.7.2"
+            ha_image: "ghcr.io/home-assistant/home-assistant:2026.7.2@sha256:1476924357b46e80735c13e94232ba5c853cac052e9df4bb28d50fa56348097b"
+          - lane: ha-2026-8-0
+            ha_version: "2026.8.0"
+            ha_image: "ghcr.io/home-assistant/home-assistant:2026.8.0@sha256:a21689ef0510df9760ee11bab4d6b2fef3ed5c1a29ed9c3224271597a23729eb"
     env:
-      HA_CONTRACT_VERSION: "2026.7.2"
-      HA_CONTRACT_IMAGE: "ghcr.io/home-assistant/home-assistant:2026.7.2@sha256:1476924357b46e80735c13e94232ba5c853cac052e9df4bb28d50fa56348097b"
+      HA_CONTRACT_LANE: ${{ matrix.lane }}
+      HA_CONTRACT_VERSION: ${{ matrix.ha_version }}
+      HA_CONTRACT_IMAGE: ${{ matrix.ha_image }}
+      HA_FIXTURE_WRITER_IMAGE: "ghcr.io/home-assistant/home-assistant:2026.7.2@sha256:1476924357b46e80735c13e94232ba5c853cac052e9df4bb28d50fa56348097b"
+      REAL_HA_EXPECTED_VERSION: ${{ matrix.ha_version }}
+      REAL_HA_CONTRACT_DIR: ${{ runner.temp }}/beta25-real-ha-${{ matrix.lane }}
+      REAL_HA_DEVICE_FIXTURE: ${{ runner.temp }}/beta25-real-ha-${{ matrix.lane }}/beta23-device-fixture.json
+      REAL_HA_TOKEN_FILE: ${{ runner.temp }}/beta25-real-ha-${{ matrix.lane }}.token
+      REAL_HA_UPSTREAM_IMAGE: "ghcr.io/homeassistant-ai/ha-mcp:8.1.1@sha256:e1d76a6ee54e26054a13a6c04089824b76d4d370246239591a02a2e4445ad2c9"
+      REAL_HA_UPSTREAM_VERSION: "8.1.1"
+      REAL_HA_UPSTREAM_CONTAINER: beta25-real-ha-upstream-${{ matrix.lane }}
+      REAL_HA_UPSTREAM_PORT: "18086"
+      HA_WRITER_CONTAINER: beta25-real-ha-writer-${{ matrix.lane }}
+      HA_CONTRACT_CONTAINER: beta25-real-ha-${{ matrix.lane }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -133,35 +155,14 @@ jobs:
           cache-dependency-path: hass_mcp_engineering_beta/requirements.txt
       - name: Install Engineering client dependencies
         run: python -m pip install -r hass_mcp_engineering_beta/requirements.txt
-      - name: Start disposable pinned Home Assistant Core
-        shell: bash
-        run: |
-          set -euo pipefail
-          contract_dir="$RUNNER_TEMP/beta25-real-ha"
-          mkdir -p "$contract_dir"
-          printf '%s\n' \
-            'default_config:' \
-            'automation: !include automations.yaml' \
-            'input_boolean: {}' \
-            'input_number: {}' \
-            'script: !include scripts.yaml' \
-            > "$contract_dir/configuration.yaml"
-          : > "$contract_dir/automations.yaml"
-          : > "$contract_dir/scripts.yaml"
-          docker pull "$HA_CONTRACT_IMAGE"
-          docker run -d --name beta25-real-ha -p 8123:8123 \
-            -v "$contract_dir:/config" "$HA_CONTRACT_IMAGE"
-          echo "HA contract version: $HA_CONTRACT_VERSION"
-          docker image inspect "$HA_CONTRACT_IMAGE" \
-            --format='HA contract image digest: {{index .RepoDigests 0}}'
-      - name: Verify exact ha-mcp 8.1.1 packaging inside disposable Home Assistant
+      - name: Prepare exact source and disposable migration configuration
         shell: bash
         run: |
           set -euo pipefail
           source_archive="$RUNNER_TEMP/ha-mcp-v8.1.1-source.tar.gz"
           source_parent="$RUNNER_TEMP/ha-mcp-v8.1.1-source"
           source_root="$source_parent/ha-mcp-8.1.1"
-          mkdir -p "$source_parent"
+          mkdir -p "$source_parent" "$REAL_HA_CONTRACT_DIR/custom_components"
           curl --fail --location --proto '=https' --tlsv1.2 --max-time 120 \
             https://codeload.github.com/homeassistant-ai/ha-mcp/tar.gz/refs/tags/v8.1.1 \
             --output "$source_archive"
@@ -171,17 +172,62 @@ jobs:
           tar -xzf "$source_archive" -C "$source_parent"
           python scripts/verify_ha_mcp_8_1_1_packaging.py \
             --source-root "$source_root" \
-            --output "$RUNNER_TEMP/ha-mcp-8.1.1-packaging.json"
-          docker cp "$source_root" beta25-real-ha:/tmp/ha-mcp-8.1.1-source
+            --output "$RUNNER_TEMP/ha-mcp-8.1.1-packaging-$HA_CONTRACT_LANE.json"
+          cp -R \
+            tests/fixtures/real_ha_device_migration/custom_components/beta23_device_fixture \
+            "$REAL_HA_CONTRACT_DIR/custom_components/"
+          cp -R "$source_root/custom_components/ha_mcp_tools" \
+            "$REAL_HA_CONTRACT_DIR/custom_components/"
+          printf '%s\n' \
+            'default_config:' \
+            'automation: !include automations.yaml' \
+            'http:' \
+            '  server_port: 8123' \
+            'input_boolean: {}' \
+            'input_number: {}' \
+            'script: !include scripts.yaml' \
+            > "$REAL_HA_CONTRACT_DIR/configuration.yaml"
+          : > "$REAL_HA_CONTRACT_DIR/automations.yaml"
+          : > "$REAL_HA_CONTRACT_DIR/scripts.yaml"
+      - name: Persist migration fixture with exact Home Assistant 2026.7.2
+        shell: bash
+        env:
+          REAL_HA_URL: http://127.0.0.1:18123
+        run: |
+          set -euo pipefail
+          docker pull "$HA_FIXTURE_WRITER_IMAGE"
+          docker run -d --name "$HA_WRITER_CONTAINER" -p 18123:8123 \
+            -v "$REAL_HA_CONTRACT_DIR:/config" "$HA_FIXTURE_WRITER_IMAGE"
+          python scripts/real_ha_contract_tests.py --prepare-migration-fixture
+          docker stop --time 30 "$HA_WRITER_CONTAINER"
+          docker rm "$HA_WRITER_CONTAINER"
+      - name: Start disposable exact target Home Assistant Core
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull "$HA_CONTRACT_IMAGE"
+          docker run -d --name "$HA_CONTRACT_CONTAINER" -p 8123:8123 \
+            -v "$REAL_HA_CONTRACT_DIR:/config" "$HA_CONTRACT_IMAGE"
+          echo "HA contract version: $HA_CONTRACT_VERSION"
+          docker image inspect "$HA_CONTRACT_IMAGE" \
+            --format='HA contract image digest: {{index .RepoDigests 0}}'
+      - name: Verify exact ha-mcp 8.1.1 packaging inside disposable Home Assistant
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_root="$RUNNER_TEMP/ha-mcp-v8.1.1-source/ha-mcp-8.1.1"
+          docker pull "$REAL_HA_UPSTREAM_IMAGE"
+          docker cp "$source_root" \
+            "$HA_CONTRACT_CONTAINER:/tmp/ha-mcp-8.1.1-source"
           docker cp scripts/disposable_ha_websockets_probe.py \
-            beta25-real-ha:/tmp/disposable_ha_websockets_probe.py
-          docker exec beta25-real-ha python \
+            "$HA_CONTRACT_CONTAINER:/tmp/disposable_ha_websockets_probe.py"
+          docker exec "$HA_CONTRACT_CONTAINER" python \
             /tmp/disposable_ha_websockets_probe.py \
             --source-root /tmp/ha-mcp-8.1.1-source \
             --output /tmp/ha-mcp-8.1.1-disposable-ha.json
           docker cp \
-            beta25-real-ha:/tmp/ha-mcp-8.1.1-disposable-ha.json \
-            "$RUNNER_TEMP/ha-mcp-8.1.1-disposable-ha.json"
+            "$HA_CONTRACT_CONTAINER:/tmp/ha-mcp-8.1.1-disposable-ha.json" \
+            "$RUNNER_TEMP/ha-mcp-8.1.1-disposable-$HA_CONTRACT_LANE.json"
       - name: Run real Home Assistant contracts
         env:
           REAL_HA_URL: http://127.0.0.1:8123
@@ -190,18 +236,21 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ha-mcp-8.1.1-disposable-ha-packaging
+          name: ha-mcp-8.1.1-disposable-${{ matrix.lane }}
           path: |
-            ${{ runner.temp }}/ha-mcp-8.1.1-packaging.json
-            ${{ runner.temp }}/ha-mcp-8.1.1-disposable-ha.json
+            ${{ runner.temp }}/ha-mcp-8.1.1-packaging-${{ matrix.lane }}.json
+            ${{ runner.temp }}/ha-mcp-8.1.1-disposable-${{ matrix.lane }}.json
           if-no-files-found: error
           retention-days: 14
       - name: Sanitize and remove disposable Home Assistant
         if: always()
         shell: bash
         run: |
-          docker rm -f beta25-real-ha >/dev/null 2>&1 || true
-          sudo rm -rf "$RUNNER_TEMP/beta25-real-ha"
+          docker rm -f "$REAL_HA_UPSTREAM_CONTAINER" >/dev/null 2>&1 || true
+          docker rm -f "$HA_CONTRACT_CONTAINER" >/dev/null 2>&1 || true
+          docker rm -f "$HA_WRITER_CONTAINER" >/dev/null 2>&1 || true
+          rm -f "$REAL_HA_TOKEN_FILE"
+          sudo rm -rf "$REAL_HA_CONTRACT_DIR"
 
   prepare_exact_image_matrix:
     runs-on: ubuntu-latest

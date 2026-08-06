@@ -1,0 +1,10 @@
+{
+  "domain": "beta23_device_fixture",
+  "name": "Beta 23 Device Migration Fixture",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/jeter-1/hass-mcp-admin",
+  "integration_type": "device",
+  "iot_class": "calculated",
+  "version": "1.0.0"
+}

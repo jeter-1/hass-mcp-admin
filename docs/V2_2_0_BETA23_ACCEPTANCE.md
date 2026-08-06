@@ -80,9 +80,47 @@ The exact source pins private `websockets==17.0.1`, records every vendored file
 in `MANIFEST.sha256`, declares no production dependency on shared `websockets`,
 contains no first-party shared import, and configures the embedded HTTP listener
 with `ws="none"`. CI downloads the exact source archive by digest and repeats
-these checks. Inside disposable pinned Home Assistant 2026.7.2 it imports the
+these checks in both disposable Home Assistant lanes. Each lane imports the
 private tree and proves the shared distribution version and import state remain
 unchanged.
+
+## Exact Home Assistant compatibility matrix
+
+| Lane | Immutable Core image |
+| --- | --- |
+| preserved baseline | `ghcr.io/home-assistant/home-assistant:2026.7.2@sha256:1476924357b46e80735c13e94232ba5c853cac052e9df4bb28d50fa56348097b` |
+| new compatibility target | `ghcr.io/home-assistant/home-assistant:2026.8.0@sha256:a21689ef0510df9760ee11bab4d6b2fef3ed5c1a29ed9c3224271597a23729eb` |
+
+Both lanes begin with the same state written through exact Home Assistant
+2026.7.2, not a hand-edited registry. Two normal config entries and two real
+sensor entities share one physical-device identifier, producing one historical
+multi-entry device. The writer also persists an automation containing the old
+device ID as a direct service target and an exact entity reference. It installs
+the exact 8.1.1 `ha_mcp_tools` component through its supported config flow.
+
+The 2026.7.2 lane proves the historical device remains one enumerable device
+owned by both config entries. The 2026.8.0 lane proves Core migrates it to two
+single-owner devices, remaps each entity to its owning split, removes the old ID
+from enumeration, and reports the exact old-to-new mapping through
+`config/device_registry/list_composite_splits`. In both lanes the direct old
+device target still resolves, `ha_mcp_tools/device_get` expands both entities,
+and public `ha_get_device(device_id=<old id>)` succeeds through exact ha-mcp
+8.1.1 with the original ID and both entities.
+
+The same run builds the production Engineering dependency index from live Core
+state, registry and automation configuration, proves the exact entity reference
+is indexed, and runs change-impact analysis. Impact evidence must retain the
+entity's current device relationship—historical composite in 2026.7.2 and the
+owning split in 2026.8.0—and report the direct automation, device-registry, and
+disable-availability findings.
+
+The writer uses an explicit default-port `http:` YAML block. The baseline lane
+proves no 2026.8 storage contract is backported. The 2026.8.0 lane proves the
+same reachable HTTP endpoint is migrated once to storage version 2 with
+`yaml_migration_done=true`, no pending trial, stable port 8123, and no recorded
+error. Every pre-existing REST, WebSocket, configuration write/readback,
+validation, trace, and cleanup contract runs unchanged in both matrix lanes;
+neither lane is allowed to continue on error.
 
 The exact-image matrix derives the 8.1.1 standalone image from the committed
 registry and verifies immutable index/platform identities, labels, initialize,
