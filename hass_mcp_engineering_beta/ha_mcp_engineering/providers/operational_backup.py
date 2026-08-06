@@ -267,6 +267,8 @@ class ReviewedOperationalBackupProvider:
         release = registry.by_version.get(catalog.server_version)
         if release is None:
             self._fail("upstream_version_mismatch", dispatched=False)
+        if release.provider_disposition("backup") != "admitted":
+            self._fail("upstream_version_mismatch", dispatched=False)
         if catalog.protocol_version not in release.allowed_protocol_versions:
             self._fail("unsupported_protocol_version", dispatched=False)
         with self._lock:

@@ -795,6 +795,11 @@ class UpstreamDashboardProvider:
                 .by_version.get(handshake.server_version)
             )
             if reviewed_release is not None:
+                if (
+                    reviewed_release.provider_disposition("dashboard")
+                    != "admitted"
+                ):
+                    raise ValueError("dashboard provider held")
                 reviewed_tool = reviewed_release.tool_contracts_by_name.get(
                     REQUIRED_DASHBOARD_TOOL
                 )

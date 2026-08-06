@@ -17,7 +17,7 @@ RELEASE_REGISTRY_PATH = Path(__file__).with_name(
     "upstream_release_registry.json"
 )
 POLICY_SCHEMA_VERSION = 1
-RELEASE_REGISTRY_FORMAT_VERSION = 2
+RELEASE_REGISTRY_FORMAT_VERSION = 3
 REVIEWED_CAPTURE_FORMAT_VERSION = 1
 REVIEWED_UPSTREAM_SERVER = "ha-mcp"
 REVIEWED_UPSTREAM_VERSION = "7.14.1"
@@ -67,7 +67,7 @@ STRICT_FULL_CONTRACT_FINGERPRINT_MODEL_V1 = (
 )
 EXACT_OCI_ARTIFACT_EVIDENCE_FORMAT_VERSION = 1
 EXACT_OCI_ARTIFACT_FAMILY = "official OCI images only"
-EXCLUDED_MISVERSIONED_RELEASE_ASSETS_8_1_0 = frozenset(
+EXCLUDED_RELEASE_PAGE_ASSETS = frozenset(
     {
         "ha-mcp-linux",
         "ha-mcp-macos-arm64",
@@ -75,6 +75,8 @@ EXCLUDED_MISVERSIONED_RELEASE_ASSETS_8_1_0 = frozenset(
         "ha-mcp.mcpb",
     }
 )
+# Retained for the existing Beta 21 review utility and compatibility tests.
+EXCLUDED_MISVERSIONED_RELEASE_ASSETS_8_1_0 = EXCLUDED_RELEASE_PAGE_ASSETS
 RUNTIME_CONTRACT_FINGERPRINT_MODELS = frozenset(
     {
         RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1,
@@ -639,6 +641,9 @@ class ReviewedUpstreamRelease:
     source_repository: str
     release_tag: str
     source_commit: str
+    source_tag_object: str | None
+    source_tree: str | None
+    source_archive_sha256: str | None
     image_index_digest: str
     architecture_image_digests: tuple[tuple[str, str], ...]
     image_revision: str
@@ -666,6 +671,10 @@ class ReviewedUpstreamRelease:
     error_contract_fingerprint: str
     entity_lookup_missing_resource_status: str
     tool_contracts: tuple[tuple[str, ReviewedReleaseToolContract], ...]
+    family_admission: Any | None
+    provider_dispositions: tuple[tuple[str, str], ...]
+    revoked: bool
+    revocation_reason: str | None
     policy: UpstreamToolPolicy
 
     @property
@@ -687,6 +696,11 @@ class ReviewedUpstreamRelease:
             for platform, digests in self.addon_artifact_digests
         }
 
+    def provider_disposition(self, surface: str) -> str:
+        """Return exact provider authority; legacy reviewed entries are admitted."""
+
+        return dict(self.provider_dispositions).get(surface, "admitted")
+
 
 @dataclass(frozen=True)
 class ReviewedUpstreamReleaseRegistry:
@@ -698,11 +712,21 @@ class ReviewedUpstreamReleaseRegistry:
 
     @property
     def by_version(self) -> dict[str, ReviewedUpstreamRelease]:
+        return {
+            entry.version: entry
+            for entry in self.releases
+            if not entry.revoked
+        }
+
+    @property
+    def historical_by_version(self) -> dict[str, ReviewedUpstreamRelease]:
+        """Include revoked exact entries for audit and incident review only."""
+
         return {entry.version: entry for entry in self.releases}
 
     @property
     def supported_versions(self) -> tuple[str, ...]:
-        return tuple(entry.version for entry in self.releases)
+        return tuple(entry.version for entry in self.releases if not entry.revoked)
 
     @property
     def default_release(self) -> ReviewedUpstreamRelease:
@@ -1339,6 +1363,33 @@ def load_reviewed_upstream_release_registry(
         raise UpstreamToolPolicyError(
             "release_registry_default_version_missing"
         )
+    if next(
+        entry for entry in releases if entry.version == default_version
+    ).revoked:
+        raise UpstreamToolPolicyError(
+            "release_registry_default_version_revoked"
+        )
+    raw_by_entry_id = {
+        item["entry_id"]: item for item in raw_releases
+    }
+    for raw_release, release in zip(raw_releases, releases, strict=True):
+        if release.family_admission is None:
+            continue
+        try:
+            from .compatibility_family import (
+                validate_family_admission_binding,
+            )
+
+            validate_family_admission_binding(
+                release.family_admission,
+                release=raw_release,
+                releases_by_entry_id=raw_by_entry_id,
+                registry_path=path,
+            )
+        except Exception as exc:
+            raise UpstreamToolPolicyError(
+                "release_registry_family_admission_invalid"
+            ) from exc
     return ReviewedUpstreamReleaseRegistry(
         registry_format_version=value["registry_format_version"],
         default_version=default_version,
@@ -1384,6 +1435,13 @@ def _load_reviewed_release(
         "addon_artifact_digests",
         "artifact_evidence_resource",
         "artifact_evidence_sha256",
+        "source_archive_sha256",
+        "source_tag_object",
+        "source_tree",
+        "family_admission",
+        "provider_dispositions",
+        "revoked",
+        "revocation_reason",
     }
     if (
         not isinstance(value, dict)
@@ -1446,6 +1504,26 @@ def _load_reviewed_release(
             raise UpstreamToolPolicyError(
                 "release_registry_source_commit_invalid"
             )
+    source_archive_sha256 = value.get("source_archive_sha256")
+    source_tag_object = value.get("source_tag_object")
+    source_tree = value.get("source_tree")
+    for field, identity in (
+        ("source tag object", source_tag_object),
+        ("source tree", source_tree),
+    ):
+        if identity is not None and (
+            not isinstance(identity, str) or not _COMMIT_SHA.fullmatch(identity)
+        ):
+            raise UpstreamToolPolicyError(
+                "release_registry_source_identity_invalid"
+            )
+    if source_archive_sha256 is not None and (
+        not isinstance(source_archive_sha256, str)
+        or not _SHA256_DIGEST.fullmatch(source_archive_sha256)
+    ):
+        raise UpstreamToolPolicyError(
+            "release_registry_source_archive_digest_invalid"
+        )
     if not isinstance(digest, str) or not _SHA256_DIGEST.fullmatch(digest):
         raise UpstreamToolPolicyError(
             "release_registry_image_digest_invalid"
@@ -1547,7 +1625,9 @@ def _load_reviewed_release(
         raise UpstreamToolPolicyError(
             "release_registry_artifact_evidence_invalid"
         )
-    if version == "8.1.0" and artifact_evidence_resource is None:
+    if (
+        version == "8.1.0" or "family_admission" in value
+    ) and artifact_evidence_resource is None:
         raise UpstreamToolPolicyError(
             "release_registry_release_identity_incomplete"
         )
@@ -1731,6 +1811,59 @@ def _load_reviewed_release(
             raise UpstreamToolPolicyError(
                 "release_registry_tool_contract_policy_mismatch"
             )
+    family_raw = value.get("family_admission")
+    dispositions_raw = value.get("provider_dispositions")
+    family_admission = None
+    provider_dispositions: tuple[tuple[str, str], ...] = ()
+    if (family_raw is None) != (dispositions_raw is None):
+        raise UpstreamToolPolicyError(
+            "release_registry_family_admission_incomplete"
+        )
+    if family_raw is not None:
+        if (
+            source_archive_sha256 is None
+            or source_tag_object is None
+            or source_tree is None
+        ):
+            raise UpstreamToolPolicyError(
+                "release_registry_family_admission_incomplete"
+            )
+        try:
+            from .compatibility_family import (
+                PROVIDER_DISPOSITIONS,
+                PROVIDER_SURFACES,
+                load_family_admission_binding,
+            )
+
+            family_admission = load_family_admission_binding(family_raw)
+        except Exception as exc:
+            raise UpstreamToolPolicyError(
+                "release_registry_family_admission_invalid"
+            ) from exc
+        if (
+            not isinstance(dispositions_raw, dict)
+            or set(dispositions_raw) != PROVIDER_SURFACES
+            or any(
+                item not in PROVIDER_DISPOSITIONS
+                for item in dispositions_raw.values()
+            )
+        ):
+            raise UpstreamToolPolicyError(
+                "release_registry_provider_dispositions_invalid"
+            )
+        provider_dispositions = tuple(sorted(dispositions_raw.items()))
+    revoked = value.get("revoked", False)
+    revocation_reason = value.get("revocation_reason")
+    if type(revoked) is not bool or (
+        revoked
+        and (
+            not isinstance(revocation_reason, str)
+            or not 1 <= len(revocation_reason) <= 512
+        )
+    ) or (not revoked and revocation_reason is not None):
+        raise UpstreamToolPolicyError(
+            "release_registry_revocation_invalid"
+        )
     return ReviewedUpstreamRelease(
         entry_id=value["entry_id"],
         server_name=value["server_name"],
@@ -1739,6 +1872,9 @@ def _load_reviewed_release(
         source_repository=value["source_repository"],
         release_tag=value["release_tag"],
         source_commit=value["source_commit"],
+        source_tag_object=source_tag_object,
+        source_tree=source_tree,
+        source_archive_sha256=source_archive_sha256,
         image_index_digest=digest,
         architecture_image_digests=tuple(
             sorted(architecture_digests.items())
@@ -1773,6 +1909,10 @@ def _load_reviewed_release(
         error_contract_fingerprint=error_contract,
         entity_lookup_missing_resource_status=entity_status,
         tool_contracts=tuple(sorted(tool_contracts.items())),
+        family_admission=family_admission,
+        provider_dispositions=provider_dispositions,
+        revoked=revoked,
+        revocation_reason=revocation_reason,
         policy=policy,
     )
 
@@ -2106,9 +2246,9 @@ def _reviewed_artifact_evidence(
         != EXACT_OCI_ARTIFACT_FAMILY
         or not isinstance(excluded_assets, list)
         or len(excluded_assets)
-        != len(EXCLUDED_MISVERSIONED_RELEASE_ASSETS_8_1_0)
+        != len(EXCLUDED_RELEASE_PAGE_ASSETS)
         or set(excluded_assets)
-        != EXCLUDED_MISVERSIONED_RELEASE_ASSETS_8_1_0
+        != EXCLUDED_RELEASE_PAGE_ASSETS
         or not isinstance(artifact_scope["exclusion_reason"], str)
         or not artifact_scope["exclusion_reason"].strip()
         or artifact_scope["standalone_image_index_digest"]

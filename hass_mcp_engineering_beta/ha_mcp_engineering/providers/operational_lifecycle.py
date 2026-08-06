@@ -137,6 +137,14 @@ _LIFECYCLE_ADDON_RESPONSE_CONTRACTS = {
         model=LIFECYCLE_ADDON_RESPONSE_MODEL_STRUCTURED_V1,
         envelope_variant=LIFECYCLE_ADDON_RESPONSE_ENVELOPE_STRUCTURED,
     ),
+    (
+        "ha-mcp-v8.1.1-e1d76a6e",
+        "8.1.1",
+        "2025-03-26",
+    ): LifecycleAddonResponseContract(
+        model=LIFECYCLE_ADDON_RESPONSE_MODEL_STRUCTURED_V1,
+        envelope_variant=LIFECYCLE_ADDON_RESPONSE_ENVELOPE_STRUCTURED,
+    ),
 }
 
 
@@ -746,6 +754,8 @@ class ReviewedOperationalLifecycleProvider:
             self._fail("server_identity_mismatch", dispatched=False)
         release = registry.by_version.get(catalog.server_version)
         if release is None:
+            self._fail("upstream_version_mismatch", dispatched=False)
+        if release.provider_disposition("lifecycle") != "admitted":
             self._fail("upstream_version_mismatch", dispatched=False)
         runtime_model = release.runtime_contract_fingerprint_model
         with self._lock:

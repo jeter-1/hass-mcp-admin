@@ -64,6 +64,11 @@ _REVIEWED_SUCCESS_ENVELOPE_MODELS = {
         REVIEWED_PROTOCOL_VERSION,
         "ha_get_hacs_info",
     ): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
+    (
+        "8.1.1",
+        REVIEWED_PROTOCOL_VERSION,
+        "ha_get_hacs_info",
+    ): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
 }
 _TRANSIENT_DISCOVERY_FAILURES = frozenset({"connection_failed", "timeout"})
 _STARTUP_ORDERING_FAILURES = frozenset({"endpoint_rejected"})
@@ -1558,6 +1563,8 @@ class UpstreamReadGateway:
                 raise DashboardTransportError(
                     "unsupported_protocol_version"
                 )
+            if release.provider_disposition("read_gateway") == "held":
+                raise DashboardTransportError("upstream_version_mismatch")
             return release.policy, release
         if (
             self._policy is None

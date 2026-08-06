@@ -2953,7 +2953,11 @@ class FakeMcpTransport:
                 ],
                 **(
                     {"structuredContent": deepcopy(payload)}
-                    if self.catalog.server_version in {"8.0.0", "8.1.0"}
+                    if self.catalog.server_version in {
+                        "8.0.0",
+                        "8.1.0",
+                        "8.1.1",
+                    }
                     else {}
                 ),
                 "isError": False,
@@ -3188,7 +3192,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unknown_8_x_lifecycle_releases_fail_without_dispatch(self):
         registry = load_reviewed_upstream_release_registry()
-        for version in ("8.0.1", "8.1.1", "8.2.0"):
+        for version in ("8.0.1", "8.1.2", "8.2.0"):
             with self.subTest(version=version):
                 transport = FakeMcpTransport("8.0.0")
                 transport.catalog = McpReadCatalog(

@@ -45,12 +45,20 @@ POLICY_7141 = RUNTIME / "upstream_tool_policy.json"
 POLICY_7142 = RUNTIME / "upstream_tool_policy_7_14_2.json"
 POLICY_8000 = RUNTIME / "upstream_tool_policy_8_0_0.json"
 POLICY_8100 = RUNTIME / "upstream_tool_policy_8_1_0.json"
+POLICY_8111 = RUNTIME / "upstream_tool_policy_8_1_1.json"
 CAPTURE_DIRECTORY = (
     ROOT / "docs/evidence/upstream-read-compatibility"
 )
 ARTIFACT_EVIDENCE_8100 = (
     CAPTURE_DIRECTORY / "ha-mcp-8.1.0-contract-review.json"
 )
+ARTIFACT_EVIDENCE_8111 = (
+    CAPTURE_DIRECTORY / "ha-mcp-8.1.1-contract-review.json"
+)
+FAMILY_DECISION_8111 = (
+    CAPTURE_DIRECTORY / "ha-mcp-8.1.1-family-decision.json"
+)
+FAMILY_POLICY = RUNTIME / "upstream_compatibility_families.json"
 DASHBOARD_ATTESTATIONS = (
     RUNTIME
     / "providers"
@@ -82,15 +90,23 @@ class RegistryFixture:
     def __init__(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
+        self.runtime = (
+            self.root
+            / "hass_mcp_engineering_beta"
+            / "ha_mcp_engineering"
+        )
+        self.runtime.mkdir(parents=True)
         for path in (
             REGISTRY,
             POLICY_7141,
             POLICY_7142,
             POLICY_8000,
             POLICY_8100,
+            POLICY_8111,
+            FAMILY_POLICY,
         ):
-            shutil.copy2(path, self.root / path.name)
-        self.path = self.root / REGISTRY.name
+            shutil.copy2(path, self.runtime / path.name)
+        self.path = self.runtime / REGISTRY.name
         self.capture_directory = (
             self.root
             / "docs"
@@ -98,7 +114,7 @@ class RegistryFixture:
             / "upstream-read-compatibility"
         )
         self.capture_directory.mkdir(parents=True)
-        for version in ("7.14.1", "7.14.2", "8.0.0", "8.1.0"):
+        for version in ("7.14.1", "7.14.2", "8.0.0", "8.1.0", "8.1.1"):
             shutil.copy2(
                 CAPTURE_DIRECTORY / f"ha-mcp-{version}.json",
                 self.capture_directory / f"ha-mcp-{version}.json",
@@ -107,9 +123,18 @@ class RegistryFixture:
             ARTIFACT_EVIDENCE_8100,
             self.capture_directory / ARTIFACT_EVIDENCE_8100.name,
         )
+        for evidence in (ARTIFACT_EVIDENCE_8111, FAMILY_DECISION_8111):
+            shutil.copy2(
+                evidence,
+                self.capture_directory / evidence.name,
+            )
         self.dashboard_attestations = (
-            self.root / DASHBOARD_ATTESTATIONS.name
+            self.runtime
+            / "providers"
+            / "contracts"
+            / DASHBOARD_ATTESTATIONS.name
         )
+        self.dashboard_attestations.parent.mkdir(parents=True)
         shutil.copy2(
             DASHBOARD_ATTESTATIONS,
             self.dashboard_attestations,
@@ -168,7 +193,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
         )
         self.assertEqual(
             registry.supported_versions,
-            ("7.14.1", "7.14.2", "8.0.0", "8.1.0"),
+            ("7.14.1", "7.14.2", "8.0.0", "8.1.0", "8.1.1"),
         )
         self.assertEqual(registry.default_version, "7.14.1")
         self.assertEqual(
@@ -180,13 +205,13 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
             self.assertEqual(len(release.tool_contracts), 78)
             self.assertEqual(
                 release.policy.classification_counts["automatic_read"],
-                24 if release.version in {"8.0.0", "8.1.0"} else 26,
+                24 if release.version in {"8.0.0", "8.1.0", "8.1.1"} else 26,
             )
             self.assertEqual(
                 release.runtime_contract_fingerprint_model,
                 (
                     RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2
-                    if release.version in {"8.0.0", "8.1.0"}
+                    if release.version in {"8.0.0", "8.1.0", "8.1.1"}
                     else RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
                 ),
             )
@@ -519,7 +544,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
     def test_policy_digest_and_policy_classification_conflicts_fail_closed(self):
         fixture = RegistryFixture()
         self.addCleanup(fixture.close)
-        policy_path = fixture.root / POLICY_7142.name
+        policy_path = fixture.runtime / POLICY_7142.name
         policy = json.loads(policy_path.read_text(encoding="utf-8"))
         policy["tools"][0]["classification"] = "unknown"
         policy_path.write_bytes(canonical_json(policy) + b"\n")
@@ -537,7 +562,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
     def test_policy_and_registry_provenance_mutations_fail_closed(self):
         fixture = RegistryFixture()
         self.addCleanup(fixture.close)
-        policy_path = fixture.root / POLICY_7142.name
+        policy_path = fixture.runtime / POLICY_7142.name
         policy = json.loads(policy_path.read_text(encoding="utf-8"))
         policy["tools"][0]["reason"] = "mutated reviewed policy"
         policy_path.write_bytes(canonical_json(policy) + b"\n")
@@ -796,7 +821,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
             }
             self.assertEqual(
                 len(automatic_names),
-                24 if release.version in {"8.0.0", "8.1.0"} else 26,
+                24 if release.version in {"8.0.0", "8.1.0", "8.1.1"} else 26,
             )
             for tool_name in sorted(automatic_names):
                 for expected_reason, mutate in mutations.items():
