@@ -41,6 +41,10 @@ from ha_mcp_engineering.impact.provider import DirectHaImpactProvider  # noqa: E
 from ha_mcp_engineering.impact.service import (  # noqa: E402
     ChangeImpactAnalysisService,
 )
+from ha_mcp_engineering.providers.ha_2026_8_device_compatibility import (  # noqa: E402
+    ADAPTER_ID as HA_2026_8_DEVICE_ADAPTER_ID,
+    adapt_ha_get_device_composite_result,
+)
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.errors import (  # noqa: E402
@@ -2415,7 +2419,24 @@ async def _run_device_migration_contract(
         )
 
     await _start_exact_upstream(token)
-    upstream_lookup = await _call_exact_upstream_get_device(old_device_id)
+    raw_upstream_lookup = await _call_exact_upstream_get_device(old_device_id)
+    upstream_lookup, response_adapter = (
+        await adapt_ha_get_device_composite_result(
+            raw_upstream_lookup,
+            arguments={"device_id": old_device_id},
+            upstream_version=UPSTREAM_VERSION,
+            rest_client=rest,
+            websocket_client=websocket,
+        )
+    )
+    expected_adapter = (
+        HA_2026_8_DEVICE_ADAPTER_ID
+        if EXPECTED_HA_VERSION == "2026.8.0"
+        else None
+    )
+    _assert_device_contract(
+        response_adapter == expected_adapter, "upstream_device_lookup"
+    )
     _assert_device_contract(
         upstream_lookup.get("success") is True, "upstream_device_lookup"
     )

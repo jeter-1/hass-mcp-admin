@@ -105,6 +105,20 @@ exact selected target. Periodic or event-triggered catalog reconciliation
 records them only as bounded, redacted unreviewed anomalies. It never exposes
 them or infers policy from their contents.
 
+### Exact Home Assistant response adapters
+
+Response adapters require exact upstream and Home Assistant version authority;
+they never inherit through a version range. The current reviewed adapter is
+`ha-get-device-composite-ha-2026.8-v1`. It applies only to upstream 8.1.0 or
+8.1.1 on exact Core 2026.8.0 when `ha_get_device(device_id=<old composite id>)`
+returns the proven incoherent empty entity join for a multi-entry synthesized
+device. It reads Core's composite-split map and entity registry, restores only
+the entity membership fields, and reports its identifier in response metadata.
+Malformed split or registry evidence fails closed. A complete upstream result,
+a non-composite device, another Core version, or another upstream release is
+returned without adaptation. This is a reviewed response repair, not provider
+fallback; `fallback=none` and `fallback_occurred=false` remain authoritative.
+
 ## Recovery versus incompatibility
 
 Use `/health` for process liveness and `/ready` for initial catalog readiness.

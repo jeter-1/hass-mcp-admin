@@ -107,9 +107,15 @@ from enumeration, and reports the exact old-to-new mapping through
 the historical optional primary config-entry relationship. In both lanes the
 direct old device target still resolves through `switch.turn_on` and
 `switch.turn_off`, with exact state readback for both entities;
-`ha_mcp_tools/device_get` expands both entities, and public
-`ha_get_device(device_id=<old id>)` succeeds through exact ha-mcp 8.1.1 with the
-original ID and both entities.
+`ha_mcp_tools/device_get` expands both entities. Exact ha-mcp 8.1.1 exposes an
+empty entity join when public `ha_get_device(device_id=<old id>)` receives this
+synthesized composite: it keys the correct component rows by their split IDs and
+then reads them by the old ID. Engineering therefore applies the reviewed
+`ha-get-device-composite-ha-2026.8-v1` response adapter only for exact upstream
+8.1.0/8.1.1 on exact Core 2026.8.0 and only for that incoherent empty-join
+envelope. The adapter uses Core's split map plus entity registry to restore both
+memberships, records its identity in response metadata, and fails closed on
+malformed evidence. Other upstream and Core versions do not inherit it.
 
 The same run builds the production Engineering dependency index from live Core
 state, registry and automation configuration, proves the exact entity reference

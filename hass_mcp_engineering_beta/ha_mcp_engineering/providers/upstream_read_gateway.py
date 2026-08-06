@@ -19,8 +19,16 @@ from pydantic import PrivateAttr
 
 from ..capabilities import replace_dynamic_upstream_capabilities
 from ..clients.mcp import DashboardTransportError
+from ..clients.rest import HomeAssistantRestClient
 from ..clients.upstream_read import McpReadCatalog, McpReadGatewayTransport
+from ..clients.websocket import HomeAssistantWebSocketClient
 from ..configuration import Settings, parse_upstream_dashboard_endpoint
+from ..errors import (
+    AuthorizationError,
+    HomeAssistantApiError,
+    HomeAssistantTimeoutError,
+    HomeAssistantUnavailableError,
+)
 from ..mcp_sdk_compatibility import McpSdkToolRegistry
 from ..models import FailureResponse, SuccessResponse
 from ..observability import METRICS
@@ -42,6 +50,10 @@ from ..upstream_tool_policy import (
     runtime_contract_fingerprint,
     runtime_description_fingerprint,
     schema_fingerprint,
+)
+from .ha_2026_8_device_compatibility import (
+    CompositeDeviceCompatibilityError,
+    adapt_ha_get_device_composite_result,
 )
 
 
@@ -377,6 +389,8 @@ class UpstreamReadGateway:
         self._transport: McpReadGatewayTransport | Any | None = None
         self._settings: Settings | None = None
         self._known_secrets: tuple[str, ...] = ()
+        self._ha_rest_client: HomeAssistantRestClient | Any | None = None
+        self._ha_websocket_client: HomeAssistantWebSocketClient | Any | None = None
         self._policy: UpstreamToolPolicy | None = None
         self._release_registry: (
             ReviewedUpstreamReleaseRegistry | None
@@ -539,11 +553,17 @@ class UpstreamReadGateway:
             ReviewedUpstreamReleaseRegistry | None
         ) = None,
         admission_validator: AdmissionValidator | None = None,
+        ha_rest_client: HomeAssistantRestClient | Any | None = None,
+        ha_websocket_client: HomeAssistantWebSocketClient | Any | None = None,
     ) -> None:
         self._remove_registered_tools()
         replace_dynamic_upstream_capabilities((), self._empty_state())
         endpoint = parse_upstream_dashboard_endpoint(settings.upstream_dashboard_mcp_url)
         self._settings = settings
+        self._ha_rest_client = ha_rest_client or HomeAssistantRestClient(settings)
+        self._ha_websocket_client = (
+            ha_websocket_client or HomeAssistantWebSocketClient(settings)
+        )
         self._known_secrets = tuple(
             dict.fromkeys(
                 item
@@ -2151,6 +2171,35 @@ class UpstreamReadGateway:
                 protocol_version=mapping.protocol_version,
                 upstream_tool=policy_entry.upstream_name,
             )
+            response_adapter = None
+            if policy_entry.upstream_name == "ha_get_device":
+                try:
+                    payload, response_adapter = (
+                        await adapt_ha_get_device_composite_result(
+                            payload,
+                            arguments=arguments,
+                            upstream_version=mapping.server_version,
+                            rest_client=self._ha_rest_client,
+                            websocket_client=self._ha_websocket_client,
+                        )
+                    )
+                except HomeAssistantTimeoutError:
+                    raise _GatewayFailure("timeout", dispatched=True) from None
+                except HomeAssistantUnavailableError:
+                    raise _GatewayFailure(
+                        "connection_failed", dispatched=True
+                    ) from None
+                except AuthorizationError:
+                    raise _GatewayFailure(
+                        "authentication_failed", dispatched=True
+                    ) from None
+                except (
+                    CompositeDeviceCompatibilityError,
+                    HomeAssistantApiError,
+                ):
+                    raise _GatewayFailure(
+                        "invalid_response", dispatched=True
+                    ) from None
             sanitation = sanitize_untrusted_data(
                 payload,
                 known_secrets=self._known_secrets,
@@ -2202,23 +2251,31 @@ class UpstreamReadGateway:
             if sanitation.truncated_field_count:
                 warnings.append("The untrusted upstream response was safely bounded.")
             warnings.extend(completeness_warnings)
+            if response_adapter is not None:
+                warnings.append(
+                    "A reviewed Home Assistant 2026.8 composite-device "
+                    "compatibility adapter restored split entity membership."
+                )
+            metadata = {
+                "provider": PROVIDER_ID,
+                "upstream_tool": policy_entry.upstream_name,
+                "upstream_server": exchange.server_name,
+                "upstream_version": exchange.server_version,
+                "classification": "automatic_read",
+                "schema_fingerprint": policy_entry.input_schema_fingerprint,
+                "untrusted_upstream_content": True,
+                "fallback": "none",
+                "fallback_occurred": False,
+                "completeness": completeness,
+            }
+            if response_adapter is not None:
+                metadata["response_adapter"] = response_adapter
             return SuccessResponse(
                 operation=exposed_name,
                 summary="Completed a reviewed pure-read operation through the upstream gateway.",
                 data=sanitation.value,
                 warnings=warnings,
-                metadata={
-                    "provider": PROVIDER_ID,
-                    "upstream_tool": policy_entry.upstream_name,
-                    "upstream_server": exchange.server_name,
-                    "upstream_version": exchange.server_version,
-                    "classification": "automatic_read",
-                    "schema_fingerprint": policy_entry.input_schema_fingerprint,
-                    "untrusted_upstream_content": True,
-                    "fallback": "none",
-                    "fallback_occurred": False,
-                    "completeness": completeness,
-                },
+                metadata=metadata,
                 timing=timing_since(started),
                 request_id=current_request_id(),
             ).to_json(response_limit)

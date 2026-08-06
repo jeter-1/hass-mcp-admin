@@ -29,7 +29,11 @@ proves the baseline remains composite or, on 2026.8.0, splits into two owned
 devices while its old ID continues to resolve for direct switch-service targets
 with state readback,
 Core's composite mapping, exact `ha_mcp_tools/device_get`, and public
-`ha_get_device`. Live dependency indexing and impact analysis verify the
+`ha_get_device`. The exact 2026.8 lane also exercises a narrowly reviewed
+response adapter for the 8.1.0/8.1.1 empty composite entity-join defect; the
+adapter restores membership from Core's split map, is surfaced in metadata,
+and does not apply to any other upstream or Core version. Live dependency
+indexing and impact analysis verify the
 migrated entity/device relationships and persisted automation reference. The
 same matrix also checks the 2026.8 one-time `http:` YAML storage migration and
 runs every existing REST, WebSocket, configuration, validation, trace, and

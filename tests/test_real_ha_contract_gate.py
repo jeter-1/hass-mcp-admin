@@ -1229,6 +1229,7 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
                 "DirectHaImpactProvider",
                 "ChangeImpactAnalysisService",
                 "_call_exact_upstream_get_device",
+                "adapt_ha_get_device_composite_result",
             }.issubset(call_names)
         )
         source = ast.get_source_segment(self.source, runner) or ""
