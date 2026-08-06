@@ -10,8 +10,11 @@ import re
 from awesomeversion import AwesomeVersion
 
 
-FINAL_RC3_VERSION = "2.0.0-rc.3"
 NEXT_VERSION_PATH = Path(".release/next-version")
+SEQUENCED_DEVELOPMENT_VERSION = re.compile(
+    r"^(?P<core>(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))-"
+    r"(?P<channel>beta\.|rc2-dev)(?P<sequence>[1-9]\d*)$"
+)
 AUTHORITATIVE_VERSION_FILES = (
     (
         Path("hass_mcp_engineering_beta/config.yaml"),
@@ -73,14 +76,23 @@ def validate_candidate(repo_root: Path) -> tuple[str, str]:
     try:
         current_version = AwesomeVersion(current)
         candidate_version = AwesomeVersion(candidate)
-        final_rc3 = AwesomeVersion(FINAL_RC3_VERSION)
         if not candidate_version > current_version:
             raise PromotionError(
                 "The staged release version must be newer than advertised"
             )
-        if not candidate_version < final_rc3:
+        current_match = SEQUENCED_DEVELOPMENT_VERSION.fullmatch(current)
+        candidate_match = SEQUENCED_DEVELOPMENT_VERSION.fullmatch(candidate)
+        if (
+            current_match is None
+            or candidate_match is None
+            or candidate_match["core"] != current_match["core"]
+            or candidate_match["channel"] != current_match["channel"]
+            or int(candidate_match["sequence"])
+            != int(current_match["sequence"]) + 1
+        ):
             raise PromotionError(
-                "The staged development version must remain below final RC3"
+                "The staged release must be the next version in the active "
+                "development sequence"
             )
     except PromotionError:
         raise

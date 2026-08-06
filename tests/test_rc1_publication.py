@@ -25,6 +25,7 @@ IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 NEXT_VERSION = "2.0.0-rc2-dev13"
 PROMOTION_FIXTURE_CURRENT_VERSION = "2.0.0-rc2-dev12"
 CURRENT_REPOSITORY_VERSION = "2.2.0-beta.22"
+CURRENT_STAGED_VERSION = "2.2.0-beta.23"
 PLATFORMS = ("linux/amd64", "linux/arm64", "linux/arm/v7")
 BUILD_ARGUMENTS = (
     "BUILD_VERSION",
@@ -109,10 +110,10 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         if declaration.exists():
             current, candidate = PROMOTION_MODULE.validate_candidate(ROOT)
             self.assertEqual(current, configured_version)
-            self.assertEqual(candidate, NEXT_VERSION)
+            self.assertEqual(candidate, CURRENT_STAGED_VERSION)
             self.assertEqual(
                 declaration.read_text(encoding="utf-8").strip(),
-                NEXT_VERSION,
+                CURRENT_STAGED_VERSION,
             )
         else:
             self.assertEqual(configured_version, CURRENT_REPOSITORY_VERSION)
@@ -131,10 +132,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             effective_version = configured_version
             self.assertEqual(configured_version, CURRENT_REPOSITORY_VERSION)
         if declaration.exists():
-            self.assertLess(
-                AwesomeVersion(effective_version),
-                AwesomeVersion("2.0.0-rc.3"),
-            )
+            self.assertEqual(effective_version, CURRENT_STAGED_VERSION)
         else:
             maintenance_version = AwesomeVersion(effective_version)
             self.assertEqual(
