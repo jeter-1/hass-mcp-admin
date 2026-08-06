@@ -1243,6 +1243,16 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             "_assert_http_configuration_contract",
             {call_name(call) for call in calls_under(self.functions["run_contracts"])},
         )
+        http_contract = self.functions["_assert_http_configuration_contract"]
+        self.assertIn(
+            "_docker_command",
+            {call_name(call) for call in calls_under(http_contract)},
+        )
+        http_source = ast.get_source_segment(self.source, http_contract) or ""
+        self.assertIn("/config/.storage/http", http_source)
+        self.assertNotIn("storage_path.read_text", http_source)
+        self.assertIn('stored.get("version") == 1', http_source)
+        self.assertIn('stored.get("version") == 2', http_source)
 
     def test_validate_job_regenerates_every_beta6_compatibility_fixture(self):
         validate = self.ci["jobs"]["validate"]

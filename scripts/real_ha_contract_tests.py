@@ -79,13 +79,15 @@ def _environment_path(name: str) -> Path | None:
 HA_URL = os.environ.get("REAL_HA_URL", "http://127.0.0.1:8123").rstrip("/")
 CLIENT_ID = f"{HA_URL}/"
 EXPECTED_HA_VERSION = os.environ.get("REAL_HA_EXPECTED_VERSION", "2026.7.2")
-CONTRACT_DIR = _environment_path("REAL_HA_CONTRACT_DIR")
 DEVICE_FIXTURE_PATH = _environment_path("REAL_HA_DEVICE_FIXTURE")
 TOKEN_PATH = _environment_path("REAL_HA_TOKEN_FILE")
 UPSTREAM_IMAGE = os.environ.get("REAL_HA_UPSTREAM_IMAGE", "")
 UPSTREAM_VERSION = os.environ.get("REAL_HA_UPSTREAM_VERSION", "8.1.1")
 UPSTREAM_CONTAINER = os.environ.get(
     "REAL_HA_UPSTREAM_CONTAINER", "beta23-real-ha-upstream"
+)
+HA_CONTRACT_CONTAINER = os.environ.get(
+    "HA_CONTRACT_CONTAINER", "beta25-real-ha"
 )
 UPSTREAM_PORT = int(os.environ.get("REAL_HA_UPSTREAM_PORT", "18086"))
 UPSTREAM_SECRET_PATH = "/beta23-real-ha-mcp"
@@ -2030,27 +2032,51 @@ async def _run_direct_update_contract(
         )
 
 
-def _assert_http_configuration_contract() -> None:
+async def _assert_http_configuration_contract() -> None:
     """Prove the 2026.8 YAML-to-storage assumption without changing ports."""
 
-    if CONTRACT_DIR is None:
-        raise RuntimeError("The disposable Home Assistant config path is required")
-    storage_path = CONTRACT_DIR / ".storage" / "http"
+    projection_code = (
+        "import json,pathlib;"
+        "root=json.loads(pathlib.Path('/config/.storage/http').read_text());"
+        "data=root.get('data') if isinstance(root.get('data'),dict) else {};"
+        "stable=data.get('stable') if isinstance(data.get('stable'),dict) else {};"
+        "print(json.dumps({"
+        "'version':root.get('version'),"
+        "'server_port':data.get('server_port'),"
+        "'has_yaml_migration_done':'yaml_migration_done' in data,"
+        "'yaml_migration_done':data.get('yaml_migration_done'),"
+        "'has_pending':'pending' in data,"
+        "'pending':data.get('pending'),"
+        "'has_stable':'stable' in data,"
+        "'stable_server_port':stable.get('server_port'),"
+        "'stable_error':stable.get('error')"
+        "},sort_keys=True,separators=(',',':')))"
+    )
+    stored = json.loads(
+        await _docker_command(
+            "exec",
+            HA_CONTRACT_CONTAINER,
+            "python",
+            "-c",
+            projection_code,
+        )
+    )
     if EXPECTED_HA_VERSION == "2026.7.2":
-        assert not storage_path.exists()
+        assert stored.get("version") == 1
+        assert stored.get("server_port") == 8123
+        assert stored.get("has_yaml_migration_done") is False
+        assert stored.get("has_pending") is False
+        assert stored.get("has_stable") is False
         return
     assert EXPECTED_HA_VERSION == "2026.8.0"
-    assert storage_path.is_file()
-    stored = json.loads(storage_path.read_text(encoding="utf-8"))
     assert stored.get("version") == 2
-    data = stored.get("data")
-    assert isinstance(data, dict)
-    assert data.get("yaml_migration_done") is True
-    assert data.get("pending") is None
-    stable = data.get("stable")
-    assert isinstance(stable, dict)
-    assert stable.get("server_port") == 8123
-    assert stable.get("error") is None
+    assert stored.get("has_yaml_migration_done") is True
+    assert stored.get("yaml_migration_done") is True
+    assert stored.get("has_pending") is True
+    assert stored.get("pending") is None
+    assert stored.get("has_stable") is True
+    assert stored.get("stable_server_port") == 8123
+    assert stored.get("stable_error") is None
 
 
 def _decode_tool_result(result: Any) -> dict[str, Any]:
@@ -2373,7 +2399,7 @@ async def run_contracts() -> None:
         await wait_for_runtime_ready(rest)
 
         phase = "http_configuration_migration"
-        _assert_http_configuration_contract()
+        await _assert_http_configuration_contract()
 
         phase = "device_registry_migration_and_analysis"
         await _run_device_migration_contract(rest, websocket, token)

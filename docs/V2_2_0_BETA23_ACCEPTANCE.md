@@ -115,10 +115,13 @@ owning split in 2026.8.0—and report the direct automation, device-registry, an
 disable-availability findings.
 
 The writer uses an explicit default-port `http:` YAML block. The baseline lane
-proves no 2026.8 storage contract is backported. The 2026.8.0 lane proves the
-same reachable HTTP endpoint is migrated once to storage version 2 with
+proves the exact legacy version-1 store retains port 8123 without any version-2
+stable, pending, or YAML-migration fields. The 2026.8.0 lane proves the same
+reachable HTTP endpoint is migrated once to storage version 2 with
 `yaml_migration_done=true`, no pending trial, stable port 8123, and no recorded
-error. Every pre-existing REST, WebSocket, configuration write/readback,
+error. The private store is inspected from inside the exact Core container and
+only this bounded, non-secret projection crosses the container boundary. Every
+pre-existing REST, WebSocket, configuration write/readback,
 validation, trace, and cleanup contract runs unchanged in both matrix lanes;
 neither lane is allowed to continue on error.
 
