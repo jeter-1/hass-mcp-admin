@@ -93,19 +93,21 @@ unchanged.
 
 Both lanes begin with the same state written through exact Home Assistant
 2026.7.2, not a hand-edited registry. Two normal config entries and two real
-sensor entities share one physical-device identifier, producing one historical
-multi-entry device. The writer also persists an automation containing the old
-device ID as a direct service target and an exact entity reference. It installs
-the exact 8.1.1 `ha_mcp_tools` component through its supported config flow.
+isolated switch entities share one physical-device identifier, producing one
+historical multi-entry device. The writer also persists an automation containing
+the old device ID as a direct service target and an exact entity reference. It
+installs the exact 8.1.1 `ha_mcp_tools` component through its supported config
+flow.
 
 The 2026.7.2 lane proves the historical device remains one enumerable device
 owned by both config entries. The 2026.8.0 lane proves Core migrates it to two
 single-owner devices, remaps each entity to its owning split, removes the old ID
 from enumeration, and reports the exact old-to-new mapping through
 `config/device_registry/list_composite_splits`. In both lanes the direct old
-device target still resolves, `ha_mcp_tools/device_get` expands both entities,
-and public `ha_get_device(device_id=<old id>)` succeeds through exact ha-mcp
-8.1.1 with the original ID and both entities.
+device target still resolves through `switch.turn_on` and `switch.turn_off`,
+with exact state readback for both entities; `ha_mcp_tools/device_get` expands
+both entities, and public `ha_get_device(device_id=<old id>)` succeeds through
+exact ha-mcp 8.1.1 with the original ID and both entities.
 
 The same run builds the production Engineering dependency index from live Core
 state, registry and automation configuration, proves the exact entity reference

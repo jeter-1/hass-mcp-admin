@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from homeassistant.components.sensor import SensorEntity
+from typing import Any
+
+from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -17,16 +19,16 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Add one actual sensor for the owning config entry."""
+    """Add one isolated in-memory switch for the owning config entry."""
 
-    async_add_entities([Beta23DeviceFixtureSensor(str(entry.data["slot"]))])
+    async_add_entities([Beta23DeviceFixtureSwitch(str(entry.data["slot"]))])
 
 
-class Beta23DeviceFixtureSensor(SensorEntity):
-    """A behavior-free state source backed by a normal entity platform."""
+class Beta23DeviceFixtureSwitch(SwitchEntity):
+    """An isolated switch used to prove direct device-target expansion."""
 
     _attr_should_poll = False
-    _attr_native_value = "ready"
+    _attr_is_on = False
 
     def __init__(self, slot: str) -> None:
         self._slot = slot
@@ -38,3 +40,15 @@ class Beta23DeviceFixtureSensor(SensorEntity):
             model="Synthetic shared physical device",
             name="Beta 23 Composite Device Fixture",
         )
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn on only this disposable in-memory fixture."""
+
+        self._attr_is_on = True
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn off only this disposable in-memory fixture."""
+
+        self._attr_is_on = False
+        self.async_write_ha_state()

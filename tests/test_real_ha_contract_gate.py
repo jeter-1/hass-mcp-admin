@@ -1196,24 +1196,28 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertIn('sudo rm -rf "$REAL_HA_CONTRACT_DIR"', cleanup_script)
         self.assertFalse(any(step.get("continue-on-error") for step in job["steps"]))
 
-    def test_real_ha_device_fixture_is_a_normal_two_entry_entity_platform(self):
+    def test_real_ha_device_fixture_is_a_normal_two_entry_switch_platform(self):
         self.assertEqual(
             {
                 path.name
                 for path in DEVICE_FIXTURE_ROOT.iterdir()
                 if path.name != "__pycache__"
             },
-            {"__init__.py", "config_flow.py", "manifest.json", "sensor.py"},
+            {"__init__.py", "config_flow.py", "manifest.json", "switch.py"},
         )
         manifest = json.loads(
             (DEVICE_FIXTURE_ROOT / "manifest.json").read_text(encoding="utf-8")
         )
         self.assertTrue(manifest["config_flow"])
-        sensor_source = (DEVICE_FIXTURE_ROOT / "sensor.py").read_text(
+        switch_source = (DEVICE_FIXTURE_ROOT / "switch.py").read_text(
             encoding="utf-8"
         )
-        self.assertIn("class Beta23DeviceFixtureSensor(SensorEntity)", sensor_source)
-        self.assertIn("identifiers={SHARED_IDENTIFIER}", sensor_source)
+        self.assertIn(
+            "class Beta23DeviceFixtureSwitch(SwitchEntity)", switch_source
+        )
+        self.assertIn("identifiers={SHARED_IDENTIFIER}", switch_source)
+        self.assertIn("async def async_turn_on", switch_source)
+        self.assertIn("async def async_turn_off", switch_source)
 
     def test_real_ha_contract_covers_migration_lookup_dependency_and_impact(self):
         runner = self.functions["_run_device_migration_contract"]
@@ -1233,6 +1237,9 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             "config/device_registry/list_composite_splits",
             "config/entity_registry/list",
             "ha_mcp_tools/device_get",
+            '"service": "turn_on"',
+            '"service": "turn_off"',
+            '/states/{entity_id}',
             "device_id",
             "composite_device_id",
             "direct_automation_reference",

@@ -864,7 +864,7 @@ async def prepare_migration_fixture() -> None:
     automation = {
         "id": MIGRATION_AUTOMATION_ID,
         "alias": "Beta 23 composite device reference",
-        "description": "Event-only disposable direct-device reference fixture",
+        "description": "Untriggered disposable direct-device reference fixture",
         "trigger": [
             {
                 "platform": "event",
@@ -874,7 +874,7 @@ async def prepare_migration_fixture() -> None:
         "condition": [],
         "action": [
             {
-                "service": "homeassistant.update_entity",
+                "service": "switch.turn_on",
                 "target": {"device_id": old_device_id},
             },
             {
@@ -2293,11 +2293,27 @@ async def _run_device_migration_contract(
     await websocket.command(
         {
             "type": "call_service",
-            "domain": "homeassistant",
-            "service": "update_entity",
+            "domain": "switch",
+            "service": "turn_on",
+            "service_data": {},
             "target": {"device_id": old_device_id},
         }
     )
+    for entity_id in entity_ids:
+        state = await rest.request("GET", f"/states/{entity_id}")
+        assert state.get("state") == "on"
+    await websocket.command(
+        {
+            "type": "call_service",
+            "domain": "switch",
+            "service": "turn_off",
+            "service_data": {},
+            "target": {"device_id": old_device_id},
+        }
+    )
+    for entity_id in entity_ids:
+        state = await rest.request("GET", f"/states/{entity_id}")
+        assert state.get("state") == "off"
 
     await _start_exact_upstream(token)
     upstream_lookup = await _call_exact_upstream_get_device(old_device_id)

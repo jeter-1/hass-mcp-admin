@@ -26,7 +26,8 @@ The disposable Home Assistant gate is now an independent two-lane matrix
 Exact 2026.7.2 first writes a genuine multi-config-entry device for each lane.
 The target boot then
 proves the baseline remains composite or, on 2026.8.0, splits into two owned
-devices while its old ID continues to resolve for direct service targets,
+devices while its old ID continues to resolve for direct switch-service targets
+with state readback,
 Core's composite mapping, exact `ha_mcp_tools/device_get`, and public
 `ha_get_device`. Live dependency indexing and impact analysis verify the
 migrated entity/device relationships and persisted automation reference. The
