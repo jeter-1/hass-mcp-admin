@@ -10,6 +10,36 @@
 - protocol: `2025-03-26`; and
 - merge, publication, deployment, and live Home Assistant changes: excluded.
 
+## Promotion-validation correction
+
+The accepted PR #96 suite validated the staged source state: the three
+advertised authorities remained exactly `2.2.0-beta.22` while
+`.release/next-version` declared exactly `2.2.0-beta.23`. Promotion run
+`31103173775` then correctly materialized those authorities as Beta 23 in a
+local candidate commit, but four release-coupled tests still compared the
+candidate to a Beta 22 test literal. The complete candidate suite therefore
+failed before any tag, GitHub Release, image, provenance, publication commit,
+deployment, or production contact.
+
+Release validation now distinguishes three states:
+
+- staged-source validation proves the advertised authorities are exactly
+  converged and the one staged declaration is the next permitted version;
+- promoted-candidate validation applies the normal transformation in an
+  isolated repository, consumes the declaration, proves exact convergence on
+  the staged version, validates deployment metadata, and runs the affected
+  F3, dashboard, and publication invariants; and
+- published-artifact validation remains the promotion workflow's post-build
+  verification of the immutable commit, tag, release, image digest, labels,
+  architectures, provenance, and SBOM.
+
+The F3 and dashboard assertions obtain the exact advertised version from the
+same promotion authority that requires config, runtime, and validator metadata
+to agree. They do not accept an arbitrary beta or mismatched identity. Ordinary
+pull-request CI materializes and validates the isolated candidate before a
+merge can trigger publication, so later staged beta increments do not require
+unrelated invariant tests to embed a new version literal.
+
 ## Exact 8.1.1 identity
 
 | Evidence | Exact value |
