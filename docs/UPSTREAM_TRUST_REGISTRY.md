@@ -91,6 +91,21 @@ release is unavailable even if the same binary-owned compiled semantics appear
 to match. A catalog fingerprint remains unrelated-tool observability and is
 never a required-tool compatibility gate.
 
+The compiled generic/provider release registry separately binds exact runtime
+authority. Its reviewed 8.1.0 entry records the tag target, standalone index
+and platform manifests, add-on index/image manifests, strict full-contract
+fingerprint, full 78-tool policy, and release-declared runtime model. Its raw
+standalone catalog fingerprint is diagnostic; complete per-tool semantic
+validation remains authoritative. The entry excludes release-page executables
+and MCPB that advertise 8.0.0 and cannot inherit 8.1.0 trust from their asset
+names.
+
+The source tag's Home Assistant add-on `config.yaml` also remains diagnostic
+build input. For operational lifecycle identity, Supervisor's exact
+endpoint-bound installed inventory is authoritative and must agree with the
+admitted MCP initialize identity. Neither a tagged-tree version nor an OCI
+revision label may override that runtime binding.
+
 ## Signing-key operations
 
 The private seed exists only as

@@ -1,4 +1,4 @@
-"""Planning-only acceptance for the immutable ha-mcp 8.0.0 add-on runtime.
+"""Planning-only acceptance for exact immutable ha-mcp add-on runtimes.
 
 CI starts the reviewed add-on image and a deterministic synthetic Home
 Assistant fixture before invoking this script.  The acceptance executes the
@@ -96,7 +96,63 @@ EXPECTED_LIFECYCLE_ADDON_RESPONSE_ENVELOPE = (
     "mcp-direct-structured-content-v1"
 )
 EXPECTED_SOURCE_DERIVED_MINIMUM_DETAIL_BYTES = 71_986
+EXPECTED_ADDON_DETAIL_PROFILE = "live-8.0.0"
 ACCEPTANCE_TIMEOUT_SECONDS = 180
+
+EXACT_ADDON_PROFILES = {
+    "8.0.0": {
+        "entry_id": "ha-mcp-v8.0.0-d65630f6",
+        "raw_catalog_fingerprint": (
+            "c61b0959e766f3900300dd4dd69a6d799fc113186d91983f21be69f1bc6b8768"
+        ),
+        "normalized_catalog_fingerprint": (
+            "3bad86b86400807ceddf68805cf4ed86d1243f201104e18ed8d3c15e560a1d53"
+        ),
+        "dashboard_runtime_fingerprint": (
+            "fb7f3789c8c020d8636a96b85a207635e94eefe9e0944c8814de59aba17e532e"
+        ),
+        "addon_detail_profile": "live-8.0.0",
+    },
+    "8.1.0": {
+        "entry_id": "ha-mcp-v8.1.0-4c07e625",
+        "raw_catalog_fingerprint": (
+            "6b5cd123cc60ff6668c2ff4dd1f9cedbe6a7a21fe43fe00471cd46611d4406d7"
+        ),
+        "normalized_catalog_fingerprint": (
+            "5ec7b1f4a4c2ffabb2acc14c73a230f08a5f94908b6f27e57cb6739d662f03d7"
+        ),
+        "dashboard_runtime_fingerprint": (
+            "fb7f3789c8c020d8636a96b85a207635e94eefe9e0944c8814de59aba17e532e"
+        ),
+        "addon_detail_profile": "live-8.1.0",
+    },
+}
+
+
+def _select_exact_addon_profile(version: str) -> None:
+    """Select one closed exact-release acceptance profile."""
+
+    profile = EXACT_ADDON_PROFILES.get(version)
+    if profile is None:
+        raise AcceptanceFailure("unsupported exact add-on acceptance profile")
+    global EXPECTED_UPSTREAM_VERSION
+    global EXPECTED_ENTRY_ID
+    global EXPECTED_RAW_CATALOG_FINGERPRINT
+    global EXPECTED_NORMALIZED_CATALOG_FINGERPRINT
+    global EXPECTED_DASHBOARD_RUNTIME_FINGERPRINT
+    global EXPECTED_ADDON_DETAIL_PROFILE
+    EXPECTED_UPSTREAM_VERSION = version
+    EXPECTED_ENTRY_ID = str(profile["entry_id"])
+    EXPECTED_RAW_CATALOG_FINGERPRINT = str(
+        profile["raw_catalog_fingerprint"]
+    )
+    EXPECTED_NORMALIZED_CATALOG_FINGERPRINT = str(
+        profile["normalized_catalog_fingerprint"]
+    )
+    EXPECTED_DASHBOARD_RUNTIME_FINGERPRINT = str(
+        profile["dashboard_runtime_fingerprint"]
+    )
+    EXPECTED_ADDON_DETAIL_PROFILE = str(profile["addon_detail_profile"])
 
 
 class AcceptanceFailure(RuntimeError):
@@ -551,7 +607,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
 
     after = fixture_stats(args.fixture_stats_url)
     require(
-        after.get("addon_detail_profile") == "live-8.0.0",
+        after.get("addon_detail_profile") == EXPECTED_ADDON_DETAIL_PROFILE,
         "fixture did not use the live-equivalent add-on detail profile",
     )
     require(
@@ -626,8 +682,14 @@ def main() -> None:
     parser.add_argument("--ha-token", required=True)
     parser.add_argument("--expected-image-index-digest", required=True)
     parser.add_argument("--expected-image-manifest-digest", required=True)
+    parser.add_argument(
+        "--expected-upstream-version",
+        choices=tuple(sorted(EXACT_ADDON_PROFILES)),
+        default="8.0.0",
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    _select_exact_addon_profile(args.expected_upstream_version)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     try:
         result = asyncio.run(

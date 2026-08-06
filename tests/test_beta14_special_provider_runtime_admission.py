@@ -224,7 +224,7 @@ class ReviewedCatalogValidatorTests(unittest.TestCase):
             (
                 "unknown_minor",
                 tools,
-                {"upstream_version": "8.1.0"},
+                {"upstream_version": "8.2.0"},
                 "upstream_version_mismatch",
             ),
             (
@@ -836,7 +836,7 @@ if actual_raw == selected_release.catalog_fingerprint:
         ).read_text(encoding="utf-8")
         self.assertIn("exact-addon-runtime-acceptance:", workflow)
         self.assertIn(
-            "Exact ha-mcp 8.0.0 add-on runtime acceptance",
+            "Exact ha-mcp ${{ matrix.upstream_version }} add-on runtime acceptance",
             workflow,
         )
         self.assertIn(
@@ -849,6 +849,22 @@ if actual_raw == selected_release.catalog_fingerprint:
         )
         self.assertIn(
             "sha256:150ee09078919a47db19639deaa8c27ec064390054e27b4e618f82eea9cf7f50",
+            workflow,
+        )
+        self.assertIn(
+            "sha256:2744a11c90f7a66e61fabe8166d058191d236094393c50d976978407c039d45d",
+            workflow,
+        )
+        self.assertIn(
+            "sha256:f415b72351d79414a3133c227622633d9c190a3f4f6b849eed93ac524ac1c2d5",
+            workflow,
+        )
+        self.assertIn(
+            "sha256:71bd08ac7ab4272bc226b91d299929949fa24b674e164121566bc1d84666e273",
+            workflow,
+        )
+        self.assertIn(
+            "sha256:2dad5c7f8afcfb8c5624d82a7d9c322fc70351d32d9697e07a162ec7015250b0",
             workflow,
         )
         self.assertIn(
@@ -878,6 +894,8 @@ if actual_raw == selected_release.catalog_fingerprint:
         self.assertIn("EXPECTED_RAW_CATALOG_FINGERPRINT", acceptance)
         self.assertIn("backup_dispatch_count == 0", acceptance)
         self.assertIn("sum(lifecycle_dispatch_counts.values()) == 0", acceptance)
+        self.assertIn('"8.0.0": {', acceptance)
+        self.assertIn('"8.1.0": {', acceptance)
         self.assertIn('"lovelace/config"', fixture)
 
 

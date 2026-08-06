@@ -55,6 +55,16 @@ MAX_QUARANTINE_RECORDS = 26
 MAX_RUNTIME_CONTRACT_DIFF_FIELDS = 16
 MAX_STRUCTURED_UPSTREAM_ERROR_BYTES = 16_384
 OPERATIONAL_CATALOG_FINGERPRINT_MODEL = "mcp-sorted-full-tool-catalog-v1"
+HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1 = (
+    "ha-mcp-hacs-info-top-level-success-v1"
+)
+_REVIEWED_SUCCESS_ENVELOPE_MODELS = {
+    (
+        "8.1.0",
+        REVIEWED_PROTOCOL_VERSION,
+        "ha_get_hacs_info",
+    ): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
+}
 _TRANSIENT_DISCOVERY_FAILURES = frozenset({"connection_failed", "timeout"})
 _STARTUP_ORDERING_FAILURES = frozenset({"endpoint_rejected"})
 STARTUP_ORDERING_GRACE_SECONDS = 600.0
@@ -2128,7 +2138,12 @@ class UpstreamReadGateway:
                     ),
                     dispatched=True,
                 )
-            payload = _normalize_upstream_payload(exchange.call_result)
+            payload = _normalize_upstream_payload(
+                exchange.call_result,
+                server_version=mapping.server_version,
+                protocol_version=mapping.protocol_version,
+                upstream_tool=policy_entry.upstream_name,
+            )
             sanitation = sanitize_untrusted_data(
                 payload,
                 known_secrets=self._known_secrets,
@@ -3382,21 +3397,110 @@ def _reviewed_single_entity_registry_lookup(
     )
 
 
-def _normalize_upstream_payload(call_result: dict[str, Any]) -> Any:
+def _normalize_upstream_payload(
+    call_result: dict[str, Any],
+    *,
+    server_version: str,
+    protocol_version: str,
+    upstream_tool: str,
+) -> Any:
+    response_model = _REVIEWED_SUCCESS_ENVELOPE_MODELS.get(
+        (server_version, protocol_version, upstream_tool)
+    )
+    if response_model == HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1:
+        payload = _reviewed_hacs_info_payload(call_result)
+        return _normalize_hacs_info_top_level_success(payload)
+
     structured = call_result.get("structuredContent")
     if structured is not None:
-        return structured
+        payload = structured
+    else:
+        content = call_result.get("content")
+        if not isinstance(content, list):
+            raise _GatewayFailure("invalid_response", dispatched=True)
+        if len(content) == 1 and isinstance(content[0], dict):
+            item = content[0]
+            if item.get("type") == "text" and isinstance(item.get("text"), str):
+                try:
+                    payload = json.loads(item["text"])
+                except json.JSONDecodeError:
+                    payload = item["text"]
+            else:
+                payload = content
+        else:
+            payload = content
+    return payload
+
+
+def _reviewed_hacs_info_payload(call_result: dict[str, Any]) -> Any:
+    """Decode the exact 8.1 MCP success envelope without ambiguity."""
+
     content = call_result.get("content")
-    if not isinstance(content, list):
+    if (
+        not isinstance(content, list)
+        or len(content) != 1
+        or not isinstance(content[0], dict)
+        or content[0].get("type") != "text"
+        or not isinstance(content[0].get("text"), str)
+    ):
         raise _GatewayFailure("invalid_response", dispatched=True)
-    if len(content) == 1 and isinstance(content[0], dict):
-        item = content[0]
-        if item.get("type") == "text" and isinstance(item.get("text"), str):
-            try:
-                return json.loads(item["text"])
-            except json.JSONDecodeError:
-                return item["text"]
-    return content
+    try:
+        text_payload = json.loads(
+            content[0]["text"],
+            object_pairs_hook=_reject_duplicate_json_members,
+            parse_constant=_reject_non_finite_json_constant,
+        )
+    except (RecursionError, TypeError, UnicodeError, ValueError):
+        raise _GatewayFailure("invalid_response", dispatched=True) from None
+
+    structured = call_result.get("structuredContent")
+    if structured is not None:
+        try:
+            structured_canonical = json.dumps(
+                structured,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+            text_canonical = json.dumps(
+                text_payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+        except (RecursionError, TypeError, UnicodeError, ValueError):
+            raise _GatewayFailure(
+                "invalid_response", dispatched=True
+            ) from None
+        if structured_canonical != text_canonical:
+            raise _GatewayFailure("invalid_response", dispatched=True)
+    return structured if structured is not None else text_payload
+
+
+def _normalize_hacs_info_top_level_success(payload: Any) -> dict[str, Any]:
+    """Restore the exact 8.0 HACS read shape for reviewed 8.1 success data."""
+
+    if not isinstance(payload, dict) or set(payload) != {
+        "success",
+        "data",
+        "metadata",
+    }:
+        raise _GatewayFailure("invalid_response", dispatched=True)
+    data = payload.get("data")
+    metadata = payload.get("metadata")
+    if (
+        payload.get("success") is not True
+        or not isinstance(data, dict)
+        or not isinstance(metadata, dict)
+        or "success" in data
+    ):
+        raise _GatewayFailure("invalid_response", dispatched=True)
+    return {
+        "data": {"success": True, **data},
+        "metadata": metadata,
+    }
 
 
 def _upstream_completeness(

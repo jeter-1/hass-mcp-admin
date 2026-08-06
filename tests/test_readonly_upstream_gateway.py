@@ -1488,12 +1488,16 @@ class PolicyInventoryTests(unittest.TestCase):
         self.assertIn("automation.gateway_fixture_unreadable", fixture)
         self.assertIn("issue_57_synthetic_provider_failure", fixture)
         self.assertIn(
-            'choices=("7.14.1", "7.14.2", "8.0.0")', fixture
+            'choices=("7.14.1", "7.14.2", "8.0.0", "8.1.0")',
+            fixture,
         )
         self.assertIn(
             'INSTALLED_ADDONS[0]["version"] = args.upstream_version',
             fixture,
         )
+        self.assertIn("exact_image_readmission_acceptance.py", workflow)
+        self.assertIn("docker stop --time 10 exact-read-gateway-upstream", workflow)
+        self.assertIn("docker start exact-read-gateway-upstream", workflow)
 
     def test_application_keeps_dashboard_and_generic_admission_independent(self):
         application = (

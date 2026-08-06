@@ -215,7 +215,11 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
             ROOT / "scripts/exact_addon_runtime_acceptance.py"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("--addon-detail-profile live-8.0.0", workflow)
+        self.assertIn("addon_detail_profile: live-8.0.0", workflow)
+        self.assertIn("addon_detail_profile: live-8.1.0", workflow)
+        self.assertIn(
+            '--addon-detail-profile "$ADDON_DETAIL_PROFILE"', workflow
+        )
         self.assertIn(
             "sha256:693ecd5c68f98e64111fbf58e02547a51b2168a942056684dbe262c550aff9cd",
             workflow,

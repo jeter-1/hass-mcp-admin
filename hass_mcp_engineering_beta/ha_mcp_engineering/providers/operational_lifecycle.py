@@ -129,6 +129,14 @@ _LIFECYCLE_ADDON_RESPONSE_CONTRACTS = {
         model=LIFECYCLE_ADDON_RESPONSE_MODEL_STRUCTURED_V1,
         envelope_variant=LIFECYCLE_ADDON_RESPONSE_ENVELOPE_STRUCTURED,
     ),
+    (
+        "ha-mcp-v8.1.0-4c07e625",
+        "8.1.0",
+        "2025-03-26",
+    ): LifecycleAddonResponseContract(
+        model=LIFECYCLE_ADDON_RESPONSE_MODEL_STRUCTURED_V1,
+        envelope_variant=LIFECYCLE_ADDON_RESPONSE_ENVELOPE_STRUCTURED,
+    ),
 }
 
 

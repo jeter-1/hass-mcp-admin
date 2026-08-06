@@ -26,6 +26,7 @@ from ha_mcp_engineering.tools import registered_tools  # noqa: E402
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1,
     RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2,
+    STRICT_FULL_CONTRACT_FINGERPRINT_MODEL_V1,
     UpstreamToolPolicyError,
     canonical_json,
     catalog_fingerprint,
@@ -43,8 +44,12 @@ REGISTRY = RUNTIME / "upstream_release_registry.json"
 POLICY_7141 = RUNTIME / "upstream_tool_policy.json"
 POLICY_7142 = RUNTIME / "upstream_tool_policy_7_14_2.json"
 POLICY_8000 = RUNTIME / "upstream_tool_policy_8_0_0.json"
+POLICY_8100 = RUNTIME / "upstream_tool_policy_8_1_0.json"
 CAPTURE_DIRECTORY = (
     ROOT / "docs/evidence/upstream-read-compatibility"
+)
+ARTIFACT_EVIDENCE_8100 = (
+    CAPTURE_DIRECTORY / "ha-mcp-8.1.0-contract-review.json"
 )
 DASHBOARD_ATTESTATIONS = (
     RUNTIME
@@ -77,7 +82,13 @@ class RegistryFixture:
     def __init__(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
-        for path in (REGISTRY, POLICY_7141, POLICY_7142, POLICY_8000):
+        for path in (
+            REGISTRY,
+            POLICY_7141,
+            POLICY_7142,
+            POLICY_8000,
+            POLICY_8100,
+        ):
             shutil.copy2(path, self.root / path.name)
         self.path = self.root / REGISTRY.name
         self.capture_directory = (
@@ -87,11 +98,15 @@ class RegistryFixture:
             / "upstream-read-compatibility"
         )
         self.capture_directory.mkdir(parents=True)
-        for version in ("7.14.1", "7.14.2", "8.0.0"):
+        for version in ("7.14.1", "7.14.2", "8.0.0", "8.1.0"):
             shutil.copy2(
                 CAPTURE_DIRECTORY / f"ha-mcp-{version}.json",
                 self.capture_directory / f"ha-mcp-{version}.json",
             )
+        shutil.copy2(
+            ARTIFACT_EVIDENCE_8100,
+            self.capture_directory / ARTIFACT_EVIDENCE_8100.name,
+        )
         self.dashboard_attestations = (
             self.root / DASHBOARD_ATTESTATIONS.name
         )
@@ -153,7 +168,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
         )
         self.assertEqual(
             registry.supported_versions,
-            ("7.14.1", "7.14.2", "8.0.0"),
+            ("7.14.1", "7.14.2", "8.0.0", "8.1.0"),
         )
         self.assertEqual(registry.default_version, "7.14.1")
         self.assertEqual(
@@ -165,13 +180,13 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
             self.assertEqual(len(release.tool_contracts), 78)
             self.assertEqual(
                 release.policy.classification_counts["automatic_read"],
-                24 if release.version == "8.0.0" else 26,
+                24 if release.version in {"8.0.0", "8.1.0"} else 26,
             )
             self.assertEqual(
                 release.runtime_contract_fingerprint_model,
                 (
                     RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2
-                    if release.version == "8.0.0"
+                    if release.version in {"8.0.0", "8.1.0"}
                     else RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
                 ),
             )
@@ -205,6 +220,157 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
             ),
             json.loads(REGISTRY.read_text(encoding="utf-8")),
         )
+
+    def test_v2_release_artifact_evidence_is_parsed_and_round_tripped(self):
+        raw = json.loads(REGISTRY.read_text(encoding="utf-8"))
+        generated = generated_reviewed_release_registry(
+            REGISTRY,
+            repository_root=ROOT,
+        )
+        registry = load_reviewed_upstream_release_registry(REGISTRY)
+
+        for version in ("8.0.0", "8.1.0"):
+            raw_release = next(
+                item for item in raw["releases"] if item["version"] == version
+            )
+            generated_release = next(
+                item
+                for item in generated["releases"]
+                if item["version"] == version
+            )
+            release = registry.by_version[version]
+            self.assertEqual(
+                release.strict_full_contract_fingerprint_model,
+                STRICT_FULL_CONTRACT_FINGERPRINT_MODEL_V1,
+            )
+            self.assertEqual(
+                release.strict_full_contract_fingerprint,
+                raw_release["strict_full_contract_fingerprint"],
+            )
+            self.assertEqual(
+                release.addon_artifact_digests_by_platform,
+                raw_release["addon_artifact_digests"],
+            )
+            for field in (
+                "strict_full_contract_fingerprint",
+                "strict_full_contract_fingerprint_model",
+                "addon_artifact_digests",
+            ):
+                self.assertEqual(generated_release[field], raw_release[field])
+            if version == "8.1.0":
+                self.assertEqual(
+                    release.artifact_evidence_resource,
+                    (
+                        "docs/evidence/upstream-read-compatibility/"
+                        "ha-mcp-8.1.0-contract-review.json"
+                    ),
+                )
+                self.assertEqual(
+                    generated_release["artifact_evidence_sha256"],
+                    raw_release["artifact_evidence_sha256"],
+                )
+            self.assertFalse(
+                {
+                    key
+                    for key in raw_release
+                    if "binary" in key or "mcpb" in key or "release_asset" in key
+                }
+            )
+
+    def test_v2_release_artifact_evidence_fails_closed(self):
+        mutations = {
+            "missing_strict_identity": lambda release: (
+                release.pop("strict_full_contract_fingerprint"),
+                release.pop("strict_full_contract_fingerprint_model"),
+            ),
+            "unsupported_strict_model": lambda release: release.update(
+                {"strict_full_contract_fingerprint_model": "unsupported-model"}
+            ),
+            "missing_addon_identity": lambda release: release.pop(
+                "addon_artifact_digests"
+            ),
+            "partial_addon_identity": lambda release: release[
+                "addon_artifact_digests"
+            ].pop("linux/arm64"),
+            "malformed_addon_identity": lambda release: release[
+                "addon_artifact_digests"
+            ]["linux/amd64"].update(
+                {"image_manifest_digest": "sha256:" + "0" * 63}
+            ),
+            "missing_artifact_evidence": lambda release: (
+                release.pop("artifact_evidence_resource"),
+                release.pop("artifact_evidence_sha256"),
+            ),
+            "unsupported_artifact_evidence": lambda release: release.update(
+                {
+                    "artifact_evidence_resource": (
+                        "docs/evidence/upstream-read-compatibility/"
+                        "ha-mcp-8.0.0-contract-review.json"
+                    )
+                }
+            ),
+        }
+        for name, mutation in mutations.items():
+            with self.subTest(name=name):
+                fixture = RegistryFixture()
+                self.addCleanup(fixture.close)
+                value = fixture.value()
+                release = next(
+                    item
+                    for item in value["releases"]
+                    if item["version"] == "8.1.0"
+                )
+                mutation(release)
+                fixture.write(value)
+                with self.assertRaises(UpstreamToolPolicyError):
+                    load_reviewed_upstream_release_registry(fixture.path)
+
+    def test_v2_release_artifact_evidence_binds_exact_reviewed_identities(self):
+        mutations = {
+            "strict_fingerprint": lambda release, evidence: release.update(
+                {"strict_full_contract_fingerprint": "0" * 64}
+            ),
+            "addon_manifest": lambda release, evidence: release[
+                "addon_artifact_digests"
+            ]["linux/amd64"].update(
+                {"image_manifest_digest": "sha256:" + "0" * 64}
+            ),
+            "artifact_family": lambda release, evidence: evidence[
+                "artifact_scope"
+            ].update({"admitted_artifact_family": "GitHub release assets"}),
+            "excluded_assets": lambda release, evidence: evidence[
+                "artifact_scope"
+            ].update({"excluded_release_assets": []}),
+            "runtime_tool_order": lambda release, evidence: evidence[
+                "runtime_catalog"
+            ]["runtime_tool_order"].reverse(),
+        }
+        for name, mutation in mutations.items():
+            with self.subTest(name=name):
+                fixture = RegistryFixture()
+                self.addCleanup(fixture.close)
+                value = fixture.value()
+                release = next(
+                    item
+                    for item in value["releases"]
+                    if item["version"] == "8.1.0"
+                )
+                evidence_path = (
+                    fixture.capture_directory
+                    / ARTIFACT_EVIDENCE_8100.name
+                )
+                evidence = json.loads(
+                    evidence_path.read_text(encoding="utf-8")
+                )
+                mutation(release, evidence)
+                evidence_path.write_bytes(canonical_json(evidence) + b"\n")
+                release["artifact_evidence_sha256"] = (
+                    "sha256:"
+                    + hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+                )
+                fixture.write(value)
+                with self.assertRaises(UpstreamToolPolicyError):
+                    fixture.validate()
 
     def test_capture_hash_identity_and_every_contract_field_are_bound(self):
         mutations = {
@@ -579,6 +745,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 (
                     item["upstream_version"],
                     item["image_index_digest"],
+                    item["source_commit"],
                     item["image_revision"],
                 )
                 for item in value["include"]
@@ -587,6 +754,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 (
                     release.version,
                     release.image_index_digest,
+                    release.source_commit,
                     release.image_revision,
                 )
                 for release in registry.releases
@@ -628,7 +796,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
             }
             self.assertEqual(
                 len(automatic_names),
-                24 if release.version == "8.0.0" else 26,
+                24 if release.version in {"8.0.0", "8.1.0"} else 26,
             )
             for tool_name in sorted(automatic_names):
                 for expected_reason, mutate in mutations.items():
