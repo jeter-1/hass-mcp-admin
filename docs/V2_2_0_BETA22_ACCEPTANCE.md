@@ -13,6 +13,8 @@
   `1f249de2f40ed698eb536ac1d1221bf0b429d2bc`;
 - post-restack clean-snapshot Evidence head, including O-1/O-2 tests:
   `e03b7af4340e0cceca748815c7eb71eb394a3f14`;
+- independently reviewed and accepted pre-correction PR #95 head:
+  `ddc5e4fbd2ee922a4e1fe99cb8c67919ca71f622`;
 - Engineering/stable versions: `2.2.0-beta.22` / `1.1.2`;
 - protocol: `2025-03-26`;
 - secure pins: `aiohttp==3.14.3` and `cryptography==50.0.0`; and
@@ -46,6 +48,54 @@ These guards change no production runtime, schema, policy, or dispatch path.
 They increase the Beta 22 focused module from 18 to 20 tests. The restacked PR
 must remain draft and unmerged until a new independent exact-head review is
 complete.
+
+## Post-review release-readiness correction
+
+The protected-merge preflight for accepted head `ddc5e4fb...` found two
+publication blockers before PR #95 was marked ready or merged:
+
+- the Beta 22 acceptance and release-note records used descriptive filenames
+  that the exact document-authority resolver did not recognize; and
+- the normal promotion workflow created and verified the immutable image and
+  annotated tag, but did not create the required GitHub Release.
+
+The records now use the canonical authority paths
+`docs/V2_2_0_BETA22_ACCEPTANCE.md` and
+`docs/V2_2_0_BETA22_RELEASE_NOTES.md`. The promotion authority validates that
+exact pair and passes the resolved release-note path to publication rather
+than reconstructing or guessing it.
+
+After anonymous multi-architecture image, provenance, SBOM, release-commit,
+and annotated-tag verification, the workflow now creates a non-draft Beta 22
+GitHub prerelease from the canonical notes. Its appended immutable identity
+records the exact source and release commits, both immutable image references,
+OCI manifest digest, build timestamp, declared architectures, and verified
+attestations. The workflow reads the Release back and requires exact tag,
+title, URL, body, draft state, prerelease state, publication ID, and publication
+timestamp before reporting the release complete.
+
+Both the initial and final Release-absence probes fail closed unless GitHub
+returns an explicit HTTP 404. Main or annotated-tag drift also fails closed.
+If the immutable image and tag succeed but Release creation or readback fails,
+the summary identifies the partial phase and directs recovery to the Release
+record only; it forbids rebuilding or overwriting the immutable image or tag.
+PR validation retains read-only permissions and cannot create a Release.
+
+Deterministic offline execution tests cover successful exact publication and
+refusal when a Release already exists, main moves, or the tag moves. The
+canonical authority resolver and workflow structure have permanent regression
+coverage. Fast protected-path validation passed with 57 workflow tests, one
+documented Windows-only skip, exact base `bc150bd2...`, and explicit authority
+for the inherited Engineering runtime/version paths plus the publication
+workflow.
+
+This correction does not change Engineering runtime behavior, stable 1.1.2,
+Beta 22's advertised version, public tools, schemas, policy, dispatch, or
+Home Assistant compatibility. It deliberately changes the accepted PR head,
+so PR #95 remains draft and unmerged pending complete Evidence, exact-head CI,
+and a new independent exact-head review and merge authorization. No tag,
+Release, image, deployment, restart, canary, or Home Assistant mutation is
+performed by this correction.
 
 ## Defect and independently traced root cause
 

@@ -198,7 +198,7 @@ in
 [`../docs/V2_2_0_BETA21_HA_MCP_8_1_0_ACCEPTANCE.md`](../docs/V2_2_0_BETA21_HA_MCP_8_1_0_ACCEPTANCE.md).
 Beta 22's approval-review invariant, projection schema, historical behavior,
 and validation evidence are recorded in
-[`../docs/V2_2_0_BETA22_APPROVAL_REVIEW_ACCEPTANCE.md`](../docs/V2_2_0_BETA22_APPROVAL_REVIEW_ACCEPTANCE.md).
+[`../docs/V2_2_0_BETA22_ACCEPTANCE.md`](../docs/V2_2_0_BETA22_ACCEPTANCE.md).
 Beta 7 response truthfulness and current prohibited projection remain
 unchanged. Its
 update/recovery preflight,

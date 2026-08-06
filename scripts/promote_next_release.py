@@ -156,6 +156,7 @@ def parse_args(argv: list[str] | None = None):
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--apply", action="store_true")
     action.add_argument("--validate-authority", metavar="VERSION")
+    action.add_argument("--resolve-release-notes", metavar="VERSION")
     return parser.parse_args(argv)
 
 
@@ -168,6 +169,12 @@ def main(argv: list[str] | None = None) -> int:
             "Validated exact release-document authority for "
             f"{args.validate_authority}."
         )
+        return 0
+    if args.resolve_release_notes:
+        resolution = validate_document_authority(
+            repo_root, args.resolve_release_notes
+        )
+        print(resolution["active_release_notes"])
         return 0
     current, candidate = (
         apply_candidate(repo_root)
