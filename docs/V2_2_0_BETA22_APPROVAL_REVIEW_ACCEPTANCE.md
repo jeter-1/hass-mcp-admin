@@ -3,14 +3,16 @@
 ## Source and release boundary
 
 - repository: `jeter-1/hass-mcp-admin`;
-- direct stacked base and accepted PR #94 head:
+- merged Beta 21 base and exact PR #95 restack target:
+  `bc150bd2ed1ee2744bc25e2f2f1930e5155efbe9`;
+- accepted PR #94 head and second parent of that merge:
   `35a83f2d2065b488ccff3594c9e8a7a629f9dcb9`;
-- merge base and merged Beta 20 main:
+- merged Beta 20 main and first parent of that merge:
   `e2152911c0f3581c38b6ef42e52a2dd221cd8d96`;
-- Beta 22 validated implementation head:
-  `b956257f3328a59cd66dff7bc72f7454af12329d`;
-- clean-snapshot Evidence head:
-  `6366fdf6d000ab129bf6bdd1e25189a0476bdf9d`;
+- pre-restack independently reviewed Beta 22 head:
+  `1f249de2f40ed698eb536ac1d1221bf0b429d2bc`;
+- post-restack clean-snapshot Evidence head, including O-1/O-2 tests:
+  `e03b7af4340e0cceca748815c7eb71eb394a3f14`;
 - Engineering/stable versions: `2.2.0-beta.22` / `1.1.2`;
 - protocol: `2025-03-26`;
 - secure pins: `aiohttp==3.14.3` and `cryptography==50.0.0`; and
@@ -19,6 +21,31 @@
 This is an approval-review correctness release stacked on Beta 21. It does not
 change the accepted F3 adapter, lock, intent, dispatch, recovery, rollback, or
 exact `ha-mcp` 8.1.0 compatibility semantics.
+
+## Post-merge restack and review hardening
+
+PR #94 was merged with exact reviewed head `35a83f2d...`, producing merge
+commit `bc150bd2...` with the two parents recorded above. Promotion run
+`31061625405` was canceled before its detection or promotion jobs executed.
+After cancellation, the Beta 21 tag, GitHub release, GHCR image tag, and any
+promotion commit were all absent.
+
+The ten previously reviewed Beta 22 commits were replayed without conflict
+onto the exact merge commit. The two accepted nonblocking observations were
+then added as regression-only hardening:
+
+- O-1 records the arguments passed to semantic-projection validation and
+  proves that `policy_class` and `physical_impact` match the authoritative plan
+  policy decision even when projection-controlled risk fields contain different
+  values; and
+- O-2 parses the approval renderer and proves that semantic `before` and
+  `after` snapshots flow through the complete snapshot renderer without any
+  `_summary_scalar` clipping call.
+
+These guards change no production runtime, schema, policy, or dispatch path.
+They increase the Beta 22 focused module from 18 to 20 tests. The restacked PR
+must remain draft and unmerged until a new independent exact-head review is
+complete.
 
 ## Defect and independently traced root cause
 
@@ -168,7 +195,7 @@ Recorded commands and final totals:
 
 ```text
 PYTHONDONTWRITEBYTECODE=1 /tmp/hass-mcp-beta15-final-venv/bin/python -m unittest -v tests.test_beta22_approval_review_correctness tests.test_dev14_configuration_plans
-# 74 tests, 0 failures, 0 skips
+# 76 tests, 0 failures, 0 skips
 
 PYTHONDONTWRITEBYTECODE=1 /tmp/hass-mcp-beta15-final-venv/bin/python -m unittest -v tests.test_beta25_external_approval tests.test_f2_policy_approval tests.test_f3_configuration_identity tests.test_f3_configuration_migration tests.test_f3_runtime_integration
 # 109 tests, 0 failures, 0 skips
@@ -176,21 +203,23 @@ PYTHONDONTWRITEBYTECODE=1 /tmp/hass-mcp-beta15-final-venv/bin/python -m unittest
 PYTHONDONTWRITEBYTECODE=1 /tmp/hass-mcp-beta15-final-venv/bin/python -m unittest -v tests.test_ha_mcp_8_1_0_compatibility tests.test_exact_8_1_runtime_acceptance tests.test_hacs_8_1_response_compatibility tests.test_upstream_release_registry
 # 56 tests, 0 failures, 0 skips
 
-DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 /tmp/hass-mcp-pr70-pwsh/pwsh -NoLogo -NoProfile -Command "& ./scripts/check.ps1 -Tier Full -PythonExecutable /tmp/hass-mcp-beta15-final-venv/bin/python -BaseRef 35a83f2d2065b488ccff3594c9e8a7a629f9dcb9 -AuthorizedProtectedPath @('hass_mcp_engineering_beta/ha_mcp_engineering/','hass_mcp_engineering_beta/config.yaml')"
-# Full passed: 1,934 discovered, 2 skipped, 0 failures; 183.134 seconds
+DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 /tmp/hass-mcp-pr70-pwsh/pwsh -NoLogo -NoProfile -Command "& ./scripts/check.ps1 -Tier Full -PythonExecutable /tmp/hass-mcp-beta15-final-venv/bin/python -BaseRef bc150bd2ed1ee2744bc25e2f2f1930e5155efbe9 -AuthorizedProtectedPath @('hass_mcp_engineering_beta/ha_mcp_engineering/','hass_mcp_engineering_beta/config.yaml')"
+# Full passed at e03b7af4340e0cceca748815c7eb71eb394a3f14:
+# 1,936 discovered, 2 skipped, 0 failures; suite step 179.387 seconds
 
-DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 /tmp/hass-mcp-pr70-pwsh/pwsh -NoLogo -NoProfile -Command "& ./scripts/check.ps1 -Tier Evidence -PythonExecutable /tmp/hass-mcp-beta15-final-venv/bin/python -BaseRef 35a83f2d2065b488ccff3594c9e8a7a629f9dcb9 -AuthorizedProtectedPath @('hass_mcp_engineering_beta/ha_mcp_engineering/','hass_mcp_engineering_beta/config.yaml')"
-# Evidence passed at clean head 6366fdf6d000ab129bf6bdd1e25189a0476bdf9d:
-# 1,934 discovered, 2 skipped, 0 failures; suite step 184.284 seconds
-# (183.146 seconds reported by unittest).
+DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 /tmp/hass-mcp-pr70-pwsh/pwsh -NoLogo -NoProfile -Command "& ./scripts/check.ps1 -Tier Evidence -PythonExecutable /tmp/hass-mcp-beta15-final-venv/bin/python -BaseRef bc150bd2ed1ee2744bc25e2f2f1930e5155efbe9 -AuthorizedProtectedPath @('hass_mcp_engineering_beta/ha_mcp_engineering/','hass_mcp_engineering_beta/config.yaml')"
+# Evidence passed at clean head e03b7af4340e0cceca748815c7eb71eb394a3f14:
+# 1,936 discovered, 2 skipped, 0 failures; suite step 176.226 seconds
+# Snapshot identity remained stable and clean.
 ```
 
-The first Full attempt discovered the same 1,934 tests and two skips but found
-two preservation defects: the fixed error-taxonomy expectation lacked the new
-domain code, and historical prohibited apply returned projection-unreviewable
-instead of the stronger established prohibited outcome. The focused fixes
-passed seven historical/tamper tests plus the taxonomy test. The final Full
-command above then passed without failure.
+During the original pre-restack implementation, the first Full attempt
+discovered the then-current 1,934 tests and two skips but found two preservation
+defects: the fixed error-taxonomy expectation lacked the new domain code, and
+historical prohibited apply returned projection-unreviewable instead of the
+stronger established prohibited outcome. The focused fixes passed seven
+historical/tamper tests plus the taxonomy test. The post-restack Full and
+Evidence commands above include those fixes and the two new review guards.
 
 ## Skip-count reconciliation
 
@@ -287,10 +316,10 @@ Evidence run:
 
 ```text
 /tmp/hass-mcp-beta15-final-venv/bin/python scripts/review_upstream_read_release.py validate
-/tmp/hass-mcp-beta15-final-venv/bin/python scripts/review_upstream_read_release.py generate --output /tmp/beta22-upstream-registry-one.json
-/tmp/hass-mcp-beta15-final-venv/bin/python scripts/review_upstream_read_release.py generate --output /tmp/beta22-upstream-registry-two.json
-cmp /tmp/beta22-upstream-registry-one.json /tmp/beta22-upstream-registry-two.json
-cmp /tmp/beta22-upstream-registry-one.json hass_mcp_engineering_beta/ha_mcp_engineering/upstream_release_registry.json
+/tmp/hass-mcp-beta15-final-venv/bin/python scripts/review_upstream_read_release.py generate --output /tmp/beta22-restack-registry-one.json
+/tmp/hass-mcp-beta15-final-venv/bin/python scripts/review_upstream_read_release.py generate --output /tmp/beta22-restack-registry-two.json
+cmp /tmp/beta22-restack-registry-one.json /tmp/beta22-restack-registry-two.json
+cmp /tmp/beta22-restack-registry-one.json hass_mcp_engineering_beta/ha_mcp_engineering/upstream_release_registry.json
 # byte-identical; SHA-256 163582e160398892ef8541e9f0c7e97de2b4e8c25301dcc867e0067a8a617035
 
 /tmp/hass-mcp-beta15-final-venv/bin/python -m pip check
