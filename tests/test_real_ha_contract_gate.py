@@ -1248,6 +1248,19 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             "device_registry_relationship",
         ):
             self.assertIn(contract, source)
+        self.assertIn("_assert_device_contract", call_names)
+        for scenario in (
+            "component_lookup",
+            "dependency_index",
+            "direct_device_target",
+            "impact_analysis",
+            "persisted_references",
+            "registry_shape",
+            "split_projection",
+            "upstream_device_lookup",
+        ):
+            self.assertIn(f'"{scenario}"', self.source)
+        self.assertIn("*_DEVICE_CONTRACT_SCENARIOS", self.source)
         self.assertIn(
             "_assert_http_configuration_contract",
             {call_name(call) for call in calls_under(self.functions["run_contracts"])},

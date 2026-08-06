@@ -2207,6 +2207,32 @@ def _contains_exact_value(value: Any, key: str, expected: str) -> bool:
     return False
 
 
+_DEVICE_CONTRACT_SCENARIOS = frozenset(
+    {
+        "component_lookup",
+        "dependency_index",
+        "direct_device_target",
+        "impact_analysis",
+        "persisted_references",
+        "registry_shape",
+        "split_projection",
+        "upstream_device_lookup",
+    }
+)
+
+
+def _assert_device_contract(condition: bool, scenario: str) -> None:
+    """Raise one bounded, stage-attributed device-contract assertion."""
+
+    if scenario not in _DEVICE_CONTRACT_SCENARIOS:
+        raise ValueError("Unknown device contract scenario")
+    if condition:
+        return
+    error = AssertionError()
+    setattr(error, "contract_scenario", scenario)
+    raise error
+
+
 async def _run_device_migration_contract(
     rest: HomeAssistantRestClient,
     websocket: HomeAssistantWebSocketClient,
@@ -2219,11 +2245,13 @@ async def _run_device_migration_contract(
     entity_ids = [str(item) for item in fixture["entity_ids"]]
     config_entry_ids = {str(item) for item in fixture["config_entry_ids"]}
     primary_config_entry_id = fixture.get("primary_config_entry_id")
-    assert primary_config_entry_id is None or isinstance(
-        primary_config_entry_id, str
+    _assert_device_contract(
+        primary_config_entry_id is None
+        or isinstance(primary_config_entry_id, str),
+        "registry_shape",
     )
-    assert len(entity_ids) == 2
-    assert len(config_entry_ids) == 2
+    _assert_device_contract(len(entity_ids) == 2, "registry_shape")
+    _assert_device_contract(len(config_entry_ids) == 2, "registry_shape")
 
     devices = await websocket.command({"type": "config/device_registry/list"})
     entities = await websocket.command({"type": "config/entity_registry/list"})
@@ -2232,10 +2260,14 @@ async def _run_device_migration_contract(
         for item in entities
         if isinstance(item, dict) and item.get("entity_id") in entity_ids
     ]
-    assert len(fixture_entities) == 2
-    assert {
-        str(item.get("config_entry_id")) for item in fixture_entities
-    } == config_entry_ids
+    _assert_device_contract(len(fixture_entities) == 2, "registry_shape")
+    _assert_device_contract(
+        {
+            str(item.get("config_entry_id")) for item in fixture_entities
+        }
+        == config_entry_ids,
+        "registry_shape",
+    )
 
     if EXPECTED_HA_VERSION == "2026.7.2":
         expected_device_ids = {old_device_id}
@@ -2244,39 +2276,62 @@ async def _run_device_migration_contract(
             for item in devices
             if isinstance(item, dict) and item.get("id") == old_device_id
         )
-        assert set(composite.get("config_entries", ())) == config_entry_ids
-        assert (
-            composite.get("primary_config_entry")
-            == primary_config_entry_id
+        _assert_device_contract(
+            set(composite.get("config_entries", ())) == config_entry_ids,
+            "registry_shape",
+        )
+        _assert_device_contract(
+            composite.get("primary_config_entry") == primary_config_entry_id,
+            "registry_shape",
         )
     else:
-        assert EXPECTED_HA_VERSION == "2026.8.0"
-        assert not any(
-            isinstance(item, dict) and item.get("id") == old_device_id
-            for item in devices
+        _assert_device_contract(
+            EXPECTED_HA_VERSION == "2026.8.0", "split_projection"
+        )
+        _assert_device_contract(
+            not any(
+                isinstance(item, dict) and item.get("id") == old_device_id
+                for item in devices
+            ),
+            "split_projection",
         )
         composite_splits = await websocket.command(
             {"type": "config/device_registry/list_composite_splits"}
         )
         split_contract = composite_splits.get(old_device_id)
-        assert isinstance(split_contract, dict)
+        _assert_device_contract(
+            isinstance(split_contract, dict), "split_projection"
+        )
         expected_device_ids = {
             str(item) for item in split_contract.get("split_ids", ())
         }
-        assert len(expected_device_ids) == 2
+        _assert_device_contract(
+            len(expected_device_ids) == 2, "split_projection"
+        )
         splits = [
             item
             for item in devices
             if isinstance(item, dict)
             and item.get("id") in expected_device_ids
         ]
-        assert len(splits) == 2
-        assert {str(item.get("config_entry_id")) for item in splits} == config_entry_ids
-        assert all(
-            set(item.get("config_entries", ())) == {item.get("config_entry_id")}
-            for item in splits
+        _assert_device_contract(len(splits) == 2, "split_projection")
+        _assert_device_contract(
+            {str(item.get("config_entry_id")) for item in splits}
+            == config_entry_ids,
+            "split_projection",
         )
-        assert {str(item["id"]) for item in splits} == expected_device_ids
+        _assert_device_contract(
+            all(
+                set(item.get("config_entries", ()))
+                == {item.get("config_entry_id")}
+                for item in splits
+            ),
+            "split_projection",
+        )
+        _assert_device_contract(
+            {str(item["id"]) for item in splits} == expected_device_ids,
+            "split_projection",
+        )
         expected_primary_id = next(
             (
                 item["id"]
@@ -2285,8 +2340,15 @@ async def _run_device_migration_contract(
             ),
             None,
         )
-        assert split_contract.get("primary_id") == expected_primary_id
-    assert {str(item.get("device_id")) for item in fixture_entities} == expected_device_ids
+        _assert_device_contract(
+            split_contract.get("primary_id") == expected_primary_id,
+            "split_projection",
+        )
+    _assert_device_contract(
+        {str(item.get("device_id")) for item in fixture_entities}
+        == expected_device_ids,
+        "split_projection",
+    )
 
     component_lookup = await websocket.command(
         {
@@ -2296,19 +2358,33 @@ async def _run_device_migration_contract(
         }
     )
     component_device = component_lookup.get("device")
-    assert isinstance(component_device, dict)
-    assert component_device.get("id") == old_device_id
-    assert {
-        str(item.get("entity_id"))
-        for item in component_lookup.get("entities", ())
-        if isinstance(item, dict)
-    } == set(entity_ids)
+    _assert_device_contract(
+        isinstance(component_device, dict), "component_lookup"
+    )
+    _assert_device_contract(
+        component_device.get("id") == old_device_id, "component_lookup"
+    )
+    _assert_device_contract(
+        {
+            str(item.get("entity_id"))
+            for item in component_lookup.get("entities", ())
+            if isinstance(item, dict)
+        }
+        == set(entity_ids),
+        "component_lookup",
+    )
 
     automation = await rest.request(
         "GET", f"/config/automation/config/{MIGRATION_AUTOMATION_ID}"
     )
-    assert _contains_exact_value(automation, "device_id", old_device_id)
-    assert _contains_exact_value(automation, "entity_id", entity_ids[0])
+    _assert_device_contract(
+        _contains_exact_value(automation, "device_id", old_device_id),
+        "persisted_references",
+    )
+    _assert_device_contract(
+        _contains_exact_value(automation, "entity_id", entity_ids[0]),
+        "persisted_references",
+    )
     await websocket.command(
         {
             "type": "call_service",
@@ -2320,7 +2396,9 @@ async def _run_device_migration_contract(
     )
     for entity_id in entity_ids:
         state = await rest.request("GET", f"/states/{entity_id}")
-        assert state.get("state") == "on"
+        _assert_device_contract(
+            state.get("state") == "on", "direct_device_target"
+        )
     await websocket.command(
         {
             "type": "call_service",
@@ -2332,21 +2410,40 @@ async def _run_device_migration_contract(
     )
     for entity_id in entity_ids:
         state = await rest.request("GET", f"/states/{entity_id}")
-        assert state.get("state") == "off"
+        _assert_device_contract(
+            state.get("state") == "off", "direct_device_target"
+        )
 
     await _start_exact_upstream(token)
     upstream_lookup = await _call_exact_upstream_get_device(old_device_id)
-    assert upstream_lookup.get("success") is True
-    assert upstream_lookup.get("queried_by") == "device_id"
+    _assert_device_contract(
+        upstream_lookup.get("success") is True, "upstream_device_lookup"
+    )
+    _assert_device_contract(
+        upstream_lookup.get("queried_by") == "device_id",
+        "upstream_device_lookup",
+    )
     upstream_device = upstream_lookup.get("device")
-    assert isinstance(upstream_device, dict)
-    assert upstream_device.get("device_id") == old_device_id
-    assert upstream_lookup.get("entity_count") == 2
-    assert {
-        str(item.get("entity_id"))
-        for item in upstream_lookup.get("entities", ())
-        if isinstance(item, dict)
-    } == set(entity_ids)
+    _assert_device_contract(
+        isinstance(upstream_device, dict), "upstream_device_lookup"
+    )
+    _assert_device_contract(
+        upstream_device.get("device_id") == old_device_id,
+        "upstream_device_lookup",
+    )
+    _assert_device_contract(
+        upstream_lookup.get("entity_count") == 2,
+        "upstream_device_lookup",
+    )
+    _assert_device_contract(
+        {
+            str(item.get("entity_id"))
+            for item in upstream_lookup.get("entities", ())
+            if isinstance(item, dict)
+        }
+        == set(entity_ids),
+        "upstream_device_lookup",
+    )
 
     index = DependencyIndex(
         DirectHaDependencyProvider(rest, websocket),
@@ -2359,11 +2456,20 @@ async def _run_device_migration_contract(
         source_types=["automation"],
         refresh_index=True,
     )
-    assert dependency.data["target"]["device_id"] in expected_device_ids
-    assert dependency.data["overview"]["dependency_status"] == "referenced"
-    assert any(
-        item.get("source_id") == MIGRATION_AUTOMATION_ID
-        for item in dependency.data["findings"]
+    _assert_device_contract(
+        dependency.data["target"]["device_id"] in expected_device_ids,
+        "dependency_index",
+    )
+    _assert_device_contract(
+        dependency.data["overview"]["dependency_status"] == "referenced",
+        "dependency_index",
+    )
+    _assert_device_contract(
+        any(
+            item.get("source_id") == MIGRATION_AUTOMATION_ID
+            for item in dependency.data["findings"]
+        ),
+        "dependency_index",
     )
 
     impact = await ChangeImpactAnalysisService(
@@ -2380,11 +2486,21 @@ async def _run_device_migration_contract(
         source_types=["automation"],
         detail_level="evidence",
     )
-    assert impact.data["target_entity_summary"]["device_id"] in expected_device_ids
+    _assert_device_contract(
+        impact.data["target_entity_summary"]["device_id"]
+        in expected_device_ids,
+        "impact_analysis",
+    )
     rules = {item["rule_id"] for item in impact.data["findings"]}
-    assert "direct_automation_reference" in rules
-    assert "device_registry_relationship" in rules
-    assert "disable_runtime_availability_risk" in rules
+    _assert_device_contract(
+        "direct_automation_reference" in rules, "impact_analysis"
+    )
+    _assert_device_contract(
+        "device_registry_relationship" in rules, "impact_analysis"
+    )
+    _assert_device_contract(
+        "disable_runtime_availability_risk" in rules, "impact_analysis"
+    )
 
 
 async def _cleanup_configuration_resources(
@@ -2605,6 +2721,7 @@ def main(arguments: list[str] | None = None) -> int:
             "standard_admin",
             "elevated_admin",
             "prohibited",
+            *_DEVICE_CONTRACT_SCENARIOS,
         }:
             scenario = "unknown"
         missing_key = getattr(exc, "contract_missing_key", None)
