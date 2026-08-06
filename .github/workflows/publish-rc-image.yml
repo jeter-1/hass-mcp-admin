@@ -85,7 +85,9 @@ jobs:
       image_verified: ${{ steps.verify.outputs.image_verified }}
       tag_created: ${{ steps.finalize.outputs.tag_created }}
       tag_verified: ${{ steps.finalize.outputs.tag_verified }}
-      release_complete: ${{ steps.finalize.outputs.release_complete }}
+      github_release_created: ${{ steps.release.outputs.github_release_created }}
+      github_release_verified: ${{ steps.release.outputs.github_release_verified }}
+      release_complete: ${{ steps.release.outputs.release_complete }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -111,6 +113,8 @@ jobs:
       - name: Prepare local immutable release commit
         id: prepare
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
@@ -136,10 +140,25 @@ jobs:
             exit 1
           fi
           python scripts/promote_next_release.py --validate-authority "$version"
+          release_notes_path="$(python scripts/promote_next_release.py --resolve-release-notes "$version")"
+          if [[ ! "$release_notes_path" =~ ^docs/[A-Za-z0-9._/-]+_RELEASE_NOTES\.md$ || ! -f "$release_notes_path" ]]; then
+            echo "::error::The resolved release-notes authority is not a bounded existing repository path."
+            exit 1
+          fi
           release_tag="v${version}"
 
           if git ls-remote --exit-code --tags origin "refs/tags/${release_tag}" >/dev/null 2>&1; then
             echo "::error::The immutable release tag ${release_tag} already exists."
+            exit 1
+          fi
+
+          release_probe_error="$RUNNER_TEMP/github-release-probe-error"
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${release_tag}" >/dev/null 2>"$release_probe_error"; then
+            echo "::error::A GitHub Release already exists for ${release_tag}."
+            exit 1
+          elif ! grep -Fq "HTTP 404" "$release_probe_error"; then
+            cat "$release_probe_error" >&2
+            echo "::error::Unable to prove that the GitHub Release tag is unused."
             exit 1
           fi
 
@@ -189,6 +208,7 @@ jobs:
             echo "release_mode=$RELEASE_MODE"
             echo "version=$version"
             echo "release_tag=$release_tag"
+            echo "release_notes_path=$release_notes_path"
             echo "release_sha=$release_sha"
             echo "build_time=$build_time"
           } >> "$GITHUB_OUTPUT"
@@ -381,9 +401,114 @@ jobs:
             echo "::error::Remote main and the annotated release tag do not resolve to the release commit."
             exit 1
           fi
+          echo "tag_verified=true" >> "$GITHUB_OUTPUT"
+
+      - name: Create and verify GitHub Release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
+          RELEASE_TAG: ${{ steps.prepare.outputs.release_tag }}
+          RELEASE_NOTES_PATH: ${{ steps.prepare.outputs.release_notes_path }}
+          SOURCE_MAIN_SHA: ${{ steps.prepare.outputs.source_main_sha }}
+          VERSION: ${{ steps.prepare.outputs.version }}
+          BUILD_TIME: ${{ steps.prepare.outputs.build_time }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          promoted_main="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          promoted_tag="$(git ls-remote origin "refs/tags/${RELEASE_TAG}^{}" | awk '{print $1}')"
+          if [[ "$promoted_main" != "$RELEASE_SHA" || "$promoted_tag" != "$RELEASE_SHA" ]]; then
+            echo "::error::The GitHub Release cannot be created because main or its annotated tag moved."
+            exit 1
+          fi
+
+          release_probe_error="$RUNNER_TEMP/github-release-final-probe-error"
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" >/dev/null 2>"$release_probe_error"; then
+            echo "::error::A GitHub Release appeared before exact finalization."
+            exit 1
+          elif ! grep -Fq "HTTP 404" "$release_probe_error"; then
+            cat "$release_probe_error" >&2
+            echo "::error::Unable to prove that the GitHub Release tag remains unused."
+            exit 1
+          fi
+
+          release_title="HA MCP Engineering Server ${VERSION}"
+          release_body="$RUNNER_TEMP/github-release-notes.md"
+          python - "$RELEASE_NOTES_PATH" "$release_body" "$VERSION" "$SOURCE_MAIN_SHA" "$RELEASE_SHA" "$BUILD_TIME" "$IMAGE_DIGEST" <<'PY'
+          from pathlib import Path
+          import sys
+
+          notes_path, output_path, version, source_sha, release_sha, build_time, digest = sys.argv[1:]
+          notes = Path(notes_path).read_text(encoding="utf-8").rstrip()
+          identity = f"""## Immutable publication identity
+
+          - Source main commit: `{source_sha}`
+          - Release commit: `{release_sha}`
+          - Version image: `ghcr.io/jeter-1/hass-mcp-engineering-beta:{version}`
+          - Commit image: `ghcr.io/jeter-1/hass-mcp-engineering-beta:sha-{release_sha}`
+          - OCI manifest digest: `{digest}`
+          - Build timestamp: `{build_time}`
+          - Architectures: `linux/amd64`, `linux/arm64`, `linux/arm/v7`
+          - SLSA provenance and SBOM attestations: verified
+          """
+          Path(output_path).write_text(
+              f"{notes}\n\n{identity}", encoding="utf-8", newline=""
+          )
+          PY
+
+          expected_prerelease=false
+          release_flags=()
+          if [[ "$VERSION" == *-* ]]; then
+            expected_prerelease=true
+            release_flags+=(--prerelease)
+          fi
+          release_url="$(gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$release_title" \
+            --notes-file "$release_body" \
+            --target "$RELEASE_SHA" \
+            --verify-tag \
+            "${release_flags[@]}")"
+          echo "github_release_created=true" >> "$GITHUB_OUTPUT"
+
+          release_json="$RUNNER_TEMP/github-release.json"
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" > "$release_json"
+          python - "$release_json" "$release_body" "$RELEASE_TAG" "$release_title" "$release_url" "$expected_prerelease" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+
+          payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          expected_body = Path(sys.argv[2]).read_text(encoding="utf-8").rstrip()
+          expected_tag, expected_title, expected_url = sys.argv[3:6]
+          expected_prerelease = sys.argv[6] == "true"
+          failures = []
+          if payload.get("tag_name") != expected_tag:
+              failures.append("tag")
+          if payload.get("name") != expected_title:
+              failures.append("title")
+          if payload.get("html_url") != expected_url:
+              failures.append("url")
+          if payload.get("body", "").rstrip() != expected_body:
+              failures.append("body")
+          if payload.get("draft") is not False:
+              failures.append("draft")
+          if payload.get("prerelease") is not expected_prerelease:
+              failures.append("prerelease")
+          if not isinstance(payload.get("id"), int) or not payload.get("published_at"):
+              failures.append("publication_identity")
+          if failures:
+              raise SystemExit(
+                  "GitHub Release verification failed: " + ", ".join(failures)
+              )
+          PY
           {
-            echo "tag_verified=true"
+            echo "github_release_verified=true"
             echo "release_complete=true"
+            echo "release_url=$release_url"
           } >> "$GITHUB_OUTPUT"
 
       - name: Write promotion and reconciliation summary
@@ -398,7 +523,10 @@ jobs:
           IMAGE_VERIFIED: ${{ steps.verify.outputs.image_verified || 'false' }}
           TAG_CREATED: ${{ steps.finalize.outputs.tag_created || 'false' }}
           TAG_VERIFIED: ${{ steps.finalize.outputs.tag_verified || 'false' }}
-          RELEASE_COMPLETE: ${{ steps.finalize.outputs.release_complete || 'false' }}
+          GITHUB_RELEASE_CREATED: ${{ steps.release.outputs.github_release_created || 'false' }}
+          GITHUB_RELEASE_VERIFIED: ${{ steps.release.outputs.github_release_verified || 'false' }}
+          GITHUB_RELEASE_URL: ${{ steps.release.outputs.release_url || 'not-created' }}
+          RELEASE_COMPLETE: ${{ steps.release.outputs.release_complete || 'false' }}
         run: |
           {
             if [[ "$RELEASE_COMPLETE" == "true" ]]; then
@@ -418,10 +546,16 @@ jobs:
             echo "- manifest_digest: ${DIGEST:-not-published}"
             echo "- tag_created: $TAG_CREATED"
             echo "- tag_verified: $TAG_VERIFIED"
+            echo "- github_release_created: $GITHUB_RELEASE_CREATED"
+            echo "- github_release_verified: $GITHUB_RELEASE_VERIFIED"
+            echo "- github_release_url: $GITHUB_RELEASE_URL"
             echo "- release_complete: $RELEASE_COMPLETE"
             echo "- The workflow did not force-push or overwrite main."
             if [[ "$RELEASE_COMPLETE" == "true" ]]; then
               echo "- Operator action: refresh the Home Assistant add-on store if needed, then update Engineering Beta."
+            elif [[ "$TAG_VERIFIED" == "true" ]]; then
+              echo "- Failed phase: GitHub Release creation or verification."
+              echo "- Recovery: verify the existing annotated tag, release commit, digest, OCI provenance, and canonical release notes before creating or correcting only the GitHub Release. Do not rebuild or overwrite the immutable image or tag."
             elif [[ "$IMAGE_PUBLISHED" == "true" ]]; then
               echo "- Failed phase: tag finalization or later verification."
               echo "- Recovery: verify the existing digest, OCI revision, version, and anonymous access before retrying only tag finalization. Do not rebuild or overwrite the immutable image tag."

@@ -893,7 +893,7 @@ async def _run_governed_configuration_contract(
             assert review["approval_state"] == "external_pending"
             assert review["operation_count"] == len(RESOURCE_ORDER)
             assert all(
-                item["semantic_projection"]["status"] == "complete"
+                item["semantic_projection"]["projection_complete"] is True
                 for item in review["operation_summaries"]
             )
 

@@ -1,14 +1,24 @@
 # HA MCP Engineering Server Beta
 
 This directory contains the Engineering v2 add-on. Development version
-`2.2.0-beta.21` adds exact reviewed `ha-mcp` 8.1.0 compatibility on top of the
-merged Beta 20 F3 runtime. The 8.1.0 profile admits 24 delegated reads, keeps
+`2.2.0-beta.22` makes every governed configuration plan completely reviewable
+before external approval while preserving Beta 21's exact reviewed `ha-mcp`
+8.1.0 compatibility on top of the merged Beta 20 F3 runtime. The 8.1.0 profile
+admits 24 delegated reads, keeps
 `ha_search` and `ha_get_operation_status` held, reclassifies the expanded
 `ha_manage_hacs` write surface, and normalizes only the exact changed HACS read
 success envelope. Immutable OCI identities are reviewed; the stale-version
 release executables and MCPB are excluded.
 
-Beta 21 preserves Beta 20's closed 12-capability F3 registry, deterministic
+Beta 22 persists a versioned complete before/after semantic projection, binds
+its digest through plan/policy authority into the unchanged F3 prepared hash,
+and renders that authoritative record without Home Assistant re-query. Long
+values remain inspectable, protected values use field-aware redaction, and
+historical plans without a trustworthy projection remain audit-readable but
+cannot be approved or dispatched.
+
+Beta 22 preserves Beta 21's exact upstream admission and Beta 20's closed
+12-capability F3 registry, deterministic
 child authority, central recovery, selective holds, private reconciliation,
 and governed rollback. It also preserves Beta 15 lifecycle response handling,
 Beta 14 model-aware catalog validation, Beta 13's secure dependency pins,
@@ -127,7 +137,7 @@ reboot and completeness defects, RC2dev14 established practical configuration
 plans, and RC2dev16 corrected delegated structured-error normalization without
 changing upstream admission or adding search behavior. Version `2.0.1`
 promoted the accepted RC1-dev2 behavior without a functional change. Development
-version `2.2.0-beta.21` retains governed controlled reload, exact add-on restart,
+version `2.2.0-beta.22` retains governed controlled reload, exact add-on restart,
 Home Assistant restart, readback-only reconciliation, and one durable execution
 task for each newly executed plan. It adds authority-version-3 policy and
 approval bundles without another tool, provider, resource, or fallback. Beta 9
@@ -186,6 +196,9 @@ also covers the settings sidecar, shutdown cancellation, and provider
 disconnect/readmission. The complete source and artifact boundary is recorded
 in
 [`../docs/V2_2_0_BETA21_HA_MCP_8_1_0_ACCEPTANCE.md`](../docs/V2_2_0_BETA21_HA_MCP_8_1_0_ACCEPTANCE.md).
+Beta 22's approval-review invariant, projection schema, historical behavior,
+and validation evidence are recorded in
+[`../docs/V2_2_0_BETA22_ACCEPTANCE.md`](../docs/V2_2_0_BETA22_ACCEPTANCE.md).
 Beta 7 response truthfulness and current prohibited projection remain
 unchanged. Its
 update/recovery preflight,

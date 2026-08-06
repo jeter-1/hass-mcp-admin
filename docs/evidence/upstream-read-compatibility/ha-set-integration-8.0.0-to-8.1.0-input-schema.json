@@ -1,0 +1,150 @@
+{
+  "conclusion": {
+    "admission_change_required": false,
+    "classification": "genuine_description_only_input_schema_change",
+    "reason": "The canonical input schemas differ at exactly /properties/config/description. The 8.1.0 registry already contains the exact 8.1.0 fingerprint and keeps ha_set_integration classified as persistent_write."
+  },
+  "diff": [
+    {
+      "after": "Flow form data. With 'domain': input for the new integration's config flow. With 'entry_id' alone: input for the entry's options flow (updates its options). Multi-step flows consume keys per step; menu steps take 'next_step_id' — a string, or a list of successive selections for flows that present more than one menu (e.g. a menu revisited after each branch, ending in a finish option). The step's data_schema is returned on validation errors so field names can be corrected.",
+      "before": "Flow form data. With 'domain': input for the new integration's config flow. With 'entry_id' alone: input for the entry's options flow (updates its options). Multi-step flows consume keys per step; menu steps take 'next_step_id'. The step's data_schema is returned on validation errors so field names can be corrected.",
+      "change": "replace",
+      "json_pointer": "/properties/config/description"
+    }
+  ],
+  "evidence_format_version": 1,
+  "hash_model": "sha256(canonical JSON: UTF-8, sorted keys, compact separators, ensure_ascii=false)",
+  "reproducible_command": "/tmp/hass-mcp-beta15-final-venv/bin/python -m unittest -v tests.test_beta22_approval_review_correctness.Beta22ObservationEvidenceTests",
+  "sources": {
+    "8.0.0": {
+      "canonical_input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Flow form data. With 'domain': input for the new integration's config flow. With 'entry_id' alone: input for the entry's options flow (updates its options). Multi-step flows consume keys per step; menu steps take 'next_step_id'. The step's data_schema is returned on validation errors so field names can be corrected."
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Integration domain to add (e.g. 'workday', 'local_calendar') — starts and drives that domain's config flow. Pass the flow's form fields in 'config'."
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "True to enable, False to disable the entry. Requires entry_id; mutually exclusive with 'domain' and 'config'."
+          },
+          "entry_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Config entry ID of an existing integration (enable/disable and options-update modes). Omit when adding via 'domain'."
+          }
+        },
+        "type": "object"
+      },
+      "capture_path": "docs/evidence/upstream-read-compatibility/ha-mcp-8.0.0.json",
+      "capture_sha256": "6f7039e27835fe3829af88a9de5caad031c6b809a09877cb69aca7f196725911",
+      "input_schema_sha256": "173747d701954dc2672b45191284ce719418a725fd13ee043972d44dd94475f0"
+    },
+    "8.1.0": {
+      "canonical_input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Flow form data. With 'domain': input for the new integration's config flow. With 'entry_id' alone: input for the entry's options flow (updates its options). Multi-step flows consume keys per step; menu steps take 'next_step_id' — a string, or a list of successive selections for flows that present more than one menu (e.g. a menu revisited after each branch, ending in a finish option). The step's data_schema is returned on validation errors so field names can be corrected."
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Integration domain to add (e.g. 'workday', 'local_calendar') — starts and drives that domain's config flow. Pass the flow's form fields in 'config'."
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "True to enable, False to disable the entry. Requires entry_id; mutually exclusive with 'domain' and 'config'."
+          },
+          "entry_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Config entry ID of an existing integration (enable/disable and options-update modes). Omit when adding via 'domain'."
+          }
+        },
+        "type": "object"
+      },
+      "capture_path": "docs/evidence/upstream-read-compatibility/ha-mcp-8.1.0.json",
+      "capture_sha256": "52abae7d54931c0b3016fa2cf0c7eb6435a4f2c35e6e85f14ef4d44b96bc6931",
+      "input_schema_sha256": "d467024b6a0a9a503c6438d473a3881e68232f91c2cc9517077123ab2bfe88c1",
+      "registry_classification": "persistent_write",
+      "registry_input_schema_sha256": "d467024b6a0a9a503c6438d473a3881e68232f91c2cc9517077123ab2bfe88c1"
+    }
+  },
+  "tool": "ha_set_integration",
+  "unchanged_tool_fields": [
+    "annotations",
+    "description",
+    "name",
+    "outputSchema",
+    "title"
+  ]
+}

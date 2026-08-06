@@ -330,6 +330,8 @@ class ConfigurationOperation:
     warnings: list[str] = field(default_factory=list)
     validation_results: dict[str, Any] = field(default_factory=dict)
     dry_run_results: dict[str, Any] = field(default_factory=dict)
+    semantic_projection: dict[str, Any] | None = None
+    semantic_projection_hash: str | None = None
     execution_status: StepExecutionStatus = StepExecutionStatus.PENDING
     execution_receipt: dict[str, Any] | None = None
     snapshot: ChangeSnapshot | None = None
@@ -354,6 +356,8 @@ class ConfigurationOperation:
         if data.get("snapshot"):
             data["snapshot"] = ChangeSnapshot(**data["snapshot"])
         data["verification"] = ChangeVerification(**data.get("verification", {}))
+        data.setdefault("semantic_projection", None)
+        data.setdefault("semantic_projection_hash", None)
         data.setdefault("execution_receipt", None)
         data.setdefault("post_apply_fingerprint", None)
         data.setdefault("failure_information", None)
@@ -502,6 +506,16 @@ class ChangePlan:
             # their exact persisted representation.
             value.pop("plan_family", None)
             value.pop("operational", None)
+        for operation in value.get("operations", []):
+            if not isinstance(operation, dict):
+                continue
+            # Dev14/Beta 21 records predate authoritative approval
+            # projections. Preserve their persisted historical shape instead
+            # of fabricating an unbound projection during a later read/save.
+            if operation.get("semantic_projection") is None:
+                operation.pop("semantic_projection", None)
+            if operation.get("semantic_projection_hash") is None:
+                operation.pop("semantic_projection_hash", None)
         return value
 
     @classmethod

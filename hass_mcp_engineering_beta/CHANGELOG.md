@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.2.0-beta.22 - Complete approval review correctness
+
+- Persist a deterministic, versioned semantic projection for every supported
+  configuration operation before a plan can create an external approval
+  challenge. Reject unreviewable, non-serializable, incomplete, or genuinely
+  oversized proposals with a stable domain outcome and no approval or F3 task.
+- Bind the complete projection digest into F2 policy authority, the exact plan
+  hash, and transitively the unchanged F3 prepared-operation hash. Tampered
+  targets, order, changes, values, schema, completeness, prepared configuration,
+  or digests fail closed before dispatch.
+- Replace the bounded 200-character/action-count review reconstruction with the
+  persisted authoritative before/after projection. Render all one-to-eight
+  ordered operations, complete long values in expandable escaped sections, and
+  field-aware redaction state without exposing protected values.
+- Keep pre-Beta-22 records readable for audit but non-approvable and
+  non-dispatchable when they lack a complete trusted projection. Preserve F3,
+  lock, intent, recovery, rollback, upstream 8.1.0 admission, protocol, secure
+  dependency pins, stable v1.1.2, public tools, and zero fallback unchanged.
+
 ## 2.2.0-beta.21 - Exact ha-mcp 8.1.0 compatibility
 
 - Add a separately reviewed exact 8.1.0 release entry for the immutable

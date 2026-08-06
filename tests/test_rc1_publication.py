@@ -1,8 +1,10 @@
 import importlib.util
+import json
 import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -22,7 +24,7 @@ IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 # RC2dev12 runtime metadata in this feature pull request.
 NEXT_VERSION = "2.0.0-rc2-dev13"
 PROMOTION_FIXTURE_CURRENT_VERSION = "2.0.0-rc2-dev12"
-CURRENT_REPOSITORY_VERSION = "2.2.0-beta.21"
+CURRENT_REPOSITORY_VERSION = "2.2.0-beta.22"
 PLATFORMS = ("linux/amd64", "linux/arm64", "linux/arm/v7")
 BUILD_ARGUMENTS = (
     "BUILD_VERSION",
@@ -197,6 +199,12 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             'python scripts/promote_next_release.py --validate-authority "$version"',
             prepare,
         )
+        self.assertIn(
+            'python scripts/promote_next_release.py --resolve-release-notes "$version"',
+            prepare,
+        )
+        self.assertIn("gh api", prepare)
+        self.assertIn("HTTP 404", prepare)
         self.assertIn('--deployed-version "$deployed_version"', prepare)
         self.assertIn('--base-ref "$validation_base"', prepare)
         self.assertIn('git status --porcelain', prepare)
@@ -273,6 +281,142 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                 else ""
             )
 
+    def run_github_release_finalization(
+        self,
+        *,
+        existing_release=False,
+        main_sha=None,
+        tag_sha=None,
+    ):
+        bash = shutil.which("bash")
+        if bash is None:
+            self.skipTest("bash is required to execute release finalization")
+        release_sha = "d" * 40
+        release_tag = f"v{CURRENT_REPOSITORY_VERSION}"
+        step = next(
+            item
+            for item in self.steps
+            if item.get("name") == "Create and verify GitHub Release"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            notes = root / "docs" / "V2_2_0_BETA22_RELEASE_NOTES.md"
+            notes.parent.mkdir()
+            notes.write_text(
+                f"# {CURRENT_REPOSITORY_VERSION} release notes\n\n"
+                "Synthetic offline release fixture.\n",
+                encoding="utf-8",
+            )
+            fake_git = root / "git"
+            fake_git.write_text(
+                """#!/usr/bin/env python3
+import os
+import sys
+
+args = sys.argv[1:]
+if args == ["ls-remote", "origin", "refs/heads/main"]:
+    print(os.environ["MOCK_MAIN_SHA"], "refs/heads/main")
+elif args[:2] == ["ls-remote", "origin"] and args[2].startswith("refs/tags/"):
+    print(os.environ["MOCK_TAG_SHA"], args[2])
+else:
+    raise SystemExit(f"unexpected git arguments: {args!r}")
+""",
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o755)
+            (root / "python").symlink_to(sys.executable)
+            fake_gh = root / "gh"
+            fake_gh.write_text(
+                """#!/usr/bin/env python3
+import json
+import os
+from pathlib import Path
+import sys
+
+args = sys.argv[1:]
+state = Path(os.environ["MOCK_RELEASE_STATE"])
+if args and args[0] == "api":
+    if state.exists():
+        print(state.read_text(encoding="utf-8"))
+        raise SystemExit(0)
+    if os.environ.get("MOCK_EXISTING_RELEASE") == "true":
+        print(json.dumps({"tag_name": os.environ["RELEASE_TAG"]}))
+        raise SystemExit(0)
+    print("gh: Not Found (HTTP 404)", file=sys.stderr)
+    raise SystemExit(1)
+if args[:2] == ["release", "create"]:
+    if "--verify-tag" not in args:
+        raise SystemExit("missing --verify-tag")
+    def option(name):
+        return args[args.index(name) + 1]
+    tag = args[2]
+    title = option("--title")
+    body = Path(option("--notes-file")).read_text(encoding="utf-8")
+    url = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/tag/{tag}"
+    payload = {
+        "id": 220022,
+        "tag_name": tag,
+        "name": title,
+        "html_url": url,
+        "body": body,
+        "draft": False,
+        "prerelease": "--prerelease" in args,
+        "published_at": "2026-08-06T00:00:00Z",
+        "target_commitish": option("--target"),
+    }
+    state.write_text(json.dumps(payload), encoding="utf-8")
+    print(url)
+    raise SystemExit(0)
+raise SystemExit(f"unexpected gh arguments: {args!r}")
+""",
+                encoding="utf-8",
+            )
+            fake_gh.chmod(0o755)
+            output = root / "github-output"
+            state = root / "release-state.json"
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "PATH": f"{root}{os.pathsep}{environment['PATH']}",
+                    "GITHUB_OUTPUT": str(output),
+                    "GITHUB_REPOSITORY": "jeter-1/hass-mcp-admin",
+                    "GH_TOKEN": "synthetic-release-token",
+                    "RUNNER_TEMP": str(root),
+                    "RELEASE_SHA": release_sha,
+                    "RELEASE_TAG": release_tag,
+                    "RELEASE_NOTES_PATH": str(notes),
+                    "SOURCE_MAIN_SHA": release_sha,
+                    "VERSION": CURRENT_REPOSITORY_VERSION,
+                    "BUILD_TIME": "2026-08-06T00:00:00Z",
+                    "IMAGE_DIGEST": f"sha256:{'e' * 64}",
+                    "MOCK_RELEASE_STATE": str(state),
+                    "MOCK_EXISTING_RELEASE": str(existing_release).lower(),
+                    "MOCK_MAIN_SHA": main_sha or release_sha,
+                    "MOCK_TAG_SHA": tag_sha or release_sha,
+                }
+            )
+            result = subprocess.run(
+                [bash, "-c", str(step["run"])],
+                cwd=root,
+                text=True,
+                capture_output=True,
+                check=False,
+                env=environment,
+            )
+            return {
+                "result": result,
+                "outputs": (
+                    assignment_lines(output.read_text(encoding="utf-8"))
+                    if output.exists()
+                    else {}
+                ),
+                "release": (
+                    json.loads(state.read_text(encoding="utf-8"))
+                    if state.exists()
+                    else None
+                ),
+            }
+
     def test_release_detector_trusts_only_exact_current_bot_subject(self):
         exact_bot_subject = (
             f"Promote HA MCP Engineering Server {CURRENT_REPOSITORY_VERSION}"
@@ -316,6 +460,40 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                     self.assertNotIn("already promoted", summary)
                 else:
                     self.assertIn("already promoted", summary)
+
+    def test_github_release_finalization_succeeds_with_exact_identity(self):
+        outcome = self.run_github_release_finalization()
+        result = outcome["result"]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            outcome["outputs"],
+            {
+                "github_release_created": "true",
+                "github_release_verified": "true",
+                "release_complete": "true",
+                "release_url": (
+                    "https://github.com/jeter-1/hass-mcp-admin/releases/tag/"
+                    f"v{CURRENT_REPOSITORY_VERSION}"
+                ),
+            },
+        )
+        release = outcome["release"]
+        self.assertEqual(release["target_commitish"], "d" * 40)
+        self.assertTrue(release["prerelease"])
+        self.assertIn("Immutable publication identity", release["body"])
+        self.assertIn(f"sha256:{'e' * 64}", release["body"])
+
+    def test_github_release_finalization_fails_closed_on_drift(self):
+        cases = (
+            {"existing_release": True},
+            {"main_sha": "a" * 40},
+            {"tag_sha": "b" * 40},
+        )
+        for values in cases:
+            with self.subTest(**values):
+                outcome = self.run_github_release_finalization(**values)
+                self.assertNotEqual(outcome["result"].returncode, 0)
+                self.assertEqual(outcome["outputs"], {})
 
     def test_exact_automated_subject_prevents_recursive_rc_publication(self):
         version = "2.0.0-rc2-dev16"
@@ -412,6 +590,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         self.assertNotIn("docker login", scripts)
         self.assertNotIn("--push", scripts)
         self.assertNotIn("git push", scripts)
+        self.assertNotIn("gh release create", scripts)
 
     def test_local_release_commit_is_validated_before_registry_login(self):
         names = [step.get("name", "") for step in self.steps]
@@ -475,7 +654,9 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             "Verify immutable tags, architectures, and provenance anonymously"
         )
         push_index = names.index("Finalize release commit and annotated tag")
+        release_index = names.index("Create and verify GitHub Release")
         self.assertLess(verify_index, push_index)
+        self.assertLess(push_index, release_index)
         verify = str(self.steps[verify_index]["run"])
         for value in (
             'anonymous_config="$RUNNER_TEMP/anonymous-docker"',
@@ -504,6 +685,26 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         for value in ("Version:", "Source SHA:", "Image digest:", "Build timestamp:"):
             self.assertIn(value, push)
 
+        release = str(self.steps[release_index]["run"])
+        for value in (
+            "gh release create",
+            "--verify-tag",
+            "--notes-file",
+            "--target",
+            "gh api",
+            "HTTP 404",
+            "Immutable publication identity",
+            "OCI manifest digest",
+            "SLSA provenance and SBOM attestations: verified",
+            '"$promoted_main" != "$RELEASE_SHA"',
+            '"$promoted_tag" != "$RELEASE_SHA"',
+            "github_release_created=true",
+            "github_release_verified=true",
+            "release_complete=true",
+        ):
+            self.assertIn(value, release)
+        self.assertNotIn("--latest", release)
+
     def test_failures_produce_reconciliation_without_silent_reuse(self):
         failure = next(
             step
@@ -517,9 +718,12 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("did not force-push", script)
         for field in (
             "image_published", "image_verified", "manifest_digest",
-            "tag_created", "tag_verified", "release_complete",
+            "tag_created", "tag_verified", "github_release_created",
+            "github_release_verified", "github_release_url",
+            "release_complete",
         ):
             self.assertIn(field, script)
+        self.assertIn("creating or correcting only the GitHub Release", script)
 
     def test_promotion_exposes_truthful_phase_outputs(self):
         outputs = self.promote["outputs"]
@@ -527,7 +731,9 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             set(outputs),
             {
                 "version", "release_sha", "digest", "image_published",
-                "image_verified", "tag_created", "tag_verified", "release_complete",
+                "image_verified", "tag_created", "tag_verified",
+                "github_release_created", "github_release_verified",
+                "release_complete",
             },
         )
         verify = next(
@@ -671,6 +877,20 @@ class PromotionScriptTests(unittest.TestCase):
         self.assertEqual(
             resolution["active_acceptance_document"],
             "docs/V2_0_1_ACCEPTANCE.md",
+        )
+
+    def test_repository_beta22_document_authority_is_exact(self):
+        resolution = self.module.validate_document_authority(
+            ROOT, CURRENT_REPOSITORY_VERSION
+        )
+        self.assertEqual(resolution["resolution_status"], "exact")
+        self.assertEqual(
+            resolution["active_release_notes"],
+            "docs/V2_2_0_BETA22_RELEASE_NOTES.md",
+        )
+        self.assertEqual(
+            resolution["active_acceptance_document"],
+            "docs/V2_2_0_BETA22_ACCEPTANCE.md",
         )
 
 

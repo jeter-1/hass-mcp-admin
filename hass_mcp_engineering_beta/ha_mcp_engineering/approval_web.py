@@ -12,6 +12,7 @@ import asyncio
 import hashlib
 from html import escape
 import hmac
+import json
 import re
 import secrets
 from typing import Any
@@ -25,31 +26,27 @@ from starlette.responses import HTMLResponse, Response
 from starlette.routing import Route
 
 from .errors import GovernanceError
-from .governance.service import (
-    DEFAULT_APPROVER_PRINCIPAL,
-    MAX_APPROVAL_PROJECTION_ACTIONS_PER_PLAN,
-    MAX_APPROVAL_PROJECTION_CONTROLS,
-    MAX_APPROVAL_PROJECTION_DATA,
-    MAX_APPROVAL_PROJECTION_DETAILS_PER_PLAN,
-    MAX_APPROVAL_PROJECTION_METADATA,
-    MAX_APPROVAL_PROJECTION_STEPS,
-    MAX_APPROVAL_PROJECTION_TARGETS,
+from .governance.semantic_projection import (
+    MAX_SEMANTIC_PROJECTION_BYTES_PER_OPERATION,
+    MAX_SEMANTIC_PROJECTION_BYTES_PER_PLAN,
+    SEMANTIC_PROJECTION_SCHEMA_VERSION,
+    SemanticProjectionError,
+    canonical_projection_bytes,
+    projection_hash,
 )
+from .governance.service import DEFAULT_APPROVER_PRINCIPAL
 
 
 MAX_BODY_BYTES = 8_192
-MAX_HTML_BYTES = 100_000
+# The complete canonical projection is bounded before persistence. HTML entity
+# escaping can expand one source byte to six bytes, so this response boundary
+# is derived from that product limit and includes fixed page/form overhead.
+MAX_HTML_BYTES = (
+    MAX_SEMANTIC_PROJECTION_BYTES_PER_PLAN * 6 + 200_000
+)
 MAX_REQUEST_SECONDS = 5
 MAX_REVIEW_OPERATIONS = 8
-MAX_STEP_CHANGED_FIELDS = 20
 MAX_STEP_WARNINGS = 10
-MAX_SEMANTIC_METADATA_FIELDS = MAX_APPROVAL_PROJECTION_METADATA
-MAX_SEMANTIC_ACTIONS_PER_OPERATION = MAX_APPROVAL_PROJECTION_STEPS
-MAX_SEMANTIC_CONTROLS_PER_OPERATION = MAX_APPROVAL_PROJECTION_CONTROLS
-MAX_SEMANTIC_ACTIONS_PER_PLAN = MAX_APPROVAL_PROJECTION_ACTIONS_PER_PLAN
-MAX_SEMANTIC_TARGETS_PER_ACTION = MAX_APPROVAL_PROJECTION_TARGETS
-MAX_SEMANTIC_DATA_PER_ACTION = MAX_APPROVAL_PROJECTION_DATA
-MAX_SEMANTIC_DETAILS_PER_PLAN = MAX_APPROVAL_PROJECTION_DETAILS_PER_PLAN
 SUPERVISOR_INGRESS_PEER = "172.30.32.2"
 _INGRESS_PATH = re.compile(r"^/api/hassio_ingress/[A-Za-z0-9_-]{8,128}$")
 _HA_USER_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
@@ -189,7 +186,18 @@ class IngressApprovalApplication:
         try:
             review, csrf = await self.governance.require().issue_external_csrf(plan_id, challenge_id)
         except GovernanceError as exc:
-            return self._response(_page("Approval unavailable", f"<p>{escape(exc.safe_message)}</p>"), 409)
+            explanation = escape(exc.safe_message)
+            if exc.code.value == "configuration_projection_unreviewable":
+                explanation += (
+                    " This historical or malformed record does not contain "
+                    "a complete Beta 22 projection bound to its prepared "
+                    "configuration. It remains readable for audit, but it "
+                    "cannot be approved or dispatched; create a new plan."
+                )
+            return self._response(
+                _page("Approval unavailable", f"<p>{explanation}</p>"),
+                409,
+            )
         return self._response(_render_review(prefix, review, csrf))
 
     async def approve(self, request: Request) -> Response:
@@ -445,11 +453,7 @@ code{{overflow-wrap:anywhere}}button{{padding:.65rem 1rem;margin:.5rem .5rem .5r
 def _bounded_operation_summaries(
     review: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], str | None]:
-    """Return only the service's bounded, raw-config-free review projection.
-
-    Raw plan operations can contain complete proposed or current configuration
-    and must never be rendered by the approval application.
-    """
+    """Validate the persisted raw-config-free projection before rendering."""
 
     if "operation_summaries" not in review:
         return [], None
@@ -464,92 +468,222 @@ def _bounded_operation_summaries(
     if any(not isinstance(item, dict) for item in raw):
         return [], "The ordered-operation review projection is malformed."
     operations = [dict(item) for item in raw]
-    action_count = 0
-    detail_count = 0
-    for operation in operations:
+    projections: list[dict[str, Any]] = []
+    for expected_index, operation in enumerate(operations):
         projection = operation.get("semantic_projection")
-        if not isinstance(projection, dict):
+        digest = operation.get("semantic_projection_hash")
+        if projection is None and digest is None:
             return (
                 operations,
-                "The plan cannot be approved because a semantic operation projection is missing.",
+                "This historical plan lacks the complete, hash-bound Beta 22 "
+                "semantic projection and cannot be approved or dispatched. "
+                "Create a new plan.",
             )
         if (
-            projection.get("status") != "complete"
-            or projection.get("redaction_applied") is True
-            or projection.get("truncation_applied") is True
+            not isinstance(projection, dict)
+            or set(projection) != {
+                "projection_schema_version",
+                "projection_complete",
+                "operation_index",
+                "operation_id",
+                "operation_type",
+                "resource",
+                "risk",
+                "changes",
+                "redacted_change_count",
+                "binding",
+            }
+            or not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
         ):
             return (
                 operations,
-                "The plan cannot be approved because a semantic operation projection is incomplete.",
+                "The plan cannot be approved because its semantic projection binding is malformed.",
             )
-        metadata = projection.get("metadata")
-        actions = projection.get("actions")
-        controls = projection.get("controls")
         if (
-            not isinstance(metadata, list)
-            or len(metadata) > MAX_SEMANTIC_METADATA_FIELDS
-            or any(not isinstance(item, dict) for item in metadata)
-            or not isinstance(actions, list)
-            or len(actions) > MAX_SEMANTIC_ACTIONS_PER_OPERATION
-            or any(not isinstance(item, dict) for item in actions)
-            or not isinstance(controls, list)
-            or len(controls) > MAX_SEMANTIC_CONTROLS_PER_OPERATION
-            or any(not isinstance(item, dict) for item in controls)
+            projection.get("projection_schema_version")
+            != SEMANTIC_PROJECTION_SCHEMA_VERSION
+            or projection.get("projection_complete") is not True
+            or projection.get("operation_index")
+            != operation.get("order")
+            or projection.get("operation_index") != expected_index
+            or projection.get("operation_id")
+            != operation.get("operation_id")
+            or projection.get("operation_type")
+            != operation.get("action")
         ):
             return (
                 operations,
-                "The plan cannot be approved because a semantic operation projection is malformed.",
+                "The plan cannot be approved because its semantic projection identity is incomplete or malformed.",
             )
-        action_count += len(actions) + len(controls)
-        detail_count += len(metadata)
-        for entry in [*actions, *controls]:
-            targets = entry.get("targets")
-            data = entry.get("data")
+        resource = projection.get("resource")
+        if not isinstance(resource, dict) or resource != {
+            "resource_type": operation.get("resource_type"),
+            "resource_subtype": operation.get("helper_type"),
+            "target_id": operation.get("target_id"),
+        }:
+            return (
+                operations,
+                "The plan cannot be approved because its semantic projection target is malformed.",
+            )
+        risk = projection.get("risk")
+        if (
+            not isinstance(risk, dict)
+            or set(risk) != {
+                "risk_classification",
+                "policy_classification",
+                "physical_impact_classification",
+            }
+            or risk["risk_classification"] != operation.get("risk_level")
+            or not isinstance(risk["policy_classification"], str)
+            or not isinstance(risk["physical_impact_classification"], str)
+        ):
+            return (
+                operations,
+                "The plan cannot be approved because its semantic projection risk classification is malformed.",
+            )
+        changes = projection.get("changes")
+        if not isinstance(changes, list):
+            return (
+                operations,
+                "The plan cannot be approved because its semantic change collection is malformed.",
+            )
+        redacted_change_count = 0
+        paths: set[str] = set()
+        for change_index, change in enumerate(changes):
             if (
-                not isinstance(targets, list)
-                or len(targets) > MAX_SEMANTIC_TARGETS_PER_ACTION
-                or any(not isinstance(item, dict) for item in targets)
-                or not isinstance(data, list)
-                or len(data) > MAX_SEMANTIC_DATA_PER_ACTION
-                or any(not isinstance(item, dict) for item in data)
+                not isinstance(change, dict)
+                or set(change) != {
+                    "change_index",
+                    "path",
+                    "change_type",
+                    "before",
+                    "after",
+                    "sensitive_value_redacted",
+                }
+                or change["change_index"] != change_index
+                or not isinstance(change["path"], str)
+                or not change["path"].startswith("/")
+                or change["path"] in paths
+                or change["change_type"]
+                not in {"added", "modified", "removed"}
+                or not isinstance(change["sensitive_value_redacted"], bool)
+                or not _review_snapshot_is_valid(change["before"])
+                or not _review_snapshot_is_valid(change["after"])
             ):
                 return (
                     operations,
-                    "The plan cannot be approved because a semantic operation projection is malformed.",
+                    "The plan cannot be approved because one of its semantic changes is malformed.",
                 )
-            detail_count += len(targets) + len(data)
-    if (
-        action_count > MAX_SEMANTIC_ACTIONS_PER_PLAN
-        or detail_count > MAX_SEMANTIC_DETAILS_PER_PLAN
-    ):
+            paths.add(change["path"])
+            before_state = change["before"]["state"]
+            after_state = change["after"]["state"]
+            expected_type = (
+                "added"
+                if before_state == "absent"
+                else "removed"
+                if after_state == "absent"
+                else "modified"
+            )
+            redacted = (
+                before_state == "redacted" or after_state == "redacted"
+            )
+            if (
+                change["change_type"] != expected_type
+                or change["sensitive_value_redacted"] is not redacted
+            ):
+                return (
+                    operations,
+                    "The plan cannot be approved because one of its semantic changes is inconsistent.",
+                )
+            redacted_change_count += int(redacted)
+        if projection.get("redacted_change_count") != redacted_change_count:
+            return (
+                operations,
+                "The plan cannot be approved because its protected-change accounting is malformed.",
+            )
+        binding = projection.get("binding")
+        if (
+            not isinstance(binding, dict)
+            or set(binding) != {
+                "current_state_fingerprint",
+                "prepared_config_hash",
+                "raw_prepared_config_hash",
+                "normalized_prepared_config_hash",
+                "projection_hash",
+            }
+            or binding["projection_hash"] != digest
+            or any(
+                not isinstance(binding[key], str)
+                for key in binding
+            )
+        ):
+            return (
+                operations,
+                "The plan cannot be approved because its semantic projection binding is malformed.",
+            )
+        try:
+            if projection_hash(projection) != digest:
+                raise SemanticProjectionError("projection_hash_mismatch")
+            if (
+                len(canonical_projection_bytes(projection))
+                > MAX_SEMANTIC_PROJECTION_BYTES_PER_OPERATION
+            ):
+                raise SemanticProjectionError(
+                    "projection_size_limit_exceeded"
+                )
+        except SemanticProjectionError:
+            return (
+                operations,
+                "The plan cannot be approved because its semantic projection hash or size boundary is invalid.",
+            )
+        projections.append(projection)
+    try:
+        plan_projection_size = len(
+            canonical_projection_bytes(projections)
+        )
+    except SemanticProjectionError:
         return (
             operations,
-            "The plan cannot be approved because its semantic operation projection exceeds the safe review bounds.",
+            "The plan cannot be approved because its semantic projection cannot be serialized safely.",
+        )
+    if plan_projection_size > MAX_SEMANTIC_PROJECTION_BYTES_PER_PLAN:
+        return (
+            operations,
+            "The plan cannot be approved because its complete semantic projection exceeds the declared product boundary.",
         )
     return operations, None
+
+
+def _review_snapshot_is_valid(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    state = value.get("state")
+    if state == "absent":
+        return set(value) == {"state"}
+    if state == "redacted":
+        categories = value.get("categories")
+        return bool(
+            set(value) == {"state", "categories"}
+            and isinstance(categories, list)
+            and categories
+            and categories == sorted(set(categories))
+            and all(isinstance(item, str) and item for item in categories)
+        )
+    if state != "value" or set(value) != {"state", "value"}:
+        return False
+    try:
+        canonical_projection_bytes(value["value"])
+    except SemanticProjectionError:
+        return False
+    return True
 
 
 def _summary_scalar(value: Any, limit: int) -> str:
     if isinstance(value, (dict, list, tuple, set)):
         return "[structured value omitted]"
     return _text(value, limit)
-
-
-def _semantic_value(value: Any, limit: int = 200) -> str:
-    if isinstance(value, list):
-        values = [
-            _semantic_value(item, limit)
-            for item in value[:8]
-            if not isinstance(item, (dict, list, tuple, set))
-        ]
-        return ", ".join(values)
-    if value is None:
-        return "null"
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (int, float)):
-        return str(value)[:limit]
-    return _summary_scalar(value, limit)
 
 
 def _operation_target(operation: dict[str, Any]) -> tuple[str, str]:
@@ -587,159 +721,91 @@ def _operation_risk(operation: dict[str, Any]) -> tuple[str, str]:
     return _summary_scalar(level or "unknown", 32), "; ".join(safe_reasons) or "none reported"
 
 
-def _operation_changed_fields(operation: dict[str, Any]) -> list[dict[str, Any]]:
-    changed_fields = operation.get("changed_fields", [])
-    if not isinstance(changed_fields, list):
-        return []
-    return [
-        item
-        for item in changed_fields[:MAX_STEP_CHANGED_FIELDS]
-        if isinstance(item, dict)
-    ]
+def _render_projection_snapshot(snapshot: dict[str, Any]) -> str:
+    state = snapshot.get("state")
+    if state == "absent":
+        return "<em>absent</em>"
+    if state == "redacted":
+        categories = ", ".join(
+            str(item) for item in snapshot.get("categories", [])
+        )
+        return (
+            "<strong>Protected value changed</strong> "
+            f"<code>({escape(categories)})</code>"
+        )
+    try:
+        encoded = json.dumps(
+            snapshot.get("value"),
+            sort_keys=True,
+            indent=2,
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+    except (TypeError, ValueError, OverflowError):
+        return "<span class=\"danger\">Invalid projected value</span>"
+    safe = escape(encoded)
+    if len(encoded) <= 200 and "\n" not in encoded:
+        return f"<code>{safe}</code>"
+    return (
+        "<details><summary>Inspect complete value "
+        f"({len(encoded.encode('utf-8'))} UTF-8 bytes)</summary>"
+        f"<pre><code>{safe}</code></pre></details>"
+    )
 
 
-def _render_semantic_projection(operation: dict[str, Any]) -> str:
+def _render_complete_semantic_projection(
+    operation: dict[str, Any],
+) -> str:
     projection = operation.get("semantic_projection")
     if not isinstance(projection, dict):
-        return "<p class=\"danger\">Semantic operation detail is unavailable.</p>"
-
-    metadata = projection.get("metadata", [])
-    metadata_rows = "".join(
-        "<tr><td>{}</td><td><code>{}</code></td></tr>".format(
-            escape(_summary_scalar(item.get("field"), 120)),
-            escape(_semantic_value(item.get("value"))),
+        return (
+            "<p class=\"danger\">The authoritative semantic projection "
+            "is unavailable.</p>"
         )
-        for item in metadata[:MAX_SEMANTIC_METADATA_FIELDS]
-        if isinstance(item, dict)
+    risk = projection.get("risk", {})
+    binding = projection.get("binding", {})
+    changes = projection.get("changes", [])
+    identity_rows = (
+        ("Projection schema", projection.get("projection_schema_version")),
+        ("Projection complete", projection.get("projection_complete")),
+        ("Policy classification", risk.get("policy_classification")),
+        (
+            "Physical impact",
+            risk.get("physical_impact_classification"),
+        ),
+        ("Projection hash", binding.get("projection_hash")),
+        ("Prepared configuration hash", binding.get("prepared_config_hash")),
+        ("Protected changes", projection.get("redacted_change_count")),
     )
-    metadata_block = (
-        "<h4>Bounded configuration metadata</h4>"
-        "<table><tr><th>Field</th><th>Proposed value</th></tr>"
-        f"{metadata_rows}</table>"
-        if metadata_rows
-        else "<h4>Bounded configuration metadata</h4><p>None.</p>"
-    )
-
-    action_rows: list[str] = []
-    actions = projection.get("actions", [])
-    for action in (
-        actions[:MAX_SEMANTIC_ACTIONS_PER_OPERATION]
-        if isinstance(actions, list)
-        else []
-    ):
-        if not isinstance(action, dict):
-            continue
-        targets = action.get("targets", [])
-        target_text = "; ".join(
-            "{}={}".format(
-                _summary_scalar(item.get("selector"), 64),
-                _semantic_value(item.get("value")),
-            )
-            for item in (
-                targets[:MAX_SEMANTIC_TARGETS_PER_ACTION]
-                if isinstance(targets, list)
-                else []
-            )
-            if isinstance(item, dict)
+    identity = "<table>" + "".join(
+        "<tr><th>{}</th><td><code>{}</code></td></tr>".format(
+            escape(label), escape(_text(str(value), 256))
         )
-        data = action.get("data", [])
-        data_text = "; ".join(
-            "{}={}".format(
-                _summary_scalar(item.get("field"), 120),
-                _semantic_value(item.get("value")),
+        for label, value in identity_rows
+    ) + "</table>"
+    if not changes:
+        change_table = "<p>No semantic configuration changes.</p>"
+    else:
+        rows = []
+        for change in changes:
+            rows.append(
+                "<tr><td><code>{}</code></td><td>{}</td>"
+                "<td>{}</td><td>{}</td></tr>".format(
+                    escape(str(change.get("path"))),
+                    escape(str(change.get("change_type"))),
+                    _render_projection_snapshot(change.get("before", {})),
+                    _render_projection_snapshot(change.get("after", {})),
+                )
             )
-            for item in (
-                data[:MAX_SEMANTIC_DATA_PER_ACTION]
-                if isinstance(data, list)
-                else []
-            )
-            if isinstance(item, dict)
+        change_table = (
+            "<table><tr><th>Semantic path</th><th>Change</th>"
+            "<th>Before</th><th>After</th></tr>"
+            + "".join(rows)
+            + "</table>"
         )
-        action_rows.append(
-            "<tr><td><code>{}</code></td><td><code>{}</code></td>"
-            "<td><code>{}</code></td><td><code>{}</code></td></tr>".format(
-                escape(_summary_scalar(action.get("path"), 160)),
-                escape(_summary_scalar(action.get("action"), 200)),
-                escape(target_text or "none"),
-                escape(data_text or "none"),
-            )
-        )
-    action_block = (
-        "<h4>Ordered semantic actions</h4>"
-        "<table><tr><th>Path</th><th>Action or service</th>"
-        "<th>Explicit targets</th><th>Key primitive data</th></tr>"
-        + "".join(action_rows)
-        + "</table>"
-        if action_rows
-        else "<h4>Ordered semantic actions</h4><p>None for this resource.</p>"
-    )
-
-    control_rows: list[str] = []
-    controls = projection.get("controls", [])
-    for control in (
-        controls[:MAX_SEMANTIC_CONTROLS_PER_OPERATION]
-        if isinstance(controls, list)
-        else []
-    ):
-        if not isinstance(control, dict):
-            continue
-        targets = control.get("targets", [])
-        target_text = "; ".join(
-            "{}={}".format(
-                _summary_scalar(item.get("selector"), 64),
-                _semantic_value(item.get("value")),
-            )
-            for item in (
-                targets[:MAX_SEMANTIC_TARGETS_PER_ACTION]
-                if isinstance(targets, list)
-                else []
-            )
-            if isinstance(item, dict)
-        )
-        data = control.get("data", [])
-        data_text = "; ".join(
-            "{}={}".format(
-                _summary_scalar(item.get("field"), 120),
-                _semantic_value(item.get("value")),
-            )
-            for item in (
-                data[:MAX_SEMANTIC_DATA_PER_ACTION]
-                if isinstance(data, list)
-                else []
-            )
-            if isinstance(item, dict)
-        )
-        control_rows.append(
-            "<tr><td><code>{}</code></td><td><code>{}</code></td>"
-            "<td><code>{}</code></td><td><code>{}</code></td>"
-            "<td><code>{}</code></td></tr>".format(
-                escape(_summary_scalar(control.get("path"), 160)),
-                escape(_summary_scalar(control.get("kind"), 32)),
-                escape(_summary_scalar(control.get("type"), 200)),
-                escape(target_text or "none"),
-                escape(data_text or "none"),
-            )
-        )
-    control_block = (
-        "<h4>Automation triggers and conditions</h4>"
-        "<table><tr><th>Path</th><th>Kind</th><th>Type</th>"
-        "<th>Explicit targets</th><th>Key primitive data</th></tr>"
-        + "".join(control_rows)
-        + "</table>"
-        if control_rows
-        else (
-            "<h4>Automation triggers and conditions</h4>"
-            "<p>None for this resource.</p>"
-        )
-    )
-    redaction_note = (
-        "<p><strong>Secret-like values were redacted from this semantic view.</strong></p>"
-        if projection.get("redaction_applied") is True
-        else ""
-    )
     return (
-        "<h4>Semantic approval detail</h4>"
-        f"{metadata_block}{action_block}{control_block}{redaction_note}"
+        "<h4>Authoritative semantic approval projection</h4>"
+        f"{identity}<h4>Complete semantic changes</h4>{change_table}"
     )
 
 
@@ -792,24 +858,7 @@ def _render_operation_summaries(operations: list[dict[str, Any]]) -> str:
             for label, value in rows
         ) + "</table>"
 
-        changed_fields = _operation_changed_fields(operation)
-        if changed_fields:
-            change_rows = "".join(
-                "<tr><td>{}</td><td>{}</td><td>{}</td></tr>".format(
-                    escape(_summary_scalar(item.get("field"), 160)),
-                    escape(_summary_scalar(item.get("before"), 500)),
-                    escape(_summary_scalar(item.get("after"), 500)),
-                )
-                for item in changed_fields
-            )
-            diff = (
-                "<h4>Bounded step diff</h4><table>"
-                "<tr><th>Field</th><th>Before</th><th>After</th></tr>"
-                f"{change_rows}</table>"
-            )
-        else:
-            diff = "<h4>Bounded step diff</h4><p>No changed-field summary is available.</p>"
-        semantic_detail = _render_semantic_projection(operation)
+        semantic_detail = _render_complete_semantic_projection(operation)
 
         warnings = operation.get("warnings", [])
         if not isinstance(warnings, list):
@@ -828,7 +877,7 @@ def _render_operation_summaries(operations: list[dict[str, Any]]) -> str:
         )
         rendered.append(
             f"<li><h3>Step {escape(position)}: {escape(operation_name)}</h3>"
-            f"{summary_table}{semantic_detail}{diff}{warning_block}</li>"
+            f"{summary_table}{semantic_detail}{warning_block}</li>"
         )
     return (
         "<h2>Ordered configuration operations</h2>"

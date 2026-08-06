@@ -60,7 +60,11 @@ from .normalize import (
     structured_diff,
 )
 from .risk import classify_risk
-from .policy import evaluate_change_policy, policy_snapshot_matches
+from .policy import (
+    configuration_operation_policy,
+    evaluate_change_policy,
+    policy_snapshot_matches,
+)
 from .resources import (
     ConfigurationMutationCompletedUnexpectedlyError,
     ConfigurationMutationNotDispatchedError,
@@ -103,6 +107,12 @@ from .operational_lifecycle import (
     RELOAD_SERVICES,
 )
 from .validation import sanitize_context, validate_automation
+from .semantic_projection import (
+    SemanticProjectionError,
+    build_semantic_projection,
+    validate_projection_plan_size,
+    validate_semantic_projection,
+)
 
 
 APPROVAL_AUTHORITY_VERSION = 3
@@ -125,12 +135,6 @@ MAX_PLAN_PROJECTION_FAILURES = 20
 SUPPORTED_CONFIGURATION_RESOURCES = frozenset({"automation", "script", "helper"})
 SUPPORTED_HELPER_TYPES = frozenset({"input_boolean", "input_number"})
 SUPPORTED_CONFIGURATION_ACTIONS = frozenset({"create", "update"})
-MAX_APPROVAL_PROJECTION_STEPS = 16
-MAX_APPROVAL_PROJECTION_METADATA = 10
-MAX_APPROVAL_PROJECTION_TARGETS = 8
-MAX_APPROVAL_PROJECTION_DATA = 8
-MAX_APPROVAL_PROJECTION_DEPTH = 4
-MAX_APPROVAL_PROJECTION_CONTROLS = 16
 AUTOMATION_PROVIDER_RESPONSE_EVENTS = frozenset(
     {
         "automation_provider_completed",
@@ -209,8 +213,6 @@ def _reconciled_persisted_invocation_count(
     )
 
 
-MAX_APPROVAL_PROJECTION_ACTIONS_PER_PLAN = 32
-MAX_APPROVAL_PROJECTION_DETAILS_PER_PLAN = 128
 MAX_OPERATIONAL_RECONCILIATIONS_PER_PASS = 20
 OPERATIONAL_RECONCILIATION_TIME_BUDGET_SECONDS = 10.0
 EXECUTION_TASK_POST_DISPATCH_DEADLINE = timedelta(hours=24)
@@ -244,37 +246,6 @@ HOME_ASSISTANT_RESTART_EVIDENCE_SOURCES = frozenset(
 MAX_RESTART_EVIDENCE_SOURCES = 8
 # The larger count bound is defensive against malformed persisted records.
 MAX_RESTART_OUTAGE_OBSERVATIONS = 10_000
-
-_APPROVAL_METADATA_FIELDS = {
-    "automation": (
-        "id",
-        "alias",
-        "description",
-        "initial_state",
-        "mode",
-        "max",
-        "max_exceeded",
-    ),
-    "script": (
-        "alias",
-        "description",
-        "icon",
-        "mode",
-        "max",
-        "max_exceeded",
-    ),
-    "helper": (
-        "name",
-        "icon",
-        "initial",
-        "min",
-        "max",
-        "step",
-        "mode",
-        "unit_of_measurement",
-    ),
-}
-
 
 def _parse_governance_timestamp(value: Any) -> datetime | None:
     if not isinstance(value, str):
@@ -324,72 +295,6 @@ def _bounded_restart_evidence_sources(value: Any) -> list[str]:
     return result
 
 
-_APPROVAL_ACTION_ROOTS = ("sequence", "action", "actions")
-_APPROVAL_TRIGGER_ROOTS = ("trigger", "triggers")
-_APPROVAL_CONDITION_ROOTS = ("condition", "conditions")
-_APPROVAL_TARGET_FIELDS = frozenset(
-    {"entity_id", "device_id", "area_id", "floor_id", "label_id"}
-)
-_APPROVAL_ACTION_STRUCTURAL_FIELDS = frozenset(
-    {
-        "action",
-        "actions",
-        "alias",
-        "choose",
-        "conditions",
-        "data",
-        "data_template",
-        "default",
-        "else",
-        "if",
-        "parallel",
-        "repeat",
-        "sequence",
-        "service",
-        "target",
-        "then",
-        "variables",
-        "wait_for_trigger",
-    }
-)
-_APPROVAL_ACTION_DIRECTIVES = (
-    "delay",
-    "wait_template",
-    "wait_for_trigger",
-    "event",
-    "scene",
-    "condition",
-    "choose",
-    "if",
-    "repeat",
-    "parallel",
-    "variables",
-    "stop",
-)
-_APPROVAL_CONTROL_STRUCTURAL_FIELDS = frozenset(
-    {
-        "alias",
-        "condition",
-        "conditions",
-        "platform",
-        "target",
-        "trigger",
-    }
-)
-_APPROVAL_ACTION_MAPPING_FIELDS = frozenset(
-    {"delay", "event_data", "event_data_template", "timeout"}
-)
-_APPROVAL_CHOICE_FIELDS = frozenset({"alias", "conditions", "sequence"})
-_APPROVAL_REPEAT_FIELDS = frozenset(
-    {"count", "for_each", "sequence", "until", "while"}
-)
-_APPROVAL_COMPLEX_ROOTS = {
-    "automation": ("variables", "trace"),
-    "script": ("variables", "fields", "trace"),
-}
-_APPROVAL_OMITTED = object()
-
-
 def _sanitize_configuration_caller_context(
     context: dict[str, Any] | None,
     *,
@@ -410,619 +315,6 @@ def _sanitize_configuration_caller_context(
         # Preserve the established bounded scalar-only caller-context contract.
         safe.update(sanitize_context({key: value}, known_secrets))
     return safe
-
-
-def _approval_primitive(value: Any) -> Any:
-    if value is None or isinstance(value, (bool, int, float)):
-        return value
-    if isinstance(value, str):
-        return value if len(value) <= 200 else _APPROVAL_OMITTED
-    if isinstance(value, (list, tuple)) and len(value) <= 8:
-        projected = []
-        for item in value:
-            primitive = _approval_primitive(item)
-            if primitive is _APPROVAL_OMITTED or isinstance(
-                primitive, (list, tuple)
-            ):
-                return _APPROVAL_OMITTED
-            projected.append(primitive)
-        return projected
-    return _APPROVAL_OMITTED
-
-
-def _configuration_approval_projection(
-    resource_type: str,
-    proposed_config: dict[str, Any],
-    *,
-    known_secrets: tuple[str, ...],
-) -> dict[str, Any]:
-    """Build a bounded semantic view of hash-bound configuration.
-
-    This deliberately is not a general configuration serializer. It includes
-    only allowlisted metadata, ordered action/service and trigger/condition
-    identities, explicit target selectors, and bounded primitive data.
-    """
-
-    sanitized_source = sanitize_untrusted_data(
-        proposed_config,
-        known_secrets=known_secrets,
-        max_string=200,
-    )
-    if sanitized_source.failed_closed or not isinstance(
-        sanitized_source.value, dict
-    ):
-        return {
-            "status": "unavailable",
-            "metadata": [],
-            "actions": [],
-            "controls": [],
-            "redaction_applied": True,
-        }
-    safe_config = sanitized_source.value
-
-    # A shortened or redacted value is not an informed approval surface. Keep
-    # rendering the bounded, sanitized view for diagnosis, but make the
-    # projection unapprovable whenever exact semantics were withheld.
-    incomplete = (
-        sanitized_source.truncated_field_count > 0
-        or sanitized_source.redaction_applied
-    )
-
-    def bounded_text(value: Any, maximum: int) -> str:
-        nonlocal incomplete
-        text = str(value)
-        if len(text) > maximum:
-            incomplete = True
-            return text[:maximum]
-        return text
-
-    metadata: list[dict[str, Any]] = []
-    for field in _APPROVAL_METADATA_FIELDS.get(resource_type, ()):
-        if field not in safe_config:
-            continue
-        primitive = _approval_primitive(safe_config[field])
-        if primitive is _APPROVAL_OMITTED:
-            incomplete = True
-            continue
-        if len(metadata) >= MAX_APPROVAL_PROJECTION_METADATA:
-            incomplete = True
-            break
-        metadata.append(
-            {"field": bounded_text(field, 120), "value": primitive}
-        )
-
-    actions: list[dict[str, Any]] = []
-    controls: list[dict[str, Any]] = []
-
-    def project_values(
-        values: Any,
-        *,
-        prefix: str,
-        destination: list[dict[str, Any]],
-        maximum: int,
-        depth: int = 0,
-    ) -> None:
-        nonlocal incomplete
-        if depth > 2:
-            incomplete = True
-            return
-        if isinstance(values, dict):
-            for key in sorted(values, key=lambda item: str(item)):
-                if len(destination) >= maximum:
-                    incomplete = True
-                    return
-                name = f"{prefix}.{key}" if prefix else str(key)
-                primitive = _approval_primitive(values[key])
-                if primitive is not _APPROVAL_OMITTED:
-                    destination.append(
-                        {
-                            "field": bounded_text(name, 120),
-                            "value": primitive,
-                        }
-                    )
-                elif isinstance(values[key], dict):
-                    project_values(
-                        values[key],
-                        prefix=name,
-                        destination=destination,
-                        maximum=maximum,
-                        depth=depth + 1,
-                    )
-                else:
-                    incomplete = True
-            return
-        incomplete = True
-
-    def project_named_value(
-        value: Any,
-        *,
-        prefix: str,
-        destination: list[dict[str, Any]],
-        maximum: int,
-    ) -> None:
-        nonlocal incomplete
-        primitive = _approval_primitive(value)
-        if primitive is not _APPROVAL_OMITTED:
-            if len(destination) >= maximum:
-                incomplete = True
-                return
-            destination.append(
-                {
-                    "field": bounded_text(prefix, 120),
-                    "value": primitive,
-                }
-            )
-            return
-        if isinstance(value, dict):
-            project_values(
-                value,
-                prefix=prefix,
-                destination=destination,
-                maximum=maximum,
-            )
-            return
-        incomplete = True
-
-    def add_target(
-        destination: list[dict[str, Any]], selector: str, value: Any
-    ) -> None:
-        nonlocal incomplete
-        primitive = _approval_primitive(value)
-        if primitive is _APPROVAL_OMITTED:
-            incomplete = True
-            return
-        if len(destination) >= MAX_APPROVAL_PROJECTION_TARGETS:
-            incomplete = True
-            return
-        destination.append(
-            {"selector": bounded_text(selector, 64), "value": primitive}
-        )
-
-    def project_step(step: dict[str, Any], path: str) -> None:
-        nonlocal incomplete
-        if len(actions) >= MAX_APPROVAL_PROJECTION_STEPS:
-            incomplete = True
-            return
-
-        action_name = step.get("service")
-        if not isinstance(action_name, str):
-            action_name = step.get("action")
-        if not isinstance(action_name, str):
-            domain = step.get("domain")
-            action_type = step.get("type")
-            if isinstance(domain, str) and isinstance(action_type, str):
-                action_name = f"{domain}.{action_type}"
-            else:
-                action_name = next(
-                    (
-                        directive
-                        for directive in _APPROVAL_ACTION_DIRECTIVES
-                        if directive in step
-                    ),
-                    "structured_action",
-                )
-        if action_name == "structured_action":
-            if "sequence" in step and set(step) <= {"alias", "sequence"}:
-                action_name = "sequence"
-            else:
-                incomplete = True
-
-        targets: list[dict[str, Any]] = []
-        target = step.get("target")
-        if target is not None:
-            if not isinstance(target, dict):
-                incomplete = True
-            else:
-                for selector in sorted(target):
-                    if selector not in _APPROVAL_TARGET_FIELDS:
-                        incomplete = True
-                        continue
-                    add_target(targets, str(selector), target[selector])
-        for selector in sorted(_APPROVAL_TARGET_FIELDS):
-            if selector in step:
-                add_target(targets, selector, step[selector])
-
-        data: list[dict[str, Any]] = []
-        for container_name in ("data", "data_template"):
-            container = step.get(container_name)
-            if container is not None:
-                if isinstance(container, dict):
-                    container = dict(container)
-                    for selector in sorted(_APPROVAL_TARGET_FIELDS):
-                        if selector in container:
-                            add_target(
-                                targets,
-                                f"{container_name}.{selector}",
-                                container.pop(selector),
-                            )
-                project_values(
-                    container,
-                    prefix=container_name,
-                    destination=data,
-                    maximum=MAX_APPROVAL_PROJECTION_DATA,
-                )
-        if "alias" in step:
-            project_named_value(
-                step["alias"],
-                prefix="alias",
-                destination=data,
-                maximum=MAX_APPROVAL_PROJECTION_DATA,
-            )
-        if "variables" in step:
-            project_named_value(
-                step["variables"],
-                prefix="variables",
-                destination=data,
-                maximum=MAX_APPROVAL_PROJECTION_DATA,
-            )
-        repeat_parameters = step.get("repeat")
-        if isinstance(repeat_parameters, dict):
-            for parameter in ("count", "for_each"):
-                if parameter in repeat_parameters:
-                    project_named_value(
-                        repeat_parameters[parameter],
-                        prefix=f"repeat.{parameter}",
-                        destination=data,
-                        maximum=MAX_APPROVAL_PROJECTION_DATA,
-                    )
-        for field in sorted(step):
-            if (
-                field in _APPROVAL_ACTION_STRUCTURAL_FIELDS
-                or field in _APPROVAL_TARGET_FIELDS
-            ):
-                continue
-            primitive = _approval_primitive(step[field])
-            if primitive is _APPROVAL_OMITTED:
-                if (
-                    field in _APPROVAL_ACTION_MAPPING_FIELDS
-                    and isinstance(step[field], dict)
-                ):
-                    project_values(
-                        step[field],
-                        prefix=str(field),
-                        destination=data,
-                        maximum=MAX_APPROVAL_PROJECTION_DATA,
-                    )
-                else:
-                    incomplete = True
-                continue
-            project_named_value(
-                primitive,
-                prefix=str(field),
-                destination=data,
-                maximum=MAX_APPROVAL_PROJECTION_DATA,
-            )
-
-        actions.append(
-            {
-                "path": bounded_text(path, 160),
-                "action": bounded_text(action_name, 200),
-                "targets": targets,
-                "data": data,
-            }
-        )
-
-    def project_control(
-        control: dict[str, Any], path: str, kind: str
-    ) -> None:
-        nonlocal incomplete
-        if len(controls) >= MAX_APPROVAL_PROJECTION_CONTROLS:
-            incomplete = True
-            return
-
-        control_type = control.get("platform")
-        if not isinstance(control_type, str):
-            control_type = control.get("trigger")
-        if not isinstance(control_type, str):
-            control_type = control.get("condition")
-        if not isinstance(control_type, str):
-            control_type = "structured"
-            incomplete = True
-
-        targets: list[dict[str, Any]] = []
-        target = control.get("target")
-        if target is not None:
-            if not isinstance(target, dict):
-                incomplete = True
-            else:
-                for selector in sorted(target):
-                    if selector not in _APPROVAL_TARGET_FIELDS:
-                        incomplete = True
-                        continue
-                    add_target(targets, str(selector), target[selector])
-        for selector in sorted(_APPROVAL_TARGET_FIELDS):
-            if selector in control:
-                add_target(targets, selector, control[selector])
-
-        data: list[dict[str, Any]] = []
-        if "alias" in control:
-            project_named_value(
-                control["alias"],
-                prefix="alias",
-                destination=data,
-                maximum=MAX_APPROVAL_PROJECTION_DATA,
-            )
-        for field in sorted(control):
-            if (
-                field in _APPROVAL_CONTROL_STRUCTURAL_FIELDS
-                or field in _APPROVAL_TARGET_FIELDS
-            ):
-                continue
-            primitive = _approval_primitive(control[field])
-            if primitive is not _APPROVAL_OMITTED:
-                if len(data) >= MAX_APPROVAL_PROJECTION_DATA:
-                    incomplete = True
-                    break
-                data.append(
-                    {
-                        "field": bounded_text(field, 120),
-                        "value": primitive,
-                    }
-                )
-            elif isinstance(control[field], dict):
-                project_values(
-                    control[field],
-                    prefix=str(field),
-                    destination=data,
-                    maximum=MAX_APPROVAL_PROJECTION_DATA,
-                )
-            else:
-                incomplete = True
-
-        controls.append(
-            {
-                "path": bounded_text(path, 160),
-                "kind": kind,
-                "type": bounded_text(control_type, 200),
-                "targets": targets,
-                "data": data,
-            }
-        )
-
-    def walk_steps(value: Any, path: str, depth: int = 0) -> None:
-        nonlocal incomplete
-        if depth > MAX_APPROVAL_PROJECTION_DEPTH:
-            incomplete = True
-            return
-        if isinstance(value, dict):
-            candidates = [(0, value)]
-        elif isinstance(value, list):
-            candidates = list(enumerate(value))
-        else:
-            incomplete = True
-            return
-        for index, step in candidates:
-            if not isinstance(step, dict):
-                incomplete = True
-                continue
-            step_path = f"{path}[{index}]"
-            project_step(step, step_path)
-            for child in (
-                "actions",
-                "sequence",
-                "then",
-                "else",
-                "default",
-                "parallel",
-            ):
-                if child in step:
-                    walk_steps(
-                        step[child],
-                        f"{step_path}.{child}",
-                        depth + 1,
-                    )
-            choices = step.get("choose")
-            if isinstance(choices, list):
-                for choice_index, choice in enumerate(choices):
-                    choice_path = (
-                        f"{step_path}.choose[{choice_index}]"
-                    )
-                    if not isinstance(choice, dict):
-                        incomplete = True
-                        continue
-                    if set(choice) - _APPROVAL_CHOICE_FIELDS:
-                        incomplete = True
-                    branch = {"action": "choose_branch"}
-                    if "alias" in choice:
-                        branch["alias"] = choice["alias"]
-                    project_step(branch, choice_path)
-                    if "conditions" in choice:
-                        walk_controls(
-                            choice["conditions"],
-                            f"{choice_path}.conditions",
-                            "choose_condition",
-                            depth + 1,
-                        )
-                    else:
-                        incomplete = True
-                    if "sequence" in choice:
-                        walk_steps(
-                            choice["sequence"],
-                            f"{choice_path}.sequence",
-                            depth + 1,
-                        )
-                    else:
-                        incomplete = True
-            elif choices is not None:
-                incomplete = True
-            if_conditions = step.get("if")
-            if if_conditions is not None:
-                walk_controls(
-                    if_conditions,
-                    f"{step_path}.if",
-                    "if_condition",
-                    depth + 1,
-                )
-            nested_conditions = step.get("conditions")
-            if nested_conditions is not None:
-                walk_controls(
-                    nested_conditions,
-                    f"{step_path}.conditions",
-                    "condition",
-                    depth + 1,
-                )
-            repeat = step.get("repeat")
-            if isinstance(repeat, dict):
-                if set(repeat) - _APPROVAL_REPEAT_FIELDS:
-                    incomplete = True
-                if "sequence" in repeat:
-                    walk_steps(
-                        repeat["sequence"],
-                        f"{step_path}.repeat.sequence",
-                        depth + 1,
-                    )
-                else:
-                    incomplete = True
-                for condition_kind in ("while", "until"):
-                    if condition_kind in repeat:
-                        walk_controls(
-                            repeat[condition_kind],
-                            f"{step_path}.repeat.{condition_kind}",
-                            f"repeat_{condition_kind}",
-                            depth + 1,
-                        )
-                if not any(
-                    field in repeat
-                    for field in ("count", "for_each", "while", "until")
-                ):
-                    incomplete = True
-            elif repeat is not None:
-                incomplete = True
-            wait_triggers = step.get("wait_for_trigger")
-            if wait_triggers is not None:
-                walk_controls(
-                    wait_triggers,
-                    f"{step_path}.wait_for_trigger",
-                    "wait_trigger",
-                    depth + 1,
-                )
-
-    def walk_controls(
-        value: Any, path: str, kind: str, depth: int = 0
-    ) -> None:
-        nonlocal incomplete
-        if depth > MAX_APPROVAL_PROJECTION_DEPTH:
-            incomplete = True
-            return
-        if isinstance(value, dict):
-            candidates = [(0, value)]
-        elif isinstance(value, list):
-            candidates = list(enumerate(value))
-        else:
-            incomplete = True
-            return
-        for index, control in candidates:
-            if not isinstance(control, dict):
-                incomplete = True
-                continue
-            control_path = f"{path}[{index}]"
-            project_control(control, control_path, kind)
-            nested = control.get("conditions")
-            if nested is not None:
-                walk_controls(
-                    nested,
-                    f"{control_path}.conditions",
-                    "condition",
-                    depth + 1,
-                )
-
-    allowed_roots = set(_APPROVAL_METADATA_FIELDS.get(resource_type, ()))
-    if resource_type in {"automation", "script"}:
-        allowed_roots.update(_APPROVAL_ACTION_ROOTS)
-        allowed_roots.update(_APPROVAL_COMPLEX_ROOTS.get(resource_type, ()))
-        allowed_roots.add("use_blueprint")
-    if resource_type == "automation":
-        allowed_roots.update(_APPROVAL_TRIGGER_ROOTS)
-        allowed_roots.update(_APPROVAL_CONDITION_ROOTS)
-    if set(safe_config) - allowed_roots:
-        incomplete = True
-
-    action_root_found = False
-    for root in _APPROVAL_ACTION_ROOTS:
-        if root in safe_config:
-            action_root_found = True
-            walk_steps(safe_config[root], root)
-
-    blueprint = safe_config.get("use_blueprint")
-    if blueprint is not None:
-        action_root_found = True
-        if isinstance(blueprint, dict):
-            project_step(
-                {
-                    "action": "use_blueprint",
-                    "data": blueprint,
-                },
-                "use_blueprint",
-            )
-        else:
-            incomplete = True
-
-    for root in _APPROVAL_COMPLEX_ROOTS.get(resource_type, ()):
-        if root not in safe_config:
-            continue
-        value = safe_config[root]
-        if not isinstance(value, dict):
-            incomplete = True
-            continue
-        if root == "variables":
-            project_step(
-                {"action": "variables", "variables": value},
-                root,
-            )
-        else:
-            project_step(
-                {"action": f"configuration_{root}", "data": value},
-                root,
-            )
-
-    if resource_type in {"automation", "script"} and not action_root_found:
-        incomplete = True
-
-    for root in _APPROVAL_TRIGGER_ROOTS:
-        if root in safe_config:
-            walk_controls(safe_config[root], root, "trigger")
-    for root in _APPROVAL_CONDITION_ROOTS:
-        if root in safe_config:
-            walk_controls(safe_config[root], root, "condition")
-
-    projection = {
-        "status": "incomplete" if incomplete else "complete",
-        "metadata": metadata,
-        "actions": actions,
-        "controls": controls,
-    }
-    sanitized = sanitize_untrusted_data(
-        projection,
-        known_secrets=known_secrets,
-        max_string=200,
-    )
-    if sanitized.failed_closed or not isinstance(sanitized.value, dict):
-        return {
-            "status": "unavailable",
-            "metadata": [],
-            "actions": [],
-            "controls": [],
-            "redaction_applied": True,
-        }
-    safe_projection = sanitized.value
-    redaction_applied = (
-        sanitized_source.redaction_applied
-        or sanitized.redaction_applied
-    )
-    incomplete = (
-        incomplete
-        or sanitized.truncated_field_count > 0
-        or redaction_applied
-    )
-    safe_projection["status"] = (
-        "incomplete" if incomplete else "complete"
-    )
-    safe_projection["redaction_applied"] = redaction_applied
-    safe_projection["truncation_applied"] = (
-        sanitized_source.truncated_field_count > 0
-        or sanitized.truncated_field_count > 0
-    )
-    return safe_projection
 
 
 class AutomationGateway:
@@ -1170,26 +462,31 @@ class ChangeGovernanceService:
         if plan.contract_version == CONFIGURATION_PLAN_CONTRACT_VERSION:
             immutable_operations = []
             for operation in sorted(plan.operations, key=lambda item: item.order):
-                immutable_operations.append(
-                    {
-                        "operation_id": operation.operation_id,
-                        "order": operation.order,
-                        "depends_on": list(operation.depends_on),
-                        "resource_type": operation.resource_type,
-                        "helper_type": operation.helper_type,
-                        "action": operation.action,
-                        "target_id": operation.target_id,
-                        "current_state_fingerprint": operation.current_state_fingerprint,
-                        "proposed_config_hash": operation.proposed_config_hash,
-                        "raw_proposed_config_hash": stable_hash(operation.proposed_config),
-                        "normalized_proposed_config_hash": stable_hash(
-                            operation.normalized_proposed_config
-                        ),
-                        "normalization_version": operation.normalization_version,
-                        "risk_level": operation.risk.level.value,
-                        "risk_apply_allowed": operation.risk.apply_allowed,
-                    }
-                )
+                immutable_operation = {
+                    "operation_id": operation.operation_id,
+                    "order": operation.order,
+                    "depends_on": list(operation.depends_on),
+                    "resource_type": operation.resource_type,
+                    "helper_type": operation.helper_type,
+                    "action": operation.action,
+                    "target_id": operation.target_id,
+                    "current_state_fingerprint": operation.current_state_fingerprint,
+                    "proposed_config_hash": operation.proposed_config_hash,
+                    "raw_proposed_config_hash": stable_hash(
+                        operation.proposed_config
+                    ),
+                    "normalized_proposed_config_hash": stable_hash(
+                        operation.normalized_proposed_config
+                    ),
+                    "normalization_version": operation.normalization_version,
+                    "risk_level": operation.risk.level.value,
+                    "risk_apply_allowed": operation.risk.apply_allowed,
+                }
+                if operation.semantic_projection_hash is not None:
+                    immutable_operation["semantic_projection_hash"] = (
+                        operation.semantic_projection_hash
+                    )
+                immutable_operations.append(immutable_operation)
             immutable = {
                 "contract_version": plan.contract_version,
                 "plan_id": plan.plan_id,
@@ -4135,48 +3432,103 @@ class ChangeGovernanceService:
                     },
                 )
 
-            normalized_proposed = (
-                normalize_resource_config(resolved_type, proposed_config) or {}
-            )
-            normalized_current = normalize_resource_config(
-                resolved_type, current
-            )
-            diff = structured_resource_diff(
-                resolved_type, current, proposed_config
-            )
-            risk = self._configuration_risk(
-                operation_id,
-                resource_type,
-                action,
-                diff,
-                proposed_config,
-            )
-            prepared.append(
-                ConfigurationOperation(
-                    operation_id=operation_id,
-                    order=index,
-                    depends_on=list(depends_on),
-                    resource_type=resource_type,
-                    action=action,
-                    target_id=target_id,
-                    helper_type=helper_type,
-                    proposed_config=proposed_config,
-                    current_config=current,
-                    normalized_proposed_config=normalized_proposed,
-                    normalized_current_config=normalized_current,
-                    current_state_fingerprint=resource_fingerprint(
-                        resolved_type, current
-                    ),
-                    proposed_config_hash=stable_hash(normalized_proposed),
-                    normalization_version=RESOURCE_NORMALIZATION_VERSION,
-                    risk=risk,
-                    warnings=warnings,
-                    validation_results={"valid": True, "errors": []},
-                    dry_run_results=diff,
+            try:
+                normalized_proposed = (
+                    normalize_resource_config(
+                        resolved_type, proposed_config
+                    )
+                    or {}
                 )
+                normalized_current = normalize_resource_config(
+                    resolved_type, current
+                )
+                proposed_hash = stable_hash(normalized_proposed)
+                diff = structured_resource_diff(
+                    resolved_type, current, proposed_config
+                )
+                risk = self._configuration_risk(
+                    operation_id,
+                    resource_type,
+                    action,
+                    diff,
+                    proposed_config,
+                )
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise GovernanceError(
+                    ErrorCode.CONFIGURATION_PROJECTION_UNREVIEWABLE,
+                    details={
+                        "resource_id": target_id,
+                        "operation_id": operation_id,
+                        "projection_error": (
+                            "projection_input_nondeterministic"
+                        ),
+                    },
+                ) from exc
+            prepared_operation = ConfigurationOperation(
+                operation_id=operation_id,
+                order=index,
+                depends_on=list(depends_on),
+                resource_type=resource_type,
+                action=action,
+                target_id=target_id,
+                helper_type=helper_type,
+                proposed_config=proposed_config,
+                current_config=current,
+                normalized_proposed_config=normalized_proposed,
+                normalized_current_config=normalized_current,
+                current_state_fingerprint=resource_fingerprint(
+                    resolved_type, current
+                ),
+                proposed_config_hash=proposed_hash,
+                normalization_version=RESOURCE_NORMALIZATION_VERSION,
+                risk=risk,
+                warnings=warnings,
+                validation_results={"valid": True, "errors": []},
+                dry_run_results=diff,
             )
+            operation_policy = configuration_operation_policy(
+                prepared_operation
+            )
+            try:
+                (
+                    prepared_operation.semantic_projection,
+                    prepared_operation.semantic_projection_hash,
+                ) = build_semantic_projection(
+                    prepared_operation,
+                    policy_class=operation_policy.policy_class.value,
+                    physical_impact=(
+                        operation_policy.physical_consequence.value
+                    ),
+                    known_secrets=self.sensitive_values,
+                )
+                validate_semantic_projection(
+                    prepared_operation,
+                    policy_class=operation_policy.policy_class.value,
+                    physical_impact=(
+                        operation_policy.physical_consequence.value
+                    ),
+                    known_secrets=self.sensitive_values,
+                )
+            except SemanticProjectionError as exc:
+                raise GovernanceError(
+                    ErrorCode.CONFIGURATION_PROJECTION_UNREVIEWABLE,
+                    details={
+                        "resource_id": target_id,
+                        "operation_id": operation_id,
+                        "projection_error": exc.reason,
+                    },
+                ) from exc
+            prepared.append(prepared_operation)
             seen_operation_ids.add(operation_id)
             seen_targets.add(target_key)
+
+        try:
+            validate_projection_plan_size(prepared)
+        except SemanticProjectionError as exc:
+            raise GovernanceError(
+                ErrorCode.CONFIGURATION_PROJECTION_UNREVIEWABLE,
+                details={"projection_error": exc.reason},
+            ) from exc
 
         expiration_minutes = max(5, min(int(expiration_minutes), 1440))
         aggregate_risk = self._aggregate_configuration_risk(prepared)
@@ -4415,6 +3767,9 @@ class ChangeGovernanceService:
                 ErrorCode.APPROVAL_AUTHORITY_MISMATCH,
                 details={"resource_id": plan.plan_id, "reason": "active_plan_must_be_recreated"},
             )
+        # Final preparation is the last semantic recomputation. A failure here
+        # cannot create an approval challenge or any durable execution task.
+        self._require_configuration_projection(plan, recompute=True)
         self._require_current_normalization(plan)
         calculated = self.plan_hash(plan)
         if expected_plan_hash != calculated:
@@ -4625,50 +3980,60 @@ class ChangeGovernanceService:
     def _configuration_approval_review_complete(
         self, plan: ChangePlan
     ) -> bool:
-        action_count = 0
-        detail_count = 0
-        for operation in plan.operations:
-            projection = _configuration_approval_projection(
-                operation.resource_type,
-                operation.proposed_config,
-                known_secrets=self.sensitive_values,
-            )
-            if (
-                projection.get("status") != "complete"
-                or projection.get("redaction_applied") is True
-                or projection.get("truncation_applied") is True
-            ):
-                return False
-            metadata = projection.get("metadata")
-            actions = projection.get("actions")
-            controls = projection.get("controls")
-            if (
-                not isinstance(metadata, list)
-                or len(metadata) > MAX_APPROVAL_PROJECTION_METADATA
-                or not isinstance(actions, list)
-                or len(actions) > MAX_APPROVAL_PROJECTION_STEPS
-                or not isinstance(controls, list)
-                or len(controls) > MAX_APPROVAL_PROJECTION_CONTROLS
-            ):
-                return False
-            action_count += len(actions) + len(controls)
-            detail_count += len(metadata)
-            for entry in [*actions, *controls]:
-                if not isinstance(entry, dict):
-                    return False
-                targets = entry.get("targets")
-                data = entry.get("data")
-                if (
-                    not isinstance(targets, list)
-                    or len(targets) > MAX_APPROVAL_PROJECTION_TARGETS
-                    or not isinstance(data, list)
-                    or len(data) > MAX_APPROVAL_PROJECTION_DATA
-                ):
-                    return False
-                detail_count += len(targets) + len(data)
-        return (
-            action_count <= MAX_APPROVAL_PROJECTION_ACTIONS_PER_PLAN
-            and detail_count <= MAX_APPROVAL_PROJECTION_DETAILS_PER_PLAN
+        return self._configuration_projection_error(plan) is None
+
+    def _configuration_projection_error(
+        self,
+        plan: ChangePlan,
+        *,
+        recompute: bool = False,
+    ) -> str | None:
+        """Validate persisted review authority without HA or provider access."""
+
+        if plan.contract_version != CONFIGURATION_PLAN_CONTRACT_VERSION:
+            return None
+        if (
+            plan.operation != ChangeOperation.CONFIGURATION_PLAN
+            or not 1 <= len(plan.operations) <= MAX_CONFIGURATION_OPERATIONS
+        ):
+            return "projection_plan_shape_malformed"
+        ordered = sorted(plan.operations, key=lambda item: item.order)
+        if [item.order for item in ordered] != list(range(len(ordered))):
+            return "projection_operation_order_malformed"
+        try:
+            for operation in ordered:
+                classification = configuration_operation_policy(operation)
+                validate_semantic_projection(
+                    operation,
+                    policy_class=classification.policy_class.value,
+                    physical_impact=(
+                        classification.physical_consequence.value
+                    ),
+                    known_secrets=self.sensitive_values,
+                    recompute=recompute,
+                )
+            validate_projection_plan_size(ordered)
+        except SemanticProjectionError as exc:
+            return exc.reason
+        return None
+
+    def _require_configuration_projection(
+        self,
+        plan: ChangePlan,
+        *,
+        recompute: bool = False,
+    ) -> None:
+        reason = self._configuration_projection_error(
+            plan, recompute=recompute
+        )
+        if reason is None:
+            return
+        raise GovernanceError(
+            ErrorCode.CONFIGURATION_PROJECTION_UNREVIEWABLE,
+            details={
+                "resource_id": plan.plan_id,
+                "projection_error": reason,
+            },
         )
 
     def _review_summary(self, plan: ChangePlan) -> dict[str, Any]:
@@ -4810,24 +4175,14 @@ class ChangeGovernanceService:
                         "validation_valid": bool(
                             operation.validation_results.get("valid")
                         ),
+                        # This is the exact persisted, hash-bound projection.
+                        # Ingress never regenerates it from current HA state.
                         "semantic_projection": (
-                            _configuration_approval_projection(
-                                operation.resource_type,
-                                operation.proposed_config,
-                                known_secrets=self.sensitive_values,
-                            )
+                            operation.semantic_projection
                         ),
-                        "changed_fields": [
-                            {
-                                "field": str(item.get("field") or "")[:160],
-                                "before": str(item.get("before") or "")[:500],
-                                "after": str(item.get("after") or "")[:500],
-                            }
-                            for item in operation.dry_run_results.get(
-                                "changed_fields", []
-                            )[:50]
-                            if isinstance(item, dict)
-                        ],
+                        "semantic_projection_hash": (
+                            operation.semantic_projection_hash
+                        ),
                     }
                 )
             summary["operation_summaries"] = operation_summaries
@@ -4839,7 +4194,6 @@ class ChangeGovernanceService:
         sanitized = sanitize_untrusted_data(
             summary,
             known_secrets=self.sensitive_values,
-            max_string=2_000,
         ).value
         if not isinstance(sanitized, dict):
             raise GovernanceError(ErrorCode.INTERNAL_SERVER_ERROR)
@@ -4854,6 +4208,7 @@ class ChangeGovernanceService:
                 raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
             if plan.approval.state == ApprovalState.EXPIRED:
                 raise GovernanceError(ErrorCode.EXTERNAL_APPROVAL_EXPIRED)
+            self._require_configuration_projection(plan)
             calculated = self.plan_hash(plan)
             action, active_challenge, _requested, _expires = (
                 self._active_challenge_projection(plan)
@@ -4907,6 +4262,7 @@ class ChangeGovernanceService:
             if plan.approval.state == ApprovalState.EXPIRED:
                 raise GovernanceError(ErrorCode.EXTERNAL_APPROVAL_EXPIRED)
             self._require_policy_snapshot(plan)
+            self._require_configuration_projection(plan)
             calculated = self.plan_hash(plan)
             approval = plan.approval
             (
@@ -9689,6 +9045,11 @@ class ChangeGovernanceService:
             == ApprovalPolicyClass.PROHIBITED
         ):
             return ErrorCode.PROHIBITED_CHANGE
+        # Preserve the stronger historical prohibition outcome. Every other
+        # contract-v2 configuration record must carry a complete Beta 22
+        # projection before dispatch approval can be considered.
+        if self._configuration_projection_error(plan) is not None:
+            return ErrorCode.CONFIGURATION_PROJECTION_UNREVIEWABLE
         approval = plan.approval
         try:
             unexpired = bool(
