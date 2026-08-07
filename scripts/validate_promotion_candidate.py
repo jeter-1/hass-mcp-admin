@@ -14,6 +14,10 @@ import tempfile
 
 PROMOTION_SCRIPT = Path("scripts/promote_next_release.py")
 RELEASE_COUPLED_TESTS = (
+    "tests.test_beta25_ha_search_promotion.Beta25SearchPromotionTests."
+    "test_beta25_is_staged_without_changing_published_versions",
+    "tests.test_beta25_ha_search_promotion.Beta25SearchPromotionTests."
+    "test_beta25_generated_release_state_is_exact",
     "tests.test_f3_adapter_invariants.F3AdapterIsolationTests."
     "test_versions_and_secure_dependency_pins_are_unchanged",
     "tests.test_f3_dashboard_runtime_invariants.DashboardRuntimeInvariantTests."
