@@ -74,6 +74,20 @@ PLANNED_CAPABILITIES: tuple[dict[str, str], ...] = ()
 
 BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
     {
+        "tool": "run_held_read_canary",
+        "category": "verification",
+        "status": "beta_native",
+        "risk": "read",
+        "additive": True,
+        "operation_class": "held_read_canary",
+        "routing": "engineering_native",
+        "provider": "upstream_read_gateway",
+        "policy": "exact_reviewed_held_read_evidence_only",
+        "fallback": "none",
+        "promotion_performed": False,
+        "direct_write_allowed": False,
+    },
+    {
         "tool": "create_backup_plan",
         "category": "operational_administration",
         "status": "beta_native",

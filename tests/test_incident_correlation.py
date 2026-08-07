@@ -541,9 +541,9 @@ class CapabilityAndSchemaTests(unittest.TestCase):
         self.assertEqual(matrix["fallback_policy"], "none")
         self.assertEqual([item["capability"] for item in PLANNED_CAPABILITIES], [])
 
-    def test_real_tools_list_contains_40_and_public_schema_is_bounded(self):
+    def test_real_tools_list_contains_49_and_public_schema_is_bounded(self):
         tools = registered_tools(get_registered_server()).values()
-        self.assertEqual(len(tools), 48)
+        self.assertEqual(len(tools), 49)
         tool = next(item for item in tools if item.name == "incident_correlation")
         schema = tool.parameters
         self.assertEqual(schema["properties"]["lookback_hours"]["maximum"], 168)

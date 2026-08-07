@@ -40,6 +40,7 @@ class ProviderCapability(str, Enum):
     CONFIGURATION_INTEGRITY_ANALYSIS = "configuration_integrity_analysis"
     INCIDENT_CORRELATION = "incident_correlation"
     AUDIT = "audit"
+    HELD_READ_CANARY = "held_read_canary"
     HANDOFF_GENERATION = "handoff_generation"
     DASHBOARD_INVENTORY = "dashboard_inventory"
     DASHBOARD_CONFIGURATION_EVIDENCE = "dashboard_configuration_evidence"

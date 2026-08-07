@@ -77,6 +77,7 @@ class RoutingPolicyTests(unittest.TestCase):
             ProviderCapability.RELIABILITY_ANALYSIS: CapabilityRoute.ENGINEERING_NATIVE,
             ProviderCapability.IMPACT_ANALYSIS: CapabilityRoute.ENGINEERING_NATIVE,
             ProviderCapability.AUDIT: CapabilityRoute.ENGINEERING_NATIVE,
+            ProviderCapability.HELD_READ_CANARY: CapabilityRoute.ENGINEERING_NATIVE,
             ProviderCapability.HANDOFF_GENERATION: CapabilityRoute.ENGINEERING_NATIVE,
             ProviderCapability.DASHBOARD_INVENTORY: CapabilityRoute.UPSTREAM_DASHBOARD,
             ProviderCapability.DASHBOARD_CONFIGURATION_EVIDENCE: CapabilityRoute.UPSTREAM_DASHBOARD,
@@ -102,9 +103,9 @@ class RoutingPolicyTests(unittest.TestCase):
             with self.subTest(capability=capability):
                 self.assertEqual(self.policy.resolve(capability).route, route)
 
-    def test_all_48_tools_have_a_deterministic_routing_policy(self):
+    def test_all_49_tools_have_a_deterministic_routing_policy(self):
         names = {item["tool"] for item in (*CAPABILITIES, *BETA_NATIVE_CAPABILITIES)}
-        self.assertEqual(len(names), 48)
+        self.assertEqual(len(names), 49)
         self.assertEqual(set(TOOL_CAPABILITY_POLICY), names)
         self.assertNotIn(
             CapabilityRoute.UNSUPPORTED,

@@ -2,6 +2,7 @@ import asyncio
 import ast
 from contextlib import asynccontextmanager
 from dataclasses import replace
+import inspect
 import json
 from pathlib import Path
 import sys
@@ -271,12 +272,22 @@ class FakeTransport:
         return self.catalog
 
     async def execute_read(
-        self, tool_name, arguments, *, timeout_seconds, catalog_validator
+        self,
+        tool_name,
+        arguments,
+        *,
+        timeout_seconds,
+        catalog_validator,
+        before_dispatch=None,
     ):
         self.attempts.append((tool_name, dict(arguments), timeout_seconds))
         if self.error:
             raise DashboardTransportError(self.error)
         catalog_validator(self.catalog)
+        if before_dispatch is not None:
+            prepared = before_dispatch()
+            if inspect.isawaitable(prepared):
+                await prepared
         self.calls.append((tool_name, dict(arguments), timeout_seconds))
         return McpReadResult(
             protocol_version=self.catalog.protocol_version,
@@ -1336,8 +1347,8 @@ class PolicyInventoryTests(unittest.TestCase):
         self.assertTrue(all(item.read_only for item in automatic_annotations.values()))
         self.assertTrue(all(not item.destructive for item in automatic_annotations.values()))
 
-    def test_engineering_catalog_is_48_without_upstream_discovery(self):
-        self.assertEqual(len(registered_tools(get_registered_server()).values()), 48)
+    def test_engineering_catalog_is_49_without_upstream_discovery(self):
+        self.assertEqual(len(registered_tools(get_registered_server()).values()), 49)
 
     def test_exact_image_acceptance_is_committed_to_ci(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
@@ -2265,7 +2276,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         )
         catalog = build_capability_catalog()
         self.assertEqual(catalog["dynamic_upstream_count"], 1)
-        self.assertEqual(catalog["engineering_registered_count"], 48)
+        self.assertEqual(catalog["engineering_registered_count"], 49)
         route = capability_for_tool("ha_get_state")
         self.assertEqual(route["provider"], "upstream_read_gateway")
         self.assertEqual(route["operation_class"], "automatic_read")
@@ -4502,12 +4513,12 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["dynamically_exposed_count"], 26)
         self.assertEqual(len(health["exposed_tools"]), 26)
         self.assertEqual(catalog["dynamic_upstream_count"], 26)
-        self.assertEqual(catalog["registered_count"], 74)
+        self.assertEqual(catalog["registered_count"], 75)
         self.assertEqual(
             catalog["upstream_read_gateway"]["dynamically_exposed_count"], 26
         )
         self.assertEqual(metadata["dynamic_upstream_tool_count"], 26)
-        self.assertEqual(metadata["tool_count"], 74)
+        self.assertEqual(metadata["tool_count"], 75)
         self.assertEqual(capability_for_tool("ha_read_0")["fallback"], "none")
 
         task.cancel()

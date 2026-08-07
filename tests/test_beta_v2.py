@@ -575,7 +575,7 @@ class ToolParityTests(unittest.TestCase):
 
     def test_all_25_tools_are_registered(self):
         self.assertEqual(len(self.production_tools), 25)
-        self.assertEqual(len(self.beta_tools), 48)
+        self.assertEqual(len(self.beta_tools), 49)
         self.assertEqual(
             set(self.production_tools),
             set(self.beta_tools)
@@ -603,6 +603,7 @@ class ToolParityTests(unittest.TestCase):
                 "configuration_integrity_analysis",
                 "incident_correlation",
                 "handoff_generation",
+                "run_held_read_canary",
             },
         )
 
@@ -660,7 +661,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertEqual(result["data"]["server"]["id"], "hass-mcp-engineering-beta")
         self.assertEqual(result["data"]["server"]["name"], "HA MCP Engineering Server Beta")
         self.assertEqual(result["data"]["server"]["version"], SERVER_VERSION)
-        self.assertEqual(result["data"]["tool_count"], 48)
+        self.assertEqual(result["data"]["tool_count"], 49)
         self.assertEqual(result["data"]["canonical_tool_count"], 25)
 
     def test_list_capabilities_reports_expected_catalog(self):
@@ -668,11 +669,12 @@ class ToolParityTests(unittest.TestCase):
         self.assertTrue(result["success"])
         catalog = result["data"]
         self.assertEqual(catalog["count"], 25)
-        self.assertEqual(catalog["registered_count"], 48)
+        self.assertEqual(catalog["registered_count"], 49)
         self.assertEqual(len(catalog["planned"]), 0)
         self.assertEqual(
             [item["tool"] for item in catalog["beta_native"]],
             [
+                "run_held_read_canary",
                 "create_backup_plan",
                 "create_reload_plan",
                 "create_addon_restart_plan",
@@ -805,7 +807,7 @@ class BetaApplicationTests(unittest.TestCase):
         )
         names = [tool["name"] for tool in listing["result"]["tools"]]
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(names), 48)
+        self.assertEqual(len(names), 49)
         dashboard_descriptors = {
             tool["name"]: tool
             for tool in listing["result"]["tools"]

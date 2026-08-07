@@ -1,8 +1,9 @@
 # HA MCP Engineering Server Beta
 
 This directory contains the Engineering v2 add-on. The currently advertised
-version remains `2.2.0-beta.22`; staged version `2.2.0-beta.23` adds an
-evidence-bound compatibility-family compiler and exact reviewed `ha-mcp` 8.1.1
+version is `2.2.0-beta.23`; staged version `2.2.0-beta.24` adds the bounded
+held-read canary described below. Beta 23 added an evidence-bound
+compatibility-family compiler and exact reviewed `ha-mcp` 8.1.1
 authority without weakening Beta 22 approval review or Beta 20 F3 behavior.
 The exact 8.1.0 and 8.1.1 profiles each admit 24 delegated reads, keep
 `ha_search` and `ha_get_operation_status` held, retain the expanded
@@ -26,7 +27,7 @@ child authority, central recovery, selective holds, private reconciliation,
 and governed rollback. It also preserves Beta 15 lifecycle response handling,
 Beta 14 model-aware catalog validation, Beta 13's secure dependency pins,
 bounded restart reconciliation, and exact 7.14.2 and 8.0.0 compatibility. It
-does not change an F3 route, provider action, public tool, held tool, dashboard
+does not change an F3 route, provider action, held upstream tool, dashboard
 execution boundary, or fallback behavior.
 Its technical “Beta” display name, slug, image repository, and runtime
 identity remain unchanged to avoid a migration. Stable v1.1.2
@@ -37,7 +38,7 @@ rollback.
 ## Contract-level reviewed upstream reads
 
 After configuring the existing secret-bearing upstream MCP URL, Engineering
-starts with 48 statically registered tools (25 canonical plus 23
+starts with 49 statically registered tools (25 canonical plus 24
 Engineering-native). Fast bounded retries recover when `ha-mcp` is not yet
 reachable after host boot. While configured upstream reconciliation is
 initially pending, `/health` remains live but `/ready` and authenticated MCP
@@ -66,9 +67,9 @@ environment-dependent values are normalized. All other descriptor fields stay
 exact. Raw operational-catalog and strict full-contract hashes remain separate
 diagnostic evidence, and malformed policy metadata remains quarantined.
 
-A complete reviewed 7.14.2 set adds 26 delegated reads for 74 registered tools.
-The exact 8.0.0, 8.1.0, and 8.1.1 sets each add 24 for 72 registered tools; their two
-held reads are accounted but never registered or callable. One missing or quarantined read
+A complete reviewed 7.14.2 set adds 26 delegated reads for 75 registered tools.
+The exact 8.0.0, 8.1.0, and 8.1.1 sets each add 24 for 73 registered tools; their two
+held reads are accounted but never registered as delegated upstream tools. One missing or quarantined read
 leaves other matches available. A client that cached an earlier list must re-list or reconnect; the
 stateless transport does not broadcast `tools/list_changed`.
 
@@ -82,6 +83,30 @@ generated candidate evidence cannot authorize itself.
 defines the active boundary, while
 [`ADR-005`](../docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md) retains
 the original Phase 1 decision history.
+
+### Held-read live canary lifecycle
+
+Held-read promotion is deliberately split into five distinct stages:
+
+1. Static compatibility review records the exact release, descriptor,
+   classification, and contract fingerprints in source-controlled evidence.
+2. `held_for_canary` keeps the reviewed read accounted but absent from the
+   dynamic delegated catalog.
+3. `run_held_read_canary` may execute only such a held read. The caller must
+   bind the request to the active exact compatibility-entry ID; Engineering
+   revalidates the input and complete target contract in the same upstream
+   session, applies no fallback, sanitizes and bounds the untrusted result, and
+   emits audit and decision evidence.
+4. A human architecture review evaluates each tool's canary independently. A
+   passing result is evidence only and does not authorize promotion.
+5. Any promotion requires a later source-policy change, review, testing, and
+   release. Canary execution never changes classification or admission state
+   and always reports `promotion_performed: false`.
+
+The canary path is read-only. It cannot call automatic reads, mixed or write
+tools, physical/high-risk actions, prohibited or unsupported tools, or an
+unreviewed/mismatched release or contract. It creates no plan, approval,
+execution task, configuration write, service call, or Home Assistant mutation.
 
 ## Install the beta add-on
 
@@ -227,8 +252,8 @@ even though `/health` is live.
 For any separately authorized deployment, call `server_info(check_ha=false)`
 and verify the expected version, complete release commit SHA, and UTC build
 time. Then call `list_capabilities` and verify the preserved 25-tool canonical
-catalog plus 23 beta-native tools. Without an admitted upstream, MCP
-`tools/list` exposes those 48 tools. With exact reviewed release/profile
+catalog plus 24 beta-native tools. Without an admitted upstream, MCP
+`tools/list` exposes those 49 tools. With exact reviewed release/profile
 authority and matching per-tool contracts, it also exposes the exact dynamic
 count reported by `upstream_read_gateway`.
 Require `version_status`, `compatibility_status`, missing/quarantine counts,

@@ -714,7 +714,7 @@ class GatewayAndHealthTests(unittest.TestCase):
         self.assertTrue(payload["success"])
         health = payload["data"]
         self.assertEqual(health["server"]["version"], SERVER_VERSION)
-        self.assertEqual(health["registered_tool_count"], 48)
+        self.assertEqual(health["registered_tool_count"], 49)
         self.assertIn("handoff_generation", health)
         self.assertIn("automation_reliability_analysis", health)
         self.assertIn("governance", health)

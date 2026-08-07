@@ -1777,7 +1777,7 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
 class ToolCompatibilityTests(unittest.TestCase):
     def test_additive_dev14_tools_preserve_the_f2_compatible_schema_set(self):
         tools = registered_tools(get_registered_server()).values()
-        self.assertEqual(len(tools), 48)
+        self.assertEqual(len(tools), 49)
         current = {item.name: item for item in tools}
         self.assertEqual(
             set(current) - set(BETA14_SCHEMA_HASHES),
@@ -1796,6 +1796,7 @@ class ToolCompatibilityTests(unittest.TestCase):
                 "get_execution_task",
                 "list_execution_tasks",
                 "cancel_execution_task",
+                "run_held_read_canary",
             },
         )
         for name, expected in BETA14_SCHEMA_HASHES.items():
