@@ -12,6 +12,10 @@ session before dispatch. It has no fallback. Arguments are validated before
 network dispatch; results remain untrusted, are sanitized and bounded, and are
 checked against a declared output schema where one exists.
 
+This capability is an unapproved read-only operator diagnostic. Invocation
+does not convey approval, create approval state, admit a tool, or authorize
+promotion.
+
 Canary evidence reports identity and compatibility binding, reviewed and
 observed input-schema fingerprints, match status for the relevant annotation,
 security, output, and runtime contracts, dispatch and provider status, truthful

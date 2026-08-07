@@ -17,6 +17,8 @@ Require all of the following before merge:
 
 - `run_held_read_canary` is a static read-only Engineering-native tool with no
   fallback and a caller-supplied expected compatibility-entry ID;
+- it is documented as an unapproved read-only operator diagnostic whose
+  invocation conveys no approval and creates no approval state;
 - only the active exact entry and a tool classified exactly
   `held_for_canary` can reach the upstream transport;
 - argument and all known descriptor/security/runtime mismatches reject before

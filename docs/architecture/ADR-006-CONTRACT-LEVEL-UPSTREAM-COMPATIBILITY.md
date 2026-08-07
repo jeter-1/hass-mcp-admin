@@ -189,6 +189,10 @@ equal the currently selected exact entry, validates arguments against the
 reviewed observed schema, and rechecks exact identity plus the full target
 descriptor in the same session before dispatch.
 
+The canary is an unapproved read-only operator diagnostic. Running it conveys
+no approval, creates no approval state, and authorizes neither admission nor
+promotion.
+
 This exception is classification-specific, not generic forwarding. Automatic
 reads, every non-held classification, unreviewed names, missing or duplicate
 targets, contract drift, non-exact admission, and entry movement fail before

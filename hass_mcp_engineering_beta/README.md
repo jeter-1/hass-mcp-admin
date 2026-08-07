@@ -96,7 +96,8 @@ Held-read promotion is deliberately split into five distinct stages:
    bind the request to the active exact compatibility-entry ID; Engineering
    revalidates the input and complete target contract in the same upstream
    session, applies no fallback, sanitizes and bounds the untrusted result, and
-   emits audit and decision evidence.
+   emits audit and decision evidence. It is an unapproved read-only operator
+   diagnostic: invocation neither grants approval nor creates approval state.
 4. A human architecture review evaluates each tool's canary independently. A
    passing result is evidence only and does not authorize promotion.
 5. Any promotion requires a later source-policy change, review, testing, and

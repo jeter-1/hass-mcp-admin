@@ -30,6 +30,7 @@ from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.capabilities import (  # noqa: E402
     capability_for_tool,
+    dynamic_upstream_capabilities,
     replace_dynamic_upstream_capabilities,
 )
 from ha_mcp_engineering.request_context import (  # noqa: E402
@@ -63,6 +64,69 @@ def decoded(value: str) -> dict:
 
 
 class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
+    def admission_surface_snapshot(
+        self,
+        gateway: UpstreamReadGateway,
+        server: FastMCP,
+    ) -> dict:
+        health = gateway.health_snapshot()
+        held_classifications = tuple(
+            sorted(
+                (entry.upstream_name, entry.classification)
+                for entry in gateway._policy.tools
+                if entry.classification == "held_for_canary"
+            )
+        )
+        registered_dynamic_tools = tuple(sorted(registered_tools(server)))
+        dynamic_capabilities = dynamic_upstream_capabilities()
+        snapshot = {
+            "held_classifications": held_classifications,
+            "held_canary_routes": tuple(sorted(gateway._held_canaries)),
+            "registered_dynamic_tools": registered_dynamic_tools,
+            "dynamic_capabilities": dynamic_capabilities,
+            "admission_generation": gateway._admission_generation,
+            "admission_state": {
+                field: deepcopy(health[field])
+                for field in (
+                    "selected_compatibility_entry_id",
+                    "admission_status",
+                    "compatibility_status",
+                    "admission_complete",
+                    "generic_delegation_available",
+                    "dynamically_exposed_count",
+                    "exact_matched_automatic_read_count",
+                    "accounted_automatic_read_count",
+                    "automatic_read_accounting_valid",
+                    "held_read_count",
+                    "held_tools",
+                    "live_canary_required_tools",
+                    "policy_classifications",
+                    "blocked_classification_counts",
+                    "catalog_fingerprint",
+                    "strict_full_contract_fingerprint",
+                    "fallback_count",
+                )
+            },
+        }
+        self.assertEqual(
+            held_classifications,
+            (
+                ("ha_get_operation_status", "held_for_canary"),
+                ("ha_search", "held_for_canary"),
+            ),
+        )
+        self.assertEqual(len(registered_dynamic_tools), 24)
+        self.assertNotIn("ha_search", registered_dynamic_tools)
+        self.assertNotIn("ha_get_operation_status", registered_dynamic_tools)
+        self.assertEqual(len(dynamic_capabilities), 24)
+        self.assertTrue(
+            all(
+                item["operation_class"] == "automatic_read"
+                for item in dynamic_capabilities
+            )
+        )
+        return snapshot
+
     def test_public_tool_is_read_only_engineering_native(self):
         tool = registered_tools(get_registered_server()).get(
             "run_held_read_canary"
@@ -135,7 +199,7 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
         )
         gateway._ha_rest_client = AsyncMock()
         gateway._ha_websocket_client = AsyncMock()
-        before = gateway.health_snapshot()
+        before = self.admission_surface_snapshot(gateway, server)
 
         telemetry, token = begin_request("held-canary-positive")
         try:
@@ -181,17 +245,10 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transport.calls[0][0], "ha_search")
         self.assertNotIn("ha_search", registered_tools(server))
         self.assertNotIn("ha_get_operation_status", registered_tools(server))
-        after = gateway.health_snapshot()
-        for field in (
-            "admission_status",
-            "compatibility_status",
-            "dynamically_exposed_count",
-            "held_tools",
-            "blocked_classification_counts",
-            "fallback_count",
-        ):
-            self.assertEqual(after[field], before[field])
-        self.assertEqual(after["dynamically_exposed_count"], 24)
+        self.assertEqual(
+            self.admission_surface_snapshot(gateway, server),
+            before,
+        )
         self.assertEqual(gateway._ha_rest_client.mock_calls, [])
         self.assertEqual(gateway._ha_websocket_client.mock_calls, [])
         self.assertEqual(telemetry.result_status, "success")
@@ -208,8 +265,8 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(telemetry.provider_success_count, 1)
         self.assertEqual(telemetry.provider_failure_count, 0)
 
-    async def test_upstream_error_is_truthful_failure(self):
-        gateway, transport, _server = await self.gateway(
+    async def test_upstream_error_is_truthful_and_preserves_admission(self):
+        gateway, transport, server = await self.gateway(
             result={
                 "content": [
                     {
@@ -228,6 +285,7 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
                 "isError": True,
             }
         )
+        before = self.admission_surface_snapshot(gateway, server)
 
         telemetry, token = begin_request("held-canary-not-found")
         try:
@@ -261,6 +319,10 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(telemetry.provider_dispatch_count, 1)
         self.assertEqual(telemetry.provider_success_count, 0)
         self.assertEqual(telemetry.provider_failure_count, 1)
+        self.assertEqual(
+            self.admission_surface_snapshot(gateway, server),
+            before,
+        )
 
     async def test_binding_schema_and_nonheld_rejections_precede_dispatch(self):
         gateway, transport, _server = await self.gateway()
@@ -430,13 +492,14 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
             "security_classification_mismatch",
         )
 
-    async def test_output_validation_failure_is_not_success(self):
-        gateway, transport, _server = await self.gateway(
+    async def test_failed_canary_preserves_admission_and_is_not_success(self):
+        gateway, transport, server = await self.gateway(
             result={
                 "content": [{"type": "text", "text": '"not-an-object"'}],
                 "isError": False,
             }
         )
+        before = self.admission_surface_snapshot(gateway, server)
         result = decoded(
             await gateway.run_held_read_canary(
                 upstream_tool_name="ha_search",
@@ -453,6 +516,10 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
             result["details"]["canary_evidence"]["dispatch_occurred"]
         )
         self.assertEqual(len(transport.calls), 1)
+        self.assertEqual(
+            self.admission_surface_snapshot(gateway, server),
+            before,
+        )
 
     async def test_untrusted_success_is_bounded_and_reports_partial(self):
         gateway, transport, _server = await self.gateway(
