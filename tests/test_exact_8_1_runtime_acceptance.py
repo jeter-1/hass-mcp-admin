@@ -437,8 +437,8 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
             "upstream_version": "8.1.0",
             "fallback": "none",
             "fallback_occurred": False,
-            "engineering_tool_count": 72,
-            "engineering_local_tool_count": 48,
+            "engineering_tool_count": 73,
+            "engineering_local_tool_count": 49,
             "held_tools_absent": True,
             "gateway_health": {
                 "admission_status": "admitted_exact",
@@ -505,7 +505,7 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["attempt"], 2)
         self.assertEqual(result["probe"]["upstream_version"], "8.1.0")
         self.assertEqual(result["probe"]["fallback"], "none")
-        self.assertEqual(result["probe"]["engineering_tool_count"], 72)
+        self.assertEqual(result["probe"]["engineering_tool_count"], 73)
         self.assertTrue(result["probe"]["held_tools_absent"])
         self.assertEqual(
             result["probe"]["gateway_health"][

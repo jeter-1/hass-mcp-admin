@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased - Evidence-only held-read live canary
+
+- Add one read-only Engineering-native `run_held_read_canary` tool. It is bound
+  to the caller-supplied active exact compatibility-entry ID and can dispatch
+  only a tool that remains classified `held_for_canary`.
+- Revalidate the reviewed input, description, annotation/security, output, and
+  runtime contracts before same-session upstream dispatch. Reject automatic,
+  mixed, write, high-risk, prohibited, unsupported, unreviewed, mismatched, or
+  quarantined tools without fallback.
+- Return sanitized bounded evidence with truthful success, partial, and failure
+  status; validate declared output contracts; and audit only bounded routing
+  and outcome fields without caller payloads or upstream result content.
+- Preserve 24 automatic delegated reads and Dashboard provider behavior.
+  `ha_search` and `ha_get_operation_status` remain held and absent from the
+  dynamic catalog. Canary execution never promotes a tool or mutates policy,
+  governance, execution-task, configuration, service, or Home Assistant state.
+
 ## 2.2.0-beta.23 - Evidence-bound compatibility-family admission
 
 - Add a strict review-time compatibility-family compiler that emits one exact

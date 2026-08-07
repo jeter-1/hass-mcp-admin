@@ -48,6 +48,7 @@ _ENGINEERING_NATIVE = {
     ProviderCapability.CONFIGURATION_INTEGRITY_ANALYSIS,
     ProviderCapability.INCIDENT_CORRELATION,
     ProviderCapability.AUDIT,
+    ProviderCapability.HELD_READ_CANARY,
     ProviderCapability.HANDOFF_GENERATION,
 }
 _STANDARD_PREFERRED = {
@@ -139,6 +140,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "delete_automation": ProviderCapability.UNGOVERNED_PHYSICAL_ACTION,
     "reload_domain": ProviderCapability.ORDINARY_SERVICE_EXECUTION,
     "get_server_health": ProviderCapability.AUDIT,
+    "run_held_read_canary": ProviderCapability.HELD_READ_CANARY,
     "create_change_plan": ProviderCapability.RISK_ASSESSMENT,
     "create_configuration_plan": ProviderCapability.RISK_ASSESSMENT,
     "create_backup_plan": ProviderCapability.OPERATIONAL_ADMINISTRATION,

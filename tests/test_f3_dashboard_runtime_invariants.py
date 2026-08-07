@@ -62,7 +62,7 @@ class DashboardRuntimeInvariantTests(unittest.TestCase):
 
     def test_public_tool_count_and_change_vocabulary_are_unchanged(self):
         names = set(registered_tools(get_registered_server()))
-        self.assertEqual(len(names), 48)
+        self.assertEqual(len(names), 49)
         self.assertNotIn("create_dashboard_update_plan", names)
         self.assertNotIn("update_storage_dashboard", names)
         self.assertNotIn("update_dashboard", {value.value for value in ChangeOperation})

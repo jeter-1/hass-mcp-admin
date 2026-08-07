@@ -373,6 +373,27 @@ class _AdmittedRoute:
     protocol_version: str
 
 
+@dataclass(frozen=True)
+class _HeldCanaryRoute:
+    """Reviewed held-tool evidence captured by the active exact admission."""
+
+    entry: UpstreamToolPolicyEntry
+    observed_tool: dict[str, Any] | None
+    generation: int
+    compatibility_entry_id: str
+    decision: _ContractDecision | None
+    rejection_reason: str | None
+    runtime_description_fingerprint: str
+    runtime_annotation_fingerprint: str
+    runtime_output_schema_fingerprint: str
+    runtime_contract_fingerprint: str
+    runtime_contract_field_fingerprints: tuple[tuple[str, str], ...]
+    runtime_contract_fingerprint_model: str
+    server_name: str
+    server_version: str
+    protocol_version: str
+
+
 @dataclass
 class _RouteLease:
     """One call's immutable route binding and dispatch linearization state."""
@@ -401,6 +422,7 @@ class UpstreamReadGateway:
         self._registered_tool_registry: McpSdkToolRegistry | None = None
         self._registered_names: set[str] = set()
         self._exposed: dict[str, _AdmittedRoute] = {}
+        self._held_canaries: dict[str, _HeldCanaryRoute] = {}
         self._dynamic_capabilities: tuple[dict[str, Any], ...] = ()
         self._admission_generation = 0
         self._live_observation_epoch = 0
@@ -838,6 +860,12 @@ class UpstreamReadGateway:
                         "collision": exposed_name != entry.upstream_name,
                     }
                 )
+            held_canaries = self._build_held_canary_routes(
+                catalog=catalog,
+                policy=selected_policy,
+                release=selected_release,
+                generation=generation,
+            )
             full_admission = len(exposed) == selected_policy.classification_counts[
                 "automatic_read"
             ]
@@ -911,6 +939,7 @@ class UpstreamReadGateway:
                     server=server,
                     dynamic_tools=dynamic_tools,
                     exposed=exposed,
+                    held_canaries=held_canaries,
                     capabilities=tuple(capabilities),
                     generation=generation,
                     catalog=catalog,
@@ -958,6 +987,7 @@ class UpstreamReadGateway:
         server: Any,
         dynamic_tools: dict[str, ReviewedUpstreamReadTool],
         exposed: dict[str, _AdmittedRoute],
+        held_canaries: dict[str, _HeldCanaryRoute],
         capabilities: tuple[dict[str, Any], ...],
         generation: int,
         catalog: McpReadCatalog,
@@ -986,6 +1016,7 @@ class UpstreamReadGateway:
         self._replace_registered_tools(server, dynamic_tools)
         self._registered_names = set(dynamic_tools)
         self._exposed = dict(exposed)
+        self._held_canaries = dict(held_canaries)
         self._dynamic_capabilities = capabilities
         self._admission_generation = generation
         self._policy = policy
@@ -1840,6 +1871,81 @@ class UpstreamReadGateway:
             return "[INVALID_NAME]"
         return sanitation.value
 
+    def _build_held_canary_routes(
+        self,
+        *,
+        catalog: McpReadCatalog,
+        policy: UpstreamToolPolicy,
+        release: ReviewedUpstreamRelease | None,
+        generation: int,
+    ) -> dict[str, _HeldCanaryRoute]:
+        """Capture held-tool contracts without registering callable routes."""
+
+        if release is None:
+            return {}
+        observed_by_name: dict[str, list[dict[str, Any]]] = {}
+        for tool in catalog.tools:
+            name = tool.get("name") if isinstance(tool, dict) else None
+            if isinstance(name, str):
+                observed_by_name.setdefault(name, []).append(tool)
+        reviewed_contracts = release.tool_contracts_by_name
+        routes: dict[str, _HeldCanaryRoute] = {}
+        for entry in policy.tools:
+            if entry.classification != "held_for_canary":
+                continue
+            observed = observed_by_name.get(entry.upstream_name, [])
+            contract = reviewed_contracts[entry.upstream_name]
+            decision = None
+            rejection_reason = None
+            observed_tool = observed[0] if len(observed) == 1 else None
+            if len(observed) != 1:
+                rejection_reason = (
+                    "live_target_missing"
+                    if not observed
+                    else "live_target_duplicate"
+                )
+            else:
+                decision = _compare_held_tool_contract(
+                    entry,
+                    observed[0],
+                    protocol_version=catalog.protocol_version,
+                    reviewed_contract=contract,
+                    runtime_contract_fingerprint_model=(
+                        release.runtime_contract_fingerprint_model
+                    ),
+                )
+                rejection_reason = decision.reason
+            routes[entry.upstream_name] = _HeldCanaryRoute(
+                entry=entry,
+                observed_tool=deepcopy(observed_tool),
+                generation=generation,
+                compatibility_entry_id=release.entry_id,
+                decision=decision,
+                rejection_reason=rejection_reason,
+                runtime_description_fingerprint=(
+                    contract.description_fingerprint
+                ),
+                runtime_annotation_fingerprint=(
+                    contract.annotation_fingerprint
+                ),
+                runtime_output_schema_fingerprint=(
+                    contract.output_contract_fingerprint
+                ),
+                runtime_contract_fingerprint=(
+                    contract.runtime_contract_fingerprint
+                ),
+                runtime_contract_field_fingerprints=(
+                    contract.runtime_contract_field_fingerprints
+                ),
+                runtime_contract_fingerprint_model=(
+                    release.runtime_contract_fingerprint_model
+                ),
+                server_name=catalog.server_name,
+                server_version=catalog.server_version,
+                protocol_version=catalog.protocol_version,
+            )
+        return routes
+
     async def _dispatch_current_route(
         self,
         *,
@@ -2372,12 +2478,508 @@ class UpstreamReadGateway:
                 request_id=current_request_id(),
             ).to_json(response_limit)
 
+    async def run_held_read_canary(
+        self,
+        *,
+        upstream_tool_name: str,
+        expected_compatibility_entry_id: str,
+        arguments: dict[str, Any] | None,
+    ) -> str:
+        """Execute one evidence-only call for an exactly reviewed held read."""
+
+        started = time.perf_counter()
+        arguments = {} if arguments is None else arguments
+        telemetry = current_telemetry()
+        route: _HeldCanaryRoute | None = None
+        dispatched = False
+        observed_identity: dict[str, str | None] = {
+            "server": None,
+            "version": None,
+            "protocol": None,
+        }
+
+        def evidence(
+            *,
+            outcome: str,
+            failure_category: str | None = None,
+            completeness: str = "failed",
+            truncation: bool = False,
+            output_contract_match: bool | None = None,
+            error_contract: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            observed_tool = (
+                route.observed_tool if route is not None else None
+            )
+            active_id = (
+                route.compatibility_entry_id
+                if route is not None
+                else self.health_snapshot().get(
+                    "selected_compatibility_entry_id"
+                )
+            )
+            observed_input_fingerprint = _safe_schema_component_fingerprint(
+                observed_tool.get("inputSchema")
+                if observed_tool is not None
+                else None
+            )
+            observed_annotation_fingerprint = (
+                _safe_schema_component_fingerprint(
+                    {
+                        "present": "annotations" in observed_tool,
+                        "value": observed_tool.get("annotations"),
+                    }
+                )
+                if observed_tool is not None
+                else None
+            )
+            observed_output_fingerprint = (
+                _safe_schema_component_fingerprint(
+                    {
+                        "present": "outputSchema" in observed_tool,
+                        "value": observed_tool.get("outputSchema"),
+                    }
+                )
+                if observed_tool is not None
+                else None
+            )
+            observed_runtime_fingerprint = None
+            if observed_tool is not None and route is not None:
+                try:
+                    observed_runtime_fingerprint = runtime_contract_fingerprint(
+                        observed_tool,
+                        model=route.runtime_contract_fingerprint_model,
+                    )
+                except (TypeError, ValueError, OverflowError):
+                    pass
+            annotation_match = bool(
+                route is not None
+                and observed_annotation_fingerprint
+                == route.runtime_annotation_fingerprint
+            )
+            security_match = bool(
+                route is not None
+                and route.entry.classification == "held_for_canary"
+                and route.entry.reviewed_annotations.read_only
+                and not route.entry.reviewed_annotations.destructive
+                and not route.entry.reviewed_annotations.open_world
+            )
+            runtime_match = bool(
+                route is not None
+                and observed_runtime_fingerprint
+                == route.runtime_contract_fingerprint
+            )
+            reviewed_output_match = bool(
+                route is not None
+                and observed_output_fingerprint
+                == route.runtime_output_schema_fingerprint
+            )
+            return {
+                "upstream_tool": upstream_tool_name[:128],
+                "expected_compatibility_entry_id": (
+                    expected_compatibility_entry_id[:160]
+                    if isinstance(expected_compatibility_entry_id, str)
+                    else "invalid"
+                ),
+                "active_compatibility_entry_id": active_id,
+                "observed_upstream_server": observed_identity["server"],
+                "observed_upstream_version": observed_identity["version"],
+                "observed_upstream_protocol": observed_identity["protocol"],
+                "reviewed_classification_before": (
+                    route.entry.classification if route is not None else None
+                ),
+                "reviewed_classification_after": (
+                    route.entry.classification if route is not None else None
+                ),
+                "reviewed_input_schema_fingerprint": (
+                    route.entry.input_schema_fingerprint
+                    if route is not None
+                    else None
+                ),
+                "observed_input_schema_fingerprint": (
+                    observed_input_fingerprint
+                ),
+                "input_schema_match": bool(
+                    route is not None
+                    and observed_input_fingerprint
+                    == route.entry.input_schema_fingerprint
+                ),
+                "annotation_match": annotation_match,
+                "security_match": security_match,
+                "annotation_security_match": (
+                    annotation_match and security_match
+                ),
+                "runtime_contract_match": runtime_match,
+                "output_contract_match": (
+                    output_contract_match
+                    if output_contract_match is not None
+                    else reviewed_output_match
+                ),
+                "error_contract": error_contract,
+                "dispatch_occurred": dispatched,
+                "provider": PROVIDER_ID,
+                "fallback": "none",
+                "fallback_occurred": False,
+                "outcome": outcome,
+                "failure_category": failure_category,
+                "completeness": completeness,
+                "truncated": truncation,
+                "promotion_performed": False,
+            }
+
+        def set_audit_context(value: dict[str, Any]) -> None:
+            if telemetry is None:
+                return
+            telemetry.audit_context.update(
+                {
+                    key: value[key]
+                    for key in (
+                        "upstream_tool",
+                        "expected_compatibility_entry_id",
+                        "active_compatibility_entry_id",
+                        "observed_upstream_server",
+                        "observed_upstream_version",
+                        "observed_upstream_protocol",
+                        "reviewed_classification_before",
+                        "reviewed_classification_after",
+                        "dispatch_occurred",
+                        "provider",
+                        "fallback_occurred",
+                        "outcome",
+                        "failure_category",
+                        "completeness",
+                        "truncated",
+                        "promotion_performed",
+                    )
+                }
+            )
+
+        async def fail(
+            category: str,
+            *,
+            reason: str | None = None,
+            error_contract: dict[str, Any] | None = None,
+        ) -> str:
+            normalized = _normalize_category(category)
+            code, retryable = _public_failure(normalized)
+            report = evidence(
+                outcome="error",
+                failure_category=normalized,
+                error_contract=error_contract,
+            )
+            set_audit_context(report)
+            if telemetry is not None:
+                telemetry.error_code = code
+                telemetry.result_status = "failure"
+                telemetry.completeness = "failed"
+            if dispatched:
+                METRICS.record_provider_result(
+                    PROVIDER_ID,
+                    "failed",
+                    dispatched=True,
+                )
+            response_limit = min(
+                route.entry.response_limit_bytes
+                if route is not None
+                else 60_000,
+                self._settings.response_size_limit
+                if self._settings is not None
+                else 60_000,
+            )
+            return FailureResponse(
+                operation="run_held_read_canary",
+                error="HeldReadCanaryError",
+                error_code=code,
+                message=_safe_failure_message(
+                    normalized,
+                    upstream_tool_name if route is not None else None,
+                ),
+                details={
+                    "failure_category": normalized,
+                    **({"reason": reason[:128]} if reason else {}),
+                    "canary_evidence": report,
+                },
+                retryable=retryable,
+                metadata={
+                    "provider": PROVIDER_ID,
+                    "fallback": "none",
+                    "fallback_occurred": False,
+                    "promotion_performed": False,
+                },
+                timing=timing_since(started),
+                request_id=current_request_id(),
+            ).to_json(response_limit)
+
+        with self._lock:
+            active_release = self._active_release
+            active_entry_id = self._state.get(
+                "selected_compatibility_entry_id"
+            )
+            exact = (
+                self._state.get("compatibility_status") == "exact"
+                and self._state.get("admission_status") == "admitted_exact"
+                and active_release is not None
+            )
+            policy_entry = (
+                self._policy.by_name.get(upstream_tool_name)
+                if self._policy is not None
+                and isinstance(upstream_tool_name, str)
+                else None
+            )
+            route = self._held_canaries.get(upstream_tool_name)
+            transport = self._transport
+        if route is not None:
+            observed_identity.update(
+                {
+                    "server": self._safe_identity_evidence(route.server_name),
+                    "version": self._safe_version_evidence(route.server_version),
+                    "protocol": self._safe_identity_evidence(
+                        route.protocol_version
+                    ),
+                }
+            )
+        if not exact:
+            return await fail("not_initialized", reason="exact_admission_required")
+        if (
+            not isinstance(expected_compatibility_entry_id, str)
+            or expected_compatibility_entry_id != active_entry_id
+        ):
+            return await fail(
+                "prohibited_delegation",
+                reason="compatibility_entry_mismatch",
+            )
+        if policy_entry is None or policy_entry.classification != "held_for_canary":
+            return await fail(
+                "prohibited_delegation",
+                reason="tool_not_held_for_canary",
+            )
+        if route is None or route.compatibility_entry_id != active_entry_id:
+            return await fail(
+                "schema_mismatch",
+                reason="held_contract_evidence_unavailable",
+            )
+        if route.rejection_reason is not None or route.decision is None:
+            return await fail(
+                "schema_mismatch",
+                reason=route.rejection_reason or "held_contract_mismatch",
+            )
+        if not isinstance(arguments, dict):
+            return await fail("argument_validation")
+        errors = list(
+            Draft202012Validator(
+                route.observed_tool["inputSchema"]
+            ).iter_errors(arguments)
+        )
+        if errors:
+            return await fail("argument_validation")
+        if transport is None:
+            return await fail("not_configured")
+
+        validator_ran = False
+
+        def validate_live_catalog(catalog: McpReadCatalog) -> None:
+            nonlocal validator_ran
+            validator_ran = True
+            observed_identity.update(
+                {
+                    "server": self._safe_identity_evidence(catalog.server_name),
+                    "version": self._safe_version_evidence(catalog.server_version),
+                    "protocol": self._safe_identity_evidence(catalog.protocol_version),
+                }
+            )
+            live_policy, live_release = self._validate_identity(
+                catalog.server_name,
+                catalog.server_version,
+                catalog.protocol_version,
+            )
+            if (
+                live_release is None
+                or live_release.entry_id != expected_compatibility_entry_id
+                or live_release.entry_id != route.compatibility_entry_id
+                or live_release.version != route.server_version
+                or catalog.protocol_version != route.protocol_version
+            ):
+                raise DashboardTransportError("upstream_version_mismatch")
+            with self._lock:
+                if (
+                    self._active_release is not active_release
+                    or self._held_canaries.get(upstream_tool_name) is not route
+                    or self._admission_generation != route.generation
+                ):
+                    raise DashboardTransportError("prohibited_delegation")
+            live_entry = live_policy.by_name.get(upstream_tool_name)
+            if (
+                live_entry is None
+                or live_entry.classification != "held_for_canary"
+            ):
+                raise DashboardTransportError("prohibited_delegation")
+            targets = [
+                item
+                for item in catalog.tools
+                if isinstance(item, dict)
+                and item.get("name") == upstream_tool_name
+            ]
+            if len(targets) != 1:
+                raise DashboardTransportError("schema_mismatch")
+            live_contract = live_release.tool_contracts_by_name[
+                upstream_tool_name
+            ]
+            decision = _compare_held_tool_contract(
+                live_entry,
+                targets[0],
+                protocol_version=catalog.protocol_version,
+                reviewed_contract=live_contract,
+                runtime_contract_fingerprint_model=(
+                    route.runtime_contract_fingerprint_model
+                ),
+            )
+            if not decision.accepted:
+                raise DashboardTransportError("schema_mismatch")
+
+        def before_dispatch() -> None:
+            nonlocal dispatched
+            with self._lock:
+                if (
+                    self._active_release is not active_release
+                    or self._held_canaries.get(upstream_tool_name) is not route
+                    or self._admission_generation != route.generation
+                    or self._state.get("compatibility_status") != "exact"
+                    or self._state.get("admission_status") != "admitted_exact"
+                ):
+                    raise DashboardTransportError("prohibited_delegation")
+                dispatched = True
+
+        try:
+            exchange = await transport.execute_read(
+                upstream_tool_name,
+                dict(arguments),
+                timeout_seconds=route.entry.timeout_seconds,
+                catalog_validator=validate_live_catalog,
+                before_dispatch=before_dispatch,
+            )
+        except DashboardTransportError as exc:
+            return await fail(exc.category)
+        except Exception as exc:
+            category = getattr(getattr(exc, "cause", None), "category", None)
+            return await fail(category or "internal_error")
+        if not validator_ran or not dispatched:
+            return await fail("prohibited_delegation")
+        if exchange.call_result.get("isError") is True:
+            error_contract = _upstream_error_evidence(exchange.call_result)
+            return await fail(
+                _classify_upstream_tool_error(
+                    upstream_tool_name,
+                    exchange.call_result,
+                    arguments,
+                ),
+                error_contract=error_contract,
+            )
+        try:
+            payload = _normalize_upstream_payload(
+                exchange.call_result,
+                server_version=route.server_version,
+                protocol_version=route.protocol_version,
+                upstream_tool=upstream_tool_name,
+            )
+            output_schema = route.observed_tool.get("outputSchema")
+            output_match = True
+            if isinstance(output_schema, dict):
+                output_match = not any(
+                    Draft202012Validator(output_schema).iter_errors(payload)
+                )
+            if not output_match:
+                return await fail(
+                    "invalid_response",
+                    reason="output_contract_validation_failed",
+                )
+            response_limit = min(
+                route.entry.response_limit_bytes,
+                self._settings.response_size_limit
+                if self._settings is not None
+                else 60_000,
+            )
+            sanitation = sanitize_untrusted_data(
+                payload,
+                known_secrets=self._known_secrets,
+                max_string=max(2_000, min(response_limit // 2, 20_000)),
+            )
+            if sanitation.failed_closed:
+                return await fail("sanitization_failed")
+            result = sanitation.value
+            encoded_size = len(
+                json.dumps(
+                    result,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                    default=str,
+                ).encode("utf-8")
+            )
+            summarized = encoded_size + 12_000 > response_limit
+            if summarized:
+                result = {
+                    "result_omitted": True,
+                    "reason": "bounded_result_summary",
+                    "sanitized_result_type": type(sanitation.value).__name__,
+                }
+            upstream_partial, warnings = _upstream_completeness(
+                route.entry, sanitation.value
+            )
+            truncated = bool(
+                sanitation.truncated_field_count or summarized
+            )
+            completeness = (
+                "partial" if truncated or upstream_partial else "complete"
+            )
+            report = evidence(
+                outcome="partial" if completeness == "partial" else "success",
+                completeness=completeness,
+                truncation=truncated,
+                output_contract_match=True,
+            )
+            set_audit_context(report)
+            if telemetry is not None:
+                telemetry.result_status = report["outcome"]
+                telemetry.completeness = completeness
+            METRICS.record_provider_result(
+                PROVIDER_ID,
+                completeness,
+                dispatched=True,
+            )
+            return SuccessResponse(
+                operation="run_held_read_canary",
+                summary=(
+                    "Executed one reviewed held read as evidence only; no "
+                    "promotion was performed."
+                ),
+                data={"canary_evidence": report, "result": result},
+                warnings=(
+                    (["The untrusted upstream result was safely bounded."] if truncated else [])
+                    + warnings
+                    + ["A passing canary does not authorize promotion."]
+                ),
+                metadata={
+                    "provider": PROVIDER_ID,
+                    "untrusted_upstream_content": True,
+                    "fallback": "none",
+                    "fallback_occurred": False,
+                    "promotion_performed": False,
+                },
+                timing=timing_since(started),
+                request_id=current_request_id(),
+            ).to_json(response_limit)
+        except _GatewayFailure as exc:
+            return await fail(exc.category)
+        except (SchemaError, TypeError, ValueError, OverflowError):
+            return await fail("invalid_response")
+
     def _remove_registered_tools(self) -> None:
         with self._lock:
             if self._registered_server is not None:
                 self._replace_registered_tools(self._registered_server, {})
             self._registered_names = set()
             self._exposed = {}
+            self._held_canaries = {}
             self._dynamic_capabilities = ()
 
     def _reset_contract_accounting_locked(self) -> None:
@@ -2892,6 +3494,13 @@ class _GatewayFailure(RuntimeError):
         self.dispatched = dispatched
 
 
+def _safe_schema_component_fingerprint(value: Any) -> str | None:
+    try:
+        return schema_fingerprint(value)
+    except (TypeError, ValueError, UnicodeError, OverflowError):
+        return None
+
+
 def _safe_catalog_fingerprint(
     tools: list[dict[str, Any]],
 ) -> str | None:
@@ -3190,6 +3799,162 @@ def _compare_tool_contract(
     )
 
 
+def _compare_held_tool_contract(
+    entry: UpstreamToolPolicyEntry,
+    observed_tool: dict[str, Any],
+    *,
+    protocol_version: str,
+    reviewed_contract: Any,
+    runtime_contract_fingerprint_model: str,
+) -> _ContractDecision:
+    """Compare a held read to release evidence without admitting it."""
+
+    try:
+        observed_components = {
+            "input_schema_fingerprint": schema_fingerprint(
+                observed_tool.get("inputSchema")
+            ),
+            "description_fingerprint": (
+                runtime_description_fingerprint(
+                    observed_tool.get("description")
+                )
+                or schema_fingerprint({"invalid_description": True})
+            ),
+            "annotation_fingerprint": schema_fingerprint(
+                {
+                    "present": "annotations" in observed_tool,
+                    "value": observed_tool.get("annotations"),
+                }
+            ),
+            "output_contract_fingerprint": schema_fingerprint(
+                {
+                    "present": "outputSchema" in observed_tool,
+                    "value": observed_tool.get("outputSchema"),
+                }
+            ),
+            "runtime_contract_fingerprint": runtime_contract_fingerprint(
+                observed_tool,
+                model=runtime_contract_fingerprint_model,
+            ),
+        }
+        observed_runtime_fields = runtime_contract_field_fingerprints(
+            observed_tool
+        )
+        Draft202012Validator.check_schema(observed_tool.get("inputSchema"))
+        if "outputSchema" in observed_tool:
+            Draft202012Validator.check_schema(
+                observed_tool.get("outputSchema")
+            )
+    except (SchemaError, TypeError, ValueError, OverflowError):
+        observed_components = {
+            "input_schema_fingerprint": schema_fingerprint(
+                {"invalid_input_schema": True}
+            ),
+            "description_fingerprint": schema_fingerprint(
+                {"invalid_description": True}
+            ),
+            "annotation_fingerprint": schema_fingerprint(
+                {"invalid_annotations": True}
+            ),
+            "output_contract_fingerprint": schema_fingerprint(
+                {"invalid_output_schema": True}
+            ),
+            "runtime_contract_fingerprint": schema_fingerprint(
+                {"invalid_runtime_contract": True}
+            ),
+        }
+        observed_runtime_fields = {}
+    expected_components = {
+        "input_schema_fingerprint": reviewed_contract.input_schema_fingerprint,
+        "description_fingerprint": reviewed_contract.description_fingerprint,
+        "annotation_fingerprint": reviewed_contract.annotation_fingerprint,
+        "output_contract_fingerprint": (
+            reviewed_contract.output_contract_fingerprint
+        ),
+        "runtime_contract_fingerprint": (
+            reviewed_contract.runtime_contract_fingerprint
+        ),
+    }
+    reviewed_fields = dict(
+        reviewed_contract.runtime_contract_field_fingerprints
+    )
+    raw_runtime_diff_fields = tuple(
+        sorted(
+            pointer
+            for pointer in set(reviewed_fields) | set(observed_runtime_fields)
+            if reviewed_fields.get(pointer)
+            != observed_runtime_fields.get(pointer)
+        )
+    )
+    annotations = entry.reviewed_annotations
+    reason = None
+    if observed_tool.get("name") != entry.upstream_name:
+        reason = "tool_name_mismatch"
+    elif observed_components["input_schema_fingerprint"] != expected_components[
+        "input_schema_fingerprint"
+    ]:
+        reason = "input_schema_mismatch"
+    elif observed_components["description_fingerprint"] != expected_components[
+        "description_fingerprint"
+    ]:
+        reason = "description_semantics_mismatch"
+    elif observed_components["annotation_fingerprint"] != expected_components[
+        "annotation_fingerprint"
+    ]:
+        reason = "annotation_mismatch"
+    elif (
+        not annotations.read_only
+        or annotations.destructive
+        or annotations.open_world
+        or entry.classification != "held_for_canary"
+        or reviewed_contract.policy_classification != "held_for_canary"
+        or reviewed_contract.reviewed_automatic_read
+        or reviewed_contract.quarantine_reason != "policy:held_for_canary"
+    ):
+        reason = "security_classification_mismatch"
+    elif observed_components["output_contract_fingerprint"] != expected_components[
+        "output_contract_fingerprint"
+    ]:
+        reason = "output_contract_mismatch"
+    elif (
+        not _runtime_descriptor_fields_valid(observed_tool)
+        or observed_components["runtime_contract_fingerprint"]
+        != expected_components["runtime_contract_fingerprint"]
+    ):
+        reason = "runtime_contract_mismatch"
+    elif protocol_version not in SUPPORTED_PROTOCOLS:
+        reason = "unsupported_protocol_version"
+    runtime_diff_fields = raw_runtime_diff_fields[
+        :MAX_RUNTIME_CONTRACT_DIFF_FIELDS
+    ]
+    if reason == "runtime_contract_mismatch" and not runtime_diff_fields:
+        runtime_diff_fields = ("/",)
+    return _ContractDecision(
+        entry=entry,
+        observed_tool=observed_tool,
+        accepted=reason is None,
+        reason=reason,
+        expected_fingerprint=schema_fingerprint(expected_components),
+        observed_fingerprint=schema_fingerprint(observed_components),
+        expected_runtime_contract_fingerprint=(
+            reviewed_contract.runtime_contract_fingerprint
+        ),
+        observed_runtime_contract_fingerprint=observed_components[
+            "runtime_contract_fingerprint"
+        ],
+        runtime_contract_fingerprint_model=runtime_contract_fingerprint_model,
+        runtime_contract_diff_fields=runtime_diff_fields,
+        runtime_contract_diff_summary=_runtime_contract_diff_summary(
+            runtime_diff_fields,
+            truncated=(
+                len(raw_runtime_diff_fields)
+                > MAX_RUNTIME_CONTRACT_DIFF_FIELDS
+            ),
+        ),
+        raw_runtime_contract_diff_fields=raw_runtime_diff_fields,
+    )
+
+
 def _runtime_contract_diff_summary(
     fields: tuple[str, ...],
     *,
@@ -3442,6 +4207,77 @@ def _classify_upstream_tool_error(
     if code in _UPSTREAM_INTERNAL_CODES:
         return "upstream_error"
     return "upstream_error"
+
+
+def _shape_projection(value: Any) -> Any:
+    """Project an untrusted result to bounded structural evidence."""
+
+    if isinstance(value, dict):
+        return {
+            str(name)[:128]: _shape_projection(item)
+            for name, item in sorted(value.items(), key=lambda pair: str(pair[0]))[
+                :64
+            ]
+        }
+    if isinstance(value, list):
+        return [_shape_projection(item) for item in value[:32]]
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int):
+        return "integer"
+    if isinstance(value, float):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    return "unsupported"
+
+
+def _upstream_error_evidence(call_result: dict[str, Any]) -> dict[str, Any]:
+    """Return code-and-shape evidence without reflecting error payload data."""
+
+    content = call_result.get("content")
+    if (
+        not isinstance(content, list)
+        or len(content) != 1
+        or not isinstance(content[0], dict)
+        or content[0].get("type") != "text"
+        or not isinstance(content[0].get("text"), str)
+    ):
+        return {
+            "is_error": True,
+            "structured_code": None,
+            "shape_fingerprint": schema_fingerprint(
+                _shape_projection(call_result)
+            ),
+        }
+    text = content[0]["text"]
+    try:
+        if len(text.encode("utf-8")) > MAX_STRUCTURED_UPSTREAM_ERROR_BYTES:
+            raise ValueError("error envelope exceeds evidence bound")
+        payload = json.loads(
+            text,
+            object_pairs_hook=_reject_duplicate_json_members,
+            parse_constant=_reject_non_finite_json_constant,
+        )
+    except (RecursionError, TypeError, UnicodeError, ValueError):
+        return {
+            "is_error": True,
+            "structured_code": None,
+            "shape_fingerprint": schema_fingerprint(
+                {"unparseable_bounded_error": True}
+            ),
+        }
+    error = payload.get("error") if isinstance(payload, dict) else None
+    code = error.get("code") if isinstance(error, dict) else None
+    return {
+        "is_error": True,
+        "structured_code": (
+            code if isinstance(code, str) and len(code) <= 128 else None
+        ),
+        "shape_fingerprint": schema_fingerprint(_shape_projection(payload)),
+    }
 
 
 def _reviewed_single_entity_registry_lookup(

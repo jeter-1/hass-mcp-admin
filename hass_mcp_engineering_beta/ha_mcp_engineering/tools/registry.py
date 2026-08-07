@@ -9,6 +9,7 @@ from . import compatibility
 from .governance import GOVERNANCE_TOOLS
 from .analysis import ANALYSIS_TOOLS
 from .dashboard import DASHBOARD_TOOLS
+from .canary import CANARY_TOOLS
 from ..capabilities import CAPABILITIES
 from ..mcp_sdk_compatibility import McpSdkToolRegistry
 from ..providers.dispatch import CANONICAL_DISPATCHER
@@ -81,6 +82,19 @@ for dashboard_tool in DASHBOARD_TOOLS:
         _SERVER.tool(
             annotations=_DASHBOARD_READ_ANNOTATIONS
         )(dashboard_tool)
+
+_registered = set(_SDK_TOOLS.snapshot())
+_CANARY_READ_ANNOTATIONS = ToolAnnotations(
+    readOnlyHint=True,
+    destructiveHint=False,
+    idempotentHint=False,
+    openWorldHint=False,
+)
+for canary_tool in CANARY_TOOLS:
+    if canary_tool.__name__ not in _registered:
+        _SERVER.tool(
+            annotations=_CANARY_READ_ANNOTATIONS
+        )(canary_tool)
 
 
 def _routed_wrapper(tool_name, original):

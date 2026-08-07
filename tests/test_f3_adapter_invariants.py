@@ -75,8 +75,8 @@ class F3AdapterIsolationTests(unittest.TestCase):
     def test_source_tool_and_schema_contract_is_unchanged(self):
         local_tools = registered_tools(get_registered_server())
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(local_tools) - len(CAPABILITIES), 23)
-        self.assertEqual(len(local_tools), 48)
+        self.assertEqual(len(local_tools) - len(CAPABILITIES), 24)
+        self.assertEqual(len(local_tools), 49)
         self.assertEqual(len(PLANNED_CAPABILITIES), 0)
         self.assertEqual(TASK_SCHEMA_VERSION, 1)
         self.assertEqual(
@@ -119,7 +119,7 @@ class F3AdapterIsolationTests(unittest.TestCase):
         self.assertEqual(
             seven.policy.classification_counts["automatic_read"], 26
         )
-        self.assertEqual(48 + 26, 74)
+        self.assertEqual(49 + 26, 75)
         self.assertEqual(len(eight.tool_contracts), 78)
         self.assertEqual(
             eight.policy.classification_counts["automatic_read"], 24
@@ -133,7 +133,7 @@ class F3AdapterIsolationTests(unittest.TestCase):
             if item.classification == "held_for_canary"
         }
         self.assertEqual(held, {"ha_search", "ha_get_operation_status"})
-        self.assertEqual(48 + 24, 72)
+        self.assertEqual(49 + 24, 73)
 
 
 if __name__ == "__main__":

@@ -178,6 +178,36 @@ unknown; independently verified reviewed-tool decisions remain authoritative.
 There is no arbitrary name forwarding, direct Home Assistant fallback,
 alternate provider fallback, service execution, or generic write dispatch.
 
+### Held-read canary boundary
+
+`held_for_canary` is neither automatic admission nor permanent prohibition. A
+held read remains absent from the dynamic delegated catalog, but the static
+Engineering-native `run_held_read_canary` tool can produce the live evidence
+needed for a later architecture decision. The request names one held upstream
+tool and the expected compatibility-entry ID. Engineering requires that ID to
+equal the currently selected exact entry, validates arguments against the
+reviewed observed schema, and rechecks exact identity plus the full target
+descriptor in the same session before dispatch.
+
+The canary is an unapproved read-only operator diagnostic. Running it conveys
+no approval, creates no approval state, and authorizes neither admission nor
+promotion.
+
+This exception is classification-specific, not generic forwarding. Automatic
+reads, every non-held classification, unreviewed names, missing or duplicate
+targets, contract drift, non-exact admission, and entry movement fail before
+dispatch. There is no fallback. Results are treated as untrusted, sanitized,
+bounded, checked against a declared output schema where present, and reported
+with completeness and truncation evidence. Audit retains bounded route,
+identity, dispatch, outcome, and failure fields rather than arguments or result
+content.
+
+Static review, held classification, live execution, a human promotion decision,
+and a later source-policy promotion are separate stages. The canary writes none
+of them. It never registers the held tool, changes its classification, edits the
+compatibility registry, or creates governance or execution state, and every
+result declares `promotion_performed: false`.
+
 ### Dashboard independence
 
 The dashboard provider and generic read gateway evaluate the same upstream

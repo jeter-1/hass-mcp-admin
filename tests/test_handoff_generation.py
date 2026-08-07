@@ -532,9 +532,9 @@ class PublicContractTests(unittest.TestCase):
         self.assertEqual(matrix["selected_provider"], "engineering")
         self.assertEqual(matrix["fallback_policy"], "none")
 
-    def test_tools_list_has_40_and_schema_is_bounded(self):
+    def test_tools_list_has_49_and_schema_is_bounded(self):
         tools = registered_tools(get_registered_server()).values()
-        self.assertEqual(len(tools), 48)
+        self.assertEqual(len(tools), 49)
         tool = next(item for item in tools if item.name == "handoff_generation")
         props = tool.parameters["properties"]
         self.assertEqual(props["handoff_type"]["default"], "system_status")

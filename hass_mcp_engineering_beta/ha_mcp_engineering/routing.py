@@ -770,6 +770,30 @@ class AuthenticatedMcpGateway:
                         "force_reload": bool(parameters.get("force_reload", True)),
                         "provider": "upstream_dashboard",
                     }
+                elif tool_name == "run_held_read_canary":
+                    # Canary arguments and upstream result content are
+                    # untrusted and may contain sensitive Home Assistant data.
+                    # Retain only bounded routing intent and result evidence.
+                    raw_arguments = parameters.get("arguments")
+                    audit_parameters = {
+                        "upstream_tool_name": str(
+                            parameters.get("upstream_tool_name", "")
+                        )[:128],
+                        "expected_compatibility_entry_id": str(
+                            parameters.get(
+                                "expected_compatibility_entry_id", ""
+                            )
+                        )[:160],
+                        "argument_fields": sorted(
+                            str(key)[:64]
+                            for key in (
+                                raw_arguments
+                                if isinstance(raw_arguments, dict)
+                                else {}
+                            )
+                        )[:64],
+                    }
+                    resource_ids = {}
                 elif capability.get("category") == "upstream_read_gateway":
                     # Generic reads may carry search text, templates, or other
                     # untrusted content.  Audit only the reviewed route,
@@ -823,6 +847,7 @@ class AuthenticatedMcpGateway:
                             "configuration_integrity_analysis",
                             "incident_correlation",
                             "handoff_generation",
+                            "run_held_read_canary",
                         }
                         else {
                             "operation_class": (
