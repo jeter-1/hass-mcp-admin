@@ -1,6 +1,20 @@
 # Changelog
 
-## Unreleased - Evidence-only held-read live canary
+## Unreleased - ha_search automatic-read promotion
+
+- Promote only `ha_search` to `automatic_read` for exact reviewed `ha-mcp`
+  8.1.1 after its successful Beta 24 positive-path live canary. Preserve every
+  reviewed input, description, annotation/security, output, and runtime
+  contract and route ordinary calls through `upstream_read_gateway` with no
+  fallback.
+- Keep `ha_get_operation_status` as the only `held_for_canary` tool. Exact
+  8.1.1 now accounts for 78 advertised tools, 25 automatic reads, one held
+  read, 49 Engineering-local tools, and 74 total runtime tools.
+- Retain exact 8.0.0 and 8.1.0 classifications, the held-read canary
+  implementation, governance and Dashboard behavior, strict exact-release
+  admission, secure dependency pins, and stable v1.1.2 unchanged.
+
+## 2.2.0-beta.24 - Evidence-only held-read live canary
 
 - Add one read-only Engineering-native `run_held_read_canary` tool. It is bound
   to the caller-supplied active exact compatibility-entry ID and can dispatch

@@ -112,6 +112,8 @@ EXACT_ADDON_PROFILES = {
             "fb7f3789c8c020d8636a96b85a207635e94eefe9e0944c8814de59aba17e532e"
         ),
         "addon_detail_profile": "live-8.0.0",
+        "automatic_read_count": 24,
+        "held_tools": {"ha_get_operation_status", "ha_search"},
     },
     "8.1.0": {
         "entry_id": "ha-mcp-v8.1.0-4c07e625",
@@ -125,6 +127,8 @@ EXACT_ADDON_PROFILES = {
             "fb7f3789c8c020d8636a96b85a207635e94eefe9e0944c8814de59aba17e532e"
         ),
         "addon_detail_profile": "live-8.1.0",
+        "automatic_read_count": 24,
+        "held_tools": {"ha_get_operation_status", "ha_search"},
     },
     "8.1.1": {
         "entry_id": "ha-mcp-v8.1.1-e1d76a6e",
@@ -132,12 +136,14 @@ EXACT_ADDON_PROFILES = {
             "6b5cd123cc60ff6668c2ff4dd1f9cedbe6a7a21fe43fe00471cd46611d4406d7"
         ),
         "normalized_catalog_fingerprint": (
-            "d652dc34b263d325d3b074dda436646d132b7e05018011934fea9d4460bc29f4"
+            "389c33d95537d93ad96d33f2859716611c60fa53313c6d56a598fb3c9034a82b"
         ),
         "dashboard_runtime_fingerprint": (
             "fb7f3789c8c020d8636a96b85a207635e94eefe9e0944c8814de59aba17e532e"
         ),
         "addon_detail_profile": "live-8.1.1",
+        "automatic_read_count": 25,
+        "held_tools": {"ha_get_operation_status"},
     },
 }
 
@@ -154,6 +160,8 @@ def _select_exact_addon_profile(version: str) -> None:
     global EXPECTED_NORMALIZED_CATALOG_FINGERPRINT
     global EXPECTED_DASHBOARD_RUNTIME_FINGERPRINT
     global EXPECTED_ADDON_DETAIL_PROFILE
+    global EXPECTED_AUTOMATIC_READ_COUNT
+    global EXPECTED_HELD_TOOLS
     EXPECTED_UPSTREAM_VERSION = version
     EXPECTED_ENTRY_ID = str(profile["entry_id"])
     EXPECTED_RAW_CATALOG_FINGERPRINT = str(
@@ -166,6 +174,8 @@ def _select_exact_addon_profile(version: str) -> None:
         profile["dashboard_runtime_fingerprint"]
     )
     EXPECTED_ADDON_DETAIL_PROFILE = str(profile["addon_detail_profile"])
+    EXPECTED_AUTOMATIC_READ_COUNT = int(profile["automatic_read_count"])
+    EXPECTED_HELD_TOOLS = set(profile["held_tools"])
 
 
 class AcceptanceFailure(RuntimeError):
@@ -253,9 +263,9 @@ def _runtime_snapshot(
     return {
         "server_version": SERVER_VERSION,
         "build_sha": "0" * 40,
-        "registered_tool_count": 73,
+        "registered_tool_count": 49 + EXPECTED_AUTOMATIC_READ_COUNT,
         "engineering_tool_count": 49,
-        "delegated_tool_count": 24,
+        "delegated_tool_count": EXPECTED_AUTOMATIC_READ_COUNT,
         "governance_storage_status": "healthy",
         "governance_plan_count": 0,
         "audit_storage_status": "healthy",
@@ -297,6 +307,24 @@ async def _automatic_read_acceptance(
     require(metadata.get("provider") == "upstream_read_gateway", "automatic read used the wrong provider")
     require(metadata.get("upstream_version") == EXPECTED_UPSTREAM_VERSION, "automatic read used the wrong release")
     require(metadata.get("fallback") == "none", "automatic read used fallback")
+    promoted_search = None
+    if EXPECTED_UPSTREAM_VERSION == "8.1.1":
+        search_tool = published.get("ha_search")
+        require(search_tool is not None, "promoted ha_search was not exposed")
+        search_response = json.loads(
+            await search_tool.run({"query": "sun", "limit": 5})
+        )
+        require(search_response.get("success") is True, "promoted ha_search failed")
+        search_metadata = search_response.get("metadata") or {}
+        require(
+            search_metadata.get("provider") == "upstream_read_gateway",
+            "promoted ha_search used the wrong provider",
+        )
+        require(
+            search_metadata.get("fallback") == "none",
+            "promoted ha_search used fallback",
+        )
+        promoted_search = "accepted_normal_gateway"
     return {
         "admission_status": health.get("admission_status"),
         "compatibility_entry_id": health.get("selected_compatibility_entry_id"),
@@ -304,6 +332,7 @@ async def _automatic_read_acceptance(
         "dynamic_tool_count": health.get("dynamically_exposed_count"),
         "held_tools": sorted(EXPECTED_HELD_TOOLS),
         "representative_read": "ha_get_state",
+        "promoted_search": promoted_search,
         "fallback_count": health.get("fallback_count"),
     }
 

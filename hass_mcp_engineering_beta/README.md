@@ -1,12 +1,13 @@
 # HA MCP Engineering Server Beta
 
 This directory contains the Engineering v2 add-on. The currently advertised
-version is `2.2.0-beta.23`; staged version `2.2.0-beta.24` adds the bounded
-held-read canary described below. Beta 23 added an evidence-bound
+version is `2.2.0-beta.24`; staged version `2.2.0-beta.25` promotes only
+`ha_search` after its successful bounded live canary. Beta 23 added an evidence-bound
 compatibility-family compiler and exact reviewed `ha-mcp` 8.1.1
 authority without weakening Beta 22 approval review or Beta 20 F3 behavior.
-The exact 8.1.0 and 8.1.1 profiles each admit 24 delegated reads, keep
-`ha_search` and `ha_get_operation_status` held, retain the expanded
+The exact 8.1.0 profile admits 24 delegated reads and keeps `ha_search` and
+`ha_get_operation_status` held. The exact 8.1.1 profile admits 25 delegated
+reads and keeps only `ha_get_operation_status` held. Both retain the expanded
 `ha_manage_hacs` surface as a persistent write, and normalize only the exact
 changed HACS read success envelope. Every 8.1.1 artifact, policy, provider
 disposition, and family decision is exact and digest-bound. Release families
@@ -68,8 +69,10 @@ exact. Raw operational-catalog and strict full-contract hashes remain separate
 diagnostic evidence, and malformed policy metadata remains quarantined.
 
 A complete reviewed 7.14.2 set adds 26 delegated reads for 75 registered tools.
-The exact 8.0.0, 8.1.0, and 8.1.1 sets each add 24 for 73 registered tools; their two
-held reads are accounted but never registered as delegated upstream tools. One missing or quarantined read
+The exact 8.0.0 and 8.1.0 sets each add 24 for 73 registered tools and keep two
+held reads. Exact 8.1.1 adds 25 for 74 registered tools and keeps only
+`ha_get_operation_status` held. Held reads are accounted but never registered
+as delegated upstream tools. One missing or quarantined read
 leaves other matches available. A client that cached an earlier list must re-list or reconnect; the
 stateless transport does not broadcast `tools/list_changed`.
 
