@@ -20,10 +20,19 @@ EXPECTED_ENTRY_BY_VERSION = {
     "8.1.1": "ha-mcp-v8.1.1-e1d76a6e",
 }
 EXPECTED_UPSTREAM_TOOL_COUNT = 78
-EXPECTED_DELEGATED_READ_COUNT = 24
-EXPECTED_HELD_TOOLS = {"ha_search", "ha_get_operation_status"}
 EXPECTED_ENGINEERING_LOCAL_TOOL_COUNT = 49
-EXPECTED_ENGINEERING_TOTAL_TOOL_COUNT = 73
+EXPECTED_ACCOUNTING_BY_VERSION = {
+    "8.1.0": {
+        "delegated_read_count": 24,
+        "held_tools": {"ha_search", "ha_get_operation_status"},
+        "engineering_total_tool_count": 73,
+    },
+    "8.1.1": {
+        "delegated_read_count": 25,
+        "held_tools": {"ha_get_operation_status"},
+        "engineering_total_tool_count": 74,
+    },
+}
 ZERO_ADMISSION_COUNTERS = (
     "schema_mismatch_count",
     "description_semantics_mismatch_count",
@@ -106,8 +115,11 @@ def exact_readmission_observed(
     observed: dict[str, Any], *, expected_upstream_version: str
 ) -> bool:
     expected_entry = EXPECTED_ENTRY_BY_VERSION.get(expected_upstream_version)
-    if expected_entry is None:
+    expected = EXPECTED_ACCOUNTING_BY_VERSION.get(expected_upstream_version)
+    if expected_entry is None or expected is None:
         return False
+    expected_delegated = expected["delegated_read_count"]
+    expected_held_tools = expected["held_tools"]
     health = observed.get("gateway_health")
     return bool(
         observed.get("success") is True
@@ -116,7 +128,7 @@ def exact_readmission_observed(
         and observed.get("fallback") == "none"
         and observed.get("fallback_occurred") is False
         and observed.get("engineering_tool_count")
-        == EXPECTED_ENGINEERING_TOTAL_TOOL_COUNT
+        == expected["engineering_total_tool_count"]
         and observed.get("engineering_local_tool_count")
         == EXPECTED_ENGINEERING_LOCAL_TOOL_COUNT
         and isinstance(health, dict)
@@ -129,11 +141,11 @@ def exact_readmission_observed(
         == EXPECTED_UPSTREAM_TOOL_COUNT
         and health.get("reviewed_tool_accounting_valid") is True
         and health.get("exact_matched_automatic_read_count")
-        == EXPECTED_DELEGATED_READ_COUNT
+        == expected_delegated
         and health.get("dynamically_exposed_count")
-        == EXPECTED_DELEGATED_READ_COUNT
-        and health.get("held_read_count") == len(EXPECTED_HELD_TOOLS)
-        and set(health.get("held_tools") or ()) == EXPECTED_HELD_TOOLS
+        == expected_delegated
+        and health.get("held_read_count") == len(expected_held_tools)
+        and set(health.get("held_tools") or ()) == expected_held_tools
         and all(health.get(name) == 0 for name in ZERO_ADMISSION_COUNTERS)
     )
 
@@ -148,21 +160,22 @@ async def probe(endpoint: str) -> dict[str, Any]:
             )
             catalog = await session.list_tools()
             names = {tool.name for tool in catalog.tools}
-            require("ha_get_state" in names, "admitted representative read disappeared")
-            require(
-                not EXPECTED_HELD_TOOLS.intersection(names),
-                "held read became reachable through Engineering",
-            )
-            result = decode_tool_result(
-                await session.call_tool(
-                    "ha_get_state", {"entity_id": "sun.sun"}
-                )
-            )
             health = bounded_gateway_health(
                 decode_tool_result(
                     await session.call_tool(
                         "get_server_health", {"check_ha": False}
                     )
+                )
+            )
+            held_tools = set(health.get("held_tools") or ())
+            require("ha_get_state" in names, "admitted representative read disappeared")
+            require(
+                not held_tools.intersection(names),
+                "held read became reachable through Engineering",
+            )
+            result = decode_tool_result(
+                await session.call_tool(
+                    "ha_get_state", {"entity_id": "sun.sun"}
                 )
             )
             metadata = result.get("metadata")

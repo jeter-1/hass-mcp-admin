@@ -203,9 +203,16 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
         for release in registry.releases:
             self.assertEqual(release.advertised_tool_count, 78)
             self.assertEqual(len(release.tool_contracts), 78)
+            expected_automatic_reads = {
+                "7.14.1": 26,
+                "7.14.2": 26,
+                "8.0.0": 24,
+                "8.1.0": 24,
+                "8.1.1": 25,
+            }
             self.assertEqual(
                 release.policy.classification_counts["automatic_read"],
-                24 if release.version in {"8.0.0", "8.1.0", "8.1.1"} else 26,
+                expected_automatic_reads[release.version],
             )
             self.assertEqual(
                 release.runtime_contract_fingerprint_model,
@@ -819,9 +826,16 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 for entry in release.policy.tools
                 if entry.classification == "automatic_read"
             }
+            expected_automatic_reads = {
+                "7.14.1": 26,
+                "7.14.2": 26,
+                "8.0.0": 24,
+                "8.1.0": 24,
+                "8.1.1": 25,
+            }
             self.assertEqual(
                 len(automatic_names),
-                24 if release.version in {"8.0.0", "8.1.0", "8.1.1"} else 26,
+                expected_automatic_reads[release.version],
             )
             for tool_name in sorted(automatic_names):
                 for expected_reason, mutate in mutations.items():

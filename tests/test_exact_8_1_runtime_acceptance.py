@@ -70,6 +70,11 @@ class ExactAddonProfileTests(unittest.TestCase):
         self.assertEqual(
             addon_acceptance.EXPECTED_ADDON_DETAIL_PROFILE, "live-8.1.0"
         )
+        self.assertEqual(addon_acceptance.EXPECTED_AUTOMATIC_READ_COUNT, 24)
+        self.assertEqual(
+            addon_acceptance.EXPECTED_HELD_TOOLS,
+            {"ha_get_operation_status", "ha_search"},
+        )
 
         addon_acceptance._select_exact_addon_profile("8.1.1")
         self.assertEqual(
@@ -78,7 +83,12 @@ class ExactAddonProfileTests(unittest.TestCase):
         )
         self.assertEqual(
             addon_acceptance.EXPECTED_NORMALIZED_CATALOG_FINGERPRINT,
-            "d652dc34b263d325d3b074dda436646d132b7e05018011934fea9d4460bc29f4",
+            "389c33d95537d93ad96d33f2859716611c60fa53313c6d56a598fb3c9034a82b",
+        )
+        self.assertEqual(addon_acceptance.EXPECTED_AUTOMATIC_READ_COUNT, 25)
+        self.assertEqual(
+            addon_acceptance.EXPECTED_HELD_TOOLS,
+            {"ha_get_operation_status"},
         )
 
     def test_unknown_addon_acceptance_profile_fails_closed(self):
@@ -244,7 +254,7 @@ class ExactAddonProfileTests(unittest.TestCase):
             "7.14.2": 26,
             "8.0.0": 24,
             "8.1.0": 24,
-            "8.1.1": 24,
+            "8.1.1": 25,
         }
         for version, filename in policy_paths.items():
             with self.subTest(version=version):
@@ -421,38 +431,45 @@ def _teardown_worker_loop(loop):
 
 class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
     @staticmethod
-    def _args(phase: str) -> argparse.Namespace:
+    def _args(
+        phase: str, *, expected_upstream_version: str = "8.1.0"
+    ) -> argparse.Namespace:
         return argparse.Namespace(
             engineering_endpoint="http://127.0.0.1:18100/synthetic/mcp",
-            expected_upstream_version="8.1.0",
+            expected_upstream_version=expected_upstream_version,
             phase=phase,
         )
 
     @staticmethod
-    def _exact_observed(**changes):
+    def _exact_observed(*, upstream_version: str = "8.1.0", **changes):
+        expected = readmission.EXPECTED_ACCOUNTING_BY_VERSION[upstream_version]
         observed = {
             "success": True,
             "error_code": None,
             "provider": "upstream_read_gateway",
-            "upstream_version": "8.1.0",
+            "upstream_version": upstream_version,
             "fallback": "none",
             "fallback_occurred": False,
-            "engineering_tool_count": 73,
+            "engineering_tool_count": expected["engineering_total_tool_count"],
             "engineering_local_tool_count": 49,
             "held_tools_absent": True,
             "gateway_health": {
                 "admission_status": "admitted_exact",
                 "selected_compatibility_entry_id": (
-                    "ha-mcp-v8.1.0-4c07e625"
+                    readmission.EXPECTED_ENTRY_BY_VERSION[upstream_version]
                 ),
                 "observed_protocol_version": "2025-03-26",
                 "observed_advertised_tool_count": 78,
                 "reviewed_accounted_tool_count": 78,
                 "reviewed_tool_accounting_valid": True,
-                "exact_matched_automatic_read_count": 24,
-                "dynamically_exposed_count": 24,
-                "held_read_count": 2,
-                "held_tools": ["ha_get_operation_status", "ha_search"],
+                "exact_matched_automatic_read_count": expected[
+                    "delegated_read_count"
+                ],
+                "dynamically_exposed_count": expected[
+                    "delegated_read_count"
+                ],
+                "held_read_count": len(expected["held_tools"]),
+                "held_tools": sorted(expected["held_tools"]),
                 **{
                     name: 0
                     for name in readmission.ZERO_ADMISSION_COUNTERS
@@ -493,7 +510,8 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
                 await readmission.run(self._args("disconnected"))
 
     async def test_readmission_requires_exact_version_and_no_fallback(self):
-        wrong = self._exact_observed(upstream_version="8.0.0")
+        wrong = self._exact_observed()
+        wrong["upstream_version"] = "8.0.0"
         exact = self._exact_observed()
         with patch.object(
             readmission,
@@ -513,6 +531,24 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
             ],
             "ha-mcp-v8.1.0-4c07e625",
         )
+
+    async def test_exact_8_1_1_readmission_uses_promoted_accounting(self):
+        exact = self._exact_observed(upstream_version="8.1.1")
+        with patch.object(
+            readmission,
+            "probe",
+            AsyncMock(return_value=exact),
+        ):
+            result = await readmission.run(
+                self._args(
+                    "readmitted", expected_upstream_version="8.1.1"
+                )
+            )
+
+        self.assertEqual(result["probe"]["engineering_tool_count"], 74)
+        health = result["probe"]["gateway_health"]
+        self.assertEqual(health["dynamically_exposed_count"], 25)
+        self.assertEqual(health["held_tools"], ["ha_get_operation_status"])
 
     async def test_readmission_rejects_any_inexact_admission_accounting(self):
         for field, value in (

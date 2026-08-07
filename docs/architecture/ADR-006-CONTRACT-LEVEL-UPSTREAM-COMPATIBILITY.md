@@ -84,7 +84,8 @@ cannot become compatibility authority.
 ### Generic automatic reads
 
 Each release's reviewed `automatic_read` entries are evaluated independently
-(26 for 7.14.x and 24 for 8.0.0/8.1.0/8.1.1).
+(26 for 7.14.x, 24 for 8.0.0/8.1.0, and 25 for 8.1.1 after the separately
+approved `ha_search` live-canary promotion).
 Admission requires the exact upstream tool name and the complete
 dispatch-relevant contract owned by Engineering, including:
 

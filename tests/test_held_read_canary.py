@@ -110,15 +110,12 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
         }
         self.assertEqual(
             held_classifications,
-            (
-                ("ha_get_operation_status", "held_for_canary"),
-                ("ha_search", "held_for_canary"),
-            ),
+            (("ha_get_operation_status", "held_for_canary"),),
         )
-        self.assertEqual(len(registered_dynamic_tools), 24)
-        self.assertNotIn("ha_search", registered_dynamic_tools)
+        self.assertEqual(len(registered_dynamic_tools), 25)
+        self.assertIn("ha_search", registered_dynamic_tools)
         self.assertNotIn("ha_get_operation_status", registered_dynamic_tools)
-        self.assertEqual(len(dynamic_capabilities), 24)
+        self.assertEqual(len(dynamic_capabilities), 25)
         self.assertTrue(
             all(
                 item["operation_class"] == "automatic_read"
@@ -178,30 +175,13 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
         )
         return gateway, transport, server
 
-    async def test_held_search_executes_without_registration_or_promotion(self):
-        gateway, transport, server = await self.gateway(
-            result={
-                "content": [
-                    {
-                        "type": "text",
-                        "text": json.dumps(
-                            {
-                                "success": True,
-                                "query": "porch",
-                                "entities": [],
-                                "partial": False,
-                            }
-                        ),
-                    }
-                ],
-                "isError": False,
-            }
-        )
+    async def test_promoted_search_is_rejected_by_held_canary(self):
+        gateway, transport, server = await self.gateway()
         gateway._ha_rest_client = AsyncMock()
         gateway._ha_websocket_client = AsyncMock()
         before = self.admission_surface_snapshot(gateway, server)
 
-        telemetry, token = begin_request("held-canary-positive")
+        telemetry, token = begin_request("held-canary-promoted-search")
         try:
             result = decoded(
                 await gateway.run_held_read_canary(
@@ -213,37 +193,16 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
         finally:
             end_request(token)
 
-        self.assertTrue(result["success"])
-        evidence = result["data"]["canary_evidence"]
-        self.assertEqual(evidence["outcome"], "success")
-        self.assertTrue(evidence["dispatch_occurred"])
-        self.assertEqual(evidence["provider"], "upstream_read_gateway")
+        self.assertFalse(result["success"])
         self.assertEqual(
-            evidence["expected_compatibility_entry_id"], ENTRY_ID
+            result["details"]["reason"], "tool_not_held_for_canary"
         )
-        self.assertEqual(evidence["active_compatibility_entry_id"], ENTRY_ID)
-        self.assertEqual(evidence["observed_upstream_server"], "ha-mcp")
-        self.assertEqual(evidence["observed_upstream_version"], "8.1.1")
-        self.assertEqual(
-            evidence["observed_upstream_protocol"], "2025-03-26"
+        self.assertFalse(
+            result["details"]["canary_evidence"]["dispatch_occurred"]
         )
-        self.assertEqual(evidence["fallback"], "none")
-        self.assertFalse(evidence["fallback_occurred"])
-        self.assertFalse(evidence["promotion_performed"])
-        self.assertEqual(
-            evidence["reviewed_classification_before"],
-            "held_for_canary",
-        )
-        self.assertEqual(
-            evidence["reviewed_classification_after"],
-            "held_for_canary",
-        )
-        self.assertTrue(evidence["input_schema_match"])
-        self.assertTrue(evidence["annotation_security_match"])
-        self.assertTrue(evidence["runtime_contract_match"])
-        self.assertTrue(evidence["output_contract_match"])
-        self.assertEqual(transport.calls[0][0], "ha_search")
-        self.assertNotIn("ha_search", registered_tools(server))
+        self.assertEqual(transport.calls, [])
+        self.assertEqual(transport.attempts, [])
+        self.assertIn("ha_search", registered_tools(server))
         self.assertNotIn("ha_get_operation_status", registered_tools(server))
         self.assertEqual(
             self.admission_surface_snapshot(gateway, server),
@@ -251,19 +210,7 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(gateway._ha_rest_client.mock_calls, [])
         self.assertEqual(gateway._ha_websocket_client.mock_calls, [])
-        self.assertEqual(telemetry.result_status, "success")
-        self.assertEqual(
-            telemetry.audit_context["upstream_tool"], "ha_search"
-        )
-        self.assertEqual(
-            telemetry.audit_context["active_compatibility_entry_id"],
-            ENTRY_ID,
-        )
-        self.assertTrue(telemetry.audit_context["dispatch_occurred"])
-        self.assertFalse(telemetry.audit_context["promotion_performed"])
-        self.assertEqual(telemetry.provider_dispatch_count, 1)
-        self.assertEqual(telemetry.provider_success_count, 1)
-        self.assertEqual(telemetry.provider_failure_count, 0)
+        self.assertEqual(telemetry.provider_dispatch_count, 0)
 
     async def test_upstream_error_is_truthful_and_preserves_admission(self):
         gateway, transport, server = await self.gateway(
@@ -328,16 +275,22 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
         gateway, transport, _server = await self.gateway()
         cases = (
             (
-                "ha_search",
+                "ha_get_operation_status",
                 "wrong-entry",
-                {"query": "porch"},
+                {"operation_id": "synthetic-operation"},
                 "compatibility_entry_mismatch",
+            ),
+            (
+                "ha_get_operation_status",
+                ENTRY_ID,
+                {},
+                None,
             ),
             (
                 "ha_search",
                 ENTRY_ID,
-                {"limit": 0},
-                None,
+                {"query": "porch"},
+                "tool_not_held_for_canary",
             ),
             (
                 "ha_config_get_automation",
@@ -421,15 +374,17 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(component=component):
                 tools = captured_tools()
                 target = next(
-                    item for item in tools if item["name"] == "ha_search"
+                    item
+                    for item in tools
+                    if item["name"] == "ha_get_operation_status"
                 )
                 mutation(target)
                 gateway, transport, server = await self.gateway(tools=tools)
                 result = decoded(
                     await gateway.run_held_read_canary(
-                        upstream_tool_name="ha_search",
+                        upstream_tool_name="ha_get_operation_status",
                         expected_compatibility_entry_id=ENTRY_ID,
-                        arguments={"query": "porch"},
+                        arguments={"operation_id": "synthetic-operation"},
                     )
                 )
                 self.assertFalse(result["success"])
@@ -443,14 +398,18 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
                     ]
                 )
                 self.assertEqual(transport.attempts, [])
-                self.assertNotIn("ha_search", registered_tools(server))
+                self.assertNotIn(
+                    "ha_get_operation_status", registered_tools(server)
+                )
 
     def test_held_security_and_nonheld_quarantine_contracts_are_rejected(self):
         release = load_reviewed_upstream_release_registry().by_version["8.1.1"]
-        entry = release.policy.by_name["ha_search"]
-        contract = release.tool_contracts_by_name["ha_search"]
+        entry = release.policy.by_name["ha_get_operation_status"]
+        contract = release.tool_contracts_by_name["ha_get_operation_status"]
         observed = next(
-            item for item in captured_tools() if item["name"] == "ha_search"
+            item
+            for item in captured_tools()
+            if item["name"] == "ha_get_operation_status"
         )
         insecure_annotations = replace(
             entry.reviewed_annotations,
@@ -502,9 +461,9 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
         before = self.admission_surface_snapshot(gateway, server)
         result = decoded(
             await gateway.run_held_read_canary(
-                upstream_tool_name="ha_search",
+                upstream_tool_name="ha_get_operation_status",
                 expected_compatibility_entry_id=ENTRY_ID,
-                arguments={"query": "porch"},
+                arguments={"operation_id": "synthetic-operation"},
             )
         )
         self.assertFalse(result["success"])
@@ -541,9 +500,9 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
         )
 
         serialized = await gateway.run_held_read_canary(
-            upstream_tool_name="ha_search",
+            upstream_tool_name="ha_get_operation_status",
             expected_compatibility_entry_id=ENTRY_ID,
-            arguments={"query": "porch"},
+            arguments={"operation_id": "synthetic-operation"},
         )
         result = decoded(serialized)
 
@@ -564,7 +523,7 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(telemetry)
             telemetry.audit_context.update(
                 {
-                    "upstream_tool": "ha_search",
+                    "upstream_tool": "ha_get_operation_status",
                     "expected_compatibility_entry_id": ENTRY_ID,
                     "active_compatibility_entry_id": ENTRY_ID,
                     "observed_upstream_server": "ha-mcp",
@@ -627,10 +586,10 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
                 "params": {
                     "name": "run_held_read_canary",
                     "arguments": {
-                        "upstream_tool_name": "ha_search",
+                        "upstream_tool_name": "ha_get_operation_status",
                         "expected_compatibility_entry_id": ENTRY_ID,
                         "arguments": {
-                            "query": secret_argument,
+                            "operation_id": secret_argument,
                             "nested": {"token": secret_argument},
                         },
                     },
@@ -673,12 +632,13 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(secret_argument, serialized)
         self.assertEqual(
             record["parameters"]["argument_fields"],
-            ["nested", "query"],
+            ["nested", "operation_id"],
         )
         self.assertEqual(record["access"], "read")
         self.assertEqual(record["result_status"], "success")
         self.assertEqual(
-            record["analysis_summary"]["upstream_tool"], "ha_search"
+            record["analysis_summary"]["upstream_tool"],
+            "ha_get_operation_status",
         )
         self.assertFalse(
             record["analysis_summary"]["promotion_performed"]

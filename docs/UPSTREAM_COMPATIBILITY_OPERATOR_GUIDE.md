@@ -44,9 +44,11 @@ runtime decision is
 7. Require zero generic writes, arbitrary forwarding, direct-HA fallback, and
    provider fallback.
 
-With 48 static tools, the exact 7.14.x 26-read profile produces 74 registered
-tools. The exact 8.0.0, 8.1.0, and 8.1.1 24-read profiles each produce 72 and
-hold exactly `ha_search` and `ha_get_operation_status`. One missing or
+With the current 49 static tools, the exact 7.14.x 26-read profile produces 75
+registered tools. The exact 8.0.0 and 8.1.0 24-read profiles each produce 73
+and hold exactly `ha_search` and `ha_get_operation_status`. Exact 8.1.1
+produces 74 with 25 delegated reads and holds only
+`ha_get_operation_status`. One missing or
 quarantined read reduces the corresponding total by one. Additional blocked,
 held, or unreviewed tools do not increase the registered count.
 
