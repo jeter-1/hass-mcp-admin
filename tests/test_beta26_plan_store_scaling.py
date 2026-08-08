@@ -81,6 +81,22 @@ def _metric_delta(before: dict[str, int], after: dict[str, int], key: str) -> in
 
 
 class Beta26PlanStoreScaleTests(unittest.IsolatedAsyncioTestCase):
+    def test_beta26_is_staged_without_changing_published_versions(self):
+        config = (BETA_DIR / "config.yaml").read_text(encoding="utf-8")
+        marker = ROOT / ".release" / "next-version"
+        if 'version: "2.2.0-beta.25"' in config:
+            self.assertEqual(
+                marker.read_text(encoding="utf-8").strip(),
+                "2.2.0-beta.26",
+            )
+        else:
+            self.assertIn('version: "2.2.0-beta.26"', config)
+            self.assertFalse(marker.exists())
+        stable_config = (
+            ROOT / "hass_mcp_admin" / "config.yaml"
+        ).read_text(encoding="utf-8")
+        self.assertIn('version: "1.1.2"', stable_config)
+
     def _service_with_history(
         self, count: int, active_payload: dict
     ) -> tuple[tempfile.TemporaryDirectory, ChangeGovernanceService, float]:

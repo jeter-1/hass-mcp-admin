@@ -1,8 +1,10 @@
 # HA MCP Engineering Server Beta
 
 This directory contains the Engineering v2 add-on. The currently advertised
-version is `2.2.0-beta.24`; staged version `2.2.0-beta.25` promotes only
-`ha_search` after its successful bounded live canary. Beta 23 added an evidence-bound
+version is `2.2.0-beta.25`; staged version `2.2.0-beta.26` corrects retained
+plan-store scaling without changing public tools, authority, providers, or
+compatibility. Beta 25 promoted only `ha_search` after its successful bounded
+live canary. Beta 23 added an evidence-bound
 compatibility-family compiler and exact reviewed `ha-mcp` 8.1.1
 authority without weakening Beta 22 approval review or Beta 20 F3 behavior.
 The exact 8.1.0 profile admits 24 delegated reads and keeps `ha_search` and
