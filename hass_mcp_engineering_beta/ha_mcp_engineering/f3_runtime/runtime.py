@@ -2113,12 +2113,9 @@ class F3RuntimeIntegration:
         lock = self.locks.snapshot()
         registry = self.registry.health()
         holds = int(lock.get("current_conflict_hold_count", 0))
-        public_tasks = self.service.task_repository.list()
-        legacy_tasks = [
-            task for task in public_tasks
-            if task.legacy_projection.get("execution_authority")
-            != F3_EXECUTION_AUTHORITY
-        ]
+        task_navigation = (
+            self.service.task_repository.navigation_metrics()
+        )
         status = "manual_intervention_required" if holds else (
             "recovering" if child["nonterminal_execution_count"] else "ready"
         )
@@ -2143,10 +2140,10 @@ class F3RuntimeIntegration:
             "nonterminal_execution_count": child["nonterminal_execution_count"],
             "observing_count": sum(item.state == "observation" for item in self.children.list()),
             "manual_review_count": child["manual_review_count"],
-            "legacy_task_count": len(legacy_tasks),
-            "legacy_active_task_count": sum(
-                task.state not in TERMINAL_TASK_STATES for task in legacy_tasks
-            ),
+            "legacy_task_count": task_navigation["legacy_task_count"],
+            "legacy_active_task_count": task_navigation[
+                "legacy_active_task_count"
+            ],
             "legacy_migration_count": 0,
             "active_conflict_hold_count": holds,
             "active_normal_lock_count": max(
