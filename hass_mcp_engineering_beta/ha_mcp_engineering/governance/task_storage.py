@@ -487,6 +487,12 @@ class ExecutionTaskRepository:
                 if entry is not None
                 else self._path(task_id)
             )
+            if task is None and entry is None and any(
+                self.quarantine.glob(f"*.{task_id}.*.corrupt")
+            ):
+                raise ExecutionTaskStorageError(
+                    "Execution-task identifier is quarantined"
+                )
             if task is not None and entry is None:
                 self._put_entry(task)
                 self._mark_navigation_current()
