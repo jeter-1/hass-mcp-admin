@@ -411,6 +411,7 @@ class ConfigurationOperationAdapter:
             )
 
         proposed_config = operation.proposed_config()
+        provider_config = self.strategy.dispatch_config(proposed_config)
         try:
             await before_dispatch()
         except Exception:
@@ -431,19 +432,32 @@ class ConfigurationOperationAdapter:
                 operation.action,
                 operation.resource_type,
                 operation.target.target_id,
-                proposed_config,
+                provider_config,
             )
-        except ConfigurationMutationNotDispatchedError:
+        except ConfigurationMutationNotDispatchedError as exc:
             self._increment("intents_committed")
             self._increment("dispatch_attempts")
+            response_received = bool(
+                isinstance(exc.details, dict)
+                and exc.details.get("provider_response_received") is True
+            )
+            self._increment(
+                "responses_received"
+                if response_received
+                else "responses_lost"
+            )
             return self._dispatch_result(
                 operation,
                 NormalizedOperationOutcome.DISPATCH_FAILED_CONFIRMED,
                 intent=True,
                 invocation_count=1,
                 may_have_dispatched=True,
-                response_received=False,
-                codes=("provider_confirmed_no_mutation",),
+                response_received=response_received,
+                codes=(
+                    "provider_rejected_mutation"
+                    if response_received
+                    else "provider_confirmed_no_mutation",
+                ),
                 provider_mutation_count=0,
             )
         except ConfigurationMutationCompletedUnexpectedlyError:

@@ -302,6 +302,20 @@ class NormalizationAndRiskTests(unittest.TestCase):
         normalized = normalize_automation({"trigger": [], "action": [], "future_field": {"x": 1}})
         self.assertEqual(normalized["future_field"], {"x": 1})
 
+    def test_category_normalization_is_versioned_for_historical_hashes(self):
+        config = {
+            "trigger": [],
+            "action": [],
+            "category": "historical-category",
+        }
+        self.assertNotIn("category", normalize_automation(config))
+        self.assertEqual(
+            normalize_automation(config, normalization_version=2)[
+                "category"
+            ],
+            "historical-category",
+        )
+
     def test_low_risk_alias_change(self):
         proposed = copy.deepcopy(CURRENT)
         proposed["alias"] = "Renamed"

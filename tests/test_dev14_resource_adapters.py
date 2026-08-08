@@ -23,6 +23,7 @@ from ha_mcp_engineering.governance.resources import (  # noqa: E402
     validate_resource_create_identity,
     validate_resource,
 )
+from ha_mcp_engineering.governance.service import AutomationGateway  # noqa: E402
 
 
 AUTOMATION = {
@@ -128,6 +129,53 @@ class ResourceValidationTests(unittest.TestCase):
         self.assertValid(
             "input_number", "input_number.hvac_target", INPUT_NUMBER
         )
+
+    def test_automation_unknown_top_level_fields_fail_closed(self):
+        proposed = copy.deepcopy(AUTOMATION)
+        proposed["future_field"] = {"not": "reviewed"}
+        self.assertInvalid(
+            "automation", "hvac_guard", proposed, "unsupported fields"
+        )
+
+    def test_category_is_read_only_metadata_not_behavioral_configuration(self):
+        for resource_type, resource_id, config in (
+            ("automation", "hvac_guard", AUTOMATION),
+            ("script", "set_hvac_comfort", SCRIPT),
+        ):
+            with self.subTest(resource_type=resource_type):
+                enriched = {**copy.deepcopy(config), "category": "security"}
+                valid, errors, warnings = validate_resource(
+                    resource_type, resource_id, enriched
+                )
+                self.assertTrue(valid, errors)
+                self.assertEqual(errors, [])
+                self.assertTrue(
+                    any("read-only registry metadata" in item for item in warnings)
+                )
+                self.assertEqual(
+                    normalize_resource_config(resource_type, enriched),
+                    normalize_resource_config(resource_type, config),
+                )
+
+    def test_invalid_category_metadata_fails_closed(self):
+        for resource_type, resource_id, config in (
+            ("automation", "hvac_guard", AUTOMATION),
+            ("script", "set_hvac_comfort", SCRIPT),
+        ):
+            for category in ("", " surrounding-space ", ["security"]):
+                with self.subTest(
+                    resource_type=resource_type, category=category
+                ):
+                    proposed = {
+                        **copy.deepcopy(config),
+                        "category": category,
+                    }
+                    self.assertInvalid(
+                        resource_type,
+                        resource_id,
+                        proposed,
+                        "category metadata",
+                    )
 
     def test_helper_create_identity_is_exact_and_conservative(self):
         self.assertEqual(
@@ -340,7 +388,7 @@ class ResourceValidationTests(unittest.TestCase):
             "sequence": copy.deepcopy(SCRIPT["sequence"]),
             "mode": "single",
         }
-        self.assertEqual(RESOURCE_NORMALIZATION_VERSION, 1)
+        self.assertEqual(RESOURCE_NORMALIZATION_VERSION, 2)
         self.assertEqual(
             normalize_resource_config("script", current), reordered
         )
@@ -925,6 +973,95 @@ class ConfigurationResourceGatewayTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(self.rest.calls[1]["body"], AUTOMATION)
         self.assertEqual(self.websocket.calls, [])
+
+    async def test_rest_configuration_writes_exclude_registry_metadata(self):
+        cases = (
+            ("automation", "hvac_guard", AUTOMATION),
+            ("script", "set_hvac_comfort", SCRIPT),
+        )
+        for resource_type, resource_id, config in cases:
+            with self.subTest(resource_type=resource_type):
+                self.rest.calls.clear()
+                enriched = {
+                    **copy.deepcopy(config),
+                    "id": resource_id,
+                    "category": "security",
+                }
+                await self.gateway.update(
+                    resource_type, resource_id, enriched
+                )
+                self.assertEqual(self.rest.calls[0]["body"], config)
+
+    async def test_rest_configuration_rejection_is_confirmed_no_mutation(self):
+        path = "/config/automation/config/hvac_guard"
+        self.rest.responses[("POST", path)] = HomeAssistantApiError(
+            details={
+                "status": 400,
+                "endpoint_category": "config/automation",
+                "provider_response_received": True,
+            }
+        )
+        with self.assertRaises(
+            ConfigurationMutationNotDispatchedError
+        ) as caught:
+            await self.gateway.update(
+                "automation", "hvac_guard", copy.deepcopy(AUTOMATION)
+            )
+        self.assertFalse(caught.exception.mutation_dispatched)
+        self.assertFalse(caught.exception.mutation_completed)
+        self.assertIs(
+            caught.exception.details["provider_response_received"], True
+        )
+        self.assertEqual(caught.exception.details["provider_status"], 400)
+        self.assertEqual(
+            caught.exception.details["reason"],
+            "configuration_write_rejected",
+        )
+
+    async def test_rest_configuration_5xx_remains_indeterminate(self):
+        path = "/config/automation/config/hvac_guard"
+        original = HomeAssistantApiError(
+            details={
+                "status": 500,
+                "endpoint_category": "config/automation",
+                "provider_response_received": True,
+            }
+        )
+        self.rest.responses[("POST", path)] = original
+        with self.assertRaises(HomeAssistantApiError) as caught:
+            await self.gateway.update(
+                "automation", "hvac_guard", copy.deepcopy(AUTOMATION)
+            )
+        self.assertIs(caught.exception, original)
+        self.assertIsNone(
+            getattr(caught.exception, "mutation_dispatched", None)
+        )
+
+    async def test_legacy_automation_gateway_uses_same_metadata_boundary(self):
+        gateway = AutomationGateway(self.rest)
+        enriched = {
+            **copy.deepcopy(AUTOMATION),
+            "id": "hvac_guard",
+            "category": "security",
+        }
+        await gateway.write("hvac_guard", enriched)
+        self.assertEqual(self.rest.calls[0]["body"], AUTOMATION)
+
+        path = "/config/automation/config/hvac_guard"
+        self.rest.responses[("POST", path)] = HomeAssistantApiError(
+            details={
+                "status": 400,
+                "provider_response_received": True,
+            }
+        )
+        with self.assertRaises(
+            ConfigurationMutationNotDispatchedError
+        ) as caught:
+            await gateway.write("hvac_guard", enriched)
+        self.assertIs(
+            caught.exception.details["provider_response_received"], True
+        )
+        self.assertEqual(caught.exception.details["provider_status"], 400)
 
     async def test_script_get_and_mutations_use_only_exact_endpoint(self):
         path = "/config/script/config/set_hvac_comfort"

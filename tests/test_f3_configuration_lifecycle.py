@@ -106,6 +106,21 @@ class LifecycleTestCase(unittest.IsolatedAsyncioTestCase):
 
 
 class PreflightTests(LifecycleTestCase):
+    async def test_create_cannot_imply_a_registry_category_write(self):
+        proposed = valid_config("automation")
+        proposed["category"] = "security"
+        proposal = proposal_for(
+            "automation", "create", proposed_config=proposed
+        )
+        gateway = SyntheticConfigurationGateway()
+        adapter = adapter_for("automation", "create", gateway)
+        with self.assertRaisesRegex(
+            ValueError, "failed existing validation"
+        ):
+            await adapter.prepare(proposal)
+        self.assertEqual(gateway.counters.dispatches, 0)
+        self.assertEqual(gateway.counters.simulated_mutations, 0)
+
     async def test_missing_complete_lock_set_rejects_before_provider_dispatch(self):
         _proposal, gateway, adapter, prepared = await self.prepared()
         result = await adapter.preflight(prepared, acquired_locks=())
@@ -207,6 +222,78 @@ class DurableDispatchTests(LifecycleTestCase):
         self.assertEqual(dispatch.adapter_dispatch_count, 1)
         self.assertEqual(dispatch.provider_mutation_count, 0)
         self.assertEqual(gateway.counters.dispatches, 1)
+
+    async def test_provider_rejection_reports_response_and_zero_mutations(self):
+        _p, gateway, adapter, prepared, preflight = await self.eligible()
+        gateway.dispatch_mode = "provider_rejection"
+        harness = ConfigurationLifecycleHarness(adapter)
+        dispatch = await adapter.dispatch(
+            prepared, preflight, before_dispatch=harness.intent
+        )
+        self.assertEqual(
+            dispatch.outcome,
+            NormalizedOperationOutcome.DISPATCH_FAILED_CONFIRMED,
+        )
+        self.assertTrue(dispatch.provider_response_received)
+        self.assertEqual(dispatch.provider_mutation_count, 0)
+        self.assertIn(
+            "provider_rejected_mutation", dispatch.diagnostic_codes
+        )
+        self.assertEqual(gateway.counters.dispatches, 1)
+        self.assertEqual(gateway.counters.simulated_mutations, 0)
+
+    async def test_registry_metadata_is_not_dispatched_or_verified_as_config(self):
+        for resource_type in ("automation", "script"):
+            with self.subTest(resource_type=resource_type):
+                current = valid_config(resource_type)
+                proposed = valid_config(resource_type, updated=True)
+                proposed["category"] = "security"
+                proposal = proposal_for(
+                    resource_type,
+                    "update",
+                    current_config=current,
+                    proposed_config=proposed,
+                )
+                gateway = SyntheticConfigurationGateway(
+                    {
+                        (resource_type, proposal.target_id): (
+                            proposal.current_config()
+                        )
+                    }
+                )
+                adapter = adapter_for(
+                    resource_type, "update", gateway
+                )
+                prepared = await adapter.prepare(proposal)
+                without_metadata = dict(proposed)
+                without_metadata.pop("category")
+                expected_descriptor = adapter.strategy.provider_descriptor(
+                    proposal.target_id, without_metadata
+                )
+                self.assertEqual(
+                    prepared.provider_descriptor.arguments_hash,
+                    expected_descriptor.arguments_hash,
+                )
+                preflight = await adapter.preflight(
+                    prepared,
+                    acquired_locks=adapter.lock_requests(prepared),
+                )
+                harness = ConfigurationLifecycleHarness(adapter)
+                dispatch = await adapter.dispatch(
+                    prepared, preflight, before_dispatch=harness.intent
+                )
+                observation = await harness.observe(prepared, dispatch)
+                verification = await harness.verify(
+                    prepared, observation
+                )
+                self.assertNotIn(
+                    "category",
+                    gateway.states[(resource_type, proposal.target_id)],
+                )
+                self.assertEqual(
+                    verification.outcome,
+                    NormalizedOperationOutcome.SUCCEEDED_VERIFIED,
+                )
 
     async def test_success_response_is_only_observing_until_exact_readback(self):
         _p, gateway, adapter, prepared, preflight = await self.eligible()

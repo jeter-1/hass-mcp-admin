@@ -111,6 +111,13 @@ class SyntheticConfigurationGateway:
             raise ConfigurationMutationNotDispatchedError(
                 details={"reason": "synthetic_confirmed_no_mutation"}
             )
+        if self.dispatch_mode == "provider_rejection":
+            raise ConfigurationMutationNotDispatchedError(
+                details={
+                    "reason": "synthetic_provider_rejection",
+                    "provider_response_received": True,
+                }
+            )
         if self.dispatch_mode == "response_lost_before_effect":
             raise HomeAssistantApiError(
                 details={"reason": "synthetic_response_lost"}

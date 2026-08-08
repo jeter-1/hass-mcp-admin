@@ -9,6 +9,7 @@ from ha_mcp_engineering.f3.contracts import F3_ADAPTER_CONTRACT_MODEL
 
 from ..governance.normalize import stable_hash
 from ..governance.resources import (
+    configuration_write_config,
     normalize_resource_config,
     resource_fingerprint,
     validate_resource,
@@ -107,6 +108,14 @@ class ConfigurationStrategy(ABC):
                     self.resource_type, target_id, proposed_config
                 )
             )
+            if (
+                self.resource_type in {"automation", "script"}
+                and "category" in proposed_config
+            ):
+                errors.append(
+                    "category is read-only registry metadata and cannot be "
+                    "set by a configuration create operation"
+                )
         unique_errors = tuple(dict.fromkeys(errors))
         return (
             valid and not unique_errors,
@@ -142,6 +151,13 @@ class ConfigurationStrategy(ABC):
             argument_names=self.argument_names(proposed_config),
             arguments_hash=stable_hash(payload),
         )
+
+    def dispatch_config(
+        self, proposed_config: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Return the exact bounded configuration sent to the provider."""
+
+        return dict(proposed_config)
 
     @property
     @abstractmethod
@@ -191,8 +207,15 @@ class _RestConfigurationStrategy(ConfigurationStrategy):
         return {
             "method": "POST",
             "path": f"/config/{self.resource_type}/config/{target_id}",
-            "body": proposed_config,
+            "body": self.dispatch_config(proposed_config),
         }
+
+    def dispatch_config(
+        self, proposed_config: dict[str, Any]
+    ) -> dict[str, Any]:
+        return configuration_write_config(
+            self.resource_type, proposed_config
+        )
 
     def argument_names(
         self, proposed_config: dict[str, Any]
