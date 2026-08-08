@@ -6,10 +6,13 @@ import copy
 from datetime import timedelta
 import json
 from pathlib import Path
+import re
 import sys
 from time import monotonic
 import tempfile
 import unittest
+
+from awesomeversion import AwesomeVersion
 
 ROOT = Path(__file__).resolve().parents[1]
 BETA_DIR = ROOT / "hass_mcp_engineering_beta"
@@ -22,6 +25,8 @@ from tests.test_governance import CURRENT, Clock, FakeGateway
 
 
 SCALE_COUNTS = (130, 1_000, 10_000)
+BETA25_VERSION = "2.2.0-beta.25"
+BETA26_VERSION = "2.2.0-beta.26"
 
 
 def _terminal_plan_payload(plan_id: str) -> dict:
@@ -83,18 +88,29 @@ def _metric_delta(before: dict[str, int], after: dict[str, int], key: str) -> in
 class Beta26PlanStoreScaleTests(unittest.IsolatedAsyncioTestCase):
     def test_beta26_is_staged_without_changing_published_versions(self):
         config = (BETA_DIR / "config.yaml").read_text(encoding="utf-8")
+        matches = re.findall(r'(?m)^version: "([^"]+)"$', config)
+        self.assertEqual(len(matches), 1)
+        advertised_version = matches[0]
+        if AwesomeVersion(advertised_version) > AwesomeVersion(BETA26_VERSION):
+            self.skipTest(
+                "Beta 26 phase assertions do not apply after a later release"
+            )
+        self.assertIn(
+            advertised_version,
+            (BETA25_VERSION, BETA26_VERSION),
+        )
         marker = ROOT / ".release" / "next-version"
-        if 'version: "2.2.0-beta.25"' in config:
+        if advertised_version == BETA25_VERSION:
             self.assertEqual(
                 marker.read_text(encoding="utf-8").strip(),
-                "2.2.0-beta.26",
+                BETA26_VERSION,
             )
         else:
-            self.assertIn('version: "2.2.0-beta.26"', config)
+            self.assertEqual(advertised_version, BETA26_VERSION)
             if marker.exists():
                 self.assertNotEqual(
                     marker.read_text(encoding="utf-8").strip(),
-                    "2.2.0-beta.26",
+                    BETA26_VERSION,
                 )
         stable_config = (
             ROOT / "hass_mcp_admin" / "config.yaml"
