@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from bisect import insort
 from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager
+from dataclasses import dataclass
 import fcntl
 import json
 import os
@@ -28,6 +30,30 @@ class ExecutionTaskStorageError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class TaskNavigationEntry:
+    """Non-authoritative task metadata for bounded navigation only."""
+
+    task_id: str
+    plan_id: str
+    idempotency_key: str
+    created_at: str
+    updated_at: str
+    completed_at: str | None
+    state: str
+    terminal: bool
+    event_count: int
+    execution_authority: str | None
+
+    @property
+    def order_key(self) -> tuple[float, str]:
+        try:
+            created = datetime.fromisoformat(self.created_at).timestamp()
+        except (TypeError, ValueError):
+            created = 0.0
+        return (-created, self.task_id)
+
+
 class ExecutionTaskRepository:
     def __init__(
         self,
@@ -48,6 +74,26 @@ class ExecutionTaskRepository:
         self.rehydration_attempts = 0
         self._fault_hook = fault_hook
         self._lock = threading.RLock()
+        self._entries: dict[str, TaskNavigationEntry] = {}
+        self._ordered_keys: list[tuple[float, str]] = []
+        self._nonterminal_ids: set[str] = set()
+        self._nonterminal_keys: list[tuple[float, str]] = []
+        self._task_by_plan: dict[str, str] = {}
+        self._task_by_idempotency: dict[str, str] = {}
+        self._expected_nonterminal_count = 0
+        self._expected_nonterminal_signature = (0, 0, 0)
+        self._total_event_count = 0
+        self._manual_review_count = 0
+        self._legacy_task_count = 0
+        self._legacy_active_task_count = 0
+        self.generation = 0
+        self.index_rebuild_count = 0
+        self.index_update_count = 0
+        self.index_invalidation_count = 0
+        self.records_deserialized = 0
+        self.terminal_records_deserialized = 0
+        self.full_history_scan_count = 0
+        self._observed_directory_token: tuple[int, int] | None = None
         try:
             self.root.mkdir(parents=True, exist_ok=True)
             self.quarantine.mkdir(parents=True, exist_ok=True)
@@ -56,6 +102,200 @@ class ExecutionTaskRepository:
             raise ExecutionTaskStorageError(
                 "Unable to initialize execution-task storage"
             ) from exc
+        self.rebuild_navigation_index()
+
+    @staticmethod
+    def _navigation_entry(task: ExecutionTask) -> TaskNavigationEntry:
+        return TaskNavigationEntry(
+            task_id=task.task_id,
+            plan_id=task.plan_id,
+            idempotency_key=task.idempotency_key,
+            created_at=task.created_at,
+            updated_at=task.updated_at,
+            completed_at=task.completed_at,
+            state=task.state.value,
+            terminal=task.state in TERMINAL_TASK_STATES,
+            event_count=len(task.events),
+            execution_authority=(
+                str(task.legacy_projection.get("execution_authority"))
+                if task.legacy_projection.get("execution_authority")
+                is not None
+                else None
+            ),
+        )
+
+    @staticmethod
+    def _identifier_signature(values: set[str]) -> tuple[int, int, int]:
+        numeric = tuple(int(value, 16) for value in values)
+        xor = 0
+        for value in numeric:
+            xor ^= value
+        return (len(numeric), sum(numeric), xor)
+
+    def _refresh_expected_nonterminal_signature(self) -> None:
+        self._expected_nonterminal_signature = self._identifier_signature(
+            self._nonterminal_ids
+        )
+
+    def _remove_entry(self, task_id: str) -> None:
+        entry = self._entries.pop(task_id, None)
+        if entry is None:
+            return
+        try:
+            self._ordered_keys.remove(entry.order_key)
+        except ValueError:
+            self.index_invalidation_count += 1
+        self._nonterminal_ids.discard(task_id)
+        if not entry.terminal:
+            self._expected_nonterminal_count -= 1
+            self._nonterminal_keys.remove(entry.order_key)
+        self._total_event_count -= entry.event_count
+        if entry.state == ExecutionTaskState.MANUAL_REVIEW_REQUIRED.value:
+            self._manual_review_count -= 1
+        if entry.execution_authority != "f3_child_sequence":
+            self._legacy_task_count -= 1
+            if not entry.terminal:
+                self._legacy_active_task_count -= 1
+        if self._task_by_plan.get(entry.plan_id) == task_id:
+            self._task_by_plan.pop(entry.plan_id, None)
+        if self._task_by_idempotency.get(entry.idempotency_key) == task_id:
+            self._task_by_idempotency.pop(entry.idempotency_key, None)
+        self._refresh_expected_nonterminal_signature()
+
+    def _put_entry(self, task: ExecutionTask, *, count_update: bool = True) -> None:
+        self._remove_entry(task.task_id)
+        entry = self._navigation_entry(task)
+        self._entries[task.task_id] = entry
+        self._task_by_plan[task.plan_id] = task.task_id
+        self._task_by_idempotency[task.idempotency_key] = task.task_id
+        insort(self._ordered_keys, entry.order_key)
+        if not entry.terminal:
+            self._nonterminal_ids.add(task.task_id)
+            insort(self._nonterminal_keys, entry.order_key)
+            self._expected_nonterminal_count += 1
+        self._total_event_count += entry.event_count
+        if entry.state == ExecutionTaskState.MANUAL_REVIEW_REQUIRED.value:
+            self._manual_review_count += 1
+        if entry.execution_authority != "f3_child_sequence":
+            self._legacy_task_count += 1
+            if not entry.terminal:
+                self._legacy_active_task_count += 1
+        self._refresh_expected_nonterminal_signature()
+        if count_update:
+            self.generation += 1
+            self.index_update_count += 1
+
+    def _record_paths(self) -> list[Path]:
+        return sorted(self.root.glob("*.json"))
+
+    def _directory_token(self) -> tuple[int, int]:
+        try:
+            state = self.root.stat()
+        except OSError as exc:
+            raise ExecutionTaskStorageError(
+                "Unable to inspect execution-task storage generation"
+            ) from exc
+        return (state.st_mtime_ns, state.st_ctime_ns)
+
+    def _mark_navigation_current(self) -> None:
+        self._observed_directory_token = self._directory_token()
+
+    def rebuild_navigation_index(self) -> dict[str, int]:
+        """Deep-audit tasks and rebuild navigation from persisted authority."""
+
+        with self._lock:
+            self._entries.clear()
+            self._ordered_keys.clear()
+            self._nonterminal_ids.clear()
+            self._nonterminal_keys.clear()
+            self._task_by_plan.clear()
+            self._task_by_idempotency.clear()
+            self._expected_nonterminal_count = 0
+            self._total_event_count = 0
+            self._manual_review_count = 0
+            self._legacy_task_count = 0
+            self._legacy_active_task_count = 0
+            self._refresh_expected_nonterminal_signature()
+            before = self.records_deserialized
+            paths = self._record_paths()
+            idempotency_keys: set[str] = set()
+            for path in paths:
+                try:
+                    task = self._load(path)
+                except ExecutionTaskStorageError:
+                    continue
+                if task is None:
+                    continue
+                if (
+                    task.plan_id in self._task_by_plan
+                    or task.idempotency_key in idempotency_keys
+                ):
+                    raise ExecutionTaskStorageError(
+                        "Execution-task ownership is ambiguous"
+                    )
+                self._put_entry(task, count_update=False)
+                idempotency_keys.add(task.idempotency_key)
+            self.generation += 1
+            self.index_rebuild_count += 1
+            self._mark_navigation_current()
+            return {
+                "records_enumerated": len(paths),
+                "records_deserialized": self.records_deserialized - before,
+                "indexed_records": len(self._entries),
+                "nonterminal_records": len(self._nonterminal_ids),
+            }
+
+    def _ensure_navigation_index(self) -> None:
+        if (
+            self._observed_directory_token != self._directory_token()
+            or len(self._ordered_keys) != len(self._entries)
+            or len(self._task_by_plan) != len(self._entries)
+            or len(self._task_by_idempotency) != len(self._entries)
+            or len(self._nonterminal_ids)
+            != self._expected_nonterminal_count
+            or len(self._nonterminal_keys)
+            != self._expected_nonterminal_count
+            or self._identifier_signature(self._nonterminal_ids)
+            != self._expected_nonterminal_signature
+            or self._identifier_signature(
+                {task_id for _, task_id in self._nonterminal_keys}
+            )
+            != self._expected_nonterminal_signature
+        ):
+            self.index_invalidation_count += 1
+            self.rebuild_navigation_index()
+
+    def nonterminal_task_ids(self) -> tuple[str, ...]:
+        with self._lock:
+            self._ensure_navigation_index()
+            return tuple(task_id for _, task_id in self._nonterminal_keys)
+
+    def list_nonterminal(self) -> list[ExecutionTask]:
+        tasks: list[ExecutionTask] = []
+        for task_id in self.nonterminal_task_ids():
+            task = self.get(task_id)
+            if task is not None and task.state not in TERMINAL_TASK_STATES:
+                tasks.append(task)
+        return tasks
+
+    def navigation_metrics(self) -> dict[str, int]:
+        with self._lock:
+            self._ensure_navigation_index()
+            return {
+                "generation": self.generation,
+                "record_count": len(self._entries),
+                "nonterminal_record_count": len(self._nonterminal_ids),
+                "index_rebuild_count": self.index_rebuild_count,
+                "index_update_count": self.index_update_count,
+                "index_invalidation_count": self.index_invalidation_count,
+                "records_deserialized": self.records_deserialized,
+                "terminal_records_deserialized": (
+                    self.terminal_records_deserialized
+                ),
+                "full_history_scan_count": self.full_history_scan_count,
+                "legacy_task_count": self._legacy_task_count,
+                "legacy_active_task_count": self._legacy_active_task_count,
+            }
 
     @contextmanager
     def transaction(self):
@@ -121,8 +361,13 @@ class ExecutionTaskRepository:
         )
         try:
             with self.transaction():
-                self._require_unique(task)
+                self._ensure_navigation_index()
                 previous = self._load(path, quarantine_corrupt=False)
+                if previous is None:
+                    # New ownership still receives an authoritative full-store
+                    # uniqueness check. Existing task transitions reload their
+                    # exact authority and avoid terminal-history enumeration.
+                    self._require_unique(task)
                 if previous is not None:
                     self._require_append_only(previous, task)
                 self._inject("before_task_write")
@@ -138,6 +383,8 @@ class ExecutionTaskRepository:
                 finally:
                     os.close(directory_fd)
                 self._inject("after_task_replace")
+                self._put_entry(task)
+                self._mark_navigation_current()
         except ExecutionTaskStorageError as exc:
             if isinstance(exc.__cause__, OSError):
                 self.write_failures += 1
@@ -232,46 +479,90 @@ class ExecutionTaskRepository:
         if not TASK_ID.fullmatch(task_id):
             return None
         with self._lock:
+            self._ensure_navigation_index()
             self.rehydration_attempts += 1
-            return self._load(self._path(task_id))
+            entry = self._entries.get(task_id)
+            task = self._load(
+                self._path(task_id, plan_id=entry.plan_id)
+                if entry is not None
+                else self._path(task_id)
+            )
+            if task is None and entry is None and any(
+                self.quarantine.glob(f"*.{task_id}.*.corrupt")
+            ):
+                raise ExecutionTaskStorageError(
+                    "Execution-task identifier is quarantined"
+                )
+            if task is not None and entry is None:
+                self._put_entry(task)
+                self._mark_navigation_current()
+            return task
 
     def get_for_plan(self, plan_id: str) -> ExecutionTask | None:
         if not PLAN_ID.fullmatch(plan_id):
             return None
-        paths = sorted(self.root.glob(f"{plan_id}.*.json"))
-        quarantined = sorted(
-            self.quarantine.glob(f"{plan_id}.*.corrupt")
-        )
-        if quarantined:
-            raise ExecutionTaskStorageError(
-                "Execution-task plan ownership is quarantined"
+        with self._lock:
+            self._ensure_navigation_index()
+            task_id = self._task_by_plan.get(plan_id)
+            paths = (
+                sorted(self.root.glob(f"{plan_id}.*.json"))
+                if task_id is None
+                else [self._path(task_id, plan_id=plan_id)]
             )
-        if len(paths) > 1:
-            raise ExecutionTaskStorageError(
-                "Execution-task plan ownership is ambiguous"
+            quarantined = sorted(
+                self.quarantine.glob(f"{plan_id}.*.corrupt")
             )
-        if not paths:
-            return None
-        task = self._load(paths[0])
-        if task is None or task.plan_id != plan_id:
-            raise ExecutionTaskStorageError(
-                "Execution-task plan ownership is corrupt"
-            )
-        return task
+            if quarantined:
+                raise ExecutionTaskStorageError(
+                    "Execution-task plan ownership is quarantined"
+                )
+            if not paths:
+                return None
+            task = self._load(paths[0])
+            if task is None or task.plan_id != plan_id:
+                raise ExecutionTaskStorageError(
+                    "Execution-task plan ownership is corrupt"
+                )
+            if task_id is None:
+                self._put_entry(task)
+                self._mark_navigation_current()
+            return task
 
     def get_for_idempotency(
         self, idempotency_key: str
     ) -> ExecutionTask | None:
-        matches = [
-            task
-            for task in self.list()
-            if task.idempotency_key == idempotency_key
-        ]
-        if len(matches) > 1:
-            raise ExecutionTaskStorageError(
-                "Execution-task idempotency ownership is ambiguous"
+        with self._lock:
+            self._ensure_navigation_index()
+            task_id = self._task_by_idempotency.get(idempotency_key)
+            if task_id is None:
+                matches = [
+                    task
+                    for task in self._list_unlocked()
+                    if task.idempotency_key == idempotency_key
+                ]
+                if len(matches) > 1:
+                    raise ExecutionTaskStorageError(
+                        "Execution-task idempotency ownership is ambiguous"
+                    )
+                if not matches:
+                    return None
+                task = matches[0]
+                self._put_entry(task)
+                self._mark_navigation_current()
+                return task
+            entry = self._entries.get(task_id)
+            if entry is None:
+                raise ExecutionTaskStorageError(
+                    "Execution-task idempotency ownership is invalid"
+                )
+            task = self._load(
+                self._path(task_id, plan_id=entry.plan_id)
             )
-        return matches[0] if matches else None
+            if task is None or task.idempotency_key != idempotency_key:
+                raise ExecutionTaskStorageError(
+                    "Execution-task idempotency ownership is corrupt"
+                )
+            return task
 
     def _load(
         self,
@@ -281,7 +572,11 @@ class ExecutionTaskRepository:
     ) -> ExecutionTask | None:
         try:
             value = json.loads(path.read_text(encoding="utf-8"))
-            return ExecutionTask.from_dict(value)
+            task = ExecutionTask.from_dict(value)
+            self.records_deserialized += 1
+            if task.state in TERMINAL_TASK_STATES:
+                self.terminal_records_deserialized += 1
+            return task
         except FileNotFoundError:
             return None
         except OSError as exc:
@@ -309,6 +604,7 @@ class ExecutionTaskRepository:
     def list(self) -> list[ExecutionTask]:
         with self._lock:
             self.rehydration_attempts += 1
+            self.full_history_scan_count += 1
             tasks = self._list_unlocked()
             plan_ids = [task.plan_id for task in tasks]
             keys = [task.idempotency_key for task in tasks]
@@ -324,6 +620,11 @@ class ExecutionTaskRepository:
 
     def _quarantine(self, path: Path) -> None:
         self.corruption_count += 1
+        parts = path.stem.split(".")
+        if len(parts) == 2:
+            self._remove_entry(parts[1])
+            self.generation += 1
+            self.index_invalidation_count += 1
         try:
             destination = self.quarantine / (
                 f"{path.stem}.{int(datetime.now().timestamp())}.corrupt"
@@ -339,27 +640,37 @@ class ExecutionTaskRepository:
         now = now or datetime.now(timezone.utc)
         cutoff = now - timedelta(days=self.retention_days)
         removed = 0
-        for task in self.list():
-            if task.state not in TERMINAL_TASK_STATES:
+        with self._lock:
+            candidates = tuple(self._entries.values())
+        for entry in candidates:
+            if not entry.terminal:
                 continue
             try:
                 completed = datetime.fromisoformat(
-                    task.completed_at or task.updated_at
+                    entry.completed_at or entry.updated_at
                 )
             except ValueError:
                 continue
             if completed < cutoff:
                 try:
                     self._path(
-                        task.task_id, plan_id=task.plan_id
+                        entry.task_id, plan_id=entry.plan_id
                     ).unlink(missing_ok=True)
+                    with self._lock:
+                        self._remove_entry(entry.task_id)
+                        self.generation += 1
+                        self.index_update_count += 1
                     removed += 1
                 except OSError:
                     self.write_failures += 1
         return removed
 
     def health(self) -> dict[str, object]:
-        tasks = self.list()
+        with self._lock:
+            self._ensure_navigation_index()
+            record_count = len(self._entries)
+            event_count = self._total_event_count
+            manual_review_count = self._manual_review_count
         return {
             "configured": True,
             "status": (
@@ -370,16 +681,14 @@ class ExecutionTaskRepository:
                 else "healthy"
             ),
             "namespace": TASK_NAMESPACE,
-            "record_count": len(tasks),
-            "event_count": sum(len(task.events) for task in tasks),
+            "record_count": record_count,
+            "event_count": event_count,
             "corruption_count": self.corruption_count,
             "write_failures": self.write_failures,
             "event_write_failures": self.event_write_failures,
             "materialization_failures": self.materialization_failures,
             "rehydration_attempts": self.rehydration_attempts,
             "retention_days": self.retention_days,
-            "manual_review_count": sum(
-                task.state == ExecutionTaskState.MANUAL_REVIEW_REQUIRED
-                for task in tasks
-            ),
+            "manual_review_count": manual_review_count,
+            "navigation": self.navigation_metrics(),
         }

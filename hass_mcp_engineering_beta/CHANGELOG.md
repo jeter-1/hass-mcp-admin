@@ -1,6 +1,21 @@
 # Changelog
 
-## Unreleased - ha_search automatic-read promotion
+## Unreleased - Plan-store/query/recovery scaling
+
+- Add rebuildable navigation for active plans, approval challenges, recovery
+  work, and execution tasks while retaining persisted plan/task/approval/F3
+  records as the only authorization and execution authority.
+- Apply list limits before plan deserialization, resolve approval detail
+  directly, restrict periodic recovery to active candidates, and use bounded
+  task aggregates plus a generation-bound governance health cache.
+- Add deterministic 130, 1,000, and 10,000-terminal-plan acceptance with
+  record-touch and latency evidence, derived-state rebuild/tamper/expiry tests,
+  and bounded hot-path observability.
+- Preserve Beta 11 restart protections, Beta 22 approval projection, Beta 20
+  F3 semantics, Beta 25 exact 8.1.1 provider/tool behavior, zero fallback, and
+  stable v1.1.2 unchanged.
+
+## 2.2.0-beta.25 - ha_search automatic-read promotion
 
 - Promote only `ha_search` to `automatic_read` for exact reviewed `ha-mcp`
   8.1.1 after its successful Beta 24 positive-path live canary. Preserve every

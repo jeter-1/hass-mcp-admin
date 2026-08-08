@@ -10,6 +10,7 @@ import sys
 import unittest
 
 from mcp.server.fastmcp import FastMCP
+from awesomeversion import AwesomeVersion
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -78,10 +79,11 @@ class Beta25SearchPromotionTests(unittest.IsolatedAsyncioTestCase):
             versions[authority] = matches[0]
         self.assertEqual(len(set(versions.values())), 1)
         actual_version = next(iter(versions.values()))
-        self.assertIn(
-            actual_version,
-            (PRE_PROMOTION_VERSION, BETA25_VERSION),
-        )
+        if AwesomeVersion(actual_version) > AwesomeVersion(BETA25_VERSION):
+            self.skipTest(
+                "Beta 25 phase assertions do not apply after a later release"
+            )
+        self.assertIn(actual_version, (PRE_PROMOTION_VERSION, BETA25_VERSION))
         if actual_version != expected_version:
             self.skipTest(
                 f"{expected_version} assertions do not apply to "
@@ -215,7 +217,12 @@ class Beta25SearchPromotionTests(unittest.IsolatedAsyncioTestCase):
             set(self.require_published_phase(BETA25_VERSION).values()),
             {BETA25_VERSION},
         )
-        self.assertFalse((ROOT / ".release" / "next-version").exists())
+        marker = ROOT / ".release" / "next-version"
+        if marker.exists():
+            self.assertNotEqual(
+                marker.read_text(encoding="utf-8"),
+                f"{BETA25_VERSION}\n",
+            )
         self.assertIn(
             'version: "1.1.2"',
             (ROOT / "hass_mcp_admin" / "config.yaml").read_text(

@@ -438,12 +438,10 @@ class RealBeta6CompatibilityTests(unittest.TestCase):
             failures.append(
                 (projected, ErrorCode.APPROVAL_SEQUENCE_FAILURE)
             )
-        with patch.object(
-            self.service,
-            "_resolved_plans_with_projection_failures",
-            return_value=([], failures),
-        ):
-            listed = self.service.list_plans(limit=100)
+        self.service._projection_failure_index = {
+            plan.plan_id: error_code for plan, error_code in failures
+        }
+        listed = self.service.list_plans(limit=100)
         self.assertEqual(listed["projection_failure_count"], 25)
         self.assertEqual(len(listed["projection_failures"]), 20)
         self.assertTrue(listed["projection_failures_truncated"])
@@ -452,7 +450,7 @@ class RealBeta6CompatibilityTests(unittest.TestCase):
     def test_systemic_plan_storage_failure_is_not_partial_success(self):
         with patch.object(
             self.repository,
-            "list",
+            "navigation_plan_ids",
             side_effect=ChangePlanStorageError("synthetic unavailable"),
         ):
             with self.assertRaises(GovernanceError) as raised:

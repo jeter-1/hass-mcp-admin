@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from bisect import insort
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from heapq import merge
+from itertools import islice
 import json
 import os
 from pathlib import Path
@@ -61,6 +65,29 @@ class ChangePlanStorageError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class PlanNavigationEntry:
+    """Non-authoritative metadata used only to locate persisted records."""
+
+    plan_id: str
+    created_at: str
+    updated_at: str
+    status: str
+    effective_status: str
+    terminal: bool
+    approval_candidate: bool
+    recovery_candidate: bool
+    operational: bool
+
+    @property
+    def order_key(self) -> tuple[float, str]:
+        try:
+            created = datetime.fromisoformat(self.created_at).timestamp()
+        except (TypeError, ValueError):
+            created = 0.0
+        return (-created, self.plan_id)
+
+
 class ChangePlanRepository:
     def __init__(self, root: str | Path, *, retention_days: int = 90):
         self.root = Path(root)
@@ -73,6 +100,31 @@ class ChangePlanRepository:
         self.corruption_count = 0
         self.write_failures = 0
         self._lock = threading.RLock()
+        self._entries: dict[str, PlanNavigationEntry] = {}
+        self._ordered_keys: list[tuple[float, str]] = []
+        self._status_keys: dict[str, list[tuple[float, str]]] = {}
+        self._active_ids: set[str] = set()
+        self._approval_candidate_ids: set[str] = set()
+        self._recovery_candidate_ids: set[str] = set()
+        self._active_keys: list[tuple[float, str]] = []
+        self._approval_candidate_keys: list[tuple[float, str]] = []
+        self._recovery_candidate_keys: list[tuple[float, str]] = []
+        self._expected_active_count = 0
+        self._expected_approval_candidate_count = 0
+        self._expected_recovery_candidate_count = 0
+        self._expected_active_signature = (0, 0, 0)
+        self._expected_approval_signature = (0, 0, 0)
+        self._expected_recovery_signature = (0, 0, 0)
+        self.generation = 0
+        self.index_rebuild_count = 0
+        self.index_update_count = 0
+        self.index_invalidation_count = 0
+        self.records_deserialized = 0
+        self.terminal_records_deserialized = 0
+        self.full_history_scan_count = 0
+        self._observed_directory_token: tuple[tuple[int, int], ...] | None = (
+            None
+        )
         try:
             self.root.mkdir(parents=True, exist_ok=True)
             self.quarantine.mkdir(parents=True, exist_ok=True)
@@ -84,6 +136,325 @@ class ChangePlanRepository:
             raise ChangePlanStorageError(
                 "Unable to initialize governance storage"
             ) from exc
+        self.rebuild_navigation_index()
+
+    @staticmethod
+    def _navigation_entry(plan: ChangePlan) -> PlanNavigationEntry:
+        terminal = is_terminal_plan(plan)
+        prohibited = bool(
+            plan.policy_decision is not None
+            and plan.policy_decision.policy_class
+            == ApprovalPolicyClass.PROHIBITED
+        )
+        approval_candidate = bool(
+            not terminal
+            and (
+                (
+                    plan.approval.challenge_id
+                    and plan.approval.state.value == "external_pending"
+                )
+                or (
+                    plan.approval.elevated_risk_acknowledgement
+                    is not None
+                    and plan.approval.elevated_risk_acknowledgement.challenge_id
+                    and plan.approval.elevated_risk_acknowledgement.state.value
+                    == "external_pending"
+                )
+            )
+        )
+        recovery_candidate = bool(
+            not terminal
+            and plan.status
+            in {PlanStatus.APPLYING, PlanStatus.VERIFICATION_REQUIRED}
+        )
+        return PlanNavigationEntry(
+            plan_id=plan.plan_id,
+            created_at=plan.created_at,
+            updated_at=plan.updated_at,
+            status=plan.status.value,
+            effective_status=("prohibited" if prohibited else plan.status.value),
+            terminal=terminal,
+            approval_candidate=approval_candidate,
+            recovery_candidate=recovery_candidate,
+            operational=ChangePlanRepository._is_operational(plan),
+        )
+
+    @staticmethod
+    def _identifier_signature(values: set[str]) -> tuple[int, int, int]:
+        numeric = tuple(int(value, 16) for value in values)
+        xor = 0
+        for value in numeric:
+            xor ^= value
+        return (len(numeric), sum(numeric), xor)
+
+    def _refresh_expected_active_signatures(self) -> None:
+        self._expected_active_signature = self._identifier_signature(
+            self._active_ids
+        )
+        self._expected_approval_signature = self._identifier_signature(
+            self._approval_candidate_ids
+        )
+        self._expected_recovery_signature = self._identifier_signature(
+            self._recovery_candidate_ids
+        )
+
+    def _remove_entry(self, plan_id: str) -> None:
+        entry = self._entries.pop(plan_id, None)
+        if entry is None:
+            return
+        try:
+            self._ordered_keys.remove(entry.order_key)
+        except ValueError:
+            self.index_invalidation_count += 1
+        bucket = self._status_keys.get(entry.effective_status)
+        if bucket is not None:
+            try:
+                bucket.remove(entry.order_key)
+            except ValueError:
+                self.index_invalidation_count += 1
+            if not bucket:
+                self._status_keys.pop(entry.effective_status, None)
+        self._active_ids.discard(plan_id)
+        self._approval_candidate_ids.discard(plan_id)
+        self._recovery_candidate_ids.discard(plan_id)
+        if not entry.terminal:
+            self._expected_active_count -= 1
+            self._active_keys.remove(entry.order_key)
+        if entry.approval_candidate:
+            self._expected_approval_candidate_count -= 1
+            self._approval_candidate_keys.remove(entry.order_key)
+        if entry.recovery_candidate:
+            self._expected_recovery_candidate_count -= 1
+            self._recovery_candidate_keys.remove(entry.order_key)
+        self._refresh_expected_active_signatures()
+
+    def _put_entry(self, plan: ChangePlan, *, count_update: bool = True) -> None:
+        self._remove_entry(plan.plan_id)
+        entry = self._navigation_entry(plan)
+        self._entries[plan.plan_id] = entry
+        insort(self._ordered_keys, entry.order_key)
+        insort(
+            self._status_keys.setdefault(entry.effective_status, []),
+            entry.order_key,
+        )
+        if not entry.terminal:
+            self._active_ids.add(plan.plan_id)
+            insort(self._active_keys, entry.order_key)
+            self._expected_active_count += 1
+        if entry.approval_candidate:
+            self._approval_candidate_ids.add(plan.plan_id)
+            insort(self._approval_candidate_keys, entry.order_key)
+            self._expected_approval_candidate_count += 1
+        if entry.recovery_candidate:
+            self._recovery_candidate_ids.add(plan.plan_id)
+            insort(self._recovery_candidate_keys, entry.order_key)
+            self._expected_recovery_candidate_count += 1
+        self._refresh_expected_active_signatures()
+        if count_update:
+            self.generation += 1
+            self.index_update_count += 1
+
+    def _record_paths(self) -> list[Path]:
+        paths = sorted(self.root.glob("*.json")) + sorted(
+            self.operational_root.glob("*.json")
+        )
+        identifiers = [path.stem for path in paths]
+        if len(identifiers) != len(set(identifiers)):
+            raise ChangePlanStorageError(
+                "Ambiguous governance record identifier"
+            )
+        return paths
+
+    def _directory_token(self) -> tuple[tuple[int, int], ...]:
+        try:
+            values = []
+            for path in (self.root, self.operational_root):
+                state = path.stat()
+                values.append((state.st_mtime_ns, state.st_ctime_ns))
+            return tuple(values)
+        except OSError as exc:
+            raise ChangePlanStorageError(
+                "Unable to inspect governance storage generation"
+            ) from exc
+
+    def _mark_navigation_current(self) -> None:
+        self._observed_directory_token = self._directory_token()
+
+    def _empty_index_has_persisted_records(self) -> bool:
+        if self._entries:
+            return False
+        return bool(
+            next(self.root.glob("*.json"), None)
+            or next(self.operational_root.glob("*.json"), None)
+        )
+
+    def _reset_navigation_index(self) -> None:
+        self._entries.clear()
+        self._ordered_keys.clear()
+        self._status_keys.clear()
+        self._active_ids.clear()
+        self._approval_candidate_ids.clear()
+        self._recovery_candidate_ids.clear()
+        self._active_keys.clear()
+        self._approval_candidate_keys.clear()
+        self._recovery_candidate_keys.clear()
+        self._expected_active_count = 0
+        self._expected_approval_candidate_count = 0
+        self._expected_recovery_candidate_count = 0
+        self._refresh_expected_active_signatures()
+
+    def _scan_and_rebuild(
+        self, *, count_full_history_scan: bool
+    ) -> tuple[list[ChangePlan], dict[str, int]]:
+        with self._lock:
+            self._reset_navigation_index()
+            if count_full_history_scan:
+                self.full_history_scan_count += 1
+            deserialized_before = self.records_deserialized
+            paths = self._record_paths()
+            plans: list[ChangePlan] = []
+            for path in paths:
+                try:
+                    plan = self._load(path)
+                except ChangePlanStorageError:
+                    continue
+                if plan is not None:
+                    plans.append(plan)
+                    self._put_entry(plan, count_update=False)
+            self.generation += 1
+            self.index_rebuild_count += 1
+            self._mark_navigation_current()
+            return plans, {
+                "records_enumerated": len(paths),
+                "records_deserialized": (
+                    self.records_deserialized - deserialized_before
+                ),
+                "indexed_records": len(self._entries),
+                "active_records": len(self._active_ids),
+            }
+
+    def rebuild_navigation_index(self) -> dict[str, int]:
+        """Deep-audit storage and rebuild navigation from authoritative files."""
+
+        _plans, evidence = self._scan_and_rebuild(
+            count_full_history_scan=False
+        )
+        return evidence
+
+    def _ensure_navigation_index(self) -> None:
+        if (
+            self._observed_directory_token != self._directory_token()
+            or self._empty_index_has_persisted_records()
+            or len(self._ordered_keys) != len(self._entries)
+            or sum(len(value) for value in self._status_keys.values())
+            != len(self._entries)
+            or len(self._active_ids) != self._expected_active_count
+            or len(self._active_keys) != self._expected_active_count
+            or len(self._approval_candidate_ids)
+            != self._expected_approval_candidate_count
+            or len(self._approval_candidate_keys)
+            != self._expected_approval_candidate_count
+            or len(self._recovery_candidate_ids)
+            != self._expected_recovery_candidate_count
+            or len(self._recovery_candidate_keys)
+            != self._expected_recovery_candidate_count
+            or self._identifier_signature(self._active_ids)
+            != self._expected_active_signature
+            or self._identifier_signature(
+                {plan_id for _, plan_id in self._active_keys}
+            )
+            != self._expected_active_signature
+            or self._identifier_signature(self._approval_candidate_ids)
+            != self._expected_approval_signature
+            or self._identifier_signature(
+                {
+                    plan_id
+                    for _, plan_id in self._approval_candidate_keys
+                }
+            )
+            != self._expected_approval_signature
+            or self._identifier_signature(self._recovery_candidate_ids)
+            != self._expected_recovery_signature
+            or self._identifier_signature(
+                {plan_id for _, plan_id in self._recovery_candidate_keys}
+            )
+            != self._expected_recovery_signature
+        ):
+            self.index_invalidation_count += 1
+            self.rebuild_navigation_index()
+
+    def navigation_plan_ids(
+        self,
+        *,
+        status: str = "",
+        offset: int = 0,
+        limit: int | None = None,
+    ) -> tuple[str, ...]:
+        """Return one bounded ordered page without loading plan authority."""
+
+        with self._lock:
+            self._ensure_navigation_index()
+            start = max(0, int(offset))
+            stop = None if limit is None else start + max(0, int(limit))
+            if not status:
+                keys = self._ordered_keys[start:stop]
+            else:
+                # Active records can change effective lifecycle with time.
+                # Merge only that bounded set with the indexed status bucket;
+                # filtering active IDs from the bucket prevents duplicates.
+                bucket = (
+                    key
+                    for key in self._status_keys.get(status, ())
+                    if key[1] not in self._active_ids
+                )
+                keys = tuple(
+                    islice(
+                        merge(bucket, self._active_keys), start, stop
+                    )
+                )
+            return tuple(key[1] for key in keys)
+
+    def active_plan_ids(self) -> tuple[str, ...]:
+        with self._lock:
+            self._ensure_navigation_index()
+            return tuple(plan_id for _, plan_id in self._active_keys)
+
+    def approval_candidate_ids(self) -> tuple[str, ...]:
+        with self._lock:
+            self._ensure_navigation_index()
+            return tuple(
+                plan_id for _, plan_id in self._approval_candidate_keys
+            )
+
+    def recovery_candidate_ids(self) -> tuple[str, ...]:
+        with self._lock:
+            self._ensure_navigation_index()
+            return tuple(
+                plan_id for _, plan_id in self._recovery_candidate_keys
+            )
+
+    def navigation_metrics(self) -> dict[str, int]:
+        with self._lock:
+            self._ensure_navigation_index()
+            return {
+                "generation": self.generation,
+                "record_count": len(self._entries),
+                "active_record_count": len(self._active_ids),
+                "approval_candidate_count": len(
+                    self._approval_candidate_ids
+                ),
+                "recovery_candidate_count": len(
+                    self._recovery_candidate_ids
+                ),
+                "index_rebuild_count": self.index_rebuild_count,
+                "index_update_count": self.index_update_count,
+                "index_invalidation_count": self.index_invalidation_count,
+                "records_deserialized": self.records_deserialized,
+                "terminal_records_deserialized": (
+                    self.terminal_records_deserialized
+                ),
+                "full_history_scan_count": self.full_history_scan_count,
+            }
 
     def _path(self, plan_id: str, *, operational: bool = False) -> Path:
         if not PLAN_ID.fullmatch(plan_id):
@@ -138,6 +509,7 @@ class ChangePlanRepository:
         )
         try:
             with self._lock:
+                self._ensure_navigation_index()
                 if other.exists():
                     raise ChangePlanStorageError(
                         "Ambiguous governance record identifier"
@@ -147,6 +519,8 @@ class ChangePlanRepository:
                     handle.flush()
                     os.fsync(handle.fileno())
                 os.replace(temporary, path)
+                self._put_entry(plan)
+                self._mark_navigation_current()
         except ChangePlanStorageError:
             raise
         except OSError as exc:
@@ -171,13 +545,23 @@ class ChangePlanRepository:
                 )
             if not existing:
                 return self._load(paths[0])
-            return self._load(existing[0])
+            plan = self._load(existing[0])
+            if plan is not None:
+                entry = self._navigation_entry(plan)
+                if self._entries.get(plan.plan_id) != entry:
+                    self._put_entry(plan)
+                    self._mark_navigation_current()
+            return plan
 
     def _load(self, path: Path) -> ChangePlan | None:
         try:
             with self._lock:
                 value = json.loads(path.read_text(encoding="utf-8"))
-            return ChangePlan.from_dict(value)
+            plan = ChangePlan.from_dict(value)
+            self.records_deserialized += 1
+            if is_terminal_plan(plan):
+                self.terminal_records_deserialized += 1
+            return plan
         except FileNotFoundError:
             return None
         except OSError as exc:
@@ -187,30 +571,16 @@ class ChangePlanRepository:
             raise ChangePlanStorageError("Governance record is corrupt") from exc
 
     def list(self) -> list[ChangePlan]:
-        plans = []
-        with self._lock:
-            paths = sorted(self.root.glob("*.json")) + sorted(
-                self.operational_root.glob("*.json")
-            )
-            identifiers = [path.stem for path in paths]
-            if len(identifiers) != len(set(identifiers)):
-                raise ChangePlanStorageError(
-                    "Ambiguous governance record identifier"
-                )
-            for path in paths:
-                try:
-                    plan = self._load(path)
-                except ChangePlanStorageError:
-                    # Corrupt records are quarantined and do not block startup
-                    # or healthy records. Directory enumeration failures are
-                    # raised by glob before this point.
-                    continue
-                if plan:
-                    plans.append(plan)
+        plans, _evidence = self._scan_and_rebuild(
+            count_full_history_scan=True
+        )
         return sorted(plans, key=lambda plan: plan.created_at, reverse=True)
 
     def _quarantine(self, path: Path) -> None:
         self.corruption_count += 1
+        self._remove_entry(path.stem)
+        self.generation += 1
+        self.index_invalidation_count += 1
         try:
             quarantine = (
                 self.operational_quarantine
@@ -231,16 +601,25 @@ class ChangePlanRepository:
         now = now or datetime.now(timezone.utc)
         cutoff = now - timedelta(days=self.retention_days)
         removed = 0
-        for plan in self.list():
-            if not is_terminal_plan(plan):
+        with self._lock:
+            candidates = tuple(self._entries.values())
+        for entry in candidates:
+            if not entry.terminal:
                 continue
             try:
-                updated = datetime.fromisoformat(plan.updated_at)
+                updated = datetime.fromisoformat(entry.updated_at)
             except ValueError:
                 continue
             if updated < cutoff:
                 try:
-                    self._path_for_plan(plan).unlink(missing_ok=True)
+                    path = self._path(
+                        entry.plan_id, operational=entry.operational
+                    )
+                    path.unlink(missing_ok=True)
+                    with self._lock:
+                        self._remove_entry(entry.plan_id)
+                        self.generation += 1
+                        self.index_update_count += 1
                     removed += 1
                 except OSError:
                     self.write_failures += 1
@@ -248,7 +627,10 @@ class ChangePlanRepository:
 
     def recover_incomplete(self, timestamp: str) -> int:
         recovered = 0
-        for plan in self.list():
+        for plan_id in self.active_plan_ids():
+            plan = self.get(plan_id)
+            if plan is None:
+                continue
             if plan.status not in {PlanStatus.APPLYING}:
                 continue
             if (
@@ -512,17 +894,15 @@ class ChangePlanRepository:
         return recovered
 
     def health(self) -> dict[str, int | str | bool]:
-        try:
-            plans = self.list()
-            status = "healthy"
-        except ChangePlanStorageError:
-            plans = []
-            status = "error"
+        with self._lock:
+            self._ensure_navigation_index()
+            plan_count = len(self._entries)
         return {
             "configured": True,
-            "status": status,
-            "total_plans": len(plans),
+            "status": "healthy",
+            "total_plans": plan_count,
             "corruption_count": self.corruption_count,
             "write_failures": self.write_failures,
             "retention_days": self.retention_days,
+            "navigation": self.navigation_metrics(),
         }

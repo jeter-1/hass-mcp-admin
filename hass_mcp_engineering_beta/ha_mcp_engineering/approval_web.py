@@ -176,11 +176,10 @@ class IngressApprovalApplication:
             return context
         prefix, _ = context
         plan_id = request.path_params["plan_id"]
-        challenge_id = ""
-        for candidate in self.governance.require().pending_external_reviews():
-            if candidate.get("plan_id") == plan_id:
-                challenge_id = str(candidate.get("challenge_id") or "")
-                break
+        candidate = self.governance.require().pending_external_review(plan_id)
+        challenge_id = str(
+            candidate.get("challenge_id") if candidate is not None else ""
+        )
         if not challenge_id:
             return self._response(_page("Approval unavailable", "<p>No active approval challenge exists.</p>"), 404)
         try:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 from contextlib import AsyncExitStack
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -409,9 +410,131 @@ class ChangeGovernanceService:
         self.repository.cleanup(now=self.now())
         self.repository.recover_incomplete(self._timestamp())
         self.task_repository.cleanup(now=self.now())
+        self._projection_failure_index: dict[str, ErrorCode] = {}
+        self._projection_index_rebuild_count = 0
+        self._projection_index_update_count = 0
+        self._hot_path_metrics: dict[str, dict[str, Any]] = {}
+        self._health_cache_key: tuple[int, int] | None = None
+        self._health_cache: dict[str, Any] | None = None
+        self._health_cache_rebuild_count = 0
+        self._health_cache_hit_count = 0
+        self._health_cache = self._build_health_summary(
+            include_provider_health=False
+        )
+        self._health_cache_key = (
+            self.repository.generation,
+            self.task_repository.generation,
+        )
+        self._health_cache_rebuild_count += 1
 
     def _timestamp(self) -> str:
         return self.now().isoformat()
+
+    def _record_hot_path_metrics(
+        self,
+        operation: str,
+        *,
+        started: float,
+        records_enumerated: int,
+        plans_before: dict[str, int],
+        tasks_before: dict[str, int] | None = None,
+        recovery_candidates_examined: int = 0,
+    ) -> None:
+        plans_after = self.repository.navigation_metrics()
+        task_after = self.task_repository.navigation_metrics()
+        task_before = tasks_before or task_after
+        self._hot_path_metrics[operation] = {
+            "last_duration_ms": round(
+                (time.monotonic() - started) * 1000.0, 3
+            ),
+            "records_enumerated": int(records_enumerated),
+            "plan_records_deserialized": (
+                plans_after["records_deserialized"]
+                - plans_before["records_deserialized"]
+            ),
+            "terminal_plan_records_deserialized": (
+                plans_after["terminal_records_deserialized"]
+                - plans_before["terminal_records_deserialized"]
+            ),
+            "task_records_deserialized": (
+                task_after["records_deserialized"]
+                - task_before["records_deserialized"]
+            ),
+            "terminal_task_records_deserialized": (
+                task_after["terminal_records_deserialized"]
+                - task_before["terminal_records_deserialized"]
+            ),
+            "recovery_candidates_examined": int(
+                recovery_candidates_examined
+            ),
+        }
+
+    def _projection_failure_for_plan(
+        self, plan: ChangePlan
+    ) -> ErrorCode | None:
+        try:
+            self._require_v2_persisted_plan_safe(plan)
+            if plan.policy_decision is not None:
+                self._require_policy_snapshot(plan)
+            return None
+        except GovernanceError as exc:
+            if exc.code not in PLAN_PROJECTION_FAILURE_CODES:
+                raise
+            return exc.code
+
+    def _rebuild_projection_failure_index(
+        self, *, invalidate_health: bool = True
+    ) -> None:
+        failures: dict[str, ErrorCode] = {}
+        for plan in self.repository.list():
+            error = self._projection_failure_for_plan(plan)
+            if error is not None:
+                failures[plan.plan_id] = error
+        self._projection_failure_index = failures
+        self._projection_index_rebuild_count += 1
+        self._observed_plan_index_rebuild_count = (
+            self.repository.index_rebuild_count
+        )
+        if invalidate_health:
+            self._health_cache_key = None
+            self._health_cache = None
+        elif self._health_cache is not None:
+            self._health_cache_key = (
+                self.repository.generation,
+                self.task_repository.generation,
+            )
+
+    def _ensure_projection_index_current(self) -> None:
+        if (
+            self._observed_plan_index_rebuild_count
+            != self.repository.index_rebuild_count
+        ):
+            self._rebuild_projection_failure_index()
+
+    def _update_projection_failure_index(self, plan: ChangePlan) -> None:
+        error = self._projection_failure_for_plan(plan)
+        if error is None:
+            self._projection_failure_index.pop(plan.plan_id, None)
+        else:
+            self._projection_failure_index[plan.plan_id] = error
+        self._projection_index_update_count += 1
+        self._health_cache_key = None
+        self._health_cache = None
+
+    def deep_audit_plan_store(self) -> dict[str, Any]:
+        """Deliberately revalidate history and rebuild derived navigation."""
+
+        plan = self.repository.rebuild_navigation_index()
+        task = self.task_repository.rebuild_navigation_index()
+        self._rebuild_projection_failure_index()
+        return {
+            "plan_store": plan,
+            "task_store": task,
+            "projection_failure_count": len(
+                self._projection_failure_index
+            ),
+            "authorization_source": "persisted_records",
+        }
 
     def _new_id(self) -> str:
         while True:
@@ -1582,6 +1705,7 @@ class ChangeGovernanceService:
         self._require_v2_persisted_plan_safe(plan)
         try:
             self.repository.save(plan)
+            self._update_projection_failure_index(plan)
         except ChangePlanStorageError as exc:
             raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR) from exc
 
@@ -3605,12 +3729,18 @@ class ChangeGovernanceService:
     def _supersede_prior(self, new_plan: ChangePlan) -> None:
         new_targets = self._plan_target_keys(new_plan)
         try:
-            plans = self.repository.list()
+            plan_ids = self.repository.active_plan_ids()
         except ChangePlanStorageError as exc:
             raise GovernanceError(
                 ErrorCode.CHANGE_PLAN_STORAGE_ERROR
             ) from exc
-        for plan in plans:
+        for plan_id in plan_ids:
+            try:
+                plan = self._load(plan_id)
+            except GovernanceError as exc:
+                if exc.code in PLAN_PROJECTION_FAILURE_CODES:
+                    continue
+                raise
             self._require_v2_persisted_plan_safe(plan)
             if plan.plan_id == new_plan.plan_id or not bool(
                 self._plan_target_keys(plan) & new_targets
@@ -3690,6 +3820,39 @@ class ChangeGovernanceService:
             key=lambda item: item[0].plan_id,
         )
 
+    def _resolved_plan_ids(
+        self,
+        plan_ids: tuple[str, ...],
+        *,
+        validate_policy: bool = True,
+    ) -> tuple[
+        list[ChangePlan],
+        list[tuple[ChangePlan, ErrorCode]],
+    ]:
+        """Reload and validate only navigation-selected plan authorities."""
+
+        resolved: list[ChangePlan] = []
+        failures: list[tuple[ChangePlan, ErrorCode]] = []
+        for plan_id in plan_ids:
+            try:
+                plan = self._load(plan_id)
+                self._require_v2_persisted_plan_safe(plan)
+                if validate_policy and plan.policy_decision is not None:
+                    self._require_policy_snapshot(plan)
+                self._resolve_lifecycle(plan)
+            except GovernanceError as exc:
+                if exc.code not in PLAN_PROJECTION_FAILURE_CODES:
+                    raise
+                try:
+                    failed_plan = self.repository.get(plan_id)
+                except ChangePlanStorageError:
+                    failed_plan = None
+                if failed_plan is not None:
+                    failures.append((failed_plan, exc.code))
+                continue
+            resolved.append(plan)
+        return resolved, failures
+
     def resolved_plans(
         self, *, validate_policy: bool = True
     ) -> list[ChangePlan]:
@@ -3707,38 +3870,78 @@ class ChangeGovernanceService:
         return plans
 
     def list_plans(self, status: str = "", limit: int = 20) -> dict[str, Any]:
+        started = time.monotonic()
+        try:
+            plan_metrics = self.repository.navigation_metrics()
+            self._ensure_projection_index_current()
+        except ChangePlanStorageError as exc:
+            raise GovernanceError(
+                ErrorCode.CHANGE_PLAN_STORAGE_ERROR
+            ) from exc
         selected: list[dict[str, Any]] = []
-        plans, failures = self._resolved_plans_with_projection_failures()
-        for plan in plans:
+        bounded_limit = max(1, min(limit, 100))
+        enumerated = 0
+        failures: list[tuple[ChangePlan, ErrorCode]] = []
+        offset = 0
+        while len(selected) < bounded_limit:
             try:
-                effective_status = self._effective_plan_status(plan)
-                if status and effective_status != status:
+                candidate_ids = self.repository.navigation_plan_ids(
+                    status=status,
+                    offset=offset,
+                    limit=(bounded_limit - len(selected)),
+                )
+            except ChangePlanStorageError as exc:
+                raise GovernanceError(
+                    ErrorCode.CHANGE_PLAN_STORAGE_ERROR
+                ) from exc
+            if not candidate_ids:
+                break
+            offset += len(candidate_ids)
+            for plan_id in candidate_ids:
+                enumerated += 1
+                plans, candidate_failures = self._resolved_plan_ids(
+                    (plan_id,)
+                )
+                failures.extend(candidate_failures)
+                if not plans:
                     continue
-                if len(selected) >= max(1, min(limit, 100)):
-                    continue
-                selected.append(self._summary(plan))
-            except GovernanceError as exc:
-                if exc.code not in PLAN_PROJECTION_FAILURE_CODES:
-                    raise
-                failures.append((plan, exc.code))
-                continue
-        failures = sorted(failures, key=lambda item: item[0].plan_id)
+                plan = plans[0]
+                try:
+                    effective_status = self._effective_plan_status(plan)
+                    if status and effective_status != status:
+                        continue
+                    selected.append(self._summary(plan))
+                except GovernanceError as exc:
+                    if exc.code not in PLAN_PROJECTION_FAILURE_CODES:
+                        raise
+                    failures.append((plan, exc.code))
+        indexed_failures = dict(self._projection_failure_index)
+        for plan, error in failures:
+            indexed_failures[plan.plan_id] = error
         projected_failures = [
             {
-                "plan_id": plan.plan_id,
+                "plan_id": plan_id,
                 "error_code": error_code.value,
             }
-            for plan, error_code in failures[:MAX_PLAN_PROJECTION_FAILURES]
+            for plan_id, error_code in sorted(indexed_failures.items())[
+                :MAX_PLAN_PROJECTION_FAILURES
+            ]
         ]
+        self._record_hot_path_metrics(
+            "list_change_plans",
+            started=started,
+            records_enumerated=enumerated,
+            plans_before=plan_metrics,
+        )
         return {
             "count": len(selected),
             "plans": selected,
             "projection_failures": projected_failures,
-            "projection_failure_count": len(failures),
+            "projection_failure_count": len(indexed_failures),
             "projection_failures_truncated": (
-                len(failures) > len(projected_failures)
+                len(indexed_failures) > len(projected_failures)
             ),
-            "partial": bool(failures),
+            "partial": bool(indexed_failures),
         }
 
     def approve(self, plan_id: str, expected_plan_hash: str, approval_note: str = "") -> dict[str, Any]:
@@ -3968,14 +4171,52 @@ class ChangeGovernanceService:
         return True
 
     def pending_external_reviews(self) -> list[dict[str, Any]]:
+        started = time.monotonic()
+        plan_metrics = self.repository.navigation_metrics()
+        self._ensure_projection_index_current()
         reviews: list[dict[str, Any]] = []
-        plans, _failures = self._resolved_plans_with_projection_failures()
+        candidate_ids = self.repository.approval_candidate_ids()
+        plans, _failures = self._resolved_plan_ids(candidate_ids)
         for plan in plans:
             calculated = self.plan_hash(plan)
             if not self._active_challenge_matches(plan, calculated):
                 continue
             reviews.append(self._review_summary(plan))
+        self._record_hot_path_metrics(
+            "pending_external_reviews",
+            started=started,
+            records_enumerated=len(candidate_ids),
+            plans_before=plan_metrics,
+        )
         return reviews
+
+    def pending_external_review(
+        self, plan_id: str
+    ) -> dict[str, Any] | None:
+        """Resolve one requested review directly from persisted authority."""
+
+        started = time.monotonic()
+        plan_metrics = self.repository.navigation_metrics()
+        self._ensure_projection_index_current()
+        try:
+            plans, _failures = self._resolved_plan_ids((plan_id,))
+        except GovernanceError as exc:
+            if exc.code != ErrorCode.CHANGE_PLAN_NOT_FOUND:
+                raise
+            plans = []
+        review = None
+        if plans:
+            plan = plans[0]
+            calculated = self.plan_hash(plan)
+            if self._active_challenge_matches(plan, calculated):
+                review = self._review_summary(plan)
+        self._record_hot_path_metrics(
+            "pending_external_review_detail",
+            started=started,
+            records_enumerated=1,
+            plans_before=plan_metrics,
+        )
+        return review
 
     def _configuration_approval_review_complete(
         self, plan: ChangePlan
@@ -6322,9 +6563,12 @@ class ChangeGovernanceService:
 
         if trigger not in {"startup", "periodic", "manual"}:
             raise ValueError("unsupported execution-task trigger")
+        started = time.monotonic()
+        plan_metrics = self.repository.navigation_metrics()
+        task_metrics = self.task_repository.navigation_metrics()
         self._task_reconciliation_runs += 1
         try:
-            tasks = self.task_repository.list()
+            tasks = self.task_repository.list_nonterminal()
         except ExecutionTaskStorageError as exc:
             raise GovernanceError(
                 ErrorCode.EXECUTION_TASK_STORAGE_ERROR
@@ -6452,7 +6696,7 @@ class ChangeGovernanceService:
                         plan,
                     )
                     manual_review += 1
-        return {
+        result = {
             "checked": checked,
             "completed": completed,
             "pending": pending,
@@ -6461,6 +6705,15 @@ class ChangeGovernanceService:
             "provider_dispatches": 0,
             "trigger": trigger,
         }
+        self._record_hot_path_metrics(
+            "execution_task_recovery",
+            started=started,
+            records_enumerated=len(tasks),
+            plans_before=plan_metrics,
+            tasks_before=task_metrics,
+            recovery_candidates_examined=checked,
+        )
+        return result
 
     async def reconcile_operational_plans(
         self,
@@ -6480,10 +6733,13 @@ class ChangeGovernanceService:
             0.01, min(float(time_budget_seconds), 60.0)
         )
         started = time.monotonic()
+        plan_metrics = self.repository.navigation_metrics()
+        task_metrics = self.task_repository.navigation_metrics()
         selected = checked = completed = pending = failed = 0
         bounded = False
-        candidates, _failures = (
-            self._resolved_plans_with_projection_failures()
+        candidate_ids = self.repository.recovery_candidate_ids()
+        candidates, _failures = self._resolved_plan_ids(
+            candidate_ids
         )
         for candidate in candidates:
             restart_candidate = self._restart_reconciliation_candidate(
@@ -6873,7 +7129,7 @@ class ChangeGovernanceService:
                 completed += 1
             else:
                 pending += 1
-        return {
+        result_summary = {
             "checked": checked,
             "completed": completed,
             "pending": pending,
@@ -6881,6 +7137,15 @@ class ChangeGovernanceService:
             "bounded": bounded,
             "provider_dispatches": 0,
         }
+        self._record_hot_path_metrics(
+            "operational_plan_recovery",
+            started=started,
+            records_enumerated=len(candidate_ids),
+            plans_before=plan_metrics,
+            tasks_before=task_metrics,
+            recovery_candidates_examined=selected,
+        )
+        return result_summary
 
     def _lifecycle_preflight_matches(
         self,
@@ -9536,10 +9801,189 @@ class ChangeGovernanceService:
         return {"status": "rolled_back", "plan": self._public(plan, include_configs=False)}
 
     def health_summary(self) -> dict[str, Any]:
+        """Return live health over a generation-bound persisted aggregate."""
+
+        started = time.monotonic()
+        plan_metrics = self.repository.navigation_metrics()
+        task_metrics = self.task_repository.navigation_metrics()
+        key = (
+            self.repository.generation,
+            self.task_repository.generation,
+        )
+        cache_rebuilt = False
+        if self._health_cache is None or self._health_cache_key != key:
+            self._health_cache = self._build_health_summary()
+            self._health_cache_key = key
+            self._health_cache_rebuild_count += 1
+            cache_rebuilt = True
+        else:
+            self._health_cache_hit_count += 1
+        summary = deepcopy(self._health_cache)
+
+        storage = self.repository.health()
+        task_storage = self.task_repository.health()
+        summary["storage"] = storage
+        summary["storage_status"] = storage["status"]
+        summary["storage_corruption_count"] = storage[
+            "corruption_count"
+        ]
+        summary["total_plans"] = storage["total_plans"]
+        execution = summary["execution_tasks"]
+        execution["storage"] = task_storage
+        execution["storage_status"] = task_storage["status"]
+        execution["rehydration_attempts"] = task_storage[
+            "rehydration_attempts"
+        ]
+        execution["record_count"] = task_storage["record_count"]
+        execution["event_count"] = task_storage["event_count"]
+        execution["reconciliation_runs"] = (
+            self._task_reconciliation_runs
+        )
+        if self.f3_runtime is not None:
+            summary["f3"] = self.f3_runtime.health()
+
+        operational = summary["operational_administration"]
+        backup_provider = self._backup_provider_health_snapshot()
+        lifecycle_provider = self._lifecycle_provider_health_snapshot()
+        operational["provider"] = backup_provider
+        operational["lifecycle_provider"] = lifecycle_provider
+        for operation, operation_health in operational["operations"].items():
+            provider_health = (
+                backup_provider
+                if operation == ChangeOperation.CREATE_FULL_BACKUP.value
+                else lifecycle_provider
+            )
+            operation_health["provider_identity"] = provider_health.get(
+                "provider"
+            )
+            availability = provider_health.get("operational_status")
+            operation_health["provider_availability"] = availability
+            operation_health["provider_contract_status"] = (
+                "exact"
+                if availability == "available"
+                else "unavailable_or_unverified"
+            )
+
+        restart_active = dict(self._restart_reconciliation_active)
+        restart = summary["restart_reconciliation"]
+        restart.update(restart_active)
+        current_restart = self._restart_reconciliation_counters
+        restart["last_result"] = (
+            current_restart["last_result"] or restart.get("last_result")
+        )
+        for key_name in (
+            "expired_record_count",
+            "expensive_probe_count",
+            "expensive_probes_avoided",
+            "cheap_gate_rejection_count",
+            "single_flight_collision_count",
+            "manual_review_terminalization_count",
+            "failure_count",
+        ):
+            restart[key_name] = max(
+                int(restart.get(key_name, 0)),
+                int(current_restart[key_name]),
+            )
+
+        self._record_hot_path_metrics(
+            "governance_health",
+            started=started,
+            records_enumerated=(
+                int(storage["total_plans"])
+                + int(task_storage["record_count"])
+                if cache_rebuilt
+                else 0
+            ),
+            plans_before=plan_metrics,
+            tasks_before=task_metrics,
+        )
+        summary["plan_store_scaling"] = {
+            "authorization_source": "persisted_records",
+            "derived_state_role": "navigation_and_status_only",
+            "plan_navigation": self.repository.navigation_metrics(),
+            "task_navigation": self.task_repository.navigation_metrics(),
+            "projection_index_rebuild_count": (
+                self._projection_index_rebuild_count
+            ),
+            "projection_index_update_count": (
+                self._projection_index_update_count
+            ),
+            "health_cache_rebuild_count": (
+                self._health_cache_rebuild_count
+            ),
+            "health_cache_hit_count": self._health_cache_hit_count,
+            "hot_paths": deepcopy(self._hot_path_metrics),
+            "historical_integrity": (
+                "validated_at_startup_or_explicit_deep_audit_and_when_"
+                "record_becomes_authority_relevant"
+            ),
+        }
+        return summary
+
+    def _backup_provider_health_snapshot(self) -> dict[str, Any]:
+        if self.operational_gateway is None:
+            return {
+                "provider": "operational_backup_provider",
+                "configured": False,
+                "operational_status": "unavailable",
+                "fallback_count": 0,
+                "fallback_policy": "none",
+            }
+        snapshot = getattr(self.operational_gateway, "health_snapshot", None)
+        if not callable(snapshot):
+            return {
+                "provider": "operational_backup_provider",
+                "configured": True,
+                "operational_status": "unavailable",
+                "fallback_count": 0,
+                "fallback_policy": "none",
+            }
+        return snapshot()
+
+    def _lifecycle_provider_health_snapshot(self) -> dict[str, Any]:
+        if self.lifecycle_gateway is None:
+            return {
+                "provider": "upstream_operational_lifecycle",
+                "configured": False,
+                "operational_status": "unavailable",
+                "fallback_count": 0,
+                "fallback_policy": "none",
+            }
+        snapshot = getattr(self.lifecycle_gateway, "health_snapshot", None)
+        if not callable(snapshot):
+            return {
+                "provider": "upstream_operational_lifecycle",
+                "configured": True,
+                "operational_status": "unavailable",
+                "fallback_count": 0,
+                "fallback_policy": "none",
+            }
+        try:
+            return snapshot()
+        except AttributeError:
+            return {
+                "provider": "upstream_operational_lifecycle",
+                "configured": True,
+                "operational_status": "unavailable",
+                "fallback_count": 0,
+                "fallback_policy": "none",
+            }
+
+    def _build_health_summary(
+        self, *, include_provider_health: bool = True
+    ) -> dict[str, Any]:
         # Record-level governance projection failures remain visible and
         # non-actionable without hiding otherwise healthy plan accounting.
         plans, projection_failures = (
             self._resolved_plans_with_projection_failures()
+        )
+        self._projection_failure_index = {
+            plan.plan_id: error_code
+            for plan, error_code in projection_failures
+        }
+        self._projection_index_rebuild_count += 1
+        self._observed_plan_index_rebuild_count = (
+            self.repository.index_rebuild_count
         )
         storage = self.repository.health()
         try:
@@ -9989,22 +10433,22 @@ class ChangeGovernanceService:
             )
 
         backup_provider_health = (
-            self.operational_gateway.health_snapshot()
-            if self.operational_gateway is not None
+            self._backup_provider_health_snapshot()
+            if include_provider_health
             else {
                 "provider": "operational_backup_provider",
-                "configured": False,
+                "configured": self.operational_gateway is not None,
                 "operational_status": "unavailable",
                 "fallback_count": 0,
                 "fallback_policy": "none",
             }
         )
         lifecycle_provider_health = (
-            self.lifecycle_gateway.health_snapshot()
-            if self.lifecycle_gateway is not None
+            self._lifecycle_provider_health_snapshot()
+            if include_provider_health
             else {
                 "provider": "upstream_operational_lifecycle",
-                "configured": False,
+                "configured": self.lifecycle_gateway is not None,
                 "operational_status": "unavailable",
                 "fallback_count": 0,
                 "fallback_policy": "none",

@@ -528,6 +528,9 @@ class ExecutionTaskStorageTests(unittest.TestCase):
             path.write_text(
                 json.dumps(forged, sort_keys=True), encoding="utf-8"
             )
+            # Force the generation-reconciliation branch: rebuild quarantines
+            # the forged record before the requested direct lookup resumes.
+            repository._observed_directory_token = (-1, -1)
 
             with self.assertRaises(ExecutionTaskStorageError):
                 repository.get(task.task_id)
