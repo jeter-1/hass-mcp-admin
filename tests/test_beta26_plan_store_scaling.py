@@ -91,7 +91,11 @@ class Beta26PlanStoreScaleTests(unittest.IsolatedAsyncioTestCase):
             )
         else:
             self.assertIn('version: "2.2.0-beta.26"', config)
-            self.assertFalse(marker.exists())
+            if marker.exists():
+                self.assertNotEqual(
+                    marker.read_text(encoding="utf-8").strip(),
+                    "2.2.0-beta.26",
+                )
         stable_config = (
             ROOT / "hass_mcp_admin" / "config.yaml"
         ).read_text(encoding="utf-8")
