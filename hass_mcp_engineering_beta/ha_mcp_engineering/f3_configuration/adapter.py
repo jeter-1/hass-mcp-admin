@@ -19,8 +19,12 @@ from ha_mcp_engineering.f3.locks import (
 
 from ..errors import EngineeringServerError
 from ..governance.config_validation import normalize_configuration_validation
-from ..governance.normalize import stable_hash
+from ..governance.normalize import (
+    AUTOMATION_NORMALIZATION_VERSION,
+    stable_hash,
+)
 from ..governance.resources import (
+    RESOURCE_NORMALIZATION_VERSION,
     ConfigurationMutationCompletedUnexpectedlyError,
     ConfigurationMutationNotDispatchedError,
     compare_resource_verification,
@@ -923,7 +927,12 @@ class ConfigurationOperationAdapter:
             "prohibited",
         }:
             raise ValueError("configuration policy class is unsupported")
-        if proposal.normalization_version not in {1, 2}:
+        if proposal.normalization_version not in {
+            1,
+            2,
+            AUTOMATION_NORMALIZATION_VERSION,
+            RESOURCE_NORMALIZATION_VERSION,
+        }:
             raise ValueError("configuration normalization version is unsupported")
         if not 0 <= proposal.order <= 7:
             raise ValueError("configuration operation order is invalid")

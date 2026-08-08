@@ -8105,6 +8105,15 @@ class ChangeGovernanceService:
         self._resolve_lifecycle(plan)
         if plan.status == PlanStatus.EXPIRED:
             raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
+        # Preserve the stronger historical prohibition outcome before a
+        # retained plan is rejected for using an older normalization contract.
+        if (
+            plan.policy_decision is not None
+            and plan.policy_decision.policy_class
+            == ApprovalPolicyClass.PROHIBITED
+        ):
+            self._require_policy_snapshot(plan)
+            self._reject_apply(plan, ErrorCode.PROHIBITED_CHANGE)
         self._require_current_normalization(plan)
         calculated = self.plan_hash(plan)
         hash_validation = (
@@ -9169,6 +9178,16 @@ class ChangeGovernanceService:
         self._resolve_lifecycle(plan)
         if plan.status == PlanStatus.EXPIRED:
             raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
+        # Preserve the stronger historical prohibition outcome even when a
+        # retained plan predates the current normalization contract.  A
+        # prohibited plan must never reach normalization or dispatch checks.
+        if (
+            plan.policy_decision is not None
+            and plan.policy_decision.policy_class
+            == ApprovalPolicyClass.PROHIBITED
+        ):
+            self._require_policy_snapshot(plan)
+            self._reject_apply(plan, ErrorCode.PROHIBITED_CHANGE)
         self._require_current_normalization(plan)
         if _automation_id_mismatch(plan.target_id, plan.proposed_config):
             self._reject_identity_mismatch(plan)
