@@ -423,6 +423,63 @@ class ConfigurationPlanTestCase(unittest.IsolatedAsyncioTestCase):
 
 
 class PlanCreationTests(ConfigurationPlanTestCase):
+    async def test_registry_category_is_reviewed_as_read_only_metadata(self):
+        operation = copy.deepcopy(hvac_operations()[2])
+        operation["depends_on"] = []
+        operation["proposed_config"]["category"] = (
+            "01KT040KKXMB972RWD49Q8YPPX"
+        )
+        created = await self.service.create_configuration_plan(
+            title="Category-enriched automation update",
+            description="Registry metadata must not become config",
+            operations=[operation],
+        )
+        persisted = self.repository.get(created["plan_id"])
+        prepared = persisted.operations[0]
+        self.assertEqual(prepared.normalization_version, 2)
+        self.assertNotIn("category", prepared.normalized_proposed_config)
+        self.assertFalse(
+            any(
+                change["field"] == "other:category"
+                for change in prepared.dry_run_results["changed_fields"]
+            )
+        )
+        self.assertTrue(
+            any(
+                "read-only registry metadata" in warning
+                for warning in prepared.warnings
+            )
+        )
+        _pending, review, _granted = await self.approve(created)
+        self.assertTrue(
+            any(
+                "read-only registry metadata" in warning
+                for warning in review["operation_summaries"][0][
+                    "warnings"
+                ]
+            )
+        )
+
+    async def test_unknown_automation_top_level_field_fails_before_io(self):
+        operation = copy.deepcopy(hvac_operations()[2])
+        operation["depends_on"] = []
+        operation["proposed_config"]["future_field"] = True
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.create_configuration_plan(
+                title="Unknown automation field",
+                description="Must fail before evidence reads",
+                operations=[operation],
+            )
+        self.assertEqual(
+            raised.exception.code,
+            ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+        )
+        self.assertIn(
+            "unsupported fields",
+            " ".join(raised.exception.details["validation_errors"]),
+        )
+        self.assertEqual(self.gateway.calls, [])
+
     async def test_hvac_plan_is_one_exact_ordered_non_writing_proposal(self):
         created = await self.create_hvac_plan()
         self.assertEqual(created["contract_version"], 2)
@@ -1350,6 +1407,31 @@ class PlanCreationTests(ConfigurationPlanTestCase):
 
 
 class ApplyTests(ConfigurationPlanTestCase):
+    async def test_category_enriched_update_applies_without_writing_metadata(self):
+        operation = copy.deepcopy(hvac_operations()[2])
+        operation["depends_on"] = []
+        operation["proposed_config"]["category"] = (
+            "01KT040KKXMB972RWD49Q8YPPX"
+        )
+        created = await self.service.create_configuration_plan(
+            title="Category-enriched automation update",
+            description="Apply only behavioral configuration",
+            operations=[operation],
+        )
+        await self.approve(created)
+        applied = await self.service.apply(
+            created["plan_id"], created["plan_hash"]
+        )
+        self.assertEqual(applied["status"], "applied")
+        stored = self.gateway.configs[
+            ("automation", "apply_hvac_comfort")
+        ]
+        self.assertNotIn("category", stored)
+        self.assertEqual(
+            applied["operations"][0]["verification"]["status"],
+            "passed",
+        )
+
     async def test_service_action_alias_does_not_weaken_stale_state(self):
         created = await self.create_automation_plan()
         changed_current = copy.deepcopy(CURRENT_AUTOMATION)

@@ -24,10 +24,13 @@ from .normalize import (
     stable_hash,
     structured_diff,
 )
-from .validation import validate_automation
+from .validation import (
+    READ_ONLY_REGISTRY_METADATA_WARNING,
+    validate_automation,
+)
 
 
-RESOURCE_NORMALIZATION_VERSION = 1
+RESOURCE_NORMALIZATION_VERSION = 2
 SUPPORTED_RESOURCE_TYPES = frozenset(
     {"automation", "script", "input_boolean", "input_number"}
 )
@@ -40,9 +43,11 @@ _HELPER_OBJECT_ID_CHARACTERS = _SCRIPT_ID_CHARACTERS
 _SCRIPT_FIELDS = frozenset(
     {
         "alias",
+        "category",
         "description",
         "fields",
         "icon",
+        "id",
         "max",
         "max_exceeded",
         "mode",
@@ -146,6 +151,15 @@ def validate_resource(
             errors.append("configuration keys must be strings")
         if resource_type == "script":
             errors.extend(_validate_script(proposed_config))
+            if "id" in proposed_config and proposed_config["id"] != resource_id:
+                errors.append("script config id must match target resource_id")
+            metadata_error = _registry_category_error(
+                proposed_config.get("category")
+            ) if "category" in proposed_config else None
+            if metadata_error:
+                errors.append(f"script {metadata_error}")
+            elif "category" in proposed_config:
+                warnings.append(READ_ONLY_REGISTRY_METADATA_WARNING)
         elif resource_type == "input_boolean":
             errors.extend(_validate_input_boolean(proposed_config))
         else:
@@ -210,13 +224,40 @@ def normalize_resource_config(
     if resource_type == "automation":
         return normalize_automation(config)
     normalized = {
-        key: value for key, value in config.items() if key != "id"
+        key: value
+        for key, value in config.items()
+        if key != "id"
+        and not (
+            resource_type == "script" and key == "category"
+        )
     }
     if resource_type == "input_number":
         for key in ("min", "max", "step", "initial"):
             if key in normalized and _is_number(normalized[key]):
                 normalized[key] = float(normalized[key])
     return _canonical(normalized)
+
+
+def configuration_write_config(
+    resource_type: str, config: dict[str, Any]
+) -> dict[str, Any]:
+    """Return only fields accepted by the selected mutation transport.
+
+    Home Assistant read providers may enrich automation and script records
+    with entity-registry metadata. That metadata is planning context, not part
+    of the REST configuration contract and is never written by this gateway.
+    """
+
+    _require_supported_type(resource_type)
+    if not isinstance(config, dict):
+        raise TypeError("resource configuration must be an object")
+    if resource_type not in _CONFIG_ENDPOINTS:
+        return dict(config)
+    return {
+        key: value
+        for key, value in config.items()
+        if key not in {"id", "category"}
+    }
 
 
 def resource_fingerprint(
@@ -559,10 +600,8 @@ class ConfigurationResourceGateway:
         if create_identity_errors:
             raise ValueError("; ".join(create_identity_errors))
         if resource_type in _CONFIG_ENDPOINTS:
-            return await self.rest_client.request(
-                "POST",
-                f"{_CONFIG_ENDPOINTS[resource_type]}/{resource_id}",
-                body=approved_config,
+            return await self._write_rest_configuration(
+                resource_type, resource_id, approved_config
             )
 
         _, object_id = _split_helper_entity_id(
@@ -669,10 +708,8 @@ class ConfigurationResourceGateway:
 
         self._require_valid(resource_type, resource_id, approved_config)
         if resource_type in _CONFIG_ENDPOINTS:
-            return await self.rest_client.request(
-                "POST",
-                f"{_CONFIG_ENDPOINTS[resource_type]}/{resource_id}",
-                body=approved_config,
+            return await self._write_rest_configuration(
+                resource_type, resource_id, approved_config
             )
 
         _, object_id = _split_helper_entity_id(
@@ -727,6 +764,37 @@ class ConfigurationResourceGateway:
         """Compact service-facing alias for the full configuration check."""
 
         return await self.validate()
+
+    async def _write_rest_configuration(
+        self,
+        resource_type: str,
+        resource_id: str,
+        approved_config: dict[str, Any],
+    ) -> Any:
+        try:
+            return await self.rest_client.request(
+                "POST",
+                f"{_CONFIG_ENDPOINTS[resource_type]}/{resource_id}",
+                body=configuration_write_config(
+                    resource_type, approved_config
+                ),
+            )
+        except HomeAssistantApiError as exc:
+            details = exc.details if isinstance(exc.details, dict) else {}
+            status = details.get("status")
+            if type(status) is int and 400 <= status < 500:
+                raise ConfigurationMutationNotDispatchedError(
+                    details={
+                        "operation": (
+                            f"{resource_type}_configuration_write"
+                        ),
+                        "resource_id": resource_id,
+                        "reason": "configuration_write_rejected",
+                        "provider_status": status,
+                        "provider_response_received": True,
+                    }
+                ) from exc
+            raise
 
     @staticmethod
     def _require_response_object(
@@ -843,6 +911,22 @@ def _bounded_identifier(
         and len(value) <= 128
         and all(character in allowed_characters for character in value)
     )
+
+
+def _registry_category_error(value: Any) -> str | None:
+    if value is None:
+        return None
+    if not (
+        isinstance(value, str)
+        and value
+        and value == value.strip()
+        and len(value) <= 128
+    ):
+        return (
+            "category metadata must be null or a non-empty string of at "
+            "most 128 characters"
+        )
+    return None
 
 
 def _validate_script(config: dict[str, Any]) -> list[str]:

@@ -1,7 +1,9 @@
 # HA MCP Engineering Server Beta
 
 This directory contains the Engineering v2 add-on. The currently advertised
-version is `2.2.0-beta.25`; staged version `2.2.0-beta.26` corrects retained
+version is `2.2.0-beta.26`; staged version `2.2.0-beta.27` separates read-only
+automation/script registry metadata from governed REST configuration and
+reports conclusive provider rejections truthfully. Beta 26 corrected retained
 plan-store scaling without changing public tools, authority, providers, or
 compatibility. Beta 25 promoted only `ha_search` after its successful bounded
 live canary. Beta 23 added an evidence-bound

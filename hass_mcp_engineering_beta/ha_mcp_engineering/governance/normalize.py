@@ -9,7 +9,7 @@ from typing import Any
 
 ALIASES = {"triggers": "trigger", "conditions": "condition", "actions": "action"}
 OPTIONAL_EMPTY = {"condition": [], "variables": {}, "trace": {}}
-AUTOMATION_NORMALIZATION_VERSION = 2
+AUTOMATION_NORMALIZATION_VERSION = 3
 AUTOMATION_VERIFICATION_NORMALIZATION_VERSION = 1
 AUTOMATION_ACTION_SERVICE_ALIAS = "automation_action_service_alias"
 AUTOMATION_VERIFICATION_STRUCTURE = "automation_verification_structure"
@@ -138,16 +138,30 @@ def _canonical(value: Any) -> Any:
     return value
 
 
-def normalize_automation(config: dict[str, Any] | None) -> dict[str, Any] | None:
+def normalize_automation(
+    config: dict[str, Any] | None,
+    *,
+    normalization_version: int | None = None,
+) -> dict[str, Any] | None:
     if config is None:
         return None
+    version = (
+        AUTOMATION_NORMALIZATION_VERSION
+        if normalization_version is None
+        else normalization_version
+    )
+    if version not in {1, 2, AUTOMATION_NORMALIZATION_VERSION}:
+        raise ValueError("unsupported automation normalization version")
     normalized: dict[str, Any] = {}
     for original_key, value in config.items():
         # Home Assistant injects the top-level automation id on read-back. It
         # identifies the resource addressed by the config endpoint; it is not
         # behavioral automation configuration and must not affect hashes or
         # behavioral diffs. Identity is verified explicitly by governance.
-        if original_key == "id":
+        if original_key == "id" or (
+            original_key == "category"
+            and version >= AUTOMATION_NORMALIZATION_VERSION
+        ):
             continue
         key = ALIASES.get(original_key, original_key)
         if key in normalized and original_key != key:

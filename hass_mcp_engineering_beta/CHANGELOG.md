@@ -1,6 +1,24 @@
 # Changelog
 
-## Unreleased - Plan-store/query/recovery scaling
+## Unreleased - Configuration metadata separation
+
+- Treat Home Assistant automation/script `category` as bounded read-only
+  entity-registry metadata rather than REST configuration. Exclude it and
+  top-level `id` from provider binding, dispatch, behavioral diffs, and exact
+  verification while warning reviewers that configuration writes preserve it.
+- Reject unknown automation top-level fields and category-bearing creates
+  before approval or dispatch. Advance the automation normalization contract to
+  3 and configuration-resource normalization contract to 2 so older pending
+  plans cannot silently gain authority under the corrected semantics.
+- Classify exact configuration-endpoint 4xx responses as received provider
+  rejections with zero provider mutations while retaining indeterminate,
+  readback-only handling for transport loss, timeouts, 5xx, and other uncertain
+  outcomes.
+- Preserve Beta 26 plan-store scaling, Beta 22 approval projection, Beta 20 F3,
+  Beta 25 exact 8.1.1 provider/tool behavior, zero fallback, public schemas,
+  and stable v1.1.2 unchanged.
+
+## 2.2.0-beta.26 - Plan-store/query/recovery scaling
 
 - Add rebuildable navigation for active plans, approval challenges, recovery
   work, and execution tasks while retaining persisted plan/task/approval/F3

@@ -72,6 +72,7 @@ from .resources import (
     RESOURCE_NORMALIZATION_VERSION,
     ResourceVerificationComparison,
     compare_resource_verification,
+    configuration_write_config,
     normalize_resource_config,
     resource_fingerprint,
     resource_identity_matches,
@@ -344,9 +345,26 @@ class AutomationGateway:
         return value
 
     async def write(self, automation_id: str, config: dict[str, Any]) -> Any:
-        return await self.client.request(
-            "POST", f"/config/automation/config/{automation_id}", body=config
-        )
+        try:
+            return await self.client.request(
+                "POST",
+                f"/config/automation/config/{automation_id}",
+                body=configuration_write_config("automation", config),
+            )
+        except HomeAssistantApiError as exc:
+            details = exc.details if isinstance(exc.details, dict) else {}
+            status = details.get("status")
+            if type(status) is int and 400 <= status < 500:
+                raise ConfigurationMutationNotDispatchedError(
+                    details={
+                        "operation": "automation_configuration_write",
+                        "resource_id": automation_id,
+                        "reason": "configuration_write_rejected",
+                        "provider_status": status,
+                        "provider_response_received": True,
+                    }
+                ) from exc
+            raise
 
     async def validate(self) -> Any:
         return await self.client.request("POST", "/config/core/check_config")
@@ -633,7 +651,11 @@ class ChangeGovernanceService:
         # Contract-v1 hashing is intentionally unchanged. Historical and
         # in-flight single-automation plans retain their exact approved hashes.
         calculated_proposed_hash = stable_hash(
-            normalize_automation(plan.proposed_config) or {}
+            normalize_automation(
+                plan.proposed_config,
+                normalization_version=plan.normalization_version,
+            )
+            or {}
         )
         immutable = {
             "plan_id": plan.plan_id,
@@ -2592,12 +2614,17 @@ class ChangeGovernanceService:
         resource_id: str,
         config: dict[str, Any],
     ) -> Any:
+        provider_config = configuration_write_config(
+            resource_type, config
+        )
         writer = getattr(self.gateway, "write", None)
         if callable(writer):
             if hasattr(self.gateway, "read"):
-                return await writer(action, resource_type, resource_id, config)
+                return await writer(
+                    action, resource_type, resource_id, provider_config
+                )
             if resource_type == "automation":
-                return await writer(resource_id, config)
+                return await writer(resource_id, provider_config)
         raise GovernanceError(
             ErrorCode.CONFIGURATION_APPLY_FAILED,
             details={
@@ -7871,6 +7898,7 @@ class ChangeGovernanceService:
             in {
                 "configuration_operation_provider_completed",
                 "configuration_operation_provider_failed",
+                "configuration_operation_not_dispatched",
             }
             and isinstance(event.operation_id, str)
         }
@@ -8077,6 +8105,15 @@ class ChangeGovernanceService:
         self._resolve_lifecycle(plan)
         if plan.status == PlanStatus.EXPIRED:
             raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
+        # Preserve the stronger historical prohibition outcome before a
+        # retained plan is rejected for using an older normalization contract.
+        if (
+            plan.policy_decision is not None
+            and plan.policy_decision.policy_class
+            == ApprovalPolicyClass.PROHIBITED
+        ):
+            self._require_policy_snapshot(plan)
+            self._reject_apply(plan, ErrorCode.PROHIBITED_CHANGE)
         self._require_current_normalization(plan)
         calculated = self.plan_hash(plan)
         hash_validation = (
@@ -8472,6 +8509,7 @@ class ChangeGovernanceService:
                     attempted_writes = max(0, attempted_writes - 1)
                     reason = exc.details.get("reason")
                     if reason not in {
+                        "configuration_write_rejected",
                         "target_already_exists",
                         "target_entity_id_reserved",
                         "helper_create_preflight_unavailable",
@@ -8491,14 +8529,26 @@ class ChangeGovernanceService:
                         "write_attempted": False,
                         "write_completed": False,
                         "readback_completed": False,
-                        "write_result": "not_dispatched",
+                        "write_result": (
+                            "provider_rejected"
+                            if reason == "configuration_write_rejected"
+                            else "not_dispatched"
+                        ),
                         "outcome": "not_applied",
                         "reason": reason,
+                        "provider_response_received": bool(
+                            exc.details.get("provider_response_received")
+                            is True
+                        ),
                     }
                     operation.failure_information = {
                         "error_code": root_error.value,
                         "reason": reason,
                         "mutation_dispatched": False,
+                        "provider_response_received": bool(
+                            exc.details.get("provider_response_received")
+                            is True
+                        ),
                     }
                     self._record(
                         plan,
@@ -8543,6 +8593,10 @@ class ChangeGovernanceService:
                         "cause_error_code": root_error.value,
                         "failed_operation_id": operation.operation_id,
                         "failure_reason": reason,
+                        "provider_response_received": bool(
+                            exc.details.get("provider_response_received")
+                            is True
+                        ),
                         "attempted_write_count": attempted_writes,
                         "successful_write_count": successful_writes,
                         "verified_write_count": verified_writes,
@@ -9124,6 +9178,16 @@ class ChangeGovernanceService:
         self._resolve_lifecycle(plan)
         if plan.status == PlanStatus.EXPIRED:
             raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
+        # Preserve the stronger historical prohibition outcome even when a
+        # retained plan predates the current normalization contract.  A
+        # prohibited plan must never reach normalization or dispatch checks.
+        if (
+            plan.policy_decision is not None
+            and plan.policy_decision.policy_class
+            == ApprovalPolicyClass.PROHIBITED
+        ):
+            self._require_policy_snapshot(plan)
+            self._reject_apply(plan, ErrorCode.PROHIBITED_CHANGE)
         self._require_current_normalization(plan)
         if _automation_id_mismatch(plan.target_id, plan.proposed_config):
             self._reject_identity_mismatch(plan)

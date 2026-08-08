@@ -16,6 +16,31 @@ SENSITIVE_KEYS = {
     "api_key",
     "webhook_id",
 }
+AUTOMATION_CONFIGURATION_FIELDS = frozenset(
+    {
+        "action",
+        "actions",
+        "alias",
+        "category",
+        "condition",
+        "conditions",
+        "description",
+        "id",
+        "max",
+        "max_exceeded",
+        "mode",
+        "trace",
+        "trigger",
+        "triggers",
+        "trigger_variables",
+        "use_blueprint",
+        "variables",
+    }
+)
+READ_ONLY_REGISTRY_METADATA_WARNING = (
+    "category is read-only registry metadata; this configuration operation "
+    "preserves it and does not include it in the Home Assistant config write"
+)
 
 
 def validate_automation(
@@ -28,6 +53,29 @@ def validate_automation(
     if not isinstance(proposed, dict):
         errors.append("proposed_config must be an object")
         return False, errors, warnings
+    if any(not isinstance(key, str) for key in proposed):
+        errors.append("automation configuration keys must be strings")
+    else:
+        unknown = sorted(set(proposed) - AUTOMATION_CONFIGURATION_FIELDS)
+        if unknown:
+            errors.append(
+                "automation config contains unsupported fields: "
+                + ", ".join(unknown)
+            )
+    if "category" in proposed:
+        category = proposed["category"]
+        if category is not None and not (
+            isinstance(category, str)
+            and category
+            and category == category.strip()
+            and len(category) <= 128
+        ):
+            errors.append(
+                "automation category metadata must be null or a non-empty "
+                "string of at most 128 characters"
+            )
+        else:
+            warnings.append(READ_ONLY_REGISTRY_METADATA_WARNING)
     if not any(key in proposed for key in ("trigger", "triggers", "use_blueprint")):
         errors.append("automation config requires trigger/triggers or use_blueprint")
     if not any(key in proposed for key in ("action", "actions", "use_blueprint")):
