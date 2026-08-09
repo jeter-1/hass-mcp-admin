@@ -1,4 +1,4 @@
-"""Typed, bounded failures for the inert F3-B dashboard foundation."""
+"""Typed, bounded failures for governed dashboard planning and execution."""
 
 from __future__ import annotations
 

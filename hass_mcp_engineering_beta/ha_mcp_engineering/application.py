@@ -196,6 +196,7 @@ def create_application(settings: Settings | None = None):
             "fallback_count": upstream.get("fallback_count", 0),
         }
 
+    UPSTREAM_DASHBOARD.configure(settings)
     GOVERNANCE.configure(
         settings,
         audit,
@@ -203,7 +204,8 @@ def create_application(settings: Settings | None = None):
         HomeAssistantWebSocketClient(settings),
         UPSTREAM_OPERATIONAL_BACKUP,
         UPSTREAM_OPERATIONAL_LIFECYCLE,
-        operational_runtime_snapshot,
+        runtime_snapshot=operational_runtime_snapshot,
+        dashboard_provider=UPSTREAM_DASHBOARD,
     )
     DEPENDENCY_ANALYSIS.configure(
         HomeAssistantRestClient(settings),
@@ -255,7 +257,6 @@ def create_application(settings: Settings | None = None):
         ha_token=settings.ha_token,
         timeout=settings.ha_timeout_seconds,
     )
-    UPSTREAM_DASHBOARD.configure(settings)
     # Generic pure reads are admitted independently per tool. The dashboard
     # provider retains its own stricter mixed-tool contract and cannot disable
     # unrelated generic reads when only that contract is unavailable.

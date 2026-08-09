@@ -135,6 +135,13 @@ It is an adapter/executor projection only; persisted strings are unchanged.
 
 ## Dashboard reads and reviewed write evidence
 
+Current update (2026-08-08): the Beta 17 inert-foundation description below is
+historical. The approved MVP now adds one governed F3 update operation for an
+existing storage-mode dashboard through the exact 8.1.1 provider contract. The
+two normal public read tools remain unchanged; the upstream setter is not
+publicly or dynamically registered. See the
+[current dashboard-write contract](F3_DASHBOARD_WRITE_CONTRACT.md).
+
 | Source and symbol | Current responsibility | Current protection | Gap / F3 owner |
 |---|---|---|---|
 | `tools/dashboard.py::list_dashboards`, `get_dashboard_config` | Two public read-only dashboard tools | No setter registration | Preserve unchanged; F3-B adds inert planning and verification only |

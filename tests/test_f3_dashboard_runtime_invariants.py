@@ -1,4 +1,4 @@
-"""Guard that the F3-B foundation has no current runtime or tool reachability."""
+"""Guard the one bounded governed dashboard-update runtime route."""
 
 from __future__ import annotations
 
@@ -33,20 +33,29 @@ PROMOTION_SPEC.loader.exec_module(PROMOTION_MODULE)
 
 
 class DashboardRuntimeInvariantTests(unittest.TestCase):
-    def test_engineering_runtime_does_not_import_or_instantiate_f3_dashboard(self):
+    def test_engineering_runtime_imports_dashboard_only_at_closed_boundaries(self):
         runtime_root = BETA / "ha_mcp_engineering"
         contacts = []
         for path in runtime_root.rglob("*.py"):
             source = path.read_text(encoding="utf-8")
             if "f3_dashboard" in source:
                 contacts.append(str(path.relative_to(ROOT)))
-        self.assertEqual(contacts, [])
+        self.assertEqual(
+            set(contacts),
+            {
+                "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+                "hass_mcp_engineering_beta/ha_mcp_engineering/governance/runtime.py",
+                "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+            },
+        )
 
-    def test_dashboard_foundation_has_no_transport_dispatch_or_public_registration(self):
+    def test_dashboard_package_has_no_direct_network_or_arbitrary_dispatch(self):
         prohibited_imports = {"aiohttp", "httpx", "requests", "subprocess", "socket"}
         imported = set()
         function_names = set()
-        for path in (ROOT / "f3_dashboard").glob("*.py"):
+        for path in (
+            BETA / "ha_mcp_engineering" / "f3_dashboard"
+        ).glob("*.py"):
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
@@ -56,16 +65,17 @@ class DashboardRuntimeInvariantTests(unittest.TestCase):
                 elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     function_names.add(node.name)
         self.assertTrue(prohibited_imports.isdisjoint(imported))
-        self.assertTrue(
-            {"dispatch", "apply", "execute", "register_tool"}.isdisjoint(function_names)
-        )
+        self.assertNotIn("register_tool", function_names)
+        self.assertNotIn("create_dashboard", function_names)
+        self.assertNotIn("delete_dashboard", function_names)
 
-    def test_public_tool_count_and_change_vocabulary_are_unchanged(self):
+    def test_public_surface_has_one_proposal_tool_and_no_direct_write_tool(self):
         names = set(registered_tools(get_registered_server()))
-        self.assertEqual(len(names), 49)
-        self.assertNotIn("create_dashboard_update_plan", names)
+        self.assertEqual(len(names), 50)
+        self.assertIn("create_dashboard_update_plan", names)
         self.assertNotIn("update_storage_dashboard", names)
-        self.assertNotIn("update_dashboard", {value.value for value in ChangeOperation})
+        self.assertNotIn("update_dashboard", names)
+        self.assertIn("update_dashboard", {value.value for value in ChangeOperation})
 
     def test_task_and_plan_schema_versions_are_unchanged(self):
         self.assertEqual(TASK_SCHEMA_VERSION, 1)
@@ -87,7 +97,9 @@ class DashboardRuntimeInvariantTests(unittest.TestCase):
     def test_no_fallback_or_live_home_assistant_fixture_is_present(self):
         source = "\n".join(
             path.read_text(encoding="utf-8")
-            for path in sorted((ROOT / "f3_dashboard").glob("*.py"))
+            for path in sorted(
+                (BETA / "ha_mcp_engineering" / "f3_dashboard").glob("*.py")
+            )
         )
         self.assertNotIn("SUPERVISOR_TOKEN", source)
         self.assertNotIn("direct_ha", source)

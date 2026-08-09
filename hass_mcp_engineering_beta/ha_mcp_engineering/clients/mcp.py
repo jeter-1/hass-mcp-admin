@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 import json
 import logging
+import re
 import socket
 import time
 from typing import Any, Callable
@@ -18,6 +19,8 @@ from ..mcp_sdk_compatibility import ReviewedProtocolClientSession as ClientSessi
 
 
 REQUIRED_DASHBOARD_TOOL = "ha_config_get_dashboard"
+REQUIRED_DASHBOARD_WRITE_TOOL = "ha_config_set_dashboard"
+REQUIRED_BEST_PRACTICES_TOOL = "ha_get_skill_guide"
 ALLOWED_DASHBOARD_ARGUMENTS = frozenset(
     {"url_path", "list_only", "force_reload", "include_screenshot"}
 )
@@ -193,7 +196,9 @@ class McpDashboardTransport:
             logger.propagate = False
 
     async def discover(self) -> McpDashboardHandshake:
-        result = await self._run(arguments=None, capability_validator=None)
+        result = await self._run(
+            tool_name=None, arguments=None, capability_validator=None
+        )
         if not isinstance(result, McpDashboardHandshake):
             raise DashboardTransportError("internal_error")
         return result
@@ -205,7 +210,44 @@ class McpDashboardTransport:
     ) -> McpDashboardRead:
         validate_dashboard_read_arguments(arguments)
         result = await self._run(
+            tool_name=REQUIRED_DASHBOARD_TOOL,
             arguments=dict(arguments),
+            capability_validator=capability_validator,
+        )
+        if not isinstance(result, McpDashboardRead):
+            raise DashboardTransportError("internal_error")
+        return result
+
+    async def execute_dashboard_write(
+        self,
+        arguments: dict[str, Any],
+        capability_validator: CapabilityValidator,
+    ) -> McpDashboardRead:
+        """Call only the exact governed dashboard setter."""
+
+        validate_dashboard_write_arguments(arguments)
+        result = await self._run(
+            tool_name=REQUIRED_DASHBOARD_WRITE_TOOL,
+            arguments=dict(arguments),
+            capability_validator=capability_validator,
+        )
+        if not isinstance(result, McpDashboardRead):
+            raise DashboardTransportError("internal_error")
+        return result
+
+    async def execute_best_practices_read(
+        self,
+        capability_validator: CapabilityValidator,
+    ) -> McpDashboardRead:
+        """Fetch only the reviewed dashboard guide used by strict BPS."""
+
+        arguments = {
+            "skill": "home-assistant-best-practices",
+            "file": "references/dashboard-guide.md",
+        }
+        result = await self._run(
+            tool_name=REQUIRED_BEST_PRACTICES_TOOL,
+            arguments=arguments,
             capability_validator=capability_validator,
         )
         if not isinstance(result, McpDashboardRead):
@@ -215,6 +257,7 @@ class McpDashboardTransport:
     async def _run(
         self,
         *,
+        tool_name: str | None,
         arguments: dict[str, Any] | None,
         capability_validator: CapabilityValidator | None,
     ) -> McpDashboardHandshake | McpDashboardRead:
@@ -245,11 +288,12 @@ class McpDashboardTransport:
                     )
                     if arguments is None:
                         return handshake
+                    if tool_name is None:
+                        raise DashboardTransportError("internal_error")
                     capability_validator(handshake)
-                    validate_dashboard_read_arguments(arguments)
                     call_started = time.perf_counter()
                     call_result = await session.call_tool(
-                        REQUIRED_DASHBOARD_TOOL,
+                        tool_name,
                         arguments,
                         read_timeout_seconds=self._timeout,
                     )
@@ -315,6 +359,43 @@ def validate_dashboard_read_arguments(arguments: dict[str, Any]) -> None:
         or arguments.get("list_only") is not False
         or not isinstance(arguments.get("force_reload"), bool)
         or arguments.get("include_screenshot") is not False
+    ):
+        raise DashboardTransportError("prohibited_argument")
+
+
+def validate_dashboard_write_arguments(arguments: dict[str, Any]) -> None:
+    """Accept only one exact full-result replacement of an existing target."""
+
+    required = {
+        "url_path",
+        "config",
+        "config_hash",
+        "MandatoryBPS",
+        "return_screenshot",
+    }
+    allowed = required | {"BestPracticeKey"}
+    if not isinstance(arguments, dict) or set(arguments) - allowed:
+        raise DashboardTransportError("prohibited_argument")
+    if not required.issubset(arguments):
+        raise DashboardTransportError("prohibited_argument")
+    if (
+        not isinstance(arguments.get("url_path"), str)
+        or not re.fullmatch(r"[a-z0-9_-]{1,256}", arguments["url_path"])
+        or not isinstance(arguments.get("config"), dict)
+        or not isinstance(arguments.get("config_hash"), str)
+        or not re.fullmatch(r"[0-9a-f]{16}", arguments["config_hash"])
+        or arguments.get("MandatoryBPS") is not False
+        or arguments.get("return_screenshot") is not False
+        or (
+            "BestPracticeKey" in arguments
+            and (
+                not isinstance(arguments["BestPracticeKey"], str)
+                or not re.fullmatch(
+                    r"I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-[0-9a-f]{8}",
+                    arguments["BestPracticeKey"],
+                )
+            )
+        )
     ):
         raise DashboardTransportError("prohibited_argument")
 

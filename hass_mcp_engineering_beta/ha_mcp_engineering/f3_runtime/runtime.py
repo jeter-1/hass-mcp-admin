@@ -49,6 +49,11 @@ from ..f3_configuration.migration import (
     proposal_from_legacy_automation_plan,
 )
 from ..f3_configuration.sequence import prepare_configuration_sequence
+from ..f3_dashboard.adapter import (
+    CAPABILITY_ID as DASHBOARD_CAPABILITY_ID,
+    DashboardPreparationRequest,
+    DashboardUpdateAdapter,
+)
 from ..governance.models import (
     ApprovalState,
     ChangeOperation,
@@ -196,6 +201,26 @@ class _LegacyConflictAdapter:
                 mismatch_fields=(),
             )
         return result
+
+
+class _AuditedDashboardGateway:
+    """Emit bounded provider-boundary events without persisting payloads."""
+
+    def __init__(self, delegate: Any, auditor: Callable[[str], None]):
+        self.delegate = delegate
+        self.auditor = auditor
+
+    async def preread(self, *, url_path: str):
+        self.auditor("provider_ha_config_get_dashboard")
+        return await self.delegate.preread(url_path=url_path)
+
+    async def best_practice_key(self):
+        self.auditor("provider_ha_get_skill_guide")
+        return await self.delegate.best_practice_key()
+
+    async def write(self, **arguments):
+        self.auditor("provider_ha_config_set_dashboard")
+        return await self.delegate.write(**arguments)
 
 
 class _OperationalEvidenceReader:
@@ -435,6 +460,7 @@ class F3RuntimeIntegration:
         lifecycle_gateway: Any,
         provider_identity_reader: Callable[[], Awaitable[dict[str, str]]],
         retention_days: int,
+        dashboard_gateway: Any | None = None,
     ):
         self.service = service
         self.children = ChildExecutionRepository(
@@ -487,9 +513,19 @@ class F3RuntimeIntegration:
             authority_reader=self._operational_authority,
             now=service.now,
         )
+        self.dashboard_adapter = DashboardUpdateAdapter(
+            _AuditedDashboardGateway(
+                dashboard_gateway, self._audit_provider_boundary
+            )
+            if dashboard_gateway is not None
+            else None,
+            service.dashboard_artifacts,
+            now=service.now,
+        )
         self.registry = ClosedAdapterRegistry.build(
             configuration_adapters=configuration_adapters,
             operational_adapter=self.operational_adapter,
+            dashboard_adapter=self.dashboard_adapter,
         )
         self._configuration_adapters = configuration_adapters
         self._prepared_cache: dict[str, Any] = {}
@@ -729,6 +765,7 @@ class F3RuntimeIntegration:
                 ChangeOperation.CONTROLLED_RELOAD,
                 ChangeOperation.RESTART_ADDON,
                 ChangeOperation.RESTART_HOME_ASSISTANT,
+                ChangeOperation.UPDATE_DASHBOARD,
             }
         )
 
@@ -836,20 +873,36 @@ class F3RuntimeIntegration:
         identity = provider_identity or await self._provider_identity()
         operation_id = plan.operation.value
         child_id = deterministic_child_id(task.task_id, plan.plan_id, operation_id, 0)
-        prepared = await self.operational_adapter.prepare(
-            OperationalPreparationRequest(
-                plan=self._approved_copy(plan),
-                expected_plan_hash=plan_hash,
-                public_task_id=task.task_id,
-                child_execution_id=child_id,
-                authoritative_provider_slug=identity["slug"],
-                provider_identity_evidence_hash=identity["evidence_hash"],
+        if plan.operation is ChangeOperation.UPDATE_DASHBOARD:
+            prepared = await self.dashboard_adapter.prepare(
+                DashboardPreparationRequest(
+                    plan=self._approved_copy(plan),
+                    expected_plan_hash=plan_hash,
+                    approval_bundle_hash=approval_hash,
+                    public_task_id=task.task_id,
+                    child_execution_id=child_id,
+                    authoritative_provider_slug=identity["slug"],
+                    provider_identity_evidence_hash=identity["evidence_hash"],
+                )
             )
-        )
-        requests = self.operational_adapter.lock_requests(prepared)
+            requests = self.dashboard_adapter.lock_requests(prepared)
+            sequence_model = "f3-dashboard-sequence-v1"
+        else:
+            prepared = await self.operational_adapter.prepare(
+                OperationalPreparationRequest(
+                    plan=self._approved_copy(plan),
+                    expected_plan_hash=plan_hash,
+                    public_task_id=task.task_id,
+                    child_execution_id=child_id,
+                    authoritative_provider_slug=identity["slug"],
+                    provider_identity_evidence_hash=identity["evidence_hash"],
+                )
+            )
+            requests = self.operational_adapter.lock_requests(prepared)
+            sequence_model = "f3-operational-sequence-v1"
         return (prepared,), requests, stable_hash(
             {
-                "model": "f3-operational-sequence-v1",
+                "model": sequence_model,
                 "plan_id": plan.plan_id,
                 "public_task_id": task.task_id,
                 "prepared_operation_hash": prepared.prepared_operation_hash,
@@ -1256,7 +1309,16 @@ class F3RuntimeIntegration:
         if plan.contract_version in {1, 2}:
             adapter = _SequenceLockAdapter(adapter, complete_requests)
         else:
-            validate_operational_executor_timing(executor, prepared)
+            if getattr(prepared, "capability_id", None) == DASHBOARD_CAPABILITY_ID:
+                if (
+                    executor.executor_timing.post_dispatch_evidence_seconds
+                    != prepared.evidence_deadline_seconds
+                ):
+                    raise GovernanceError(
+                        ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+                    )
+            else:
+                validate_operational_executor_timing(executor, prepared)
         adapter = _LegacyConflictAdapter(
             adapter, self._has_active_legacy_conflict
         )

@@ -37,6 +37,7 @@ _PROPOSAL_TOOLS = {
     "create_home_assistant_restart_plan",
     "create_change_plan",
     "create_configuration_plan",
+    "create_dashboard_update_plan",
 }
 _TASK_READ_TOOLS = {"get_execution_task", "list_execution_tasks"}
 _TASK_READ_ANNOTATIONS = ToolAnnotations(

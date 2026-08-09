@@ -1,409 +1,213 @@
-# F3 governed dashboard-write contract
+# Governed existing-dashboard update contract
 
-Status: Historical F3-0 proposal; dashboard execution deferred by Beta 17
+Status: approved bounded MVP implementation contract (2026-08-08)
 
-## Beta 17 dashboard-execution decision
-
-F3-B proved that the reviewed Home Assistant and `ha-mcp` interfaces cannot
-satisfy the required external-writer lost-update contract. Hash validation and
-save are separate operations. There is no atomic compare-and-save,
-expected-hash enforcement at the authoritative save boundary, transaction
-receipt, or authoritative exclusion of every Lovelace writer.
-
-Beta 17 therefore accepts and retains exact raw preread evidence, bounded patch
-compilation, semantic diff, risk evidence, immutable private planning
-artifacts, stale-state checks, and exact readback verification. It accepts no
-dashboard setter realization. In particular:
-
-- Engineering locks coordinate cooperating Engineering operations only;
-- final exact reread cannot reveal an external edit overwritten before the
-  approved result became final;
-- generated `python_transform` is a rejected historical candidate, not a
-  dispatch contract;
-- unrestricted full-configuration replacement remains outside the bounded
-  operation and is not a workaround;
-- no public dashboard tool or persisted `update_dashboard` operation exists;
-- no dashboard transport, provider setter, dispatch path, or rollback is
-  reachable; and
-- reconsideration requires independently reviewed proof of atomic
-  compare-and-save, expected-hash enforcement at the authoritative save
-  boundary, or authoritative exclusion of all dashboard writers.
-
-The remaining sections preserve the exact evidence and original F3-0 proposal
-that led to this decision. Any imperative execution language below is
-superseded by this Beta 17 deferral.
+This contract supersedes the Beta 17 execution deferral for one narrowly
+defined operation: updating an existing Home Assistant storage-mode dashboard.
+The deferral correctly identified that the upstream hash check and save are not
+atomic. Josh has explicitly accepted that residual risk under the operator
+condition below. The decision does not authorize any other dashboard write.
 
 ## Required completion boundary
 
-F3-0 proposed updating one existing Home Assistant storage-mode dashboard
-identified by an exact canonical `url_path`. That persistent administrative
-configuration lifecycle is not accepted for execution in Beta 17. Its planning
-and verification stages remain accepted as an inert foundation.
+Engineering may update one existing storage-mode dashboard identified by its
+exact canonical `url_path`. The public proposal accepts a non-empty ordered
+JSON Pointer patch of at most 16 `add`, `replace`, or `remove` operations.
+Engineering compiles the patch locally against a complete exact preread and
+binds the resulting full configuration to the governed plan.
 
-The proposed, currently blocked lifecycle was:
+The lifecycle is:
 
 ```text
-complete exact read
-  -> declarative patch and bounded semantic diff
-  -> hash-bound governed proposal
+exact preread and storage identity proof
+  -> bounded local patch compilation and semantic diff
+  -> immutable private artifact and governed plan
   -> external administrator approval
-  -> dashboard lock
-  -> exact storage identity and stale-hash preflight
+  -> task-bound F3 locks
+  -> exact compatibility, identity, and stale-hash preflight
   -> durable dispatch intent
-  -> exactly one setter invocation
-  -> exact reread
-  -> intended-result verification
-  -> durable terminal outcome
+  -> exactly one ha_config_set_dashboard call
+  -> exact reread and full-result verification
+  -> truthful terminal or manual-review outcome
 ```
 
-F3-0 adds none of these runtime capabilities. The current Dashboard v2/v3 read
-path remains unchanged.
+The proposal tool cannot write Home Assistant. Only `apply_change_plan` may
+cross the write boundary after the existing approval, integrity, policy,
+sequence, locking, and F3 checks pass.
 
-## Exact reviewed upstream evidence
+## Exact upstream admission
 
-The contract was reviewed against:
+The executable provider contract is admitted only for exact reviewed
+`ha-mcp` 8.1.1, protocol `2025-03-26`, compatibility entry
+`ha-mcp-v8.1.1-e1d76a6e`. The reviewed source is tag `v8.1.1`, commit
+`ae84694b50bfbd8d507042381fdee5e529bf73c5`.
 
-| Release | Exact source | Protocol | Reviewed entry |
-|---|---|---|---|
-| `ha-mcp` 7.14.2 | `904c14ebbe76de700f7c3535f5cc71c017dca12e` | `2025-03-26` | `ha-mcp-v7.14.2-7917b2d3` |
-| `ha-mcp` 8.0.0 | `9dd3ac620e3149cd34ec3c990b6ee81e778191f2` | `2025-03-26` | `ha-mcp-v8.0.0-d65630f6` |
+Before planning or dispatch, Engineering requires the complete observed
+upstream catalog to match the exact reviewed release. It separately requires:
 
-Both exact releases advertise 78 tools and the same closed
-`ha_config_set_dashboard` input schema. The reviewed registry input-schema
-fingerprint is
-`a7d11d72710f1c39937bfc864291f6d0936b2d4feb68dc4ff049eda3b91a3ac1`.
-The tool is classified as `persistent_write`; its annotations are destructive
-and not open-world.
+- `ha_config_get_dashboard` with its reviewed read contract;
+- `ha_get_skill_guide` with its reviewed automatic-read contract; and
+- `ha_config_set_dashboard` with its reviewed persistent-write contract.
 
-The exact upstream setter is broader than F3:
-
-- it can create or update;
-- it accepts unrestricted full configuration or executable
-  `python_transform` text;
-- its full-replacement pre-read failure is non-fatal and the tool can create a
-  missing dashboard;
-- hash validation and save are separate calls, not atomic compare-and-swap;
-- it also exposes metadata, screenshot, and view arguments; and
-- strict best-practices mode may require a rotating public read-receipt key.
-
-The upstream Python sandbox explicitly states that it is not a security
-boundary. F3 therefore never accepts caller-provided Python.
-
-## Current read boundary and required internal read
-
-`UpstreamDashboardProvider` currently exposes only:
-
-- inventory through `ha_config_get_dashboard` with `list_only=true` and
-  `include_screenshot=false`; and
-- exact configuration through canonical `url_path`, `list_only=false`, and
-  `include_screenshot=false`.
-
-It verifies the upstream configuration hash as the first 16 hex characters of
-SHA-256 over sorted compact JSON and separately retains a full Engineering
-SHA-256 evidence hash. The public response may sanitize or truncate the
-configuration while retaining hashes of the unsanitized raw configuration.
-That public payload is not a valid write-planning input.
-
-The retained F3-B planning foundation adds an internal, non-public
-complete-read projection that:
-
-- selects an exact reviewed release and protocol before the read;
-- proves exactly one inventory row for the canonical path;
-- requires explicit `mode == "storage"` and rejects YAML, absent, duplicate,
-  default/unlisted, or ambiguous identities;
-- returns the exact raw configuration only to the governed planner;
-- independently recomputes both upstream and Engineering hashes;
-- fails closed on sanitization, truncation, malformed content, or a reviewed
-  byte bound; and
-- never emits the full configuration in health or audit output.
-
-Current Beta 15 read limits are diagnostic facts, not future persistence
-authority. The configured response limit defaults to 60,000, the provider
-reserves 16,000 for its envelope, and the returned pretty-JSON configuration
-must fit the remaining budget. With the default limit, individual sanitized
-strings are capped at 20,000 characters. The provider also records raw compact
-canonical UTF-8 byte size. These public-response bounds do not establish a safe
-durable prior-configuration or rollback bound.
-
-The current inventory wrapper's “storage-mode” description is not proof: exact
-upstream source includes YAML metadata rows. Mode must be checked explicitly.
-
-## Frozen operation plan
-
-The historical proposal used the future name `update_dashboard`. Beta 17 does
-not add that value to the persisted `ChangeOperation` enum or any public
-schema. The canonical path must match exactly
-`^[a-z0-9_-]{1,256}$`. The `default` alias, title/name lookup, internal dashboard
-ID, fuzzy path, and case normalization are prohibited. `lovelace` is accepted
-only when inventory explicitly contains exactly one storage-mode row for that
-canonical path; the implicit unlisted default is rejected. Its target is:
-
-```text
-target_type = dashboard
-target_id   = <exact canonical url_path>
-```
-
-The complete canonical lock requests are:
-
-- `dashboard:<url_path>`, resource scope, exclusive, reason
-  `dashboard_target_mutation`;
-- `home_assistant:core`, resource scope, shared, reason
-  `home_assistant_availability_dependency`; and
-- `addon:<authoritative_ha_mcp_slug>`, provider scope, shared, reason
-  `upstream_provider_dependency` for an add-on-backed exact provider.
-
-The selected provider identity must supply the exact authoritative add-on slug;
-it is never inferred from an endpoint string. This shared add-on key conflicts
-with an exclusive restart of that exact add-on.
-
-The plan must bind:
-
-- exact selected compatibility entry, upstream version, and protocol;
-- exact canonical path and proven storage-mode identity;
-- current upstream `config_hash`;
-- current full Engineering configuration hash;
-- transformation model and canonical transformation hash;
-- exact computed resulting configuration hash under both hash models;
-- a bounded semantic diff containing paths and change kinds, not arbitrary
-  unbounded values;
-- risk/policy decision and required administrator approval bundle;
-- exact provider contract, argument hash, expected effects, and verification
-  contract;
-- prior-state retention/rollback capability; and
-- configured raw-config, resulting-config, diff, and evidence byte limits.
-
-The current verified `config_hash` is the stale-state authority. The full
-Engineering hash is retained separately as evidence and must not be substituted
-for the upstream value expected by the setter.
+Unknown releases, compatibility entries, protocols, tools, schemas,
+annotations, security metadata, output contracts, runtime contracts, or policy
+classifications fail closed. There is no fallback and no generic forwarding.
+The setter is not registered as a public or dynamically delegated tool.
 
 ## Transformation representation
 
-The frozen public planning representation is
-`f3-dashboard-json-pointer-patch-v1`:
+The target path must match `^[a-z0-9_-]{1,256}$` and must resolve to exactly
+one explicit inventory row with `mode == "storage"`. Title lookup, fuzzy
+matching, case normalization, internal dashboard IDs, YAML dashboards,
+implicit/unlisted defaults, absent targets, and ambiguous identities are
+rejected. A missing target is never treated as permission to create it.
 
-- a non-empty ordered list with at most 16 operations, matching the current
-  complete per-operation approval projection bound;
-- operation kinds are exactly `add`, `replace`, and `remove`;
-- each operation uses one canonical RFC 6901 JSON Pointer;
-- no wildcard, predicate, fuzzy selector, executable expression, `move`, or
-  `copy` is allowed;
-- `replace` and `remove` require exactly one existing path;
-- `add` requires an exact unambiguous parent and cannot silently overwrite;
-- the empty root pointer is prohibited for every operation;
-- array append `-` is excluded until separately reviewed;
-- recursive semantic leaf changes must also fit the complete 16-step approval
-  projection, so replacing or removing a broad parent subtree cannot bypass
-  reviewer visibility;
-- each operation is applied to a deep copy of the complete raw configuration;
-- the implementation proves that only declared paths changed; and
-- unknown custom-card, custom-component, and extension fields remain
-  structurally equal under canonical JSON except where an exact declared path
-  changes them.
+The patch representation is `f3-dashboard-json-pointer-patch-v1`:
 
-Transformation intent and the resulting full configuration are distinct
-hash-bound plan fields. The approver sees a bounded semantic diff and the exact
-result hash.
+- only canonical RFC 6901 pointers are accepted;
+- the empty root pointer, array append `-`, wildcard and predicate selectors,
+  executable expressions, `move`, and `copy` are prohibited;
+- `replace` and `remove` require an existing exact path;
+- `add` requires an existing unambiguous parent and cannot overwrite;
+- recursive semantic leaf changes must fit the 16-change approval projection;
+- the result is built from a deep copy of the complete raw configuration; and
+- undeclared structure, including custom-card fields, must remain equal.
 
-The F3-0 candidate dispatch realization was
-`ha-mcp-dashboard-generated-transform-v1`. Exact review superseded and rejected
-that candidate: generated `python_transform` still executes through a sandbox
-that is not a security boundary and does not close the non-atomic save race.
-Beta 17 retains deterministic local patch compilation only for planning; its
-output is not accepted setter input.
-
-Unrestricted full replacement is not part of the required F3 capability. It
-may be proposed later only as a distinct explicitly bounded operation model;
-it may never be inferred from the patch representation.
+The full input and result are private artifacts. Public approval review may
+show bounded, sanitized before/after previews for the declared changed paths so
+an administrator can make a meaningful decision. It never exposes the complete
+dashboard or compiled setter payload. Audit, health, and errors expose only
+bounded paths, change kinds, counts, hashes, typed categories, and reviewed
+provider identity.
 
 ## Exact provider evidence boundary
 
-The following allowlist records the rejected candidate surface that was
-reviewed. It is source evidence, not a reachable Beta 17 provider wrapper or
-dispatch contract.
-
-The candidate mutating provider tool was exact-release-admitted
-`ha_config_set_dashboard`. The proposed invocation would have contained only:
+The sole mutating invocation is exact `ha_config_set_dashboard` with:
 
 - exact `url_path`;
-- the exact current `config_hash`;
-- deterministic Engineering-generated transform input for the approved patch;
-- `return_screenshot=false`;
-- `MandatoryBPS=false` to suppress attached best-practice content without
-  weakening strict acknowledgment; and
-- the ephemeral `BestPracticeKey` only when exact upstream strict-BPS preflight
+- the locally compiled full `config`;
+- the immediately reread upstream `config_hash`;
+- `MandatoryBPS=false`;
+- `return_screenshot=false`; and
+- an ephemeral best-practices receipt only when the reviewed upstream contract
   requires it.
 
-The receipt key is a public rotating read receipt, not authorization. When
-strict BPS is effective, the only acquisition call is exact-release-admitted
-`ha_get_skill_guide` with fixed arguments
-`skill="home-assistant-best-practices"` and
-`file="references/dashboard-guide.md"`. F3-B bounds the response, extracts only
-the reviewed acknowledgment line/prefix, and rejects missing, duplicate,
-malformed, or unrelated content. The raw key is never plan authority, persisted,
-hashed into durable approval, logged, or exposed in health. Expiration before
-dispatch returns to exact non-mutating preflight; it never permits an argument
-retry after durable dispatch intent.
+The receipt is acquired only through fixed
+`ha_get_skill_guide(skill="home-assistant-best-practices",
+file="references/dashboard-guide.md")`. It is untrusted public read evidence,
+not authorization. It is never persisted, logged, audited, or returned.
 
-The provider call must omit and reject:
+Caller Python, generated Python, metadata fields, title, icon, sidebar/admin
+settings, `view_path`, screenshots, resources, unknown arguments, and repeated
+setter invocation are prohibited. Provider success is evidence only and never
+establishes verified success by itself.
 
-- `config` full replacement;
-- caller-provided `python_transform`;
-- `title`, `icon`, `require_admin`, and `show_in_sidebar`;
-- `view_path`; and
-- any screenshot/render request or unknown argument.
+## Non-atomic operator policy
 
-Before durable intent, F3 rereads inventory and exact raw configuration while
-holding `dashboard:<url_path>`, proves storage mode and exact target identity,
-and compares the current upstream hash with the approved hash. A missing target
-is a stale preflight rejection, never permission to create it.
+The upstream implementation reads and validates `config_hash`, then performs a
+separate save. Home Assistant does not provide an authoritative compare-and-save
+or a lock covering every dashboard writer. Engineering's exclusive
+`dashboard:<url_path>` lock coordinates Engineering operations only.
 
-The upstream hash check is not atomic with save. The dashboard lock coordinates
-Engineering operations but cannot exclude a concurrent external Home Assistant
-edit. Exact post-write readback can detect a conflicting final state, but it
-cannot detect an external edit overwritten between the upstream hash read and
-save when the final state equals the approved result. This is an unresolved
-lost-update race, not a condition readback solves.
+The operation is therefore explicitly `operator_accepted_non_atomic` and is
+permitted only under this operating condition:
 
-F3-B must stop before enabling dashboard writes unless exact-release evidence
-proves either an atomic compare-and-save contract or an exclusive mechanism
-covering all dashboard writers. A separate operator policy could explicitly
-accept the residual risk only by revising this acceptance contract; F3-0 does
-not grant that authority. The implementation suite must include a deterministic
-interleaving test that would expose the lost update. Any final mismatch remains
-verification mismatch/manual review and is never resolved by redispatch.
+> Do not edit the target dashboard in Home Assistant UI or through another
+> client while the approved Engineering task is executing.
 
-In the blocked proposal, “exactly one dispatch” meant exactly one mutating
-setter invocation. Inventory,
-strict-BPS receipt acquisition, stale preflight, and post-write reads are
-non-mutating observations and have their own bounded attempt accounting.
+The approver sees this condition and the residual lost-update risk. Exact
+readback detects a conflicting final state but cannot detect an external edit
+that was overwritten inside the read/save window when the final state happens
+to equal the approved result. The server must never claim atomicity.
 
-## Lock, dispatch, and recovery
+## F3 authority and locking
 
-- The dashboard resource lock is exclusive and task-bound.
-- Two updates to the same canonical path conflict.
-- Different dashboard paths may execute concurrently when no broader outage
-  lock conflicts.
-- Durable dispatch intent is persisted before invoking the setter.
-- Failure to persist intent prevents invocation.
-- After intent, timeout, lost response, process loss, or provider loss means
-  possible dispatch and observation only.
-- Recovery reacquires the dashboard and provider dependency locks, rereads the
-  exact target, and never calls the setter again.
-- One exact post-write reread must prove the full resulting configuration and
-  both new hashes; a bounded recovery policy may repeat readback, not dispatch.
-- No live plan, approval challenge, provider mutation, or physical action is
-  allowed during planning.
+Persisted plan, approval, task, and F3 records remain authorization authority.
+The immutable private dashboard artifact is hash-bound to the plan and is
+revalidated before use. Missing, malformed, substituted, or tampered artifacts
+fail closed before dispatch.
 
-## Verification
+The operation requests:
 
-Verification succeeds only when:
+- exclusive `dashboard:<url_path>` resource lock;
+- shared `home_assistant:core` availability lock; and
+- shared lock for the exact authoritative `ha-mcp` add-on identity.
 
-- the inventory still contains exactly one storage-mode target at the canonical
-  path;
-- exact readback is complete and within the reviewed bound;
-- the full readback equals the hash-bound computed result;
-- every declared patch effect occurred;
-- no undeclared path changed;
-- unknown custom fields were preserved; and
-- the new upstream and Engineering hashes are captured durably.
+Preflight while holding those locks repeats the exact inventory/configuration
+read, compatibility-entry and provider checks, storage identity proof, and both
+upstream and Engineering hash comparisons. Stale state prevents durable intent
+and produces zero setter calls.
 
-A provider success response alone is insufficient. A lost response with exact
-matching readback can become `succeeded_verified`. Conflicting or ambiguous
-readback becomes `verification_mismatch` or `manual_review_required`, with no
-redispatch.
+Durable dispatch intent is written before the setter call. Once intent exists,
+timeout, transport loss, invalid provider response, or process loss is treated
+as possibly dispatched. The setter is never retried. Recovery reacquires the
+locks and performs readback only.
 
-As source-derived evidence, generated-transform success includes
-`success=true`, `action="python_transform"`, the exact `url_path`,
-`write_committed=true`, `post_write_verified`, and an optional new
-`config_hash`; post-save reread failure produces a warning and no authoritative
-new hash. The upstream response also echoes `python_expression`. Engineering
-must never persist, audit, or expose that expression or raw warning values; it
-retains only bounded reviewed fields and hashes. Hash-required/conflict,
-strict-BPS acknowledgment, transform validation, and save rejection are typed
-provider failures. Timeout, transport loss, or invalid response after durable
-intent is dispatch-indeterminate and readback-only.
+## Verification and outcomes
 
-## Rollback decision
+Verified success requires an exact complete reread proving:
 
-The required F3 dashboard update initially declares rollback unavailable. This
-is deliberate: the current public read limit and upstream auto-backup do not
-establish a safe persisted prior-config bound.
+- the same single storage-mode target;
+- full configuration equality with the approved compiled result;
+- the expected upstream and Engineering hashes;
+- every declared patch effect; and
+- no undeclared change.
 
-A later single-dashboard rollback capability may be added only when all of the
-following are reviewed together:
+A lost provider response followed by matching readback may become
+`succeeded_verified`. A stale preflight is `failed_pre_dispatch` with no write.
+An upstream failure after intent, incomplete readback, or a mismatching result
+is reported as failed-post-dispatch or manual-review-required according to the
+existing F3 state machine. None of those outcomes permits redispatch.
 
-- the exact prior raw configuration is retained within an evidence-backed
-  durable-storage byte limit and separately hash-bound;
-- the applied-result hash is known;
-- separate rollback authorization is required;
-- rollback preflight proves current state still equals that applied result;
-- the same dashboard lock and one-dispatch rule apply; and
-- exact reread verifies the prior configuration.
+Rollback is unavailable. The upstream best-effort backup is not governed
+rollback authority. Recovery is exact readback and classification only.
 
-The upstream best-effort automatic backup is supplemental evidence, not the
-governed rollback authority. Cross-dashboard compensation remains F4.
+## Audit and observability
 
-## Risk review
+Audit and telemetry distinguish dashboard preread, best-practices read, setter
+dispatch, and verification. Bounded records may include the operation, target
+hash, compatibility entry, upstream identity/version, provider, dispatch
+count/status, result category, verification status, and fallback count.
 
-Dashboard writes are persistent administrative configuration changes. Merely
-displaying a lock, alarm, garage door, cover, or other high-risk entity is not
-physical actuation.
-
-The retained F3-B foundation adds a bounded risk-review stage that detects
-explicit action/service definitions capable of direct high-risk or destructive
-effects. It must retain
-the policy distinction between display and action. It may not interpret card
-text as instructions or broadly prohibit all custom content without evidence.
-
-Open risk decisions for F3-B are:
-
-- exact built-in action-card and service-action taxonomy;
-- treatment of conditional/nested action surfaces;
-- whether opaque custom-card action schemas require elevated manual review or
-  rejection; and
-- the bounded evidence shown for a flagged action without exposing the full
-  dashboard.
-
-These decisions require policy review before implementation. F3-0 does not
-change policy or approval authority.
-
-## Error and observability contract
-
-Pre-dispatch categories distinguish invalid patch, unsupported response model,
-non-storage target, stale hash, lock conflict, provider unavailable, and strict
-BPS preflight failure. Post-dispatch outcomes distinguish indeterminate
-dispatch, incomplete readback, verification mismatch, and manual review.
-
-Bounded health and audit evidence may include model IDs, exact canonical target
-hash, selected release, lock state, read/verification attempt counts, config
-size, diff counts, mismatch paths, dispatch count, and fallback count. It must
-not expose raw configuration, card contents, unrelated dashboards, receipt
-keys, provider exception strings, tokens, or credentials.
+They must not contain raw configurations, changed values, best-practices keys,
+unrestricted provider payloads or exception strings, tokens, or credentials.
+Fallback must remain `none` and direct Home Assistant mutation is prohibited.
 
 ## Explicit exclusions
 
-F3 does not expose:
+This contract does not authorize:
 
 - dashboard creation or deletion;
-- dashboard resource creation, update, or removal;
-- preference writes;
-- metadata or sidebar updates;
+- resource creation, update, or deletion;
+- dashboard registry metadata, title, icon, sidebar, or admin-setting writes;
 - screenshots or rendering;
-- arbitrary Python or caller executable transforms;
-- arbitrary service calls or physical actuation;
-- direct Home Assistant or other fallback;
+- YAML-mode dashboards;
+- arbitrary full-replacement proposals;
+- Python or any caller-supplied executable transform;
+- service calls, physical actions, reloads, or restarts;
 - cross-dashboard transactions; or
-- interpretation of dashboard content as instructions.
+- rollback.
 
-Creating a new dashboard is an optional future extension, not part of F3
-completion.
+Each is a separate product and security decision.
 
-## Unresolved implementation gates
+## Acceptance invariants
 
-F3-B provides measured planning-artifact bounds and closes the action-card risk
-taxonomy without enabling execution. Strict-BPS receipt handling and any setter
-compiler are no longer Beta 17 requirements because no setter realization is
-accepted. The non-atomic lost-update race remains the controlling blocker.
-Failure to prove a future authoritative atomicity/exclusion mechanism does not
-authorize full replacement, generated or caller Python, an Engineering-only
-lock claim, or an undocumented residual risk.
+Acceptance must prove the positive path and the safety boundary:
+
+- exact 8.1.1 admission, one setter call, exact reread, and verified result;
+- stale hash, missing target, YAML target, schema drift, contract drift,
+  unreviewed release, invalid patch, and artifact tamper all fail closed;
+- no setter dispatch occurs before durable intent;
+- no setter redispatch occurs after any possibly-dispatched outcome;
+- restart/recovery uses readback only;
+- the setter and guide are absent from normal dynamic delegation;
+- existing dashboard reads and admitted delegated reads remain unchanged; and
+- stable v1, provider routing, zero fallback, approval authority, and unrelated
+  F3 semantics remain unchanged.
+
+## Historical decision record
+
+Beta 17's deferral remains the accurate record of why this operation was not
+previously executable. The 2026-08-08 decision changes only the conclusion that
+atomic external-writer exclusion is mandatory: for this bounded home-scale
+operation, Josh accepts the documented residual risk and operator condition.

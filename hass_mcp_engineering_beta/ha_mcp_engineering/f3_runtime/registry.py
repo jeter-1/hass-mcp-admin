@@ -58,6 +58,12 @@ OPERATIONAL_REGISTRATIONS = (
     ("restart_home_assistant_core", "restart_home_assistant", "home_assistant"),
 )
 
+DASHBOARD_REGISTRATION = (
+    "update_existing_dashboard",
+    "update_dashboard",
+    "dashboard",
+)
+
 
 class AdapterRegistryError(RuntimeError):
     pass
@@ -72,7 +78,13 @@ class ClosedAdapterRegistry:
         self.validate()
 
     @classmethod
-    def build(cls, *, configuration_adapters: dict[str, Any], operational_adapter: Any):
+    def build(
+        cls,
+        *,
+        configuration_adapters: dict[str, Any],
+        operational_adapter: Any,
+        dashboard_adapter: Any,
+    ):
         entries = [
             AdapterRegistration(
                 capability_id=capability,
@@ -122,11 +134,40 @@ class ClosedAdapterRegistry:
         adapters = dict(configuration_adapters)
         for capability, _operation, _target in OPERATIONAL_REGISTRATIONS:
             adapters[capability] = operational_adapter
+        capability, operation, target = DASHBOARD_REGISTRATION
+        entries.append(
+            AdapterRegistration(
+                capability_id=capability,
+                adapter_id="dashboard_update",
+                operation_family="dashboard_update",
+                plan_operation=operation,
+                target_type=target,
+                action="update",
+                provider_model="ha-mcp-dashboard-full-result-update-v1",
+                resource_lock_model="f3-dashboard-lock-set-v1",
+                provider_dependency_lock_model=(
+                    "authoritative_ha_mcp_addon_shared_dependency"
+                ),
+                provider_admission_model="exact_reviewed_release_registry",
+                verification_model="f3-dashboard-exact-reread-v1",
+                recovery_model="exact_dashboard_readback_only",
+                rollback_declaration="unavailable",
+                runtime_route="apply_change_plan",
+                historical_compatibility="new_plan_required",
+                required_releases=("8.1.1",),
+            )
+        )
+        adapters[capability] = dashboard_adapter
         return cls(entries, adapters)
 
     def validate(self) -> None:
         expected = {
-            item[0] for item in (*CONFIGURATION_REGISTRATIONS, *OPERATIONAL_REGISTRATIONS)
+            item[0]
+            for item in (
+                *CONFIGURATION_REGISTRATIONS,
+                *OPERATIONAL_REGISTRATIONS,
+                DASHBOARD_REGISTRATION,
+            )
         }
         identities = [item.capability_id for item in self._entries]
         if len(identities) != len(set(identities)) or set(identities) != expected:
@@ -137,7 +178,8 @@ class ClosedAdapterRegistry:
             if entry.contract_model != F3_ADAPTER_CONTRACT_MODEL:
                 raise AdapterRegistryError("F3 adapter model is unsupported")
             if (
-                entry.required_releases != ("7.14.2", "8.0.0")
+                entry.required_releases
+                not in {("7.14.2", "8.0.0"), ("8.1.1",)}
                 or entry.required_protocol != "2025-03-26"
                 or entry.runtime_route != "apply_change_plan"
                 or entry.provider_admission_model
@@ -147,6 +189,7 @@ class ClosedAdapterRegistry:
                 or entry.target_type not in {
                     "automation", "script", "input_boolean", "input_number",
                     "backup", "reload_domain", "addon", "home_assistant",
+                    "dashboard",
                 }
             ):
                 raise AdapterRegistryError("F3 route admission binding is invalid")
@@ -155,7 +198,8 @@ class ClosedAdapterRegistry:
             supported = tuple(getattr(capabilities, "supported_operations", ()))
             expected_operation = (
                 entry.plan_operation
-                if entry.operation_family == "operational_administration"
+                if entry.operation_family
+                in {"operational_administration", "dashboard_update"}
                 else entry.capability_id
             )
             if (
@@ -165,8 +209,6 @@ class ClosedAdapterRegistry:
                 or getattr(capabilities, "adapter_id", None) != entry.adapter_id
             ):
                 raise AdapterRegistryError("F3 adapter capability binding is invalid")
-        if any("dashboard" in identity for identity in identities):
-            raise AdapterRegistryError("dashboard execution is excluded")
 
     def adapter(self, capability_id: str) -> Any:
         try:
@@ -202,6 +244,9 @@ class ClosedAdapterRegistry:
                     projection, sort_keys=True, separators=(",", ":")
                 ).encode("utf-8")
             ).hexdigest(),
-            "dashboard_capability_count": 0,
+            "dashboard_capability_count": sum(
+                entry.operation_family == "dashboard_update"
+                for entry in self._entries
+            ),
             "fallback_count": 0,
         }

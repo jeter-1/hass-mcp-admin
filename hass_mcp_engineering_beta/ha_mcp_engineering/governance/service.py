@@ -31,6 +31,10 @@ from ..request_context import (
     current_request_id,
 )
 from ..sanitization import sanitize_untrusted_data
+from ..f3_dashboard.artifact_store import DashboardArtifactStore
+from ..f3_dashboard.errors import DashboardFoundationError
+from ..f3_dashboard.planning import create_dashboard_update_plan as build_dashboard_update
+from ..f3_dashboard.serialization import public_proposal_projection
 from .models import (
     ApprovalActionKind,
     ApprovalActionRecord,
@@ -382,6 +386,8 @@ class ChangeGovernanceService:
         operational_gateway: BackupAdministrationGateway | Any | None = None,
         lifecycle_gateway: OperationalLifecycleGateway | Any | None = None,
         task_repository: ExecutionTaskRepository | None = None,
+        dashboard_gateway: Any | None = None,
+        provider_identity_reader: Callable[[], Awaitable[dict[str, str]]] | None = None,
     ):
         self.repository = repository
         self.gateway = gateway
@@ -390,6 +396,12 @@ class ChangeGovernanceService:
         self.sensitive_values = tuple(value for value in sensitive_values if value)
         self.operational_gateway = operational_gateway
         self.lifecycle_gateway = lifecycle_gateway
+        self.dashboard_gateway = dashboard_gateway
+        self.provider_identity_reader = provider_identity_reader
+        self.dashboard_artifacts = DashboardArtifactStore(
+            repository.root / "dashboard_artifacts",
+            retention_days=repository.retention_days,
+        )
         self.task_repository = task_repository or ExecutionTaskRepository(
             repository.root,
             retention_days=repository.retention_days,
@@ -3296,6 +3308,245 @@ class ChangeGovernanceService:
             )
         return self._public(plan)
 
+    async def create_dashboard_update_plan(
+        self,
+        *,
+        title: str,
+        description: str,
+        url_path: str,
+        patch_operations: list[dict[str, Any]],
+        expiration_minutes: int = 120,
+    ) -> dict[str, Any]:
+        """Create one externally approved update for an existing dashboard."""
+
+        if (
+            self.dashboard_gateway is None
+            or self.dashboard_artifacts is None
+            or self.provider_identity_reader is None
+        ):
+            raise GovernanceError(
+                ErrorCode.UPSTREAM_DASHBOARD_NOT_CONFIGURED
+            )
+        try:
+            provider_identity = await self.provider_identity_reader()
+            provider_slug = provider_identity.get("slug")
+            if not isinstance(provider_slug, str) or not provider_slug:
+                raise ValueError("provider identity unavailable")
+            proposal = await build_dashboard_update(
+                reader=self.dashboard_gateway,
+                url_path=url_path,
+                operations=patch_operations,
+                title=title,
+                description=description,
+                expiration_minutes=expiration_minutes,
+                requested_by=current_caller_id(),
+                authoritative_provider_slug=provider_slug,
+                now=self.now(),
+                plan_id=self._new_id(),
+            )
+        except DashboardFoundationError as exc:
+            raise GovernanceError(
+                ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                details={"reason": exc.code},
+            ) from None
+        except GovernanceError:
+            raise
+        except Exception as exc:
+            raise GovernanceError(
+                ErrorCode.OPERATIONAL_PROVIDER_UNAVAILABLE,
+                details={"reason": "dashboard_provider_identity_unavailable"},
+            ) from exc
+
+        if persistence_safety_errors(
+            proposal.raw_evidence.configuration, self.sensitive_values
+        ) or persistence_safety_errors(
+            proposal.compilation.resulting_configuration,
+            self.sensitive_values,
+        ):
+            raise GovernanceError(
+                ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                details={"reason": "dashboard_contains_prohibited_sensitive_data"},
+            )
+        public_projection = public_proposal_projection(proposal)
+        sanitation = sanitize_untrusted_data(
+            public_projection,
+            known_secrets=self.sensitive_values,
+            max_string=512,
+        )
+        if sanitation.failed_closed:
+            raise GovernanceError(
+                ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                details={"reason": "dashboard_review_projection_unsafe"},
+            )
+        public_projection = sanitation.value
+        if not isinstance(public_projection, dict):
+            raise GovernanceError(ErrorCode.INTERNAL_INVARIANT_VIOLATION)
+        try:
+            artifact = self.dashboard_artifacts.create(proposal)
+        except DashboardFoundationError:
+            raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR) from None
+
+        elevated = proposal.risk.manual_review_required or (
+            proposal.risk.disposition.value != "standard_review"
+        )
+        risk = ChangeRiskAssessment(
+            level=RiskLevel.HIGH if elevated else RiskLevel.MEDIUM,
+            reasons=[
+                "Dashboard configuration is a persistent administrative write.",
+                "Home Assistant dashboard save is not compare-and-save atomic.",
+                *(
+                    ["Dashboard action changes require elevated review."]
+                    if elevated
+                    else []
+                ),
+            ],
+            apply_allowed=True,
+            evidence=[
+                {
+                    "field": "operation",
+                    "trigger": "governed_existing_dashboard_update",
+                },
+                {
+                    "field": "concurrency",
+                    "trigger": "operator_accepted_non_atomic_dashboard_save",
+                },
+            ],
+            warnings=[
+                "Do not edit this dashboard in Home Assistant while the approved update is executing.",
+                "A concurrent external edit in the provider read/save gap can be overwritten without detection.",
+                "Automatic rollback is unavailable; recovery is readback-only.",
+            ],
+        )
+        baseline = {
+            "artifact_schema": artifact.schema,
+            "artifact_payload_sha256": artifact.payload_sha256,
+            "proposal_sha256": proposal.proposal_sha256,
+            "current_upstream_config_hash": (
+                proposal.raw_evidence.upstream_config_hash
+            ),
+            "current_engineering_sha256": (
+                proposal.raw_evidence.engineering_config_sha256
+            ),
+            "resulting_upstream_config_hash": (
+                proposal.compilation.resulting_upstream_config_hash
+            ),
+            "resulting_engineering_sha256": (
+                proposal.compilation.resulting_sha256
+            ),
+            "canonical_patch_sha256": (
+                proposal.compilation.canonical_patch_sha256
+            ),
+            "semantic_diff_sha256": (
+                proposal.semantic_diff.semantic_diff_sha256
+            ),
+            "compatibility_entry": (
+                proposal.raw_evidence.compatibility_entry
+            ),
+            "upstream_version": proposal.raw_evidence.upstream_version,
+            "protocol_version": proposal.raw_evidence.protocol_version,
+            "storage_mode_confirmed": True,
+            "non_atomic": True,
+            "operator_policy": "bounded_dashboard_update_non_atomic_v1",
+        }
+        operational = OperationalPlanDetails(
+            schema_version=1,
+            family="dashboard_update",
+            operation=ChangeOperation.UPDATE_DASHBOARD.value,
+            requested_name=url_path,
+            provider="upstream_dashboard",
+            provider_capability_evidence={
+                "tool": "ha_config_set_dashboard",
+                "compatibility_entry": proposal.provider_admission.compatibility_entry,
+                "provider_contract_hash": proposal.provider_admission.provider_contract_hash,
+                "classification": "persistent_write",
+                "argument_model": "exact_full_result_with_config_hash_v1",
+                "fallback": "none",
+            },
+            expected_effects=[
+                "Update exactly one existing storage-mode dashboard.",
+                "Apply only the approved bounded JSON Pointer patch result.",
+                "Preserve every undeclared dashboard field.",
+            ],
+            preconditions=[
+                "The target remains one exact storage-mode dashboard.",
+                "The complete preread hashes still match while the dashboard lock is held.",
+                "The exact reviewed upstream release and complete catalog remain admitted.",
+                "The external administrator approval remains bound to this plan hash.",
+            ],
+            verification_contract={
+                "model": "f3-dashboard-exact-reread-v1",
+                "exact_full_configuration_match": True,
+                "declared_patch_effects_required": True,
+                "undeclared_fields_preserved": True,
+                "no_blind_redispatch": True,
+                "non_atomic": True,
+            },
+            baseline=baseline,
+            dispatch={
+                "attempt_count": 0,
+                "dispatched": False,
+                "request_id": None,
+                "attempted_at": None,
+            },
+            verification=RecoveryVerification(),
+            limitations=list(risk.warnings),
+            rollback_available=False,
+        )
+        plan = ChangePlan(
+            plan_id=proposal.plan_id,
+            plan_version=1,
+            created_at=proposal.created_at,
+            updated_at=proposal.created_at,
+            expires_at=proposal.expires_at,
+            status=PlanStatus.AWAITING_APPROVAL,
+            title=proposal.title,
+            description=proposal.description,
+            requested_by=current_caller_id(),
+            target=ChangeTarget("dashboard", url_path),
+            operation=ChangeOperation.UPDATE_DASHBOARD,
+            proposed_config={"dashboard_update": public_projection},
+            current_config=None,
+            normalized_proposed_config={
+                "proposal_sha256": proposal.proposal_sha256,
+                "resulting_sha256": proposal.compilation.resulting_sha256,
+            },
+            normalized_current_config=None,
+            current_state_fingerprint=(
+                proposal.raw_evidence.engineering_config_sha256
+            ),
+            proposed_config_hash=proposal.compilation.resulting_sha256,
+            risk=risk,
+            normalization_version=1,
+            warnings=list(risk.warnings),
+            validation_results={
+                "valid": True,
+                "planning_write_performed": False,
+                "storage_mode_confirmed": True,
+                "exact_provider_contract_admitted": True,
+                "operator_non_atomic_policy_accepted": True,
+            },
+            dry_run_results={
+                "provider_dispatch_occurred": False,
+                "patch_operation_count": len(proposal.compilation.operations),
+                "semantic_leaf_change_count": (
+                    proposal.compilation.semantic_leaf_change_count
+                ),
+                "semantic_diff": public_projection.get("semantic_diff"),
+                "non_atomic": True,
+            },
+            rollback=ChangeRollback(available=False, status="unavailable"),
+            caller_context={},
+            contract_version=OPERATIONAL_PLAN_CONTRACT_VERSION,
+            plan_family="dashboard_update",
+            operational=operational,
+            execution_outcome="not_applied",
+        )
+        plan.policy_decision = evaluate_change_policy(plan)
+        self._bind_new_plan_policy(plan)
+        self._record(plan, "dashboard_update_plan_created", "success")
+        self._supersede_prior(plan)
+        return self._public(plan)
+
     async def create_configuration_plan(
         self,
         *,
@@ -4404,6 +4655,24 @@ class ChangeGovernanceService:
                 "rollback_available": False,
                 "provider_arguments": (
                     {
+                        "url_path": plan.target_id,
+                        "approved_result_sha256": (
+                            operational.baseline.get(
+                                "resulting_engineering_sha256"
+                            )
+                        ),
+                        "current_config_hash": (
+                            operational.baseline.get(
+                                "current_upstream_config_hash"
+                            )
+                        ),
+                        "return_screenshot": False,
+                        "non_atomic": True,
+                    }
+                    if plan.operation
+                    == ChangeOperation.UPDATE_DASHBOARD
+                    else
+                    {
                         "scope": "snapshot",
                         "action": "create",
                         "name": operational.requested_name,
@@ -4423,6 +4692,11 @@ class ChangeGovernanceService:
                     else {"confirm": True}
                 ),
             }
+            if plan.operation is ChangeOperation.UPDATE_DASHBOARD:
+                proposal = plan.proposed_config.get("dashboard_update")
+                summary["dashboard_review"] = (
+                    proposal if isinstance(proposal, dict) else {}
+                )
         elif plan.contract_version == CONFIGURATION_PLAN_CONTRACT_VERSION:
             operation_summaries = []
             for operation in sorted(
@@ -9466,6 +9740,65 @@ class ChangeGovernanceService:
     def _require_current_normalization(self, plan: ChangePlan) -> None:
         if plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION:
             operational = plan.operational
+            if plan.operation is ChangeOperation.UPDATE_DASHBOARD:
+                evidence = (
+                    operational.provider_capability_evidence
+                    if operational is not None
+                    and isinstance(
+                        operational.provider_capability_evidence, dict
+                    )
+                    else {}
+                )
+                baseline = (
+                    operational.baseline
+                    if operational is not None
+                    and isinstance(operational.baseline, dict)
+                    else {}
+                )
+                invalid_dashboard = any(
+                    (
+                        operational is None,
+                        getattr(operational, "schema_version", None) != 1,
+                        getattr(operational, "family", None)
+                        != "dashboard_update",
+                        plan.plan_family != "dashboard_update",
+                        getattr(operational, "operation", None)
+                        != ChangeOperation.UPDATE_DASHBOARD.value,
+                        plan.target_type != "dashboard",
+                        getattr(operational, "requested_name", None)
+                        != plan.target_id,
+                        getattr(operational, "provider", None)
+                        != "upstream_dashboard",
+                        evidence.get("tool")
+                        != "ha_config_set_dashboard",
+                        evidence.get("classification")
+                        != "persistent_write",
+                        evidence.get("argument_model")
+                        != "exact_full_result_with_config_hash_v1",
+                        evidence.get("fallback") != "none",
+                        baseline.get("operator_policy")
+                        != "bounded_dashboard_update_non_atomic_v1",
+                        baseline.get("non_atomic") is not True,
+                        baseline.get("storage_mode_confirmed") is not True,
+                        baseline.get("current_engineering_sha256")
+                        != plan.current_state_fingerprint,
+                        baseline.get("resulting_engineering_sha256")
+                        != plan.proposed_config_hash,
+                        getattr(operational, "rollback_available", None)
+                        is not False,
+                        plan.rollback.available,
+                    )
+                )
+                if invalid_dashboard:
+                    raise GovernanceError(
+                        ErrorCode.APPROVAL_HASH_MISMATCH,
+                        details={
+                            "resource_id": plan.plan_id,
+                            "reason": "dashboard_plan_contract_mismatch",
+                        },
+                    )
+                self._require_v2_persisted_plan_safe(plan)
+                return
             constraints = (
                 operational.provider_capability_evidence.get(
                     "argument_constraints"

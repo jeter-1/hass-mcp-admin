@@ -53,7 +53,12 @@ class F3AdapterIsolationTests(unittest.TestCase):
         for path in sorted(RUNTIME.rglob("*.py")):
             if any(
                 RUNTIME / package in path.parents
-                for package in ("f3", "f3_configuration", "f3_runtime")
+                for package in (
+                    "f3",
+                    "f3_configuration",
+                    "f3_dashboard",
+                    "f3_runtime",
+                )
             ):
                 continue
             tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -72,11 +77,11 @@ class F3AdapterIsolationTests(unittest.TestCase):
                     )
                 )
 
-    def test_source_tool_and_schema_contract_is_unchanged(self):
+    def test_source_tool_and_schema_contract_has_only_approved_dashboard_additions(self):
         local_tools = registered_tools(get_registered_server())
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(local_tools) - len(CAPABILITIES), 24)
-        self.assertEqual(len(local_tools), 49)
+        self.assertEqual(len(local_tools) - len(CAPABILITIES), 25)
+        self.assertEqual(len(local_tools), 50)
         self.assertEqual(len(PLANNED_CAPABILITIES), 0)
         self.assertEqual(TASK_SCHEMA_VERSION, 1)
         self.assertEqual(
@@ -85,6 +90,7 @@ class F3AdapterIsolationTests(unittest.TestCase):
                 "create_automation",
                 "update_automation",
                 "configuration_plan",
+                "update_dashboard",
                 "create_full_backup",
                 "controlled_reload",
                 "restart_addon",
@@ -119,7 +125,7 @@ class F3AdapterIsolationTests(unittest.TestCase):
         self.assertEqual(
             seven.policy.classification_counts["automatic_read"], 26
         )
-        self.assertEqual(49 + 26, 75)
+        self.assertEqual(50 + 26, 76)
         self.assertEqual(len(eight.tool_contracts), 78)
         self.assertEqual(
             eight.policy.classification_counts["automatic_read"], 24
@@ -133,7 +139,7 @@ class F3AdapterIsolationTests(unittest.TestCase):
             if item.classification == "held_for_canary"
         }
         self.assertEqual(held, {"ha_search", "ha_get_operation_status"})
-        self.assertEqual(49 + 24, 73)
+        self.assertEqual(50 + 24, 74)
 
 
 if __name__ == "__main__":

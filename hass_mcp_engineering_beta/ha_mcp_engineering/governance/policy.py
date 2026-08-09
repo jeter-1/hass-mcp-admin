@@ -219,6 +219,25 @@ def _single_plan_policy(
                 ("home_assistant_restart_elevated_policy",),
             ),
         )
+    if plan.operation == ChangeOperation.UPDATE_DASHBOARD:
+        elevated = plan.risk.level is RiskLevel.HIGH
+        return (
+            OperationPolicyClassification(
+                (
+                    ApprovalPolicyClass.ELEVATED_ADMIN
+                    if elevated
+                    else ApprovalPolicyClass.STANDARD_ADMIN
+                ),
+                RiskDelta.HIGH if elevated else RiskDelta.MODERATE,
+                PhysicalConsequence.NONE,
+                (
+                    "dashboard_action_change_elevated_policy"
+                    if elevated
+                    else "dashboard_update_standard_policy",
+                    "operator_accepted_non_atomic_dashboard_save",
+                ),
+            ),
+        )
     if plan.operation == ChangeOperation.CONFIGURATION_PLAN:
         if not plan.operations:
             return (

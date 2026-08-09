@@ -10,21 +10,21 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 sys.path.insert(0, str(Path(__file__).parent))
 
-from f3_dashboard.constants import (  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.constants import (  # noqa: E402
     MAX_INDIVIDUAL_VALUE_BYTES,
     MAX_PATCH_OPERATIONS,
     MAX_POINTER_DEPTH,
 )
-from f3_dashboard.errors import PatchCompilationError, PatchValidationError  # noqa: E402
-from f3_dashboard.json_codec import (  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.errors import PatchCompilationError, PatchValidationError  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.json_codec import (  # noqa: E402
     canonical_json_bytes,
     engineering_sha256,
     strict_json_equal,
 )
-from f3_dashboard.patch import (  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.patch import (  # noqa: E402
     compile_dashboard_patch,
     parse_pointer,
     semantic_leaf_difference,

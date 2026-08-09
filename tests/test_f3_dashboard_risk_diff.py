@@ -10,13 +10,13 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 sys.path.insert(0, str(Path(__file__).parent))
 
-from f3_dashboard.models import RiskCategory, RiskDisposition  # noqa: E402
-from f3_dashboard.patch import compile_dashboard_patch  # noqa: E402
-from f3_dashboard.risk import analyze_dashboard_risk  # noqa: E402
-from f3_dashboard.semantic_diff import build_semantic_diff  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.models import RiskCategory, RiskDisposition  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.patch import compile_dashboard_patch  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.risk import analyze_dashboard_risk  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.semantic_diff import build_semantic_diff  # noqa: E402
 from f3_dashboard_support import load_dashboard  # noqa: E402
 
 

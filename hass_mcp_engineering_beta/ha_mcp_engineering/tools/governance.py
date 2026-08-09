@@ -29,6 +29,24 @@ ConfigurationOperations = Annotated[
 ]
 
 
+class DashboardPatchOperation(TypedDict):
+    """One bounded declarative dashboard JSON Pointer change."""
+
+    __pydantic_config__ = ConfigDict(extra="forbid")
+
+    operation_id: Annotated[
+        str, Field(pattern=r"^[a-z][a-z0-9_-]{0,63}$")
+    ]
+    operation: Literal["add", "replace", "remove"]
+    path: Annotated[str, Field(min_length=1, max_length=1024)]
+    value: NotRequired[Any]
+
+
+DashboardPatchOperations = Annotated[
+    list[DashboardPatchOperation], Field(min_length=1, max_length=16)
+]
+
+
 async def create_backup_plan(
     backup_name: Annotated[str, Field(max_length=96)] = "",
     expiration_minutes: Annotated[int, Field(ge=5, le=1440)] = 120,
@@ -203,6 +221,42 @@ async def create_configuration_plan(
     )
 
 
+async def create_dashboard_update_plan(
+    title: Annotated[str, Field(min_length=1, max_length=160)],
+    description: Annotated[str, Field(max_length=2000)],
+    url_path: Annotated[
+        str, Field(pattern=r"^[a-z0-9_-]{1,256}$")
+    ],
+    patch_operations: DashboardPatchOperations,
+    expiration_minutes: Annotated[int, Field(ge=5, le=1440)] = 120,
+) -> str:
+    """Propose one bounded update to an existing storage-mode dashboard.
+
+    Planning performs exact readback and creates no Home Assistant write. The
+    proposal requires external administrator approval and later application.
+    Dashboard save is explicitly non-atomic with external UI editors; do not
+    edit the target dashboard while an approved update is executing.
+    """
+
+    return await run_structured(
+        "create_dashboard_update_plan",
+        "Created a governed dashboard update proposal without dispatching it.",
+        lambda: GOVERNANCE.require().create_dashboard_update_plan(
+            title=title,
+            description=description,
+            url_path=url_path,
+            patch_operations=patch_operations,
+            expiration_minutes=expiration_minutes,
+        ),
+        metadata={
+            "resource_type": "dashboard",
+            "resource_id": url_path,
+            "operation": "update_dashboard",
+        },
+        response_limit=SETTINGS.response_size_limit,
+    )
+
+
 async def get_change_plan(plan_id: str) -> str:
     """Return one persisted change plan, including review diff and lifecycle state."""
     return await run_structured(
@@ -353,6 +407,7 @@ GOVERNANCE_TOOLS = (
     create_home_assistant_restart_plan,
     create_change_plan,
     create_configuration_plan,
+    create_dashboard_update_plan,
     get_change_plan,
     list_change_plans,
     get_execution_task,

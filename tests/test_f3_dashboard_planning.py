@@ -12,19 +12,19 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 sys.path.insert(0, str(Path(__file__).parent))
 
-from f3_dashboard.artifact_store import DashboardArtifactStore  # noqa: E402
-from f3_dashboard.errors import PlanningError, RawEvidenceError  # noqa: E402
-from f3_dashboard.models import AtomicityStatus  # noqa: E402
-from f3_dashboard.observability import DashboardWriteObservability  # noqa: E402
-from f3_dashboard.planning import (  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.artifact_store import DashboardArtifactStore  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.errors import PlanningError, RawEvidenceError  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.models import AtomicityStatus  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.observability import DashboardWriteObservability  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.planning import (  # noqa: E402
     create_dashboard_update_plan,
     create_dashboard_update_plan_projection,
 )
-from f3_dashboard.provider import EXACT_CONTRACTS  # noqa: E402
-from f3_dashboard.raw_evidence import build_raw_dashboard_evidence  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.provider import EXACT_CONTRACTS  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.raw_evidence import build_raw_dashboard_evidence  # noqa: E402
 from f3_dashboard_support import FakeExactReader, load_dashboard, make_preread, make_proposal  # noqa: E402
 
 
@@ -107,9 +107,12 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
         proposal, reader = await make_proposal()
         self.assertEqual(reader.preread_count, 1)
         self.assertEqual(reader.mutation_count, 0)
-        self.assertFalse(proposal.executable)
-        self.assertFalse(proposal.provider_projection.executable)
-        self.assertEqual(proposal.atomicity.status, AtomicityStatus.BLOCKED)
+        self.assertTrue(proposal.executable)
+        self.assertTrue(proposal.provider_projection.executable)
+        self.assertEqual(
+            proposal.atomicity.status,
+            AtomicityStatus.OPERATOR_ACCEPTED_NON_ATOMIC,
+        )
         self.assertEqual(proposal.required_approval, "external_administrator")
         self.assertFalse(proposal.rollback_available)
         self.assertEqual(
@@ -144,7 +147,7 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
             description="No raw data.",
             expiration_minutes=30,
             requested_by="test.operator",
-            provider_evidence=EXACT_CONTRACTS["8.0.0"],
+            provider_evidence=EXACT_CONTRACTS["8.1.1"],
             authoritative_provider_slug="hass-mcp-engineering",
             now=datetime(2026, 8, 4, 12, 5, tzinfo=timezone.utc),
             plan_id="plan000000000002",
@@ -209,7 +212,7 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
                     description="Synthetic",
                     expiration_minutes=30,
                     requested_by="test.operator",
-                    provider_evidence=EXACT_CONTRACTS["8.0.0"],
+                    provider_evidence=EXACT_CONTRACTS["8.1.1"],
                     authoritative_provider_slug="hass-mcp-engineering",
                     plan_id=f"plan00000000{index + 10:04d}",
                 )
@@ -226,7 +229,7 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
                 description="Synthetic",
                 expiration_minutes=30,
                 requested_by="test.operator",
-                provider_evidence=EXACT_CONTRACTS["8.0.0"],
+                provider_evidence=EXACT_CONTRACTS["8.1.1"],
                 authoritative_provider_slug="hass-mcp-engineering",
             )
         self.assertEqual(reader.preread_count, 0)
@@ -250,7 +253,7 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
             description="Synthetic",
             expiration_minutes=30,
             requested_by="test.operator",
-            provider_evidence=EXACT_CONTRACTS["8.0.0"],
+            provider_evidence=EXACT_CONTRACTS["8.1.1"],
             authoritative_provider_slug="hass-mcp-engineering",
             observability=metrics,
             now=datetime(2026, 8, 4, 12, 5, tzinfo=timezone.utc),

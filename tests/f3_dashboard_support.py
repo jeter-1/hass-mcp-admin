@@ -6,16 +6,21 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import sys
 from typing import Any
 
-from f3_dashboard.json_codec import upstream_config_hash
-from f3_dashboard.models import (
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
+
+from ha_mcp_engineering.f3_dashboard.json_codec import upstream_config_hash
+from ha_mcp_engineering.f3_dashboard.models import (
     DashboardInventoryRow,
     DashboardPreread,
     DashboardUpdateProposal,
 )
-from f3_dashboard.planning import create_dashboard_update_plan
-from f3_dashboard.provider import EXACT_CONTRACTS
+from ha_mcp_engineering.f3_dashboard.planning import create_dashboard_update_plan
+from ha_mcp_engineering.f3_dashboard.provider import EXACT_CONTRACTS
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "f3_dashboard" / "storage_dashboard.json"
@@ -29,7 +34,7 @@ def make_preread(
     configuration: dict[str, Any] | None = None,
     *,
     url_path: str = "synthetic-dashboard",
-    version: str = "8.0.0",
+    version: str = "8.1.1",
     mode: str = "storage",
     completeness: str = "complete",
     configuration_returned: bool = True,
@@ -43,11 +48,11 @@ def make_preread(
         if version == "7.14.2"
         else "ha_mcp_dashboard_read_v3"
     )
-    compatibility = (
-        "ha-mcp-v7.14.2-7917b2d3"
-        if version == "7.14.2"
-        else "ha-mcp-v8.0.0-d65630f6"
-    )
+    compatibility = {
+        "7.14.2": "ha-mcp-v7.14.2-7917b2d3",
+        "8.0.0": "ha-mcp-v8.0.0-d65630f6",
+        "8.1.1": "ha-mcp-v8.1.1-e1d76a6e",
+    }[version]
     return DashboardPreread(
         inventory=(DashboardInventoryRow(url_path=url_path, mode=mode),),
         canonical_url_path=url_path,

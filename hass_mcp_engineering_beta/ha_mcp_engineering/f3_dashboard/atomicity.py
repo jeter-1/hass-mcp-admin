@@ -1,4 +1,4 @@
-"""Hard F3-B atomicity gate derived from exact reviewed source."""
+"""Dashboard concurrency decision derived from exact source and operator policy."""
 
 from __future__ import annotations
 
@@ -12,16 +12,17 @@ from .json_codec import engineering_sha256
 from .models import AtomicityDecision, AtomicityStatus
 
 
-HOME_ASSISTANT_RELEASE = "2026.7.4"
-HOME_ASSISTANT_SOURCE_COMMIT = "a4feaf06248c529f60021fc8be93ee69bc9b3084"
+HOME_ASSISTANT_RELEASE = "2026.8.0"
+HOME_ASSISTANT_SOURCE_COMMIT = "4a9dce13f61d03960ad5d2710e2af9fd2a78af54"
 UPSTREAM_SOURCE_COMMITS = {
     "7.14.2": "904c14ebbe76de700f7c3535f5cc71c017dca12e",
     "8.0.0": "9dd3ac620e3149cd34ec3c990b6ee81e778191f2",
+    "8.1.1": "ae84694b50bfbd8d507042381fdee5e529bf73c5",
 }
 
 
 def assess_atomicity(upstream_version: str) -> AtomicityDecision:
-    """Return the immutable blocked decision for both reviewed releases."""
+    """Return the explicit bounded non-atomic operator-policy decision."""
 
     if upstream_version not in SUPPORTED_UPSTREAM_VERSIONS:
         raise AtomicityGateError("Unknown upstream release cannot satisfy atomicity")
@@ -42,13 +43,16 @@ def assess_atomicity(upstream_version: str) -> AtomicityDecision:
         "home_assistant_source_commit": HOME_ASSISTANT_SOURCE_COMMIT,
         "home_assistant_command": "lovelace/config/save",
         "home_assistant_arguments": ["config", "url_path"],
-        "reason_codes": list(reasons),
+        "reason_codes": [
+            *reasons,
+            "residual_concurrent_editor_risk_explicitly_accepted",
+        ],
     }
     return AtomicityDecision(
         model=ATOMICITY_MODEL,
-        status=AtomicityStatus.BLOCKED,
-        mechanism=None,
-        reason_codes=reasons,
+        status=AtomicityStatus.OPERATOR_ACCEPTED_NON_ATOMIC,
+        mechanism="explicit_home_operator_policy_with_immediate_conflict_check",
+        reason_codes=(*reasons, "residual_concurrent_editor_risk_explicitly_accepted"),
         exact_upstream_release=upstream_version,
         home_assistant_release=HOME_ASSISTANT_RELEASE,
         source_evidence_sha256=engineering_sha256(source_evidence),
@@ -57,12 +61,13 @@ def assess_atomicity(upstream_version: str) -> AtomicityDecision:
 
 def require_executable_atomicity(decision: AtomicityDecision) -> None:
     if decision.status not in {
+        AtomicityStatus.OPERATOR_ACCEPTED_NON_ATOMIC,
         AtomicityStatus.PROVEN_ATOMIC,
         AtomicityStatus.AUTHORITATIVE_WRITER_EXCLUSION,
     }:
         raise AtomicityGateError(
-            "Executable dashboard writes remain disabled: external-writer "
-            "lost-update protection is unproven"
+            "Executable dashboard writes require atomicity, writer exclusion, "
+            "or the explicit bounded home-operator policy"
         )
 
 

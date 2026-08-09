@@ -1,4 +1,4 @@
-"""Exact-release dashboard setter admission and inert planning binding."""
+"""Exact-release dashboard setter admission and planning binding."""
 
 from __future__ import annotations
 
@@ -60,18 +60,29 @@ EXACT_CONTRACTS: Final = {
         runtime_contract_fingerprint="42c5f8769ab712b5299b71a5bd56c489214a7f04b528fb8a1cfb3feb869617b5",
         policy_classification="persistent_write",
     ),
+    "8.1.1": ProviderRuntimeEvidence(
+        upstream_version="8.1.1",
+        protocol_version=PROTOCOL_VERSION,
+        compatibility_entry="ha-mcp-v8.1.1-e1d76a6e",
+        source_commit="ae84694b50bfbd8d507042381fdee5e529bf73c5",
+        tool_name=TOOL_NAME,
+        input_schema_fingerprint=COMMON_INPUT_SCHEMA_FINGERPRINT,
+        annotation_fingerprint=COMMON_ANNOTATION_FINGERPRINT,
+        description_fingerprint=COMMON_DESCRIPTION_FINGERPRINT,
+        output_contract_fingerprint=COMMON_OUTPUT_CONTRACT_FINGERPRINT,
+        runtime_contract_fingerprint="42c5f8769ab712b5299b71a5bd56c489214a7f04b528fb8a1cfb3feb869617b5",
+        policy_classification="persistent_write",
+    ),
 }
 
 POTENTIAL_EPHEMERAL_ARGUMENT_NAMES = ("BestPracticeKey",)
 PROHIBITED_ARGUMENT_NAMES = (
-    "config",
     "python_transform",
     "title",
     "icon",
     "require_admin",
     "show_in_sidebar",
     "view_path",
-    "return_screenshot",
     "resources",
     "preferences",
 )
@@ -93,11 +104,14 @@ def admit_provider_contract(evidence: ProviderRuntimeEvidence) -> ProviderAdmiss
     projection = asdict(expected)
     return ProviderAdmission(
         admitted_for_planning=True,
-        executable=False,
+        executable=True,
         exact_release=expected.upstream_version,
         compatibility_entry=expected.compatibility_entry,
         provider_contract_hash=engineering_sha256(projection),
-        diagnostic_codes=("exact_release_contract_reviewed", "apply_disabled_atomicity"),
+        diagnostic_codes=(
+            "exact_release_contract_reviewed",
+            "operator_accepted_non_atomic_contract",
+        ),
     )
 
 
@@ -123,12 +137,9 @@ def build_provider_projection(
     }
     if not SHA256.fullmatch(compilation.resulting_sha256):
         raise ProviderAdmissionError("Resulting configuration hash is malformed")
-    executable = False
-    blocked_reasons = ["no_reviewed_mutating_argument_realization"]
-    try:
-        require_executable_atomicity(atomicity)
-    except AtomicityGateError:
-        blocked_reasons.append("atomicity_or_all_writer_exclusion_unproven")
+    require_executable_atomicity(atomicity)
+    executable = admission.executable
+    blocked_reasons: list[str] = []
     return ProviderPlanningProjection(
         tool_name=TOOL_NAME,
         target_url_path=url_path,
@@ -145,13 +156,10 @@ def build_provider_projection(
 
 
 def require_executable_projection(projection: ProviderPlanningProjection) -> None:
-    """Fail closed; this foundation intentionally has no dispatch method."""
+    """Require the exact reviewed provider and explicit concurrency policy."""
 
     if not projection.executable:
-        raise AtomicityGateError("Dashboard provider projection is planning-only")
-    raise ProviderAdmissionError(
-        "No executable provider transport is packaged in the F3-B foundation"
-    )
+        raise AtomicityGateError("Dashboard provider projection is not executable")
 
 
 def project_provider_response(
@@ -159,45 +167,49 @@ def project_provider_response(
     *,
     expected_url_path: str,
 ) -> ProviderResponseEvidence:
-    """Retain only bounded reviewed response fields; never the echoed Python."""
+    """Retain only the reviewed config-mode update response fields."""
 
     if not isinstance(payload, dict):
         raise ProviderAdmissionError("Unsupported dashboard setter response model")
-    required = {"success", "action", "url_path", "write_committed", "post_write_verified"}
+    required = {
+        "success",
+        "action",
+        "url_path",
+        "dashboard_created",
+        "config_updated",
+        "metadata_updated",
+    }
     if not required.issubset(payload):
         raise ProviderAdmissionError("Dashboard setter response is incomplete")
-    if payload.get("success") is not True or payload.get("action") != "python_transform":
-        raise ProviderAdmissionError("Dashboard setter did not claim generated-transform success")
+    if payload.get("success") is not True or payload.get("action") != "update":
+        raise ProviderAdmissionError("Dashboard setter did not claim config-mode update success")
     if payload.get("url_path") != expected_url_path:
         raise ProviderAdmissionError("Dashboard setter response target mismatch")
-    if payload.get("write_committed") is not True:
-        raise ProviderAdmissionError("Dashboard setter did not claim a committed write")
-    if not isinstance(payload.get("post_write_verified"), bool):
-        raise ProviderAdmissionError("Dashboard setter verification claim is malformed")
-    config_hash = payload.get("config_hash")
-    if config_hash is not None and (
-        not isinstance(config_hash, str) or not UPSTREAM_CONFIG_HASH.fullmatch(config_hash)
+    if (
+        payload.get("dashboard_created") is not False
+        or payload.get("config_updated") is not True
+        or payload.get("metadata_updated") is not False
     ):
-        raise ProviderAdmissionError("Dashboard setter returned a malformed config_hash")
+        raise ProviderAdmissionError("Dashboard setter response is not one exact existing-config update")
     projection = {
         "success": True,
-        "action": "python_transform",
+        "action": "update",
         "url_path": expected_url_path,
-        "write_committed": True,
-        "post_write_verified": payload["post_write_verified"],
-        "config_hash": config_hash,
+        "dashboard_created": False,
+        "config_updated": True,
+        "metadata_updated": False,
     }
     return ProviderResponseEvidence(
         response_received=True,
         success_claimed=True,
         write_committed_claimed=True,
-        post_write_verified_claimed=payload["post_write_verified"],
-        upstream_config_hash=config_hash,
+        post_write_verified_claimed=False,
+        upstream_config_hash=None,
         response_evidence_sha256=engineering_sha256(projection),
         diagnostic_codes=(
             "provider_response_is_not_verification",
-            "python_expression_discarded",
-            "raw_warnings_discarded",
+            "exact_existing_config_update_claimed",
+            "readback_required",
         ),
     )
 

@@ -4924,9 +4924,9 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 "upstream_addon_identity_unavailable",
             )
 
-    def test_public_tool_schemas_are_bounded_and_catalog_is_49(self):
+    def test_public_tool_schemas_are_bounded_and_catalog_is_50(self):
         tools = registered_tools(get_registered_server())
-        self.assertEqual(len(tools), 49)
+        self.assertEqual(len(tools), 50)
         reload_schema = tools["create_reload_plan"].parameters
         self.assertEqual(
             reload_schema["properties"]["reload_target"]["enum"],

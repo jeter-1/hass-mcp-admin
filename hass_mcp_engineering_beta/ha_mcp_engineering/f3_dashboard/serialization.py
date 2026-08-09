@@ -1,4 +1,4 @@
-"""Private durable and bounded public projections for F3-B artifacts."""
+"""Private durable and bounded public projections for dashboard updates."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def private_proposal_projection(proposal: DashboardUpdateProposal) -> dict[str, 
 
 
 def public_proposal_projection(proposal: DashboardUpdateProposal) -> dict[str, Any]:
-    """Exclude exact configurations, generated Python, and raw card values."""
+    """Exclude exact configurations while retaining bounded review previews."""
 
     return {
         "model": proposal.model,

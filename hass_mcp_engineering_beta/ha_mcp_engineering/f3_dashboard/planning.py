@@ -1,4 +1,4 @@
-"""Unregistered, zero-dispatch dashboard-update planning handler."""
+"""Zero-dispatch planning for one governed existing-dashboard update."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ from .models import (
 )
 from .observability import DashboardWriteObservability
 from .patch import compile_dashboard_patch
-from .provider import admit_provider_contract, build_provider_projection
+from .provider import EXACT_CONTRACTS, admit_provider_contract, build_provider_projection
 from .raw_evidence import build_raw_dashboard_evidence
 from .risk import analyze_dashboard_risk
 from .semantic_diff import build_semantic_diff
@@ -63,8 +63,8 @@ async def create_dashboard_update_plan(
     description: str,
     expiration_minutes: int,
     requested_by: str,
-    provider_evidence: ProviderRuntimeEvidence,
     authoritative_provider_slug: str,
+    provider_evidence: ProviderRuntimeEvidence | None = None,
     artifact_store: DashboardArtifactStore | None = None,
     observability: DashboardWriteObservability | None = None,
     now: datetime | None = None,
@@ -128,6 +128,11 @@ async def create_dashboard_update_plan(
     if risk.manual_review_required:
         metrics.record("planning.risk_review_flags", target=url_path)
 
+    provider_evidence = provider_evidence or EXACT_CONTRACTS.get(
+        raw.upstream_version
+    )
+    if provider_evidence is None:
+        raise ProviderAdmissionError("Provider release is not reviewed")
     if provider_evidence.upstream_version != raw.upstream_version:
         raise ProviderAdmissionError("Provider release differs from preread release")
     metrics.record("provider.admission_attempts", target=url_path)
@@ -171,7 +176,7 @@ async def create_dashboard_update_plan(
         atomicity=atomicity,
         required_approval="external_administrator",
         rollback_available=False,
-        executable=False,
+        executable=provider_projection.executable,
         lock_keys=tuple(
             sorted(
                 {
@@ -191,7 +196,7 @@ async def create_dashboard_update_plan(
 
 
 async def create_dashboard_update_plan_projection(**kwargs: Any) -> dict[str, Any]:
-    """Unregistered handler projection that never returns raw dashboard content."""
+    """Bounded projection that never returns raw dashboard content."""
 
     proposal = await create_dashboard_update_plan(**kwargs)
     return public_proposal_projection(proposal)

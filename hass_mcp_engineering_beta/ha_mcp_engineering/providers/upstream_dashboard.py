@@ -1,4 +1,9 @@
-"""Read-only provider for one explicitly configured upstream dashboard tool."""
+"""Exact dashboard reads plus the fixed, governed dashboard-update gateway.
+
+The ordinary public provider remains read-only.  The setter methods in this
+module are reachable only from the F3 dashboard adapter after plan approval,
+locking, exact preflight, and durable dispatch intent.
+"""
 
 from __future__ import annotations
 
@@ -20,7 +25,10 @@ from ..clients.mcp import (
     McpDashboardRead,
     McpDashboardTransport,
     REQUIRED_DASHBOARD_TOOL,
+    REQUIRED_DASHBOARD_WRITE_TOOL,
+    REQUIRED_BEST_PRACTICES_TOOL,
     validate_dashboard_read_arguments,
+    validate_dashboard_write_arguments,
 )
 from ..configuration import Settings, parse_upstream_dashboard_endpoint
 from ..errors import DashboardProviderError, ErrorCode, GovernanceError
@@ -33,6 +41,7 @@ from ..upstream_tool_policy import (
     runtime_contract_fingerprint,
     runtime_contract_mismatch_fields,
     runtime_policy_state_fingerprint_projection,
+    validate_reviewed_release_catalog,
 )
 from .upstream_contracts import (
     COMPILED_CONTRACT_FAMILIES,
@@ -609,6 +618,165 @@ class UpstreamDashboardProvider:
             arguments=arguments,
             normalizer=normalize,
         )
+
+    def _validate_write_handshake(
+        self, handshake: McpDashboardHandshake
+    ) -> None:
+        """Require the complete exact catalog and two fixed write-path tools."""
+
+        self._validate_handshake(handshake)
+        release = load_reviewed_upstream_release_registry().by_version.get(
+            handshake.server_version
+        )
+        if release is None:
+            raise DashboardTransportError("upstream_version_mismatch")
+        validation = validate_reviewed_release_catalog(
+            release,
+            observed_server_name=handshake.server_name,
+            observed_upstream_version=handshake.server_version,
+            observed_protocol_version=handshake.protocol_version,
+            tools=handshake.tools,
+        )
+        contracts = release.tool_contracts_by_name
+        if (
+            not validation.valid
+            or contracts.get(REQUIRED_DASHBOARD_WRITE_TOOL) is None
+            or contracts[REQUIRED_DASHBOARD_WRITE_TOOL].policy_classification
+            != "persistent_write"
+            or contracts.get(REQUIRED_BEST_PRACTICES_TOOL) is None
+            or contracts[REQUIRED_BEST_PRACTICES_TOOL].policy_classification
+            != "automatic_read"
+        ):
+            raise DashboardTransportError("reviewed_contract_mismatch")
+
+    async def best_practices_acknowledgement_key(self) -> str:
+        """Read the public rotating strict-BPS receipt before write intent."""
+
+        if not self._transport:
+            self._raise("not_configured", dispatched=False)
+        started = self._begin_request()
+        try:
+            exchange = await self._transport.execute_best_practices_read(
+                self._validate_write_handshake
+            )
+            content = exchange.call_result.get("content")
+            if (
+                exchange.call_result.get("isError")
+                or not isinstance(content, list)
+            ):
+                raise DashboardTransportError("upstream_error")
+            guide_text = "\n".join(
+                item.get("text", "")
+                for item in content
+                if isinstance(item, dict)
+                and item.get("type") == "text"
+                and isinstance(item.get("text"), str)
+            )
+            match = re.search(
+                r"I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-[0-9a-f]{8}",
+                guide_text,
+            )
+            if match is None:
+                raise DashboardTransportError("invalid_response")
+            self._record_success(
+                tool_call_latency_ms=exchange.tool_call_latency_ms,
+                dashboard_call=True,
+            )
+            METRICS.record_provider_result(
+                PROVIDER_ID, "complete", dispatched=True
+            )
+            return match.group(0)
+        except DashboardProviderError as exc:
+            category = _category_for_code(exc.code)
+            self._record_failure(category, dispatched=True)
+            METRICS.record_provider_result(
+                PROVIDER_ID, "failed", dispatched=True
+            )
+            raise
+        except DashboardTransportError as exc:
+            category = _normalized_category(exc.category)
+            self._record_failure(category, dispatched=True)
+            METRICS.record_provider_result(
+                PROVIDER_ID, "failed", dispatched=True
+            )
+            self._raise(category, dispatched=True)
+        finally:
+            self._finish_telemetry(started)
+
+    async def execute_governed_dashboard_update(
+        self,
+        *,
+        url_path: str,
+        configuration: dict[str, Any],
+        config_hash: str,
+        best_practice_key: str,
+    ) -> dict[str, Any]:
+        """Make one exact, non-retrying setter call for an approved result."""
+
+        if not self._transport:
+            self._raise("not_configured", dispatched=False)
+        arguments = {
+            "url_path": url_path,
+            "config": configuration,
+            "config_hash": config_hash,
+            "MandatoryBPS": False,
+            "return_screenshot": False,
+            "BestPracticeKey": best_practice_key,
+        }
+        try:
+            validate_dashboard_write_arguments(arguments)
+        except DashboardTransportError:
+            self._raise("prohibited_argument", dispatched=False)
+        started = self._begin_request()
+        try:
+            exchange = await self._transport.execute_dashboard_write(
+                arguments, self._validate_write_handshake
+            )
+            payload = self._decode_call_result(
+                exchange.call_result, expected_url_path=url_path
+            )
+            if (
+                payload.get("success") is not True
+                or payload.get("action") != "update"
+                or payload.get("url_path") != url_path
+                or payload.get("dashboard_created") is not False
+                or payload.get("config_updated") is not True
+                or payload.get("metadata_updated") is not False
+            ):
+                raise DashboardTransportError("invalid_response")
+            self._record_success(
+                tool_call_latency_ms=exchange.tool_call_latency_ms,
+                dashboard_call=True,
+            )
+            METRICS.record_provider_result(
+                PROVIDER_ID, "complete", dispatched=True
+            )
+            return {
+                "provider": PROVIDER_ID,
+                "provider_operation": REQUIRED_DASHBOARD_WRITE_TOOL,
+                "provider_response_received": True,
+                "success_claimed": True,
+                "update_claimed": True,
+                "target": url_path,
+                "fallback_occurred": False,
+                "non_atomic": True,
+            }
+        except DashboardProviderError as exc:
+            category = _category_for_code(exc.code)
+            self._record_failure(category, dispatched=True)
+            METRICS.record_provider_result(
+                PROVIDER_ID, "failed", dispatched=True
+            )
+            raise
+        except DashboardTransportError as exc:
+            category = _normalized_category(exc.category)
+            self._record_failure(category, dispatched=True)
+            METRICS.record_provider_result(
+                PROVIDER_ID, "failed", dispatched=True
+            )
+            self._raise(category, dispatched=True)
+        finally:
+            self._finish_telemetry(started)
 
     async def _execute(
         self,

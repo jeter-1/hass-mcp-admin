@@ -10,6 +10,7 @@ from ..errors import ErrorCode, GovernanceError
 from ..providers.supervisor_self import (
     SupervisorSelfAddonIdentityResolver,
 )
+from ..f3_dashboard.gateway import DashboardExecutionGateway
 from .operational_lifecycle import OperationalLifecycleGateway
 from .resources import ConfigurationResourceGateway
 from .operational import BackupAdministrationGateway
@@ -68,6 +69,7 @@ class GovernanceRuntime:
         operational_provider=None,
         lifecycle_provider=None,
         runtime_snapshot=None,
+        dashboard_provider=None,
     ) -> None:
         try:
             repository = ChangePlanRepository(
@@ -115,6 +117,19 @@ class GovernanceRuntime:
                 if lifecycle_provider is not None
                 else None
             )
+            dashboard_gateway = (
+                DashboardExecutionGateway(
+                    dashboard_provider,
+                    response_limit=settings.response_size_limit,
+                )
+                if dashboard_provider is not None
+                else None
+            )
+            provider_identity_reader = (
+                lifecycle_gateway.authoritative_provider_identity
+                if lifecycle_gateway is not None
+                else self._unavailable_provider_identity
+            )
             resource_gateway = ConfigurationResourceGateway(
                 rest_client, websocket_client
             )
@@ -128,6 +143,8 @@ class GovernanceRuntime:
                 operational_gateway=operational_gateway,
                 lifecycle_gateway=lifecycle_gateway,
                 task_repository=task_repository,
+                dashboard_gateway=dashboard_gateway,
+                provider_identity_reader=provider_identity_reader,
             )
             from ..f3_runtime.runtime import F3RuntimeIntegration
 
@@ -137,11 +154,8 @@ class GovernanceRuntime:
                 configuration_gateway=resource_gateway,
                 backup_gateway=operational_gateway,
                 lifecycle_gateway=lifecycle_gateway,
-                provider_identity_reader=(
-                    lifecycle_gateway.authoritative_provider_identity
-                    if lifecycle_gateway is not None
-                    else self._unavailable_provider_identity
-                ),
+                dashboard_gateway=dashboard_gateway,
+                provider_identity_reader=provider_identity_reader,
                 retention_days=settings.governance_retention_days,
             )
             self.storage_error = None

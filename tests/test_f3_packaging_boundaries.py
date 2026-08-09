@@ -276,7 +276,7 @@ class BuiltImageImportClosureTests(unittest.TestCase):
 
 class F3ImportBoundaryTests(unittest.TestCase):
     def test_shipped_modules_use_no_repository_only_packages(self):
-        forbidden = {"f3_contracts", "f3_dashboard", "tests"}
+        forbidden = {"f3_contracts", "tests"}
         for path in sorted(RUNTIME.rglob("*.py")):
             imported = _imports(path)
             with self.subTest(path=path.relative_to(ROOT)):
@@ -322,7 +322,11 @@ class F3ImportBoundaryTests(unittest.TestCase):
                 self.assertNotIn("from ..f3 import", source)
                 self.assertNotIn("from ..f3.", source)
                 self.assertNotIn("ha_mcp_engineering.f3.", source)
-                self.assertNotIn("f3_dashboard", source)
+                if relative not in {
+                    "governance/runtime.py",
+                    "governance/service.py",
+                }:
+                    self.assertNotIn("f3_dashboard", source)
                 self.assertNotIn("f3_contracts", source)
 
     def test_only_the_closed_integration_package_imports_f3_runtime_internals(self):
@@ -334,7 +338,7 @@ class F3ImportBoundaryTests(unittest.TestCase):
         actual = set()
         for path in sorted(RUNTIME.rglob("*.py")):
             relative = path.relative_to(RUNTIME).as_posix()
-            if relative.startswith(("f3/", "f3_configuration/")):
+            if relative.startswith(("f3/", "f3_configuration/", "f3_dashboard/")):
                 continue
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
