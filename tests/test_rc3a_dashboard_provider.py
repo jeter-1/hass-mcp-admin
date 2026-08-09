@@ -483,6 +483,36 @@ class McpTransportLifecycleTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(category=category):
                 self.assertEqual(_classify_transport_exception(exc), category)
 
+        server_error = RuntimeError("synthetic 5xx body must not be retained")
+        server_error.response = type("Response", (), {"status_code": 503})()
+        classified = _classified_transport_error(server_error)
+        self.assertEqual(classified.category, "upstream_error")
+        self.assertEqual(
+            classified.failure_kind, "provider_5xx_ambiguous"
+        )
+        self.assertFalse(classified.provider_response_received)
+        self.assertTrue(classified.http_response_received)
+        self.assertEqual(classified.http_status_class, "5xx")
+        self.assertNotIn("synthetic 5xx body", repr(classified))
+
+        timeout = _classified_transport_error(asyncio.TimeoutError())
+        self.assertEqual(
+            timeout.failure_kind,
+            "transport_silence_or_response_loss",
+        )
+        self.assertFalse(timeout.provider_response_received)
+        self.assertFalse(timeout.http_response_received)
+
+        protocol = _classified_transport_error(
+            json.JSONDecodeError("synthetic payload", "{", 1)
+        )
+        self.assertEqual(
+            protocol.failure_kind,
+            "protocol_or_transport_failure",
+        )
+        self.assertFalse(protocol.provider_response_received)
+        self.assertFalse(protocol.http_response_received)
+
     def test_typed_exception_groups_preserve_precise_bounded_categories(self):
         homogeneous = ExceptionGroup(
             "nested",
@@ -744,6 +774,36 @@ class CapabilityAndAllowlistTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(health["last_successful_handshake_timestamp"])
         self.assertFalse(health["writes_allowed"])
         self.assertEqual(health["allowlisted_tool_count"], 1)
+        self.assertEqual(
+            health["ordinary_dashboard_read_route"],
+            {
+                "route_class": "ordinary_read_provider",
+                "required_tool": "ha_config_get_dashboard",
+                "enabled_capabilities": [
+                    "list_dashboards",
+                    "get_dashboard_config",
+                ],
+                "publicly_registered": True,
+                "writes_allowed": False,
+                "fallback": "none",
+            },
+        )
+        self.assertEqual(
+            health["governed_dashboard_write_route"],
+            {
+                "route_class": "f3_external_approval_only",
+                "required_tools": [
+                    "ha_get_skill_guide",
+                    "ha_config_set_dashboard",
+                ],
+                "publicly_registered": False,
+                "admission_evaluated_per_operation": True,
+                "exactly_one_dispatch": True,
+                "blind_redispatch_allowed": False,
+                "direct_home_assistant_fallback": False,
+                "fallback": "none",
+            },
+        )
         self.assertNotIn("url", json.dumps(health).lower())
 
     async def test_differently_named_schema_compatible_endpoint_is_rejected(self):

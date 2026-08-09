@@ -87,6 +87,7 @@ class InternalRecoveryContext:
     prior_observation_attempts: int
     prior_verification_attempts: int
     post_dispatch_deadline: str | None
+    dispatch_diagnostic_codes: tuple[str, ...] = ()
 
 
 class _LeaseRenewer:
@@ -891,6 +892,15 @@ class SharedOperationExecutor:
                     prior_verification_attempts=record.verification_attempts,
                     post_dispatch_deadline=str(
                         record.dispatch_intent["evidence_deadline"]
+                    ),
+                    dispatch_diagnostic_codes=next(
+                        (
+                            tuple(event["diagnostic_codes"])
+                            for event in reversed(record.events)
+                            if event["event_type"]
+                            == "dispatch_result_recorded"
+                        ),
+                        (),
                     ),
                 )
                 observation = await getattr(adapter, "recover")(

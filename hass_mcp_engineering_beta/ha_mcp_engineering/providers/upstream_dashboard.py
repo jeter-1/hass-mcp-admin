@@ -148,6 +148,8 @@ FAILURE_CATEGORIES = (
 CANONICAL_DASHBOARD_PATH = re.compile(r"^[a-z0-9_-]{1,256}$")
 MAX_IDENTITY_CHARS = 128
 MAX_WARNING_CHARS = 512
+SAFE_UPSTREAM_ERROR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
+SAFE_UPSTREAM_ACTION = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 RESPONSE_ENVELOPE_RESERVE = 16_000
 REACHABILITY_FRESHNESS_SECONDS = 120.0
 
@@ -420,7 +422,11 @@ class UpstreamDashboardProvider:
             category = _normalized_category(exc.category)
             self._record_failure(category, dispatched=True)
             METRICS.record_provider_result(PROVIDER_ID, "failed", dispatched=True)
-            self._raise(category, dispatched=True)
+            self._raise(
+                category,
+                dispatched=True,
+                details=exc.evidence_details(),
+            )
         finally:
             self._finish_telemetry(started)
 
@@ -664,7 +670,11 @@ class UpstreamDashboardProvider:
                 exchange.call_result.get("isError")
                 or not isinstance(content, list)
             ):
-                raise DashboardTransportError("upstream_error")
+                raise DashboardTransportError(
+                    "upstream_error",
+                    provider_response_received=True,
+                    failure_kind="protocol_or_transport_failure",
+                )
             guide_text = "\n".join(
                 item.get("text", "")
                 for item in content
@@ -677,7 +687,11 @@ class UpstreamDashboardProvider:
                 guide_text,
             )
             if match is None:
-                raise DashboardTransportError("invalid_response")
+                raise DashboardTransportError(
+                    "invalid_response",
+                    provider_response_received=True,
+                    failure_kind="protocol_or_transport_failure",
+                )
             self._record_success(
                 tool_call_latency_ms=exchange.tool_call_latency_ms,
                 dashboard_call=True,
@@ -699,7 +713,11 @@ class UpstreamDashboardProvider:
             METRICS.record_provider_result(
                 PROVIDER_ID, "failed", dispatched=True
             )
-            self._raise(category, dispatched=True)
+            self._raise(
+                category,
+                dispatched=True,
+                details=exc.evidence_details(),
+            )
         finally:
             self._finish_telemetry(started)
 
@@ -743,7 +761,11 @@ class UpstreamDashboardProvider:
                 or payload.get("config_updated") is not True
                 or payload.get("metadata_updated") is not False
             ):
-                raise DashboardTransportError("invalid_response")
+                raise DashboardTransportError(
+                    "invalid_response",
+                    provider_response_received=True,
+                    failure_kind="protocol_or_transport_failure",
+                )
             self._record_success(
                 tool_call_latency_ms=exchange.tool_call_latency_ms,
                 dashboard_call=True,
@@ -774,7 +796,11 @@ class UpstreamDashboardProvider:
             METRICS.record_provider_result(
                 PROVIDER_ID, "failed", dispatched=True
             )
-            self._raise(category, dispatched=True)
+            self._raise(
+                category,
+                dispatched=True,
+                details=exc.evidence_details(),
+            )
         finally:
             self._finish_telemetry(started)
 
@@ -862,7 +888,11 @@ class UpstreamDashboardProvider:
             self._record_failure(category, dispatched=True)
             failure_recorded = True
             METRICS.record_provider_result(PROVIDER_ID, "failed", dispatched=True)
-            self._raise(category, dispatched=True)
+            self._raise(
+                category,
+                dispatched=True,
+                details=exc.evidence_details(),
+            )
         except Exception:
             self._record_failure("internal_error", dispatched=True)
             failure_recorded = True
@@ -1272,7 +1302,14 @@ class UpstreamDashboardProvider:
     ) -> dict[str, Any]:
         content = result.get("content")
         if not isinstance(content, list):
-            self._raise("invalid_response", dispatched=True)
+            self._raise(
+                "invalid_response",
+                dispatched=True,
+                details={
+                    "provider_response_received": True,
+                    "provider_failure_kind": "protocol_or_transport_failure",
+                },
+            )
         text_parts = [
             item.get("text")
             for item in content
@@ -1281,15 +1318,37 @@ class UpstreamDashboardProvider:
             and isinstance(item.get("text"), str)
         ]
         if not text_parts:
-            self._raise("invalid_response", dispatched=True)
+            self._raise(
+                "invalid_response",
+                dispatched=True,
+                details={
+                    "provider_response_received": True,
+                    "provider_failure_kind": "protocol_or_transport_failure",
+                },
+            )
         text = "\n".join(text_parts)
         try:
             payload = json.loads(text)
         except (json.JSONDecodeError, TypeError):
-            self._raise("invalid_response", dispatched=True)
+            self._raise(
+                "invalid_response",
+                dispatched=True,
+                details={
+                    "provider_response_received": True,
+                    "provider_failure_kind": "protocol_or_transport_failure",
+                },
+            )
         if not isinstance(payload, dict):
-            self._raise("invalid_response", dispatched=True)
+            self._raise(
+                "invalid_response",
+                dispatched=True,
+                details={
+                    "provider_response_received": True,
+                    "provider_failure_kind": "protocol_or_transport_failure",
+                },
+            )
         if result.get("isError") or payload.get("success") is False:
+            details = self._structured_rejection_details(payload)
             if _upstream_error_code(payload) in {
                 "RESOURCE_NOT_FOUND",
                 "DASHBOARD_NOT_FOUND",
@@ -1297,9 +1356,38 @@ class UpstreamDashboardProvider:
                 payload,
                 expected_url_path=expected_url_path,
             ):
-                self._raise("dashboard_not_found", dispatched=True)
-            self._raise("upstream_error", dispatched=True)
+                self._raise(
+                    "dashboard_not_found",
+                    dispatched=True,
+                    details=details,
+                )
+            self._raise(
+                "upstream_error",
+                dispatched=True,
+                details=details,
+            )
         return payload
+
+    def _structured_rejection_details(
+        self, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Project one provider rejection without retaining its payload."""
+
+        details: dict[str, Any] = {
+            "provider_response_received": True,
+            "provider_failure_kind": "structured_provider_rejection",
+        }
+        upstream_code = _upstream_error_code(payload)
+        if upstream_code is not None:
+            upstream_code = self._safe_string(upstream_code, max_chars=64)
+            if SAFE_UPSTREAM_ERROR_CODE.fullmatch(upstream_code):
+                details["upstream_error_code"] = upstream_code
+        action = payload.get("action")
+        if isinstance(action, str):
+            action = self._safe_string(action, max_chars=32)
+            if SAFE_UPSTREAM_ACTION.fullmatch(action):
+                details["upstream_action"] = action
+        return details
 
     def _dashboard_metadata(self, value: Any) -> dict[str, Any] | None:
         if not isinstance(value, dict):
@@ -1619,6 +1707,30 @@ class UpstreamDashboardProvider:
                     "list_dashboards",
                     "get_dashboard_config",
                 ],
+                "ordinary_dashboard_read_route": {
+                    "route_class": "ordinary_read_provider",
+                    "required_tool": REQUIRED_DASHBOARD_TOOL,
+                    "enabled_capabilities": [
+                        "list_dashboards",
+                        "get_dashboard_config",
+                    ],
+                    "publicly_registered": True,
+                    "writes_allowed": False,
+                    "fallback": "none",
+                },
+                "governed_dashboard_write_route": {
+                    "route_class": "f3_external_approval_only",
+                    "required_tools": [
+                        REQUIRED_BEST_PRACTICES_TOOL,
+                        REQUIRED_DASHBOARD_WRITE_TOOL,
+                    ],
+                    "publicly_registered": False,
+                    "admission_evaluated_per_operation": True,
+                    "exactly_one_dispatch": True,
+                    "blind_redispatch_allowed": False,
+                    "direct_home_assistant_fallback": False,
+                    "fallback": "none",
+                },
                 "attestation_entry_id": state.attestation_entry_id,
                 "attested_upstream_version": state.attested_upstream_version,
                 "observed_upstream_version": state.observed_upstream_version,

@@ -36,6 +36,10 @@ class ProviderAdmissionError(DashboardFoundationError):
     code = "dashboard_write_provider_not_admitted"
 
 
+class KnownUpstreamCompatibilityError(ProviderAdmissionError):
+    code = "dashboard_write_existing_hyphenless_path_incompatible"
+
+
 class AtomicityGateError(DashboardFoundationError):
     code = "dashboard_write_atomicity_unproven"
 
