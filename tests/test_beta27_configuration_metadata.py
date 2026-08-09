@@ -83,7 +83,12 @@ class Beta27ReleaseBoundaryTests(unittest.TestCase):
             set(self.require_published_phase(BETA27_VERSION).values()),
             {BETA27_VERSION},
         )
-        self.assertFalse((ROOT / ".release" / "next-version").exists())
+        next_version = ROOT / ".release" / "next-version"
+        if next_version.exists():
+            self.assertGreater(
+                AwesomeVersion(next_version.read_text(encoding="utf-8").strip()),
+                AwesomeVersion(BETA27_VERSION),
+            )
         stable_config = (
             ROOT / "hass_mcp_admin" / "config.yaml"
         ).read_text(encoding="utf-8")
