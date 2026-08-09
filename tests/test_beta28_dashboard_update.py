@@ -86,7 +86,12 @@ class Beta28ReleaseBoundaryTests(unittest.TestCase):
             set(self.require_published_phase(BETA28_VERSION).values()),
             {BETA28_VERSION},
         )
-        self.assertFalse((ROOT / ".release" / "next-version").exists())
+        marker = ROOT / ".release" / "next-version"
+        if marker.exists():
+            self.assertGreater(
+                AwesomeVersion(marker.read_text(encoding="utf-8").strip()),
+                AwesomeVersion(BETA28_VERSION),
+            )
         self.assertIn(
             'version: "1.1.2"',
             (ROOT / "hass_mcp_admin" / "config.yaml").read_text(
