@@ -40,6 +40,65 @@ VERIFICATION_MODEL = "f3-dashboard-exact-reread-v1"
 PROVIDER_CONTRACT_MODEL = "ha-mcp-dashboard-full-result-update-v1"
 OPERATOR_POLICY = "bounded_dashboard_update_non_atomic_v1"
 EVIDENCE_DEADLINE_SECONDS = 120
+_PROVIDER_FAILURE_DIAGNOSTICS = {
+    "structured_provider_rejection": "structured_provider_rejection_received",
+    "transport_silence_or_response_loss": "transport_silence_or_response_loss",
+    "provider_5xx_ambiguous": "provider_5xx_ambiguous",
+    "protocol_or_transport_failure": "other_protocol_or_transport_failure",
+}
+
+
+def _provider_failure_projection(
+    error: DashboardProviderError,
+) -> tuple[bool, tuple[str, ...], str]:
+    """Project bounded provider evidence into durable F3 diagnostics."""
+
+    details = error.details
+    response_received = details.get("provider_response_received") is True
+    failure_kind = details.get("provider_failure_kind")
+    diagnostic = _PROVIDER_FAILURE_DIAGNOSTICS.get(
+        failure_kind, "unclassified_provider_failure"
+    )
+    codes = [diagnostic, "readback_only_recovery", "fallback_none"]
+    upstream_code: str | None = None
+    candidate_code = details.get("upstream_error_code")
+    if (
+        isinstance(candidate_code, str)
+        and 1 <= len(candidate_code) <= 64
+        and candidate_code[0].isalpha()
+        and all(
+            character.isupper() or character.isdigit() or character == "_"
+            for character in candidate_code
+        )
+    ):
+        upstream_code = candidate_code
+        codes.append(f"upstream_error_{upstream_code.lower()}")
+    action: str | None = None
+    candidate_action = details.get("upstream_action")
+    if (
+        isinstance(candidate_action, str)
+        and 1 <= len(candidate_action) <= 32
+        and candidate_action[0].isalpha()
+        and all(
+            character.islower() or character.isdigit() or character == "_"
+            for character in candidate_action
+        )
+    ):
+        action = candidate_action
+        codes.append(f"upstream_action_{action}")
+    evidence_hash = stable_hash(
+        {
+            "provider_failure_kind": failure_kind,
+            "provider_response_received": response_received,
+            "upstream_error_code": upstream_code,
+            "upstream_action": action,
+            "http_response_received": (
+                details.get("http_response_received") is True
+            ),
+            "http_status_class": details.get("http_status_class"),
+        }
+    )
+    return response_received, tuple(codes), evidence_hash
 
 
 @dataclass(frozen=True)
@@ -388,6 +447,23 @@ class DashboardUpdateAdapter:
                 config_hash=operation.current_upstream_config_hash,
                 best_practice_key=key,
             )
+        except DashboardProviderError as exc:
+            response_received, diagnostics, evidence_hash = (
+                _provider_failure_projection(exc)
+            )
+            return DispatchResult(
+                outcome=(
+                    NormalizedOperationOutcome.OBSERVING
+                    if "structured_provider_rejection_received" in diagnostics
+                    else NormalizedOperationOutcome.DISPATCH_INDETERMINATE
+                ),
+                dispatch_intent_recorded=True,
+                mutating_invocation_count=1,
+                may_have_dispatched=True,
+                provider_response_received=response_received,
+                response_evidence_hash=evidence_hash,
+                diagnostic_codes=diagnostics,
+            )
         except Exception:
             return DispatchResult(
                 outcome=NormalizedOperationOutcome.DISPATCH_INDETERMINATE,
@@ -396,7 +472,7 @@ class DashboardUpdateAdapter:
                 may_have_dispatched=True,
                 provider_response_received=False,
                 diagnostic_codes=(
-                    "dashboard_setter_outcome_indeterminate",
+                    "unclassified_provider_failure",
                     "readback_only_recovery",
                     "fallback_none",
                 ),
@@ -421,7 +497,18 @@ class DashboardUpdateAdapter:
         operation: PreparedDashboardOperation,
         dispatch: DispatchResult | None,
     ) -> ObservationResult:
-        del dispatch
+        dispatch_diagnostics = (
+            dispatch.diagnostic_codes if dispatch is not None else ()
+        )
+        return await self._observe_with_dispatch_diagnostics(
+            operation, dispatch_diagnostics
+        )
+
+    async def _observe_with_dispatch_diagnostics(
+        self,
+        operation: PreparedDashboardOperation,
+        dispatch_diagnostics: tuple[str, ...],
+    ) -> ObservationResult:
         try:
             observed = build_raw_dashboard_evidence(
                 await self.gateway.preread(url_path=operation.target.target_id),
@@ -446,34 +533,62 @@ class DashboardUpdateAdapter:
             and canonical_json_bytes(observed.configuration).decode("utf-8")
             == operation.resulting_configuration_json
         )
-        return ObservationResult(
-            outcome=(
+        unchanged = (
+            observed.engineering_config_sha256
+            == operation.current_engineering_sha256
+            and observed.upstream_config_hash
+            == operation.current_upstream_config_hash
+        )
+        structured_rejection_unchanged = (
+            "structured_provider_rejection_received" in dispatch_diagnostics
+            and unchanged
+            and not exact
+        )
+        if structured_rejection_unchanged:
+            outcome = NormalizedOperationOutcome.OBSERVING
+            mismatch_fields: tuple[str, ...] = ()
+            diagnostic_codes = (
+                "provider_rejection_confirmed_no_change",
+                "authoritative_state_unchanged",
+                "non_atomic",
+                "fallback_none",
+            )
+        else:
+            outcome = (
                 NormalizedOperationOutcome.OBSERVING
                 if exact
                 else NormalizedOperationOutcome.VERIFICATION_MISMATCH
-            ),
+            )
+            mismatch_fields = () if exact else ("dashboard_configuration",)
+            diagnostic_codes = (
+                "exact_full_configuration_match"
+                if exact
+                else "exact_readback_mismatch",
+                "non_atomic",
+                "fallback_none",
+            )
+        return ObservationResult(
+            outcome=outcome,
             attempt_count=1,
             observation_complete=True,
             provider_reachable=True,
             target_reachable=True,
             readback_state_fingerprint=observed.engineering_config_sha256,
             intended_result_observed=exact,
-            mismatch_fields=() if exact else ("dashboard_configuration",),
+            mismatch_fields=mismatch_fields,
             evidence_hash=stable_hash(
                 {
                     "target": operation.target.target_id,
                     "observed_sha256": observed.engineering_config_sha256,
                     "observed_upstream_hash": observed.upstream_config_hash,
                     "exact": exact,
+                    "unchanged": unchanged,
+                    "structured_rejection_unchanged": (
+                        structured_rejection_unchanged
+                    ),
                 }
             ),
-            diagnostic_codes=(
-                "exact_full_configuration_match"
-                if exact
-                else "exact_readback_mismatch",
-                "non_atomic",
-                "fallback_none",
-            ),
+            diagnostic_codes=diagnostic_codes,
         )
 
     async def verify(
@@ -497,6 +612,22 @@ class DashboardUpdateAdapter:
                 resulting_state_fingerprint=observation.readback_state_fingerprint,
                 evidence_hash=observation.evidence_hash,
             )
+        if (
+            "provider_rejection_confirmed_no_change"
+            in observation.diagnostic_codes
+        ):
+            return VerificationResult(
+                outcome=NormalizedOperationOutcome.FAILED_POST_DISPATCH,
+                attempt_count=observation.attempt_count,
+                verified=False,
+                resulting_state_fingerprint=(
+                    observation.readback_state_fingerprint
+                ),
+                evidence_hash=observation.evidence_hash,
+                manual_review_reason_code=(
+                    "provider_rejection_confirmed_no_change"
+                ),
+            )
         return VerificationResult(
             outcome=NormalizedOperationOutcome.VERIFICATION_MISMATCH,
             attempt_count=observation.attempt_count,
@@ -513,8 +644,14 @@ class DashboardUpdateAdapter:
         *,
         context: RecoveryContext,
     ) -> ObservationResult:
-        del context
-        return await self.observe(operation, None)
+        dispatch_diagnostics = tuple(
+            value
+            for value in getattr(context, "dispatch_diagnostic_codes", ())
+            if isinstance(value, str)
+        )
+        return await self._observe_with_dispatch_diagnostics(
+            operation, dispatch_diagnostics
+        )
 
     async def prepare_rollback(
         self,

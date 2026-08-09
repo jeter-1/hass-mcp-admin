@@ -28,6 +28,13 @@ MAX_TOOL_CATALOG_SIZE = 500
 MAX_TOOL_CATALOG_PAGES = 20
 MAX_UPSTREAM_CONTENT_CHARS = 2_000_000
 MAX_GROUPED_ERROR_CATEGORIES = 8
+TRANSPORT_FAILURE_KINDS = frozenset(
+    {
+        "transport_silence_or_response_loss",
+        "provider_5xx_ambiguous",
+        "protocol_or_transport_failure",
+    }
+)
 _RECOGNIZED_TYPED_ERROR_CATEGORIES = frozenset(
     {
         "annotation_mismatch",
@@ -132,6 +139,10 @@ class DashboardTransportError(RuntimeError):
         *,
         retryable: bool | None = None,
         grouped_categories: tuple[str, ...] = (),
+        provider_response_received: bool = False,
+        http_response_received: bool = False,
+        failure_kind: str = "protocol_or_transport_failure",
+        http_status_class: str | None = None,
     ):
         super().__init__("The upstream dashboard MCP transport failed.")
         self.category = category
@@ -139,6 +150,34 @@ class DashboardTransportError(RuntimeError):
         self.grouped_categories = grouped_categories[
             :MAX_GROUPED_ERROR_CATEGORIES
         ]
+        self.provider_response_received = provider_response_received is True
+        self.http_response_received = http_response_received is True
+        self.failure_kind = (
+            failure_kind
+            if failure_kind in TRANSPORT_FAILURE_KINDS
+            else "protocol_or_transport_failure"
+        )
+        self.http_status_class = (
+            http_status_class
+            if http_status_class in {"4xx", "5xx"}
+            else None
+        )
+
+    def evidence_details(self) -> dict[str, Any]:
+        """Return only bounded classification evidence, never exception text."""
+
+        details: dict[str, Any] = {
+            "provider_response_received": self.provider_response_received,
+            "http_response_received": self.http_response_received,
+            "provider_failure_kind": self.failure_kind,
+        }
+        if self.http_status_class is not None:
+            details["http_status_class"] = self.http_status_class
+        if self.grouped_categories:
+            details["transport_failure_categories"] = list(
+                self.grouped_categories
+            )
+        return details
 
 
 @dataclass(frozen=True)
@@ -457,12 +496,68 @@ def _classified_transport_error(
     typed = _recognized_typed_error_details(leaves)
     if typed is not None:
         category, retryable, categories = typed
+        selected = next(
+            (
+                leaf
+                for leaf in leaves
+                if isinstance(leaf, DashboardTransportError)
+                and leaf.category == category
+            ),
+            None,
+        )
         return DashboardTransportError(
             category,
             retryable=retryable,
             grouped_categories=categories,
+            provider_response_received=(
+                selected.provider_response_received
+                if selected is not None
+                else False
+            ),
+            http_response_received=(
+                selected.http_response_received
+                if selected is not None
+                else False
+            ),
+            failure_kind=(
+                selected.failure_kind
+                if selected is not None
+                else "protocol_or_transport_failure"
+            ),
+            http_status_class=(
+                selected.http_status_class
+                if selected is not None
+                else None
+            ),
         )
-    return DashboardTransportError(_classify_transport_exception(exc))
+    category = _classify_transport_exception(exc)
+    http_status_class = _http_status_class(leaves)
+    return DashboardTransportError(
+        category,
+        http_response_received=http_status_class is not None,
+        failure_kind=(
+            "provider_5xx_ambiguous"
+            if http_status_class == "5xx"
+            else "transport_silence_or_response_loss"
+            if category in {"connection_failed", "timeout"}
+            else "protocol_or_transport_failure"
+        ),
+        http_status_class=http_status_class,
+    )
+
+
+def _http_status_class(leaves: tuple[BaseException, ...]) -> str | None:
+    """Return a bounded HTTP status family without retaining response data."""
+
+    for leaf in leaves:
+        response = getattr(leaf, "response", None)
+        status = getattr(response, "status_code", None)
+        if isinstance(status, int):
+            if 500 <= status <= 599:
+                return "5xx"
+            if 400 <= status <= 499:
+                return "4xx"
+    return None
 
 
 def _classify_transport_exception(exc: BaseException) -> str:

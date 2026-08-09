@@ -17,6 +17,7 @@ COUNTER_NAMES = frozenset(
         "planning.preread_attempts",
         "planning.preread_failures",
         "planning.non_storage_rejections",
+        "planning.known_upstream_compatibility_rejections",
         "planning.patch_validation_failures",
         "planning.broad_subtree_rejections",
         "planning.risk_review_flags",

@@ -24,6 +24,7 @@ from ha_mcp_engineering.clients.mcp import (  # noqa: E402
 )
 from ha_mcp_engineering.errors import (  # noqa: E402
     DashboardProviderError,
+    ErrorCode,
     GovernanceError,
 )
 from ha_mcp_engineering.f3_dashboard.errors import (  # noqa: E402
@@ -72,6 +73,7 @@ class _DashboardGateway:
         self.write_count = 0
         self.fail_after_write = False
         self.fail_before_write = False
+        self.structured_rejection = False
         self.last_write: dict[str, object] | None = None
 
     async def preread(self, *, url_path: str):
@@ -89,6 +91,19 @@ class _DashboardGateway:
     async def write(self, **arguments):
         self.write_count += 1
         self.last_write = deepcopy(arguments)
+        if self.structured_rejection:
+            raise DashboardProviderError(
+                ErrorCode.UPSTREAM_DASHBOARD_UPSTREAM_ERROR,
+                details={
+                    "provider": "upstream_dashboard",
+                    "failure_category": "upstream_error",
+                    "provider_failure_kind": "structured_provider_rejection",
+                    "provider_response_received": True,
+                    "upstream_dispatch_occurred": True,
+                    "upstream_error_code": "VALIDATION_INVALID_PARAMETER",
+                    "upstream_action": "set",
+                },
+            )
         if self.fail_before_write:
             raise RuntimeError("synthetic pre-provider response failure")
         self.configuration = deepcopy(arguments["configuration"])
@@ -130,6 +145,7 @@ class _ExactProviderTransport:
         )
         self.guide_count = 0
         self.write_count = 0
+        self.write_is_error = False
         self.write_payload = {
             "success": True,
             "action": "update",
@@ -172,7 +188,7 @@ class _ExactProviderTransport:
                         "text": json.dumps(self.write_payload),
                     }
                 ],
-                "isError": False,
+                "isError": self.write_is_error,
             },
             tool_call_latency_ms=1.0,
         )
@@ -267,6 +283,47 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(transport.write_count, 1)
 
+    async def test_structured_setter_rejection_preserves_bounded_evidence(self):
+        transport = _ExactProviderTransport()
+        transport.write_is_error = True
+        transport.write_payload = {
+            "success": False,
+            "action": "set",
+            "url_path": "map",
+            "error": {
+                "code": "VALIDATION_INVALID_PARAMETER",
+                "message": "synthetic rejected payload must not be retained",
+            },
+        }
+        provider = UpstreamDashboardProvider()
+        provider._transport = transport
+
+        with self.assertRaises(DashboardProviderError) as caught:
+            await provider.execute_governed_dashboard_update(
+                url_path="map",
+                configuration={"title": "After", "views": []},
+                config_hash="0" * 16,
+                best_practice_key=(
+                    "I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-0123abcd"
+                ),
+            )
+
+        self.assertEqual(transport.write_count, 1)
+        self.assertTrue(caught.exception.details["provider_response_received"])
+        self.assertEqual(
+            caught.exception.details["provider_failure_kind"],
+            "structured_provider_rejection",
+        )
+        self.assertEqual(
+            caught.exception.details["upstream_error_code"],
+            "VALIDATION_INVALID_PARAMETER",
+        )
+        self.assertEqual(caught.exception.details["upstream_action"], "set")
+        self.assertNotIn(
+            "synthetic rejected payload",
+            json.dumps(caught.exception.details),
+        )
+
 
 class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -301,7 +358,7 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         return await self.service.create_dashboard_update_plan(
             title="Rename operations dashboard",
             description="Bounded existing-dashboard update.",
-            url_path="operations",
+            url_path="main-operations",
             patch_operations=[
                 {
                     "operation_id": "rename",
@@ -412,6 +469,31 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["task_state"], "failed_pre_dispatch")
         self.assertEqual(self.dashboard.write_count, 0)
 
+    async def test_ha_mcp_8_1_1_hyphenless_target_fails_during_planning(self):
+        with self.assertRaises(GovernanceError) as caught:
+            await self.service.create_dashboard_update_plan(
+                title="Rename map dashboard",
+                description="Known 8.1.1 compatibility rejection.",
+                url_path="map",
+                patch_operations=[
+                    {
+                        "operation_id": "rename",
+                        "operation": "replace",
+                        "path": "/title",
+                        "value": "After",
+                    }
+                ],
+                expiration_minutes=30,
+            )
+
+        self.assertEqual(
+            caught.exception.details["reason"],
+            "dashboard_write_existing_hyphenless_path_incompatible",
+        )
+        self.assertEqual(self.dashboard.best_practice_count, 0)
+        self.assertEqual(self.dashboard.write_count, 0)
+        self.assertEqual(self.repository.list(), [])
+
     async def test_lost_response_is_read_back_without_redispatch(self):
         created = await self._plan()
         await self._approve(created)
@@ -439,6 +521,42 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
             result["task_state"],
             {"failed_post_dispatch", "manual_review_required"},
         )
+        self.assertEqual(self.dashboard.write_count, 1)
+
+    async def test_structured_rejection_and_unchanged_reread_is_not_mismatch(self):
+        created = await self._plan()
+        await self._approve(created)
+        self.dashboard.structured_rejection = True
+
+        result = await self.service.apply(
+            created["plan_id"], created["plan_hash"]
+        )
+
+        self.assertEqual(result["task_state"], "failed_post_dispatch")
+        self.assertEqual(self.dashboard.write_count, 1)
+        self.assertEqual(self.dashboard.configuration["title"], "Before")
+        evidence = self._execution_evidence(result["task_id"])
+        self.assertEqual(len(evidence), 1)
+        child = evidence[0]
+        self.assertTrue(child["provider_response_received"])
+        self.assertEqual(child["normalized_outcome"], "failed_post_dispatch")
+        diagnostics = {
+            code
+            for event in child["events"]
+            for code in event["diagnostic_codes"]
+        }
+        self.assertIn("structured_provider_rejection_received", diagnostics)
+        self.assertIn("provider_rejection_confirmed_no_change", diagnostics)
+        self.assertIn(
+            "upstream_error_validation_invalid_parameter", diagnostics
+        )
+        self.assertNotIn("exact_readback_mismatch", diagnostics)
+        self.assertNotEqual(child["normalized_outcome"], "verification_mismatch")
+
+        with self.assertRaises(GovernanceError):
+            await self.service.apply(
+                created["plan_id"], created["plan_hash"]
+            )
         self.assertEqual(self.dashboard.write_count, 1)
         with self.assertRaises(GovernanceError):
             await self.service.apply(

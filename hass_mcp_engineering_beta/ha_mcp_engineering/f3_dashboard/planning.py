@@ -19,6 +19,7 @@ from .constants import (
     PROPOSAL_MODEL,
 )
 from .errors import (
+    KnownUpstreamCompatibilityError,
     PatchCompilationError,
     PatchValidationError,
     PlanningError,
@@ -41,6 +42,9 @@ from .serialization import proposal_hash, public_proposal_projection
 
 _CANONICAL_ADDON_SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,127}$")
 _CANONICAL_CALLER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}$")
+KNOWN_HYPHENLESS_EXISTING_UPDATE_INCOMPATIBLE_RELEASES = frozenset(
+    {"8.1.1"}
+)
 
 
 class ExactDashboardReader(Protocol):
@@ -111,6 +115,22 @@ async def create_dashboard_update_plan(
         if "storage-mode" in str(exc):
             metrics.record("planning.non_storage_rejections", target=url_path)
         raise
+
+    if (
+        raw.upstream_version
+        in KNOWN_HYPHENLESS_EXISTING_UPDATE_INCOMPATIBLE_RELEASES
+        and "-" not in raw.canonical_url_path
+        and raw.canonical_url_path != "lovelace"
+    ):
+        metrics.record(
+            "planning.known_upstream_compatibility_rejections",
+            target=url_path,
+            codes=("existing_hyphenless_path", "ha_mcp_8_1_1"),
+        )
+        raise KnownUpstreamCompatibilityError(
+            "ha-mcp 8.1.1 rejects updates to an existing hyphenless "
+            "dashboard path before its setter runs"
+        )
 
     try:
         compilation = compile_dashboard_patch(raw.configuration, operations)
