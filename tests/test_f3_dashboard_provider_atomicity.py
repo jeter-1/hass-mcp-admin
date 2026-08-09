@@ -12,18 +12,18 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 sys.path.insert(0, str(Path(__file__).parent))
 
-from f3_dashboard.atomicity import (  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.atomicity import (  # noqa: E402
     assess_atomicity,
     require_executable_atomicity,
     simulate_non_atomic_interleaving,
 )
-from f3_dashboard.errors import AtomicityGateError, ProviderAdmissionError  # noqa: E402
-from f3_dashboard.models import AtomicityStatus  # noqa: E402
-from f3_dashboard.patch import compile_dashboard_patch  # noqa: E402
-from f3_dashboard.provider import (  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.errors import ProviderAdmissionError  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.models import AtomicityStatus  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.patch import compile_dashboard_patch  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.provider import (  # noqa: E402
     COMMON_INPUT_SCHEMA_FINGERPRINT,
     EXACT_CONTRACTS,
     PROHIBITED_ARGUMENT_NAMES,
@@ -62,12 +62,12 @@ class DashboardProviderAdmissionTests(unittest.TestCase):
             [COMMON_INPUT_SCHEMA_FINGERPRINT, COMMON_INPUT_SCHEMA_FINGERPRINT],
         )
 
-    def test_exact_7142_and_800_contracts_are_planning_admitted_only(self):
+    def test_exact_reviewed_contracts_are_executable_under_operator_policy(self):
         for version, evidence in EXACT_CONTRACTS.items():
             with self.subTest(version=version):
                 admission = admit_provider_contract(evidence)
                 self.assertTrue(admission.admitted_for_planning)
-                self.assertFalse(admission.executable)
+                self.assertTrue(admission.executable)
                 self.assertEqual(admission.exact_release, version)
 
     def test_unknown_release_protocol_schema_security_output_and_runtime_fail_closed(self):
@@ -98,13 +98,13 @@ class DashboardProviderAdmissionTests(unittest.TestCase):
                 }
             ],
         )
-        admission = admit_provider_contract(EXACT_CONTRACTS["8.0.0"])
+        admission = admit_provider_contract(EXACT_CONTRACTS["8.1.1"])
         projection = build_provider_projection(
             admission=admission,
             compilation=compilation,
             url_path="synthetic-dashboard",
             current_config_hash=compilation.resulting_upstream_config_hash,
-            atomicity=assess_atomicity("8.0.0"),
+            atomicity=assess_atomicity("8.1.1"),
         )
         self.assertEqual(projection.target_url_path, "synthetic-dashboard")
         self.assertEqual(
@@ -114,32 +114,33 @@ class DashboardProviderAdmissionTests(unittest.TestCase):
             projection.resulting_upstream_config_hash,
             compilation.resulting_upstream_config_hash,
         )
-        self.assertFalse(projection.executable)
-        self.assertIn(
-            "no_reviewed_mutating_argument_realization", projection.blocked_reason
-        )
+        self.assertTrue(projection.executable)
+        self.assertEqual(projection.blocked_reason, "")
         self.assertIn("BestPracticeKey", projection.potential_ephemeral_argument_names)
         self.assertEqual(projection.prohibited_argument_names, PROHIBITED_ARGUMENT_NAMES)
         self.assertEqual(
             set(PROHIBITED_ARGUMENT_NAMES),
             {
-                "config",
                 "python_transform",
                 "title",
                 "icon",
                 "require_admin",
                 "show_in_sidebar",
                 "view_path",
-                "return_screenshot",
                 "resources",
                 "preferences",
             },
         )
-        with self.assertRaises(AtomicityGateError):
-            require_executable_projection(projection)
+        require_executable_projection(projection)
 
     def test_arbitrary_arguments_creation_and_screenshot_routes_are_not_projected(self):
-        source = Path(ROOT / "f3_dashboard" / "provider.py").read_text(encoding="utf-8")
+        source = Path(
+            ROOT
+            / "hass_mcp_engineering_beta"
+            / "ha_mcp_engineering"
+            / "f3_dashboard"
+            / "provider.py"
+        ).read_text(encoding="utf-8")
         self.assertNotIn("def dispatch", source)
         self.assertNotIn("def create_dashboard", source)
         self.assertNotIn("def delete_dashboard", source)
@@ -151,12 +152,11 @@ class DashboardProviderAdmissionTests(unittest.TestCase):
     def test_provider_response_is_bounded_evidence_not_verification(self):
         payload = {
             "success": True,
-            "action": "python_transform",
+            "action": "update",
             "url_path": "synthetic-dashboard",
-            "write_committed": True,
-            "post_write_verified": True,
-            "config_hash": "a" * 16,
-            "python_expression": "sensitive generated expression",
+            "dashboard_created": False,
+            "config_updated": True,
+            "metadata_updated": False,
             "warnings": ["raw upstream content"],
         }
         evidence = project_provider_response(
@@ -169,8 +169,9 @@ class DashboardProviderAdmissionTests(unittest.TestCase):
             None,
             {},
             {**payload, "url_path": "other-dashboard"},
-            {**payload, "config_hash": "malformed"},
-            {**payload, "post_write_verified": "yes"},
+            {**payload, "dashboard_created": True},
+            {**payload, "config_updated": False},
+            {**payload, "metadata_updated": True},
         ):
             with self.subTest(malformed=malformed), self.assertRaises(ProviderAdmissionError):
                 project_provider_response(malformed, expected_url_path="synthetic-dashboard")
@@ -182,18 +183,23 @@ class DashboardAtomicityGateTests(unittest.TestCase):
         self.approved = {"title": "approved result"}
         self.external = {"title": "external writer result"}
 
-    def test_exact_reviewed_releases_have_no_selected_atomicity_mechanism(self):
-        for version in ("7.14.2", "8.0.0"):
+    def test_exact_reviewed_releases_use_explicit_operator_policy(self):
+        for version in ("7.14.2", "8.0.0", "8.1.1"):
             with self.subTest(version=version):
                 decision = assess_atomicity(version)
-                self.assertEqual(decision.status, AtomicityStatus.BLOCKED)
-                self.assertIsNone(decision.mechanism)
+                self.assertEqual(
+                    decision.status,
+                    AtomicityStatus.OPERATOR_ACCEPTED_NON_ATOMIC,
+                )
+                self.assertEqual(
+                    decision.mechanism,
+                    "explicit_home_operator_policy_with_immediate_conflict_check",
+                )
                 self.assertIn(
                     "upstream_hash_check_and_save_are_separate_awaited_calls",
                     decision.reason_codes,
                 )
-                with self.assertRaises(AtomicityGateError):
-                    require_executable_atomicity(decision)
+                require_executable_atomicity(decision)
 
     def test_unchanged_dashboard_models_save_without_fixture_mutation(self):
         result = simulate_non_atomic_interleaving(
@@ -272,10 +278,12 @@ class DashboardAtomicityGateTests(unittest.TestCase):
                 self.assertEqual(result.fixture_mutation_count, 0)
 
     def test_strict_bps_receipts_are_not_modeled_as_cas_or_writer_exclusion(self):
-        decision = assess_atomicity("8.0.0")
+        decision = assess_atomicity("8.1.1")
         self.assertNotIn("strict_bps", decision.reason_codes)
-        self.assertEqual(decision.status, AtomicityStatus.BLOCKED)
-        self.assertIsNone(decision.mechanism)
+        self.assertEqual(
+            decision.status, AtomicityStatus.OPERATOR_ACCEPTED_NON_ATOMIC
+        )
+        self.assertNotIn("strict_bps", decision.mechanism)
 
 
 if __name__ == "__main__":

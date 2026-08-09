@@ -13,20 +13,20 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 sys.path.insert(0, str(Path(__file__).parent))
 
-from f3_dashboard.artifact_store import (  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.artifact_store import (  # noqa: E402
     DashboardArtifactStore,
     artifact_resulting_configuration,
 )
-from f3_dashboard.errors import ArtifactStorageError  # noqa: E402
-from f3_dashboard.json_codec import engineering_sha256, upstream_config_hash  # noqa: E402
-from f3_dashboard.models import VerificationOutcome  # noqa: E402
-from f3_dashboard.patch import mismatch_paths  # noqa: E402
-from f3_dashboard.observability import DashboardWriteObservability  # noqa: E402
-from f3_dashboard.serialization import proposal_hash  # noqa: E402
-from f3_dashboard.verification import (  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.errors import ArtifactStorageError  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.json_codec import engineering_sha256, upstream_config_hash  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.models import VerificationOutcome  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.patch import mismatch_paths  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.observability import DashboardWriteObservability  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.serialization import proposal_hash  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.verification import (  # noqa: E402
     assess_dashboard_preflight,
     verify_dashboard_observation,
 )
@@ -143,16 +143,16 @@ class DashboardPreflightTests(unittest.IsolatedAsyncioTestCase):
             self.proposal, current or self.current, **values
         )
 
-    async def test_even_fresh_approved_fenced_complete_lock_preflight_is_atomicity_blocked(self):
+    async def test_fresh_approved_fenced_complete_lock_preflight_is_eligible(self):
         result = self.preflight()
-        self.assertFalse(result.eligible)
+        self.assertTrue(result.eligible)
         self.assertFalse(result.stale)
         self.assertTrue(result.approval_bundle_validated)
         self.assertTrue(result.complete_lock_keys_present)
         self.assertTrue(result.fencing_validated)
-        self.assertFalse(result.atomicity_validated)
-        self.assertIn("atomicity_gate_rejected", result.diagnostic_codes)
-        self.assertIn("proposal_is_planning_only", result.diagnostic_codes)
+        self.assertTrue(result.atomicity_validated)
+        self.assertNotIn("atomicity_gate_rejected", result.diagnostic_codes)
+        self.assertNotIn("proposal_is_planning_only", result.diagnostic_codes)
 
     async def test_external_change_before_intent_is_stale_and_cannot_dispatch(self):
         changed = make_preread({"title": "external writer"})

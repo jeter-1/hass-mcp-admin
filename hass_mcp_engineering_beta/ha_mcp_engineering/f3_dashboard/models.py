@@ -35,6 +35,7 @@ class RiskDisposition(str, Enum):
 
 class AtomicityStatus(str, Enum):
     BLOCKED = "blocked"
+    OPERATOR_ACCEPTED_NON_ATOMIC = "operator_accepted_non_atomic"
     PROVEN_ATOMIC = "proven_atomic"
     AUTHORITATIVE_WRITER_EXCLUSION = "authoritative_writer_exclusion"
 

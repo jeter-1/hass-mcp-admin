@@ -20,17 +20,17 @@ EXPECTED_ENTRY_BY_VERSION = {
     "8.1.1": "ha-mcp-v8.1.1-e1d76a6e",
 }
 EXPECTED_UPSTREAM_TOOL_COUNT = 78
-EXPECTED_ENGINEERING_LOCAL_TOOL_COUNT = 49
+EXPECTED_ENGINEERING_LOCAL_TOOL_COUNT = 50
 EXPECTED_ACCOUNTING_BY_VERSION = {
     "8.1.0": {
         "delegated_read_count": 24,
         "held_tools": {"ha_search", "ha_get_operation_status"},
-        "engineering_total_tool_count": 73,
+        "engineering_total_tool_count": 74,
     },
     "8.1.1": {
         "delegated_read_count": 25,
         "held_tools": {"ha_get_operation_status"},
-        "engineering_total_tool_count": 74,
+        "engineering_total_tool_count": 75,
     },
 }
 ZERO_ADMISSION_COUNTERS = (

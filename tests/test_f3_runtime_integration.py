@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.f3_runtime.registry import (  # noqa: E402
     CONFIGURATION_REGISTRATIONS,
+    DASHBOARD_REGISTRATION,
     OPERATIONAL_REGISTRATIONS,
 )
 from ha_mcp_engineering.f3_runtime.repository import (  # noqa: E402
@@ -1007,24 +1008,31 @@ class F3ConfigurationActivationTests(ConfigurationPlanTestCase):
             F3_EXECUTION_AUTHORITY,
         )
 
-    def test_registry_is_closed_and_dashboard_execution_is_absent(self):
+    def test_registry_is_closed_and_contains_one_dashboard_update(self):
         identities = {entry.capability_id for entry in self.runtime.registry.entries}
         self.assertEqual(
             identities,
             {
                 item[0]
-                for item in (*CONFIGURATION_REGISTRATIONS, *OPERATIONAL_REGISTRATIONS)
+                for item in (
+                    *CONFIGURATION_REGISTRATIONS,
+                    *OPERATIONAL_REGISTRATIONS,
+                    DASHBOARD_REGISTRATION,
+                )
             },
         )
-        self.assertEqual(len(identities), 12)
-        self.assertFalse(any("dashboard" in item for item in identities))
+        self.assertEqual(len(identities), 13)
+        self.assertEqual(
+            [item for item in identities if "dashboard" in item],
+            ["update_existing_dashboard"],
+        )
 
-    def test_ready_health_is_bounded_and_reports_no_fallback_or_dashboard(self):
+    def test_ready_health_is_bounded_and_reports_one_dashboard_capability(self):
         health = self.runtime.health()
         self.assertEqual(health["status"], "ready")
         self.assertTrue(health["execution_ready"])
-        self.assertEqual(health["activated_capability_count"], 12)
-        self.assertEqual(health["dashboard_capability_count"], 0)
+        self.assertEqual(health["activated_capability_count"], 13)
+        self.assertEqual(health["dashboard_capability_count"], 1)
         self.assertEqual(health["fallback_count"], 0)
         self.assertEqual(health["recovery_cadence_seconds"], 30)
         self.assertLessEqual(health["recovery_batch_size"], 16)

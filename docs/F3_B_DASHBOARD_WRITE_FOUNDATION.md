@@ -1,6 +1,12 @@
 # F3-B governed storage-dashboard write foundation
 
-Status: Beta 17 accepted planning/verification foundation; execution deferred.
+Status: Historical Beta 17 foundation; execution decision superseded 2026-08-08.
+
+The current bounded existing-dashboard implementation contract is
+[F3_DASHBOARD_WRITE_CONTRACT.md](F3_DASHBOARD_WRITE_CONTRACT.md). This document
+remains source and design history; its statements that the shipped runtime does
+not import `f3_dashboard` or cannot dispatch are no longer current after the
+approved MVP is merged.
 
 This document separates reviewed source facts, F3-B implementation decisions,
 unresolved integration requirements, and future work. It does not amend the

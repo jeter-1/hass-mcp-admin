@@ -22,7 +22,7 @@ UPSTREAM_CONFIG_HASH = re.compile(r"^[0-9a-f]{16}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 PROTOCOL_VERSION = "2025-03-26"
-SUPPORTED_UPSTREAM_VERSIONS = frozenset({"7.14.2", "8.0.0"})
+SUPPORTED_UPSTREAM_VERSIONS = frozenset({"7.14.2", "8.0.0", "8.1.1"})
 
 # The current Engineering dashboard provider defaults to a 60,000-byte MCP
 # response and reserves 16,000 bytes for its envelope.  Forty thousand bytes

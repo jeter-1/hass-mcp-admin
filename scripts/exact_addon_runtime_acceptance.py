@@ -263,8 +263,8 @@ def _runtime_snapshot(
     return {
         "server_version": SERVER_VERSION,
         "build_sha": "0" * 40,
-        "registered_tool_count": 49 + EXPECTED_AUTOMATIC_READ_COUNT,
-        "engineering_tool_count": 49,
+        "registered_tool_count": 50 + EXPECTED_AUTOMATIC_READ_COUNT,
+        "engineering_tool_count": 50,
         "delegated_tool_count": EXPECTED_AUTOMATIC_READ_COUNT,
         "governance_storage_status": "healthy",
         "governance_plan_count": 0,

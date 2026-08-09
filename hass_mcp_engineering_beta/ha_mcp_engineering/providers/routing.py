@@ -143,6 +143,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "run_held_read_canary": ProviderCapability.HELD_READ_CANARY,
     "create_change_plan": ProviderCapability.RISK_ASSESSMENT,
     "create_configuration_plan": ProviderCapability.RISK_ASSESSMENT,
+    "create_dashboard_update_plan": ProviderCapability.RISK_ASSESSMENT,
     "create_backup_plan": ProviderCapability.OPERATIONAL_ADMINISTRATION,
     "create_reload_plan": ProviderCapability.OPERATIONAL_ADMINISTRATION,
     "create_addon_restart_plan": (

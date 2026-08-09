@@ -313,6 +313,7 @@ class F3ContractDeclarationTests(unittest.TestCase):
                 "create_automation",
                 "update_automation",
                 "configuration_plan",
+                "update_dashboard",
                 "create_full_backup",
                 "controlled_reload",
                 "restart_addon",
@@ -339,7 +340,7 @@ class F3ContractDeclarationTests(unittest.TestCase):
                 "superseded",
             },
         )
-        self.assertEqual(len(registered_tools(get_registered_server())), 49)
+        self.assertEqual(len(registered_tools(get_registered_server())), 50)
 
     def test_canonical_contract_has_only_standard_library_imports(self):
         contract = (

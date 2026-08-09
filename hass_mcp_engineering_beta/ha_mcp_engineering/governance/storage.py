@@ -31,6 +31,9 @@ OPERATIONAL_OPERATIONS = frozenset(
         ChangeOperation.RESTART_HOME_ASSISTANT,
     }
 )
+V3_NAMESPACED_OPERATIONS = OPERATIONAL_OPERATIONS | frozenset(
+    {ChangeOperation.UPDATE_DASHBOARD}
+)
 TERMINAL_STATUSES = {
     PlanStatus.VALIDATION_FAILED,
     PlanStatus.APPLIED,
@@ -478,11 +481,18 @@ class ChangePlanRepository:
 
     @staticmethod
     def _is_operational(plan: ChangePlan) -> bool:
-        return (
-            plan.contract_version == 3
-            and plan.plan_family == "operational_administration"
-            and plan.operation in OPERATIONAL_OPERATIONS
-            and plan.operational is not None
+        if plan.contract_version != 3 or plan.operational is None:
+            return False
+        expected_family = (
+            "dashboard_update"
+            if plan.operation is ChangeOperation.UPDATE_DASHBOARD
+            else "operational_administration"
+        )
+        return bool(
+            plan.operation in V3_NAMESPACED_OPERATIONS
+            and plan.plan_family == expected_family
+            and plan.operational.family == expected_family
+            and plan.operational.operation == plan.operation.value
         )
 
     def _path_for_plan(self, plan: ChangePlan) -> Path:

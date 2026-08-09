@@ -81,6 +81,7 @@ def assess_dashboard_preflight(
     if stale:
         codes.append("stale_dashboard_state")
     atomicity = proposal.atomicity.status in {
+        AtomicityStatus.OPERATOR_ACCEPTED_NON_ATOMIC,
         AtomicityStatus.PROVEN_ATOMIC,
         AtomicityStatus.AUTHORITATIVE_WRITER_EXCLUSION,
     }
