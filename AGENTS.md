@@ -139,6 +139,7 @@ gate.
 
 ## Frozen or Protected Paths
 
+- `.coderabbit.yaml` - automated-review scope, retention, trigger, and write-adjacent controls
 - `hass_mcp_admin/` - stable v1.1.2 source and packaging
 - `hass_mcp_engineering_beta/ha_mcp_engineering/` - Engineering runtime, schemas, registration, routing, providers, and policy
 - `.github/workflows/*.yml` and `*.yaml` - CI, publication, signing, and deployment authority
@@ -150,6 +151,12 @@ gate.
 Changes to a protected path require the external task to name and authorize that
 surface explicitly. Nested instruction files and other non-runtime documentation
 do not change the runtime merely because they live below a protected directory.
+
+CodeRabbit installation access, repository scope, data-retention behavior,
+review triggers, and write-adjacent features such as Autofix are security and
+governance controls. Do not change them, weaken `.coderabbit.yaml`, or enable a
+CodeRabbit feature that can write to branches without explicit external
+authorization for that exact change.
 
 ## Prohibited Actions
 
@@ -184,6 +191,8 @@ state that status explicitly rather than inventing a value:
 
 Reviewers must flag each of the following, with file-and-line evidence:
 
+- weakening of `.coderabbit.yaml`, expansion of CodeRabbit access or retention,
+  or enabling CodeRabbit write-adjacent behavior without explicit authorization;
 - newly reachable writes, physical actions, service calls, reloads, restarts, or
   deletions;
 - provider-boundary bypass, direct-HA fallback, upstream fallback, or unreviewed
