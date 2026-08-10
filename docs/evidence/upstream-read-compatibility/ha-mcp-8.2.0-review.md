@@ -22,6 +22,7 @@ source behind an opt-in feature switch but is absent from the reviewed default
 | source commit | `54c492510d05b1f33c777f1c94bfb6a50a7d7c42` |
 | source tree | `3788d2bfefc140364be66a37cb96a67ac73141df` |
 | source archive SHA-256 | `945faf6eb7a10c9b687fd6c45f50b09d997d41f5549784f8835f2b29fda181ff` |
+| source archive URL | immutable annotated-tag object `codeload.github.com/homeassistant-ai/ha-mcp/legacy.tar.gz/098540ba22d495fdb1701daf830d54762350fd46` |
 | skills submodule | `9e4eff281112218953dc708687d24601777f9ccb` |
 | standalone index | `sha256:dbcfc0ee8ad02d2190ebde69e5cc6167175c79608bbf1d55cff9034e256face1` |
 | standalone amd64 manifest | `sha256:2a53077b16a70a24df176434db8b0dffaa9abaa692290cb73146d0c3d37e7644` |

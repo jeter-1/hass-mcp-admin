@@ -170,7 +170,7 @@ jobs:
           } >> "$GITHUB_ENV"
           mkdir -p "$source_parent" "$contract_dir/custom_components"
           curl --fail --location --proto '=https' --tlsv1.2 --max-time 120 \
-            https://codeload.github.com/homeassistant-ai/ha-mcp/tar.gz/refs/tags/v8.2.0 \
+            https://codeload.github.com/homeassistant-ai/ha-mcp/legacy.tar.gz/098540ba22d495fdb1701daf830d54762350fd46 \
             --output "$source_archive"
           printf '%s  %s\n' \
             945faf6eb7a10c9b687fd6c45f50b09d997d41f5549784f8835f2b29fda181ff \

@@ -1141,6 +1141,16 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         )
         startup_script = str(preparation["run"])
         self.assertIn(
+            "https://codeload.github.com/homeassistant-ai/ha-mcp/"
+            "legacy.tar.gz/098540ba22d495fdb1701daf830d54762350fd46",
+            startup_script,
+        )
+        self.assertIn(
+            "945faf6eb7a10c9b687fd6c45f50b09d997d41f5549784f8835f2b29fda181ff",
+            startup_script,
+        )
+        self.assertNotIn("tar.gz/refs/tags/v8.2.0", startup_script)
+        self.assertIn(
             "script: !include scripts.yaml",
             startup_script,
         )
