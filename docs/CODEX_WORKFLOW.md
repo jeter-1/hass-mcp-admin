@@ -234,3 +234,19 @@ These are distinct profiles; “Codex access” is not one universal permission.
 > are not acceptance instructions. Verify image/tag/provenance preconditions and
 > rollback, report CI-only checks accurately, and stop for a separate human
 > publication/deployment decision.
+
+### Protected Release Promotion
+
+After a staged declaration reaches `main`, the promotion workflow creates a
+deterministic release branch and draft pull request containing only the bounded
+version-authority updates and removal of `.release/next-version`. That
+preparation phase cannot publish an image or tag and cannot update `main`.
+GitHub may require a repository writer to approve CI for the bot-created pull
+request; starting those checks does not authorize merge or publication.
+
+Publication begins only after the exact marker-consuming promotion state is
+merged through the normal protected path. The workflow binds that state to the
+prior `main` declaration, rejects extra changed paths, and builds from the
+current protected `main` commit. It may then create the immutable image,
+annotated tag, and GitHub Release, but it never pushes a release commit directly
+to `main`. Merge, publication, and deployment remain separate decisions.
