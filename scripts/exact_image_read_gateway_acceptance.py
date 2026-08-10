@@ -1919,10 +1919,6 @@ async def inspect_approval_notification(
 ) -> dict[str, Any]:
     """Exercise the baked resolver and advisory notify route end to end."""
 
-    before_stats = fixture_stats(fixture_stats_url)
-    before_calls = len(
-        before_stats.get("approval_notification_calls") or []
-    )
     proposed = {
         "alias": "Gateway Fixture",
         "description": "Beta 31 exact-image notification fixture",
@@ -1978,8 +1974,10 @@ async def inspect_approval_notification(
                 "exact-image approval challenge request failed",
             )
             pending_data = pending.get("data") or {}
+            challenge_id = pending_data.get("challenge_id")
             require(
-                pending_data.get("status") == "approval_pending",
+                pending_data.get("status") == "approval_pending"
+                and isinstance(challenge_id, str),
                 "notification delivery changed approval authority",
             )
             notification_projection = (
@@ -1990,8 +1988,24 @@ async def inspect_approval_notification(
                 "notification projection claimed approval authority",
             )
 
+            expected_url = (
+                "/hassio/ingress/"
+                "df26dea6_hass_mcp_engineering_beta/plans/"
+                f"{plan_id}"
+            )
+            notification_key = (
+                "ha_mcp_approval_"
+                + hashlib.sha256(challenge_id.encode()).hexdigest()[:24]
+            )
+            expected_url_hash = hashlib.sha256(
+                expected_url.encode()
+            ).hexdigest()
+            expected_tag_hash = hashlib.sha256(
+                notification_key.encode()
+            ).hexdigest()
             notification_health: dict[str, Any] = {}
-            for _attempt in range(50):
+            matching_calls: list[dict[str, Any]] = []
+            for _attempt in range(100):
                 health = decode_tool_result(
                     await session.call_tool(
                         "get_server_health", {"check_ha": False}
@@ -2003,21 +2017,37 @@ async def inspect_approval_notification(
                     )
                     or {}
                 )
-                if notification_health.get("delivered", 0) >= 1:
+                current_stats = fixture_stats(fixture_stats_url)
+                matching_calls = [
+                    call
+                    for call in (
+                        current_stats.get("approval_notification_calls")
+                        or []
+                    )
+                    if call.get("url_sha256") == expected_url_hash
+                    and call.get("tag_sha256") == expected_tag_hash
+                ]
+                if (
+                    len(matching_calls) == 1
+                    and notification_health.get("delivered", 0) >= 1
+                ):
                     break
                 await asyncio.sleep(0.1)
 
     after_stats = fixture_stats(fixture_stats_url)
-    calls = after_stats.get("approval_notification_calls") or []
+    matching_calls = [
+        call
+        for call in (
+            after_stats.get("approval_notification_calls") or []
+        )
+        if call.get("url_sha256") == expected_url_hash
+        and call.get("tag_sha256") == expected_tag_hash
+    ]
     require(
-        len(calls) - before_calls == 1,
+        len(matching_calls) == 1,
         "exact-image notification did not make exactly one allowlisted call",
     )
-    call = calls[-1]
-    expected_url = (
-        "/hassio/ingress/df26dea6_hass_mcp_engineering_beta/plans/"
-        f"{plan_id}"
-    )
+    call = matching_calls[0]
     require(
         call.get("url_sha256")
         == hashlib.sha256(expected_url.encode()).hexdigest(),
@@ -2053,7 +2083,7 @@ async def inspect_approval_notification(
         "supervisor_self_info_requests": rest_reads.get(
             "/addons/self/info"
         ),
-        "notification_dispatch_count": len(calls) - before_calls,
+        "notification_dispatch_count": len(matching_calls),
         "exact_ingress_plan_link": True,
         "configured": notification_health.get("configured"),
         "worker_running": notification_health.get("worker_running"),

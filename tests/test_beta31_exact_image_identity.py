@@ -23,6 +23,8 @@ class Beta31ExactImageIdentityTests(unittest.TestCase):
         self.assertIn("supervisor_self_info_payload_bytes", exact_acceptance)
         self.assertIn("SELF_ADDON_INFO_BODY", fixture)
         self.assertIn("approval_notification_calls", fixture)
+        self.assertIn("expected_tag_hash", exact_acceptance)
+        self.assertIn("call.get(\"tag_sha256\")", exact_acceptance)
 
     def test_one_resolver_instance_is_shared_by_both_consumers(self):
         runtime = (
