@@ -107,6 +107,23 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             },
         )
 
+    def test_every_promotion_workflow_bash_step_parses(self):
+        bash = shutil.which("bash")
+        if bash is None:
+            self.skipTest("bash is required to validate workflow scripts")
+        for job_name, job in self.jobs.items():
+            for step in job.get("steps", []):
+                if "run" not in step or step.get("shell", "bash") != "bash":
+                    continue
+                with self.subTest(job=job_name, step=step.get("name", "unnamed")):
+                    result = subprocess.run(
+                        [bash, "-n", "-c", str(step["run"])],
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_feature_pr_or_promoted_source_is_version_consistent(self):
         versions = PROMOTION_MODULE.authoritative_versions(ROOT)
         self.assertEqual(len(set(versions.values())), 1)
