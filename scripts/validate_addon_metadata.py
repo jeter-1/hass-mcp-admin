@@ -33,6 +33,7 @@ MIN_ACCESS_SECRET_LENGTH = 24
 EXTERNAL_CHECK_TIMEOUT_SECONDS = 60
 EXPECTED_BETA_SCHEMA = {
     "access_secret": "str",
+    "approval_notification_service": "str",
     "upstream_dashboard_mcp_url": "password",
     "upstream_trust_registry_enabled": "bool",
     "upstream_trust_registry_public_key": "str",
@@ -228,6 +229,10 @@ def validate_config_pair(production: dict, beta: dict, *, minimum_secret_length:
         raise MetadataValidationError("Beta access_secret minimum length changed")
     if options["access_secret"] != "" or production.get("options", {}).get("access_secret") != "":
         raise MetadataValidationError("Access secrets must not be stored in add-on metadata")
+    if options["approval_notification_service"] != "":
+        raise MetadataValidationError(
+            "Approval notification service must default to disabled"
+        )
     if options["redaction_enabled"] is not True:
         raise MetadataValidationError("Beta redaction must remain enabled")
     if options["trust_cf_connecting_ip"] is not False:

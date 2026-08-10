@@ -168,7 +168,9 @@ class IngressApprovalApplication:
                     )
                 )
             content = "<ul>" + "".join(rows) + "</ul>"
-        return self._response(_page("Pending governed approvals", content))
+        return self._response(
+            _page("Pending governed approvals", content, prefix=prefix)
+        )
 
     async def review(self, request: Request) -> Response:
         context = self._deny_unless_ingress(request)
@@ -181,7 +183,14 @@ class IngressApprovalApplication:
             candidate.get("challenge_id") if candidate is not None else ""
         )
         if not challenge_id:
-            return self._response(_page("Approval unavailable", "<p>No active approval challenge exists.</p>"), 404)
+            return self._response(
+                _page(
+                    "Approval unavailable",
+                    "<p>No active approval challenge exists.</p>",
+                    prefix=prefix,
+                ),
+                404,
+            )
         try:
             review, csrf = await self.governance.require().issue_external_csrf(plan_id, challenge_id)
         except GovernanceError as exc:
@@ -194,7 +203,11 @@ class IngressApprovalApplication:
                     "cannot be approved or dispatched; create a new plan."
                 )
             return self._response(
-                _page("Approval unavailable", f"<p>{explanation}</p>"),
+                _page(
+                    "Approval unavailable",
+                    f"<p>{explanation}</p>",
+                    prefix=prefix,
+                ),
                 409,
             )
         return self._response(_render_review(prefix, review, csrf))
@@ -212,12 +225,21 @@ class IngressApprovalApplication:
         prefix, _principal = context
         if _principal == DEFAULT_APPROVER_PRINCIPAL:
             return self._response(
-                _page("Forbidden", "<p>An authenticated Home Assistant administrator identity is required.</p>"),
+                _page(
+                    "Forbidden",
+                    "<p>An authenticated Home Assistant administrator identity is required.</p>",
+                    prefix=prefix,
+                ),
                 403,
             )
         runtime = self.governance.require().f3_runtime
         if runtime is None:
-            return self._response(_page("F3 unavailable", "<p>F3 is not ready.</p>"), 503)
+            return self._response(
+                _page(
+                    "F3 unavailable", "<p>F3 is not ready.</p>", prefix=prefix
+                ),
+                503,
+            )
         rows = []
         for item in runtime.reconciliation_items():
             child_id = _text(item["child_id"], 128)
@@ -230,7 +252,9 @@ class IngressApprovalApplication:
                 )
             )
         content = "<p>No unresolved F3 executions or holds.</p>" if not rows else "<ul>" + "".join(rows) + "</ul>"
-        return self._response(_page("F3 reconciliation", content))
+        return self._response(
+            _page("F3 reconciliation", content, prefix=prefix)
+        )
 
     async def f3_review(self, request: Request) -> Response:
         context = self._deny_unless_ingress(request)
@@ -239,19 +263,35 @@ class IngressApprovalApplication:
         prefix, principal = context
         if principal == DEFAULT_APPROVER_PRINCIPAL:
             return self._response(
-                _page("Forbidden", "<p>An authenticated Home Assistant administrator identity is required.</p>"),
+                _page(
+                    "Forbidden",
+                    "<p>An authenticated Home Assistant administrator identity is required.</p>",
+                    prefix=prefix,
+                ),
                 403,
             )
         runtime = self.governance.require().f3_runtime
         if runtime is None:
-            return self._response(_page("F3 unavailable", "<p>F3 is not ready.</p>"), 503)
+            return self._response(
+                _page(
+                    "F3 unavailable", "<p>F3 is not ready.</p>", prefix=prefix
+                ),
+                503,
+            )
         child_id = request.path_params["child_id"]
         item = next(
             (value for value in runtime.reconciliation_items() if value["child_id"] == child_id),
             None,
         )
         if item is None:
-            return self._response(_page("F3 record unavailable", "<p>No unresolved record exists.</p>"), 404)
+            return self._response(
+                _page(
+                    "F3 record unavailable",
+                    "<p>No unresolved record exists.</p>",
+                    prefix=prefix,
+                ),
+                404,
+            )
         token = secrets.token_urlsafe(32)
         hold_generation_binding = ",".join(
             f"{value['key']}:{value['generation']}"
@@ -309,21 +349,38 @@ class IngressApprovalApplication:
             f'<button type="submit">{escape(action.replace("_", " "))}</button></form>'
             for action in actions
         )
-        return self._response(_page("F3 reconciliation record", f"<table>{rows}</table>{forms}"))
+        return self._response(
+            _page(
+                "F3 reconciliation record",
+                f"<table>{rows}</table>{forms}",
+                prefix=prefix,
+            )
+        )
 
     async def f3_reconcile(self, request: Request) -> Response:
         context = self._deny_unless_ingress(request)
         if isinstance(context, Response):
             return context
-        _prefix, principal = context
+        prefix, principal = context
         if principal == DEFAULT_APPROVER_PRINCIPAL:
             return self._response(
-                _page("Forbidden", "<p>An authenticated Home Assistant administrator identity is required.</p>"),
+                _page(
+                    "Forbidden",
+                    "<p>An authenticated Home Assistant administrator identity is required.</p>",
+                    prefix=prefix,
+                ),
                 403,
             )
         content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
         if content_type != "application/x-www-form-urlencoded":
-            return self._response(_page("Invalid request", "<p>Unsupported content type.</p>"), 415)
+            return self._response(
+                _page(
+                    "Invalid request",
+                    "<p>Unsupported content type.</p>",
+                    prefix=prefix,
+                ),
+                415,
+            )
         try:
             content_length = int(request.headers.get("content-length", "0"))
             if not 1 <= content_length <= MAX_BODY_BYTES:
@@ -355,33 +412,77 @@ class IngressApprovalApplication:
                 authorized_principal=principal,
             )
         except TimeoutError:
-            return self._response(_page("Request timeout", "<p>The bounded reconciliation request timed out.</p>"), 408)
+            return self._response(
+                _page(
+                    "Request timeout",
+                    "<p>The bounded reconciliation request timed out.</p>",
+                    prefix=prefix,
+                ),
+                408,
+            )
         except (UnicodeDecodeError, ValueError):
-            return self._response(_page("Invalid request", "<p>The bounded action is invalid or stale.</p>"), 400)
+            return self._response(
+                _page(
+                    "Invalid request",
+                    "<p>The bounded action is invalid or stale.</p>",
+                    prefix=prefix,
+                ),
+                400,
+            )
         except GovernanceError as exc:
-            return self._response(_page("Reconciliation refused", f"<p>{escape(exc.safe_message)}</p>"), 409)
-        return self._response(_page("Reconciliation recorded", f"<p>{escape(_text(result.get('status'), 96))}</p>"))
+            return self._response(
+                _page(
+                    "Reconciliation refused",
+                    f"<p>{escape(exc.safe_message)}</p>",
+                    prefix=prefix,
+                ),
+                409,
+            )
+        return self._response(
+            _page(
+                "Reconciliation recorded",
+                f"<p>{escape(_text(result.get('status'), 96))}</p>"
+                f'<p><a href="{escape(f"{prefix}/f3", quote=True)}">'
+                "Return to F3 reconciliation</a></p>",
+                prefix=prefix,
+            )
+        )
 
     async def _decide(self, request: Request, decision: str) -> Response:
         context = self._deny_unless_ingress(request)
         if isinstance(context, Response):
             return context
-        _, principal = context
+        prefix, principal = context
         content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
         if content_type != "application/x-www-form-urlencoded":
-            return self._response(_page("Invalid request", "<p>Unsupported content type.</p>"), 415)
+            return self._response(
+                _page("Invalid request", "<p>Unsupported content type.</p>", prefix=prefix),
+                415,
+            )
         try:
             content_length = int(request.headers.get("content-length", "0"))
         except ValueError:
-            return self._response(_page("Invalid request", "<p>Invalid request length.</p>"), 400)
+            return self._response(
+                _page("Invalid request", "<p>Invalid request length.</p>", prefix=prefix),
+                400,
+            )
         if content_length < 1 or content_length > MAX_BODY_BYTES:
-            return self._response(_page("Invalid request", "<p>Request body is outside the permitted bounds.</p>"), 413)
+            return self._response(
+                _page("Invalid request", "<p>Request body is outside the permitted bounds.</p>", prefix=prefix),
+                413,
+            )
         try:
             raw = await asyncio.wait_for(request.body(), timeout=MAX_REQUEST_SECONDS)
         except TimeoutError:
-            return self._response(_page("Request timeout", "<p>The bounded approval request timed out.</p>"), 408)
+            return self._response(
+                _page("Request timeout", "<p>The bounded approval request timed out.</p>", prefix=prefix),
+                408,
+            )
         if len(raw) > MAX_BODY_BYTES:
-            return self._response(_page("Invalid request", "<p>Request body is outside the permitted bounds.</p>"), 413)
+            return self._response(
+                _page("Invalid request", "<p>Request body is outside the permitted bounds.</p>", prefix=prefix),
+                413,
+            )
         try:
             parsed = parse_qs(raw.decode("utf-8", "strict"), keep_blank_values=True, max_num_fields=8)
             one = lambda name: parsed.get(name, [""])[0]
@@ -401,14 +502,41 @@ class IngressApprovalApplication:
                 approver_principal=principal,
             )
         except (UnicodeDecodeError, ValueError):
-            return self._response(_page("Invalid request", "<p>The form data is invalid.</p>"), 400)
+            return self._response(
+                _page("Invalid request", "<p>The form data is invalid.</p>", prefix=prefix),
+                400,
+            )
         except GovernanceError as exc:
-            return self._response(_page("Approval refused", f"<p>{escape(exc.safe_message)}</p>"), 409)
+            return self._response(
+                _page(
+                    "Approval refused",
+                    f"<p>{escape(exc.safe_message)}</p>",
+                    prefix=prefix,
+                ),
+                409,
+            )
         status = _text(result.get("status"), 32)
+        if status == "approval_pending":
+            next_href = f"{prefix}/plans/{request.path_params['plan_id']}"
+            next_label = "Continue elevated-risk acknowledgement"
+        else:
+            remaining = self.governance.require().pending_external_reviews()
+            next_href = f"{prefix}/"
+            next_label = (
+                f"Review remaining approvals ({len(remaining)})"
+                if remaining
+                else "Return to pending approvals"
+            )
+        follow_up = (
+            f'<p><a href="{escape(next_href, quote=True)}">'
+            f"{escape(next_label)}</a></p>"
+        )
         return self._response(
             _page(
                 "Approval decision recorded",
-                f"<p>The exact governed plan was <strong>{escape(status)}</strong>.</p>",
+                f"<p>The exact governed plan was <strong>{escape(status)}</strong>.</p>"
+                + follow_up,
+                prefix=prefix,
             )
         )
 
@@ -437,15 +565,26 @@ def _text(value: Any, limit: int) -> str:
     return safe[:limit]
 
 
-def _page(title: str, content: str) -> str:
+def _page(title: str, content: str, *, prefix: str | None = None) -> str:
+    navigation = ""
+    if prefix is not None:
+        approvals_href = escape(f"{prefix}/", quote=True)
+        f3_href = escape(f"{prefix}/f3", quote=True)
+        navigation = (
+            '<nav aria-label="Approval panel navigation">'
+            f'<a href="{approvals_href}">Approvals</a>'
+            f'<a href="{f3_href}">F3 reconciliation</a>'
+            "</nav>"
+        )
     return """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title}</title><style>
 body{{font-family:system-ui,sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem;color:#202124}}
 table{{border-collapse:collapse;width:100%}}th,td{{border:1px solid #bbb;padding:.5rem;text-align:left;vertical-align:top}}
 code{{overflow-wrap:anywhere}}button{{padding:.65rem 1rem;margin:.5rem .5rem .5rem 0}}.danger{{color:#8b0000}}
-</style></head><body><h1>{title}</h1>{content}</body></html>""".format(
-        title=escape(_text(title, 160)), content=content
+nav{{display:flex;gap:1rem;margin-bottom:1.25rem}}
+</style></head><body>{navigation}<h1>{title}</h1>{content}</body></html>""".format(
+        title=escape(_text(title, 160)), content=content, navigation=navigation
     )
 
 
@@ -1018,4 +1157,18 @@ def _render_review(prefix: str, review: dict[str, Any], csrf: str) -> str:
         + f'<form method="post" action="{reject_action}">{hidden}<button class="danger" type="submit">Reject plan</button></form>'
         + "<p>Approval is bound to the exact hash and approval kind shown above. This page does not apply or roll back the change.</p>"
     )
-    return _page("Review governed change", "<table>" + "".join(rows) + "</table>" + change_table + warning_block + forms)
+    back_link = (
+        f'<p><a href="{escape(f"{prefix}/", quote=True)}">'
+        "Back to pending approvals</a></p>"
+    )
+    return _page(
+        "Review governed change",
+        back_link
+        + "<table>"
+        + "".join(rows)
+        + "</table>"
+        + change_table
+        + warning_block
+        + forms,
+        prefix=prefix,
+    )

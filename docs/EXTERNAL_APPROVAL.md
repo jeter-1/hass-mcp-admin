@@ -46,8 +46,10 @@ actionability rules.
 This boundary does not prove that an automation will behave correctly. Apply
 verification proves that Home Assistant stored the intended configuration,
 returned the expected automation identity, and accepted its configuration.
-RC2 adds no behavioral observation window, mobile notification, service-call
-tool, or background monitor.
+RC2 added no behavioral observation window, mobile notification, service-call
+tool, or background monitor. Beta 30 later adds one optional notification-only
+operator convenience. It is not a public service-call tool or monitoring
+authority; its exact boundary is described below.
 
 RC2 also preserves Beta 26 persisted lifecycle behavior: no startup migration,
 authority upgrade, approval grant/consumption/replacement/revival, terminal
@@ -76,6 +78,13 @@ timeout. Responses are bounded and include `Cache-Control: no-store`,
 restrictive Content Security Policy compatible with Ingress. There are no
 external scripts, stylesheets, fonts, or remote resources. The application does
 not set framing headers that would break Ingress.
+
+Every authenticated Ingress page provides navigation to the pending approval
+inbox and F3 reconciliation. Exact review pages link back to the inbox. A
+decision resolves the current pending inventory on the server: an ordinary
+decision returns there, while the first step of an elevated approval links to
+the newly created acknowledgement for that exact plan. These links are GET-only
+navigation and carry no decision authority.
 
 All plan-, MCP-, user-, and Home Assistant-originated content is bounded,
 sanitized, and HTML-escaped. The panel never renders raw HTML or displays access
@@ -125,6 +134,38 @@ state also invalidates the challenge.
 Challenge and external-approval state is atomically persisted under
 `/data/governance/change_plans` and survives an add-on restart. A restart never
 approves, consumes, or revives an approval.
+
+## Optional Beta 30 operator notification
+
+`approval_notification_service` may be empty (disabled) or one exact Companion
+App service matching `notify.mobile_app_<device>`. A dedicated adapter makes
+only that allowlisted Home Assistant REST service call. It cannot call a notify
+group, another service domain, ha-mcp, a provider fallback, or an arbitrary
+Home Assistant service.
+
+After persistence of a new challenge, the adapter asynchronously sends a
+privacy-minimal normal-priority notification with one URI action: **Open
+Approval Panel**. The adapter resolves the running add-on's exact slug from
+Supervisor `/addons/self/info` instead of guessing a custom-repository prefix.
+The relative link contains the opaque plan ID so Ingress can open the exact
+review. It contains no approval decision, challenge ID, hash,
+CSRF nonce, credential, authenticated URL, diff, or unrestricted plan content.
+The Ingress application must still authenticate an administrator, resolve the
+active persisted challenge, validate the exact authority, and issue a fresh
+one-time CSRF nonce.
+
+Delivery is best-effort and has authority `none`. Queueing, success, failure,
+replacement, clearing, or restart reconciliation cannot modify the plan or
+approval state and cannot block challenge creation. A deterministic tag keeps
+one notification per challenge and is cleared on approval, rejection, expiry,
+invalidation, or consumption. Startup reconciliation may replace the tagged
+notification for an active persisted challenge; its in-memory delivery state is
+navigation/observability only, never authorization state.
+
+Audit and health distinguish queued, delivered, failed, clear, and queue-full
+outcomes with bounded counts and normalized failure categories. They do not log
+the configured device service, unrestricted payload, challenge ID, secrets, or
+authenticated URLs. There is no retry-driven approval behavior and no fallback.
 
 ## Beta 26 effective expiry lifecycle
 
