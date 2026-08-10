@@ -73,16 +73,31 @@ EXACT_CONTRACTS: Final = {
         runtime_contract_fingerprint="42c5f8769ab712b5299b71a5bd56c489214a7f04b528fb8a1cfb3feb869617b5",
         policy_classification="persistent_write",
     ),
+    "8.2.0": ProviderRuntimeEvidence(
+        upstream_version="8.2.0",
+        protocol_version=PROTOCOL_VERSION,
+        compatibility_entry="ha-mcp-v8.2.0-dbcfc0ee",
+        source_commit="54c492510d05b1f33c777f1c94bfb6a50a7d7c42",
+        tool_name=TOOL_NAME,
+        input_schema_fingerprint=COMMON_INPUT_SCHEMA_FINGERPRINT,
+        annotation_fingerprint=COMMON_ANNOTATION_FINGERPRINT,
+        description_fingerprint=COMMON_DESCRIPTION_FINGERPRINT,
+        output_contract_fingerprint=COMMON_OUTPUT_CONTRACT_FINGERPRINT,
+        runtime_contract_fingerprint="42c5f8769ab712b5299b71a5bd56c489214a7f04b528fb8a1cfb3feb869617b5",
+        policy_classification="persistent_write",
+    ),
 }
 
 POTENTIAL_EPHEMERAL_ARGUMENT_NAMES = ("BestPracticeKey",)
 PROHIBITED_ARGUMENT_NAMES = (
+    "config",
     "python_transform",
     "title",
     "icon",
     "require_admin",
     "show_in_sidebar",
     "view_path",
+    "return_screenshot",
     "resources",
     "preferences",
 )

@@ -1,0 +1,55 @@
+{
+  "model": "ha-mcp-dashboard-setter-source-review-v1",
+  "upstream": {
+    "repository": "https://github.com/homeassistant-ai/ha-mcp",
+    "version": "8.2.0",
+    "tag": "v8.2.0",
+    "tag_object": "098540ba22d495fdb1701daf830d54762350fd46",
+    "source_commit": "54c492510d05b1f33c777f1c94bfb6a50a7d7c42",
+    "source_tree": "3788d2bfefc140364be66a37cb96a67ac73141df",
+    "source_archive_sha256": "945faf6eb7a10c9b687fd6c45f50b09d997d41f5549784f8835f2b29fda181ff",
+    "dashboard_correction_commit": "801c22d0eaa59bfcbf44b51c257dafc635a075d3",
+    "skills_submodule_commit": "9e4eff281112218953dc708687d24601777f9ccb"
+  },
+  "runtime": {
+    "server_name": "ha-mcp",
+    "protocol_version": "2025-03-26",
+    "advertised_tool_count": 78,
+    "catalog_fingerprint": "97d88718be4542a60fc2911411da0ff0172ba0dfef821a9c83e998809dcaf4a2",
+    "loopback_capture_sha256": "c7337087bb1f63dafeb3319c9ca8134db1069f87025b897781e7fae43f0474e4",
+    "immutable_image_reproduction": "required_by_exact_head_ci"
+  },
+  "source_files": {
+    "src/ha_mcp/tools/tools_config_dashboards.py": "a50d22ca5fb89f5268e90c5b7cfd61ce4310a8f0a3fdc0e15ca2a30322522f43",
+    "tests/src/unit/test_set_dashboard_metadata.py": "953d135a6b6eaa127056230e1f7730ece64d4478b7c79456313201935ade1820",
+    "tests/src/unit/test_tools_config_dashboards.py": "864ead6156a5a131df953a6ac35da47b650237c5d5673f22950e6391831a29ca"
+  },
+  "resolver_contract": {
+    "existing_hyphenless_exact_url_path": "accepted_update",
+    "existing_hyphenated_exact_url_path": "accepted_update",
+    "new_hyphenless_url_path": "rejected_validation_invalid_parameter",
+    "new_hyphenated_url_path": "accepted_creation",
+    "internal_id_match_cannot_exempt_different_hyphenless_path": true,
+    "unreadable_dashboard_registry": "fail_closed",
+    "strategy_dashboard_full_config_or_python_transform": "rejected"
+  },
+  "setter_contract": {
+    "tool_name": "ha_config_set_dashboard",
+    "input_schema_fingerprint": "a7d11d72710f1c39937bfc864291f6d0936b2d4feb68dc4ff049eda3b91a3ac1",
+    "description_fingerprint": "97fdcfaf0c05e07e11113ebccbc7c1c964ab906658c642f5c34e853595d9870b",
+    "runtime_contract_fingerprint": "42c5f8769ab712b5299b71a5bd56c489214a7f04b528fb8a1cfb3feb869617b5",
+    "engineering_reachability": "governed_dashboard_setter_only",
+    "raw_direct_home_assistant_fallback": false,
+    "blind_redispatch": false,
+    "verification": "exact_complete_reread"
+  },
+  "focused_upstream_tests": {
+    "command_scope": [
+      "tests/src/unit/test_set_dashboard_metadata.py",
+      "tests/src/unit/test_tools_config_dashboards.py"
+    ],
+    "passed": 49,
+    "failed": 0,
+    "skipped": 0
+  }
+}

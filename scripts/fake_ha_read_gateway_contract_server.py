@@ -276,7 +276,16 @@ DASHBOARDS = [
         "show_in_sidebar": True,
         "require_admin": False,
         "mode": "storage",
-    }
+    },
+    {
+        "id": "map",
+        "url_path": "map",
+        "title": "Map",
+        "icon": "mdi:map",
+        "show_in_sidebar": True,
+        "require_admin": False,
+        "mode": "storage",
+    },
 ]
 DASHBOARD_CONFIG = {
     "title": "Compatibility Fixture",
@@ -565,7 +574,7 @@ def _result_for(message_type: str, request_data: dict[str, Any]) -> Any:
         return DASHBOARDS
     if message_type == "lovelace/config":
         url_path = request_data.get("url_path")
-        if url_path in {None, "compatibility-fixture"}:
+        if url_path in {None, "compatibility-fixture", "map"}:
             return DASHBOARD_CONFIG
         return None
     if message_type in {
@@ -649,6 +658,7 @@ def _addon_detail(addon: dict[str, Any]) -> dict[str, Any]:
         "live-8.0.0",
         "live-8.1.0",
         "live-8.1.1",
+        "live-8.2.0",
     }:
         return detail
     detail.update(
@@ -827,7 +837,17 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
                     }
                 )
             continue
-        if any(token in lowered for token in ("/update", "/create", "/delete", "call_service", "reload")):
+        if any(
+            token in lowered
+            for token in (
+                "/update",
+                "/create",
+                "/delete",
+                "/save",
+                "call_service",
+                "reload",
+            )
+        ):
             STATE.websocket_mutations[message_type] += 1
             await ws.send_json(
                 {
@@ -861,12 +881,25 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=18123)
     parser.add_argument(
         "--upstream-version",
-        choices=("7.14.1", "7.14.2", "8.0.0", "8.1.0", "8.1.1"),
+        choices=(
+            "7.14.1",
+            "7.14.2",
+            "8.0.0",
+            "8.1.0",
+            "8.1.1",
+            "8.2.0",
+        ),
         required=True,
     )
     parser.add_argument(
         "--addon-detail-profile",
-        choices=("compact", "live-8.0.0", "live-8.1.0", "live-8.1.1"),
+        choices=(
+            "compact",
+            "live-8.0.0",
+            "live-8.1.0",
+            "live-8.1.1",
+            "live-8.2.0",
+        ),
         default="compact",
     )
     args = parser.parse_args()

@@ -121,12 +121,14 @@ class DashboardProviderAdmissionTests(unittest.TestCase):
         self.assertEqual(
             set(PROHIBITED_ARGUMENT_NAMES),
             {
+                "config",
                 "python_transform",
                 "title",
                 "icon",
                 "require_admin",
                 "show_in_sidebar",
                 "view_path",
+                "return_screenshot",
                 "resources",
                 "preferences",
             },
@@ -184,7 +186,7 @@ class DashboardAtomicityGateTests(unittest.TestCase):
         self.external = {"title": "external writer result"}
 
     def test_exact_reviewed_releases_use_explicit_operator_policy(self):
-        for version in ("7.14.2", "8.0.0", "8.1.1"):
+        for version in ("7.14.2", "8.0.0", "8.1.1", "8.2.0"):
             with self.subTest(version=version):
                 decision = assess_atomicity(version)
                 self.assertEqual(

@@ -52,6 +52,7 @@ def make_preread(
         "7.14.2": "ha-mcp-v7.14.2-7917b2d3",
         "8.0.0": "ha-mcp-v8.0.0-d65630f6",
         "8.1.1": "ha-mcp-v8.1.1-e1d76a6e",
+        "8.2.0": "ha-mcp-v8.2.0-dbcfc0ee",
     }[version]
     return DashboardPreread(
         inventory=(DashboardInventoryRow(url_path=url_path, mode=mode),),

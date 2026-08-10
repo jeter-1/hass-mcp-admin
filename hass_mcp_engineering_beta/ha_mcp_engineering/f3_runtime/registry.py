@@ -154,7 +154,7 @@ class ClosedAdapterRegistry:
                 rollback_declaration="unavailable",
                 runtime_route="apply_change_plan",
                 historical_compatibility="new_plan_required",
-                required_releases=("8.1.1",),
+                required_releases=("8.1.1", "8.2.0"),
             )
         )
         adapters[capability] = dashboard_adapter
@@ -179,7 +179,10 @@ class ClosedAdapterRegistry:
                 raise AdapterRegistryError("F3 adapter model is unsupported")
             if (
                 entry.required_releases
-                not in {("7.14.2", "8.0.0"), ("8.1.1",)}
+                not in {
+                    ("7.14.2", "8.0.0"),
+                    ("8.1.1", "8.2.0"),
+                }
                 or entry.required_protocol != "2025-03-26"
                 or entry.runtime_route != "apply_change_plan"
                 or entry.provider_admission_model

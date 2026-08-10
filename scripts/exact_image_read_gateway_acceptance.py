@@ -130,6 +130,15 @@ EXPECTED_STOCK_COUNTS_BY_VERSION = {
         "prohibited": 1,
         "unsupported": 1,
     },
+    "8.2.0": {
+        "automatic_read": 25,
+        "held_for_canary": 1,
+        "mixed_or_requires_wrapper": 13,
+        "persistent_write": 33,
+        "physical_or_high_risk_action": 4,
+        "prohibited": 1,
+        "unsupported": 1,
+    },
 }
 DELEGATED_READ_CALLS = {
     "ha_config_get_automation": {"identifier": "gateway_fixture"},
