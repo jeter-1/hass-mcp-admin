@@ -11,6 +11,7 @@ import argparse
 import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -1911,6 +1912,165 @@ async def inspect_operational_lifecycle(
     }
 
 
+async def inspect_approval_notification(
+    *,
+    engineering_endpoint: str,
+    fixture_stats_url: str,
+) -> dict[str, Any]:
+    """Exercise the baked resolver and advisory notify route end to end."""
+
+    before_stats = fixture_stats(fixture_stats_url)
+    before_calls = len(
+        before_stats.get("approval_notification_calls") or []
+    )
+    proposed = {
+        "alias": "Gateway Fixture",
+        "description": "Beta 31 exact-image notification fixture",
+        "triggers": [],
+        "conditions": [],
+        "actions": [],
+        "mode": "single",
+    }
+    async with streamablehttp_client(engineering_endpoint) as (
+        read,
+        write,
+        _session_id,
+    ):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            created = decode_tool_result(
+                await session.call_tool(
+                    "create_change_plan",
+                    {
+                        "title": "Beta 31 exact-image notification",
+                        "description": (
+                            "Synthetic advisory delivery acceptance"
+                        ),
+                        "operation": "update_automation",
+                        "automation_id": "gateway_fixture",
+                        "proposed_config": proposed,
+                    },
+                )
+            )
+            require(
+                created.get("success") is True,
+                "exact-image notification plan creation failed",
+            )
+            created_data = created.get("data") or {}
+            plan_id = created_data.get("plan_id")
+            plan_hash = created_data.get("plan_hash")
+            require(
+                isinstance(plan_id, str)
+                and isinstance(plan_hash, str),
+                "exact-image notification plan identity was incomplete",
+            )
+            pending = decode_tool_result(
+                await session.call_tool(
+                    "approve_change_plan",
+                    {
+                        "plan_id": plan_id,
+                        "expected_plan_hash": plan_hash,
+                    },
+                )
+            )
+            require(
+                pending.get("success") is True,
+                "exact-image approval challenge request failed",
+            )
+            pending_data = pending.get("data") or {}
+            require(
+                pending_data.get("status") == "approval_pending",
+                "notification delivery changed approval authority",
+            )
+            notification_projection = (
+                pending_data.get("approval_notification") or {}
+            )
+            require(
+                notification_projection.get("authority") == "none",
+                "notification projection claimed approval authority",
+            )
+
+            notification_health: dict[str, Any] = {}
+            for _attempt in range(50):
+                health = decode_tool_result(
+                    await session.call_tool(
+                        "get_server_health", {"check_ha": False}
+                    )
+                )
+                notification_health = (
+                    ((health.get("data") or {}).get("governance") or {}).get(
+                        "approval_notifications"
+                    )
+                    or {}
+                )
+                if notification_health.get("delivered", 0) >= 1:
+                    break
+                await asyncio.sleep(0.1)
+
+    after_stats = fixture_stats(fixture_stats_url)
+    calls = after_stats.get("approval_notification_calls") or []
+    require(
+        len(calls) - before_calls == 1,
+        "exact-image notification did not make exactly one allowlisted call",
+    )
+    call = calls[-1]
+    expected_url = (
+        "/hassio/ingress/df26dea6_hass_mcp_engineering_beta/plans/"
+        f"{plan_id}"
+    )
+    require(
+        call.get("url_sha256")
+        == hashlib.sha256(expected_url.encode()).hexdigest(),
+        "exact-image notification did not carry the exact Ingress plan link",
+    )
+    require(
+        after_stats.get("supervisor_self_info_payload_bytes", 0)
+        > 32 * 1024,
+        "exact-image Supervisor self-info fixture was not larger than 32 KiB",
+    )
+    rest_reads = after_stats.get("rest_reads") or {}
+    require(
+        rest_reads.get("/addons/self/info", 0) >= 1,
+        "baked Engineering runtime did not use Supervisor self info",
+    )
+    require(
+        notification_health.get("configured") is True
+        and notification_health.get("worker_running") is True
+        and notification_health.get("delivered", 0) >= 1
+        and notification_health.get("failed") == 0
+        and notification_health.get("addon_identity_status")
+        == "verified_supervisor_self_info"
+        and notification_health.get("addon_identity_failure_category")
+        is None
+        and notification_health.get("authority") == "none"
+        and notification_health.get("fallback_count") == 0,
+        "exact-image notification health was not successful and advisory",
+    )
+    return {
+        "supervisor_self_info_payload_bytes": after_stats.get(
+            "supervisor_self_info_payload_bytes"
+        ),
+        "supervisor_self_info_requests": rest_reads.get(
+            "/addons/self/info"
+        ),
+        "notification_dispatch_count": len(calls) - before_calls,
+        "exact_ingress_plan_link": True,
+        "configured": notification_health.get("configured"),
+        "worker_running": notification_health.get("worker_running"),
+        "delivered": notification_health.get("delivered"),
+        "failed": notification_health.get("failed"),
+        "addon_identity_status": notification_health.get(
+            "addon_identity_status"
+        ),
+        "addon_identity_failure_category": notification_health.get(
+            "addon_identity_failure_category"
+        ),
+        "authority": notification_health.get("authority"),
+        "fallback_count": notification_health.get("fallback_count"),
+        "approval_performed": False,
+    }
+
+
 async def run(args: argparse.Namespace) -> dict[str, Any]:
     registry = load_reviewed_upstream_release_registry()
     release = registry.by_version.get(args.expected_upstream_version)
@@ -2033,6 +2193,10 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         expected_upstream_version=args.expected_upstream_version,
         release=release,
     )
+    approval_notification = await inspect_approval_notification(
+        engineering_endpoint=args.engineering_endpoint,
+        fixture_stats_url=args.fixture_stats_url,
+    )
     return {
         "result": "PASS",
         "upstream_version": args.expected_upstream_version,
@@ -2051,6 +2215,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         "classification_counts": policy.classification_counts,
         "operational_backup": operational_backup,
         "operational_lifecycle": operational_lifecycle,
+        "approval_notification": approval_notification,
         **engineering,
     }
 

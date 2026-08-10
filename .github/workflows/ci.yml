@@ -408,14 +408,17 @@ jobs:
             '  "prewarm_enabled": false,' \
             '  "rate_limit_per_minute": 600,' \
             '  "rate_limit_burst": 100,' \
+            '  "approval_notification_service": "notify.mobile_app_beta31_fixture",' \
             '  "upstream_trust_registry_enabled": false' \
             '}' > "$RUNNER_TEMP/read-gateway-data/options.json"
           docker run --detach --rm --network host \
             --add-host abcdef12-ha-mcp:127.0.0.1 \
+            --add-host supervisor:127.0.0.1 \
             --name engineering-read-gateway-acceptance \
             -v "$RUNNER_TEMP/read-gateway-data:/data" \
-            -e HA_URL=http://127.0.0.1:18123 \
+            -e HA_URL=http://supervisor:18123/core \
             -e HA_TOKEN=synthetic-read-gateway-token \
+            -e SUPERVISOR_TOKEN=synthetic-read-gateway-token \
             -e MCP_PORT=18100 -e APPROVAL_INGRESS_PORT=18110 \
             -e UPSTREAM_DASHBOARD_MCP_URL=http://abcdef12-ha-mcp:18086/synthetic-upstream-secret/mcp \
             engineering-read-gateway-acceptance:test
