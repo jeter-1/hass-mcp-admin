@@ -3,7 +3,8 @@
 The fixture implements the bounded REST and WebSocket reads used by the
 representative reviewed ha-mcp releases. Every HTTP mutation and every
 WebSocket mutation other than one exact synthetic ``backup/generate`` contract
-is rejected. The stats endpoint lets CI prove the reached operation surface.
+and one exact allowlisted approval-notification service is rejected. The stats
+endpoint lets CI prove the reached operation surface without returning payloads.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import argparse
 from collections import Counter
 from copy import deepcopy
 from datetime import UTC, datetime
+import hashlib
 import json
 from typing import Any
 
@@ -228,6 +230,41 @@ INSTALLED_ADDONS = [
         "repository": "abcdef12",
     }
 ]
+SELF_ADDON_SLUG = "df26dea6_hass_mcp_engineering_beta"
+SELF_ADDON_INFO_BODY = json.dumps(
+    {
+        "result": "ok",
+        "data": {
+            "slug": SELF_ADDON_SLUG,
+            "name": "HA MCP Engineering Server Beta",
+            "version": "2.2.0-beta.31",
+            "repository": "df26dea6",
+            "long_description": (
+                "synthetic-exact-image-long-description-marker"
+                + ("x" * 48_000)
+            ),
+            "options": {
+                "access_secret": "synthetic-exact-image-option-secret",
+                "approval_notification_service": (
+                    "notify.mobile_app_beta31_fixture"
+                ),
+            },
+            "schema": {
+                "access_secret": "password",
+                "approval_notification_service": "str",
+            },
+            "translations": {
+                "en": {
+                    "configuration": (
+                        "synthetic-private-translation-marker"
+                    )
+                }
+            },
+        },
+    },
+    separators=(",", ":"),
+).encode("utf-8")
+assert len(SELF_ADDON_INFO_BODY) > 32 * 1024
 SOURCE_DERIVED_MINIMUM_ADDON_DETAIL_BYTES = 71_986
 ADDON_DETAIL_PROFILE = "compact"
 DASHBOARDS = [
@@ -239,7 +276,16 @@ DASHBOARDS = [
         "show_in_sidebar": True,
         "require_admin": False,
         "mode": "storage",
-    }
+    },
+    {
+        "id": "map",
+        "url_path": "map",
+        "title": "Map",
+        "icon": "mdi:map",
+        "show_in_sidebar": True,
+        "require_admin": False,
+        "mode": "storage",
+    },
 ]
 DASHBOARD_CONFIG = {
     "title": "Compatibility Fixture",
@@ -301,6 +347,7 @@ class FixtureState:
         self.operational_backup_creates: list[dict[str, Any]] = []
         self.backups: list[dict[str, Any]] = []
         self.last_backup_event: dict[str, Any] | None = None
+        self.approval_notification_calls: list[dict[str, Any]] = []
 
     def snapshot(self) -> dict[str, Any]:
         return {
@@ -313,6 +360,12 @@ class FixtureState:
             ),
             "addon_detail_profile": ADDON_DETAIL_PROFILE,
             "addon_detail_payload_bytes": _addon_detail_payload_bytes(),
+            "supervisor_self_info_payload_bytes": len(
+                SELF_ADDON_INFO_BODY
+            ),
+            "approval_notification_calls": list(
+                self.approval_notification_calls
+            ),
         }
 
 
@@ -323,6 +376,12 @@ STATE = FixtureState()
 async def read_only_guard(request: web.Request, handler):
     if request.path.startswith("/__fixture__/"):
         return await handler(request)
+    if (
+        request.method == "POST"
+        and request.path
+        == "/core/api/services/notify/mobile_app_beta31_fixture"
+    ):
+        return await handler(request)
     if request.method != "GET":
         STATE.http_mutations[f"{request.method} {request.path}"] += 1
         return web.json_response({"message": "fixture is read-only"}, status=405)
@@ -332,6 +391,51 @@ async def read_only_guard(request: web.Request, handler):
 async def api_root(_request: web.Request) -> web.Response:
     STATE.rest_reads["/api/"] += 1
     return web.json_response({"message": "API running."})
+
+
+async def supervisor_self_info(request: web.Request) -> web.Response:
+    STATE.rest_reads["/addons/self/info"] += 1
+    if request.headers.get("Authorization") != f"Bearer {TOKEN}":
+        return web.json_response({"result": "error"}, status=401)
+    return web.Response(
+        body=SELF_ADDON_INFO_BODY,
+        content_type="application/json",
+    )
+
+
+async def approval_notification(request: web.Request) -> web.Response:
+    if request.headers.get("Authorization") != f"Bearer {TOKEN}":
+        return web.json_response({"message": "unauthorized"}, status=401)
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return web.json_response({"message": "invalid"}, status=400)
+    data = body.get("data") if isinstance(body, dict) else None
+    actions = data.get("actions") if isinstance(data, dict) else None
+    url = data.get("url") if isinstance(data, dict) else None
+    tag = data.get("tag") if isinstance(data, dict) else None
+    action = actions[0] if isinstance(actions, list) and actions else None
+    if (
+        not isinstance(url, str)
+        or not isinstance(tag, str)
+        or not isinstance(action, dict)
+        or action.get("action") != "URI"
+        or action.get("uri") != url
+        or action.get("authenticationRequired") is not True
+    ):
+        return web.json_response({"message": "invalid"}, status=400)
+    STATE.approval_notification_calls.append(
+        {
+            "operation": "notify",
+            "url_sha256": hashlib.sha256(url.encode()).hexdigest(),
+            "tag_sha256": hashlib.sha256(tag.encode()).hexdigest(),
+            "action": "URI",
+            "authentication_required": True,
+        }
+    )
+    return web.json_response(
+        {"context": {"id": "synthetic-beta31-notification-context"}}
+    )
 
 
 async def api_config(_request: web.Request) -> web.Response:
@@ -470,7 +574,7 @@ def _result_for(message_type: str, request_data: dict[str, Any]) -> Any:
         return DASHBOARDS
     if message_type == "lovelace/config":
         url_path = request_data.get("url_path")
-        if url_path in {None, "compatibility-fixture"}:
+        if url_path in {None, "compatibility-fixture", "map"}:
             return DASHBOARD_CONFIG
         return None
     if message_type in {
@@ -554,6 +658,7 @@ def _addon_detail(addon: dict[str, Any]) -> dict[str, Any]:
         "live-8.0.0",
         "live-8.1.0",
         "live-8.1.1",
+        "live-8.2.0",
     }:
         return detail
     detail.update(
@@ -732,7 +837,17 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
                     }
                 )
             continue
-        if any(token in lowered for token in ("/update", "/create", "/delete", "call_service", "reload")):
+        if any(
+            token in lowered
+            for token in (
+                "/update",
+                "/create",
+                "/delete",
+                "/save",
+                "call_service",
+                "reload",
+            )
+        ):
             STATE.websocket_mutations[message_type] += 1
             await ws.send_json(
                 {
@@ -766,12 +881,25 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=18123)
     parser.add_argument(
         "--upstream-version",
-        choices=("7.14.1", "7.14.2", "8.0.0", "8.1.0", "8.1.1"),
+        choices=(
+            "7.14.1",
+            "7.14.2",
+            "8.0.0",
+            "8.1.0",
+            "8.1.1",
+            "8.2.0",
+        ),
         required=True,
     )
     parser.add_argument(
         "--addon-detail-profile",
-        choices=("compact", "live-8.0.0", "live-8.1.0", "live-8.1.1"),
+        choices=(
+            "compact",
+            "live-8.0.0",
+            "live-8.1.0",
+            "live-8.1.1",
+            "live-8.2.0",
+        ),
         default="compact",
     )
     args = parser.parse_args()
@@ -834,6 +962,13 @@ def main() -> None:
         "/core/api/config/script/config/{script_id}", api_script
     )
     application.router.add_get("/core/websocket", websocket)
+    application.router.add_get(
+        "/addons/self/info", supervisor_self_info
+    )
+    application.router.add_post(
+        "/core/api/services/notify/mobile_app_beta31_fixture",
+        approval_notification,
+    )
     application.router.add_get("/__fixture__/stats", fixture_stats)
     web.run_app(application, host="127.0.0.1", port=args.port, print=None)
 

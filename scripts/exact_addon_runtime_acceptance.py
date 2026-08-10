@@ -145,6 +145,21 @@ EXACT_ADDON_PROFILES = {
         "automatic_read_count": 25,
         "held_tools": {"ha_get_operation_status"},
     },
+    "8.2.0": {
+        "entry_id": "ha-mcp-v8.2.0-dbcfc0ee",
+        "raw_catalog_fingerprint": (
+            "6157026213bd2c742cd8ee9468bb7004cfc4e22e76a99e338a82dd79f38bc974"
+        ),
+        "normalized_catalog_fingerprint": (
+            "912c68f50271b5b45639453c75931aa80bb42bb5a1e6249defe6777017c7da70"
+        ),
+        "dashboard_runtime_fingerprint": (
+            "fb7f3789c8c020d8636a96b85a207635e94eefe9e0944c8814de59aba17e532e"
+        ),
+        "addon_detail_profile": "live-8.2.0",
+        "automatic_read_count": 25,
+        "held_tools": {"ha_get_operation_status"},
+    },
 }
 
 
@@ -308,7 +323,7 @@ async def _automatic_read_acceptance(
     require(metadata.get("upstream_version") == EXPECTED_UPSTREAM_VERSION, "automatic read used the wrong release")
     require(metadata.get("fallback") == "none", "automatic read used fallback")
     promoted_search = None
-    if EXPECTED_UPSTREAM_VERSION == "8.1.1":
+    if EXPECTED_UPSTREAM_VERSION in {"8.1.1", "8.2.0"}:
         search_tool = published.get("ha_search")
         require(search_tool is not None, "promoted ha_search was not exposed")
         search_response = json.loads(

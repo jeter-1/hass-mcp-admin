@@ -18,6 +18,7 @@ UPSTREAM_SOURCE_COMMITS = {
     "7.14.2": "904c14ebbe76de700f7c3535f5cc71c017dca12e",
     "8.0.0": "9dd3ac620e3149cd34ec3c990b6ee81e778191f2",
     "8.1.1": "ae84694b50bfbd8d507042381fdee5e529bf73c5",
+    "8.2.0": "54c492510d05b1f33c777f1c94bfb6a50a7d7c42",
 }
 
 

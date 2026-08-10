@@ -18,6 +18,7 @@ EXPECTED_PROTOCOL = "2025-03-26"
 EXPECTED_ENTRY_BY_VERSION = {
     "8.1.0": "ha-mcp-v8.1.0-4c07e625",
     "8.1.1": "ha-mcp-v8.1.1-e1d76a6e",
+    "8.2.0": "ha-mcp-v8.2.0-dbcfc0ee",
 }
 EXPECTED_UPSTREAM_TOOL_COUNT = 78
 EXPECTED_ENGINEERING_LOCAL_TOOL_COUNT = 50
@@ -28,6 +29,11 @@ EXPECTED_ACCOUNTING_BY_VERSION = {
         "engineering_total_tool_count": 74,
     },
     "8.1.1": {
+        "delegated_read_count": 25,
+        "held_tools": {"ha_get_operation_status"},
+        "engineering_total_tool_count": 75,
+    },
+    "8.2.0": {
         "delegated_read_count": 25,
         "held_tools": {"ha_get_operation_status"},
         "engineering_total_tool_count": 75,

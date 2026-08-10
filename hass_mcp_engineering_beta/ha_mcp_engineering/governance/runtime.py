@@ -86,6 +86,9 @@ class GovernanceRuntime:
                 if websocket_client is not None
                 else HomeAssistantWebSocketClient(settings)
             )
+            self_addon_identity = (
+                SupervisorSelfAddonIdentityResolver.from_settings(settings)
+            )
             operational_gateway = (
                 BackupAdministrationGateway(
                     operational_provider, websocket_client
@@ -105,11 +108,7 @@ class GovernanceRuntime:
                     ),
                     runtime_snapshot=runtime_snapshot or (lambda: {}),
                     process_instance_id=uuid.uuid4().hex,
-                    self_addon_identity_resolver=(
-                        SupervisorSelfAddonIdentityResolver.from_settings(
-                            settings
-                        ).resolve
-                    ),
+                    self_addon_identity_resolver=(self_addon_identity.resolve),
                     sensitive_values=(
                         settings.access_secret,
                         settings.ha_token,
@@ -139,11 +138,7 @@ class GovernanceRuntime:
                 audit,
                 service=settings.approval_notification_service,
                 timeout_seconds=settings.ha_timeout_seconds,
-                addon_identity_resolver=(
-                    SupervisorSelfAddonIdentityResolver.from_settings(
-                        settings
-                    ).resolve
-                ),
+                addon_identity_resolver=self_addon_identity.resolve,
             )
             self.service = ChangeGovernanceService(
                 repository,

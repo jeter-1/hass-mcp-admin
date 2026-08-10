@@ -19,6 +19,15 @@ and future argument forms remain untrusted and follow the generic
 provider-error path. The handled domain outcome retains upstream attribution
 but does not degrade provider health.
 
+Beta 31 preserves `self_addon_identity_unavailable` as the top-level
+fail-closed operational result while correcting the shared Supervisor self-info
+resolver for legitimate larger responses. Advisory notification health may
+expose only the bounded internal reason `configuration_unavailable`,
+`response_too_large`, `http_status`, `malformed_response`, `timeout`, or
+`transport_failure`. These categories never include an HTTP body, status text,
+options, configuration, translation, token, or endpoint, and they never change
+approval authority.
+
 Beta 2 corrective `addon_not_found` is a non-retryable installed-add-on domain
 outcome. It creates no plan or approval, attempts no lifecycle action, leaves
 fallback at zero, and does not change the last available/exact operational

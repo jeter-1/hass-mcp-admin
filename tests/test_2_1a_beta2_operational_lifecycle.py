@@ -2957,6 +2957,7 @@ class FakeMcpTransport:
                         "8.0.0",
                         "8.1.0",
                         "8.1.1",
+                        "8.2.0",
                     }
                     else {}
                 ),
@@ -3192,7 +3193,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unknown_8_x_lifecycle_releases_fail_without_dispatch(self):
         registry = load_reviewed_upstream_release_registry()
-        for version in ("8.0.1", "8.1.2", "8.2.0"):
+        for version in ("8.0.1", "8.1.2", "8.2.1"):
             with self.subTest(version=version):
                 transport = FakeMcpTransport("8.0.0")
                 transport.catalog = McpReadCatalog(
@@ -3257,7 +3258,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 }
 
         async def fetch_self():
-            return 200, json.dumps(
+            payload = json.dumps(
                 {
                     "result": "ok",
                     "data": {
@@ -3265,9 +3266,17 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                         "name": "HA MCP Engineering Server Beta",
                         "version": "2.2.0-beta.2",
                         "repository": "df26dea6",
+                        "long_description": "x" * 48_000,
+                        "options": {
+                            "access_secret": (
+                                "synthetic-self-info-option-secret"
+                            )
+                        },
                     },
                 }
             ).encode()
+            self.assertGreater(len(payload), 32 * 1024)
+            return 200, payload
 
         self_resolver = SupervisorSelfAddonIdentityResolver(
             base_url="http://supervisor",
@@ -3302,6 +3311,10 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 created["plan"]["plan_id"]
             )
 
+        self.assertNotIn(
+            "synthetic-self-info-option-secret",
+            json.dumps(persisted.to_dict(), sort_keys=True),
+        )
         baseline = persisted.operational.baseline
         self.assertEqual(baseline["target_class"], "engineering_addon")
         self.assertEqual(
@@ -3502,7 +3515,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 return {}
 
         async def unavailable():
-            raise SelfAddonIdentityError()
+            raise SelfAddonIdentityError("transport_failure")
 
         provider = AddonProvider()
         gateway = OperationalLifecycleGateway(

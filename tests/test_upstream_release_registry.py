@@ -46,6 +46,7 @@ POLICY_7142 = RUNTIME / "upstream_tool_policy_7_14_2.json"
 POLICY_8000 = RUNTIME / "upstream_tool_policy_8_0_0.json"
 POLICY_8100 = RUNTIME / "upstream_tool_policy_8_1_0.json"
 POLICY_8111 = RUNTIME / "upstream_tool_policy_8_1_1.json"
+POLICY_8200 = RUNTIME / "upstream_tool_policy_8_2_0.json"
 CAPTURE_DIRECTORY = (
     ROOT / "docs/evidence/upstream-read-compatibility"
 )
@@ -54,6 +55,9 @@ ARTIFACT_EVIDENCE_8100 = (
 )
 ARTIFACT_EVIDENCE_8111 = (
     CAPTURE_DIRECTORY / "ha-mcp-8.1.1-contract-review.json"
+)
+ARTIFACT_EVIDENCE_8200 = (
+    CAPTURE_DIRECTORY / "ha-mcp-8.2.0-contract-review.json"
 )
 FAMILY_DECISION_8111 = (
     CAPTURE_DIRECTORY / "ha-mcp-8.1.1-family-decision.json"
@@ -103,6 +107,7 @@ class RegistryFixture:
             POLICY_8000,
             POLICY_8100,
             POLICY_8111,
+            POLICY_8200,
             FAMILY_POLICY,
         ):
             shutil.copy2(path, self.runtime / path.name)
@@ -114,7 +119,14 @@ class RegistryFixture:
             / "upstream-read-compatibility"
         )
         self.capture_directory.mkdir(parents=True)
-        for version in ("7.14.1", "7.14.2", "8.0.0", "8.1.0", "8.1.1"):
+        for version in (
+            "7.14.1",
+            "7.14.2",
+            "8.0.0",
+            "8.1.0",
+            "8.1.1",
+            "8.2.0",
+        ):
             shutil.copy2(
                 CAPTURE_DIRECTORY / f"ha-mcp-{version}.json",
                 self.capture_directory / f"ha-mcp-{version}.json",
@@ -128,6 +140,10 @@ class RegistryFixture:
                 evidence,
                 self.capture_directory / evidence.name,
             )
+        shutil.copy2(
+            ARTIFACT_EVIDENCE_8200,
+            self.capture_directory / ARTIFACT_EVIDENCE_8200.name,
+        )
         self.dashboard_attestations = (
             self.runtime
             / "providers"
@@ -193,7 +209,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
         )
         self.assertEqual(
             registry.supported_versions,
-            ("7.14.1", "7.14.2", "8.0.0", "8.1.0", "8.1.1"),
+            ("7.14.1", "7.14.2", "8.0.0", "8.1.0", "8.1.1", "8.2.0"),
         )
         self.assertEqual(registry.default_version, "7.14.1")
         self.assertEqual(
@@ -209,6 +225,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 "8.0.0": 24,
                 "8.1.0": 24,
                 "8.1.1": 25,
+                "8.2.0": 25,
             }
             self.assertEqual(
                 release.policy.classification_counts["automatic_read"],
@@ -218,7 +235,12 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 release.runtime_contract_fingerprint_model,
                 (
                     RUNTIME_CONTRACT_FINGERPRINT_MODEL_V2
-                    if release.version in {"8.0.0", "8.1.0", "8.1.1"}
+                    if release.version in {
+                        "8.0.0",
+                        "8.1.0",
+                        "8.1.1",
+                        "8.2.0",
+                    }
                     else RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
                 ),
             )
@@ -832,6 +854,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 "8.0.0": 24,
                 "8.1.0": 24,
                 "8.1.1": 25,
+                "8.2.0": 25,
             }
             self.assertEqual(
                 len(automatic_names),

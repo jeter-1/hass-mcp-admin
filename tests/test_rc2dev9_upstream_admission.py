@@ -63,7 +63,7 @@ def tool_for(version):
         SEVEN_THIRTEEN
         if version == "7.13.0"
         else EIGHT_ONE
-        if version in {"8.1.0", "8.1.1"}
+        if version in {"8.1.0", "8.1.1", "8.2.0"}
         else EIGHT_ZERO
         if version == "8.0.0"
         else SEVEN_FOURTEEN
@@ -171,6 +171,7 @@ class ContractFamilyTests(unittest.TestCase):
                 "8.0.0",
                 "8.1.0",
                 "8.1.1",
+                "8.2.0",
             },
         )
         for version in entries:

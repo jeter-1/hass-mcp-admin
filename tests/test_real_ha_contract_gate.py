@@ -1117,9 +1117,10 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertEqual(
             job["env"]["HA_FIXTURE_WRITER_IMAGE"], matrix[0]["ha_image"]
         )
-        self.assertRegex(
+        self.assertEqual(
             job["env"]["REAL_HA_UPSTREAM_IMAGE"],
-            r"^ghcr\.io/homeassistant-ai/ha-mcp:8\.1\.1@sha256:[0-9a-f]{64}$",
+            "ghcr.io/homeassistant-ai/ha-mcp:8.2.0@"
+            "sha256:dbcfc0ee8ad02d2190ebde69e5cc6167175c79608bbf1d55cff9034e256face1",
         )
         scripts = [
             str(step["run"])
@@ -1139,6 +1140,16 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             == "Prepare exact source and disposable migration configuration"
         )
         startup_script = str(preparation["run"])
+        self.assertIn(
+            "https://codeload.github.com/homeassistant-ai/ha-mcp/"
+            "legacy.tar.gz/098540ba22d495fdb1701daf830d54762350fd46",
+            startup_script,
+        )
+        self.assertIn(
+            "945faf6eb7a10c9b687fd6c45f50b09d997d41f5549784f8835f2b29fda181ff",
+            startup_script,
+        )
+        self.assertNotIn("tar.gz/refs/tags/v8.2.0", startup_script)
         self.assertIn(
             "script: !include scripts.yaml",
             startup_script,

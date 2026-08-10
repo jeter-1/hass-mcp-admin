@@ -139,8 +139,8 @@ jobs:
       HA_CONTRACT_IMAGE: ${{ matrix.ha_image }}
       HA_FIXTURE_WRITER_IMAGE: "ghcr.io/home-assistant/home-assistant:2026.7.2@sha256:1476924357b46e80735c13e94232ba5c853cac052e9df4bb28d50fa56348097b"
       REAL_HA_EXPECTED_VERSION: ${{ matrix.ha_version }}
-      REAL_HA_UPSTREAM_IMAGE: "ghcr.io/homeassistant-ai/ha-mcp:8.1.1@sha256:e1d76a6ee54e26054a13a6c04089824b76d4d370246239591a02a2e4445ad2c9"
-      REAL_HA_UPSTREAM_VERSION: "8.1.1"
+      REAL_HA_UPSTREAM_IMAGE: "ghcr.io/homeassistant-ai/ha-mcp:8.2.0@sha256:dbcfc0ee8ad02d2190ebde69e5cc6167175c79608bbf1d55cff9034e256face1"
+      REAL_HA_UPSTREAM_VERSION: "8.2.0"
       REAL_HA_UPSTREAM_CONTAINER: beta25-real-ha-upstream-${{ matrix.lane }}
       REAL_HA_UPSTREAM_PORT: "18086"
       HA_WRITER_CONTAINER: beta25-real-ha-writer-${{ matrix.lane }}
@@ -158,9 +158,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          source_archive="$RUNNER_TEMP/ha-mcp-v8.1.1-source.tar.gz"
-          source_parent="$RUNNER_TEMP/ha-mcp-v8.1.1-source"
-          source_root="$source_parent/ha-mcp-8.1.1"
+          source_archive="$RUNNER_TEMP/ha-mcp-v8.2.0-source.tar.gz"
+          source_parent="$RUNNER_TEMP/ha-mcp-v8.2.0-source"
           contract_dir="$RUNNER_TEMP/beta25-real-ha-$HA_CONTRACT_LANE"
           device_fixture="$contract_dir/beta23-device-fixture.json"
           token_file="$RUNNER_TEMP/beta25-real-ha-$HA_CONTRACT_LANE.token"
@@ -171,15 +170,19 @@ jobs:
           } >> "$GITHUB_ENV"
           mkdir -p "$source_parent" "$contract_dir/custom_components"
           curl --fail --location --proto '=https' --tlsv1.2 --max-time 120 \
-            https://codeload.github.com/homeassistant-ai/ha-mcp/tar.gz/refs/tags/v8.1.1 \
+            https://codeload.github.com/homeassistant-ai/ha-mcp/legacy.tar.gz/098540ba22d495fdb1701daf830d54762350fd46 \
             --output "$source_archive"
           printf '%s  %s\n' \
-            bc631f50d3efd22234430891bbf66f55bbcd1cdea775e2eb7ae1b41b5feabe79 \
+            945faf6eb7a10c9b687fd6c45f50b09d997d41f5549784f8835f2b29fda181ff \
             "$source_archive" | sha256sum --check --strict
           tar -xzf "$source_archive" -C "$source_parent"
-          python scripts/verify_ha_mcp_8_1_1_packaging.py \
+          source_root="$(find "$source_parent" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          test -n "$source_root"
+          test "$(find "$source_parent" -mindepth 1 -maxdepth 1 -type d | wc -l)" = 1
+          printf 'HA_MCP_8_2_SOURCE_ROOT=%s\n' "$source_root" >> "$GITHUB_ENV"
+          python scripts/verify_ha_mcp_8_2_0_packaging.py \
             --source-root "$source_root" \
-            --output "$RUNNER_TEMP/ha-mcp-8.1.1-packaging-$HA_CONTRACT_LANE.json"
+            --output "$RUNNER_TEMP/ha-mcp-8.2.0-packaging-$HA_CONTRACT_LANE.json"
           cp -R \
             tests/fixtures/real_ha_device_migration/custom_components/beta23_device_fixture \
             "$contract_dir/custom_components/"
@@ -218,23 +221,23 @@ jobs:
           echo "HA contract version: $HA_CONTRACT_VERSION"
           docker image inspect "$HA_CONTRACT_IMAGE" \
             --format='HA contract image digest: {{index .RepoDigests 0}}'
-      - name: Verify exact ha-mcp 8.1.1 packaging inside disposable Home Assistant
+      - name: Verify exact ha-mcp 8.2.0 packaging inside disposable Home Assistant
         shell: bash
         run: |
           set -euo pipefail
-          source_root="$RUNNER_TEMP/ha-mcp-v8.1.1-source/ha-mcp-8.1.1"
+          source_root="$HA_MCP_8_2_SOURCE_ROOT"
           docker pull "$REAL_HA_UPSTREAM_IMAGE"
           docker cp "$source_root" \
-            "$HA_CONTRACT_CONTAINER:/tmp/ha-mcp-8.1.1-source"
+            "$HA_CONTRACT_CONTAINER:/tmp/ha-mcp-8.2.0-source"
           docker cp scripts/disposable_ha_websockets_probe.py \
             "$HA_CONTRACT_CONTAINER:/tmp/disposable_ha_websockets_probe.py"
           docker exec "$HA_CONTRACT_CONTAINER" python \
             /tmp/disposable_ha_websockets_probe.py \
-            --source-root /tmp/ha-mcp-8.1.1-source \
-            --output /tmp/ha-mcp-8.1.1-disposable-ha.json
+            --source-root /tmp/ha-mcp-8.2.0-source \
+            --output /tmp/ha-mcp-8.2.0-disposable-ha.json
           docker cp \
-            "$HA_CONTRACT_CONTAINER:/tmp/ha-mcp-8.1.1-disposable-ha.json" \
-            "$RUNNER_TEMP/ha-mcp-8.1.1-disposable-$HA_CONTRACT_LANE.json"
+            "$HA_CONTRACT_CONTAINER:/tmp/ha-mcp-8.2.0-disposable-ha.json" \
+            "$RUNNER_TEMP/ha-mcp-8.2.0-disposable-$HA_CONTRACT_LANE.json"
       - name: Run real Home Assistant contracts
         env:
           REAL_HA_URL: http://127.0.0.1:8123
@@ -243,10 +246,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ha-mcp-8.1.1-disposable-${{ matrix.lane }}
+          name: ha-mcp-8.2.0-disposable-${{ matrix.lane }}
           path: |
-            ${{ runner.temp }}/ha-mcp-8.1.1-packaging-${{ matrix.lane }}.json
-            ${{ runner.temp }}/ha-mcp-8.1.1-disposable-${{ matrix.lane }}.json
+            ${{ runner.temp }}/ha-mcp-8.2.0-packaging-${{ matrix.lane }}.json
+            ${{ runner.temp }}/ha-mcp-8.2.0-disposable-${{ matrix.lane }}.json
           if-no-files-found: error
           retention-days: 14
       - name: Sanitize and remove disposable Home Assistant
@@ -408,14 +411,17 @@ jobs:
             '  "prewarm_enabled": false,' \
             '  "rate_limit_per_minute": 600,' \
             '  "rate_limit_burst": 100,' \
+            '  "approval_notification_service": "notify.mobile_app_beta31_fixture",' \
             '  "upstream_trust_registry_enabled": false' \
             '}' > "$RUNNER_TEMP/read-gateway-data/options.json"
           docker run --detach --rm --network host \
             --add-host abcdef12-ha-mcp:127.0.0.1 \
+            --add-host supervisor:127.0.0.1 \
             --name engineering-read-gateway-acceptance \
             -v "$RUNNER_TEMP/read-gateway-data:/data" \
-            -e HA_URL=http://127.0.0.1:18123 \
+            -e HA_URL=http://supervisor:18123/core \
             -e HA_TOKEN=synthetic-read-gateway-token \
+            -e SUPERVISOR_TOKEN=synthetic-read-gateway-token \
             -e MCP_PORT=18100 -e APPROVAL_INGRESS_PORT=18110 \
             -e UPSTREAM_DASHBOARD_MCP_URL=http://abcdef12-ha-mcp:18086/synthetic-upstream-secret/mcp \
             engineering-read-gateway-acceptance:test
@@ -439,8 +445,16 @@ jobs:
             --ha-url http://127.0.0.1:18123 \
             --ha-token synthetic-read-gateway-token \
             --output "$RUNNER_TEMP/exact-image-read-gateway-result.json"
-      - name: Verify exact 8.1 stdio lifecycle
-        if: matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1'
+      - name: Verify exact 8.2.0 dashboard target resolution
+        if: matrix.upstream_version == '8.2.0'
+        shell: bash
+        run: |
+          python scripts/exact_8_2_dashboard_setter_acceptance.py \
+            --upstream-endpoint http://127.0.0.1:18086/synthetic-upstream-secret/mcp \
+            --fixture-stats-url http://127.0.0.1:18123/__fixture__/stats \
+            --output "$RUNNER_TEMP/exact-8.2.0-dashboard-setter-result.json"
+      - name: Verify exact 8.1+ stdio lifecycle
+        if: matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1' || matrix.upstream_version == '8.2.0'
         shell: bash
         run: |
           set -euo pipefail
@@ -473,8 +487,8 @@ jobs:
             --expected-source-sha256 "$source_sha256" \
             --expected-source-commit "$source_commit" \
             --output "$RUNNER_TEMP/exact-custom-component-shutdown-result.json"
-      - name: Verify exact 8.1 disconnect and readmission
-        if: matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1'
+      - name: Verify exact 8.1+ disconnect and readmission
+        if: matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1' || matrix.upstream_version == '8.2.0'
         shell: bash
         run: |
           set -euo pipefail
@@ -516,8 +530,16 @@ jobs:
             ${{ runner.temp }}/upstream-contract-capture-1.json
           if-no-files-found: error
           retention-days: 14
-      - name: Upload bounded 8.1 lifecycle evidence
-        if: always() && (matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1')
+      - name: Upload exact 8.2.0 dashboard resolver evidence
+        if: always() && matrix.upstream_version == '8.2.0'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: exact-8.2.0-dashboard-setter
+          path: ${{ runner.temp }}/exact-8.2.0-dashboard-setter-result.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload bounded 8.1+ lifecycle evidence
+        if: always() && (matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1' || matrix.upstream_version == '8.2.0')
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: exact-image-readmission-${{ matrix.upstream_version }}
@@ -567,6 +589,13 @@ jobs:
             addon_amd64_manifest_digest: sha256:9b051abf89667209dcc3f3d77614e0b914b69b4aa20350637569193eea23e7f2
             addon_arm64_index_digest: sha256:013ce6faff9b197634a346d5654854859d40aab1a1b1a9423f5e9e77ca38c176
             addon_arm64_manifest_digest: sha256:8a14c856be38d621ee99807fde76406b7cabf99935fa2869686aaf205fed71fb
+          - upstream_version: "8.2.0"
+            addon_detail_profile: live-8.2.0
+            secret_path: /beta31-synthetic/mcp
+            addon_amd64_index_digest: sha256:c86b0414a88b9ee404b6f151ed80419fe1bb120f6bb3baf1d31a6b01a5113e36
+            addon_amd64_manifest_digest: sha256:8abc94e916b1cc5333e2aee64fcebc749e814b5446980d1c773fa243c56b8c57
+            addon_arm64_index_digest: sha256:72b5f80bcdb614ae3c1ecc04f1f0f31275c8048c6ff8fd5a0859e61b6848adb0
+            addon_arm64_manifest_digest: sha256:ed614264dee86264a8d08d9bb3e9e8dab2cbcae82734ce73d4213983916b0ef6
     env:
       UPSTREAM_VERSION: ${{ matrix.upstream_version }}
       ADDON_DETAIL_PROFILE: ${{ matrix.addon_detail_profile }}

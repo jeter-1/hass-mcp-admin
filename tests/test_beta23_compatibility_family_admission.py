@@ -107,7 +107,8 @@ class CompatibilityFamilyAdmissionTests(unittest.TestCase):
     def test_exact_entry_not_version_family_is_runtime_authority(self) -> None:
         self.assertIn("8.1.1", self.registry.by_version)
         self.assertNotIn("8.1.2", self.registry.by_version)
-        self.assertNotIn("8.2.0", self.registry.by_version)
+        self.assertIn("8.2.0", self.registry.by_version)
+        self.assertNotIn("8.2.1", self.registry.by_version)
         self.assertNotIn("9.1.1", self.registry.by_version)
         self.assertTrue(self.family.candidate_is_eligible("8.1.2"))
         self.assertFalse(self.family.candidate_is_eligible("8.2.0"))

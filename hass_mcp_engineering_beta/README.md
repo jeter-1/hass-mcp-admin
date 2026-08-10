@@ -145,7 +145,9 @@ execution task, configuration write, service call, or Home Assistant mutation.
    The dedicated adapter cannot call a notify group or any other Home Assistant
    service. Its sole **Open Approval Panel** action still requires an
    authenticated administrator Ingress session; delivery never approves or
-   executes a plan.
+   executes a plan. The exact installed add-on slug comes only from Supervisor
+   `/addons/self/info`; the bounded resolver retains identity fields and
+   discards all other response content.
 7. Keep the RC2dev5 dependency-index defaults unless the installation needs a
    different freshness budget: `prewarm_enabled=true`, a 45-second nonblocking
    startup delay, a 600-second soft TTL, and a 3600-second hard TTL. The legacy

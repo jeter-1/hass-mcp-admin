@@ -21,6 +21,7 @@ from ..errors import (
     HomeAssistantUnavailableError,
 )
 from ..logging_config import get_logger, log_event
+from ..providers.supervisor_self import SelfAddonIdentityError
 from .models import ApprovalActionKind, ChangePlan
 
 
@@ -94,6 +95,7 @@ class ApprovalNotificationManager:
         self._worker_running = False
         self._addon_slug: str | None = None
         self._addon_identity_status = "unresolved"
+        self._addon_identity_failure_category: str | None = None
         self._counters = {
             "queued": 0,
             "delivered": 0,
@@ -227,6 +229,9 @@ class ApprovalNotificationManager:
             "authority": "none",
             "delivery_semantics": "best_effort_advisory",
             "addon_identity_status": self._addon_identity_status,
+            "addon_identity_failure_category": (
+                self._addon_identity_failure_category
+            ),
             "approval_performed": False,
         }
 
@@ -238,6 +243,9 @@ class ApprovalNotificationManager:
             "authority": "none",
             "delivery_semantics": "best_effort_advisory",
             "addon_identity_status": self._addon_identity_status,
+            "addon_identity_failure_category": (
+                self._addon_identity_failure_category
+            ),
             "worker_running": self._worker_running,
             "queue_depth": self.queue.qsize(),
             "queue_limit": MAX_NOTIFICATION_QUEUE,
@@ -323,7 +331,8 @@ class ApprovalNotificationManager:
             if addon_slug is None:
                 self._failed(
                     work,
-                    "self_addon_identity_unavailable",
+                    self._addon_identity_failure_category
+                    or "configuration_unavailable",
                     response_received=False,
                     dispatched=False,
                 )
@@ -393,20 +402,34 @@ class ApprovalNotificationManager:
             return self._addon_slug
         if self.addon_identity_resolver is None:
             self._addon_identity_status = "unavailable"
+            self._addon_identity_failure_category = (
+                "configuration_unavailable"
+            )
             return None
         try:
             identity = await asyncio.wait_for(
                 self.addon_identity_resolver(), timeout=self.timeout_seconds
             )
             slug = getattr(identity, "slug", None)
+        except (asyncio.TimeoutError, TimeoutError):
+            self._addon_identity_status = "unavailable"
+            self._addon_identity_failure_category = "timeout"
+            return None
+        except SelfAddonIdentityError as exc:
+            self._addon_identity_status = "unavailable"
+            self._addon_identity_failure_category = exc.failure_category
+            return None
         except Exception:
             self._addon_identity_status = "unavailable"
+            self._addon_identity_failure_category = "transport_failure"
             return None
         if not isinstance(slug, str) or _SAFE_ADDON_SLUG.fullmatch(slug) is None:
             self._addon_identity_status = "unavailable"
+            self._addon_identity_failure_category = "malformed_response"
             return None
         self._addon_slug = slug
         self._addon_identity_status = "verified_supervisor_self_info"
+        self._addon_identity_failure_category = None
         return slug
 
     def _failed(

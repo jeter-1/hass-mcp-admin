@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 from ha_mcp_engineering.providers.ha_2026_8_device_compatibility import (  # noqa: E402
     ADAPTER_ID,
     CompositeDeviceCompatibilityError,
+    REVIEWED_UPSTREAM_VERSIONS,
     adapt_ha_get_device_composite_result,
 )
 
@@ -32,6 +33,12 @@ def empty_composite_payload():
 class HomeAssistant20268DeviceCompatibilityTests(
     unittest.IsolatedAsyncioTestCase
 ):
+    def test_exact_reviewed_upstream_versions_include_8_2_0(self):
+        self.assertEqual(
+            REVIEWED_UPSTREAM_VERSIONS,
+            frozenset({"8.1.0", "8.1.1", "8.2.0"}),
+        )
+
     async def test_exact_adapter_restores_both_split_entity_memberships(self):
         rest = AsyncMock()
         rest.request.return_value = {"version": "2026.8.0"}
