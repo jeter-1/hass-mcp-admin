@@ -302,6 +302,20 @@ class AddonMetadataValidationTests(unittest.TestCase):
         with self.assertRaises(VALIDATOR.MetadataValidationError):
             self.validate(beta=beta)
 
+    def test_approval_notification_service_defaults_to_disabled(self):
+        self.assertEqual(
+            self.beta["options"]["approval_notification_service"], ""
+        )
+        self.assertEqual(
+            self.beta["schema"]["approval_notification_service"], "str"
+        )
+        beta = copy.deepcopy(self.beta)
+        beta["options"]["approval_notification_service"] = (
+            "notify.mobile_app_synthetic_phone"
+        )
+        with self.assertRaises(VALIDATOR.MetadataValidationError):
+            self.validate(beta=beta)
+
     def test_access_secret_minimum_cannot_change(self):
         with self.assertRaises(VALIDATOR.MetadataValidationError):
             self.validate(minimum=23)

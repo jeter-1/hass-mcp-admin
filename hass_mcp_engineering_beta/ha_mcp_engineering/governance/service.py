@@ -388,6 +388,7 @@ class ChangeGovernanceService:
         task_repository: ExecutionTaskRepository | None = None,
         dashboard_gateway: Any | None = None,
         provider_identity_reader: Callable[[], Awaitable[dict[str, str]]] | None = None,
+        approval_notifications: Any | None = None,
     ):
         self.repository = repository
         self.gateway = gateway
@@ -398,6 +399,7 @@ class ChangeGovernanceService:
         self.lifecycle_gateway = lifecycle_gateway
         self.dashboard_gateway = dashboard_gateway
         self.provider_identity_reader = provider_identity_reader
+        self.approval_notifications = approval_notifications
         self.dashboard_artifacts = DashboardArtifactStore(
             repository.root / "dashboard_artifacts",
             retention_days=repository.retention_days,
@@ -2177,6 +2179,13 @@ class ChangeGovernanceService:
             ),
             context=safe,
         )
+        if self.approval_notifications is not None:
+            self.approval_notifications.observe(
+                plan,
+                event,
+                request_id=request_id,
+                approval_action=approval_action,
+            )
 
     def _expire_if_needed(self, plan: ChangePlan) -> bool:
         # A terminal plan has already completed its lifecycle transition.  In
@@ -4359,6 +4368,10 @@ class ChangeGovernanceService:
             "approval_state": plan.approval.state.value,
             "authority_version": APPROVAL_AUTHORITY_VERSION,
         }
+        if self.approval_notifications is not None:
+            summary["approval_notification"] = (
+                self.approval_notifications.status_for(challenge_id)
+            )
         return summary
 
     @staticmethod
@@ -10238,6 +10251,17 @@ class ChangeGovernanceService:
         )
         if self.f3_runtime is not None:
             summary["f3"] = self.f3_runtime.health()
+        summary["approval_notifications"] = (
+            self.approval_notifications.health_snapshot()
+            if self.approval_notifications is not None
+            else {
+                "configured": False,
+                "authority": "none",
+                "delivery_semantics": "best_effort_advisory",
+                "fallback": "none",
+                "fallback_count": 0,
+            }
+        )
 
         operational = summary["operational_administration"]
         backup_provider = self._backup_provider_health_snapshot()

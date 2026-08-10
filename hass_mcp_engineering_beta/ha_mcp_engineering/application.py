@@ -23,6 +23,7 @@ from .health import HEALTH
 from .clients import HomeAssistantRestClient
 from .clients import HomeAssistantWebSocketClient
 from .governance import GOVERNANCE
+from .governance.approval_notifications import validate_notification_service
 from .dependency import DEPENDENCY_ANALYSIS
 from .reliability import RELIABILITY_ANALYSIS
 from .impact import CHANGE_IMPACT_ANALYSIS
@@ -58,6 +59,11 @@ def validate_settings(settings: Settings) -> None:
         errors.append("ingress_port must be between 1 and 65535")
     if settings.ingress_port == settings.port:
         errors.append("ingress_port must be separate from the MCP port")
+    if not validate_notification_service(settings.approval_notification_service):
+        errors.append(
+            "approval_notification_service must be empty or match "
+            "notify.mobile_app_<device>"
+        )
     if settings.audit_enabled and not settings.audit_path.strip():
         errors.append("audit output path is required when auditing is enabled")
     if settings.audit_max_payload_chars < 512:
@@ -365,6 +371,21 @@ async def _serve(settings: Settings) -> None:
     if isinstance(gateway, AuthenticatedMcpGateway):
         await _run_f3_recovery_pass("startup", strict=True)
 
+    notification_manager = (
+        GOVERNANCE.service.approval_notifications
+        if GOVERNANCE.service is not None
+        else None
+    )
+    notification_task = None
+    if notification_manager is not None and notification_manager.configured:
+        notification_manager.reconcile_pending(
+            GOVERNANCE.require().pending_external_reviews()
+        )
+        notification_task = asyncio.create_task(
+            notification_manager.run(),
+            name="approval-notification-worker",
+        )
+
     mcp_server = uvicorn.Server(
         uvicorn.Config(
             gateway,
@@ -432,11 +453,15 @@ async def _serve(settings: Settings) -> None:
         approval_server.should_exit = True
         upstream_reconciliation_task.cancel()
         operational_reconciliation_task.cancel()
+        if notification_task is not None:
+            notification_task.cancel()
         await asyncio.gather(mcp_task, approval_task, return_exceptions=True)
         await asyncio.gather(upstream_reconciliation_task, return_exceptions=True)
         await asyncio.gather(
             operational_reconciliation_task, return_exceptions=True
         )
+        if notification_task is not None:
+            await asyncio.gather(notification_task, return_exceptions=True)
         if registry_refresh_task is not None:
             await asyncio.gather(registry_refresh_task, return_exceptions=True)
         await DEPENDENCY_ANALYSIS.shutdown()
@@ -468,6 +493,10 @@ def main() -> None:
             "ingress_port": settings.ingress_port,
             "runtime": "home_assistant_addon" if os.environ.get("SUPERVISOR_TOKEN") else "standalone",
             "redaction_enabled": settings.redaction_enabled,
+            "approval_notifications": {
+                "configured": bool(settings.approval_notification_service),
+                "authority": "none",
+            },
             "upstream_dashboard": {
                 "configured": bool(settings.upstream_dashboard_mcp_url),
                 "credential_present": bool(

@@ -15,6 +15,7 @@ from .operational_lifecycle import OperationalLifecycleGateway
 from .resources import ConfigurationResourceGateway
 from .operational import BackupAdministrationGateway
 from .service import AutomationGateway, ChangeGovernanceService
+from .approval_notifications import ApprovalNotificationManager
 from .storage import ChangePlanRepository, ChangePlanStorageError
 from .task_storage import (
     ExecutionTaskRepository,
@@ -133,6 +134,17 @@ class GovernanceRuntime:
             resource_gateway = ConfigurationResourceGateway(
                 rest_client, websocket_client
             )
+            approval_notifications = ApprovalNotificationManager(
+                rest_client,
+                audit,
+                service=settings.approval_notification_service,
+                timeout_seconds=settings.ha_timeout_seconds,
+                addon_identity_resolver=(
+                    SupervisorSelfAddonIdentityResolver.from_settings(
+                        settings
+                    ).resolve
+                ),
+            )
             self.service = ChangeGovernanceService(
                 repository,
                 _RuntimeGovernanceGateway(
@@ -145,6 +157,7 @@ class GovernanceRuntime:
                 task_repository=task_repository,
                 dashboard_gateway=dashboard_gateway,
                 provider_identity_reader=provider_identity_reader,
+                approval_notifications=approval_notifications,
             )
             from ..f3_runtime.runtime import F3RuntimeIntegration
 

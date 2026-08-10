@@ -23,6 +23,7 @@ ports_description:
   8100/tcp: Beta MCP streamable-HTTP endpoint
 options:
   access_secret: ""
+  approval_notification_service: ""
   upstream_dashboard_mcp_url: ""
   upstream_trust_registry_enabled: false
   upstream_trust_registry_public_key: ""
@@ -52,6 +53,7 @@ options:
     - homeassistant.stop
 schema:
   access_secret: str
+  approval_notification_service: str
   upstream_dashboard_mcp_url: password
   upstream_trust_registry_enabled: bool
   upstream_trust_registry_public_key: str

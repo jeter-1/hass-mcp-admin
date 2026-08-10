@@ -43,6 +43,7 @@ class Settings:
     trust_cf_connecting_ip: bool = False
     trusted_proxy_cidrs: tuple[str, ...] = ()
     ingress_port: int = 8110
+    approval_notification_service: str = field(default="", repr=False)
     upstream_dashboard_mcp_url: str = field(default="", repr=False)
     upstream_trust_registry_enabled: bool = False
     upstream_trust_registry_public_key: str = field(default="", repr=False)
@@ -195,6 +196,9 @@ def load_settings() -> Settings:
             str(value).strip() for value in configured_proxies if str(value).strip()
         ),
         ingress_port=int(os.environ.get("APPROVAL_INGRESS_PORT", "8110")),
+        approval_notification_service=str(
+            options.get("approval_notification_service", "") or ""
+        ).strip(),
         upstream_dashboard_mcp_url=str(
             options.get(
                 "upstream_dashboard_mcp_url",
