@@ -86,7 +86,7 @@ EXPECTED_HA_VERSION = os.environ.get("REAL_HA_EXPECTED_VERSION", "2026.7.2")
 DEVICE_FIXTURE_PATH = _environment_path("REAL_HA_DEVICE_FIXTURE")
 TOKEN_PATH = _environment_path("REAL_HA_TOKEN_FILE")
 UPSTREAM_IMAGE = os.environ.get("REAL_HA_UPSTREAM_IMAGE", "")
-UPSTREAM_VERSION = os.environ.get("REAL_HA_UPSTREAM_VERSION", "8.1.1")
+UPSTREAM_VERSION = os.environ.get("REAL_HA_UPSTREAM_VERSION", "8.2.0")
 UPSTREAM_CONTAINER = os.environ.get(
     "REAL_HA_UPSTREAM_CONTAINER", "beta23-real-ha-upstream"
 )
@@ -2126,7 +2126,7 @@ async def _docker_command(*arguments: str, allow_failure: bool = False) -> str:
 
 
 async def _start_exact_upstream(token: str) -> None:
-    """Start exact ha-mcp 8.1.1 against only the disposable HA instance."""
+    """Start the exact reviewed ha-mcp release against disposable HA only."""
 
     if not UPSTREAM_IMAGE:
         raise RuntimeError("The exact upstream image identity is required")

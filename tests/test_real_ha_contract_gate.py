@@ -1117,9 +1117,10 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertEqual(
             job["env"]["HA_FIXTURE_WRITER_IMAGE"], matrix[0]["ha_image"]
         )
-        self.assertRegex(
+        self.assertEqual(
             job["env"]["REAL_HA_UPSTREAM_IMAGE"],
-            r"^ghcr\.io/homeassistant-ai/ha-mcp:8\.1\.1@sha256:[0-9a-f]{64}$",
+            "ghcr.io/homeassistant-ai/ha-mcp:8.2.0@"
+            "sha256:dbcfc0ee8ad02d2190ebde69e5cc6167175c79608bbf1d55cff9034e256face1",
         )
         scripts = [
             str(step["run"])
