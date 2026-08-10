@@ -3310,6 +3310,10 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 created["plan"]["plan_id"]
             )
 
+        self.assertNotIn(
+            "synthetic-self-info-option-secret",
+            json.dumps(persisted.to_dict(), sort_keys=True),
+        )
         baseline = persisted.operational.baseline
         self.assertEqual(baseline["target_class"], "engineering_addon")
         self.assertEqual(
