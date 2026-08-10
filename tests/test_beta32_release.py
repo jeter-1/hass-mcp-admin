@@ -1,7 +1,8 @@
-"""Beta 31 staged-release boundary."""
+"""Beta 32 staged-release and notification-scope boundary."""
 
 from pathlib import Path
 import re
+import sys
 import unittest
 
 from awesomeversion import AwesomeVersion
@@ -9,11 +10,16 @@ from awesomeversion import AwesomeVersion
 
 ROOT = Path(__file__).resolve().parents[1]
 BETA_DIR = ROOT / "hass_mcp_engineering_beta"
-PRE_PROMOTION_VERSION = "2.2.0-beta.30"
-BETA31_VERSION = "2.2.0-beta.31"
+sys.path.insert(0, str(BETA_DIR))
+
+from ha_mcp_engineering.capabilities import BETA_NATIVE_CAPABILITIES  # noqa: E402
 
 
-class Beta31ReleaseBoundaryTests(unittest.TestCase):
+PRE_PROMOTION_VERSION = "2.2.0-beta.31"
+BETA32_VERSION = "2.2.0-beta.32"
+
+
+class Beta32ReleaseBoundaryTests(unittest.TestCase):
     def authoritative_versions(self) -> set[str]:
         patterns = (
             (
@@ -40,11 +46,11 @@ class Beta31ReleaseBoundaryTests(unittest.TestCase):
         versions = self.authoritative_versions()
         self.assertEqual(len(versions), 1)
         actual_version = next(iter(versions))
-        if AwesomeVersion(actual_version) > AwesomeVersion(BETA31_VERSION):
+        if AwesomeVersion(actual_version) > AwesomeVersion(BETA32_VERSION):
             self.skipTest(
-                "Beta 31 phase assertions do not apply after a later release"
+                "Beta 32 phase assertions do not apply after a later release"
             )
-        self.assertIn(actual_version, (PRE_PROMOTION_VERSION, BETA31_VERSION))
+        self.assertIn(actual_version, (PRE_PROMOTION_VERSION, BETA32_VERSION))
         if actual_version != expected_version:
             self.skipTest(
                 f"{expected_version} assertions do not apply to "
@@ -52,50 +58,58 @@ class Beta31ReleaseBoundaryTests(unittest.TestCase):
             )
         return versions
 
-    def assert_beta31_documents_resolve_exactly(self) -> None:
-        release = ROOT / "docs" / "V2_2_0_BETA31_RELEASE_NOTES.md"
-        acceptance = ROOT / "docs" / "V2_2_0_BETA31_ACCEPTANCE.md"
+    def assert_beta32_documents_resolve_exactly(self) -> None:
+        release = ROOT / "docs" / "V2_2_0_BETA32_RELEASE_NOTES.md"
+        acceptance = ROOT / "docs" / "V2_2_0_BETA32_ACCEPTANCE.md"
         self.assertTrue(release.is_file())
         self.assertTrue(acceptance.is_file())
-        self.assertIn("512 KiB", release.read_text())
-        self.assertIn("Fresh notification canary", acceptance.read_text())
+        self.assertIn("clickAction", release.read_text(encoding="utf-8"))
+        self.assertIn(
+            "Fresh notification canary",
+            acceptance.read_text(encoding="utf-8"),
+        )
 
-    def test_beta31_is_staged_without_changing_published_versions(self):
+    def test_beta32_is_staged_without_changing_published_versions(self):
         self.assertEqual(
             self.require_release_phase(PRE_PROMOTION_VERSION),
             {PRE_PROMOTION_VERSION},
         )
         marker = ROOT / ".release" / "next-version"
-        self.assertEqual(marker.read_text().strip(), BETA31_VERSION)
+        self.assertEqual(marker.read_text().strip(), BETA32_VERSION)
         self.assertLess(
             AwesomeVersion(PRE_PROMOTION_VERSION),
-            AwesomeVersion(BETA31_VERSION),
+            AwesomeVersion(BETA32_VERSION),
         )
         self.assertIn(
             'version: "1.1.2"',
             (ROOT / "hass_mcp_admin" / "config.yaml").read_text(),
         )
-        self.assert_beta31_documents_resolve_exactly()
+        self.assert_beta32_documents_resolve_exactly()
 
-    def test_beta31_generated_release_state_is_exact(self):
+    def test_beta32_generated_release_state_is_exact(self):
         self.assertEqual(
-            self.require_release_phase(BETA31_VERSION),
-            {BETA31_VERSION},
+            self.require_release_phase(BETA32_VERSION),
+            {BETA32_VERSION},
         )
-        marker = ROOT / ".release" / "next-version"
-        if marker.exists() and AwesomeVersion(
-            marker.read_text().strip()
-        ) > AwesomeVersion(BETA31_VERSION):
-            self.skipTest("Beta 31 is published and a later release is staged")
-        self.assertFalse(marker.exists())
+        self.assertFalse((ROOT / ".release" / "next-version").exists())
         self.assertIn(
             'version: "1.1.2"',
             (ROOT / "hass_mcp_admin" / "config.yaml").read_text(),
         )
-        self.assert_beta31_documents_resolve_exactly()
+        self.assert_beta32_documents_resolve_exactly()
 
-    def test_beta31_documents_resolve_exactly(self):
-        self.assert_beta31_documents_resolve_exactly()
+    def test_scope_adds_no_tool_or_provider_fallback(self):
+        self.assertEqual(len(BETA_NATIVE_CAPABILITIES), 25)
+        source = (
+            BETA_DIR
+            / "ha_mcp_engineering"
+            / "governance"
+            / "approval_notifications.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"clickAction": review_url', source)
+        self.assertIn('"fallback": "none"', source)
+        self.assertNotIn("authenticationRequired", source)
+        self.assertNotIn("call_service", source)
 
 
 if __name__ == "__main__":

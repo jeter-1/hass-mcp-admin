@@ -135,7 +135,7 @@ Challenge and external-approval state is atomically persisted under
 `/data/governance/change_plans` and survives an add-on restart. A restart never
 approves, consumes, or revives an approval.
 
-## Optional Beta 30 operator notification
+## Optional operator notification
 
 `approval_notification_service` may be empty (disabled) or one exact Companion
 App service matching `notify.mobile_app_<device>`. A dedicated adapter makes
@@ -143,9 +143,12 @@ only that allowlisted Home Assistant REST service call. It cannot call a notify
 group, another service domain, ha-mcp, a provider fallback, or an arbitrary
 Home Assistant service.
 
-After persistence of a new challenge, the adapter asynchronously sends a
+After persistence of a new challenge, the adapter asynchronously submits a
 privacy-minimal normal-priority notification with one URI action: **Open
-Approval Panel**. The adapter resolves the running add-on's exact slug from
+Approval Panel**. The payload uses the shared relative Ingress path for the
+Android `clickAction`, iOS `url`, and URI action target. It does not include
+platform-specific action fields that the Android Companion contract rejects.
+The adapter resolves the running add-on's exact slug from
 Supervisor `/addons/self/info` instead of guessing a custom-repository prefix.
 The complete Supervisor response is read only through a fixed 512 KiB ceiling;
 only the validated installed slug and strictly necessary identity fields are
@@ -160,16 +163,27 @@ The Ingress application must still authenticate an administrator, resolve the
 active persisted challenge, validate the exact authority, and issue a fresh
 one-time CSRF nonce.
 
-Delivery is best-effort and has authority `none`. Queueing, success, failure,
+Submission is best-effort and has authority `none`. Queueing, success, failure,
 replacement, clearing, or restart reconciliation cannot modify the plan or
 approval state and cannot block challenge creation. A deterministic tag keeps
 one notification per challenge and is cleared on approval, rejection, expiry,
 invalidation, or consumption. Startup reconciliation may replace the tagged
-notification for an active persisted challenge; its in-memory delivery state is
+notification for an active persisted challenge; its in-memory notification state is
 navigation/observability only, never authorization state.
 
-Audit and health distinguish queued, delivered, failed, clear, and queue-full
-outcomes with bounded counts and normalized failure categories. They do not log
+Home Assistant's REST response confirms only that the service call was
+submitted; it does not confirm delivery to or clearing on the handset. Audit,
+challenge status, and health therefore report `submitted` and
+`clear_submitted` for successful Home Assistant service responses. The legacy
+`delivered` and `cleared` counters remain present but are not incremented
+without an observable handset acknowledgement. Explicit
+`handset_delivery_observable` and `handset_clear_observable` fields remain
+false. Actual handset receipt, navigation, and notification removal are live
+acceptance observations, not runtime claims.
+
+Audit and health distinguish queued, submitted, provider-rejected, failed,
+clear-submitted, and queue-full outcomes with bounded counts and normalized
+failure categories. They do not log
 the configured device service, unrestricted payload, challenge ID, secrets, or
 authenticated URLs. There is no retry-driven approval behavior and no fallback.
 Self-identity failures expose only one safe category:

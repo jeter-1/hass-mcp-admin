@@ -218,7 +218,9 @@ class SupervisorSelfIdentityCorrectionTests(
                 manager.logger.removeHandler(handler)
 
             health = manager.health_snapshot()
-            self.assertEqual(health["delivered"], 1)
+            self.assertEqual(health["submitted"], 1)
+            self.assertEqual(health["delivered"], 0)
+            self.assertFalse(health["handset_delivery_observable"])
             self.assertEqual(health["failed"], 0)
             self.assertEqual(
                 health["addon_identity_status"],
