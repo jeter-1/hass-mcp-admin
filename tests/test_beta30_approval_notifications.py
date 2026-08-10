@@ -369,7 +369,7 @@ class NotificationGovernanceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             self.notifications.health_snapshot()["last_failure_category"],
-            "self_addon_identity_unavailable",
+            "transport_failure",
         )
         self.assertEqual(
             self.notifications.status_for(pending["challenge_id"])["status"],
@@ -552,6 +552,10 @@ class Beta30ReleaseBoundaryTests(unittest.TestCase):
         marker = ROOT / ".release" / "next-version"
         if current == PRE_PROMOTION_VERSION:
             self.assertEqual(marker.read_text().strip(), BETA30_VERSION)
+        elif marker.exists() and AwesomeVersion(
+            marker.read_text().strip()
+        ) > AwesomeVersion(BETA30_VERSION):
+            self.skipTest("Beta 30 is published and a later release is staged")
         else:
             self.assertFalse(marker.exists())
         self.assertIn(

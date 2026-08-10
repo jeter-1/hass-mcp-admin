@@ -3257,7 +3257,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 }
 
         async def fetch_self():
-            return 200, json.dumps(
+            payload = json.dumps(
                 {
                     "result": "ok",
                     "data": {
@@ -3265,9 +3265,17 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                         "name": "HA MCP Engineering Server Beta",
                         "version": "2.2.0-beta.2",
                         "repository": "df26dea6",
+                        "long_description": "x" * 48_000,
+                        "options": {
+                            "access_secret": (
+                                "synthetic-self-info-option-secret"
+                            )
+                        },
                     },
                 }
             ).encode()
+            self.assertGreater(len(payload), 32 * 1024)
+            return 200, payload
 
         self_resolver = SupervisorSelfAddonIdentityResolver(
             base_url="http://supervisor",
@@ -3502,7 +3510,7 @@ class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
                 return {}
 
         async def unavailable():
-            raise SelfAddonIdentityError()
+            raise SelfAddonIdentityError("transport_failure")
 
         provider = AddonProvider()
         gateway = OperationalLifecycleGateway(

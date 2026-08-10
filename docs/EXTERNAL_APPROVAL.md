@@ -147,6 +147,12 @@ After persistence of a new challenge, the adapter asynchronously sends a
 privacy-minimal normal-priority notification with one URI action: **Open
 Approval Panel**. The adapter resolves the running add-on's exact slug from
 Supervisor `/addons/self/info` instead of guessing a custom-repository prefix.
+The complete Supervisor response is read only through a fixed 512 KiB ceiling;
+only the validated installed slug and strictly necessary identity fields are
+retained. Options, configuration, translations, long descriptions, tokens, and
+the raw response are discarded as untrusted data and are never logged or
+persisted. A response above the ceiling fails closed with no notification and
+no inferred or fallback identity.
 The relative link contains the opaque plan ID so Ingress can open the exact
 review. It contains no approval decision, challenge ID, hash,
 CSRF nonce, credential, authenticated URL, diff, or unrestricted plan content.
@@ -166,6 +172,10 @@ Audit and health distinguish queued, delivered, failed, clear, and queue-full
 outcomes with bounded counts and normalized failure categories. They do not log
 the configured device service, unrestricted payload, challenge ID, secrets, or
 authenticated URLs. There is no retry-driven approval behavior and no fallback.
+Self-identity failures expose only one safe category:
+`configuration_unavailable`, `response_too_large`, `http_status`,
+`malformed_response`, `timeout`, or `transport_failure`. Raw Supervisor status
+content and response data remain private.
 
 ## Beta 26 effective expiry lifecycle
 

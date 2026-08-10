@@ -15,8 +15,18 @@ import aiohttp
 from ..configuration import Settings
 
 
-MAX_SELF_INFO_BYTES = 32_000
+MAX_SELF_INFO_BYTES = 512 * 1024
 IDENTITY_SOURCE = "supervisor_self_info"
+SELF_IDENTITY_FAILURE_CATEGORIES = frozenset(
+    {
+        "configuration_unavailable",
+        "response_too_large",
+        "http_status",
+        "malformed_response",
+        "timeout",
+        "transport_failure",
+    }
+)
 _SAFE_SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,127}$")
 _SAFE_TEXT = re.compile(r"^[^\x00-\x1f\x7f]{1,512}$")
 _FetchSelfInfo = Callable[[], Awaitable[tuple[int, bytes]]]
@@ -27,7 +37,10 @@ class SelfAddonIdentityError(RuntimeError):
 
     category = "self_addon_identity_unavailable"
 
-    def __init__(self) -> None:
+    def __init__(self, failure_category: str) -> None:
+        if failure_category not in SELF_IDENTITY_FAILURE_CATEGORIES:
+            failure_category = "transport_failure"
+        self.failure_category = failure_category
         super().__init__(
             "The current Engineering add-on identity could not be verified."
         )
@@ -96,40 +109,63 @@ class SupervisorSelfAddonIdentityResolver:
 
     async def resolve(self) -> SupervisorSelfAddonIdentity:
         if not self._base_url or not self._token:
-            raise SelfAddonIdentityError()
+            raise SelfAddonIdentityError("configuration_unavailable")
+        fetch_failure: str | None = None
+        response: object = None
         try:
-            status, body = (
+            response = (
                 await self._fetcher()
                 if self._fetcher is not None
                 else await self._fetch()
             )
-            if status != 200 or len(body) > MAX_SELF_INFO_BYTES:
-                raise SelfAddonIdentityError()
+        except (asyncio.TimeoutError, TimeoutError):
+            fetch_failure = "timeout"
+        except (aiohttp.ClientError, OSError):
+            fetch_failure = "transport_failure"
+        except SelfAddonIdentityError:
+            raise
+        except Exception:
+            fetch_failure = "transport_failure"
+        if fetch_failure is not None:
+            raise SelfAddonIdentityError(fetch_failure)
+
+        if (
+            not isinstance(response, tuple)
+            or len(response) != 2
+            or isinstance(response[0], bool)
+            or not isinstance(response[0], int)
+            or not isinstance(response[1], bytes)
+        ):
+            raise SelfAddonIdentityError("malformed_response")
+        status, body = response
+        if status != 200:
+            raise SelfAddonIdentityError("http_status")
+        if len(body) > MAX_SELF_INFO_BYTES:
+            raise SelfAddonIdentityError("response_too_large")
+        payload: object = None
+        malformed = False
+        try:
             payload = json.loads(
                 body.decode("utf-8"),
                 object_pairs_hook=_reject_duplicate_members,
                 parse_constant=_reject_nonfinite,
             )
-        except SelfAddonIdentityError:
-            raise
         except (
-            aiohttp.ClientError,
-            asyncio.TimeoutError,
-            TimeoutError,
-            OSError,
             TypeError,
             ValueError,
             UnicodeError,
             RecursionError,
-        ) as exc:
-            raise SelfAddonIdentityError() from exc
+        ):
+            malformed = True
+        if malformed:
+            raise SelfAddonIdentityError("malformed_response")
 
         if (
             not isinstance(payload, dict)
             or payload.get("result") != "ok"
             or not isinstance(payload.get("data"), dict)
         ):
-            raise SelfAddonIdentityError()
+            raise SelfAddonIdentityError("malformed_response")
         data = payload["data"]
         slug = data.get("slug")
         name = data.get("name")
@@ -142,7 +178,7 @@ class SupervisorSelfAddonIdentityResolver:
             or not _safe_text(version)
             or (repository is not None and not _safe_text(repository))
         ):
-            raise SelfAddonIdentityError()
+            raise SelfAddonIdentityError("malformed_response")
         return SupervisorSelfAddonIdentity(
             slug=slug,
             name=name,
