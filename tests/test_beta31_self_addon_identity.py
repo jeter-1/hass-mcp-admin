@@ -265,21 +265,29 @@ class SupervisorSelfIdentityCorrectionTests(
             fetcher=oversized,
         )
         rest = FakeRestClient()
-        manager = ApprovalNotificationManager(
-            rest,
-            None,
-            service="notify.mobile_app_synthetic_fixture",
-            timeout_seconds=5,
-            addon_identity_resolver=resolver.resolve,
-        )
-        manager._enqueue(
-            "notify",
-            "b" * 32,
-            "synthetic-opaque-challenge",
-            "plan_approval",
-            None,
-        )
-        await manager.process_next()
+        with tempfile.TemporaryDirectory() as directory:
+            audit_path = Path(directory) / "audit.jsonl"
+            manager = ApprovalNotificationManager(
+                rest,
+                AuditLogger(
+                    str(audit_path), "synthetic-beta31-audit-secret"
+                ),
+                service="notify.mobile_app_synthetic_fixture",
+                timeout_seconds=5,
+                addon_identity_resolver=resolver.resolve,
+            )
+            manager._enqueue(
+                "notify",
+                "b" * 32,
+                "synthetic-opaque-challenge",
+                "plan_approval",
+                None,
+            )
+            await manager.process_next()
+            audit = [
+                json.loads(line)
+                for line in audit_path.read_text().splitlines()
+            ]
 
         self.assertEqual(rest.calls, [])
         health = manager.health_snapshot()
@@ -292,6 +300,16 @@ class SupervisorSelfIdentityCorrectionTests(
             "response_too_large",
         )
         self.assertEqual(health["fallback_count"], 0)
+        failure = next(
+            record
+            for record in audit
+            if record["event"] == "approval_notification_notify_failed"
+        )
+        self.assertEqual(
+            failure["failure_category"], "response_too_large"
+        )
+        self.assertFalse(failure["provider_dispatch_occurred"])
+        self.assertFalse(failure["approval_authority_changed"])
 
 
 if __name__ == "__main__":
