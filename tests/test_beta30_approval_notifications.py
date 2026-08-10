@@ -165,8 +165,11 @@ class NotificationGovernanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             body["data"]["actions"][0]["title"], "Open Approval Panel"
         )
-        self.assertTrue(
-            body["data"]["actions"][0]["authenticationRequired"]
+        self.assertEqual(
+            body["data"]["clickAction"], body["data"]["url"]
+        )
+        self.assertNotIn(
+            "authenticationRequired", body["data"]["actions"][0]
         )
         self.assertIn(
             f"/hassio/ingress/repository_hass_mcp_engineering_beta/plans/{created['plan_id']}",
@@ -183,8 +186,12 @@ class NotificationGovernanceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(repeated["challenge_id"], pending["challenge_id"])
         self.assertEqual(
-            repeated["approval_notification"]["status"], "delivered"
+            repeated["approval_notification"]["status"], "submitted"
         )
+        health = self.notifications.health_snapshot()
+        self.assertEqual(health["submitted"], 1)
+        self.assertEqual(health["delivered"], 0)
+        self.assertFalse(health["handset_delivery_observable"])
         self.assertEqual(self.notifications.queue.qsize(), 0)
 
     async def test_structured_provider_error_is_truthful_and_non_authoritative(self):
@@ -274,6 +281,17 @@ class NotificationGovernanceTests(unittest.IsolatedAsyncioTestCase):
             self.rest.calls[0][2]["data"]["tag"],
             self.rest.calls[-1][2]["data"]["tag"],
         )
+        health = self.notifications.health_snapshot()
+        self.assertEqual(health["clear_submitted"], 1)
+        self.assertEqual(health["cleared"], 0)
+        self.assertFalse(health["handset_clear_observable"])
+        clear_event = next(
+            json.loads(line)
+            for line in self.audit_path.read_text().splitlines()
+            if "approval_notification_clear_submitted" in line
+        )
+        self.assertTrue(clear_event["provider_response_received"])
+        self.assertFalse(clear_event["handset_outcome_observable"])
 
     async def test_startup_reconciliation_replaces_only_active_challenges(self):
         created = await self.create()

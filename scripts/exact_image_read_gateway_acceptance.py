@@ -1930,7 +1930,7 @@ async def inspect_approval_notification(
 
     proposed = {
         "alias": "Gateway Fixture",
-        "description": "Beta 31 exact-image notification fixture",
+        "description": "Beta 32 exact-image notification fixture",
         "triggers": [],
         "conditions": [],
         "actions": [],
@@ -1947,9 +1947,9 @@ async def inspect_approval_notification(
                 await session.call_tool(
                     "create_change_plan",
                     {
-                        "title": "Beta 31 exact-image notification",
+                        "title": "Beta 32 exact-image notification",
                         "description": (
-                            "Synthetic advisory delivery acceptance"
+                            "Synthetic advisory submission acceptance"
                         ),
                         "operation": "update_automation",
                         "automation_id": "gateway_fixture",
@@ -2038,7 +2038,7 @@ async def inspect_approval_notification(
                 ]
                 if (
                     len(matching_calls) == 1
-                    and notification_health.get("delivered", 0) >= 1
+                    and notification_health.get("submitted", 0) >= 1
                 ):
                     break
                 await asyncio.sleep(0.1)
@@ -2063,6 +2063,11 @@ async def inspect_approval_notification(
         "exact-image notification did not carry the exact Ingress plan link",
     )
     require(
+        call.get("click_action_matches_url") is True
+        and call.get("authentication_required_present") is False,
+        "exact-image notification did not satisfy the Android link contract",
+    )
+    require(
         after_stats.get("supervisor_self_info_payload_bytes", 0)
         > 32 * 1024,
         "exact-image Supervisor self-info fixture was not larger than 32 KiB",
@@ -2075,7 +2080,9 @@ async def inspect_approval_notification(
     require(
         notification_health.get("configured") is True
         and notification_health.get("worker_running") is True
-        and notification_health.get("delivered", 0) >= 1
+        and notification_health.get("submitted", 0) >= 1
+        and notification_health.get("delivered") == 0
+        and notification_health.get("handset_delivery_observable") is False
         and notification_health.get("failed") == 0
         and notification_health.get("addon_identity_status")
         == "verified_supervisor_self_info"
@@ -2096,7 +2103,11 @@ async def inspect_approval_notification(
         "exact_ingress_plan_link": True,
         "configured": notification_health.get("configured"),
         "worker_running": notification_health.get("worker_running"),
+        "submitted": notification_health.get("submitted"),
         "delivered": notification_health.get("delivered"),
+        "handset_delivery_observable": notification_health.get(
+            "handset_delivery_observable"
+        ),
         "failed": notification_health.get("failed"),
         "addon_identity_status": notification_health.get(
             "addon_identity_status"

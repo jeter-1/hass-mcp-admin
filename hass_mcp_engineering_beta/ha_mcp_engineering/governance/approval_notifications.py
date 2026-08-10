@@ -98,9 +98,11 @@ class ApprovalNotificationManager:
         self._addon_identity_failure_category: str | None = None
         self._counters = {
             "queued": 0,
+            "submitted": 0,
             "delivered": 0,
             "failed": 0,
             "clear_queued": 0,
+            "clear_submitted": 0,
             "cleared": 0,
             "clear_failed": 0,
             "queue_full": 0,
@@ -228,6 +230,9 @@ class ApprovalNotificationManager:
             "status": status,
             "authority": "none",
             "delivery_semantics": "best_effort_advisory",
+            "submission_semantics": "home_assistant_service_response_only",
+            "handset_delivery_observable": False,
+            "handset_clear_observable": False,
             "addon_identity_status": self._addon_identity_status,
             "addon_identity_failure_category": (
                 self._addon_identity_failure_category
@@ -242,6 +247,9 @@ class ApprovalNotificationManager:
             "route": "direct_home_assistant_rest_allowlisted_notification",
             "authority": "none",
             "delivery_semantics": "best_effort_advisory",
+            "submission_semantics": "home_assistant_service_response_only",
+            "handset_delivery_observable": False,
+            "handset_clear_observable": False,
             "addon_identity_status": self._addon_identity_status,
             "addon_identity_failure_category": (
                 self._addon_identity_failure_category
@@ -349,12 +357,12 @@ class ApprovalNotificationManager:
                 "data": {
                     "tag": work.notification_key,
                     "url": review_url,
+                    "clickAction": review_url,
                     "actions": [
                         {
                             "action": "URI",
                             "title": "Open Approval Panel",
                             "uri": review_url,
-                            "authenticationRequired": True,
                         }
                     ],
                 },
@@ -385,8 +393,16 @@ class ApprovalNotificationManager:
         except Exception:
             self._failed(work, "internal_error", response_received=False)
         else:
-            counter = "delivered" if work.operation == "notify" else "cleared"
-            state = "delivered" if work.operation == "notify" else "cleared"
+            counter = (
+                "submitted"
+                if work.operation == "notify"
+                else "clear_submitted"
+            )
+            state = (
+                "submitted"
+                if work.operation == "notify"
+                else "clear_submitted"
+            )
             self._counters[counter] += 1
             self._set_state(work.notification_key, state)
             self._audit(
@@ -463,7 +479,7 @@ class ApprovalNotificationManager:
     ) -> None:
         event = f"approval_notification_{work.operation}"
         if result_status == "success":
-            event += "_delivered" if work.operation == "notify" else "_completed"
+            event += "_submitted"
         elif result_status == "failure":
             event += "_failed"
         else:
@@ -487,6 +503,8 @@ class ApprovalNotificationManager:
             "fallback": "none",
             "fallback_occurred": False,
             "approval_authority_changed": False,
+            "submission_semantics": "home_assistant_service_response_only",
+            "handset_outcome_observable": False,
         }
         if self.audit:
             self.audit.write(record)

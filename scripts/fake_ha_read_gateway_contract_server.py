@@ -421,7 +421,8 @@ async def approval_notification(request: web.Request) -> web.Response:
         or not isinstance(action, dict)
         or action.get("action") != "URI"
         or action.get("uri") != url
-        or action.get("authenticationRequired") is not True
+        or data.get("clickAction") != url
+        or "authenticationRequired" in action
     ):
         return web.json_response({"message": "invalid"}, status=400)
     STATE.approval_notification_calls.append(
@@ -430,7 +431,8 @@ async def approval_notification(request: web.Request) -> web.Response:
             "url_sha256": hashlib.sha256(url.encode()).hexdigest(),
             "tag_sha256": hashlib.sha256(tag.encode()).hexdigest(),
             "action": "URI",
-            "authentication_required": True,
+            "click_action_matches_url": True,
+            "authentication_required_present": False,
         }
     )
     return web.json_response(
