@@ -12,7 +12,7 @@ runtime decision is
    `observed_identity_status`. The endpoint must identify as `ha-mcp`, match an
    explicit reviewed release entry, and negotiate the supported MCP protocol.
    The compiled registry currently authorizes exact 7.14.1, 7.14.2, 8.0.0,
-   and reviewed immutable-OCI 8.1.0 and 8.1.1 entries. Release-page
+   and reviewed immutable-OCI 8.1.0, 8.1.1, and 8.2.0 entries. Release-page
    executables and MCPB are excluded because they report 8.0.0 at runtime.
    Identity, unreviewed-version, malformed-version, or protocol failure is
    global and must not be worked around with a self-advertised schema match.
@@ -46,8 +46,8 @@ runtime decision is
 
 With the current 49 static tools, the exact 7.14.x 26-read profile produces 75
 registered tools. The exact 8.0.0 and 8.1.0 24-read profiles each produce 73
-and hold exactly `ha_search` and `ha_get_operation_status`. Exact 8.1.1
-produces 74 with 25 delegated reads and holds only
+and hold exactly `ha_search` and `ha_get_operation_status`. Exact 8.1.1 and
+8.2.0 each produce 74 with 25 delegated reads and hold only
 `ha_get_operation_status`. One missing or
 quarantined read reduces the corresponding total by one. Additional blocked,
 held, or unreviewed tools do not increase the registered count.
@@ -232,12 +232,14 @@ defect. Do not claim that a live artifact digest or source revision was verified
 from MCP discovery; deployment artifact verification remains an operator
 responsibility.
 
-For exact 8.1.0 and 8.1.1, treat MCP `tools/list` as catalog authority. Source-only,
+For exact 8.1.0, 8.1.1, and 8.2.0, treat MCP `tools/list` as catalog authority. Source-only,
 conditional, hidden, and nonadvertised declarations are review diagnostics,
 not additional runtime tools. Require 78 unique advertised names and complete
 classification. `ha_manage_hacs` is one persistent-write tool because its
-8.1.0 action enum includes `remove`; none of its actions is an Engineering
-route. `ha_get_hacs_info` alone uses the exact top-level-success response model.
+8.1.0 action enum includes `remove`; 8.2.0 additionally includes
+`update_information`, which remains classified as a persistent write. None of
+those actions is an Engineering route. `ha_get_hacs_info` alone uses the exact
+top-level-success response model.
 
 Lifecycle installed-version binding uses Supervisor's endpoint-bound installed
 add-on inventory, not the source tag's add-on `config.yaml`. The 8.1.0 tag

@@ -38,9 +38,13 @@ sequence, locking, and F3 checks pass.
 ## Exact upstream admission
 
 The executable provider contract is admitted only for exact reviewed
-`ha-mcp` 8.1.1, protocol `2025-03-26`, compatibility entry
-`ha-mcp-v8.1.1-e1d76a6e`. The reviewed source is tag `v8.1.1`, commit
-`ae84694b50bfbd8d507042381fdee5e529bf73c5`.
+`ha-mcp` 8.1.1 or 8.2.0, protocol `2025-03-26`, and the corresponding exact
+compatibility entry. The 8.2.0 entry is `ha-mcp-v8.2.0-dbcfc0ee`, source tag
+`v8.2.0`, commit `54c492510d05b1f33c777f1c94bfb6a50a7d7c42`.
+The known existing-hyphenless-target pre-plan rejection remains exact to
+8.1.1. Exact 8.2.0 accepts such a target only after its upstream registry read
+proves the exact `url_path` already exists; new hyphenless creation remains
+rejected.
 
 Before planning or dispatch, Engineering requires the complete observed
 upstream catalog to match the exact reviewed release. It separately requires:
