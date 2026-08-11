@@ -191,16 +191,61 @@ def _is_exact_configuration_transition_plan(plan: ChangePlan) -> bool:
     )
 
 
-def _legacy_authority_is_inert(plan: ChangePlan) -> bool:
+def _configuration_plan_hash(plan: ChangePlan) -> str:
+    """Recompute the accepted contract-v2 approval binding."""
+
+    immutable_operations = []
+    for operation in sorted(plan.operations, key=lambda item: item.order):
+        immutable_operation = {
+            "operation_id": operation.operation_id,
+            "order": operation.order,
+            "depends_on": list(operation.depends_on),
+            "resource_type": operation.resource_type,
+            "helper_type": operation.helper_type,
+            "action": operation.action,
+            "target_id": operation.target_id,
+            "current_state_fingerprint": (
+                operation.current_state_fingerprint
+            ),
+            "proposed_config_hash": operation.proposed_config_hash,
+            "raw_proposed_config_hash": stable_hash(
+                operation.proposed_config
+            ),
+            "normalized_proposed_config_hash": stable_hash(
+                operation.normalized_proposed_config
+            ),
+            "normalization_version": operation.normalization_version,
+            "risk_level": operation.risk.level.value,
+            "risk_apply_allowed": operation.risk.apply_allowed,
+        }
+        if operation.semantic_projection_hash is not None:
+            immutable_operation["semantic_projection_hash"] = (
+                operation.semantic_projection_hash
+            )
+        immutable_operations.append(immutable_operation)
+    immutable: dict[str, object] = {
+        "contract_version": plan.contract_version,
+        "plan_id": plan.plan_id,
+        "plan_version": plan.plan_version,
+        "operation": plan.operation.value,
+        "target_type": plan.target_type,
+        "target_id": plan.target_id,
+        "expires_at": plan.expires_at,
+        "operations": immutable_operations,
+        "risk_level": plan.risk.level.value,
+        "risk_apply_allowed": plan.risk.apply_allowed,
+        "approval_kind": plan.approval.approval_kind,
+        "approval_authority_version": plan.approval.authority_version,
+    }
+    if plan.policy_decision is not None:
+        immutable["policy_decision"] = plan.policy_decision.to_dict()
+    return stable_hash(immutable)
+
+
+def _top_level_authority_is_absent(plan: ChangePlan) -> bool:
     approval = plan.approval
     return bool(
-        approval.authority_version == 3
-        and approval.approval_kind == "apply"
-        and approval.policy_decision_hash
-        == plan.policy_decision.policy_decision_hash
-        and approval.policy_class
-        == plan.policy_decision.policy_class.value
-        and approval.channel is None
+        approval.channel is None
         and approval.approver_principal is None
         and approval.principal_separation_enforced is None
         and approval.approved_at is None
@@ -221,7 +266,137 @@ def _legacy_authority_is_inert(plan: ChangePlan) -> bool:
         and approval.csrf_digest is None
         and approval.csrf_issued_at is None
         and approval.same_principal_confirmed is None
-        and approval.elevated_risk_acknowledgement is None
+    )
+
+
+def _approval_decision_binding_matches(plan: ChangePlan) -> bool:
+    decision = plan.policy_decision
+    approval = plan.approval
+    return bool(
+        decision is not None
+        and approval.authority_version == 3
+        and approval.approval_kind == "apply"
+        and approval.policy_decision_hash
+        == decision.policy_decision_hash
+        and approval.policy_class == decision.policy_class.value
+    )
+
+
+def _invalidated_elevated_acknowledgement_matches(plan: ChangePlan) -> bool:
+    acknowledgement = plan.approval.elevated_risk_acknowledgement
+    return bool(
+        acknowledgement is not None
+        and acknowledgement.kind
+        is ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
+        and acknowledgement.authority_version == 3
+        and acknowledgement.state is ApprovalState.INVALIDATED
+        and acknowledgement.bound_plan_hash is None
+        and acknowledgement.policy_decision_hash is None
+        and acknowledgement.policy_class is None
+        and acknowledgement.risk_delta is None
+        and acknowledgement.physical_consequence is None
+        and acknowledgement.challenge_id is None
+        and acknowledgement.challenge_requested_at is None
+        and acknowledgement.challenge_expires_at is None
+        and acknowledgement.granted_at is None
+        and acknowledgement.approver_principal is None
+        and acknowledgement.consumed_at is None
+        and acknowledgement.csrf_digest is None
+        and acknowledgement.csrf_issued_at is None
+    )
+
+
+def _consumed_elevated_bundle_matches(plan: ChangePlan) -> bool:
+    decision = plan.policy_decision
+    approval = plan.approval
+    acknowledgement = approval.elevated_risk_acknowledgement
+    if decision is None or acknowledgement is None:
+        return False
+    expected_plan_hash = _configuration_plan_hash(plan)
+    return bool(
+        plan.status is PlanStatus.APPLIED
+        and approval.state is ApprovalState.CONSUMED
+        and approval.bundle_state == "consumed"
+        and approval.channel == "home_assistant_ingress"
+        and approval.bound_plan_hash == expected_plan_hash
+        and bool(approval.challenge_id)
+        and bool(approval.challenge_requested_at)
+        and bool(approval.challenge_expires_at)
+        and approval.challenge_plan_version == plan.plan_version
+        and approval.challenge_target_type == plan.target_type
+        and approval.challenge_target_id == plan.target_id
+        and approval.challenge_operation == plan.operation.value
+        and approval.challenge_risk_level == plan.risk.level.value
+        and bool(approval.approver_principal)
+        and bool(approval.approved_at)
+        and bool(approval.approval_expires_at)
+        and bool(approval.consumed_at)
+        and approval.principal_separation_enforced is True
+        and approval.same_principal_confirmed is True
+        and approval.csrf_digest is None
+        and approval.csrf_issued_at is None
+        and acknowledgement.kind
+        is ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
+        and acknowledgement.authority_version == 3
+        and acknowledgement.state is ApprovalState.CONSUMED
+        and acknowledgement.bound_plan_hash == expected_plan_hash
+        and acknowledgement.policy_decision_hash
+        == decision.policy_decision_hash
+        and acknowledgement.policy_class == decision.policy_class.value
+        and acknowledgement.risk_delta == decision.risk_delta.value
+        and acknowledgement.physical_consequence
+        == decision.physical_consequence.value
+        and bool(acknowledgement.challenge_id)
+        and bool(acknowledgement.challenge_requested_at)
+        and bool(acknowledgement.challenge_expires_at)
+        and bool(acknowledgement.granted_at)
+        and acknowledgement.approver_principal
+        == approval.approver_principal
+        and bool(acknowledgement.consumed_at)
+        and acknowledgement.csrf_digest is None
+        and acknowledgement.csrf_issued_at is None
+    )
+
+
+def persisted_historical_approval_integrity_matches(
+    plan: ChangePlan,
+) -> bool:
+    """Validate the exact authority state of a reviewed historical shape."""
+
+    decision = plan.policy_decision
+    if decision is None or not _approval_decision_binding_matches(plan):
+        return False
+    stored_shape = _decision_shape(decision)
+    approval = plan.approval
+    if stored_shape == _BETA32_RETAINED_EFFECT_SHAPE:
+        if plan.status is PlanStatus.AWAITING_APPROVAL:
+            expected_state = (ApprovalState.REQUIRED, "prohibited")
+        elif plan.status in {PlanStatus.SUPERSEDED, PlanStatus.EXPIRED}:
+            expected_state = (ApprovalState.INVALIDATED, "invalidated")
+        else:
+            return False
+        return bool(
+            (approval.state, approval.bundle_state) == expected_state
+            and _top_level_authority_is_absent(plan)
+            and approval.elevated_risk_acknowledgement is None
+        )
+    if stored_shape != _BETA33_INITIAL_RETAINED_EFFECT_SHAPE:
+        return False
+    if plan.status is PlanStatus.SUPERSEDED:
+        return bool(
+            approval.state is ApprovalState.INVALIDATED
+            and approval.bundle_state == "invalidated"
+            and _top_level_authority_is_absent(plan)
+            and _invalidated_elevated_acknowledgement_matches(plan)
+        )
+    return _consumed_elevated_bundle_matches(plan)
+
+
+def _legacy_authority_is_inert(plan: ChangePlan) -> bool:
+    return bool(
+        _approval_decision_binding_matches(plan)
+        and _top_level_authority_is_absent(plan)
+        and plan.approval.elevated_risk_acknowledgement is None
     )
 
 
@@ -317,17 +492,11 @@ def _is_exact_legacy_transition_plan(plan: ChangePlan) -> bool:
     )
 
 
-def historical_policy_projection_match(
+def _historical_policy_projection_candidate(
     plan: ChangePlan,
+    *,
+    require_approval_integrity: bool,
 ) -> HistoricalPolicyProjectionMatch | None:
-    """Recognize an exact, terminal, source-reviewed transition snapshot.
-
-    Current evaluation is used only to prove that the immutable subject still
-    belongs to the narrow corrected retained-effect policy family.  The
-    historical decision itself must independently retain exact subject and
-    decision hashes.  Active records deliberately do not qualify.
-    """
-
     decision = plan.policy_decision
     if (
         decision is None
@@ -337,6 +506,10 @@ def historical_policy_projection_match(
             or _is_exact_legacy_transition_plan(plan)
         )
         or not persisted_policy_snapshot_integrity_matches(plan)
+        or (
+            require_approval_integrity
+            and not persisted_historical_approval_integrity_matches(plan)
+        )
         or _decision_shape(evaluate_change_policy(plan))
         != _CURRENT_RETAINED_EFFECT_SHAPE
     ):
@@ -356,3 +529,35 @@ def historical_policy_projection_match(
                 source_commit=source_commit,
             )
     return None
+
+
+def historical_policy_projection_has_only_approval_mismatch(
+    plan: ChangePlan,
+) -> bool:
+    """Identify a reviewed snapshot rejected only by approval integrity."""
+
+    return bool(
+        _historical_policy_projection_candidate(
+            plan,
+            require_approval_integrity=False,
+        )
+        is not None
+        and not persisted_historical_approval_integrity_matches(plan)
+    )
+
+
+def historical_policy_projection_match(
+    plan: ChangePlan,
+) -> HistoricalPolicyProjectionMatch | None:
+    """Recognize an exact, terminal, source-reviewed transition snapshot.
+
+    Current evaluation is used only to prove that the immutable subject still
+    belongs to the narrow corrected retained-effect policy family.  The
+    historical decision and approval bundle must independently retain exact
+    integrity.  Active records deliberately do not qualify.
+    """
+
+    return _historical_policy_projection_candidate(
+        plan,
+        require_approval_integrity=True,
+    )

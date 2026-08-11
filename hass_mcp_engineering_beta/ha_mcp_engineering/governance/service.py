@@ -39,6 +39,7 @@ from .historical_policy import (
     HISTORICAL_POLICY_PROJECTION_MODEL,
     HISTORICAL_POLICY_PROJECTION_PROFILES,
     HistoricalPolicyProjectionMatch,
+    historical_policy_projection_has_only_approval_mismatch,
     historical_policy_projection_match,
 )
 from .models import (
@@ -806,6 +807,14 @@ class ChangeGovernanceService:
             self._require_policy_snapshot(plan)
             return
         if historical_policy_projection_match(plan) is None:
+            if historical_policy_projection_has_only_approval_mismatch(plan):
+                bundle_error = self._approval_bundle_integrity_error(plan)
+                if bundle_error is not None:
+                    METRICS.record_classified_outcome(bundle_error.value)
+                    raise GovernanceError(
+                        bundle_error,
+                        details={"resource_id": plan.plan_id},
+                    )
             self._require_policy_snapshot(plan)
             return
         bundle_error = self._approval_bundle_integrity_error(plan)
