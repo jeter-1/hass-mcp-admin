@@ -15,10 +15,12 @@ import hmac
 from .models import (
     ApprovalActionKind,
     ApprovalPolicyClass,
+    ApprovalState,
     ChangeOperation,
     ChangePlan,
     ChangePolicyDecision,
     PhysicalConsequence,
+    PlanStatus,
     RiskDelta,
 )
 from .normalize import stable_hash
@@ -163,7 +165,7 @@ def persisted_policy_snapshot_integrity_matches(plan: ChangePlan) -> bool:
     )
 
 
-def _is_exact_transition_plan(plan: ChangePlan) -> bool:
+def _is_exact_configuration_transition_plan(plan: ChangePlan) -> bool:
     if (
         plan.contract_version != 2
         or plan.plan_family != "configuration_change"
@@ -189,6 +191,132 @@ def _is_exact_transition_plan(plan: ChangePlan) -> bool:
     )
 
 
+def _legacy_authority_is_inert(plan: ChangePlan) -> bool:
+    approval = plan.approval
+    return bool(
+        approval.authority_version == 3
+        and approval.approval_kind == "apply"
+        and approval.policy_decision_hash
+        == plan.policy_decision.policy_decision_hash
+        and approval.policy_class
+        == plan.policy_decision.policy_class.value
+        and approval.channel is None
+        and approval.approver_principal is None
+        and approval.principal_separation_enforced is None
+        and approval.approved_at is None
+        and approval.approving_caller_id is None
+        and approval.approval_note is None
+        and approval.bound_plan_hash is None
+        and approval.consumed_at is None
+        and approval.approval_expires_at is None
+        and approval.challenge_id is None
+        and approval.challenge_requested_at is None
+        and approval.challenge_expires_at is None
+        and approval.challenge_plan_version is None
+        and approval.challenge_target_type is None
+        and approval.challenge_target_id is None
+        and approval.challenge_operation is None
+        and approval.challenge_risk_level is None
+        and approval.request_note is None
+        and approval.csrf_digest is None
+        and approval.csrf_issued_at is None
+        and approval.same_principal_confirmed is None
+        and approval.elevated_risk_acknowledgement is None
+    )
+
+
+def _legacy_execution_is_inert(plan: ChangePlan) -> bool:
+    verification = plan.verification
+    rollback = plan.rollback
+    return bool(
+        plan.applied_at is None
+        and plan.apply_request_id is None
+        and plan.post_apply_fingerprint is None
+        and plan.snapshot is None
+        and plan.failure_information is None
+        and verification.status == "not_run"
+        and verification.checked_at is None
+        and verification.desired_fingerprint is None
+        and verification.actual_fingerprint is None
+        and verification.config_check_status is None
+        and not verification.mismatch_fields
+        and verification.duration_ms is None
+        and plan.configuration_check_status in {None, "not_run"}
+        and rollback.requested_at is None
+        and rollback.approved_at is None
+        and rollback.rolled_back_at is None
+        and rollback.request_id is None
+        and rollback.expected_current_fingerprint is None
+        and rollback.failure_code is None
+        and plan.execution_outcome in {None, "not_started", "not_applied"}
+    )
+
+
+def _legacy_event_sequence_is_reviewed(plan: ChangePlan) -> bool:
+    observed = tuple(
+        (event.event, event.result_status, event.error_code)
+        for event in plan.events
+    )
+    return observed in {
+        (("change_plan_created", "success", None),),
+        (
+            ("change_plan_created", "success", None),
+            ("change_plan_expired", "rejected", "change_plan_expired"),
+        ),
+        (
+            ("change_plan_created", "success", None),
+            ("policy_approval_rejected", "rejected", "prohibited_change"),
+            ("change_apply_rejected", "rejected", "prohibited_change"),
+            ("change_plan_expired", "rejected", "change_plan_expired"),
+        ),
+    }
+
+
+def _is_exact_legacy_transition_plan(plan: ChangePlan) -> bool:
+    """Recognize only source-reviewed contract-v1 retained-effect records."""
+
+    decision = plan.policy_decision
+    if (
+        decision is None
+        or plan.contract_version != 1
+        or plan.plan_version != 1
+        or plan.operation is not ChangeOperation.UPDATE_AUTOMATION
+        or plan.target_type != "automation"
+        or not plan.target_id
+        or plan.target_id == plan.plan_id
+        or plan.operations
+        or plan.operational is not None
+        or not isinstance(plan.current_config, dict)
+        or not isinstance(plan.proposed_config, dict)
+        or not isinstance(plan.normalized_current_config, dict)
+        or not isinstance(plan.normalized_proposed_config, dict)
+        or plan.risk.apply_allowed
+        or not _legacy_authority_is_inert(plan)
+        or not _legacy_execution_is_inert(plan)
+        or not _legacy_event_sequence_is_reviewed(plan)
+    ):
+        return False
+
+    approval = plan.approval
+    return bool(
+        (
+            plan.status is PlanStatus.AWAITING_APPROVAL
+            and approval.state is ApprovalState.REQUIRED
+            and approval.bundle_state == "prohibited"
+            and len(plan.events) == 1
+        )
+        or (
+            plan.status is PlanStatus.EXPIRED
+            and approval.state is ApprovalState.INVALIDATED
+            and approval.bundle_state == "invalidated"
+            and any(
+                event.event == "change_plan_expired"
+                for event in plan.events
+            )
+        )
+    )
+
+
 def historical_policy_projection_match(
     plan: ChangePlan,
 ) -> HistoricalPolicyProjectionMatch | None:
@@ -204,7 +332,10 @@ def historical_policy_projection_match(
     if (
         decision is None
         or not is_terminal_plan(plan)
-        or not _is_exact_transition_plan(plan)
+        or not (
+            _is_exact_configuration_transition_plan(plan)
+            or _is_exact_legacy_transition_plan(plan)
+        )
         or not persisted_policy_snapshot_integrity_matches(plan)
         or _decision_shape(evaluate_change_policy(plan))
         != _CURRENT_RETAINED_EFFECT_SHAPE
@@ -212,6 +343,11 @@ def historical_policy_projection_match(
         return None
 
     stored_shape = _decision_shape(decision)
+    if (
+        plan.contract_version == 1
+        and stored_shape != _BETA32_RETAINED_EFFECT_SHAPE
+    ):
+        return None
     for profile, source_commit, expected_shape in _HISTORICAL_PROFILES:
         if stored_shape == expected_shape:
             return HistoricalPolicyProjectionMatch(

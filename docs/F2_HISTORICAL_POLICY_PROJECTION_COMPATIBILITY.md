@@ -28,15 +28,41 @@ execution, provider, or task contracts.
 - Exact-source synthetic fixtures prove both historical shapes without an
   approval challenge, execution task, or provider write. Their generator and
   provenance are committed with the tests.
+- Exact Beta 6 source commit
+  `5c7eebf962837f85f2309b1b5099401fb075cd6e` and exact Beta 32 source also
+  prove the two contract-v1 lifecycle containers observed in persisted
+  history: an expired legacy automation plan and a terminal prohibited
+  automation plan. Both were written through
+  `ChangeGovernanceService.create_plan` with zero provider writes and zero
+  execution tasks in the source-generated fixtures.
 
-## Record diagnosis boundary
+## Sanitized live-record certification
 
-The live health observation supplied to this workstream reports two policy
-snapshot mismatches and two projection failures, but it does not include the
-two persisted records. Source work therefore cannot truthfully identify their
-live plan IDs, stored hashes, approval history, or exact failure clauses. This
-branch does not access deployed add-on storage or Home Assistant and does not
-infer those facts from the aggregate counters.
+The operator acquired byte-exact read-only copies of the two records from the
+Engineering add-on data boundary on 2026-08-11. Source and copy SHA-256 values
+matched. The private JSON remains outside Git; no challenge identifiers,
+nonces, CSRF material, credentials, provider bodies, or raw configurations are
+recorded here.
+
+| Plan | Created | Immutable identity | Lifecycle | Stored policy | Stored hashes | Authority and execution | Certification |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `4bbc541d0a5046b0baac3e2b5e03faf4` | `2026-08-05T04:02:01.255322+00:00` | contract 1, plan version 1, `update_automation`, automation `1737583374684` | `awaiting_approval`, terminal prohibited bundle | `f2-v1`; `prohibited / high / safety_critical`; `safety_critical_effect_not_reviewed`, `supported_configuration_change` | subject `66bc3be8a84e3b1ab9f4b5041f2cc43eff0907055b7488858791a5cba00fc923`; decision `99eb92f5a516fba7656a704addeadbbde056168d923e08c9b3ef821980d3483d` | approval required but prohibited; no challenge, grant, consumption, elevated acknowledgement, task, dispatch, apply, or verification | `matches_reviewed_beta32_historical_profile` |
+| `b2bdaad198ee4e82a33feb53f6d404f2` | `2026-08-01T04:39:42.810192+00:00` | contract 1, plan version 1, `update_automation`, automation `1737583374684` | `expired`, invalidated approval and bundle | `f2-v1`; `prohibited / high / safety_critical`; `safety_critical_effect_not_reviewed`, `supported_configuration_change` | subject `174b22d10dff4c59f5cb7023fd95eaa02cdba27be5115cd5374f28693268c371`; decision `eb2ff58546731bed77ee15712c3b70a34ff7f7a5804e3a8d6a5092cdf7c51473` | no challenge, grant, consumption, elevated acknowledgement, task, dispatch, apply, or verification | `matches_reviewed_beta32_historical_profile` |
+
+For each record, the canonical policy-subject hash recomputed exactly from the
+immutable plan subject, and the canonical policy-decision hash recomputed
+exactly from every stored decision field. The approval policy hash and class
+match the stored decision. Current evaluation retains the same subject hash
+and classifies the subject as the corrected
+`non_risk_increasing_condition_guard_added` retained-effect family. The
+records differ from current policy only in the reviewed historical decision.
+
+The first reviewed implementation assumed these records were contract-v2
+configuration plans. The live evidence disproved that structural assumption.
+The correction does not add another decision profile: it accepts only the two
+already-reviewed contract-v1 writer/lifecycle containers, exact inert
+authority and execution state, and the existing Beta 32 decision profile.
+Unknown reason codes and every other contract-v1 shape remain rejected.
 
 The committed source-authentic diagnostic records are deliberately synthetic:
 
@@ -62,10 +88,10 @@ live system is involved. Current read-only projection preserves its approval
 and execution bytes, while every fresh approve or apply attempt still fails
 current-policy validation before a new task or provider call.
 
-Before claiming that the two live failures are corrected, a separately
-authorized operator must compare sanitized copies of those exact records to
-the reviewed profiles. A mismatch remains a real projection failure; this
-branch does not add a plan-ID exception or arbitrary reason-code acceptance.
+No production record or plan-ID exception is committed. Deterministic
+source-generated fixtures reproduce the two observed contract-v1 shapes with
+synthetic identifiers and values before their historical writers compute the
+policy hashes.
 
 ## Decision
 
@@ -76,15 +102,21 @@ Read-only governance projection recognizes two exact historical profiles:
 
 Recognition requires all of the following:
 
-- a terminal contract-v2 configuration plan;
-- exactly one automation update operation;
-- the canonical configuration-plan identity and structure;
+- either a terminal contract-v2 configuration plan with exactly one canonical
+  automation update operation, or one exact source-reviewed contract-v1
+  `update_automation` container;
+- for contract-v1, plan version 1, a distinct nonempty automation target, no
+  operations array or operational plan, and either the exact terminal
+  prohibited lifecycle or exact Beta 6 expired lifecycle and event sequence;
 - a stored policy-subject hash that matches the immutable plan subject;
 - a stored policy-decision hash that matches every stored decision field;
 - one exact source-reviewed historical decision tuple;
 - current classification of the immutable subject as the corrected bounded
   retained-effect policy family; and
-- a complete, internally consistent persisted approval bundle.
+- a complete, internally consistent persisted approval bundle;
+- no challenge, grant, consumption, acknowledgement, execution, verification,
+  rollback, provider, or other authority evidence for contract-v1; and
+- no execution task in the authoritative task store.
 
 The record is projected with its original stored policy class and evidence.
 It is not rewritten or upgraded to current policy.
@@ -97,6 +129,14 @@ model, compatible count, exact-profile counts, and
 remain ordinary current-policy records, records without a snapshot remain in
 `legacy_without_policy_snapshot`, and corrupt, contradictory, nonterminal, or
 unreviewed historical records remain projection failures.
+
+The observed Beta 33 accounting before this correction was two projection
+failures and two policy-snapshot mismatches, with two prohibited records and
+two `projection_failed` records. Replaying the two source-authentic certified
+shapes yields zero projection failures, zero policy-snapshot mismatches, four
+prohibited records, and two historical-compatible records under
+`beta32_retained_effect_prohibited`. This is deterministic source/test
+evidence, not a claim that undeployed live health has already changed.
 
 ## Authority boundary
 
@@ -115,6 +155,7 @@ provider, write Home Assistant state, or enable fallback.
 The focused tests require:
 
 - exact fixture and generator provenance;
+- exact Beta 6 and Beta 32 contract-v1 writer provenance;
 - both historical snapshots to fail current-policy equality while passing
   independent stored-hash integrity;
 - exact terminal projection without persisted-byte mutation;
@@ -126,6 +167,8 @@ The focused tests require:
 - byte-immutable consumed approval and execution evidence generated by exact
   historical source;
 - strict refusal of approval and apply with zero task and provider mutations;
+- exact projection of both certified contract-v1 containers with startup and
+  deep-audit accounting unchanged;
 - rejection of a nonterminal old snapshot; and
 - rejection of subject, decision, and approval-bundle contradictions.
 
