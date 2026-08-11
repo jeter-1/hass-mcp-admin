@@ -34,7 +34,7 @@ plans; do not reuse the earlier prohibited garage plan or any consumed approval.
    safety-critical effect. Keep unknowns explicit; do not reconstruct the
    current configuration from a prior plan or conversation.
 
-## Fresh garage risk-reduction canary
+## Fresh garage retained-effect canary
 
 1. Prepare one fresh full-config update that preserves the exact current
    action/control-flow graph, triggers, mode, and other behavioral fields and
@@ -43,7 +43,10 @@ plans; do not reuse the earlier prohibited garage plan or any consumed approval.
 2. Confirm planning reports `risk.level=high`,
    `policy_class=elevated_admin`, `risk_delta=moderate`,
    `physical_consequence=safety_critical`, and the four retained-effect reason
-   codes documented in the release notes.
+   codes documented in the release notes, including
+   `non_risk_increasing_condition_guard_added`. Treat this as proof that the
+   retained effect's reachable states did not expand, not proof that the guard
+   is effective in any reachable live state.
 3. Review the complete semantic projection. Confirm it shows only the appended
    condition (and any deliberately requested metadata) and no action, target,
    trigger, mode, or unrelated delta.
@@ -74,7 +77,7 @@ plans; do not reuse the earlier prohibited garage plan or any consumed approval.
 
 ## Acceptance result
 
-Beta 33 passes only when the fresh garage risk-reduction plan completes through
+Beta 33 passes only when the fresh garage retained-effect plan completes through
 both elevated approval actions and one verified dispatch, while every broadened
 or ambiguous variant remains unreachable. Any changed physical effect admitted
 by the exception, incomplete review projection, stale-state dispatch, duplicate

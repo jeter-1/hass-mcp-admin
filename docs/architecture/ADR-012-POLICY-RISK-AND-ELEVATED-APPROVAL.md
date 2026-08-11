@@ -37,8 +37,9 @@ or downgrade them. Unknown, incomplete, unsupported, destructive,
 policy-evasive, critical, or unreviewed safety-critical classifications fail
 closed as `prohibited`.
 
-Beta 33 adds one machine-verifiable exception for an update to an existing
-automation that retains its complete normalized action and control-flow graph.
+Beta 33 adds one machine-proven non-risk-increasing retained-effect exception
+for an update to an existing automation that retains its complete normalized
+action and control-flow graph.
 The exception applies only when every behavioral top-level field other than
 `condition` is unchanged and the proposed top-level conjunctive condition list
 is the exact existing list followed by one or more reviewed, enabled condition
@@ -47,11 +48,22 @@ guards, blueprints, unresolved action or target structure, condition removal or
 replacement, trigger changes, action changes, target changes, and creates do
 not qualify.
 
-This proof establishes that the retained effect cannot execute in a state where
-the existing automation could not already execute. It does not claim that a
-new guard will be false in any particular real-world state. The whole proposed
-automation remains structurally high risk and its physical consequence remains
-`safety_critical`; only the immutable delta is classified `moderate`. The plan
+The exact theorem is: the safety-critical action graph is unchanged; all other
+behavioral configuration is unchanged; existing conditions remain an exact
+prefix; and appended reviewed conditions are additional conjunctive guards.
+Therefore post-edit safety-critical effect reachability is a subset of pre-edit
+safety-critical effect reachability: no new state can reach the retained
+effect. The proof permits both strict narrowing and behavioral neutrality. It
+does not prove that an appended guard evaluates false in any reachable runtime
+state. Guard effectiveness beyond this non-expansion theorem remains part of
+elevated administrator review.
+
+The reviewed families include `template`. An appended template condition is
+still an additional conjunctive restriction, but Engineering does not
+statically prove the template's semantic effectiveness or whether it is
+tautological. The whole proposed automation remains structurally high risk,
+and its physical consequence remains `safety_critical`; only the immutable
+delta is classified `moderate`. The plan
 therefore requires `elevated_admin`, including both the exact-plan approval and
 the elevated-risk acknowledgement. A passing proof never grants approval or
 execution authority by itself.

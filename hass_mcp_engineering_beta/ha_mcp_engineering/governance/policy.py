@@ -180,7 +180,7 @@ def _reviewed_condition_guard(value: Any, *, depth: int = 0) -> bool:
     )
 
 
-def _retained_safety_critical_effect_is_risk_reducing(
+def _retained_safety_critical_effect_is_non_risk_increasing(
     operation: ConfigurationOperation,
     *,
     triggers: set[str],
@@ -193,7 +193,9 @@ def _retained_safety_critical_effect_is_risk_reducing(
     appending one or more reviewed conditions to Home Assistant's top-level
     conjunctive condition list.  Existing conditions remain an exact prefix,
     so the proposal cannot make the retained effect run in any state where it
-    did not already run.
+    did not already run.  The proof permits strict narrowing or behavioral
+    neutrality; it does not prove that an appended guard is effective in any
+    reachable runtime state.
     """
 
     if (
@@ -255,7 +257,7 @@ def configuration_operation_policy(
     reasons = {"supported_configuration_change"}
     consequence = PhysicalConsequence.NONE
 
-    if _retained_safety_critical_effect_is_risk_reducing(
+    if _retained_safety_critical_effect_is_non_risk_increasing(
         operation,
         triggers=triggers,
         safety_critical_services=safety_critical_services,
@@ -266,7 +268,7 @@ def configuration_operation_policy(
             PhysicalConsequence.SAFETY_CRITICAL,
             (
                 "retained_safety_critical_effect",
-                "risk_reducing_condition_guard_added",
+                "non_risk_increasing_condition_guard_added",
                 "safety_critical_effect_requires_elevated_review",
                 "supported_configuration_change",
             ),

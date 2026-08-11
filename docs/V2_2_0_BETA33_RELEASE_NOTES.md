@@ -1,7 +1,7 @@
 # Engineering 2.2.0-beta.33 release notes
 
-Beta 33 corrects the F2/F7 risk-delta defect exposed by the live garage
-risk-reduction exercise. An existing automation was prohibited merely because
+Beta 33 corrects the F2/F7 risk-delta defect exposed by the live garage guard
+exercise. An existing automation was prohibited merely because
 its complete proposed configuration still contained an unchanged retained
 safety-critical effect. This release adds one bounded path for that effect
 without relaxing policy for new, changed, broadened, or ambiguous effects. It
@@ -10,7 +10,7 @@ is staged from `2.2.0-beta.32`.
 Publication, deployment, live Home Assistant access, and a live garage canary
 are not part of this source change.
 
-## Reviewed retained-effect proof
+## Reviewed non-expansion retained-effect proof
 
 An existing automation update qualifies only when Engineering can prove all of
 the following from the normalized authoritative before/after records:
@@ -26,22 +26,31 @@ the following from the normalized authoritative before/after records:
 - action/service/target structure is fully bounded, with no policy warning.
 
 This proves that the retained effect cannot run in a state in which the current
-automation could not already run. It does not prove the added condition will be
-false in a particular live state.
+automation could not already run. The proof permits strict narrowing and
+behavioral neutrality: it does not prove the added condition will be false in
+any reachable runtime state. Guard effectiveness beyond this non-expansion
+guarantee remains part of elevated administrator review.
+
+The reviewed condition families include `template`. An appended template
+condition is still an additional conjunctive restriction, so it cannot expand
+effect reachability. Engineering does not statically prove that the template is
+semantically effective or non-tautological.
 
 ## Proportional governance
 
 The complete proposed automation remains structurally `high` risk and the
-physical consequence remains `safety_critical`. The proven configuration delta
-is `moderate`, and the policy is `elevated_admin`. The same authenticated Home
-Assistant administrator must therefore complete the existing exact-plan
-approval and elevated-risk acknowledgement before F3 can execute.
+physical consequence remains `safety_critical`. The bounded non-risk-increasing
+configuration delta is `moderate`, and the policy is `elevated_admin`. The same
+authenticated Home Assistant administrator must therefore complete the
+existing exact-plan approval and elevated-risk acknowledgement before F3 can
+execute.
 
 The immutable policy decision records bounded reason codes for the retained
-effect and appended guard. The existing current-state fingerprint, complete
-Beta 22 semantic projection, policy and plan hashes, stale-state preflight, F3
-task authority, exactly-one-dispatch rule, exact readback verification, and
-duplicate-apply behavior are unchanged.
+effect and appended guard, including
+`non_risk_increasing_condition_guard_added`. The existing current-state
+fingerprint, complete Beta 22 semantic projection, policy and plan hashes,
+stale-state preflight, F3 task authority, exactly-one-dispatch rule, exact
+readback verification, and duplicate-apply behavior are unchanged.
 
 ## Preserved prohibitions and boundaries
 

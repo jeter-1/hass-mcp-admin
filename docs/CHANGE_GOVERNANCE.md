@@ -385,7 +385,11 @@ retaining the exact normalized action/control-flow graph and every other
 behavioral field. The whole automation remains high risk and its physical
 consequence remains `safety_critical`; the immutable update delta is
 `moderate`. This is a structural non-increase proof, not a claim that the new
-condition will block a real execution.
+condition will block a real execution. The proof permits strict narrowing and
+behavioral neutrality; guard effectiveness beyond non-expansion remains part
+of elevated administrator review. An appended `template` condition qualifies
+as an additional conjunctive restriction, but Engineering does not statically
+prove its semantic effectiveness or that it is non-tautological.
 
 Creates, blueprints, trigger or mode changes, action or target changes,
 condition removal/replacement/reordering, disabled or unknown guard shapes,

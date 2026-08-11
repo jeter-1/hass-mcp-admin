@@ -161,8 +161,8 @@ class Beta33RiskDeltaTests(ConfigurationPlanTestCase):
         self.assertEqual(
             decision["reason_codes"],
             [
+                "non_risk_increasing_condition_guard_added",
                 "retained_safety_critical_effect",
-                "risk_reducing_condition_guard_added",
                 "safety_critical_effect_requires_elevated_review",
                 "supported_configuration_change",
             ],
@@ -389,6 +389,32 @@ class Beta33RiskDeltaTests(ConfigurationPlanTestCase):
             ApprovalPolicyClass.ELEVATED_ADMIN,
         )
 
+    def test_tautological_template_guard_is_not_labeled_strict_reduction(self):
+        current = copy.deepcopy(CURRENT_GARAGE_AUTOMATION)
+        current.pop("id")
+        proposed = copy.deepcopy(current)
+        proposed["condition"] = [
+            {
+                "condition": "template",
+                "value_template": "{{ true }}",
+            }
+        ]
+
+        decision = _operation_policy(current, proposed)
+
+        self.assertEqual(
+            decision.policy_class, ApprovalPolicyClass.ELEVATED_ADMIN
+        )
+        self.assertEqual(decision.risk_delta, RiskDelta.MODERATE)
+        self.assertIn(
+            "non_risk_increasing_condition_guard_added",
+            decision.reason_codes,
+        )
+        self.assertNotIn(
+            "risk_reducing_condition_guard_added",
+            decision.reason_codes,
+        )
+
     def test_ambiguous_or_blueprint_effects_never_use_the_exception(self):
         unresolved = copy.deepcopy(CURRENT_GARAGE_AUTOMATION)
         unresolved.pop("id")
@@ -469,11 +495,11 @@ class Beta33ReleaseBoundaryTests(unittest.TestCase):
         self.assertTrue(release.is_file())
         self.assertTrue(acceptance.is_file())
         self.assertIn(
-            "Reviewed retained-effect proof",
+            "Reviewed non-expansion retained-effect proof",
             release.read_text(encoding="utf-8"),
         )
         self.assertIn(
-            "Fresh garage risk-reduction canary",
+            "Fresh garage retained-effect canary",
             acceptance.read_text(encoding="utf-8"),
         )
 
