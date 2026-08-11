@@ -59,6 +59,21 @@ PROVENANCE_PATH = (
 GENERATOR_PATH = (
     ROOT / "scripts" / "generate_beta34_historical_policy_fixtures.py"
 )
+LEGACY_RETAINED_FIXTURE_PATHS = (
+    FIXTURE_ROOT / "beta32_legacy_retained_effect_prohibited_plan.json",
+    FIXTURE_ROOT / "beta6_legacy_retained_effect_expired_plan.json",
+)
+LEGACY_RETAINED_PROVENANCE_PATH = (
+    FIXTURE_ROOT / "beta34_legacy_retained_effect_provenance.json"
+)
+LEGACY_RETAINED_GENERATOR_PATH = (
+    ROOT
+    / "scripts"
+    / "generate_beta34_legacy_retained_effect_fixtures.py"
+)
+BETA6_LEGACY_SOURCE_COMMIT = (
+    "5c7eebf962837f85f2309b1b5099401fb075cd6e"
+)
 EXPECTED_PROFILES = (
     "beta32_retained_effect_prohibited",
     "beta33_initial_retained_effect_reason",
@@ -134,6 +149,58 @@ class HistoricalPolicyFixtureProvenanceTests(unittest.TestCase):
                 value = json.loads(path.read_text(encoding="utf-8"))
                 self.assertEqual(value["contract_version"], 2)
                 self.assertEqual(len(value["operations"]), 1)
+
+    def test_legacy_retained_fixtures_use_exact_reviewed_writers(self):
+        provenance = json.loads(
+            LEGACY_RETAINED_PROVENANCE_PATH.read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            provenance["compatibility_model"],
+            HISTORICAL_POLICY_PROJECTION_MODEL,
+        )
+        self.assertEqual(
+            provenance["generator_sha256"],
+            _sha256(LEGACY_RETAINED_GENERATOR_PATH),
+        )
+        self.assertEqual(
+            provenance["writer_path"],
+            "ChangeGovernanceService.create_plan",
+        )
+        sources = {
+            item["profile"]: item for item in provenance["sources"]
+        }
+        self.assertEqual(
+            sources["beta32-prohibited"]["commit"],
+            BETA32_POLICY_SOURCE_COMMIT,
+        )
+        self.assertEqual(
+            sources["beta6-expired"]["commit"],
+            BETA6_LEGACY_SOURCE_COMMIT,
+        )
+        by_path = {item["path"]: item for item in provenance["fixtures"]}
+        for path in LEGACY_RETAINED_FIXTURE_PATHS:
+            with self.subTest(fixture=path.name):
+                evidence = by_path[path.relative_to(ROOT).as_posix()]
+                self.assertEqual(evidence["sha256"], _sha256(path))
+                self.assertEqual(evidence["provider_write_count"], 0)
+                self.assertEqual(evidence["execution_task_count"], 0)
+                value = json.loads(path.read_text(encoding="utf-8"))
+                self.assertNotIn("contract_version", value)
+                self.assertNotIn("operations", value)
+                plan = ChangePlan.from_dict(value)
+                self.assertEqual(plan.contract_version, 1)
+                self.assertEqual(plan.plan_version, 1)
+                self.assertEqual(plan.operation.value, "update_automation")
+                self.assertEqual(plan.target_type, "automation")
+                self.assertNotEqual(plan.target_id, plan.plan_id)
+                self.assertEqual(plan.operations, [])
+                self.assertEqual(
+                    plan.policy_decision.reason_codes,
+                    (
+                        "safety_critical_effect_not_reviewed",
+                        "supported_configuration_change",
+                    ),
+                )
 
 
 class HistoricalPolicyProjectionTests(unittest.IsolatedAsyncioTestCase):
@@ -476,6 +543,246 @@ class HistoricalPolicyProjectionTests(unittest.IsolatedAsyncioTestCase):
             ],
             2,
         )
+
+
+class LegacyRetainedEffectProjectionTests(
+    unittest.IsolatedAsyncioTestCase
+):
+    async def asyncSetUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.plan_root = Path(self.temporary.name) / "plans"
+        self.plan_root.mkdir(parents=True)
+        self.before: dict[str, bytes] = {}
+        for fixture in LEGACY_RETAINED_FIXTURE_PATHS:
+            raw = fixture.read_bytes()
+            plan_id = str(json.loads(raw)["plan_id"])
+            (self.plan_root / f"{plan_id}.json").write_bytes(raw)
+            self.before[plan_id] = raw
+        self.gateway = _NoWriteGateway()
+        self.repository = ChangePlanRepository(self.plan_root)
+        self.service = ChangeGovernanceService(
+            self.repository,
+            self.gateway,
+            now=lambda: datetime(
+                2026, 8, 12, 12, 0, tzinfo=timezone.utc
+            ),
+        )
+
+    async def asyncTearDown(self):
+        self.temporary.cleanup()
+
+    def _plans(self) -> list[ChangePlan]:
+        plans: list[ChangePlan] = []
+        for plan_id in self.before:
+            plan = self.repository.get(plan_id)
+            self.assertIsNotNone(plan)
+            assert plan is not None
+            plans.append(plan)
+        return plans
+
+    def _assert_bytes_unchanged(self) -> None:
+        for plan_id, raw in self.before.items():
+            self.assertEqual(
+                (self.plan_root / f"{plan_id}.json").read_bytes(),
+                raw,
+            )
+
+    def _write_adversarial(self, value: dict[str, object]) -> str:
+        plan_id = str(value["plan_id"])
+        (self.plan_root / f"{plan_id}.json").write_text(
+            json.dumps(value, sort_keys=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        return plan_id
+
+    @staticmethod
+    def _rebind_snapshot_hashes(value: dict[str, object]) -> None:
+        plan = ChangePlan.from_dict(copy.deepcopy(value))
+        value["policy_decision"]["policy_subject_hash"] = (
+            evaluate_change_policy(plan).policy_subject_hash
+        )
+        LegacyRetainedEffectProjectionTests._rebind_decision_hash(value)
+
+    @staticmethod
+    def _rebind_decision_hash(value: dict[str, object]) -> None:
+        decision = value["policy_decision"]
+        decision_payload = {
+            key: decision[key]
+            for key in (
+                "policy_version",
+                "policy_class",
+                "risk_delta",
+                "physical_consequence",
+                "reason_codes",
+                "required_acknowledgements",
+                "policy_subject_hash",
+            )
+        }
+        decision["policy_decision_hash"] = stable_hash(decision_payload)
+        value["approval"]["policy_decision_hash"] = decision[
+            "policy_decision_hash"
+        ]
+
+    def test_exact_legacy_shapes_resolve_live_health_failures(self):
+        plans = self._plans()
+        self.assertEqual(len(plans), 2)
+        for plan in plans:
+            with self.subTest(plan_id=plan.plan_id):
+                self.assertEqual(plan.contract_version, 1)
+                self.assertTrue(is_terminal_plan(plan))
+                self.assertFalse(policy_snapshot_matches(plan))
+                self.assertTrue(
+                    persisted_policy_snapshot_integrity_matches(plan)
+                )
+                match = historical_policy_projection_match(plan)
+                self.assertIsNotNone(match)
+                assert match is not None
+                self.assertEqual(
+                    match.profile,
+                    "beta32_retained_effect_prohibited",
+                )
+                self.assertIsNone(
+                    self.service._approval_bundle_integrity_error(plan)
+                )
+                public = self.service.get_plan(plan.plan_id)
+                self.assertEqual(public["status"], "prohibited")
+                self.assertFalse(public["approval_actionable"])
+                self.assertFalse(public["approval_challenge_created"])
+                self.assertFalse(public["apply_allowed"])
+                self.assertIsNone(public["next_required_operation"])
+                self.assertIsNone(public["execution_task"]["task_id"])
+
+        health = self.service.health_summary()
+        self.assertEqual(health["projection_failure_count"], 0)
+        self.assertEqual(health["policy_snapshot_mismatches"], 0)
+        self.assertEqual(
+            health["plans_by_policy_class"]["prohibited"], 2
+        )
+        self.assertEqual(
+            health["plans_by_policy_class"]["projection_failed"], 0
+        )
+        self.assertEqual(
+            health["historical_policy_snapshot_compatibility"],
+            {
+                "model": HISTORICAL_POLICY_PROJECTION_MODEL,
+                "compatible_count": 2,
+                "profile_counts": {
+                    "beta32_retained_effect_prohibited": 2,
+                    "beta33_initial_retained_effect_reason": 0,
+                },
+                "authorization_effect": "none_projection_only",
+            },
+        )
+
+        before_restart = health[
+            "historical_policy_snapshot_compatibility"
+        ]
+        audit = self.service.deep_audit_plan_store()
+        self.assertEqual(
+            audit["historical_policy_snapshot_compatibility"],
+            before_restart,
+        )
+        restarted = ChangeGovernanceService(
+            ChangePlanRepository(self.plan_root),
+            self.gateway,
+            now=lambda: datetime(
+                2026, 8, 12, 12, 0, tzinfo=timezone.utc
+            ),
+        )
+        self.assertEqual(
+            restarted.health_summary()[
+                "historical_policy_snapshot_compatibility"
+            ],
+            before_restart,
+        )
+        self.assertEqual(
+            restarted.health_summary()["projection_failure_count"], 0
+        )
+        self._assert_bytes_unchanged()
+
+    async def test_legacy_history_never_becomes_new_authority(self):
+        for plan in self._plans():
+            with self.subTest(plan_id=plan.plan_id):
+                with self.assertRaises(GovernanceError) as approval_error:
+                    self.service.approve(
+                        plan.plan_id,
+                        self.service.plan_hash(plan),
+                    )
+                self.assertEqual(
+                    approval_error.exception.code,
+                    ErrorCode.POLICY_SNAPSHOT_MISMATCH,
+                )
+                with self.assertRaises(GovernanceError) as apply_error:
+                    await self.service.apply(
+                        plan.plan_id,
+                        self.service.plan_hash(plan),
+                    )
+                self.assertEqual(
+                    apply_error.exception.code,
+                    ErrorCode.POLICY_SNAPSHOT_MISMATCH,
+                )
+                self.assertIsNone(
+                    self.service.task_repository.get_for_plan(plan.plan_id)
+                )
+        self.assertEqual(self.gateway.writes, 0)
+        self._assert_bytes_unchanged()
+
+    def test_legacy_unknown_tampered_or_actionable_shapes_fail_closed(self):
+        fixture = LEGACY_RETAINED_FIXTURE_PATHS[0]
+        cases: list[tuple[str, dict[str, object]]] = []
+
+        unknown = json.loads(fixture.read_text(encoding="utf-8"))
+        unknown["policy_decision"]["reason_codes"] = [
+            "safety_critical_effect_not_reviewed",
+            "supported_configuration_change",
+            "unreviewed_historical_reason",
+        ]
+        self._rebind_decision_hash(unknown)
+        cases.append(("unknown_reason", unknown))
+
+        decision_hash = json.loads(fixture.read_text(encoding="utf-8"))
+        decision_hash["policy_decision"]["policy_decision_hash"] = "0" * 64
+        decision_hash["approval"]["policy_decision_hash"] = "0" * 64
+        cases.append(("decision_hash", decision_hash))
+
+        challenge = json.loads(fixture.read_text(encoding="utf-8"))
+        challenge["approval"]["challenge_id"] = (
+            "synthetic-untrusted-challenge"
+        )
+        cases.append(("authority_evidence", challenge))
+
+        execution = json.loads(fixture.read_text(encoding="utf-8"))
+        execution["applied_at"] = "2026-08-11T18:01:00+00:00"
+        cases.append(("execution_evidence", execution))
+
+        for name, value in cases:
+            with self.subTest(case=name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp) / "plans"
+                root.mkdir(parents=True)
+                plan_id = str(value["plan_id"])
+                path = root / f"{plan_id}.json"
+                path.write_text(
+                    json.dumps(value, sort_keys=True, separators=(",", ":")),
+                    encoding="utf-8",
+                )
+                before = path.read_bytes()
+                service = ChangeGovernanceService(
+                    ChangePlanRepository(root),
+                    _NoWriteGateway(),
+                )
+                loaded = service.repository.get(plan_id)
+                self.assertIsNotNone(loaded)
+                assert loaded is not None
+                self.assertIsNone(
+                    historical_policy_projection_match(loaded)
+                )
+                with self.assertRaises(GovernanceError) as raised:
+                    service.get_plan(plan_id)
+                self.assertEqual(
+                    raised.exception.code,
+                    ErrorCode.POLICY_SNAPSHOT_MISMATCH,
+                )
+                self.assertEqual(path.read_bytes(), before)
 
     def test_nonterminal_old_snapshot_remains_a_policy_mismatch(self):
         value = json.loads(FIXTURE_PATHS[1].read_text(encoding="utf-8"))

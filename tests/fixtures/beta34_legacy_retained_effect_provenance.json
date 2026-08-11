@@ -1,0 +1,85 @@
+{
+  "compatibility_model": "beta34-historical-policy-projection-v1",
+  "fixtures": [
+    {
+      "approval_bundle_state": "prohibited",
+      "approval_state": "required",
+      "contract_version_key_present": false,
+      "deserialized_contract_version": 1,
+      "execution_task_count": 0,
+      "operation": "update_automation",
+      "path": "tests/fixtures/beta32_legacy_retained_effect_prohibited_plan.json",
+      "policy_decision": {
+        "physical_consequence": "safety_critical",
+        "policy_class": "prohibited",
+        "policy_decision_hash": "5dbab8ff550e32f025b93cb2a9a549f7100aabd15de7eaecee272b1b1e9c9cb8",
+        "policy_subject_hash": "47f91735205aa170ffe5cb89340fbda171e5f9f4560a230780929776557a0d63",
+        "policy_version": "f2-v1",
+        "reason_codes": [
+          "safety_critical_effect_not_reviewed",
+          "supported_configuration_change"
+        ],
+        "required_acknowledgements": [],
+        "risk_delta": "high"
+      },
+      "profile": "beta32-prohibited",
+      "provider_write_count": 0,
+      "sha256": "c1251034d713329dd79bd2e4fd7a6803375acb8b5265862e80979c7388b21fda",
+      "source_commit": "f9d660499a05edef6af7fd9a590d7827b5983e3a",
+      "status": "awaiting_approval",
+      "target_type": "automation"
+    },
+    {
+      "approval_bundle_state": "invalidated",
+      "approval_state": "invalidated",
+      "contract_version_key_present": false,
+      "deserialized_contract_version": 1,
+      "execution_task_count": 0,
+      "operation": "update_automation",
+      "path": "tests/fixtures/beta6_legacy_retained_effect_expired_plan.json",
+      "policy_decision": {
+        "physical_consequence": "safety_critical",
+        "policy_class": "prohibited",
+        "policy_decision_hash": "ead39080f38cad9ea4d2edd6234e0863bc9c037c1ba9db5e51ec3604c4087bf3",
+        "policy_subject_hash": "7d346680fd7632236c1ae9171273e3886ef656b8c9c0467738c0379317b3880c",
+        "policy_version": "f2-v1",
+        "reason_codes": [
+          "safety_critical_effect_not_reviewed",
+          "supported_configuration_change"
+        ],
+        "required_acknowledgements": [],
+        "risk_delta": "high"
+      },
+      "profile": "beta6-expired",
+      "provider_write_count": 0,
+      "sha256": "2f57579a1fb2eed311f346b83a7a95096aeb37ed6e6a94ab02ae30aca2ba9b73",
+      "source_commit": "5c7eebf962837f85f2309b1b5099401fb075cd6e",
+      "status": "expired",
+      "target_type": "automation"
+    }
+  ],
+  "generation_timestamp": "2026-08-11T22:30:00Z",
+  "generator": "scripts/generate_beta34_legacy_retained_effect_fixtures.py",
+  "generator_command": "python3 scripts/generate_beta34_legacy_retained_effect_fixtures.py --beta6-worktree <exact-beta6-worktree> --beta32-worktree <exact-beta32-worktree> --output-dir tests/fixtures --generated-at 2026-08-11T22:30:00Z",
+  "generator_sha256": "11d8e11e86fb32c9cf957d5a158e57b7cbd937fd5344887ced61b40974ca6a65",
+  "schema_version": 1,
+  "sources": [
+    {
+      "commit": "f9d660499a05edef6af7fd9a590d7827b5983e3a",
+      "policy_source_sha256": "89212350f3a51edf9bcea2178b0dd985a37b8abeb1cf77b261d0ac8f810d9152",
+      "profile": "beta32-prohibited",
+      "service_source_sha256": "381a950b94f7652fe17d6c3385e73ea6113e337fe8cd146fd93d1286f4ecffe7"
+    },
+    {
+      "commit": "5c7eebf962837f85f2309b1b5099401fb075cd6e",
+      "policy_source_sha256": "81d9289c75c490156920d9e823104125e8c69edb3edc8aac0fb4174cba967a90",
+      "profile": "beta6-expired",
+      "service_source_sha256": "4e86a68a1db52d8129c271b258909ccf208f37b5e005cfaa648373ef59a281d3"
+    }
+  ],
+  "terminal_lifecycle": {
+    "beta32-prohibited": "prohibited_policy_bundle",
+    "beta6-expired": "ChangeGovernanceService._expire_if_needed"
+  },
+  "writer_path": "ChangeGovernanceService.create_plan"
+}
