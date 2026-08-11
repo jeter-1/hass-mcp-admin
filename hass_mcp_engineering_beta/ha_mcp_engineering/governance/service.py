@@ -35,6 +35,12 @@ from ..f3_dashboard.artifact_store import DashboardArtifactStore
 from ..f3_dashboard.errors import DashboardFoundationError
 from ..f3_dashboard.planning import create_dashboard_update_plan as build_dashboard_update
 from ..f3_dashboard.serialization import public_proposal_projection
+from .historical_policy import (
+    HISTORICAL_POLICY_PROJECTION_MODEL,
+    HISTORICAL_POLICY_PROJECTION_PROFILES,
+    HistoricalPolicyProjectionMatch,
+    historical_policy_projection_match,
+)
 from .models import (
     ApprovalActionKind,
     ApprovalActionRecord,
@@ -443,6 +449,9 @@ class ChangeGovernanceService:
         self.repository.recover_incomplete(self._timestamp())
         self.task_repository.cleanup(now=self.now())
         self._projection_failure_index: dict[str, ErrorCode] = {}
+        self._historical_policy_projection_index: dict[
+            str, HistoricalPolicyProjectionMatch
+        ] = {}
         self._projection_index_rebuild_count = 0
         self._projection_index_update_count = 0
         self._hot_path_metrics: dict[str, dict[str, Any]] = {}
@@ -507,7 +516,7 @@ class ChangeGovernanceService:
         try:
             self._require_v2_persisted_plan_safe(plan)
             if plan.policy_decision is not None:
-                self._require_policy_snapshot(plan)
+                self._require_projection_policy_snapshot(plan)
             return None
         except GovernanceError as exc:
             if exc.code not in PLAN_PROJECTION_FAILURE_CODES:
@@ -518,11 +527,17 @@ class ChangeGovernanceService:
         self, *, invalidate_health: bool = True
     ) -> None:
         failures: dict[str, ErrorCode] = {}
+        historical: dict[str, HistoricalPolicyProjectionMatch] = {}
         for plan in self.repository.list():
             error = self._projection_failure_for_plan(plan)
             if error is not None:
                 failures[plan.plan_id] = error
+                continue
+            match = historical_policy_projection_match(plan)
+            if match is not None:
+                historical[plan.plan_id] = match
         self._projection_failure_index = failures
+        self._historical_policy_projection_index = historical
         self._projection_index_rebuild_count += 1
         self._observed_plan_index_rebuild_count = (
             self.repository.index_rebuild_count
@@ -547,8 +562,20 @@ class ChangeGovernanceService:
         error = self._projection_failure_for_plan(plan)
         if error is None:
             self._projection_failure_index.pop(plan.plan_id, None)
+            match = historical_policy_projection_match(plan)
+            if match is None:
+                self._historical_policy_projection_index.pop(
+                    plan.plan_id, None
+                )
+            else:
+                self._historical_policy_projection_index[
+                    plan.plan_id
+                ] = match
         else:
             self._projection_failure_index[plan.plan_id] = error
+            self._historical_policy_projection_index.pop(
+                plan.plan_id, None
+            )
         self._projection_index_update_count += 1
         self._health_cache_key = None
         self._health_cache = None
@@ -565,7 +592,26 @@ class ChangeGovernanceService:
             "projection_failure_count": len(
                 self._projection_failure_index
             ),
+            "historical_policy_snapshot_compatibility": (
+                self._historical_policy_projection_summary()
+            ),
             "authorization_source": "persisted_records",
+        }
+
+    def _historical_policy_projection_summary(self) -> dict[str, Any]:
+        profiles = {
+            profile: 0
+            for profile in HISTORICAL_POLICY_PROJECTION_PROFILES
+        }
+        for match in self._historical_policy_projection_index.values():
+            profiles[match.profile] += 1
+        return {
+            "model": HISTORICAL_POLICY_PROJECTION_MODEL,
+            "compatible_count": len(
+                self._historical_policy_projection_index
+            ),
+            "profile_counts": profiles,
+            "authorization_effect": "none_projection_only",
         }
 
     def _new_id(self) -> str:
@@ -740,6 +786,28 @@ class ChangeGovernanceService:
                 ErrorCode.POLICY_SNAPSHOT_MISMATCH,
                 details={"resource_id": plan.plan_id},
             )
+        bundle_error = self._approval_bundle_integrity_error(plan)
+        if bundle_error is not None:
+            METRICS.record_classified_outcome(bundle_error.value)
+            raise GovernanceError(
+                bundle_error,
+                details={"resource_id": plan.plan_id},
+            )
+
+    def _require_projection_policy_snapshot(self, plan: ChangePlan) -> None:
+        """Validate current authority or exact terminal history for reads.
+
+        Historical compatibility deliberately exists only at projection
+        boundaries.  Approval, apply, rollback, and recovery continue through
+        ``_require_policy_snapshot`` and therefore require current policy.
+        """
+
+        if policy_snapshot_matches(plan):
+            self._require_policy_snapshot(plan)
+            return
+        if historical_policy_projection_match(plan) is None:
+            self._require_policy_snapshot(plan)
+            return
         bundle_error = self._approval_bundle_integrity_error(plan)
         if bundle_error is not None:
             METRICS.record_classified_outcome(bundle_error.value)
@@ -1307,9 +1375,13 @@ class ChangeGovernanceService:
         exact source-generated forms as terminal without rewriting them.
         """
 
+        projection_snapshot_validated = bool(
+            policy_snapshot_validated
+            or historical_policy_projection_match(plan) is not None
+        )
         return not self._effective_prohibited_plan_failures(
             plan,
-            policy_snapshot_validated=policy_snapshot_validated,
+            policy_snapshot_validated=projection_snapshot_validated,
         )
 
     @staticmethod
@@ -1348,6 +1420,24 @@ class ChangeGovernanceService:
         self._require_v2_persisted_plan_safe(plan)
         if plan.policy_decision is not None:
             self._require_policy_snapshot(plan)
+        return plan
+
+    def _load_for_projection(self, plan_id: str) -> ChangePlan:
+        """Load a readable plan without extending historical authority."""
+
+        try:
+            plan = self.repository.get(plan_id)
+        except ChangePlanStorageError as exc:
+            raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR) from exc
+        if plan is None:
+            METRICS.record_classified_outcome("change_plan_not_found")
+            raise GovernanceError(
+                ErrorCode.CHANGE_PLAN_NOT_FOUND,
+                details={"resource_id": plan_id},
+            )
+        self._require_v2_persisted_plan_safe(plan)
+        if plan.policy_decision is not None:
+            self._require_projection_policy_snapshot(plan)
         return plan
 
     def _load_task(self, task_id: str) -> ExecutionTask:
@@ -4070,7 +4160,7 @@ class ChangeGovernanceService:
                 self._record(plan, "change_plan_superseded", "rejected")
 
     def get_plan(self, plan_id: str) -> dict[str, Any]:
-        plan = self._load(plan_id)
+        plan = self._load_for_projection(plan_id)
         self._resolve_lifecycle(plan)
         return self._public(plan)
 
@@ -4094,7 +4184,7 @@ class ChangeGovernanceService:
             try:
                 self._require_v2_persisted_plan_safe(plan)
                 if validate_policy and plan.policy_decision is not None:
-                    self._require_policy_snapshot(plan)
+                    self._require_projection_policy_snapshot(plan)
                 self._resolve_lifecycle(plan)
             except GovernanceError as exc:
                 if exc.code not in PLAN_PROJECTION_FAILURE_CODES:
@@ -4122,10 +4212,11 @@ class ChangeGovernanceService:
         failures: list[tuple[ChangePlan, ErrorCode]] = []
         for plan_id in plan_ids:
             try:
-                plan = self._load(plan_id)
-                self._require_v2_persisted_plan_safe(plan)
-                if validate_policy and plan.policy_decision is not None:
-                    self._require_policy_snapshot(plan)
+                plan = (
+                    self._load_for_projection(plan_id)
+                    if validate_policy
+                    else self._load(plan_id)
+                )
                 self._resolve_lifecycle(plan)
             except GovernanceError as exc:
                 if exc.code not in PLAN_PROJECTION_FAILURE_CODES:
@@ -10402,6 +10493,14 @@ class ChangeGovernanceService:
             plan.plan_id: error_code
             for plan, error_code in projection_failures
         }
+        self._historical_policy_projection_index = {
+            plan.plan_id: match
+            for plan in plans
+            if (
+                match := historical_policy_projection_match(plan)
+            )
+            is not None
+        }
         self._projection_index_rebuild_count += 1
         self._observed_plan_index_rebuild_count = (
             self.repository.index_rebuild_count
@@ -10528,6 +10627,9 @@ class ChangeGovernanceService:
                 "one_or_more_governance_plans_could_not_be_projected"
                 if projection_failures
                 else None
+            ),
+            "historical_policy_snapshot_compatibility": (
+                self._historical_policy_projection_summary()
             ),
             "policy_class_accounting_valid": (
                 policy_class_accounting_valid
