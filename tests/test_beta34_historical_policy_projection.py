@@ -23,6 +23,7 @@ from ha_mcp_engineering.governance.historical_policy import (  # noqa: E402
     HISTORICAL_POLICY_PROJECTION_MODEL,
     HISTORICAL_POLICY_PROJECTION_PROFILES,
     historical_policy_projection_match,
+    persisted_historical_approval_integrity_matches,
     persisted_policy_snapshot_integrity_matches,
 )
 from ha_mcp_engineering.governance.models import (  # noqa: E402
@@ -309,6 +310,46 @@ class HistoricalPolicyProjectionTests(unittest.IsolatedAsyncioTestCase):
                     "non_risk_increasing_condition_guard_added",
                     current.reason_codes,
                 )
+
+    def test_matcher_rejects_contradictory_historical_approval_bundles(self):
+        cases = (
+            (
+                FIXTURE_PATHS[0],
+                lambda value: value["approval"].__setitem__(
+                    "policy_decision_hash", "f" * 64
+                ),
+            ),
+            (
+                FIXTURE_PATHS[1],
+                lambda value: value["approval"].__setitem__(
+                    "policy_class", "standard_admin"
+                ),
+            ),
+            (
+                CONSUMED_FIXTURE_PATH,
+                lambda value: value["approval"].__setitem__(
+                    "bound_plan_hash", "e" * 64
+                ),
+            ),
+            (
+                CONSUMED_FIXTURE_PATH,
+                lambda value: value["approval"][
+                    "elevated_risk_acknowledgement"
+                ].__setitem__("policy_decision_hash", "d" * 64),
+            ),
+        )
+        for fixture, mutate in cases:
+            with self.subTest(fixture=fixture.name):
+                value = json.loads(fixture.read_text(encoding="utf-8"))
+                mutate(value)
+                plan = ChangePlan.from_dict(copy.deepcopy(value))
+                self.assertTrue(
+                    persisted_policy_snapshot_integrity_matches(plan)
+                )
+                self.assertFalse(
+                    persisted_historical_approval_integrity_matches(plan)
+                )
+                self.assertIsNone(historical_policy_projection_match(plan))
 
     def test_exact_history_projects_without_false_health_failures(self):
         plans = self._plans()

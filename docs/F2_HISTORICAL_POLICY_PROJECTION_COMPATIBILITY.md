@@ -150,6 +150,12 @@ decision, or a contradictory approval bundle remains fail-closed. Historical
 projection cannot create a challenge or task, consume approval, invoke a
 provider, write Home Assistant state, or enable fallback.
 
+The standalone historical matcher validates the complete source-reviewed
+approval shape before returning a compatibility result. A contradictory
+top-level decision binding, bundle state, bound plan hash, or elevated
+acknowledgement is therefore rejected even when the immutable policy subject
+and decision hashes themselves remain intact.
+
 ## Validation contract
 
 The focused tests require:
