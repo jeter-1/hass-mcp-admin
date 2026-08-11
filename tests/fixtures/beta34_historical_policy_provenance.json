@@ -1,0 +1,115 @@
+{
+  "compatibility_model": "beta34-historical-policy-projection-v1",
+  "fixtures": [
+    {
+      "approval_bundle_state": "prohibited",
+      "contract_version": 2,
+      "execution_task_count": 0,
+      "path": "tests/fixtures/beta32_retained_effect_prohibited_plan.json",
+      "policy_decision": {
+        "physical_consequence": "safety_critical",
+        "policy_class": "prohibited",
+        "policy_decision_hash": "cb9d74780042707c4d724984134ba48dadba52c75cedafa56032aa1a25451e1e",
+        "policy_subject_hash": "51281c221b711bbbb44ecd4abe8895bd35e76f63d347c80bd8734d85704dec71",
+        "policy_version": "f2-v1",
+        "reason_codes": [
+          "safety_critical_effect_not_reviewed",
+          "supported_configuration_change"
+        ],
+        "required_acknowledgements": [],
+        "risk_delta": "high"
+      },
+      "profile": "beta32",
+      "provider_write_count": 0,
+      "sha256": "d46bd599e1f3696260321a9890a8cbd2d3219c8aca01ef9d140e375f01add573",
+      "source_commit": "f9d660499a05edef6af7fd9a590d7827b5983e3a",
+      "status": "awaiting_approval"
+    },
+    {
+      "approval_bundle_state": "invalidated",
+      "contract_version": 2,
+      "execution_task_count": 0,
+      "path": "tests/fixtures/beta33_initial_retained_effect_reason_plan.json",
+      "policy_decision": {
+        "physical_consequence": "safety_critical",
+        "policy_class": "elevated_admin",
+        "policy_decision_hash": "0e8cade1d65db626ef1fd95f4dc8ce773641a235a014fedf20d5429e9f780c22",
+        "policy_subject_hash": "d11180bd26fc3146c008cf254d1e14560510a147c0ed62671dc9d7d13c6423dc",
+        "policy_version": "f2-v1",
+        "reason_codes": [
+          "retained_safety_critical_effect",
+          "risk_reducing_condition_guard_added",
+          "safety_critical_effect_requires_elevated_review",
+          "supported_configuration_change"
+        ],
+        "required_acknowledgements": [
+          "plan_approval",
+          "elevated_risk_acknowledgement"
+        ],
+        "risk_delta": "moderate"
+      },
+      "profile": "beta33-initial",
+      "provider_write_count": 0,
+      "sha256": "c152c3f0c3c3df98c41d83fd026dfc81744be88c41b97247c0ae893dedceac99",
+      "source_commit": "5b149b04cb12ee42abf19fc6a37ec2017c8bb0bf",
+      "status": "superseded"
+    },
+    {
+      "approval_bundle_state": "consumed",
+      "contract_version": 2,
+      "execution_task_count": 1,
+      "path": "tests/fixtures/beta33_initial_retained_effect_consumed_plan.json",
+      "policy_decision": {
+        "physical_consequence": "safety_critical",
+        "policy_class": "elevated_admin",
+        "policy_decision_hash": "c2e2dd91b49ea911a4045c927cc98dcb4960edf137be21802f7027fc09edb210",
+        "policy_subject_hash": "322f385c81e40f947d70be2f13bd467197f32a670a1bd4a11b1cadbadc358514",
+        "policy_version": "f2-v1",
+        "reason_codes": [
+          "retained_safety_critical_effect",
+          "risk_reducing_condition_guard_added",
+          "safety_critical_effect_requires_elevated_review",
+          "supported_configuration_change"
+        ],
+        "required_acknowledgements": [
+          "plan_approval",
+          "elevated_risk_acknowledgement"
+        ],
+        "risk_delta": "moderate"
+      },
+      "profile": "beta33-initial-consumed",
+      "provider_write_count": 1,
+      "sha256": "19bef64202f90e52197d342559a12fe63f89077927c4c91e612cbf79280ec6b0",
+      "source_commit": "5b149b04cb12ee42abf19fc6a37ec2017c8bb0bf",
+      "status": "applied"
+    }
+  ],
+  "generation_timestamp": "2026-08-11T18:00:00Z",
+  "generator": "scripts/generate_beta34_historical_policy_fixtures.py",
+  "generator_command": "python3 scripts/generate_beta34_historical_policy_fixtures.py --beta32-worktree <exact-beta32-worktree> --beta33-initial-worktree <exact-initial-beta33-worktree> --output-dir tests/fixtures --generated-at 2026-08-11T18:00:00Z",
+  "generator_sha256": "7129970c534676e6ec12a68caa460353613f0cf3b370421d21508351bbb5dd0f",
+  "schema_version": 1,
+  "sources": [
+    {
+      "commit": "f9d660499a05edef6af7fd9a590d7827b5983e3a",
+      "policy_source_sha256": "89212350f3a51edf9bcea2178b0dd985a37b8abeb1cf77b261d0ac8f810d9152",
+      "profile": "beta32"
+    },
+    {
+      "commit": "5b149b04cb12ee42abf19fc6a37ec2017c8bb0bf",
+      "policy_source_sha256": "87d6d1e8f26a1b7ce18ceefb6e0440d8664cc49267d5128ac2429368771d04dd",
+      "profile": "beta33-initial"
+    },
+    {
+      "commit": "5b149b04cb12ee42abf19fc6a37ec2017c8bb0bf",
+      "policy_source_sha256": "87d6d1e8f26a1b7ce18ceefb6e0440d8664cc49267d5128ac2429368771d04dd",
+      "profile": "beta33-initial-consumed"
+    }
+  ],
+  "terminal_lifecycle": {
+    "beta32": "prohibited_policy_bundle",
+    "beta33-initial": "same_target_plan_supersession",
+    "beta33-initial-consumed": "externally_approved_and_applied"
+  },
+  "writer_path": "ChangeGovernanceService.create_configuration_plan"
+}
