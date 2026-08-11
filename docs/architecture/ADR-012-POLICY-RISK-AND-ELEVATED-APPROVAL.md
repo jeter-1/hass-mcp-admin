@@ -1,6 +1,6 @@
 # ADR-012: Policy, risk, and elevated administrator approval
 
-Status: accepted for 2.2.0-beta.6
+Status: accepted for 2.2.0-beta.6; narrowly amended for 2.2.0-beta.33
 
 ## Context
 
@@ -37,11 +37,32 @@ or downgrade them. Unknown, incomplete, unsupported, destructive,
 policy-evasive, critical, or unreviewed safety-critical classifications fail
 closed as `prohibited`.
 
+Beta 33 adds one machine-verifiable exception for an update to an existing
+automation that retains its complete normalized action and control-flow graph.
+The exception applies only when every behavioral top-level field other than
+`condition` is unchanged and the proposed top-level conjunctive condition list
+is the exact existing list followed by one or more reviewed, enabled condition
+guards. Unknown condition families, action-like condition content, disabled
+guards, blueprints, unresolved action or target structure, condition removal or
+replacement, trigger changes, action changes, target changes, and creates do
+not qualify.
+
+This proof establishes that the retained effect cannot execute in a state where
+the existing automation could not already execute. It does not claim that a
+new guard will be false in any particular real-world state. The whole proposed
+automation remains structurally high risk and its physical consequence remains
+`safety_critical`; only the immutable delta is classified `moderate`. The plan
+therefore requires `elevated_admin`, including both the exact-plan approval and
+the elevated-risk acknowledgement. A passing proof never grants approval or
+execution authority by itself.
+
 The first reviewed safety-critical service set is immutable and contains
 `lock.unlock` and `alarm_control_panel.alarm_disarm`. Classification follows
 the service name independently of entity, device, area, data-based, broad,
 templated, unresolved, mixed, or omitted targets. Device and area identifiers
-are evidence, not proof of safety. Reviewed nested action positions are
+are evidence, not proof of safety. These services remain prohibited when they
+are created, changed, broadened, unresolved, or otherwise outside the Beta 33
+retained-effect proof. Reviewed nested action positions are
 traversed without scanning conditions or arbitrary mappings; unsupported
 nesting fails closed. High-risk services outside this exact set keep their
 separately reviewed mapping.
@@ -101,6 +122,14 @@ plan without a validated policy snapshot cannot receive a new approval or
 dispatch; an operator must create a new plan. Authority-version-2 approval
 records are not upgraded or treated as authority-version-3 bundles. Missing F2
 fields on otherwise valid historical data are legacy evidence, not corruption.
+
+A pending pre-Beta-33 plan whose retained-effect classification recomputes
+differently fails policy-snapshot validation and must be recreated. Persisted
+prohibited and terminal records are not rewritten or reinterpreted. The
+current-state fingerprint, normalized current configuration, normalized
+proposal, complete semantic projection, policy decision, plan hash, and F3
+preflight continue to bind the proof and fail closed on tampering or stale
+state.
 
 The existing MCP tools and reviewed providers are unchanged. F2 adds no new
 resource type, arbitrary service call, Supervisor request, direct Home Assistant

@@ -378,6 +378,22 @@ unsupported, destructive, unknown, or policy-evasive changes are
 Planning and configuration apply store a future automation action; they do not
 trigger it.
 
+Beta 33 recognizes one narrow safety-critical risk-delta case as
+`elevated_admin`: an update to an existing automation may append reviewed,
+enabled conditions to the end of its top-level conjunctive condition list while
+retaining the exact normalized action/control-flow graph and every other
+behavioral field. The whole automation remains high risk and its physical
+consequence remains `safety_critical`; the immutable update delta is
+`moderate`. This is a structural non-increase proof, not a claim that the new
+condition will block a real execution.
+
+Creates, blueprints, trigger or mode changes, action or target changes,
+condition removal/replacement/reordering, disabled or unknown guard shapes,
+unresolved structure, or any additional physical effect remain prohibited.
+Exact current/proposed normalization, complete review projection, both elevated
+administrator actions, stale-state preflight, F3 one-dispatch ownership,
+readback verification, and no fallback remain mandatory.
+
 The fixed reviewed service set `lock.unlock` and
 `alarm_control_panel.alarm_disarm` is safety-critical from the service name
 alone. Entity, device, area, data-based, broad, templated, unresolved, mixed,

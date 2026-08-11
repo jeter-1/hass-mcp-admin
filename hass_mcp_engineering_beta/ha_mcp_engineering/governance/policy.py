@@ -65,6 +65,37 @@ _UNCLASSIFIABLE_TRIGGERS = frozenset(
     }
 )
 
+_REVIEWED_CONDITION_FAMILIES = frozenset(
+    {
+        "and",
+        "device",
+        "not",
+        "numeric_state",
+        "or",
+        "state",
+        "sun",
+        "template",
+        "time",
+        "trigger",
+        "zone",
+    }
+)
+_CONDITION_CONTROL_FAMILIES = frozenset({"and", "not", "or"})
+_EXECUTABLE_CONDITION_KEYS = frozenset(
+    {
+        "action",
+        "actions",
+        "choose",
+        "else",
+        "parallel",
+        "repeat",
+        "sequence",
+        "service",
+        "then",
+    }
+)
+_NON_BEHAVIORAL_AUTOMATION_KEYS = frozenset({"alias", "description"})
+
 
 @dataclass(frozen=True)
 class OperationPolicyClassification:
@@ -104,6 +135,116 @@ def _risk_services(operation: ConfigurationOperation) -> set[str]:
     }
 
 
+def _contains_executable_condition_key(value: Any) -> bool:
+    if isinstance(value, dict):
+        if _EXECUTABLE_CONDITION_KEYS.intersection(value):
+            return True
+        return any(
+            _contains_executable_condition_key(item)
+            for item in value.values()
+        )
+    if isinstance(value, list):
+        return any(_contains_executable_condition_key(item) for item in value)
+    return False
+
+
+def _reviewed_condition_guard(value: Any, *, depth: int = 0) -> bool:
+    """Recognize one bounded condition that can only narrow top-level AND.
+
+    This is deliberately a policy proof, not a replacement for Home
+    Assistant configuration validation.  Unknown condition families,
+    disabled guards, action-like directives, and excessively nested boolean
+    structures are excluded from the retained-effect exception.
+    """
+
+    if depth > 4 or not isinstance(value, dict):
+        return False
+    family = value.get("condition")
+    if (
+        not isinstance(family, str)
+        or family not in _REVIEWED_CONDITION_FAMILIES
+        or value.get("enabled", True) is not True
+        or _contains_executable_condition_key(value)
+    ):
+        return False
+    if family not in _CONDITION_CONTROL_FAMILIES:
+        return True
+    children = value.get("conditions")
+    return bool(
+        isinstance(children, list)
+        and children
+        and all(
+            _reviewed_condition_guard(child, depth=depth + 1)
+            for child in children
+        )
+    )
+
+
+def _retained_safety_critical_effect_is_risk_reducing(
+    operation: ConfigurationOperation,
+    *,
+    triggers: set[str],
+    safety_critical_services: set[str],
+) -> bool:
+    """Prove the narrow reviewed-existing-effect policy exception.
+
+    The exact normalized action/control-flow graph and every other behavioral
+    top-level field must be unchanged.  The only behavioral delta permitted is
+    appending one or more reviewed conditions to Home Assistant's top-level
+    conjunctive condition list.  Existing conditions remain an exact prefix,
+    so the proposal cannot make the retained effect run in any state where it
+    did not already run.
+    """
+
+    if (
+        operation.resource_type != "automation"
+        or operation.action != "update"
+        or not isinstance(operation.normalized_current_config, dict)
+        or not isinstance(operation.normalized_proposed_config, dict)
+        or operation.risk.warnings
+        or triggers.intersection(_UNCLASSIFIABLE_TRIGGERS)
+        or not (
+            triggers.intersection(_SAFETY_CRITICAL_TRIGGERS)
+            or safety_critical_services
+        )
+    ):
+        return False
+
+    current = operation.normalized_current_config
+    proposed = operation.normalized_proposed_config
+    if "use_blueprint" in current or "use_blueprint" in proposed:
+        return False
+    if (
+        not isinstance(current.get("action"), list)
+        or not current["action"]
+        or current.get("action") != proposed.get("action")
+    ):
+        return False
+
+    ignored = {*_NON_BEHAVIORAL_AUTOMATION_KEYS, "condition"}
+    for key in set(current).union(proposed).difference(ignored):
+        if (
+            (key in current) != (key in proposed)
+            or current.get(key) != proposed.get(key)
+        ):
+            return False
+
+    current_conditions = current.get("condition", [])
+    proposed_conditions = proposed.get("condition", [])
+    if (
+        not isinstance(current_conditions, list)
+        or not isinstance(proposed_conditions, list)
+        or len(proposed_conditions) <= len(current_conditions)
+        or proposed_conditions[: len(current_conditions)]
+        != current_conditions
+    ):
+        return False
+    return all(
+        _reviewed_condition_guard(value)
+        for value in proposed_conditions[len(current_conditions) :]
+    )
+
+
 def configuration_operation_policy(
     operation: ConfigurationOperation,
 ) -> OperationPolicyClassification:
@@ -113,6 +254,23 @@ def configuration_operation_policy(
     risk_delta = _risk_delta(operation.risk.level)
     reasons = {"supported_configuration_change"}
     consequence = PhysicalConsequence.NONE
+
+    if _retained_safety_critical_effect_is_risk_reducing(
+        operation,
+        triggers=triggers,
+        safety_critical_services=safety_critical_services,
+    ):
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.ELEVATED_ADMIN,
+            RiskDelta.MODERATE,
+            PhysicalConsequence.SAFETY_CRITICAL,
+            (
+                "retained_safety_critical_effect",
+                "risk_reducing_condition_guard_added",
+                "safety_critical_effect_requires_elevated_review",
+                "supported_configuration_change",
+            ),
+        )
 
     if operation.resource_type == "helper":
         consequence = PhysicalConsequence.INDIRECT
