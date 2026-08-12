@@ -296,6 +296,87 @@ class HomeAssistant20268DeviceCompatibilityTests(
                     rest.request.assert_awaited_once_with("GET", "/config")
                     websocket.command.assert_not_awaited()
 
+    async def test_reviewed_query_identity_is_explicit_null(self):
+        for version, expected_adapter in ADAPTER_IDS_BY_HA_VERSION.items():
+            with self.subTest(version=version):
+                payload = empty_composite_payload()
+                self.assertIn("queried_entity_id", payload)
+                self.assertIsNone(payload["queried_entity_id"])
+                rest, websocket = self._clients(version)
+
+                _adapted, adapter = await adapt_ha_get_device_composite_result(
+                    payload,
+                    arguments={"device_id": "legacy-composite-id"},
+                    upstream_version="8.2.0",
+                    rest_client=rest,
+                    websocket_client=websocket,
+                )
+
+                self.assertEqual(adapter, expected_adapter)
+
+    async def test_owned_releases_reject_nonreviewed_query_identity(self):
+        missing = object()
+        query_identity_variants = (
+            ("missing", missing),
+            ("non_null", "switch.fixture_a"),
+            ("conflicting", "switch.conflicting"),
+            ("empty_string", ""),
+            ("wrong_type", 7),
+            ("malformed", ["switch.conflicting"]),
+        )
+        for version in ADAPTER_IDS_BY_HA_VERSION:
+            for label, queried_entity_id in query_identity_variants:
+                with self.subTest(version=version, query_identity=label):
+                    payload = empty_composite_payload()
+                    if queried_entity_id is missing:
+                        del payload["queried_entity_id"]
+                    else:
+                        payload["queried_entity_id"] = queried_entity_id
+                    rest = AsyncMock()
+                    rest.request.return_value = {"version": version}
+                    websocket = AsyncMock()
+
+                    with self.assertRaises(CompositeDeviceCompatibilityError):
+                        await adapt_ha_get_device_composite_result(
+                            payload,
+                            arguments={"device_id": "legacy-composite-id"},
+                            upstream_version="8.2.0",
+                            rest_client=rest,
+                            websocket_client=websocket,
+                        )
+
+                    rest.request.assert_awaited_once_with("GET", "/config")
+                    websocket.command.assert_not_awaited()
+
+    async def test_non_target_releases_do_not_validate_query_identity(self):
+        for version in ("2026.7.2", "2026.8.2"):
+            for queried_entity_id in (None, "switch.conflicting", 7):
+                with self.subTest(
+                    version=version,
+                    queried_entity_id=queried_entity_id,
+                ):
+                    payload = empty_composite_payload()
+                    if queried_entity_id is None:
+                        del payload["queried_entity_id"]
+                    else:
+                        payload["queried_entity_id"] = queried_entity_id
+                    rest = AsyncMock()
+                    rest.request.return_value = {"version": version}
+                    websocket = AsyncMock()
+
+                    adapted, adapter = await adapt_ha_get_device_composite_result(
+                        payload,
+                        arguments={"device_id": "legacy-composite-id"},
+                        upstream_version="8.2.0",
+                        rest_client=rest,
+                        websocket_client=websocket,
+                    )
+
+                    self.assertIs(adapted, payload)
+                    self.assertIsNone(adapter)
+                    rest.request.assert_awaited_once_with("GET", "/config")
+                    websocket.command.assert_not_awaited()
+
     async def test_split_count_and_primary_identity_are_exact(self):
         for split_contract in (
             {"split_ids": ["split-a"], "primary_id": "split-a"},

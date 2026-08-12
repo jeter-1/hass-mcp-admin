@@ -52,8 +52,17 @@ def _coarse_composite_candidate(
     return device, device_id
 
 
-def _validated_config_entries(device: dict[str, Any]) -> list[str]:
+def _validated_reviewed_source(
+    payload: dict[str, Any],
+    device: dict[str, Any],
+) -> list[str]:
     """Validate source evidence only after exact release ownership is known."""
+
+    if (
+        "queried_entity_id" not in payload
+        or payload["queried_entity_id"] is not None
+    ):
+        raise CompositeDeviceCompatibilityError()
 
     config_entries = device.get("config_entries")
     if (
@@ -99,7 +108,7 @@ async def adapt_ha_get_device_composite_result(
     adapter_id = ADAPTER_IDS_BY_HA_VERSION.get(runtime_version)
     if adapter_id is None:
         return payload, None
-    config_entries = _validated_config_entries(device)
+    config_entries = _validated_reviewed_source(payload, device)
 
     composite_splits = await websocket_client.command(
         {"type": "config/device_registry/list_composite_splits"}
