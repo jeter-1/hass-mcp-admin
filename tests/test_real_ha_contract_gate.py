@@ -1304,38 +1304,25 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertIn('stored.get("version") == 1', http_source)
         self.assertIn('stored.get("version") == 2', http_source)
 
-    def test_response_adapter_is_required_only_for_failed_2026_8_lookup(self):
+    def test_response_adapter_is_bound_to_the_exact_reviewed_ha_release(self):
         expected_adapter = self.contract._expected_device_response_adapter
         adapter_id = self.contract.HA_2026_8_DEVICE_ADAPTER_ID
-
-        self.assertIsNone(
-            expected_adapter(
-                home_assistant_version="2026.7.2",
-                raw_upstream_lookup={"success": False},
-            )
+        exact_ha_version = (
+            self.contract.HA_2026_8_DEVICE_ADAPTER_EXACT_HA_VERSION
         )
-        for version in ("2026.8.0", "2026.8.1"):
-            with self.subTest(version=version, raw_success=False):
-                self.assertEqual(
-                    expected_adapter(
-                        home_assistant_version=version,
-                        raw_upstream_lookup={"success": False},
-                    ),
-                    adapter_id,
-                )
-            with self.subTest(version=version, raw_success=True):
+
+        for version in ("2026.7.2", "2026.8.1"):
+            with self.subTest(version=version):
                 self.assertIsNone(
-                    expected_adapter(
-                        home_assistant_version=version,
-                        raw_upstream_lookup={"success": True},
-                    )
+                    expected_adapter(home_assistant_version=version)
                 )
+        self.assertEqual(
+            expected_adapter(home_assistant_version=exact_ha_version),
+            adapter_id,
+        )
 
         with self.assertRaises(ValueError):
-            expected_adapter(
-                home_assistant_version="2026.9.0",
-                raw_upstream_lookup={"success": True},
-            )
+            expected_adapter(home_assistant_version="2026.9.0")
 
     def test_validate_job_regenerates_every_beta6_compatibility_fixture(self):
         validate = self.ci["jobs"]["validate"]
