@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import copy
 from datetime import datetime, timezone
 import hashlib
@@ -59,6 +60,9 @@ PROVENANCE_PATH = (
 )
 GENERATOR_PATH = (
     ROOT / "scripts" / "generate_beta34_historical_policy_fixtures.py"
+)
+SERVICE_PATH = (
+    BETA_DIR / "ha_mcp_engineering" / "governance" / "service.py"
 )
 LEGACY_RETAINED_FIXTURE_PATHS = (
     FIXTURE_ROOT / "beta32_legacy_retained_effect_prohibited_plan.json",
@@ -202,6 +206,67 @@ class HistoricalPolicyFixtureProvenanceTests(unittest.TestCase):
                         "supported_configuration_change",
                     ),
                 )
+
+
+class ProjectionAuthorityBoundaryStructureTests(unittest.TestCase):
+    def test_projection_validator_has_only_reviewed_read_callers(self):
+        tree = ast.parse(SERVICE_PATH.read_text(encoding="utf-8"))
+        service = next(
+            node
+            for node in tree.body
+            if isinstance(node, ast.ClassDef)
+            and node.name == "ChangeGovernanceService"
+        )
+        methods = {
+            node.name: node
+            for node in service.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+
+        def directly_calls_projection_validator(
+            method: ast.FunctionDef | ast.AsyncFunctionDef,
+        ) -> bool:
+            return any(
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "self"
+                and node.func.attr
+                == "_require_projection_policy_snapshot"
+                for node in ast.walk(method)
+            )
+
+        direct_callers = {
+            name
+            for name, method in methods.items()
+            if directly_calls_projection_validator(method)
+        }
+        self.assertEqual(
+            direct_callers,
+            {
+                "_projection_failure_for_plan",
+                "_load_for_projection",
+                "_resolved_plans_with_projection_failures",
+            },
+        )
+
+        authority_markers = (
+            "approve",
+            "consume",
+            "apply",
+            "rollback",
+            "recover",
+            "reconcile",
+            "task",
+            "dispatch",
+            "redispatch",
+        )
+        authority_callers = {
+            name
+            for name in direct_callers
+            if any(marker in name for marker in authority_markers)
+        }
+        self.assertEqual(authority_callers, set())
 
 
 class HistoricalPolicyProjectionTests(unittest.IsolatedAsyncioTestCase):
