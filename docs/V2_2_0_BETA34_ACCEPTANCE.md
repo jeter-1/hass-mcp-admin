@@ -85,6 +85,36 @@ Any newly actionable historical record, persisted-byte change, provider call,
 authority effect other than `none_projection_only`, remaining unexplained
 projection mismatch, or exposure of raw approval evidence blocks acceptance.
 
+## C — Home Assistant 2026.8.1 compatibility acceptance
+
+1. Require the immutable disposable Home Assistant 2026.8.0 and 2026.8.1
+   lanes to capture the same reviewed raw restored-composite shape for the
+   migration fixture: two config entries, two split-device ids, zero raw joined
+   entities, and `entity_count=0` before adaptation.
+2. Require exact 2026.8.0 to report
+   `ha-get-device-composite-ha-2026.8-v1` and exact 2026.8.1 to report
+   `ha-get-device-composite-ha-2026.8.1-v1` for that shape. Neither release may
+   enter the other release's adapter identity.
+3. Require both adapted results to preserve the restored composite device id
+   and project exactly the two expected entity identities from the reviewed
+   split-device registry relationship.
+4. Require the previously failing
+   `device_registry_migration_and_analysis / upstream_entity_count` scenario to
+   pass unchanged on exact 2026.8.1. Do not alter its required count.
+5. Require Home Assistant 2026.7.2 to retain its established no-adapter path,
+   and prove an unknown future patch release does not inherit 2026.8.1
+   behavior.
+6. Require missing, malformed, duplicated, ambiguous, or inconsistent split
+   evidence to fail as a response-contract error, with no fallback or new
+   provider call.
+7. Confirm the exact ha-mcp admission matrix, dynamic delegated-read count,
+   public tool catalog, approval and governance authority, F3 dispatch,
+   dashboard behavior, configuration writes, and stable v1.1.2 are unchanged.
+
+Any permissive `2026.8.x` match, future-version inheritance, weakened entity
+count, silent shape repair, fallback, new provider call, or authority change
+blocks acceptance.
+
 ## Separate operational follow-up
 
 Protected Supervisor options appeared in a private discovery transcript during

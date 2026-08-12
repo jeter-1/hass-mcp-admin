@@ -44,13 +44,31 @@ One source-reviewed Beta 6 container shares the structural Beta 32 prohibited
 profile. It remains identified by its persisted contract/lifecycle variant;
 Beta 34 does not rename or broaden the compatibility profiles.
 
+## C — Exact Home Assistant 2026.8.1 composite-device compatibility
+
+The disposable 2026.8.0 and 2026.8.1 lanes proved that ha-mcp 8.2.0 returns
+the same reviewed restored-composite envelope on both releases: the synthetic
+device retains two config entries, while its entity rows are keyed by the two
+live split-device ids and the raw composite lookup therefore contains zero
+joined entities. The relevant Home Assistant device- and entity-registry
+source blobs are also identical across those patch releases.
+
+Beta 34 assigns a distinct compatibility-adapter identity to exact Home
+Assistant 2026.8.1 and applies the already reviewed split projection only when
+both that exact release and the exact empty-join response shape match. Exact
+2026.8.0 retains its existing adapter identity. Home Assistant 2026.7.2 and
+unknown future patch releases do not inherit either adapter. Malformed,
+ambiguous, duplicate, or incomplete split evidence fails closed as an invalid
+provider response.
+
 ## Compatibility and security boundaries
 
 - Public MCP tools and schemas, task and plan schemas, approval authority,
   provider routes, dispatch behavior, and zero-fallback policy are unchanged.
 - Exact ha-mcp 8.0.0, 8.1.0, 8.1.1, and 8.2.0 lanes remain required.
 - Disposable Home Assistant coverage preserves 2026.7.2 and 2026.8.0 and adds
-  exact 2026.8.1 by immutable OCI digest.
+  exact 2026.8.1 by immutable OCI digest, including the composite-device
+  `upstream_entity_count` contract.
 - Stable v1.1.2 is unchanged.
 - No production record, credential, signing material, or private discovery
   evidence is included.
