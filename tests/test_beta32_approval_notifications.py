@@ -41,13 +41,18 @@ class AndroidCompanionContractRestClient:
         data = body.get("data") if isinstance(body, dict) else None
         actions = data.get("actions") if isinstance(data, dict) else None
         action = actions[0] if isinstance(actions, list) and actions else None
-        review_url = data.get("url") if isinstance(data, dict) else None
+        navigation_uri = data.get("url") if isinstance(data, dict) else None
+        android_navigation_uri = (
+            f"deep-link://{navigation_uri}"
+            if isinstance(navigation_uri, str)
+            else None
+        )
         if (
-            not isinstance(review_url, str)
-            or data.get("clickAction") != review_url
+            not isinstance(navigation_uri, str)
+            or data.get("clickAction") != android_navigation_uri
             or not isinstance(action, dict)
             or action.get("action") != "URI"
-            or action.get("uri") != review_url
+            or action.get("uri") != android_navigation_uri
             or "authenticationRequired" in action
         ):
             raise HomeAssistantApiError(details={"status": 400})
@@ -104,10 +109,18 @@ class Beta32ApprovalNotificationTests(unittest.IsolatedAsyncioTestCase):
         method, path, body = rest.calls[0]
         self.assertEqual(method, "POST")
         self.assertEqual(path, "/services/notify/mobile_app_synthetic_pixel")
-        review_url = f"/hassio/ingress/{SELF_SLUG}/plans/{PLAN_ID}"
+        review_url = (
+            "homeassistant://navigate/hassio/ingress/"
+            f"{SELF_SLUG}/plans/{PLAN_ID}"
+        )
         self.assertEqual(body["data"]["url"], review_url)
-        self.assertEqual(body["data"]["clickAction"], review_url)
-        self.assertEqual(body["data"]["actions"][0]["uri"], review_url)
+        android_navigation_uri = f"deep-link://{review_url}"
+        self.assertEqual(
+            body["data"]["clickAction"], android_navigation_uri
+        )
+        self.assertEqual(
+            body["data"]["actions"][0]["uri"], android_navigation_uri
+        )
         self.assertNotIn(
             "authenticationRequired", body["data"]["actions"][0]
         )
