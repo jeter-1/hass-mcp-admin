@@ -56,7 +56,7 @@ def _eligible_composite_result(
         or any(not isinstance(item, str) or not item for item in config_entries)
         or len(set(config_entries)) != len(config_entries)
     ):
-        return None
+        raise CompositeDeviceCompatibilityError()
     return device, device_id
 
 
