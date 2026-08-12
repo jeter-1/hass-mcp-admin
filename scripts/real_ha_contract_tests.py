@@ -2221,7 +2221,13 @@ _DEVICE_CONTRACT_SCENARIOS = frozenset(
         "persisted_references",
         "registry_shape",
         "split_projection",
-        "upstream_device_lookup",
+        "upstream_device_identity",
+        "upstream_device_shape",
+        "upstream_entity_count",
+        "upstream_entity_identity",
+        "upstream_query_mode",
+        "upstream_response_adapter",
+        "upstream_success",
     }
 )
 
@@ -2448,26 +2454,26 @@ async def _run_device_migration_contract(
         home_assistant_version=EXPECTED_HA_VERSION,
     )
     _assert_device_contract(
-        response_adapter == expected_adapter, "upstream_device_lookup"
+        response_adapter == expected_adapter, "upstream_response_adapter"
     )
     _assert_device_contract(
-        upstream_lookup.get("success") is True, "upstream_device_lookup"
+        upstream_lookup.get("success") is True, "upstream_success"
     )
     _assert_device_contract(
         upstream_lookup.get("queried_by") == "device_id",
-        "upstream_device_lookup",
+        "upstream_query_mode",
     )
     upstream_device = upstream_lookup.get("device")
     _assert_device_contract(
-        isinstance(upstream_device, dict), "upstream_device_lookup"
+        isinstance(upstream_device, dict), "upstream_device_shape"
     )
     _assert_device_contract(
         upstream_device.get("device_id") == old_device_id,
-        "upstream_device_lookup",
+        "upstream_device_identity",
     )
     _assert_device_contract(
         upstream_lookup.get("entity_count") == 2,
-        "upstream_device_lookup",
+        "upstream_entity_count",
     )
     _assert_device_contract(
         {
@@ -2476,7 +2482,7 @@ async def _run_device_migration_contract(
             if isinstance(item, dict)
         }
         == set(entity_ids),
-        "upstream_device_lookup",
+        "upstream_entity_identity",
     )
 
     index = DependencyIndex(

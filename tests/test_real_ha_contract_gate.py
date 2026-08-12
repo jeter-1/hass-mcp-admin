@@ -1285,7 +1285,13 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             "persisted_references",
             "registry_shape",
             "split_projection",
-            "upstream_device_lookup",
+            "upstream_device_identity",
+            "upstream_device_shape",
+            "upstream_entity_count",
+            "upstream_entity_identity",
+            "upstream_query_mode",
+            "upstream_response_adapter",
+            "upstream_success",
         ):
             self.assertIn(f'"{scenario}"', self.source)
         self.assertIn("*_DEVICE_CONTRACT_SCENARIOS", self.source)
