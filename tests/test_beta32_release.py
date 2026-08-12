@@ -114,7 +114,7 @@ class Beta32ReleaseBoundaryTests(unittest.TestCase):
             / "governance"
             / "approval_notifications.py"
         ).read_text(encoding="utf-8")
-        self.assertIn('"clickAction": review_url', source)
+        self.assertIn('"clickAction": android_review_url', source)
         self.assertIn('"fallback": "none"', source)
         self.assertNotIn("authenticationRequired", source)
         self.assertNotIn("call_service", source)

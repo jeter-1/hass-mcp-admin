@@ -31,6 +31,7 @@ MOBILE_NOTIFY_SERVICE = re.compile(
     r"^notify\.mobile_app_[a-z0-9_]{1,128}$"
 )
 _SAFE_ADDON_SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,127}$")
+_SAFE_PLAN_ID = re.compile(r"^[a-f0-9]{32}$")
 _SEND_EVENTS = {
     "external_approval_requested": ApprovalActionKind.PLAN_APPROVAL.value,
     "elevated_risk_acknowledgement_requested": (
@@ -335,6 +336,14 @@ class ApprovalNotificationManager:
     async def _dispatch(self, work: _NotificationWork) -> None:
         path = f"/services/notify/{self.service.split('.', 1)[1]}"
         if work.operation == "notify":
+            if _SAFE_PLAN_ID.fullmatch(work.plan_id) is None:
+                self._failed(
+                    work,
+                    "invalid_navigation_target",
+                    response_received=False,
+                    dispatched=False,
+                )
+                return
             addon_slug = await self._resolve_addon_slug()
             if addon_slug is None:
                 self._failed(
@@ -345,9 +354,15 @@ class ApprovalNotificationManager:
                     dispatched=False,
                 )
                 return
-            review_url = (
+            review_path = (
                 f"/hassio/ingress/{addon_slug}/plans/{work.plan_id}"
             )
+            # Derive both platform representations from the one authenticated
+            # Ingress path.  iOS accepts the Home Assistant URL-handler form
+            # directly.  Android's notification contract uses deep-link:// to
+            # pass that same URI to the app's exported navigation handler.
+            review_url = f"homeassistant://navigate{review_path}"
+            android_review_url = f"deep-link://{review_url}"
             body = {
                 "title": "Home Assistant approval requested",
                 "message": (
@@ -357,12 +372,12 @@ class ApprovalNotificationManager:
                 "data": {
                     "tag": work.notification_key,
                     "url": review_url,
-                    "clickAction": review_url,
+                    "clickAction": android_review_url,
                     "actions": [
                         {
                             "action": "URI",
                             "title": "Open Approval Panel",
-                            "uri": review_url,
+                            "uri": android_review_url,
                         }
                     ],
                 },

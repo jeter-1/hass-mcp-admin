@@ -239,7 +239,8 @@ class SupervisorSelfIdentityCorrectionTests(
             )
             self.assertEqual(
                 body["data"]["url"],
-                f"/hassio/ingress/{SELF_SLUG}/plans/{'a' * 32}",
+                "homeassistant://navigate/hassio/ingress/"
+                f"{SELF_SLUG}/plans/{'a' * 32}",
             )
             self.assertEqual(body["data"]["actions"][0]["action"], "URI")
 

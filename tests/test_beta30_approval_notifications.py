@@ -166,7 +166,12 @@ class NotificationGovernanceTests(unittest.IsolatedAsyncioTestCase):
             body["data"]["actions"][0]["title"], "Open Approval Panel"
         )
         self.assertEqual(
-            body["data"]["clickAction"], body["data"]["url"]
+            body["data"]["clickAction"],
+            f"deep-link://{body['data']['url']}",
+        )
+        self.assertEqual(
+            body["data"]["actions"][0]["uri"],
+            body["data"]["clickAction"],
         )
         self.assertNotIn(
             "authenticationRequired", body["data"]["actions"][0]
