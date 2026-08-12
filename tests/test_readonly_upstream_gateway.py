@@ -2498,6 +2498,140 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
             any("compatibility adapter" in item for item in value["warnings"])
         )
 
+    async def test_exact_2026_8_1_composite_adapter_is_distinct_and_reported(
+        self,
+    ):
+        reviewed_schema = schema("device_id")
+        observed = catalog_tool(
+            "ha_get_device", reviewed_schema=reviewed_schema
+        )
+        payload = {
+            "success": True,
+            "device": {
+                "device_id": "legacy-composite-id",
+                "config_entries": ["entry-a", "entry-b"],
+                "entities": [],
+            },
+            "entities": [],
+            "entity_count": 0,
+            "queried_by": "device_id",
+            "queried_entity_id": None,
+        }
+        transport = FakeTransport(
+            [observed],
+            version="8.2.0",
+            result={"structuredContent": payload, "isError": False},
+        )
+        rest = AsyncMock()
+        rest.request.return_value = {"version": "2026.8.1"}
+        websocket = AsyncMock()
+        websocket.command.side_effect = [
+            {
+                "legacy-composite-id": {
+                    "split_ids": ["split-a", "split-b"],
+                    "primary_id": "split-a",
+                }
+            },
+            [
+                {
+                    "entity_id": "switch.fixture_a",
+                    "device_id": "split-a",
+                    "platform": "beta23_device_fixture",
+                },
+                {
+                    "entity_id": "switch.fixture_b",
+                    "device_id": "split-b",
+                    "platform": "beta23_device_fixture",
+                },
+            ],
+        ]
+        _gateway, server, _transport = await initialize(
+            [policy_entry("ha_get_device", reviewed_schema=reviewed_schema)],
+            [observed],
+            transport=transport,
+            version="8.2.0",
+            reviewed_version="8.2.0",
+            ha_rest_client=rest,
+            ha_websocket_client=websocket,
+        )
+
+        value = json.loads(
+            await registered_tools(server).get("ha_get_device").run(
+                {"device_id": "legacy-composite-id"}
+            )
+        )
+
+        self.assertTrue(value["success"])
+        self.assertEqual(value["data"]["entity_count"], 2)
+        self.assertEqual(
+            value["metadata"]["response_adapter"],
+            "ha-get-device-composite-ha-2026.8.1-v1",
+        )
+        self.assertEqual(value["metadata"]["fallback"], "none")
+        self.assertFalse(value["metadata"]["fallback_occurred"])
+        self.assertEqual(len(transport.calls), 1)
+
+    async def test_composite_adapter_contract_failure_is_invalid_response(
+        self,
+    ):
+        reviewed_schema = schema("device_id")
+        observed = catalog_tool(
+            "ha_get_device", reviewed_schema=reviewed_schema
+        )
+        payload = {
+            "success": True,
+            "device": {
+                "device_id": "legacy-composite-id",
+                "config_entries": ["entry-a", "entry-b"],
+                "entities": [],
+            },
+            "entities": [],
+            "entity_count": 0,
+            "queried_by": "device_id",
+            "queried_entity_id": None,
+        }
+        transport = FakeTransport(
+            [observed],
+            version="8.2.0",
+            result={"structuredContent": payload, "isError": False},
+        )
+        rest = AsyncMock()
+        rest.request.return_value = {"version": "2026.8.1"}
+        websocket = AsyncMock()
+        websocket.command.return_value = {
+            "legacy-composite-id": {
+                "split_ids": ["split-a", "split-b", "unexpected-split"],
+                "primary_id": "split-a",
+            }
+        }
+        _gateway, server, _transport = await initialize(
+            [policy_entry("ha_get_device", reviewed_schema=reviewed_schema)],
+            [observed],
+            transport=transport,
+            version="8.2.0",
+            reviewed_version="8.2.0",
+            ha_rest_client=rest,
+            ha_websocket_client=websocket,
+        )
+
+        value = json.loads(
+            await registered_tools(server).get("ha_get_device").run(
+                {"device_id": "legacy-composite-id"}
+            )
+        )
+
+        self.assertFalse(value["success"])
+        self.assertEqual(value["error_code"], "provider_error")
+        self.assertEqual(
+            value["details"]["failure_category"], "invalid_response"
+        )
+        self.assertTrue(
+            value["metadata"]["upstream_dispatch_occurred"]
+        )
+        self.assertEqual(value["metadata"]["fallback"], "none")
+        self.assertFalse(value["metadata"]["fallback_occurred"])
+        self.assertEqual(len(transport.calls), 1)
+
     async def test_mcp_128_result_conversion_preserves_json_text(self):
         raw = {
             "content": [

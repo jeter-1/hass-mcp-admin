@@ -11,6 +11,10 @@ from ..providers.supervisor_self import (
     SupervisorSelfAddonIdentityResolver,
 )
 from ..f3_dashboard.gateway import DashboardExecutionGateway
+from .historical_policy import (
+    HISTORICAL_POLICY_PROJECTION_MODEL,
+    HISTORICAL_POLICY_PROJECTION_PROFILES,
+)
 from .operational_lifecycle import OperationalLifecycleGateway
 from .resources import ConfigurationResourceGateway
 from .operational import BackupAdministrationGateway
@@ -243,6 +247,14 @@ class GovernanceRuntime:
                 },
                 "projection_failure_count": 0,
                 "projection_failure_warning": None,
+                "historical_policy_snapshot_compatibility": {
+                    "model": HISTORICAL_POLICY_PROJECTION_MODEL,
+                    "compatible_count": 0,
+                    "profile_counts": dict.fromkeys(
+                        HISTORICAL_POLICY_PROJECTION_PROFILES, 0
+                    ),
+                    "authorization_effect": "none_projection_only",
+                },
                 "policy_class_accounting_valid": True,
                 "pending_plan_approvals": 0,
                 "pending_elevated_acknowledgements": 0,

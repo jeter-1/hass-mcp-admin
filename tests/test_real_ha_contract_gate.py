@@ -1086,6 +1086,14 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             for node in ast.walk(tree)
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
+        spec = importlib.util.spec_from_file_location(
+            "_real_ha_contract_workflow_subject",
+            CONTRACT_PATH,
+        )
+        if spec is None or spec.loader is None:
+            raise AssertionError("could not load real Home Assistant contract runner")
+        cls.contract = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.contract)
 
     def test_real_ha_job_runs_contract_runner_and_always_destroys_config(self):
         job = self.ci["jobs"]["real-ha-contract-tests"]
@@ -1108,6 +1116,14 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
                     "ha_image": (
                         "ghcr.io/home-assistant/home-assistant:2026.8.0@"
                         "sha256:a21689ef0510df9760ee11bab4d6b2fef3ed5c1a29ed9c3224271597a23729eb"
+                    ),
+                },
+                {
+                    "lane": "ha-2026-8-1",
+                    "ha_version": "2026.8.1",
+                    "ha_image": (
+                        "ghcr.io/home-assistant/home-assistant:2026.8.1@"
+                        "sha256:6340a3de3917a9b19368e767310a96dd090f6a19aca8aeadf87fd1145cec9682"
                     ),
                 },
             ],
@@ -1269,7 +1285,13 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             "persisted_references",
             "registry_shape",
             "split_projection",
-            "upstream_device_lookup",
+            "upstream_device_identity",
+            "upstream_device_shape",
+            "upstream_entity_count",
+            "upstream_entity_identity",
+            "upstream_query_mode",
+            "upstream_response_adapter",
+            "upstream_success",
         ):
             self.assertIn(f'"{scenario}"', self.source)
         self.assertIn("*_DEVICE_CONTRACT_SCENARIOS", self.source)
@@ -1287,6 +1309,66 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertNotIn("storage_path.read_text", http_source)
         self.assertIn('stored.get("version") == 1', http_source)
         self.assertIn('stored.get("version") == 2', http_source)
+
+    def test_response_adapter_is_bound_to_the_exact_reviewed_ha_release(self):
+        expected_adapter = self.contract._expected_device_response_adapter
+        adapter_ids = self.contract.HA_DEVICE_ADAPTER_IDS_BY_HA_VERSION
+
+        self.assertIsNone(
+            expected_adapter(home_assistant_version="2026.7.2")
+        )
+        self.assertEqual(set(adapter_ids), {"2026.8.0", "2026.8.1"})
+        self.assertNotEqual(adapter_ids["2026.8.0"], adapter_ids["2026.8.1"])
+        for version, adapter_id in adapter_ids.items():
+            with self.subTest(version=version):
+                self.assertEqual(
+                    expected_adapter(home_assistant_version=version),
+                    adapter_id,
+                )
+
+        with self.assertRaises(ValueError):
+            expected_adapter(home_assistant_version="2026.9.0")
+
+    def test_composite_device_contract_evidence_is_bounded_and_structural(self):
+        project = self.contract._bounded_device_lookup_shape
+        payload = {
+            "success": True,
+            "queried_by": "device_id",
+            "entity_count": 1,
+            "entities": [
+                {
+                    "entity_id": "switch.synthetic_a",
+                    "device_id": "split-a",
+                    "config_entry_id": "entry-a",
+                    "platform": "synthetic_fixture",
+                    "name": "must-not-be-projected",
+                    "attributes": {"secret": "must-not-be-projected"},
+                }
+            ],
+            "device": {
+                "device_id": "legacy-composite-id",
+                "config_entries": ["entry-a", "entry-b"],
+                "entities": [],
+                "connections": [["synthetic", "must-not-be-projected"]],
+                "identifiers": [["synthetic", "must-not-be-projected"]],
+                "name": "must-not-be-projected",
+            },
+            "unreviewed_body": {"secret": "must-not-be-projected"},
+        }
+
+        evidence = project(payload)
+
+        encoded = json.dumps(evidence, sort_keys=True)
+        self.assertEqual(evidence["entity_count"], 1)
+        self.assertEqual(evidence["entities"][0]["device_id"], "split-a")
+        self.assertEqual(
+            evidence["device"]["config_entries"], ["entry-a", "entry-b"]
+        )
+        self.assertIn("connections", evidence["device"]["fields"])
+        self.assertIn("identifiers", evidence["device"]["fields"])
+        self.assertIn("unreviewed_body", evidence["fields"])
+        self.assertNotIn("must-not-be-projected", encoded)
+        self.assertNotIn("secret", encoded)
 
     def test_validate_job_regenerates_every_beta6_compatibility_fixture(self):
         validate = self.ci["jobs"]["validate"]

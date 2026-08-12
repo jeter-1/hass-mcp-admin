@@ -42,7 +42,7 @@ from ha_mcp_engineering.impact.service import (  # noqa: E402
     ChangeImpactAnalysisService,
 )
 from ha_mcp_engineering.providers.ha_2026_8_device_compatibility import (  # noqa: E402
-    ADAPTER_ID as HA_2026_8_DEVICE_ADAPTER_ID,
+    ADAPTER_IDS_BY_HA_VERSION as HA_DEVICE_ADAPTER_IDS_BY_HA_VERSION,
     adapt_ha_get_device_composite_result,
 )
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
@@ -2075,7 +2075,7 @@ async def _assert_http_configuration_contract() -> None:
         assert stored.get("has_pending") is False
         assert stored.get("has_stable") is False
         return
-    assert EXPECTED_HA_VERSION == "2026.8.0"
+    assert EXPECTED_HA_VERSION in {"2026.8.0", "2026.8.1"}
     assert stored.get("version") == 2
     assert stored.get("has_yaml_migration_done") is True
     assert stored.get("yaml_migration_done") is True
@@ -2220,7 +2220,13 @@ _DEVICE_CONTRACT_SCENARIOS = frozenset(
         "persisted_references",
         "registry_shape",
         "split_projection",
-        "upstream_device_lookup",
+        "upstream_device_identity",
+        "upstream_device_shape",
+        "upstream_entity_count",
+        "upstream_entity_identity",
+        "upstream_query_mode",
+        "upstream_response_adapter",
+        "upstream_success",
     }
 )
 
@@ -2235,6 +2241,118 @@ def _assert_device_contract(condition: bool, scenario: str) -> None:
     error = AssertionError()
     setattr(error, "contract_scenario", scenario)
     raise error
+
+
+def _bounded_device_lookup_shape(payload: object) -> dict[str, object]:
+    """Project only reviewed structural fields from one disposable lookup.
+
+    The real-HA job needs enough evidence to review an upstream response-contract
+    transition without ever printing a raw provider body.  Values are limited to
+    the synthetic registry identifiers created by this disposable fixture plus
+    field names, counts, and booleans.  Names, connections, identifiers, options,
+    attributes, and arbitrary upstream values are deliberately excluded.
+    """
+
+    if not isinstance(payload, dict):
+        return {"payload_type": type(payload).__name__}
+
+    def bounded_token(value: object) -> str | None:
+        return _bounded_diagnostic_token(
+            value,
+            maximum=128,
+            punctuation="_-/.",
+        )
+
+    def entity_shape(value: object) -> dict[str, object]:
+        if not isinstance(value, dict):
+            return {"row_type": type(value).__name__}
+        return {
+            "fields": sorted(
+                key
+                for key in value
+                if bounded_token(key) is not None
+            )[:32],
+            "entity_id": bounded_token(value.get("entity_id")),
+            "device_id": bounded_token(value.get("device_id")),
+            "config_entry_id": bounded_token(
+                value.get("config_entry_id")
+            ),
+            "platform": bounded_token(value.get("platform")),
+        }
+
+    entities = payload.get("entities")
+    projected_entities = (
+        [entity_shape(item) for item in entities[:4]]
+        if isinstance(entities, list)
+        else []
+    )
+    device = payload.get("device")
+    if isinstance(device, dict):
+        device_entities = device.get("entities")
+        config_entries = device.get("config_entries")
+        projected_device: dict[str, object] = {
+            "fields": sorted(
+                key
+                for key in device
+                if bounded_token(key) is not None
+            )[:48],
+            "device_id": bounded_token(device.get("device_id")),
+            "config_entries": [
+                token
+                for item in (
+                    config_entries[:8]
+                    if isinstance(config_entries, list)
+                    else []
+                )
+                if (token := bounded_token(item)) is not None
+            ],
+            "entity_count": (
+                len(device_entities)
+                if isinstance(device_entities, list)
+                else None
+            ),
+            "entities": (
+                [entity_shape(item) for item in device_entities[:4]]
+                if isinstance(device_entities, list)
+                else []
+            ),
+        }
+    else:
+        projected_device = {"payload_type": type(device).__name__}
+
+    return {
+        "fields": sorted(
+            key for key in payload if bounded_token(key) is not None
+        )[:32],
+        "success": payload.get("success")
+        if isinstance(payload.get("success"), bool)
+        else None,
+        "queried_by": bounded_token(payload.get("queried_by")),
+        "entity_count": payload.get("entity_count")
+        if isinstance(payload.get("entity_count"), int)
+        else None,
+        "entities_length": len(entities)
+        if isinstance(entities, list)
+        else None,
+        "entities": projected_entities,
+        "device": projected_device,
+    }
+
+
+def _expected_device_response_adapter(
+    *,
+    home_assistant_version: str,
+) -> str | None:
+    """Return the adapter reviewed for the exact Home Assistant release."""
+
+    if home_assistant_version == "2026.7.2":
+        return None
+    try:
+        return HA_DEVICE_ADAPTER_IDS_BY_HA_VERSION[home_assistant_version]
+    except KeyError:
+        raise ValueError(
+            "Unsupported Home Assistant contract version"
+        ) from None
 
 
 async def _run_device_migration_contract(
@@ -2290,7 +2408,8 @@ async def _run_device_migration_contract(
         )
     else:
         _assert_device_contract(
-            EXPECTED_HA_VERSION == "2026.8.0", "split_projection"
+            EXPECTED_HA_VERSION in {"2026.8.0", "2026.8.1"},
+            "split_projection",
         )
         _assert_device_contract(
             not any(
@@ -2429,32 +2548,53 @@ async def _run_device_migration_contract(
             websocket_client=websocket,
         )
     )
-    expected_adapter = (
-        HA_2026_8_DEVICE_ADAPTER_ID
-        if EXPECTED_HA_VERSION == "2026.8.0"
-        else None
+    print(
+        "Composite device contract evidence: "
+        + json.dumps(
+            {
+                "model": "composite-device-response-contract-v1",
+                "home_assistant_version": EXPECTED_HA_VERSION,
+                "upstream_version": UPSTREAM_VERSION,
+                "requested_device_id": old_device_id,
+                "expected_entity_ids": entity_ids,
+                "expected_split_device_ids": sorted(expected_device_ids),
+                "expected_entity_count": len(entity_ids),
+                "response_adapter": response_adapter,
+                "raw_lookup": _bounded_device_lookup_shape(
+                    raw_upstream_lookup
+                ),
+                "adapted_lookup": _bounded_device_lookup_shape(
+                    upstream_lookup
+                ),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+    expected_adapter = _expected_device_response_adapter(
+        home_assistant_version=EXPECTED_HA_VERSION,
     )
     _assert_device_contract(
-        response_adapter == expected_adapter, "upstream_device_lookup"
+        response_adapter == expected_adapter, "upstream_response_adapter"
     )
     _assert_device_contract(
-        upstream_lookup.get("success") is True, "upstream_device_lookup"
+        upstream_lookup.get("success") is True, "upstream_success"
     )
     _assert_device_contract(
         upstream_lookup.get("queried_by") == "device_id",
-        "upstream_device_lookup",
+        "upstream_query_mode",
     )
     upstream_device = upstream_lookup.get("device")
     _assert_device_contract(
-        isinstance(upstream_device, dict), "upstream_device_lookup"
+        isinstance(upstream_device, dict), "upstream_device_shape"
     )
     _assert_device_contract(
         upstream_device.get("device_id") == old_device_id,
-        "upstream_device_lookup",
+        "upstream_device_identity",
     )
     _assert_device_contract(
         upstream_lookup.get("entity_count") == 2,
-        "upstream_device_lookup",
+        "upstream_entity_count",
     )
     _assert_device_contract(
         {
@@ -2463,7 +2603,7 @@ async def _run_device_migration_contract(
             if isinstance(item, dict)
         }
         == set(entity_ids),
-        "upstream_device_lookup",
+        "upstream_entity_identity",
     )
 
     index = DependencyIndex(

@@ -17,6 +17,7 @@ UNSUPPORTED_AUTOMATION_ACTION_FAMILY = (
     "unsupported_automation_action_family"
 )
 MAX_AUTOMATION_ACTION_NAME_LENGTH = 200
+MAX_AUTOMATION_TEMPLATE_LENGTH = 60_000
 MAX_AUTOMATION_ACTION_DEPTH = 4
 AUTOMATION_ACTION_STEP_MODIFIERS = frozenset(
     {"alias", "continue_on_error", "enabled"}
@@ -205,6 +206,22 @@ def _bounded_nonempty_string(value: Any) -> bool:
     )
 
 
+def _nonempty_template_string(value: Any) -> bool:
+    """Accept a valid template without treating it as an action name.
+
+    Template content remains byte-for-byte significant to the normalized
+    verification hash.  The dedicated fixed ceiling remains fail-closed while
+    avoiding the unrelated action-name limit that rejected ordinary template
+    source before exact comparison could occur.
+    """
+
+    return bool(
+        isinstance(value, str)
+        and value.strip()
+        and len(value) <= MAX_AUTOMATION_TEMPLATE_LENGTH
+    )
+
+
 def _validate_action_modifiers(value: dict[str, Any]) -> None:
     if "alias" in value and not _bounded_nonempty_string(value["alias"]):
         raise AutomationVerificationNormalizationError(
@@ -279,10 +296,13 @@ def _validate_simple_action(
         "scene",
         "set_conversation_response",
         "stop",
-        "wait_template",
     } and not _bounded_nonempty_string(primary):
         raise AutomationVerificationNormalizationError(
             "invalid automation simple action value"
+        )
+    if family == "wait_template" and not _nonempty_template_string(primary):
+        raise AutomationVerificationNormalizationError(
+            "invalid automation wait template"
         )
     if family == "delay" and not _valid_time_period(primary):
         raise AutomationVerificationNormalizationError(
