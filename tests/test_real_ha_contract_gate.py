@@ -1086,6 +1086,14 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             for node in ast.walk(tree)
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
+        spec = importlib.util.spec_from_file_location(
+            "_real_ha_contract_workflow_subject",
+            CONTRACT_PATH,
+        )
+        if spec is None or spec.loader is None:
+            raise AssertionError("could not load real Home Assistant contract runner")
+        cls.contract = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.contract)
 
     def test_real_ha_job_runs_contract_runner_and_always_destroys_config(self):
         job = self.ci["jobs"]["real-ha-contract-tests"]
@@ -1295,6 +1303,39 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertNotIn("storage_path.read_text", http_source)
         self.assertIn('stored.get("version") == 1', http_source)
         self.assertIn('stored.get("version") == 2', http_source)
+
+    def test_response_adapter_is_required_only_for_failed_2026_8_lookup(self):
+        expected_adapter = self.contract._expected_device_response_adapter
+        adapter_id = self.contract.HA_2026_8_DEVICE_ADAPTER_ID
+
+        self.assertIsNone(
+            expected_adapter(
+                home_assistant_version="2026.7.2",
+                raw_upstream_lookup={"success": False},
+            )
+        )
+        for version in ("2026.8.0", "2026.8.1"):
+            with self.subTest(version=version, raw_success=False):
+                self.assertEqual(
+                    expected_adapter(
+                        home_assistant_version=version,
+                        raw_upstream_lookup={"success": False},
+                    ),
+                    adapter_id,
+                )
+            with self.subTest(version=version, raw_success=True):
+                self.assertIsNone(
+                    expected_adapter(
+                        home_assistant_version=version,
+                        raw_upstream_lookup={"success": True},
+                    )
+                )
+
+        with self.assertRaises(ValueError):
+            expected_adapter(
+                home_assistant_version="2026.9.0",
+                raw_upstream_lookup={"success": True},
+            )
 
     def test_validate_job_regenerates_every_beta6_compatibility_fixture(self):
         validate = self.ci["jobs"]["validate"]

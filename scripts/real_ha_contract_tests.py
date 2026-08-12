@@ -2237,6 +2237,22 @@ def _assert_device_contract(condition: bool, scenario: str) -> None:
     raise error
 
 
+def _expected_device_response_adapter(
+    *,
+    home_assistant_version: str,
+    raw_upstream_lookup: dict[str, Any],
+) -> str | None:
+    """Require adaptation only when the exact upstream lookup needs it."""
+
+    if home_assistant_version == "2026.7.2":
+        return None
+    if home_assistant_version not in {"2026.8.0", "2026.8.1"}:
+        raise ValueError("Unsupported Home Assistant contract version")
+    if raw_upstream_lookup.get("success") is True:
+        return None
+    return HA_2026_8_DEVICE_ADAPTER_ID
+
+
 async def _run_device_migration_contract(
     rest: HomeAssistantRestClient,
     websocket: HomeAssistantWebSocketClient,
@@ -2430,10 +2446,9 @@ async def _run_device_migration_contract(
             websocket_client=websocket,
         )
     )
-    expected_adapter = (
-        HA_2026_8_DEVICE_ADAPTER_ID
-        if EXPECTED_HA_VERSION in {"2026.8.0", "2026.8.1"}
-        else None
+    expected_adapter = _expected_device_response_adapter(
+        home_assistant_version=EXPECTED_HA_VERSION,
+        raw_upstream_lookup=raw_upstream_lookup,
     )
     _assert_device_contract(
         response_adapter == expected_adapter, "upstream_device_lookup"
