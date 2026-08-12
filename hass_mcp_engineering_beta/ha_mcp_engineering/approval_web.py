@@ -62,6 +62,265 @@ SECURITY_HEADERS = {
 }
 
 
+# Home Assistant renders Ingress content in a separate iframe document. The
+# frontend paints the iframe element with its theme background, but it does not
+# expose its CSS custom properties or an effective-theme value inside the
+# embedded document. Keep this page script-free and use the browser color-scheme
+# preference as the bounded fallback until Ingress provides an explicit theme
+# contract.
+_APPROVAL_PAGE_STYLES = """
+:root {
+  color-scheme: light dark;
+  --approval-page-background: #f5f7f9;
+  --approval-surface: #ffffff;
+  --approval-surface-muted: #eef1f4;
+  --approval-text: #202124;
+  --approval-muted-text: #51565c;
+  --approval-border: #70757a;
+  --approval-link: #005ea8;
+  --approval-link-hover: #004477;
+  --approval-primary-background: #006b96;
+  --approval-primary-text: #ffffff;
+  --approval-primary-hover: #005276;
+  --approval-reject-background: #a51d23;
+  --approval-reject-text: #ffffff;
+  --approval-reject-hover: #811219;
+  --approval-danger-text: #9b1c1c;
+  --approval-danger-surface: #fff1f1;
+  --approval-danger-border: #a51d23;
+  --approval-focus: #005fcc;
+  --approval-disabled-background: #dce1e6;
+  --approval-disabled-text: #5c6268;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --approval-page-background: #111315;
+    --approval-surface: #1c2024;
+    --approval-surface-muted: #272c31;
+    --approval-text: #f1f3f4;
+    --approval-muted-text: #c2c7cc;
+    --approval-border: #747b82;
+    --approval-link: #8dccff;
+    --approval-link-hover: #b5ddff;
+    --approval-primary-background: #8dccff;
+    --approval-primary-text: #002a3d;
+    --approval-primary-hover: #b5ddff;
+    --approval-reject-background: #ffb4ab;
+    --approval-reject-text: #3a0004;
+    --approval-reject-hover: #ffd9d5;
+    --approval-danger-text: #ffb4ab;
+    --approval-danger-surface: #381719;
+    --approval-danger-border: #ffb4ab;
+    --approval-focus: #a8c7fa;
+    --approval-disabled-background: #353a3f;
+    --approval-disabled-text: #a1a6ac;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: var(--approval-page-background);
+  color: var(--approval-text);
+}
+
+body {
+  max-width: 900px;
+  margin: 2rem auto;
+  padding: 0 1rem 2rem;
+  background: var(--approval-page-background);
+  color: var(--approval-text);
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+h1, h2, h3, h4 {
+  color: var(--approval-text);
+  line-height: 1.25;
+}
+
+p, li {
+  color: var(--approval-text);
+}
+
+.muted, small {
+  color: var(--approval-muted-text);
+}
+
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  padding: .75rem 1rem;
+  border: 1px solid var(--approval-border);
+  border-radius: .5rem;
+  background: var(--approval-surface);
+}
+
+a {
+  color: var(--approval-link);
+  text-decoration-thickness: .1em;
+  text-underline-offset: .16em;
+}
+
+a:hover {
+  color: var(--approval-link-hover);
+}
+
+table {
+  display: block;
+  width: 100%;
+  margin: .75rem 0 1rem;
+  overflow-x: auto;
+  border-collapse: collapse;
+  background: var(--approval-surface);
+}
+
+th, td {
+  padding: .5rem;
+  border: 1px solid var(--approval-border);
+  color: var(--approval-text);
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  background: var(--approval-surface-muted);
+  font-weight: 650;
+}
+
+code {
+  padding: .08rem .24rem;
+  border: 1px solid var(--approval-border);
+  border-radius: .25rem;
+  background: var(--approval-surface-muted);
+  color: var(--approval-text);
+  overflow-wrap: anywhere;
+}
+
+pre {
+  max-width: 100%;
+  padding: .75rem;
+  overflow: auto;
+  border: 1px solid var(--approval-border);
+  border-radius: .4rem;
+  background: var(--approval-surface-muted);
+  color: var(--approval-text);
+}
+
+pre code {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+details {
+  margin: .5rem 0;
+  padding: .5rem .75rem;
+  border: 1px solid var(--approval-border);
+  border-radius: .4rem;
+  background: var(--approval-surface);
+}
+
+summary {
+  color: var(--approval-link);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button,
+input:not([type="hidden"]),
+select,
+textarea {
+  border: 1px solid var(--approval-border);
+  border-radius: .35rem;
+  background: var(--approval-surface);
+  color: var(--approval-text);
+  font: inherit;
+}
+
+button {
+  padding: .65rem 1rem;
+  margin: .5rem .5rem .5rem 0;
+  border-color: var(--approval-primary-background);
+  background: var(--approval-primary-background);
+  color: var(--approval-primary-text);
+  cursor: pointer;
+  font-weight: 650;
+}
+
+button:hover {
+  border-color: var(--approval-primary-hover);
+  background: var(--approval-primary-hover);
+}
+
+button:active {
+  filter: brightness(.9);
+}
+
+button.danger {
+  border-color: var(--approval-reject-background);
+  background: var(--approval-reject-background);
+  color: var(--approval-reject-text);
+}
+
+button.danger:hover {
+  border-color: var(--approval-reject-hover);
+  background: var(--approval-reject-hover);
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  border-color: var(--approval-border);
+  background: var(--approval-disabled-background);
+  color: var(--approval-disabled-text);
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid var(--approval-focus);
+  outline-offset: 2px;
+}
+
+.danger {
+  color: var(--approval-danger-text);
+}
+
+p.danger {
+  padding: .75rem 1rem;
+  border: 1px solid var(--approval-danger-border);
+  border-left-width: .35rem;
+  border-radius: .4rem;
+  background: var(--approval-danger-surface);
+}
+
+@media (max-width: 600px) {
+  body {
+    margin: 1rem auto;
+  }
+
+  button {
+    width: 100%;
+    margin-right: 0;
+  }
+}
+""".strip()
+
+
 class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
@@ -578,13 +837,12 @@ def _page(title: str, content: str, *, prefix: str | None = None) -> str:
         )
     return """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{title}</title><style>
-body{{font-family:system-ui,sans-serif;max-width:900px;margin:2rem auto;padding:0 1rem;color:#202124}}
-table{{border-collapse:collapse;width:100%}}th,td{{border:1px solid #bbb;padding:.5rem;text-align:left;vertical-align:top}}
-code{{overflow-wrap:anywhere}}button{{padding:.65rem 1rem;margin:.5rem .5rem .5rem 0}}.danger{{color:#8b0000}}
-nav{{display:flex;gap:1rem;margin-bottom:1.25rem}}
-</style></head><body>{navigation}<h1>{title}</h1>{content}</body></html>""".format(
-        title=escape(_text(title, 160)), content=content, navigation=navigation
+<meta name="color-scheme" content="light dark"><title>{title}</title>
+<style>{styles}</style></head><body>{navigation}<h1>{title}</h1>{content}</body></html>""".format(
+        title=escape(_text(title, 160)),
+        content=content,
+        navigation=navigation,
+        styles=_APPROVAL_PAGE_STYLES,
     )
 
 
