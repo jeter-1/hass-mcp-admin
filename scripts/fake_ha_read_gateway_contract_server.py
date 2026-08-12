@@ -15,6 +15,7 @@ from copy import deepcopy
 from datetime import UTC, datetime
 import hashlib
 import json
+import re
 from typing import Any
 
 from aiohttp import WSMsgType, web
@@ -22,6 +23,10 @@ from aiohttp import WSMsgType, web
 
 TOKEN = "synthetic-read-gateway-token"
 NOW = "2026-07-21T12:00:00+00:00"
+APPROVAL_INGRESS_PATH = re.compile(
+    r"/hassio/ingress/df26dea6_hass_mcp_engineering_beta/"
+    r"plans/[a-f0-9]{32}"
+)
 STATES = [
     {
         "entity_id": "sun.sun",
@@ -413,25 +418,55 @@ async def approval_notification(request: web.Request) -> web.Response:
     data = body.get("data") if isinstance(body, dict) else None
     actions = data.get("actions") if isinstance(data, dict) else None
     url = data.get("url") if isinstance(data, dict) else None
+    click_action = (
+        data.get("clickAction") if isinstance(data, dict) else None
+    )
     tag = data.get("tag") if isinstance(data, dict) else None
-    action = actions[0] if isinstance(actions, list) and actions else None
+    action = (
+        actions[0]
+        if isinstance(actions, list) and len(actions) == 1
+        else None
+    )
+    ingress_path = (
+        url.removeprefix("homeassistant://navigate")
+        if isinstance(url, str)
+        else None
+    )
+    android_target = f"deep-link://{url}" if isinstance(url, str) else None
     if (
         not isinstance(url, str)
+        or len(url) > 1024
+        or not isinstance(ingress_path, str)
+        or APPROVAL_INGRESS_PATH.fullmatch(ingress_path) is None
+        or click_action != android_target
         or not isinstance(tag, str)
+        or len(tag) > 128
         or not isinstance(action, dict)
+        or set(body) != {"title", "message", "data"}
+        or set(data) != {"tag", "url", "clickAction", "actions"}
+        or set(action) != {"action", "title", "uri"}
         or action.get("action") != "URI"
-        or action.get("uri") != url
-        or data.get("clickAction") != url
-        or "authenticationRequired" in action
+        or action.get("title") != "Open Approval Panel"
+        or action.get("uri") != android_target
     ):
         return web.json_response({"message": "invalid"}, status=400)
     STATE.approval_notification_calls.append(
         {
             "operation": "notify",
-            "url_sha256": hashlib.sha256(url.encode()).hexdigest(),
+            "ingress_path_sha256": hashlib.sha256(
+                ingress_path.encode()
+            ).hexdigest(),
+            "ios_url_sha256": hashlib.sha256(url.encode()).hexdigest(),
+            "android_click_action_sha256": hashlib.sha256(
+                click_action.encode()
+            ).hexdigest(),
+            "action_uri_sha256": hashlib.sha256(
+                action["uri"].encode()
+            ).hexdigest(),
             "tag_sha256": hashlib.sha256(tag.encode()).hexdigest(),
             "action": "URI",
-            "click_action_matches_url": True,
+            "action_uri_matches_android_target": True,
+            "authority_material_present": False,
             "authentication_required_present": False,
         }
     )

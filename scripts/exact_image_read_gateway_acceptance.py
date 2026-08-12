@@ -1997,17 +1997,29 @@ async def inspect_approval_notification(
                 "notification projection claimed approval authority",
             )
 
-            expected_url = (
+            expected_ingress_path = (
                 "/hassio/ingress/"
                 "df26dea6_hass_mcp_engineering_beta/plans/"
                 f"{plan_id}"
+            )
+            expected_ios_url = (
+                f"homeassistant://navigate{expected_ingress_path}"
+            )
+            expected_android_target = (
+                f"deep-link://{expected_ios_url}"
             )
             notification_key = (
                 "ha_mcp_approval_"
                 + hashlib.sha256(challenge_id.encode()).hexdigest()[:24]
             )
-            expected_url_hash = hashlib.sha256(
-                expected_url.encode()
+            expected_ingress_path_hash = hashlib.sha256(
+                expected_ingress_path.encode()
+            ).hexdigest()
+            expected_ios_url_hash = hashlib.sha256(
+                expected_ios_url.encode()
+            ).hexdigest()
+            expected_android_target_hash = hashlib.sha256(
+                expected_android_target.encode()
             ).hexdigest()
             expected_tag_hash = hashlib.sha256(
                 notification_key.encode()
@@ -2033,7 +2045,12 @@ async def inspect_approval_notification(
                         current_stats.get("approval_notification_calls")
                         or []
                     )
-                    if call.get("url_sha256") == expected_url_hash
+                    if call.get("ingress_path_sha256")
+                    == expected_ingress_path_hash
+                    and call.get("ios_url_sha256")
+                    == expected_ios_url_hash
+                    and call.get("android_click_action_sha256")
+                    == expected_android_target_hash
                     and call.get("tag_sha256") == expected_tag_hash
                 ]
                 if (
@@ -2049,7 +2066,11 @@ async def inspect_approval_notification(
         for call in (
             after_stats.get("approval_notification_calls") or []
         )
-        if call.get("url_sha256") == expected_url_hash
+        if call.get("ingress_path_sha256")
+        == expected_ingress_path_hash
+        and call.get("ios_url_sha256") == expected_ios_url_hash
+        and call.get("android_click_action_sha256")
+        == expected_android_target_hash
         and call.get("tag_sha256") == expected_tag_hash
     ]
     require(
@@ -2058,12 +2079,17 @@ async def inspect_approval_notification(
     )
     call = matching_calls[0]
     require(
-        call.get("url_sha256")
-        == hashlib.sha256(expected_url.encode()).hexdigest(),
-        "exact-image notification did not carry the exact Ingress plan link",
+        call.get("ingress_path_sha256") == expected_ingress_path_hash
+        and call.get("ios_url_sha256") == expected_ios_url_hash,
+        "exact-image notification did not carry the exact iOS Ingress link",
     )
     require(
-        call.get("click_action_matches_url") is True
+        call.get("android_click_action_sha256")
+        == expected_android_target_hash
+        and call.get("action_uri_sha256")
+        == expected_android_target_hash
+        and call.get("action_uri_matches_android_target") is True
+        and call.get("authority_material_present") is False
         and call.get("authentication_required_present") is False,
         "exact-image notification did not satisfy the Android link contract",
     )

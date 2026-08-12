@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -17,6 +18,7 @@ from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.governance.approval_notifications import (  # noqa: E402
     ApprovalNotificationManager,
 )
+from scripts import fake_ha_read_gateway_contract_server as exact_fixture  # noqa: E402
 
 
 SELF_SLUG = "df26dea6_hass_mcp_engineering_beta"
@@ -32,6 +34,15 @@ class CapturingRestClient:
     async def request(self, method: str, path: str, body=None):
         self.calls.append((method, path, body))
         return {"context": {"id": "synthetic-beta35-submission"}}
+
+
+class FixtureRequest:
+    def __init__(self, body: dict) -> None:
+        self.headers = {"Authorization": f"Bearer {exact_fixture.TOKEN}"}
+        self.body = body
+
+    async def json(self):
+        return self.body
 
 
 class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
@@ -227,6 +238,101 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["clear_submitted"], 1)
         self.assertEqual(health["cleared"], 0)
         self.assertFalse(health["handset_clear_observable"])
+
+    async def test_exact_image_fixture_records_bounded_platform_hashes(self):
+        review_path = f"/hassio/ingress/{SELF_SLUG}/plans/{PLAN_ID}"
+        ios_target = f"homeassistant://navigate{review_path}"
+        android_target = f"deep-link://{ios_target}"
+        body = {
+            "title": "Home Assistant approval requested",
+            "message": (
+                "A governed Home Assistant change is waiting for "
+                "administrator review."
+            ),
+            "data": {
+                "tag": "ha_mcp_approval_synthetic",
+                "url": ios_target,
+                "clickAction": android_target,
+                "actions": [
+                    {
+                        "action": "URI",
+                        "title": "Open Approval Panel",
+                        "uri": android_target,
+                    }
+                ],
+            },
+        }
+        exact_fixture.STATE.approval_notification_calls.clear()
+
+        response = await exact_fixture.approval_notification(
+            FixtureRequest(body)
+        )
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(
+            len(exact_fixture.STATE.approval_notification_calls), 1
+        )
+        recorded = exact_fixture.STATE.approval_notification_calls[0]
+        self.assertEqual(
+            recorded["ingress_path_sha256"],
+            hashlib.sha256(review_path.encode()).hexdigest(),
+        )
+        self.assertEqual(
+            recorded["ios_url_sha256"],
+            hashlib.sha256(ios_target.encode()).hexdigest(),
+        )
+        self.assertEqual(
+            recorded["android_click_action_sha256"],
+            hashlib.sha256(android_target.encode()).hexdigest(),
+        )
+        self.assertEqual(
+            recorded["action_uri_sha256"],
+            recorded["android_click_action_sha256"],
+        )
+        self.assertFalse(recorded["authority_material_present"])
+        self.assertNotIn(PLAN_ID, json.dumps(recorded, sort_keys=True))
+
+    async def test_exact_image_fixture_rejects_drift_and_authority_fields(self):
+        review_path = f"/hassio/ingress/{SELF_SLUG}/plans/{PLAN_ID}"
+        ios_target = f"homeassistant://navigate{review_path}"
+        android_target = f"deep-link://{ios_target}"
+        base = {
+            "title": "Home Assistant approval requested",
+            "message": (
+                "A governed Home Assistant change is waiting for "
+                "administrator review."
+            ),
+            "data": {
+                "tag": "ha_mcp_approval_synthetic",
+                "url": ios_target,
+                "clickAction": android_target,
+                "actions": [
+                    {
+                        "action": "URI",
+                        "title": "Open Approval Panel",
+                        "uri": android_target,
+                    }
+                ],
+            },
+        }
+        invalid_bodies = []
+        for mutation in ("relative", "wrong_action", "authority"):
+            candidate = json.loads(json.dumps(base))
+            if mutation == "relative":
+                candidate["data"]["url"] = review_path
+            elif mutation == "wrong_action":
+                candidate["data"]["actions"][0]["uri"] = ios_target
+            else:
+                candidate["data"]["approval_token"] = "synthetic-forbidden"
+            invalid_bodies.append(candidate)
+
+        exact_fixture.STATE.approval_notification_calls.clear()
+        for candidate in invalid_bodies:
+            response = await exact_fixture.approval_notification(
+                FixtureRequest(candidate)
+            )
+            self.assertEqual(response.status, 400)
+        self.assertEqual(exact_fixture.STATE.approval_notification_calls, [])
 
 
 if __name__ == "__main__":
