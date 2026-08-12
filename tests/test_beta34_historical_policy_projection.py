@@ -351,6 +351,55 @@ class HistoricalPolicyProjectionTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertIsNone(historical_policy_projection_match(plan))
 
+    def test_matcher_locally_rejects_incompatible_execution_evidence(self):
+        cases = (
+            (
+                "applied_at",
+                lambda value: value.__setitem__(
+                    "applied_at", "2026-08-10T12:00:00+00:00"
+                ),
+            ),
+            (
+                "verification_passed",
+                lambda value: value["verification"].__setitem__(
+                    "status", "passed"
+                ),
+            ),
+            (
+                "rollback_requested",
+                lambda value: value["rollback"].__setitem__(
+                    "requested_at", "2026-08-10T12:00:00+00:00"
+                ),
+            ),
+            (
+                "apply_request_id",
+                lambda value: value.__setitem__(
+                    "apply_request_id", "unexpected-execution"
+                ),
+            ),
+            (
+                "execution_outcome",
+                lambda value: value.__setitem__(
+                    "execution_outcome", "applied"
+                ),
+            ),
+        )
+        for fixture in FIXTURE_PATHS:
+            for label, mutate in cases:
+                with self.subTest(fixture=fixture.name, evidence=label):
+                    value = json.loads(fixture.read_text(encoding="utf-8"))
+                    mutate(value)
+                    plan = ChangePlan.from_dict(copy.deepcopy(value))
+                    self.assertTrue(
+                        persisted_policy_snapshot_integrity_matches(plan)
+                    )
+                    self.assertTrue(
+                        persisted_historical_approval_integrity_matches(plan)
+                    )
+                    self.assertIsNone(
+                        historical_policy_projection_match(plan)
+                    )
+
     def test_exact_history_projects_without_false_health_failures(self):
         plans = self._plans()
         public = [self.service.get_plan(plan.plan_id) for plan in plans]

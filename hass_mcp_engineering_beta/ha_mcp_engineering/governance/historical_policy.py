@@ -400,7 +400,9 @@ def _legacy_authority_is_inert(plan: ChangePlan) -> bool:
     )
 
 
-def _legacy_execution_is_inert(plan: ChangePlan) -> bool:
+def _execution_and_rollback_are_inert(plan: ChangePlan) -> bool:
+    """Reject execution evidence from a reviewed non-applied profile."""
+
     verification = plan.verification
     rollback = plan.rollback
     return bool(
@@ -467,7 +469,7 @@ def _is_exact_legacy_transition_plan(plan: ChangePlan) -> bool:
         or not isinstance(plan.normalized_proposed_config, dict)
         or plan.risk.apply_allowed
         or not _legacy_authority_is_inert(plan)
-        or not _legacy_execution_is_inert(plan)
+        or not _execution_and_rollback_are_inert(plan)
         or not _legacy_event_sequence_is_reviewed(plan)
     ):
         return False
@@ -516,6 +518,12 @@ def _historical_policy_projection_candidate(
         return None
 
     stored_shape = _decision_shape(decision)
+    if (
+        plan.contract_version == 2
+        and plan.status is not PlanStatus.APPLIED
+        and not _execution_and_rollback_are_inert(plan)
+    ):
+        return None
     if (
         plan.contract_version == 1
         and stored_shape != _BETA32_RETAINED_EFFECT_SHAPE
