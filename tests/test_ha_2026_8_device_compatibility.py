@@ -231,6 +231,71 @@ class HomeAssistant20268DeviceCompatibilityTests(
                 websocket_client=AsyncMock(),
             )
 
+    async def test_non_target_releases_do_not_validate_candidate_source(self):
+        source_variants = (
+            ("missing", None),
+            ("malformed", "entry-a"),
+            ("duplicate", ["entry-a", "entry-a"]),
+            ("ambiguous", ["entry-a", ""]),
+        )
+        for version in ("2026.7.2", "2026.8.2"):
+            for label, config_entries in source_variants:
+                with self.subTest(version=version, source=label):
+                    payload = empty_composite_payload()
+                    if config_entries is None:
+                        del payload["device"]["config_entries"]
+                    else:
+                        payload["device"]["config_entries"] = config_entries
+                    rest = AsyncMock()
+                    rest.request.return_value = {"version": version}
+                    websocket = AsyncMock()
+
+                    adapted, adapter = await adapt_ha_get_device_composite_result(
+                        payload,
+                        arguments={"device_id": "legacy-composite-id"},
+                        upstream_version="8.2.0",
+                        rest_client=rest,
+                        websocket_client=websocket,
+                    )
+
+                    self.assertIs(adapted, payload)
+                    self.assertIsNone(adapter)
+                    rest.request.assert_awaited_once_with("GET", "/config")
+                    websocket.command.assert_not_awaited()
+
+    async def test_owned_releases_fail_closed_on_malformed_candidate_source(
+        self,
+    ):
+        source_variants = (
+            ("missing", None),
+            ("malformed", "entry-a"),
+            ("duplicate", ["entry-a", "entry-a"]),
+            ("ambiguous", ["entry-a", ""]),
+        )
+        for version in ADAPTER_IDS_BY_HA_VERSION:
+            for label, config_entries in source_variants:
+                with self.subTest(version=version, source=label):
+                    payload = empty_composite_payload()
+                    if config_entries is None:
+                        del payload["device"]["config_entries"]
+                    else:
+                        payload["device"]["config_entries"] = config_entries
+                    rest = AsyncMock()
+                    rest.request.return_value = {"version": version}
+                    websocket = AsyncMock()
+
+                    with self.assertRaises(CompositeDeviceCompatibilityError):
+                        await adapt_ha_get_device_composite_result(
+                            payload,
+                            arguments={"device_id": "legacy-composite-id"},
+                            upstream_version="8.2.0",
+                            rest_client=rest,
+                            websocket_client=websocket,
+                        )
+
+                    rest.request.assert_awaited_once_with("GET", "/config")
+                    websocket.command.assert_not_awaited()
+
     async def test_split_count_and_primary_identity_are_exact(self):
         for split_contract in (
             {"split_ids": ["split-a"], "primary_id": "split-a"},

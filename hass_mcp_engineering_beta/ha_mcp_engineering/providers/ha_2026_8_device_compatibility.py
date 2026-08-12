@@ -23,11 +23,11 @@ class CompositeDeviceCompatibilityError(RuntimeError):
     """The exact compatibility evidence was malformed or incomplete."""
 
 
-def _eligible_composite_result(
+def _coarse_composite_candidate(
     payload: Any,
     arguments: dict[str, Any],
 ) -> tuple[dict[str, Any], str] | None:
-    """Recognize only the reviewed empty-join response shape."""
+    """Recognize an empty-join candidate without applying release policy."""
 
     device_id = arguments.get("device_id")
     entity_id = arguments.get("entity_id")
@@ -49,6 +49,12 @@ def _eligible_composite_result(
         or device.get("entities") != []
     ):
         return None
+    return device, device_id
+
+
+def _validated_config_entries(device: dict[str, Any]) -> list[str]:
+    """Validate source evidence only after exact release ownership is known."""
+
     config_entries = device.get("config_entries")
     if (
         not isinstance(config_entries, list)
@@ -57,7 +63,7 @@ def _eligible_composite_result(
         or len(set(config_entries)) != len(config_entries)
     ):
         raise CompositeDeviceCompatibilityError()
-    return device, device_id
+    return config_entries
 
 
 async def adapt_ha_get_device_composite_result(
@@ -79,10 +85,10 @@ async def adapt_ha_get_device_composite_result(
 
     if upstream_version not in REVIEWED_UPSTREAM_VERSIONS:
         return payload, None
-    eligible = _eligible_composite_result(payload, arguments)
-    if eligible is None:
+    candidate = _coarse_composite_candidate(payload, arguments)
+    if candidate is None:
         return payload, None
-    device, device_id = eligible
+    device, device_id = candidate
 
     runtime = await rest_client.request("GET", "/config")
     if not isinstance(runtime, dict):
@@ -93,6 +99,7 @@ async def adapt_ha_get_device_composite_result(
     adapter_id = ADAPTER_IDS_BY_HA_VERSION.get(runtime_version)
     if adapter_id is None:
         return payload, None
+    config_entries = _validated_config_entries(device)
 
     composite_splits = await websocket_client.command(
         {"type": "config/device_registry/list_composite_splits"}
@@ -104,7 +111,6 @@ async def adapt_ha_get_device_composite_result(
         raise CompositeDeviceCompatibilityError()
     split_ids = split_contract.get("split_ids")
     primary_id = split_contract.get("primary_id")
-    config_entries = device["config_entries"]
     if (
         not isinstance(split_ids, list)
         or len(split_ids) < 2
