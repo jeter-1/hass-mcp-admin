@@ -1312,20 +1312,19 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
 
     def test_response_adapter_is_bound_to_the_exact_reviewed_ha_release(self):
         expected_adapter = self.contract._expected_device_response_adapter
-        adapter_id = self.contract.HA_2026_8_DEVICE_ADAPTER_ID
-        exact_ha_version = (
-            self.contract.HA_2026_8_DEVICE_ADAPTER_EXACT_HA_VERSION
-        )
+        adapter_ids = self.contract.HA_DEVICE_ADAPTER_IDS_BY_HA_VERSION
 
-        for version in ("2026.7.2", "2026.8.1"):
-            with self.subTest(version=version):
-                self.assertIsNone(
-                    expected_adapter(home_assistant_version=version)
-                )
-        self.assertEqual(
-            expected_adapter(home_assistant_version=exact_ha_version),
-            adapter_id,
+        self.assertIsNone(
+            expected_adapter(home_assistant_version="2026.7.2")
         )
+        self.assertEqual(set(adapter_ids), {"2026.8.0", "2026.8.1"})
+        self.assertNotEqual(adapter_ids["2026.8.0"], adapter_ids["2026.8.1"])
+        for version, adapter_id in adapter_ids.items():
+            with self.subTest(version=version):
+                self.assertEqual(
+                    expected_adapter(home_assistant_version=version),
+                    adapter_id,
+                )
 
         with self.assertRaises(ValueError):
             expected_adapter(home_assistant_version="2026.9.0")

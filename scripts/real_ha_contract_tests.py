@@ -42,8 +42,7 @@ from ha_mcp_engineering.impact.service import (  # noqa: E402
     ChangeImpactAnalysisService,
 )
 from ha_mcp_engineering.providers.ha_2026_8_device_compatibility import (  # noqa: E402
-    ADAPTER_ID as HA_2026_8_DEVICE_ADAPTER_ID,
-    EXACT_HA_VERSION as HA_2026_8_DEVICE_ADAPTER_EXACT_HA_VERSION,
+    ADAPTER_IDS_BY_HA_VERSION as HA_DEVICE_ADAPTER_IDS_BY_HA_VERSION,
     adapt_ha_get_device_composite_result,
 )
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
@@ -2346,11 +2345,14 @@ def _expected_device_response_adapter(
 ) -> str | None:
     """Return the adapter reviewed for the exact Home Assistant release."""
 
-    if home_assistant_version in {"2026.7.2", "2026.8.1"}:
+    if home_assistant_version == "2026.7.2":
         return None
-    if home_assistant_version == HA_2026_8_DEVICE_ADAPTER_EXACT_HA_VERSION:
-        return HA_2026_8_DEVICE_ADAPTER_ID
-    raise ValueError("Unsupported Home Assistant contract version")
+    try:
+        return HA_DEVICE_ADAPTER_IDS_BY_HA_VERSION[home_assistant_version]
+    except KeyError:
+        raise ValueError(
+            "Unsupported Home Assistant contract version"
+        ) from None
 
 
 async def _run_device_migration_contract(
