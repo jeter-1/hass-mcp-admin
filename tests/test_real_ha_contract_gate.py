@@ -1330,6 +1330,47 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             expected_adapter(home_assistant_version="2026.9.0")
 
+    def test_composite_device_contract_evidence_is_bounded_and_structural(self):
+        project = self.contract._bounded_device_lookup_shape
+        payload = {
+            "success": True,
+            "queried_by": "device_id",
+            "entity_count": 1,
+            "entities": [
+                {
+                    "entity_id": "switch.synthetic_a",
+                    "device_id": "split-a",
+                    "config_entry_id": "entry-a",
+                    "platform": "synthetic_fixture",
+                    "name": "must-not-be-projected",
+                    "attributes": {"secret": "must-not-be-projected"},
+                }
+            ],
+            "device": {
+                "device_id": "legacy-composite-id",
+                "config_entries": ["entry-a", "entry-b"],
+                "entities": [],
+                "connections": [["synthetic", "must-not-be-projected"]],
+                "identifiers": [["synthetic", "must-not-be-projected"]],
+                "name": "must-not-be-projected",
+            },
+            "unreviewed_body": {"secret": "must-not-be-projected"},
+        }
+
+        evidence = project(payload)
+
+        encoded = json.dumps(evidence, sort_keys=True)
+        self.assertEqual(evidence["entity_count"], 1)
+        self.assertEqual(evidence["entities"][0]["device_id"], "split-a")
+        self.assertEqual(
+            evidence["device"]["config_entries"], ["entry-a", "entry-b"]
+        )
+        self.assertIn("connections", evidence["device"]["fields"])
+        self.assertIn("identifiers", evidence["device"]["fields"])
+        self.assertIn("unreviewed_body", evidence["fields"])
+        self.assertNotIn("must-not-be-projected", encoded)
+        self.assertNotIn("secret", encoded)
+
     def test_validate_job_regenerates_every_beta6_compatibility_fixture(self):
         validate = self.ci["jobs"]["validate"]
         step = next(
