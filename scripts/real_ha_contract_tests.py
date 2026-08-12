@@ -2075,7 +2075,7 @@ async def _assert_http_configuration_contract() -> None:
         assert stored.get("has_pending") is False
         assert stored.get("has_stable") is False
         return
-    assert EXPECTED_HA_VERSION == "2026.8.0"
+    assert EXPECTED_HA_VERSION in {"2026.8.0", "2026.8.1"}
     assert stored.get("version") == 2
     assert stored.get("has_yaml_migration_done") is True
     assert stored.get("yaml_migration_done") is True
@@ -2290,7 +2290,8 @@ async def _run_device_migration_contract(
         )
     else:
         _assert_device_contract(
-            EXPECTED_HA_VERSION == "2026.8.0", "split_projection"
+            EXPECTED_HA_VERSION in {"2026.8.0", "2026.8.1"},
+            "split_projection",
         )
         _assert_device_contract(
             not any(
@@ -2431,7 +2432,7 @@ async def _run_device_migration_contract(
     )
     expected_adapter = (
         HA_2026_8_DEVICE_ADAPTER_ID
-        if EXPECTED_HA_VERSION == "2026.8.0"
+        if EXPECTED_HA_VERSION in {"2026.8.0", "2026.8.1"}
         else None
     )
     _assert_device_contract(
