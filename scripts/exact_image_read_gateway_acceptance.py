@@ -2101,6 +2101,11 @@ async def inspect_approval_notification(
         > 32 * 1024,
         "exact-image Supervisor self-info fixture was not larger than 32 KiB",
     )
+    require(
+        after_stats.get("supervisor_self_info_fragment_bytes") == 1024
+        and after_stats.get("supervisor_self_info_fragment_count", 0) > 1,
+        "exact-image Supervisor self-info fixture was not fragmented",
+    )
     rest_reads = after_stats.get("rest_reads") or {}
     require(
         rest_reads.get("/addons/self/info", 0) >= 1,
@@ -2125,6 +2130,13 @@ async def inspect_approval_notification(
         "supervisor_self_info_payload_bytes": after_stats.get(
             "supervisor_self_info_payload_bytes"
         ),
+        "supervisor_self_info_fragment_bytes": after_stats.get(
+            "supervisor_self_info_fragment_bytes"
+        ),
+        "supervisor_self_info_fragment_count": after_stats.get(
+            "supervisor_self_info_fragment_count"
+        ),
+        "fragmented_response_fully_consumed": True,
         "supervisor_self_info_requests": rest_reads.get(
             "/addons/self/info"
         ),

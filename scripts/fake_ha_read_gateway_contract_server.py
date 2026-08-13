@@ -10,6 +10,7 @@ endpoint lets CI prove the reached operation surface without returning payloads.
 from __future__ import annotations
 
 import argparse
+import asyncio
 from collections import Counter
 from copy import deepcopy
 from datetime import UTC, datetime
@@ -254,17 +255,20 @@ INSTALLED_ADDONS = [
     }
 ]
 SELF_ADDON_SLUG = "df26dea6_hass_mcp_engineering_beta"
-SELF_ADDON_INFO_BODY = json.dumps(
-    {
+LIVE_SHAPED_SELF_ADDON_INFO_BYTES = 33_732
+SELF_ADDON_INFO_FRAGMENT_BYTES = 1024
+
+
+def _self_addon_info_body() -> bytes:
+    payload = {
         "result": "ok",
         "data": {
             "slug": SELF_ADDON_SLUG,
             "name": "HA MCP Engineering Server Beta",
-            "version": "2.2.0-beta.31",
+            "version": "2.2.0-beta.36",
             "repository": "df26dea6",
             "long_description": (
                 "synthetic-exact-image-long-description-marker"
-                + ("x" * 48_000)
             ),
             "options": {
                 "access_secret": "synthetic-exact-image-option-secret",
@@ -272,10 +276,13 @@ SELF_ADDON_INFO_BODY = json.dumps(
                     "notify.mobile_app_beta31_fixture"
                 ),
             },
-            "schema": {
-                "access_secret": "password",
-                "approval_notification_service": "str",
-            },
+            "schema": [
+                {"name": "access_secret", "type": "password"},
+                {
+                    "name": "approval_notification_service",
+                    "type": "str",
+                },
+            ],
             "translations": {
                 "en": {
                     "configuration": (
@@ -284,9 +291,21 @@ SELF_ADDON_INFO_BODY = json.dumps(
                 }
             },
         },
-    },
-    separators=(",", ":"),
-).encode("utf-8")
+    }
+    encoded = json.dumps(payload, separators=(",", ":")).encode(
+        "utf-8"
+    )
+    padding = LIVE_SHAPED_SELF_ADDON_INFO_BYTES - len(encoded)
+    assert padding > 0
+    payload["data"]["long_description"] += "x" * padding
+    encoded = json.dumps(payload, separators=(",", ":")).encode(
+        "utf-8"
+    )
+    assert len(encoded) == LIVE_SHAPED_SELF_ADDON_INFO_BYTES
+    return encoded
+
+
+SELF_ADDON_INFO_BODY = _self_addon_info_body()
 assert len(SELF_ADDON_INFO_BODY) > 32 * 1024
 SOURCE_DERIVED_MINIMUM_ADDON_DETAIL_BYTES = 71_986
 ADDON_DETAIL_PROFILE = "compact"
@@ -386,6 +405,15 @@ class FixtureState:
             "supervisor_self_info_payload_bytes": len(
                 SELF_ADDON_INFO_BODY
             ),
+            "supervisor_self_info_fragment_bytes": (
+                SELF_ADDON_INFO_FRAGMENT_BYTES
+            ),
+            "supervisor_self_info_fragment_count": (
+                len(SELF_ADDON_INFO_BODY)
+                + SELF_ADDON_INFO_FRAGMENT_BYTES
+                - 1
+            )
+            // SELF_ADDON_INFO_FRAGMENT_BYTES,
             "approval_notification_calls": list(
                 self.approval_notification_calls
             ),
@@ -416,14 +444,35 @@ async def api_root(_request: web.Request) -> web.Response:
     return web.json_response({"message": "API running."})
 
 
-async def supervisor_self_info(request: web.Request) -> web.Response:
+async def supervisor_self_info(
+    request: web.Request,
+) -> web.StreamResponse:
     STATE.rest_reads["/addons/self/info"] += 1
     if request.headers.get("Authorization") != f"Bearer {TOKEN}":
         return web.json_response({"result": "error"}, status=401)
-    return web.Response(
-        body=SELF_ADDON_INFO_BODY,
-        content_type="application/json",
+    response = web.StreamResponse(
+        status=200,
+        headers={
+            "Content-Type": "application/json; charset=utf-8",
+            "Content-Length": str(len(SELF_ADDON_INFO_BODY)),
+        },
     )
+    await response.prepare(request)
+    for index in range(
+        0, len(SELF_ADDON_INFO_BODY), SELF_ADDON_INFO_FRAGMENT_BYTES
+    ):
+        await response.write(
+            SELF_ADDON_INFO_BODY[
+                index : index + SELF_ADDON_INFO_FRAGMENT_BYTES
+            ]
+        )
+        if index == 0:
+            # A live response may span transport reads. The delay makes the
+            # first fragment independently observable so a one-read client
+            # deterministically receives incomplete JSON.
+            await asyncio.sleep(0.05)
+    await response.write_eof()
+    return response
 
 
 async def approval_notification(request: web.Request) -> web.Response:
