@@ -55,7 +55,9 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
         post_deployment = acceptance.index(
             "## Post-deployment entry criteria"
         )
-        live_acceptance = acceptance.index("## A — Mobile navigation matrix")
+        live_acceptance = acceptance.index(
+            "## A — Mobile navigation matrices"
+        )
 
         self.assertLess(pre_deployment, post_deployment)
         self.assertLess(post_deployment, live_acceptance)
@@ -125,9 +127,30 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
                 {
                     "action": "URI",
                     "title": "Open Approval Panel",
-                    "uri": android_navigation_uri,
+                    "uri": review_path,
                 }
             ],
+        )
+        self.assertEqual(
+            body["data"]["url"].removeprefix(
+                "homeassistant://navigate"
+            ),
+            review_path,
+        )
+        self.assertEqual(
+            body["data"]["clickAction"].removeprefix(
+                "deep-link://homeassistant://navigate"
+            ),
+            review_path,
+        )
+        self.assertEqual(
+            body["data"]["clickAction"].count("deep-link://"), 1
+        )
+        self.assertEqual(
+            body["data"]["clickAction"].count(
+                "homeassistant://navigate"
+            ),
+            1,
         )
 
         encoded = json.dumps(body, sort_keys=True)
@@ -144,6 +167,72 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
             "reject",
         ):
             self.assertNotIn(forbidden, encoded.lower())
+
+    async def test_action_button_uses_cross_platform_ingress_target(self):
+        """The shared action must not reuse Android's body-only wrapper."""
+
+        rest = CapturingRestClient()
+        manager, _ = await self._manager(rest)
+        self._enqueue(manager, PLAN_ID, CHALLENGE_ID)
+
+        await manager.process_next()
+
+        body = rest.calls[0][2]
+        review_path = f"/hassio/ingress/{SELF_SLUG}/plans/{PLAN_ID}"
+        self.assertEqual(
+            body["data"]["actions"],
+            [
+                {
+                    "action": "URI",
+                    "title": "Open Approval Panel",
+                    "uri": review_path,
+                }
+            ],
+        )
+        self.assertNotIn(
+            "deep-link://", body["data"]["actions"][0]["uri"]
+        )
+
+    async def test_ios_body_and_action_resolve_the_exact_plan_route(self):
+        rest = CapturingRestClient()
+        manager, _ = await self._manager(rest)
+        self._enqueue(manager, PLAN_ID, CHALLENGE_ID)
+
+        await manager.process_next()
+
+        data = rest.calls[0][2]["data"]
+        review_path = f"/hassio/ingress/{SELF_SLUG}/plans/{PLAN_ID}"
+        self.assertEqual(
+            data["url"], f"homeassistant://navigate{review_path}"
+        )
+        self.assertEqual(
+            data["url"].removeprefix("homeassistant://navigate"),
+            review_path,
+        )
+        self.assertEqual(data["actions"][0]["uri"], review_path)
+        self.assertNotIn("deep-link://", data["actions"][0]["uri"])
+
+    async def test_android_body_and_action_resolve_the_exact_plan_route(self):
+        rest = CapturingRestClient()
+        manager, _ = await self._manager(rest)
+        self._enqueue(manager, PLAN_ID, CHALLENGE_ID)
+
+        await manager.process_next()
+
+        data = rest.calls[0][2]["data"]
+        review_path = f"/hassio/ingress/{SELF_SLUG}/plans/{PLAN_ID}"
+        self.assertEqual(
+            data["clickAction"],
+            f"deep-link://homeassistant://navigate{review_path}",
+        )
+        self.assertEqual(
+            data["clickAction"].removeprefix(
+                "deep-link://homeassistant://navigate"
+            ),
+            review_path,
+        )
+        self.assertEqual(data["actions"][0]["uri"], review_path)
+        self.assertNotIn("deep-link://", data["actions"][0]["uri"])
 
     async def test_each_notification_keeps_its_own_plan_navigation_target(self):
         rest = CapturingRestClient()
@@ -168,6 +257,54 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
                 "deep-link://homeassistant://navigate/hassio/ingress/"
                 f"{SELF_SLUG}/plans/{SECOND_PLAN_ID}",
             ],
+        )
+        action_targets = [
+            call[2]["data"]["actions"][0]["uri"] for call in rest.calls
+        ]
+        self.assertEqual(
+            action_targets,
+            [
+                f"/hassio/ingress/{SELF_SLUG}/plans/{PLAN_ID}",
+                f"/hassio/ingress/{SELF_SLUG}/plans/{SECOND_PLAN_ID}",
+            ],
+        )
+
+    async def test_documented_navigation_forms_match_runtime_contract(self):
+        rest = CapturingRestClient()
+        manager, _ = await self._manager(rest)
+        self._enqueue(manager, PLAN_ID, CHALLENGE_ID)
+
+        await manager.process_next()
+
+        data = rest.calls[0][2]["data"]
+
+        def documented(value: str) -> str:
+            return value.replace(
+                SELF_SLUG, "{verified_addon_slug}"
+            ).replace(PLAN_ID, "{plan_id}")
+
+        external_approval = (
+            ROOT / "docs" / "EXTERNAL_APPROVAL.md"
+        ).read_text(encoding="utf-8")
+        mobile_navigation = (
+            ROOT / "docs" / "BETA35_MOBILE_APPROVAL_NAVIGATION.md"
+        ).read_text(encoding="utf-8")
+        combined = f"{external_approval}\n{mobile_navigation}"
+        self.assertIn(documented(data["url"]), combined)
+        self.assertIn(documented(data["clickAction"]), combined)
+        self.assertIn(documented(data["actions"][0]["uri"]), combined)
+        self.assertNotIn(
+            "Android `clickAction`, iOS `url`, and URI action target",
+            external_approval,
+        )
+        acceptance = (
+            ROOT / "docs" / "V2_2_0_BETA35_ACCEPTANCE.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("### Android", acceptance)
+        self.assertIn("### iOS", acceptance)
+        self.assertIn(
+            "iOS must remain explicitly unaccepted",
+            " ".join(acceptance.split()),
         )
 
     async def test_malformed_plan_identity_fails_before_provider_dispatch(self):
@@ -283,7 +420,7 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
                     {
                         "action": "URI",
                         "title": "Open Approval Panel",
-                        "uri": android_target,
+                        "uri": review_path,
                     }
                 ],
             },
@@ -313,9 +450,28 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             recorded["action_uri_sha256"],
-            recorded["android_click_action_sha256"],
+            recorded["ingress_path_sha256"],
+        )
+        self.assertTrue(
+            recorded["action_uri_matches_cross_platform_target"]
+        )
+        self.assertEqual(recorded["action"], "URI")
+        self.assertEqual(
+            recorded["title_sha256"],
+            hashlib.sha256(body["title"].encode()).hexdigest(),
+        )
+        self.assertEqual(
+            recorded["message_sha256"],
+            hashlib.sha256(body["message"].encode()).hexdigest(),
+        )
+        self.assertEqual(
+            recorded["action_title_sha256"],
+            hashlib.sha256(
+                body["data"]["actions"][0]["title"].encode()
+            ).hexdigest(),
         )
         self.assertFalse(recorded["authority_material_present"])
+        self.assertFalse(recorded["authentication_required_present"])
         self.assertNotIn(PLAN_ID, json.dumps(recorded, sort_keys=True))
 
     async def test_exact_image_fixture_rejects_drift_and_authority_fields(self):
@@ -336,25 +492,53 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
                     {
                         "action": "URI",
                         "title": "Open Approval Panel",
-                        "uri": android_target,
+                        "uri": review_path,
                     }
                 ],
             },
         }
         invalid_bodies = []
-        for mutation in ("relative", "wrong_action", "authority"):
+        for mutation in (
+            "relative_body",
+            "android_action",
+            "ios_action",
+            "authority_title",
+            "authority_message",
+            "authority_data",
+            "authority_action_title",
+            "authority_action_uri",
+            "authority_action_verb",
+            "authentication_required",
+        ):
             candidate = json.loads(json.dumps(base))
-            if mutation == "relative":
+            if mutation == "relative_body":
                 candidate["data"]["url"] = review_path
                 relative_android_target = f"deep-link://{review_path}"
                 candidate["data"]["clickAction"] = relative_android_target
-                candidate["data"]["actions"][0][
-                    "uri"
-                ] = relative_android_target
-            elif mutation == "wrong_action":
+            elif mutation == "android_action":
+                candidate["data"]["actions"][0]["uri"] = android_target
+            elif mutation == "ios_action":
                 candidate["data"]["actions"][0]["uri"] = ios_target
+            elif mutation == "authority_title":
+                candidate["title"] = "Home Assistant plan_hash requested"
+            elif mutation == "authority_message":
+                candidate["message"] = "Open /approve directly"
+            elif mutation == "authority_data":
+                candidate["data"]["approval_token"] = (
+                    "synthetic-forbidden"
+                )
+            elif mutation == "authority_action_title":
+                candidate["data"]["actions"][0]["title"] = "Reject plan"
+            elif mutation == "authority_action_uri":
+                candidate["data"]["actions"][0]["uri"] = (
+                    f"{review_path}/approve"
+                )
+            elif mutation == "authority_action_verb":
+                candidate["data"]["actions"][0]["action"] = "APPROVE"
             else:
-                candidate["data"]["approval_token"] = "synthetic-forbidden"
+                candidate["data"]["actions"][0][
+                    "authenticationRequired"
+                ] = True
             invalid_bodies.append(candidate)
 
         exact_fixture.STATE.approval_notification_calls.clear()

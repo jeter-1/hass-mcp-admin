@@ -47,12 +47,17 @@ class AndroidCompanionContractRestClient:
             if isinstance(navigation_uri, str)
             else None
         )
+        action_navigation_path = (
+            navigation_uri.removeprefix("homeassistant://navigate")
+            if isinstance(navigation_uri, str)
+            else None
+        )
         if (
             not isinstance(navigation_uri, str)
             or data.get("clickAction") != android_navigation_uri
             or not isinstance(action, dict)
             or action.get("action") != "URI"
-            or action.get("uri") != android_navigation_uri
+            or action.get("uri") != action_navigation_path
             or "authenticationRequired" in action
         ):
             raise HomeAssistantApiError(details={"status": 400})
@@ -119,7 +124,8 @@ class Beta32ApprovalNotificationTests(unittest.IsolatedAsyncioTestCase):
             body["data"]["clickAction"], android_navigation_uri
         )
         self.assertEqual(
-            body["data"]["actions"][0]["uri"], android_navigation_uri
+            body["data"]["actions"][0]["uri"],
+            review_url.removeprefix("homeassistant://navigate"),
         )
         self.assertNotIn(
             "authenticationRequired", body["data"]["actions"][0]

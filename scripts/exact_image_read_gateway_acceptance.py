@@ -2021,6 +2021,7 @@ async def inspect_approval_notification(
             expected_android_target_hash = hashlib.sha256(
                 expected_android_target.encode()
             ).hexdigest()
+            expected_action_target_hash = expected_ingress_path_hash
             expected_tag_hash = hashlib.sha256(
                 notification_key.encode()
             ).hexdigest()
@@ -2051,6 +2052,8 @@ async def inspect_approval_notification(
                     == expected_ios_url_hash
                     and call.get("android_click_action_sha256")
                     == expected_android_target_hash
+                    and call.get("action_uri_sha256")
+                    == expected_action_target_hash
                     and call.get("tag_sha256") == expected_tag_hash
                 ]
                 if (
@@ -2087,16 +2090,21 @@ async def inspect_approval_notification(
         call.get("android_click_action_sha256")
         == expected_android_target_hash
         and call.get("action_uri_sha256")
-        == expected_android_target_hash
-        and call.get("action_uri_matches_android_target") is True
+        == expected_action_target_hash
+        and call.get("action_uri_matches_cross_platform_target") is True
         and call.get("authority_material_present") is False
         and call.get("authentication_required_present") is False,
-        "exact-image notification did not satisfy the Android link contract",
+        "exact-image notification did not satisfy the platform link contract",
     )
     require(
         after_stats.get("supervisor_self_info_payload_bytes", 0)
         > 32 * 1024,
         "exact-image Supervisor self-info fixture was not larger than 32 KiB",
+    )
+    require(
+        after_stats.get("supervisor_self_info_fragment_bytes") == 1024
+        and after_stats.get("supervisor_self_info_fragment_count", 0) > 1,
+        "exact-image Supervisor self-info fixture was not fragmented",
     )
     rest_reads = after_stats.get("rest_reads") or {}
     require(
@@ -2122,6 +2130,13 @@ async def inspect_approval_notification(
         "supervisor_self_info_payload_bytes": after_stats.get(
             "supervisor_self_info_payload_bytes"
         ),
+        "supervisor_self_info_fragment_bytes": after_stats.get(
+            "supervisor_self_info_fragment_bytes"
+        ),
+        "supervisor_self_info_fragment_count": after_stats.get(
+            "supervisor_self_info_fragment_count"
+        ),
+        "fragmented_response_fully_consumed": True,
         "supervisor_self_info_requests": rest_reads.get(
             "/addons/self/info"
         ),

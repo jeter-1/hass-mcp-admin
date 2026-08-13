@@ -32,11 +32,14 @@ as `2.2.0-beta.35` and that its build/image provenance matches the published
 deployment candidate verified above. Stop if source, publication, image, and
 runtime identity do not reconcile exactly.
 
-## A — Mobile navigation matrix
+## A — Mobile navigation matrices
 
-Test the following six combinations with a fresh pending plan or challenge for
-each one-time authority context. Do not accept merely opening Home Assistant as
-success.
+Test each platform independently with a fresh pending plan or challenge for
+every one-time authority context. Do not accept merely opening Home Assistant
+as success. Passing Android does not establish iOS acceptance, and iOS must
+remain explicitly unaccepted until exercised on a physical iOS device.
+
+### Android
 
 | Entry point | Companion state |
 | --- | --- |
@@ -47,7 +50,18 @@ success.
 | **Open Approval Panel** action | Backgrounded |
 | **Open Approval Panel** action | Foregrounded |
 
-For every row:
+### iOS
+
+| Entry point | Companion state |
+| --- | --- |
+| Notification body tap | Cold/not running |
+| Notification body tap | Backgrounded |
+| Notification body tap | Foregrounded |
+| **Open Approval Panel** action | Cold/not running |
+| **Open Approval Panel** action | Backgrounded |
+| **Open Approval Panel** action | Foregrounded |
+
+For every row on each platform:
 
 1. Confirm Engineering queued the intended fresh plan's notification and Home
    Assistant accepted one submission.

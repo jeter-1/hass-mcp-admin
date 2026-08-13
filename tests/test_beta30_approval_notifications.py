@@ -171,7 +171,9 @@ class NotificationGovernanceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             body["data"]["actions"][0]["uri"],
-            body["data"]["clickAction"],
+            body["data"]["url"].removeprefix(
+                "homeassistant://navigate"
+            ),
         )
         self.assertNotIn(
             "authenticationRequired", body["data"]["actions"][0]

@@ -10,6 +10,7 @@ endpoint lets CI prove the reached operation surface without returning payloads.
 from __future__ import annotations
 
 import argparse
+import asyncio
 from collections import Counter
 from copy import deepcopy
 from datetime import UTC, datetime
@@ -26,6 +27,24 @@ NOW = "2026-07-21T12:00:00+00:00"
 APPROVAL_INGRESS_PATH = re.compile(
     r"/hassio/ingress/df26dea6_hass_mcp_engineering_beta/"
     r"plans/[a-f0-9]{32}"
+)
+APPROVAL_NOTIFICATION_TITLE = "Home Assistant approval requested"
+APPROVAL_NOTIFICATION_MESSAGE = (
+    "A governed Home Assistant change is waiting for administrator review."
+)
+APPROVAL_AUTHORITY_MARKERS = (
+    "approval_token",
+    "challenge_id",
+    "csrf",
+    "plan_hash",
+    "nonce",
+    "proposed_config",
+    "/approve",
+    "/reject",
+    '"action":"approve"',
+    '"action":"reject"',
+    "approve plan",
+    "reject plan",
 )
 STATES = [
     {
@@ -236,17 +255,20 @@ INSTALLED_ADDONS = [
     }
 ]
 SELF_ADDON_SLUG = "df26dea6_hass_mcp_engineering_beta"
-SELF_ADDON_INFO_BODY = json.dumps(
-    {
+LIVE_SHAPED_SELF_ADDON_INFO_BYTES = 33_732
+SELF_ADDON_INFO_FRAGMENT_BYTES = 1024
+
+
+def _self_addon_info_body() -> bytes:
+    payload = {
         "result": "ok",
         "data": {
             "slug": SELF_ADDON_SLUG,
             "name": "HA MCP Engineering Server Beta",
-            "version": "2.2.0-beta.31",
+            "version": "2.2.0-beta.36",
             "repository": "df26dea6",
             "long_description": (
                 "synthetic-exact-image-long-description-marker"
-                + ("x" * 48_000)
             ),
             "options": {
                 "access_secret": "synthetic-exact-image-option-secret",
@@ -254,10 +276,13 @@ SELF_ADDON_INFO_BODY = json.dumps(
                     "notify.mobile_app_beta31_fixture"
                 ),
             },
-            "schema": {
-                "access_secret": "password",
-                "approval_notification_service": "str",
-            },
+            "schema": [
+                {"name": "access_secret", "type": "password"},
+                {
+                    "name": "approval_notification_service",
+                    "type": "str",
+                },
+            ],
             "translations": {
                 "en": {
                     "configuration": (
@@ -266,9 +291,21 @@ SELF_ADDON_INFO_BODY = json.dumps(
                 }
             },
         },
-    },
-    separators=(",", ":"),
-).encode("utf-8")
+    }
+    encoded = json.dumps(payload, separators=(",", ":")).encode(
+        "utf-8"
+    )
+    padding = LIVE_SHAPED_SELF_ADDON_INFO_BYTES - len(encoded)
+    assert padding > 0
+    payload["data"]["long_description"] += "x" * padding
+    encoded = json.dumps(payload, separators=(",", ":")).encode(
+        "utf-8"
+    )
+    assert len(encoded) == LIVE_SHAPED_SELF_ADDON_INFO_BYTES
+    return encoded
+
+
+SELF_ADDON_INFO_BODY = _self_addon_info_body()
 assert len(SELF_ADDON_INFO_BODY) > 32 * 1024
 SOURCE_DERIVED_MINIMUM_ADDON_DETAIL_BYTES = 71_986
 ADDON_DETAIL_PROFILE = "compact"
@@ -368,6 +405,15 @@ class FixtureState:
             "supervisor_self_info_payload_bytes": len(
                 SELF_ADDON_INFO_BODY
             ),
+            "supervisor_self_info_fragment_bytes": (
+                SELF_ADDON_INFO_FRAGMENT_BYTES
+            ),
+            "supervisor_self_info_fragment_count": (
+                len(SELF_ADDON_INFO_BODY)
+                + SELF_ADDON_INFO_FRAGMENT_BYTES
+                - 1
+            )
+            // SELF_ADDON_INFO_FRAGMENT_BYTES,
             "approval_notification_calls": list(
                 self.approval_notification_calls
             ),
@@ -398,14 +444,35 @@ async def api_root(_request: web.Request) -> web.Response:
     return web.json_response({"message": "API running."})
 
 
-async def supervisor_self_info(request: web.Request) -> web.Response:
+async def supervisor_self_info(
+    request: web.Request,
+) -> web.StreamResponse:
     STATE.rest_reads["/addons/self/info"] += 1
     if request.headers.get("Authorization") != f"Bearer {TOKEN}":
         return web.json_response({"result": "error"}, status=401)
-    return web.Response(
-        body=SELF_ADDON_INFO_BODY,
-        content_type="application/json",
+    response = web.StreamResponse(
+        status=200,
+        headers={
+            "Content-Type": "application/json; charset=utf-8",
+            "Content-Length": str(len(SELF_ADDON_INFO_BODY)),
+        },
     )
+    await response.prepare(request)
+    for index in range(
+        0, len(SELF_ADDON_INFO_BODY), SELF_ADDON_INFO_FRAGMENT_BYTES
+    ):
+        await response.write(
+            SELF_ADDON_INFO_BODY[
+                index : index + SELF_ADDON_INFO_FRAGMENT_BYTES
+            ]
+        )
+        if index == 0:
+            # A live response may span transport reads. The delay makes the
+            # first fragment independently observable so a one-read client
+            # deterministically receives incomplete JSON.
+            await asyncio.sleep(0.05)
+    await response.write_eof()
+    return response
 
 
 async def approval_notification(request: web.Request) -> web.Response:
@@ -427,6 +494,8 @@ async def approval_notification(request: web.Request) -> web.Response:
         if isinstance(actions, list) and len(actions) == 1
         else None
     )
+    title = body.get("title") if isinstance(body, dict) else None
+    message = body.get("message") if isinstance(body, dict) else None
     ingress_path = (
         url.removeprefix("homeassistant://navigate")
         if isinstance(url, str)
@@ -434,12 +503,38 @@ async def approval_notification(request: web.Request) -> web.Response:
         else None
     )
     android_target = f"deep-link://{url}" if isinstance(url, str) else None
+    inspected_payload = {
+        "title": title,
+        "message": message,
+        "url": url,
+        "clickAction": click_action,
+        "actions": actions,
+    }
+    inspected_text = json.dumps(
+        inspected_payload, sort_keys=True, separators=(",", ":")
+    ).lower()
+    authority_material_present = any(
+        marker in inspected_text for marker in APPROVAL_AUTHORITY_MARKERS
+    )
+    authentication_required_present = bool(
+        isinstance(actions, list)
+        and any(
+            isinstance(item, dict)
+            and "authenticationRequired" in item
+            for item in actions
+        )
+    )
+    action_uri_matches_cross_platform_target = bool(
+        isinstance(action, dict) and action.get("uri") == ingress_path
+    )
     if (
         not isinstance(url, str)
         or len(url) > 1024
         or not isinstance(ingress_path, str)
         or APPROVAL_INGRESS_PATH.fullmatch(ingress_path) is None
         or click_action != android_target
+        or title != APPROVAL_NOTIFICATION_TITLE
+        or message != APPROVAL_NOTIFICATION_MESSAGE
         or not isinstance(tag, str)
         or len(tag) > 128
         or not isinstance(action, dict)
@@ -448,7 +543,9 @@ async def approval_notification(request: web.Request) -> web.Response:
         or set(action) != {"action", "title", "uri"}
         or action.get("action") != "URI"
         or action.get("title") != "Open Approval Panel"
-        or action.get("uri") != android_target
+        or not action_uri_matches_cross_platform_target
+        or authority_material_present
+        or authentication_required_present
     ):
         return web.json_response({"message": "invalid"}, status=400)
     STATE.approval_notification_calls.append(
@@ -464,11 +561,20 @@ async def approval_notification(request: web.Request) -> web.Response:
             "action_uri_sha256": hashlib.sha256(
                 action["uri"].encode()
             ).hexdigest(),
+            "title_sha256": hashlib.sha256(title.encode()).hexdigest(),
+            "message_sha256": hashlib.sha256(message.encode()).hexdigest(),
+            "action_title_sha256": hashlib.sha256(
+                action["title"].encode()
+            ).hexdigest(),
             "tag_sha256": hashlib.sha256(tag.encode()).hexdigest(),
-            "action": "URI",
-            "action_uri_matches_android_target": True,
-            "authority_material_present": False,
-            "authentication_required_present": False,
+            "action": action["action"],
+            "action_uri_matches_cross_platform_target": (
+                action_uri_matches_cross_platform_target
+            ),
+            "authority_material_present": authority_material_present,
+            "authentication_required_present": (
+                authentication_required_present
+            ),
         }
     )
     return web.json_response(
