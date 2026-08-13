@@ -125,9 +125,30 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
                 {
                     "action": "URI",
                     "title": "Open Approval Panel",
-                    "uri": android_navigation_uri,
+                    "uri": review_path,
                 }
             ],
+        )
+        self.assertEqual(
+            body["data"]["url"].removeprefix(
+                "homeassistant://navigate"
+            ),
+            review_path,
+        )
+        self.assertEqual(
+            body["data"]["clickAction"].removeprefix(
+                "deep-link://homeassistant://navigate"
+            ),
+            review_path,
+        )
+        self.assertEqual(
+            body["data"]["clickAction"].count("deep-link://"), 1
+        )
+        self.assertEqual(
+            body["data"]["clickAction"].count(
+                "homeassistant://navigate"
+            ),
+            1,
         )
 
         encoded = json.dumps(body, sort_keys=True)
@@ -170,6 +191,47 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
             "deep-link://", body["data"]["actions"][0]["uri"]
         )
 
+    async def test_ios_body_and_action_resolve_the_exact_plan_route(self):
+        rest = CapturingRestClient()
+        manager, _ = await self._manager(rest)
+        self._enqueue(manager, PLAN_ID, CHALLENGE_ID)
+
+        await manager.process_next()
+
+        data = rest.calls[0][2]["data"]
+        review_path = f"/hassio/ingress/{SELF_SLUG}/plans/{PLAN_ID}"
+        self.assertEqual(
+            data["url"], f"homeassistant://navigate{review_path}"
+        )
+        self.assertEqual(
+            data["url"].removeprefix("homeassistant://navigate"),
+            review_path,
+        )
+        self.assertEqual(data["actions"][0]["uri"], review_path)
+        self.assertNotIn("deep-link://", data["actions"][0]["uri"])
+
+    async def test_android_body_and_action_resolve_the_exact_plan_route(self):
+        rest = CapturingRestClient()
+        manager, _ = await self._manager(rest)
+        self._enqueue(manager, PLAN_ID, CHALLENGE_ID)
+
+        await manager.process_next()
+
+        data = rest.calls[0][2]["data"]
+        review_path = f"/hassio/ingress/{SELF_SLUG}/plans/{PLAN_ID}"
+        self.assertEqual(
+            data["clickAction"],
+            f"deep-link://homeassistant://navigate{review_path}",
+        )
+        self.assertEqual(
+            data["clickAction"].removeprefix(
+                "deep-link://homeassistant://navigate"
+            ),
+            review_path,
+        )
+        self.assertEqual(data["actions"][0]["uri"], review_path)
+        self.assertNotIn("deep-link://", data["actions"][0]["uri"])
+
     async def test_each_notification_keeps_its_own_plan_navigation_target(self):
         rest = CapturingRestClient()
         manager, _ = await self._manager(rest)
@@ -192,6 +254,16 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
                 f"{SELF_SLUG}/plans/{PLAN_ID}",
                 "deep-link://homeassistant://navigate/hassio/ingress/"
                 f"{SELF_SLUG}/plans/{SECOND_PLAN_ID}",
+            ],
+        )
+        action_targets = [
+            call[2]["data"]["actions"][0]["uri"] for call in rest.calls
+        ]
+        self.assertEqual(
+            action_targets,
+            [
+                f"/hassio/ingress/{SELF_SLUG}/plans/{PLAN_ID}",
+                f"/hassio/ingress/{SELF_SLUG}/plans/{SECOND_PLAN_ID}",
             ],
         )
 
