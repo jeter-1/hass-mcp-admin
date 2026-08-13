@@ -380,7 +380,7 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
                     {
                         "action": "URI",
                         "title": "Open Approval Panel",
-                        "uri": android_target,
+                        "uri": review_path,
                     }
                 ],
             },
@@ -410,9 +410,28 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             recorded["action_uri_sha256"],
-            recorded["android_click_action_sha256"],
+            recorded["ingress_path_sha256"],
+        )
+        self.assertTrue(
+            recorded["action_uri_matches_cross_platform_target"]
+        )
+        self.assertEqual(recorded["action"], "URI")
+        self.assertEqual(
+            recorded["title_sha256"],
+            hashlib.sha256(body["title"].encode()).hexdigest(),
+        )
+        self.assertEqual(
+            recorded["message_sha256"],
+            hashlib.sha256(body["message"].encode()).hexdigest(),
+        )
+        self.assertEqual(
+            recorded["action_title_sha256"],
+            hashlib.sha256(
+                body["data"]["actions"][0]["title"].encode()
+            ).hexdigest(),
         )
         self.assertFalse(recorded["authority_material_present"])
+        self.assertFalse(recorded["authentication_required_present"])
         self.assertNotIn(PLAN_ID, json.dumps(recorded, sort_keys=True))
 
     async def test_exact_image_fixture_rejects_drift_and_authority_fields(self):
@@ -433,25 +452,53 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
                     {
                         "action": "URI",
                         "title": "Open Approval Panel",
-                        "uri": android_target,
+                        "uri": review_path,
                     }
                 ],
             },
         }
         invalid_bodies = []
-        for mutation in ("relative", "wrong_action", "authority"):
+        for mutation in (
+            "relative_body",
+            "android_action",
+            "ios_action",
+            "authority_title",
+            "authority_message",
+            "authority_data",
+            "authority_action_title",
+            "authority_action_uri",
+            "authority_action_verb",
+            "authentication_required",
+        ):
             candidate = json.loads(json.dumps(base))
-            if mutation == "relative":
+            if mutation == "relative_body":
                 candidate["data"]["url"] = review_path
                 relative_android_target = f"deep-link://{review_path}"
                 candidate["data"]["clickAction"] = relative_android_target
-                candidate["data"]["actions"][0][
-                    "uri"
-                ] = relative_android_target
-            elif mutation == "wrong_action":
+            elif mutation == "android_action":
+                candidate["data"]["actions"][0]["uri"] = android_target
+            elif mutation == "ios_action":
                 candidate["data"]["actions"][0]["uri"] = ios_target
+            elif mutation == "authority_title":
+                candidate["title"] = "Home Assistant plan_hash requested"
+            elif mutation == "authority_message":
+                candidate["message"] = "Open /approve directly"
+            elif mutation == "authority_data":
+                candidate["data"]["approval_token"] = (
+                    "synthetic-forbidden"
+                )
+            elif mutation == "authority_action_title":
+                candidate["data"]["actions"][0]["title"] = "Reject plan"
+            elif mutation == "authority_action_uri":
+                candidate["data"]["actions"][0]["uri"] = (
+                    f"{review_path}/approve"
+                )
+            elif mutation == "authority_action_verb":
+                candidate["data"]["actions"][0]["action"] = "APPROVE"
             else:
-                candidate["data"]["approval_token"] = "synthetic-forbidden"
+                candidate["data"]["actions"][0][
+                    "authenticationRequired"
+                ] = True
             invalid_bodies.append(candidate)
 
         exact_fixture.STATE.approval_notification_calls.clear()

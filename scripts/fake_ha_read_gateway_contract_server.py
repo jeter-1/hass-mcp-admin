@@ -27,6 +27,24 @@ APPROVAL_INGRESS_PATH = re.compile(
     r"/hassio/ingress/df26dea6_hass_mcp_engineering_beta/"
     r"plans/[a-f0-9]{32}"
 )
+APPROVAL_NOTIFICATION_TITLE = "Home Assistant approval requested"
+APPROVAL_NOTIFICATION_MESSAGE = (
+    "A governed Home Assistant change is waiting for administrator review."
+)
+APPROVAL_AUTHORITY_MARKERS = (
+    "approval_token",
+    "challenge_id",
+    "csrf",
+    "plan_hash",
+    "nonce",
+    "proposed_config",
+    "/approve",
+    "/reject",
+    '"action":"approve"',
+    '"action":"reject"',
+    "approve plan",
+    "reject plan",
+)
 STATES = [
     {
         "entity_id": "sun.sun",
@@ -427,6 +445,8 @@ async def approval_notification(request: web.Request) -> web.Response:
         if isinstance(actions, list) and len(actions) == 1
         else None
     )
+    title = body.get("title") if isinstance(body, dict) else None
+    message = body.get("message") if isinstance(body, dict) else None
     ingress_path = (
         url.removeprefix("homeassistant://navigate")
         if isinstance(url, str)
@@ -434,12 +454,38 @@ async def approval_notification(request: web.Request) -> web.Response:
         else None
     )
     android_target = f"deep-link://{url}" if isinstance(url, str) else None
+    inspected_payload = {
+        "title": title,
+        "message": message,
+        "url": url,
+        "clickAction": click_action,
+        "actions": actions,
+    }
+    inspected_text = json.dumps(
+        inspected_payload, sort_keys=True, separators=(",", ":")
+    ).lower()
+    authority_material_present = any(
+        marker in inspected_text for marker in APPROVAL_AUTHORITY_MARKERS
+    )
+    authentication_required_present = bool(
+        isinstance(actions, list)
+        and any(
+            isinstance(item, dict)
+            and "authenticationRequired" in item
+            for item in actions
+        )
+    )
+    action_uri_matches_cross_platform_target = bool(
+        isinstance(action, dict) and action.get("uri") == ingress_path
+    )
     if (
         not isinstance(url, str)
         or len(url) > 1024
         or not isinstance(ingress_path, str)
         or APPROVAL_INGRESS_PATH.fullmatch(ingress_path) is None
         or click_action != android_target
+        or title != APPROVAL_NOTIFICATION_TITLE
+        or message != APPROVAL_NOTIFICATION_MESSAGE
         or not isinstance(tag, str)
         or len(tag) > 128
         or not isinstance(action, dict)
@@ -448,7 +494,9 @@ async def approval_notification(request: web.Request) -> web.Response:
         or set(action) != {"action", "title", "uri"}
         or action.get("action") != "URI"
         or action.get("title") != "Open Approval Panel"
-        or action.get("uri") != android_target
+        or not action_uri_matches_cross_platform_target
+        or authority_material_present
+        or authentication_required_present
     ):
         return web.json_response({"message": "invalid"}, status=400)
     STATE.approval_notification_calls.append(
@@ -464,11 +512,20 @@ async def approval_notification(request: web.Request) -> web.Response:
             "action_uri_sha256": hashlib.sha256(
                 action["uri"].encode()
             ).hexdigest(),
+            "title_sha256": hashlib.sha256(title.encode()).hexdigest(),
+            "message_sha256": hashlib.sha256(message.encode()).hexdigest(),
+            "action_title_sha256": hashlib.sha256(
+                action["title"].encode()
+            ).hexdigest(),
             "tag_sha256": hashlib.sha256(tag.encode()).hexdigest(),
-            "action": "URI",
-            "action_uri_matches_android_target": True,
-            "authority_material_present": False,
-            "authentication_required_present": False,
+            "action": action["action"],
+            "action_uri_matches_cross_platform_target": (
+                action_uri_matches_cross_platform_target
+            ),
+            "authority_material_present": authority_material_present,
+            "authentication_required_present": (
+                authentication_required_present
+            ),
         }
     )
     return web.json_response(

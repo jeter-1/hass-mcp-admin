@@ -28,7 +28,9 @@ class Beta31ExactImageIdentityTests(unittest.TestCase):
         self.assertIn("expected_ingress_path_hash", exact_acceptance)
         self.assertIn("expected_ios_url_hash", exact_acceptance)
         self.assertIn("expected_android_target_hash", exact_acceptance)
-        self.assertIn("action_uri_matches_android_target", exact_acceptance)
+        self.assertIn(
+            "action_uri_matches_cross_platform_target", exact_acceptance
+        )
         self.assertIn("authority_material_present", exact_acceptance)
         self.assertIn("authentication_required_present", exact_acceptance)
         self.assertIn("ios_url_sha256", fixture)
