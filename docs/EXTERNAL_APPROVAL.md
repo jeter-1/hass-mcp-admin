@@ -79,6 +79,21 @@ restrictive Content Security Policy compatible with Ingress. There are no
 external scripts, stylesheets, fonts, or remote resources. The application does
 not set framing headers that would break Ingress.
 
+The approval document declares `color-scheme: light dark` and uses a bounded,
+high-contrast light palette with a `prefers-color-scheme: dark` palette for its
+page, surfaces, text, links, controls, semantic projection, warnings, focus,
+hover, active, and disabled states. Home Assistant renders Ingress content in a
+separate iframe document: its frontend styles the iframe element with the HA
+background, but Supervisor forwards no theme metadata and the parent document's
+CSS custom properties do not cross into the embedded document. The panel
+therefore follows the browser or Companion App system color preference without
+JavaScript or external resources. An HA-only mode or custom-theme override that
+differs from the device preference cannot be observed through the current
+Ingress contract and may not match exactly; light and dark live acceptance must
+verify the effective Companion App behavior. This presentation fallback does
+not change any route, form method, hidden authority input, decision endpoint, or
+approval semantics.
+
 Every authenticated Ingress page provides navigation to the pending approval
 inbox and F3 reconciliation. Exact review pages link back to the inbox. A
 decision resolves the current pending inventory on the server: an ordinary
