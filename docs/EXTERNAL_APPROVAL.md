@@ -182,7 +182,10 @@ Companion contract rejects.
 The adapter resolves the running add-on's exact slug from
 Supervisor `/addons/self/info` instead of guessing a custom-repository prefix.
 The complete Supervisor response is read only through a fixed 512 KiB ceiling;
-only the validated installed slug and strictly necessary identity fields are
+the bounded reader continues across transport fragments until EOF instead of
+treating the first available fragment as a complete JSON document. It retains
+at most 512 KiB plus one byte used only to detect an oversized response.
+Only the validated installed slug and strictly necessary identity fields are
 retained. Options, configuration, translations, long descriptions, tokens, and
 the raw response are discarded as untrusted data and are never logged or
 persisted. A response above the ceiling fails closed with no notification and

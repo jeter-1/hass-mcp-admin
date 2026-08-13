@@ -475,8 +475,9 @@ success and failure, provider state, zero fallback, and unavailable rollback.
   Planning failed closed before a plan or action; restore authoritative
   Supervisor access and retry with a fresh proposal.
   The shared self-identity resolver accepts a complete response only below its
-  fixed 512 KiB ceiling, retains only validated identity fields, and exposes no
-  raw Supervisor content. Approval-notification health may refine an identity
+  fixed 512 KiB ceiling, reads every transport fragment to EOF, retains only
+  validated identity fields, and exposes no raw Supervisor content.
+  Approval-notification health may refine an identity
   failure to the safe category `configuration_unavailable`,
   `response_too_large`, `http_status`, `malformed_response`, `timeout`, or
   `transport_failure`; self-restart planning retains the established top-level
