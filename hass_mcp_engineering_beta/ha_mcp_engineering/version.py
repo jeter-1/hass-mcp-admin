@@ -36,7 +36,7 @@ def _normalize_build_dirty(value: str | None) -> bool | str:
 
 SERVER_NAME = "HA MCP Engineering Server Beta"
 SERVER_ID = "hass-mcp-engineering-beta"
-SERVER_VERSION = "2.2.0-beta.35"
+SERVER_VERSION = "2.2.0-beta.36"
 SCHEMA_VERSION = "1"
 BUILD_SHA = _normalize_build_sha(os.environ.get("HAMCP_BUILD_SHA"))
 BUILD_TIME = _normalize_build_time(os.environ.get("HAMCP_BUILD_TIME"))
