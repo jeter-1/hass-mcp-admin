@@ -430,6 +430,7 @@ async def approval_notification(request: web.Request) -> web.Response:
     ingress_path = (
         url.removeprefix("homeassistant://navigate")
         if isinstance(url, str)
+        and url.startswith("homeassistant://navigate")
         else None
     )
     android_target = f"deep-link://{url}" if isinstance(url, str) else None

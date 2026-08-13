@@ -1,15 +1,17 @@
 # Engineering 2.2.0-beta.35 acceptance
 
-This procedure applies only after independent merge-gate review, merge,
-protected promotion, publication, and separately authorized deployment. Source
-validation must not access the deployed Home Assistant environment. Use fresh,
-uniquely identifiable plans and challenges; never reuse consumed approval
-authority.
+This procedure spans pre-deployment release verification and post-deployment
+live acceptance. Complete the pre-deployment gates after independent
+merge-gate review, merge, protected promotion, and publication, but before a
+separately authorized deployment. Sections A through C apply only after that
+deployment. Source validation must not access the deployed Home Assistant
+environment. Use fresh, uniquely identifiable plans and challenges; never
+reuse consumed approval authority.
 
 ## Pre-deployment gates
 
 1. Confirm source declaration, promoted metadata, image labels, tag, accepted
-   commit, and deployed image all identify `2.2.0-beta.35`.
+   commit, and the deployment-candidate image all identify `2.2.0-beta.35`.
 2. Confirm stable v1.1.2, the public tool catalog and schemas, task schema,
    approval authority, policy authority, provider routing/admission,
    zero-fallback policy, F3 behavior, dashboard behavior, and historical
@@ -22,6 +24,13 @@ authority.
    ha-mcp 8.0.0, 8.1.0, 8.1.1, and 8.2.0 lanes to pass with no fallback.
 5. Confirm the notification remains navigation-only and reports Home Assistant
    service acceptance as `submitted`, not handset delivery.
+
+## Post-deployment entry criteria
+
+Before sections A through C, confirm the deployed Engineering runtime identifies
+as `2.2.0-beta.35` and that its build/image provenance matches the published
+deployment candidate verified above. Stop if source, publication, image, and
+runtime identity do not reconcile exactly.
 
 ## A — Mobile navigation matrix
 
