@@ -145,6 +145,31 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertNotIn(forbidden, encoded.lower())
 
+    async def test_action_button_uses_cross_platform_ingress_target(self):
+        """The shared action must not reuse Android's body-only wrapper."""
+
+        rest = CapturingRestClient()
+        manager, _ = await self._manager(rest)
+        self._enqueue(manager, PLAN_ID, CHALLENGE_ID)
+
+        await manager.process_next()
+
+        body = rest.calls[0][2]
+        review_path = f"/hassio/ingress/{SELF_SLUG}/plans/{PLAN_ID}"
+        self.assertEqual(
+            body["data"]["actions"],
+            [
+                {
+                    "action": "URI",
+                    "title": "Open Approval Panel",
+                    "uri": review_path,
+                }
+            ],
+        )
+        self.assertNotIn(
+            "deep-link://", body["data"]["actions"][0]["uri"]
+        )
+
     async def test_each_notification_keeps_its_own_plan_navigation_target(self):
         rest = CapturingRestClient()
         manager, _ = await self._manager(rest)
