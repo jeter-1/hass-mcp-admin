@@ -197,10 +197,15 @@ class SupervisorSelfAddonIdentityResolver:
                 f"{self._base_url}/addons/self/info",
                 headers=headers,
             ) as response:
-                body = await response.content.read(
-                    MAX_SELF_INFO_BYTES + 1
-                )
-                return response.status, body
+                body = bytearray()
+                while len(body) <= MAX_SELF_INFO_BYTES:
+                    chunk = await response.content.read(
+                        MAX_SELF_INFO_BYTES + 1 - len(body)
+                    )
+                    if not chunk:
+                        break
+                    body.extend(chunk)
+                return response.status, bytes(body)
 
 
 def _safe_text(value: object) -> str | None:
