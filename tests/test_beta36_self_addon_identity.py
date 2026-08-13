@@ -6,7 +6,9 @@ from collections import deque
 import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -14,6 +16,13 @@ ROOT = Path(__file__).resolve().parents[1]
 BETA_DIR = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA_DIR))
 
+from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
+from ha_mcp_engineering.governance.approval_notifications import (  # noqa: E402
+    ApprovalNotificationManager,
+)
+from ha_mcp_engineering.governance.operational_lifecycle import (  # noqa: E402
+    OperationalLifecycleGateway,
+)
 from ha_mcp_engineering.providers import supervisor_self  # noqa: E402
 from ha_mcp_engineering.providers.supervisor_self import (  # noqa: E402
     MAX_SELF_INFO_BYTES,
@@ -106,9 +115,22 @@ class FakeSession:
         return self.response
 
 
+class CapturingRestClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, object]] = []
+
+    async def request(self, method: str, path: str, body=None):
+        self.calls.append((method, path, body))
+        return {"context": {"id": "synthetic-beta36-submission"}}
+
+
 def resolver_with_chunks(
     chunks: list[bytes], *, status: int = 200
-) -> tuple[SupervisorSelfAddonIdentityResolver, FragmentedContent]:
+) -> tuple[
+    SupervisorSelfAddonIdentityResolver,
+    FragmentedContent,
+    FakeSession,
+]:
     content = FragmentedContent(chunks)
     response = FakeResponse(status, content)
     resolver = SupervisorSelfAddonIdentityResolver(
@@ -116,20 +138,19 @@ def resolver_with_chunks(
         token="synthetic-supervisor-token",
         timeout_seconds=5,
     )
-    resolver._test_session = FakeSession(response)  # type: ignore[attr-defined]
-    return resolver, content
+    return resolver, content, FakeSession(response)
 
 
 class Beta36FragmentedSelfInfoTests(unittest.IsolatedAsyncioTestCase):
     async def test_fragmented_live_shaped_response_reads_to_eof(self):
         body = sanitized_live_shaped_payload()
         chunks = [body[:1024], body[1024:16_384], body[16_384:]]
-        resolver, content = resolver_with_chunks(chunks)
+        resolver, content, session = resolver_with_chunks(chunks)
 
         with patch.object(
             supervisor_self.aiohttp,
             "ClientSession",
-            return_value=resolver._test_session,  # type: ignore[attr-defined]
+            return_value=session,
         ):
             identity = await resolver.resolve()
 
@@ -148,12 +169,12 @@ class Beta36FragmentedSelfInfoTests(unittest.IsolatedAsyncioTestCase):
             body[index : index + 4096]
             for index in range(0, len(body), 4096)
         ]
-        resolver, content = resolver_with_chunks(chunks)
+        resolver, content, session = resolver_with_chunks(chunks)
 
         with patch.object(
             supervisor_self.aiohttp,
             "ClientSession",
-            return_value=resolver._test_session,  # type: ignore[attr-defined]
+            return_value=session,
         ):
             with self.assertRaises(SelfAddonIdentityError) as raised:
                 await resolver.resolve()
@@ -162,6 +183,166 @@ class Beta36FragmentedSelfInfoTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             sum(content.returned_sizes), MAX_SELF_INFO_BYTES + 1
         )
+
+    async def test_fragmented_identity_drives_notification_and_clear(self):
+        body = sanitized_live_shaped_payload()
+        resolver, _, session = resolver_with_chunks(
+            [body[:1024], body[1024:]]
+        )
+        rest = CapturingRestClient()
+
+        with tempfile.TemporaryDirectory() as directory:
+            manager = ApprovalNotificationManager(
+                rest,
+                AuditLogger(
+                    str(Path(directory) / "audit.jsonl"),
+                    "synthetic-beta36-audit-secret",
+                ),
+                service="notify.mobile_app_synthetic_beta36",
+                timeout_seconds=5,
+                addon_identity_resolver=resolver.resolve,
+            )
+            with patch.object(
+                supervisor_self.aiohttp,
+                "ClientSession",
+                return_value=session,
+            ):
+                manager._enqueue(
+                    "notify",
+                    "a" * 32,
+                    "synthetic-beta36-opaque-challenge",
+                    "plan_approval",
+                    "synthetic-beta36-notify",
+                )
+                await manager.process_next()
+                manager._enqueue(
+                    "clear",
+                    "a" * 32,
+                    "synthetic-beta36-opaque-challenge",
+                    "plan_approval",
+                    "synthetic-beta36-clear",
+                )
+                await manager.process_next()
+
+            persisted = (Path(directory) / "audit.jsonl").read_text()
+
+        self.assertEqual(len(rest.calls), 2)
+        self.assertEqual(
+            rest.calls[0][1],
+            "/services/notify/mobile_app_synthetic_beta36",
+        )
+        self.assertEqual(rest.calls[1][2]["message"], "clear_notification")
+        health = manager.health_snapshot()
+        self.assertEqual(health["submitted"], 1)
+        self.assertEqual(health["clear_submitted"], 1)
+        self.assertEqual(
+            health["addon_identity_status"],
+            "verified_supervisor_self_info",
+        )
+        self.assertEqual(health["fallback_count"], 0)
+        self.assertNotIn("synthetic-beta36-option-secret", persisted)
+        self.assertNotIn("synthetic-private-value", persisted)
+
+    async def test_fragmented_identity_drives_self_restart_planning_only(self):
+        body = sanitized_live_shaped_payload()
+        resolver, _, session = resolver_with_chunks(
+            [body[:1024], body[1024:]]
+        )
+
+        class AddonProvider:
+            async def probe(self, _operation: str):
+                return SimpleNamespace(
+                    as_dict=lambda: {
+                        "provider": "synthetic-reviewed-lifecycle"
+                    }
+                )
+
+            async def get_addon(self, requested_slug: str):
+                return {
+                    "slug": requested_slug,
+                    "name": "HA MCP Engineering Server Beta",
+                    "version": "2.2.0-beta.35",
+                    "repository": "df26dea6",
+                    "state": "started",
+                }
+
+        async def configuration_validator():
+            raise AssertionError("restart planning must not validate config")
+
+        gateway = OperationalLifecycleGateway(
+            AddonProvider(),  # type: ignore[arg-type]
+            None,  # type: ignore[arg-type]
+            None,  # type: ignore[arg-type]
+            configuration_validator=configuration_validator,
+            runtime_snapshot=lambda: {"server_version": "2.2.0-beta.35"},
+            process_instance_id="synthetic-beta36-process",
+            self_addon_identity_resolver=resolver.resolve,
+        )
+
+        with patch.object(
+            supervisor_self.aiohttp,
+            "ClientSession",
+            return_value=session,
+        ):
+            evidence = await gateway.planning_evidence(
+                "restart_addon", SELF_SLUG
+            )
+
+        target = evidence["baseline"]["target_identity"]
+        self.assertEqual(target["resolved_slug"], SELF_SLUG)
+        self.assertEqual(target["target_class"], "engineering_addon")
+        self.assertTrue(target["authoritative_self_match"])
+        self.assertEqual(target["identity_source"], "supervisor_self_info")
+
+    async def test_invalid_live_envelope_identity_fields_fail_closed(self):
+        valid_data = {
+            "slug": SELF_SLUG,
+            "name": "HA MCP Engineering Server Beta",
+            "version": "2.2.0-beta.35",
+            "repository": "df26dea6",
+        }
+        cases: dict[str, object] = {
+            "outer_list": [],
+            "data_not_object": {"result": "ok", "data": []},
+            "missing_slug": {
+                "result": "ok",
+                "data": {
+                    key: value
+                    for key, value in valid_data.items()
+                    if key != "slug"
+                },
+            },
+            "empty_slug": {
+                "result": "ok",
+                "data": {**valid_data, "slug": ""},
+            },
+            "wrong_slug_type": {
+                "result": "ok",
+                "data": {**valid_data, "slug": 42},
+            },
+            "invalid_slug_syntax": {
+                "result": "ok",
+                "data": {**valid_data, "slug": "../unsafe"},
+            },
+        }
+        for label, payload in cases.items():
+            with self.subTest(label=label):
+
+                async def fetch(value=payload):
+                    return 200, json.dumps(value).encode()
+
+                resolver = SupervisorSelfAddonIdentityResolver(
+                    base_url="http://supervisor",
+                    token="synthetic-supervisor-token",
+                    timeout_seconds=5,
+                    fetcher=fetch,
+                )
+                with self.assertRaises(SelfAddonIdentityError) as raised:
+                    await resolver.resolve()
+                self.assertEqual(
+                    raised.exception.failure_category,
+                    "malformed_response",
+                )
 
 
 if __name__ == "__main__":
