@@ -160,9 +160,25 @@ Home Assistant service.
 
 After persistence of a new challenge, the adapter asynchronously submits a
 privacy-minimal normal-priority notification with one URI action: **Open
-Approval Panel**. The payload uses the shared relative Ingress path for the
-Android `clickAction`, iOS `url`, and URI action target. It does not include
-platform-specific action fields that the Android Companion contract rejects.
+Approval Panel**. All navigation forms derive from one canonical authenticated
+Ingress route:
+
+```text
+/hassio/ingress/{verified_addon_slug}/plans/{plan_id}
+```
+
+The iOS body `url` is
+`homeassistant://navigate{canonical_ingress_route}`. The Android body
+`clickAction` is
+`deep-link://homeassistant://navigate{canonical_ingress_route}`. The shared
+**Open Approval Panel** action `uri` is the canonical relative Ingress route
+itself. Current Companion clients resolve a relative URI-action target against
+the configured Home Assistant frontend, while Android's body-tap notification
+contract requires its additional `deep-link://` wrapper. The service name is
+not used to guess a platform.
+
+The payload does not include platform-specific action fields that the Android
+Companion contract rejects.
 The adapter resolves the running add-on's exact slug from
 Supervisor `/addons/self/info` instead of guessing a custom-repository prefix.
 The complete Supervisor response is read only through a fixed 512 KiB ceiling;
@@ -171,7 +187,7 @@ retained. Options, configuration, translations, long descriptions, tokens, and
 the raw response are discarded as untrusted data and are never logged or
 persisted. A response above the ceiling fails closed with no notification and
 no inferred or fallback identity.
-The relative link contains the opaque plan ID so Ingress can open the exact
+The canonical route contains the opaque plan ID so Ingress can open the exact
 review. It contains no approval decision, challenge ID, hash,
 CSRF nonce, credential, authenticated URL, diff, or unrestricted plan content.
 The Ingress application must still authenticate an administrator, resolve the

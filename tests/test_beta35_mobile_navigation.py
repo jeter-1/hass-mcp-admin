@@ -55,7 +55,9 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
         post_deployment = acceptance.index(
             "## Post-deployment entry criteria"
         )
-        live_acceptance = acceptance.index("## A — Mobile navigation matrix")
+        live_acceptance = acceptance.index(
+            "## A — Mobile navigation matrices"
+        )
 
         self.assertLess(pre_deployment, post_deployment)
         self.assertLess(post_deployment, live_acceptance)
@@ -265,6 +267,44 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
                 f"/hassio/ingress/{SELF_SLUG}/plans/{PLAN_ID}",
                 f"/hassio/ingress/{SELF_SLUG}/plans/{SECOND_PLAN_ID}",
             ],
+        )
+
+    async def test_documented_navigation_forms_match_runtime_contract(self):
+        rest = CapturingRestClient()
+        manager, _ = await self._manager(rest)
+        self._enqueue(manager, PLAN_ID, CHALLENGE_ID)
+
+        await manager.process_next()
+
+        data = rest.calls[0][2]["data"]
+
+        def documented(value: str) -> str:
+            return value.replace(
+                SELF_SLUG, "{verified_addon_slug}"
+            ).replace(PLAN_ID, "{plan_id}")
+
+        external_approval = (
+            ROOT / "docs" / "EXTERNAL_APPROVAL.md"
+        ).read_text(encoding="utf-8")
+        mobile_navigation = (
+            ROOT / "docs" / "BETA35_MOBILE_APPROVAL_NAVIGATION.md"
+        ).read_text(encoding="utf-8")
+        combined = f"{external_approval}\n{mobile_navigation}"
+        self.assertIn(documented(data["url"]), combined)
+        self.assertIn(documented(data["clickAction"]), combined)
+        self.assertIn(documented(data["actions"][0]["uri"]), combined)
+        self.assertNotIn(
+            "Android `clickAction`, iOS `url`, and URI action target",
+            external_approval,
+        )
+        acceptance = (
+            ROOT / "docs" / "V2_2_0_BETA35_ACCEPTANCE.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("### Android", acceptance)
+        self.assertIn("### iOS", acceptance)
+        self.assertIn(
+            "iOS must remain explicitly unaccepted",
+            " ".join(acceptance.split()),
         )
 
     async def test_malformed_plan_identity_fails_before_provider_dispatch(self):
