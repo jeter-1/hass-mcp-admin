@@ -110,6 +110,26 @@ class ExactAddonProfileTests(unittest.TestCase):
         with self.assertRaises(addon_acceptance.AcceptanceFailure):
             addon_acceptance._select_exact_addon_profile("8.1.2")
 
+    def test_addon_runtime_uses_authoritative_exact_local_accounting(self):
+        self.assertEqual(
+            addon_acceptance.ENGINEERING_STATIC_TOOL_COUNT, 51
+        )
+        for version, delegated in (
+            ("8.0.0", 24),
+            ("8.1.0", 24),
+            ("8.1.1", 25),
+            ("8.2.0", 25),
+        ):
+            with self.subTest(version=version):
+                addon_acceptance._select_exact_addon_profile(version)
+                snapshot = addon_acceptance._runtime_snapshot(
+                    observed_catalog_fingerprint="a" * 64
+                )
+                self.assertEqual(snapshot["engineering_tool_count"], 51)
+                self.assertEqual(
+                    snapshot["registered_tool_count"], 51 + delegated
+                )
+
     def test_packaging_probe_has_no_third_party_requirement_parser(self):
         cases = {
             "websockets==17.0": "websockets",
@@ -474,7 +494,9 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
             "fallback": "none",
             "fallback_occurred": False,
             "engineering_tool_count": expected["engineering_total_tool_count"],
-            "engineering_local_tool_count": 50,
+            "engineering_local_tool_count": (
+                readmission.ENGINEERING_STATIC_TOOL_COUNT
+            ),
             "held_tools_absent": True,
             "gateway_health": {
                 "admission_status": "admitted_exact",
@@ -546,7 +568,7 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["attempt"], 2)
         self.assertEqual(result["probe"]["upstream_version"], "8.1.0")
         self.assertEqual(result["probe"]["fallback"], "none")
-        self.assertEqual(result["probe"]["engineering_tool_count"], 74)
+        self.assertEqual(result["probe"]["engineering_tool_count"], 75)
         self.assertTrue(result["probe"]["held_tools_absent"])
         self.assertEqual(
             result["probe"]["gateway_health"][
@@ -568,10 +590,34 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
 
-        self.assertEqual(result["probe"]["engineering_tool_count"], 75)
+        self.assertEqual(result["probe"]["engineering_tool_count"], 76)
         health = result["probe"]["gateway_health"]
         self.assertEqual(health["dynamically_exposed_count"], 25)
         self.assertEqual(health["held_tools"], ["ha_get_operation_status"])
+
+    async def test_exact_8_2_0_readmission_uses_exact_accounting(self):
+        exact = self._exact_observed(upstream_version="8.2.0")
+        with patch.object(
+            readmission,
+            "probe",
+            AsyncMock(return_value=exact),
+        ):
+            result = await readmission.run(
+                self._args(
+                    "readmitted", expected_upstream_version="8.2.0"
+                )
+            )
+
+        self.assertEqual(result["probe"]["engineering_tool_count"], 76)
+        self.assertEqual(
+            result["probe"]["engineering_local_tool_count"], 51
+        )
+        self.assertEqual(
+            result["probe"]["gateway_health"][
+                "dynamically_exposed_count"
+            ],
+            25,
+        )
 
     async def test_readmission_rejects_any_inexact_admission_accounting(self):
         for field, value in (

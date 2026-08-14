@@ -20,9 +20,10 @@ from ha_mcp_engineering.f3.operational_models import (  # noqa: E402
     CREATE_FULL_BACKUP,
     OPERATIONAL_PLAN_CONTRACT_VERSION,
     OPERATIONAL_PREPARED_AUTHORITY_MODEL,
-    OPERATIONAL_PROVIDER_CONTRACT_MODEL,
+    PROVIDER_CONTRACT_MODELS,
     RESTART_ADDON,
     RESTART_HOME_ASSISTANT,
+    SET_INPUT_BOOLEAN_STATE,
     SUPPORTED_OPERATIONS,
     canonical_json,
     operational_prepared_authority_payload,
@@ -76,6 +77,7 @@ class RuntimeInertAndSchemaTests(unittest.TestCase):
                 "create_reload_plan",
                 "create_addon_restart_plan",
                 "create_home_assistant_restart_plan",
+                "create_helper_state_plan",
                 "_apply_operational_backup",
                 "_apply_operational_lifecycle",
                 "_resume_operational_verification",
@@ -85,8 +87,8 @@ class RuntimeInertAndSchemaTests(unittest.TestCase):
             <= methods
         )
 
-    def test_public_tools_and_persisted_schema_vocabulary_are_unchanged(self):
-        self.assertEqual(len(registered_tools(get_registered_server())), 50)
+    def test_public_tools_and_persisted_schema_vocabulary_are_current(self):
+        self.assertEqual(len(registered_tools(get_registered_server())), 51)
         self.assertEqual(TASK_SCHEMA_VERSION, 1)
         service_tree = ast.parse(
             (BETA / "ha_mcp_engineering/governance/service.py").read_text(
@@ -123,6 +125,7 @@ class RuntimeInertAndSchemaTests(unittest.TestCase):
                 "controlled_reload",
                 "restart_addon",
                 "restart_home_assistant",
+                "set_input_boolean_state",
             },
         )
 
@@ -175,6 +178,13 @@ class ExactReleaseAndMigrationEquivalenceTests(unittest.IsolatedAsyncioTestCase)
                     )
                     prepared = await prepare_context(context)
                     evidence = prepared.provider_evidence
+                    if operation == SET_INPUT_BOOLEAN_STATE:
+                        self.assertEqual(
+                            evidence["provider_contract_model"],
+                            "direct-ha-exact-input-boolean-v1",
+                        )
+                        self.assertEqual(evidence["fallback"], "none")
+                        continue
                     self.assertEqual(evidence["server_version"], version)
                     self.assertEqual(evidence["protocol_version"], "2025-03-26")
                     self.assertEqual(
@@ -236,7 +246,7 @@ class ExactReleaseAndMigrationEquivalenceTests(unittest.IsolatedAsyncioTestCase)
             self.assertEqual(prepared.provider_id, operational.provider)
             self.assertEqual(
                 prepared.provider_contract_model,
-                OPERATIONAL_PROVIDER_CONTRACT_MODEL,
+                PROVIDER_CONTRACT_MODELS[operation],
             )
             self.assertEqual(
                 prepared.provider_evidence,
@@ -256,6 +266,7 @@ class ExactReleaseAndMigrationEquivalenceTests(unittest.IsolatedAsyncioTestCase)
                 CONTROLLED_RELOAD: "ha_reload_core",
                 RESTART_ADDON: "ha_manage_addon",
                 RESTART_HOME_ASSISTANT: "ha_restart",
+                SET_INPUT_BOOLEAN_STATE: "set_exact_input_boolean_state",
             }[operation])
             requests = context.adapter.lock_requests(prepared)
             lock_projection = [
@@ -384,7 +395,7 @@ class ExactReleaseAndMigrationEquivalenceTests(unittest.IsolatedAsyncioTestCase)
 
     def test_capability_and_operation_sets_are_bijective(self):
         self.assertEqual(set(CAPABILITY_IDENTITIES), set(SUPPORTED_OPERATIONS))
-        self.assertEqual(len(set(CAPABILITY_IDENTITIES.values())), 4)
+        self.assertEqual(len(set(CAPABILITY_IDENTITIES.values())), 5)
 
 
 class OperationalObservabilityTests(unittest.TestCase):

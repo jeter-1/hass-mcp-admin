@@ -6,10 +6,20 @@ import argparse
 import asyncio
 import json
 from pathlib import Path
+import sys
 from typing import Any
 
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
+
+
+ROOT = Path(__file__).resolve().parents[1]
+BETA = ROOT / "hass_mcp_engineering_beta"
+sys.path.insert(0, str(BETA))
+
+from ha_mcp_engineering.tools import (  # noqa: E402
+    ENGINEERING_STATIC_TOOL_COUNT,
+)
 
 
 MAX_ATTEMPTS = 30
@@ -21,22 +31,28 @@ EXPECTED_ENTRY_BY_VERSION = {
     "8.2.0": "ha-mcp-v8.2.0-dbcfc0ee",
 }
 EXPECTED_UPSTREAM_TOOL_COUNT = 78
-EXPECTED_ENGINEERING_LOCAL_TOOL_COUNT = 50
+EXPECTED_ENGINEERING_LOCAL_TOOL_COUNT = ENGINEERING_STATIC_TOOL_COUNT
 EXPECTED_ACCOUNTING_BY_VERSION = {
     "8.1.0": {
         "delegated_read_count": 24,
         "held_tools": {"ha_search", "ha_get_operation_status"},
-        "engineering_total_tool_count": 74,
+        "engineering_total_tool_count": (
+            ENGINEERING_STATIC_TOOL_COUNT + 24
+        ),
     },
     "8.1.1": {
         "delegated_read_count": 25,
         "held_tools": {"ha_get_operation_status"},
-        "engineering_total_tool_count": 75,
+        "engineering_total_tool_count": (
+            ENGINEERING_STATIC_TOOL_COUNT + 25
+        ),
     },
     "8.2.0": {
         "delegated_read_count": 25,
         "held_tools": {"ha_get_operation_status"},
-        "engineering_total_tool_count": 75,
+        "engineering_total_tool_count": (
+            ENGINEERING_STATIC_TOOL_COUNT + 25
+        ),
     },
 }
 ZERO_ADMISSION_COUNTERS = (

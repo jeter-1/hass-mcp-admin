@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any, Iterable
 
@@ -50,7 +51,96 @@ _ACTION_SIMPLE_FAMILIES = frozenset(
     }
 )
 _ACTION_DEVICE_DISCRIMINATORS = frozenset({"device_id", "domain", "type"})
-_TARGET_SELECTORS = ("entity_id", "device_id", "area_id")
+_TARGET_SELECTORS = (
+    "entity_id",
+    "device_id",
+    "area_id",
+    "floor_id",
+    "label_id",
+)
+_HELPER_DIRECT_EFFECT_DOMAINS = frozenset(
+    {
+        "alarm_control_panel",
+        "climate",
+        "cover",
+        "fan",
+        "light",
+        "lock",
+        "switch",
+        "valve",
+        "water_heater",
+    }
+)
+_HELPER_SAFETY_CRITICAL_DOMAINS = frozenset(
+    {"alarm_control_panel", "lock", "valve"}
+)
+_HELPER_TRANSITIVE_EFFECT_DOMAINS = frozenset(
+    {"automation", "scene", "script"}
+)
+_HELPER_PROVEN_BENIGN_SERVICE_DOMAINS = frozenset({"notify"})
+_HELPER_NOTIFICATION_TEXT_BYTES = 4_096
+_HELPER_NOTIFICATION_DATA_FIELDS = frozenset({"message", "title"})
+_HELPER_REVIEWED_NONPHYSICAL_NOTIFICATION_CONTROLS = frozenset(
+    {
+        "clear_badge",
+        "clear_notification",
+        "kiosk_hide_screensaver",
+        "kiosk_show_screensaver",
+        "update_complications",
+        "update_widgets",
+    }
+)
+_HELPER_EFFECTFUL_NOTIFICATION_CONTROLS = frozenset(
+    {
+        "remove_channel",
+        "request_location_update",
+        "tts",
+    }
+)
+_HELPER_GENERIC_EFFECT_SERVICES = frozenset(
+    {
+        "homeassistant.toggle",
+        "homeassistant.turn_off",
+        "homeassistant.turn_on",
+    }
+)
+_HELPER_TRANSITIVE_ACTION_FAMILIES = frozenset({"event", "scene"})
+_HELPER_PROFILE_LIMIT = 32
+_HELPER_PROFILE_VALUE_BYTES = 256
+_HELPER_EFFECT_PROJECTION_MODEL = "automation-action-effect-v2"
+_HELPER_EFFECT_STRUCTURE_NODE_LIMIT = 512
+_HELPER_EFFECT_STRUCTURE_DEPTH_LIMIT = 16
+_HELPER_EFFECT_DISPLAY_ONLY_FIELDS = frozenset({"alias", "description"})
+_HELPER_EFFECT_SAFE_DATA_FIELDS = frozenset(
+    {
+        "brightness",
+        "brightness_pct",
+        "color_temp_kelvin",
+        "hvac_mode",
+        "percentage",
+        "position",
+        "preset_mode",
+        "rgb_color",
+        "temperature",
+        "tilt_position",
+        "transition",
+        "volume_level",
+    }
+)
+_HELPER_EFFECT_SENSITIVE_TERMS = frozenset(
+    {
+        "access_code",
+        "api_key",
+        "authorization",
+        "credential",
+        "password",
+        "payload",
+        "pin",
+        "secret",
+        "token",
+        "webhook",
+    }
+)
 
 
 def _walk(value: Any) -> Iterable[Any]:
@@ -119,6 +209,55 @@ def _action_nodes(
             )
         if allow_sequence_wrapper and "sequence" in step:
             yield from _action_nodes(
+                step.get("sequence"), f"{step_path}.sequence"
+            )
+
+
+def _action_steps(
+    value: Any,
+    path: str,
+    *,
+    allow_sequence_wrapper: bool = False,
+) -> Iterable[tuple[str, dict[str, Any]]]:
+    """Yield every bounded action step with its execution-order path."""
+
+    if not isinstance(value, list):
+        return
+    for index, step in enumerate(value):
+        step_path = f"{path}[{index}]"
+        if not isinstance(step, dict):
+            continue
+        yield step_path, step
+        choices = step.get("choose")
+        if isinstance(choices, list):
+            for choice_index, choice in enumerate(choices):
+                if isinstance(choice, dict):
+                    yield from _action_steps(
+                        choice.get("sequence"),
+                        f"{step_path}.choose[{choice_index}].sequence",
+                    )
+        if "default" in step:
+            yield from _action_steps(
+                step.get("default"), f"{step_path}.default"
+            )
+        for branch in ("then", "else"):
+            if branch in step:
+                yield from _action_steps(
+                    step.get(branch), f"{step_path}.{branch}"
+                )
+        repeat = step.get("repeat")
+        if isinstance(repeat, dict):
+            yield from _action_steps(
+                repeat.get("sequence"), f"{step_path}.repeat.sequence"
+            )
+        if "parallel" in step:
+            yield from _action_steps(
+                step.get("parallel"),
+                f"{step_path}.parallel",
+                allow_sequence_wrapper=True,
+            )
+        if allow_sequence_wrapper and "sequence" in step:
+            yield from _action_steps(
                 step.get("sequence"), f"{step_path}.sequence"
             )
 
@@ -266,6 +405,14 @@ def _target_shape_evidence(
         elif selector == "area_id":
             evidence.append(
                 {"field": f"{path}.{field}", "trigger": "area_target"}
+            )
+        elif selector == "floor_id":
+            evidence.append(
+                {"field": f"{path}.{field}", "trigger": "floor_target"}
+            )
+        elif selector == "label_id":
+            evidence.append(
+                {"field": f"{path}.{field}", "trigger": "label_target"}
             )
         values = [value] if isinstance(value, str) else value
         selector_unresolved = False
@@ -419,6 +566,652 @@ def _structured_analysis(
         sorted(warnings),
         targets,
     )
+
+
+def _device_action_domains(config: dict[str, Any]) -> set[str]:
+    """Return literal device-action domains from action roots only."""
+
+    domains: set[str] = set()
+    for _root_path, root in _action_roots(config):
+        for value in _walk(root):
+            if not isinstance(value, dict):
+                continue
+            domain = value.get("domain")
+            if (
+                isinstance(domain, str)
+                and domain == domain.strip().lower()
+                and domain
+                and isinstance(value.get("device_id"), str)
+                and isinstance(value.get("type"), str)
+            ):
+                domains.add(domain)
+    return domains
+
+
+def _bounded_helper_profile_values(
+    values: Iterable[str],
+) -> tuple[list[str], bool]:
+    """Return deterministic bounded values and whether evidence was clipped."""
+
+    bounded: set[str] = set()
+    clipped = False
+    for value in values:
+        encoded = value.encode("utf-8")
+        if len(encoded) > _HELPER_PROFILE_VALUE_BYTES:
+            clipped = True
+            value = "oversized_sha256:" + hashlib.sha256(encoded).hexdigest()
+        bounded.add(value)
+    ordered = sorted(bounded)
+    return ordered[:_HELPER_PROFILE_LIMIT], (
+        clipped or len(ordered) > _HELPER_PROFILE_LIMIT
+    )
+
+
+def _effect_value_hash(value: Any) -> str:
+    try:
+        encoded = json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+            default=str,
+        )
+    except (TypeError, ValueError):
+        encoded = repr(value)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _effect_path_is_sensitive(path: str) -> bool:
+    lowered = path.lower()
+    return any(term in lowered for term in _HELPER_EFFECT_SENSITIVE_TERMS)
+
+
+def _bounded_effect_projection_values(
+    values: Iterable[str],
+) -> tuple[list[str], bool]:
+    """Bound effect details while retaining every omitted value in a hash."""
+
+    normalized: set[str] = set()
+    clipped = False
+    for value in values:
+        encoded = value.encode("utf-8")
+        if len(encoded) > _HELPER_PROFILE_VALUE_BYTES:
+            clipped = True
+            value = "oversized_sha256:" + hashlib.sha256(encoded).hexdigest()
+        normalized.add(value)
+    ordered = sorted(normalized)
+    if len(ordered) > _HELPER_PROFILE_LIMIT:
+        clipped = True
+        overflow = _effect_value_hash(ordered[_HELPER_PROFILE_LIMIT - 1 :])
+        ordered = [
+            *ordered[: _HELPER_PROFILE_LIMIT - 1],
+            "overflow_sha256:" + overflow,
+        ]
+    return ordered, clipped
+
+
+def _effect_scalar_token(path: str, value: Any) -> str:
+    leaf = path.rsplit(".", 1)[-1].split("[", 1)[0]
+    if _effect_path_is_sensitive(path):
+        rendered = "sha256:" + _effect_value_hash(value)
+    elif isinstance(value, str):
+        encoded = value.encode("utf-8")
+        if _has_template(value):
+            rendered = "dynamic_sha256:" + hashlib.sha256(encoded).hexdigest()
+        elif (
+            leaf not in _HELPER_EFFECT_SAFE_DATA_FIELDS
+            or len(encoded) > _HELPER_PROFILE_VALUE_BYTES
+        ):
+            rendered = "sha256:" + hashlib.sha256(encoded).hexdigest()
+        else:
+            rendered = value
+    elif value is None or isinstance(value, (bool, int, float)):
+        try:
+            rendered = json.dumps(value, allow_nan=False)
+        except (TypeError, ValueError):
+            rendered = "sha256:" + _effect_value_hash(value)
+    else:
+        rendered = "sha256:" + _effect_value_hash(value)
+    return f"{path}={rendered}"
+
+
+def _flatten_effect_data(
+    value: Any,
+    path: str,
+    output: list[str],
+    state: dict[str, Any],
+    *,
+    depth: int = 0,
+) -> None:
+    if depth > _HELPER_EFFECT_STRUCTURE_DEPTH_LIMIT:
+        state["overflow"].update(
+            f"{path}:{_effect_value_hash(value)}".encode("utf-8")
+        )
+        state["clipped"] = True
+        return
+    if state["remaining"] <= 0:
+        state["overflow"].update(
+            f"{path}:{_effect_value_hash(value)}".encode("utf-8")
+        )
+        state["clipped"] = True
+        return
+    if isinstance(value, dict):
+        for key in sorted(value, key=lambda item: str(item).encode("utf-8")):
+            if state["remaining"] <= 0:
+                state["overflow"].update(
+                    f"{path}:{_effect_value_hash(value)}".encode("utf-8")
+                )
+                state["clipped"] = True
+                return
+            _flatten_effect_data(
+                value[key],
+                f"{path}.{key}",
+                output,
+                state,
+                depth=depth + 1,
+            )
+        return
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            if state["remaining"] <= 0:
+                state["overflow"].update(
+                    f"{path}:{_effect_value_hash(value)}".encode("utf-8")
+                )
+                state["clipped"] = True
+                return
+            _flatten_effect_data(
+                item,
+                f"{path}[{index}]",
+                output,
+                state,
+                depth=depth + 1,
+            )
+        return
+    output.append(_effect_scalar_token(path, value))
+    state["remaining"] -= 1
+
+
+def _normalize_effect_structure(
+    value: Any,
+    path: str,
+    state: dict[str, Any],
+    *,
+    depth: int = 0,
+) -> Any:
+    if (
+        depth > _HELPER_EFFECT_STRUCTURE_DEPTH_LIMIT
+        or state["remaining"] <= 0
+    ):
+        state["clipped"] = True
+        return {"bounded_sha256": _effect_value_hash(value)}
+    state["remaining"] -= 1
+    if isinstance(value, dict):
+        result = {}
+        for key in sorted(value, key=lambda item: str(item).encode("utf-8")):
+            if state["remaining"] <= 0:
+                state["clipped"] = True
+                result["__bounded_sha256"] = _effect_value_hash(value)
+                break
+            key_text = str(key)
+            if key_text in _HELPER_EFFECT_DISPLAY_ONLY_FIELDS:
+                continue
+            result[key_text] = _normalize_effect_structure(
+                value[key],
+                f"{path}.{key_text}",
+                state,
+                depth=depth + 1,
+            )
+        return result
+    if isinstance(value, list):
+        result = []
+        for index, item in enumerate(value):
+            if state["remaining"] <= 0:
+                state["clipped"] = True
+                result.append({"bounded_sha256": _effect_value_hash(value)})
+                break
+            result.append(
+                _normalize_effect_structure(
+                    item,
+                    f"{path}[{index}]",
+                    state,
+                    depth=depth + 1,
+                )
+            )
+        return result
+    if isinstance(value, str):
+        encoded = value.encode("utf-8")
+        if _has_template(value):
+            return "dynamic_sha256:" + hashlib.sha256(encoded).hexdigest()
+        if (
+            _effect_path_is_sensitive(path)
+            or (".data." in path and path.rsplit(".", 1)[-1]
+                not in _HELPER_EFFECT_SAFE_DATA_FIELDS)
+            or len(encoded) > _HELPER_PROFILE_VALUE_BYTES
+        ):
+            return "sha256:" + hashlib.sha256(encoded).hexdigest()
+    return value
+
+
+def _automation_effect_projection(
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    targets: list[str] = []
+    data: list[str] = []
+    data_state = {
+        "remaining": _HELPER_PROFILE_LIMIT - 1,
+        "overflow": hashlib.sha256(),
+        "clipped": False,
+    }
+    for root_path, root in _action_roots(config):
+        for path, step in _action_steps(root, root_path):
+            families = set(_action_families(step))
+            if families & {"call", "device"}:
+                for field, selector, value in _target_selectors(step):
+                    values = value if isinstance(value, list) else [value]
+                    if not isinstance(values, list):
+                        values = [values]
+                    for index, item in enumerate(values):
+                        item_path = f"{path}.{field}"
+                        if len(values) > 1:
+                            item_path += f"[{index}]"
+                        if isinstance(item, str) and not _has_template(item):
+                            token = item.lower()
+                        else:
+                            token = "sha256:" + _effect_value_hash(item)
+                        targets.append(f"{item_path}|{selector}|{token}")
+                for key in ("data", "data_template"):
+                    if key in step:
+                        _flatten_effect_data(
+                            step[key],
+                            f"{path}.{key}",
+                            data,
+                            data_state,
+                        )
+            if "scene" in families:
+                scene = step.get("scene")
+                token = (
+                    scene.lower()
+                    if isinstance(scene, str) and not _has_template(scene)
+                    else "sha256:" + _effect_value_hash(scene)
+                )
+                targets.append(f"{path}.scene|entity_id|{token}")
+            if "event" in families:
+                event_name = step.get("event")
+                targets.append(
+                    f"{path}.event|event_type|sha256:"
+                    + _effect_value_hash(event_name)
+                )
+                if "event_data" in step:
+                    _flatten_effect_data(
+                        step["event_data"],
+                        f"{path}.event_data",
+                        data,
+                        data_state,
+                    )
+    if data_state["clipped"]:
+        data.append("overflow_sha256:" + data_state["overflow"].hexdigest())
+    effect_targets, targets_clipped = _bounded_effect_projection_values(
+        targets
+    )
+    effect_data, data_clipped = _bounded_effect_projection_values(data)
+    structure_state = {
+        "remaining": _HELPER_EFFECT_STRUCTURE_NODE_LIMIT,
+        "clipped": False,
+    }
+    structure = _normalize_effect_structure(
+        {key: value for key, value in _action_roots(config)},
+        "actions",
+        structure_state,
+    )
+    structure_fingerprint = _effect_value_hash(structure)
+    projection = {
+        "model": _HELPER_EFFECT_PROJECTION_MODEL,
+        "targets": effect_targets,
+        "data": effect_data,
+        "structure_fingerprint": structure_fingerprint,
+        "projection_clipped": bool(
+            targets_clipped
+            or data_clipped
+            or data_state["clipped"]
+            or structure_state["clipped"]
+        ),
+    }
+    return {
+        **projection,
+        "effect_fingerprint": _effect_value_hash(projection),
+    }
+
+
+def _effect_action_families(config: dict[str, Any]) -> set[str]:
+    families: set[str] = set()
+    for root_path, root in _action_roots(config):
+        for _path, step in _action_steps(root, root_path):
+            families.update(_action_families(step))
+    return families
+
+
+def _notification_effect_semantics(
+    config: dict[str, Any],
+) -> tuple[bool, bool, tuple[str, ...]]:
+    """Classify static notification display and reviewed control subsets."""
+
+    seen = False
+    blocking_reasons: set[str] = set()
+    reason_codes: set[str] = set()
+
+    def classify_message(message: str) -> str:
+        normalized = message.strip().lower()
+        if normalized in (
+            _HELPER_REVIEWED_NONPHYSICAL_NOTIFICATION_CONTROLS
+        ):
+            return "reviewed_nonphysical_control"
+        if (
+            normalized in _HELPER_EFFECTFUL_NOTIFICATION_CONTROLS
+            or normalized.startswith("command_")
+            or normalized.startswith("kiosk_")
+        ):
+            return "effectful_control"
+        return "ordinary_display"
+
+    def reviewed_control_payload_is_bounded(
+        message: str, payload: dict[str, Any]
+    ) -> bool:
+        normalized = message.strip().lower()
+        if normalized != "clear_notification":
+            return set(payload) == {"message"}
+        if set(payload) == {"message"}:
+            return True
+        if set(payload) != {"message", "data"}:
+            return False
+        control_data = payload.get("data")
+        if not isinstance(control_data, dict) or set(control_data) != {
+            "tag"
+        }:
+            return False
+        tag = control_data.get("tag")
+        return bool(
+            isinstance(tag, str)
+            and tag
+            and not _has_template(tag)
+            and len(tag.encode("utf-8"))
+            <= _HELPER_PROFILE_VALUE_BYTES
+        )
+
+    def note_message(message: str) -> str:
+        kind = classify_message(message)
+        if kind == "reviewed_nonphysical_control":
+            reason_codes.add(
+                "reviewed_nonphysical_notification_control"
+            )
+        elif kind == "effectful_control":
+            code = (
+                "notification_command_effect"
+                if message.strip().lower().startswith("command_")
+                else "notification_control_effect"
+            )
+            blocking_reasons.add(code)
+            reason_codes.add(code)
+        return kind
+
+    for root_path, root in _action_roots(config):
+        for _path, step in _action_steps(root, root_path):
+            service = step.get("service", step.get("action"))
+            if (
+                not isinstance(service, str)
+                or _has_template(service)
+                or not service.startswith("notify.")
+            ):
+                continue
+            seen = True
+            direct_message = step.get("message")
+            if isinstance(direct_message, str) and _has_template(
+                direct_message
+            ):
+                blocking_reasons.add("dynamic_notification_content")
+                reason_codes.add("dynamic_notification_content")
+            elif isinstance(direct_message, str):
+                note_message(direct_message)
+            if "data_template" in step:
+                blocking_reasons.add("dynamic_notification_content")
+                reason_codes.add("dynamic_notification_content")
+            if "target" in step:
+                blocking_reasons.add("notification_extension_unreviewed")
+                reason_codes.add("notification_extension_unreviewed")
+            payload = step.get("data")
+            if not isinstance(payload, dict):
+                blocking_reasons.add("notification_payload_unproven")
+                reason_codes.add("notification_payload_unproven")
+                continue
+            message = payload.get("message")
+            if not isinstance(message, str) or not message:
+                blocking_reasons.add("notification_payload_unproven")
+                reason_codes.add("notification_payload_unproven")
+            elif _has_template(message):
+                blocking_reasons.add("dynamic_notification_content")
+                reason_codes.add("dynamic_notification_content")
+            elif len(message.encode("utf-8")) > _HELPER_NOTIFICATION_TEXT_BYTES:
+                blocking_reasons.add("notification_payload_unproven")
+                reason_codes.add("notification_payload_unproven")
+            else:
+                kind = note_message(message)
+                if kind == "reviewed_nonphysical_control":
+                    if not reviewed_control_payload_is_bounded(
+                        message, payload
+                    ):
+                        blocking_reasons.add(
+                            "notification_extension_unreviewed"
+                        )
+                        reason_codes.add(
+                            "notification_extension_unreviewed"
+                        )
+                elif set(payload) - _HELPER_NOTIFICATION_DATA_FIELDS:
+                    blocking_reasons.add(
+                        "notification_extension_unreviewed"
+                    )
+                    reason_codes.add(
+                        "notification_extension_unreviewed"
+                    )
+            title = payload.get("title")
+            if title is not None:
+                if not isinstance(title, str) or _has_template(title):
+                    blocking_reasons.add("dynamic_notification_content")
+                    reason_codes.add("dynamic_notification_content")
+                elif len(title.encode("utf-8")) > (
+                    _HELPER_NOTIFICATION_TEXT_BYTES
+                ):
+                    blocking_reasons.add("notification_payload_unproven")
+                    reason_codes.add("notification_payload_unproven")
+    return seen, bool(seen and not blocking_reasons), tuple(
+        sorted(reason_codes, key=lambda item: item.encode("utf-8"))
+    )
+
+
+def automation_action_consequence_profile(
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    """Project bounded downstream consequence evidence using the F2 parser.
+
+    This is not a second automation parser or approval model. It reuses the
+    structure-first F2 action analysis and returns only the normalized facts
+    needed to assess an exact helper dependency.
+    """
+
+    services, evidence, warnings, targets = _structured_analysis(config)
+    service_domains = {
+        service.split(".", 1)[0]
+        for service in services
+        if "." in service
+    }
+    target_domains = {
+        target.split(".", 1)[0]
+        for target in targets
+        if "." in target and not _has_template(target)
+    }
+    device_domains = _device_action_domains(config)
+    action_domains = service_domains | target_domains | device_domains
+    action_families = _effect_action_families(config)
+    effect = _automation_effect_projection(config)
+    (
+        notification_present,
+        notification_proven_benign,
+        notification_reason_codes,
+    ) = _notification_effect_semantics(config)
+    triggers = {
+        str(item.get("trigger"))
+        for item in evidence
+        if isinstance(item, dict) and isinstance(item.get("trigger"), str)
+    }
+
+    safety_critical = bool(
+        action_domains & _HELPER_SAFETY_CRITICAL_DOMAINS
+        or triggers
+        & {
+            "garage_cover_target",
+            "safety_critical_service",
+            "sensitive_blueprint_input",
+            "sensitive_entity_domain",
+            "water_control_target",
+        }
+    )
+    transitive = bool(
+        action_domains & _HELPER_TRANSITIVE_EFFECT_DOMAINS
+        or action_families & _HELPER_TRANSITIVE_ACTION_FAMILIES
+    )
+    broad_selector = bool(
+        triggers
+        & {
+            "area_target",
+            "device_target",
+            "floor_target",
+            "label_target",
+            "mixed_target_selector",
+            "target_list",
+        }
+    )
+    generic_services = set(services) & _HELPER_GENERIC_EFFECT_SERVICES
+    generic_target_known = bool(
+        generic_services
+        and target_domains
+        and target_domains <= _HELPER_DIRECT_EFFECT_DOMAINS
+        and not broad_selector
+    )
+    generic_unknown = bool(generic_services and not generic_target_known)
+    unreviewed_homeassistant = any(
+        service.startswith("homeassistant.")
+        and service not in _HELPER_GENERIC_EFFECT_SERVICES
+        for service in services
+    )
+    recognized_domains = (
+        _HELPER_DIRECT_EFFECT_DOMAINS
+        | _HELPER_TRANSITIVE_EFFECT_DOMAINS
+        | _HELPER_PROVEN_BENIGN_SERVICE_DOMAINS
+        | {"homeassistant"}
+    )
+    unrecognized = bool(
+        action_domains - recognized_domains or unreviewed_homeassistant
+    )
+    known_direct = bool(action_domains & _HELPER_DIRECT_EFFECT_DOMAINS)
+    consequential = bool(
+        safety_critical
+        or known_direct
+        or generic_target_known
+        or "high_risk_service" in triggers
+    )
+    all_domains, domains_truncated = _bounded_helper_profile_values(
+        action_domains
+    )
+    all_services, services_truncated = _bounded_helper_profile_values(
+        services
+    )
+    unresolved_effect = bool(
+        transitive
+        or generic_unknown
+        or unrecognized
+        or (notification_present and not notification_proven_benign)
+        or warnings
+        or (
+            consequential
+            and "omitted_action_target" in triggers
+        )
+    )
+    incomplete = bool(
+        unresolved_effect or domains_truncated or services_truncated
+    )
+
+    consequence = (
+        "safety_critical"
+        if safety_critical
+        else "unknown"
+        if unresolved_effect
+        else "direct"
+        if consequential
+        else "unknown"
+        if incomplete
+        else "none"
+    )
+    reasons = []
+    if safety_critical:
+        reasons.append("safety_critical_action_family")
+    elif consequential:
+        reasons.append("consequential_action_family")
+    elif unresolved_effect:
+        reasons.append("action_effect_unresolved")
+    elif not services and not device_domains and not transitive:
+        reasons.append("no_effect_action_detected")
+    else:
+        reasons.append("proven_benign_action_family")
+    reasons.extend(notification_reason_codes)
+    if transitive:
+        reasons.append("transitive_action_target_unresolved")
+    if generic_unknown:
+        reasons.append("generic_target_effect_unresolved")
+    if unrecognized:
+        reasons.append("unrecognized_action_effect")
+    if broad_selector:
+        reasons.append("broad_target_selector")
+    if warnings:
+        reasons.append("action_structure_incomplete")
+
+    all_reasons, reasons_truncated = _bounded_helper_profile_values(reasons)
+    truncated = any(
+        (domains_truncated, services_truncated, reasons_truncated)
+    )
+    complete = not incomplete and not truncated
+    normalized = {
+        "model": "automation-action-consequence-v2",
+        "risk_level": "high" if consequence != "none" or not complete else "low",
+        "physical_consequence": consequence,
+        "complete": complete,
+        "truncated": truncated,
+        "action_domains": all_domains,
+        "services": all_services,
+        "reason_codes": all_reasons,
+        "effect_projection_model": effect["model"],
+        "effect_targets": effect["targets"],
+        "effect_data": effect["data"],
+        "effect_structure_fingerprint": effect[
+            "structure_fingerprint"
+        ],
+        "effect_projection_fingerprint": effect[
+            "effect_fingerprint"
+        ],
+        "effect_projection_clipped": effect[
+            "projection_clipped"
+        ],
+    }
+    encoded = json.dumps(
+        normalized,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+    return {
+        **normalized,
+        "evidence_fingerprint": hashlib.sha256(
+            encoded.encode("utf-8")
+        ).hexdigest(),
+    }
 
 
 def _is_high_service(service: str) -> bool:

@@ -24,6 +24,9 @@ from ha_mcp_engineering.f3.locks import (
 )
 
 from ..governance.models import ApprovalState, ChangePlan, PlanStatus
+from ..governance.helper_dependency import (
+    read_runtime_helper_dependency_risk,
+)
 from .operational_locks import OperationalLockSetCalculator
 from .operational_models import (
     CAPABILITY_IDENTITIES,
@@ -33,11 +36,11 @@ from .operational_models import (
     OPERATIONAL_ADAPTER_ID,
     OPERATIONAL_PLAN_CONTRACT_VERSION,
     OPERATIONAL_PREPARED_AUTHORITY_MODEL,
-    OPERATIONAL_PROVIDER_CONTRACT_MODEL,
-    POLICY_EXPECTATIONS,
+    PROVIDER_CONTRACT_MODELS,
     PROVIDER_OPERATIONS,
     RESTART_ADDON,
     RESTART_HOME_ASSISTANT,
+    SET_INPUT_BOOLEAN_STATE,
     SUPPORTED_OPERATIONS,
     TARGET_CLASSES,
     TARGET_TYPES,
@@ -49,6 +52,7 @@ from .operational_models import (
     PreparedOperationalOperation,
     canonical_json,
     operational_escalation_policy,
+    operational_policy_expectation_is_valid,
     provider_arguments,
     recompute_operational_prepared_hash,
     stable_hash,
@@ -149,7 +153,7 @@ def validate_operational_executor_timing(
 
 
 class OperationalAdministrationAdapter:
-    """One closed adapter delegating to four exact strategies.
+    """One closed adapter delegating to exact operational strategies.
 
     The merged executor owns claims, durable locks, approval consumption,
     intent, duplicate handling, cancellation, and reconstruction cadence.  The
@@ -174,6 +178,11 @@ class OperationalAdministrationAdapter:
         lifecycle_gateway: Any,
         evidence_reader: OperationalEvidenceReader,
         authority_reader: AuthorityReader,
+        helper_state_gateway: Any = None,
+        helper_dependency_risk_reader: Callable[..., Awaitable[
+            dict[str, Any]
+        ]]
+        | None = None,
         metrics: OperationalMetrics | None = None,
         events: OperationalEventRecorder | None = None,
         lock_calculator: OperationalLockSetCalculator | None = None,
@@ -189,6 +198,12 @@ class OperationalAdministrationAdapter:
         self.strategies = strategies or default_strategies(
             backup_gateway=backup_gateway,
             lifecycle_gateway=lifecycle_gateway,
+            helper_state_gateway=helper_state_gateway,
+            helper_dependency_risk_reader=(
+                helper_dependency_risk_reader
+                if helper_dependency_risk_reader is not None
+                else read_runtime_helper_dependency_risk
+            ),
             metrics=self.metrics,
         )
         if tuple(sorted(self.strategies)) != tuple(sorted(SUPPORTED_OPERATIONS)):
@@ -254,6 +269,10 @@ class OperationalAdministrationAdapter:
                 operation == RESTART_HOME_ASSISTANT
                 and plan.target_id != "core"
             )
+            or (
+                operation == SET_INPUT_BOOLEAN_STATE
+                and plan.target_type != "input_boolean"
+            )
         ):
             raise OperationalAdapterError("target_identity_mismatch")
         policy = plan.policy_decision
@@ -262,7 +281,11 @@ class OperationalAdministrationAdapter:
             _enum_value(policy.risk_delta),
             _enum_value(policy.physical_consequence),
         )
-        if policy_values != POLICY_EXPECTATIONS[operation]:
+        if not operational_policy_expectation_is_valid(
+            operation,
+            policy_values,
+            _enum_value(plan.risk.level),
+        ):
             raise OperationalAdapterError("policy_snapshot_mismatch")
         if operational.provider != strategy.capability.provider:
             raise OperationalAdapterError("provider_identity_mismatch")
@@ -317,7 +340,7 @@ class OperationalAdministrationAdapter:
             plan_expires_at=plan.expires_at,
             requested_name=operational.requested_name,
             provider_id=operational.provider,
-            provider_contract_model=OPERATIONAL_PROVIDER_CONTRACT_MODEL,
+            provider_contract_model=PROVIDER_CONTRACT_MODELS[operation],
             provider_operation=PROVIDER_OPERATIONS[operation],
             provider_arguments_json=arguments_json,
             provider_arguments_hash=stable_hash(arguments_json),
@@ -509,6 +532,27 @@ class OperationalAdministrationAdapter:
             operation
         )
         if not eligible:
+            if category == "already_desired" and isinstance(fresh, dict):
+                fresh_baseline = fresh.get("baseline")
+                if isinstance(fresh_baseline, dict):
+                    evidence_hash = stable_hash(
+                        {
+                            "provider": fresh.get("provider"),
+                            "baseline": fresh_baseline,
+                            "desired_state": operation.requested_name,
+                        }
+                    )
+                    return PreflightResult(
+                        eligible=False,
+                        outcome=NormalizedOperationOutcome.SUCCEEDED_VERIFIED,
+                        confirmed_target=operation.target,
+                        observed_state_fingerprint=stable_hash(fresh_baseline),
+                        provider_contract=operation.provider_contract_model,
+                        provider_operation=operation.provider_operation,
+                        provider_arguments_hash=operation.provider_arguments_hash,
+                        evidence_hash=evidence_hash,
+                        diagnostic_codes=("desired_state_already_reached",),
+                    )
             if category in {
                 "provider_unavailable",
                 "provider_timeout",

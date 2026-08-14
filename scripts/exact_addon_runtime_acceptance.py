@@ -64,7 +64,10 @@ from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     UpstreamReadGateway,
 )
-from ha_mcp_engineering.tools import registered_tools  # noqa: E402
+from ha_mcp_engineering.tools import (  # noqa: E402
+    ENGINEERING_STATIC_TOOL_COUNT,
+    registered_tools,
+)
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     REVIEWED_NORMALIZED_CATALOG_FINGERPRINT_MODEL_V1,
     catalog_fingerprint,
@@ -278,8 +281,11 @@ def _runtime_snapshot(
     return {
         "server_version": SERVER_VERSION,
         "build_sha": "0" * 40,
-        "registered_tool_count": 50 + EXPECTED_AUTOMATIC_READ_COUNT,
-        "engineering_tool_count": 50,
+        "registered_tool_count": (
+            ENGINEERING_STATIC_TOOL_COUNT
+            + EXPECTED_AUTOMATIC_READ_COUNT
+        ),
+        "engineering_tool_count": ENGINEERING_STATIC_TOOL_COUNT,
         "delegated_tool_count": EXPECTED_AUTOMATIC_READ_COUNT,
         "governance_storage_status": "healthy",
         "governance_plan_count": 0,

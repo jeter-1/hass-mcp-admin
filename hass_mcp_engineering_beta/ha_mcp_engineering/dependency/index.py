@@ -3,17 +3,54 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+import hashlib
+import json
 import time
 from typing import Any
 
 from ..observability import METRICS
-from .models import DependencyIndexSnapshot, snapshot_fingerprint
+from .models import (
+    DependencyIndexSnapshot,
+    DynamicReference,
+    dynamic_reference_fingerprint,
+    snapshot_fingerprint,
+)
 from .provider import DependencySourceProvider
 
 
 DEFAULT_SOFT_TTL_SECONDS = 600.0
 DEFAULT_HARD_TTL_SECONDS = 3600.0
+MAX_AUTOMATION_ACTION_PROFILES = 1_000
+MAX_AUTOMATION_READ_FAILURES = 1_000
+MAX_DYNAMIC_REFERENCES = 1_000
+
+
+def _dynamic_reference_sort_key(
+    item: DynamicReference,
+) -> tuple[str, str, str, str, str, str]:
+    return (
+        item.source_type,
+        item.source_entity_id or "",
+        item.source_id,
+        item.config_path,
+        item.evidence_id,
+        dynamic_reference_fingerprint(item),
+    )
+
+
+def _dynamic_reference_overflow_fingerprint(
+    items: list[DynamicReference],
+) -> str | None:
+    if not items:
+        return None
+    encoded = json.dumps(
+        [dynamic_reference_fingerprint(item) for item in items],
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def _utc_now() -> str:
@@ -210,9 +247,92 @@ class DependencyIndex:
             scan = await self.provider.scan()
             next_generation = self.generation + 1
             findings = sorted(scan.findings, key=lambda item: item.evidence_id)[: self.max_edges]
-            if len(scan.findings) > self.max_edges:
+            findings_truncated = len(scan.findings) > self.max_edges
+            profiles = sorted(
+                scan.automation_action_profiles,
+                key=lambda item: (
+                    item.source_entity_id or "",
+                    item.source_id,
+                ),
+            )[:MAX_AUTOMATION_ACTION_PROFILES]
+            profiles_truncated = (
+                len(scan.automation_action_profiles)
+                > MAX_AUTOMATION_ACTION_PROFILES
+            )
+            read_failures = sorted(
+                scan.automation_read_failures,
+                key=lambda item: (
+                    item.source_entity_id or "",
+                    item.source_id,
+                    item.reason_code,
+                ),
+            )[:MAX_AUTOMATION_READ_FAILURES]
+            read_failures_truncated = (
+                len(scan.automation_read_failures)
+                > MAX_AUTOMATION_READ_FAILURES
+            )
+            ordered_dynamic_references = sorted(
+                scan.dynamic_references,
+                key=_dynamic_reference_sort_key,
+            )
+            dynamic_references = ordered_dynamic_references[
+                :MAX_DYNAMIC_REFERENCES
+            ]
+            dynamic_reference_overflow = ordered_dynamic_references[
+                MAX_DYNAMIC_REFERENCES:
+            ]
+            dynamic_references_truncated = bool(
+                dynamic_reference_overflow
+            )
+            dynamic_reference_overflow_count = len(
+                dynamic_reference_overflow
+            )
+            dynamic_reference_overflow_fingerprint = (
+                _dynamic_reference_overflow_fingerprint(
+                    dynamic_reference_overflow
+                )
+            )
+            coverage = list(scan.coverage)
+            if (
+                findings_truncated
+                or profiles_truncated
+                or read_failures_truncated
+                or dynamic_references_truncated
+            ):
                 METRICS.record_dependency_truncation()
-            fingerprint = snapshot_fingerprint(findings, scan.coverage, next_generation)
+                coverage = [
+                    replace(
+                        item,
+                        completeness=(
+                            "partial"
+                            if item.source_type == "automation"
+                            else item.completeness
+                        ),
+                        warnings=(
+                            [
+                                *item.warnings,
+                                "Automation dependency evidence exceeded the bounded index payload.",
+                            ]
+                            if item.source_type == "automation"
+                            else list(item.warnings)
+                        ),
+                    )
+                    for item in coverage
+                ]
+            fingerprint = snapshot_fingerprint(
+                findings,
+                coverage,
+                next_generation,
+                profiles,
+                read_failures,
+                dynamic_references=dynamic_references,
+                dynamic_reference_overflow_count=(
+                    dynamic_reference_overflow_count
+                ),
+                dynamic_reference_overflow_fingerprint=(
+                    dynamic_reference_overflow_fingerprint
+                ),
+            )
             build_duration_ms = (time.perf_counter() - build_started) * 1000
             replacement = DependencyIndexSnapshot(
                 fingerprint=fingerprint,
@@ -220,11 +340,19 @@ class DependencyIndex:
                 built_at_monotonic=time.monotonic(),
                 built_at=_utc_now(),
                 findings=tuple(findings),
-                dynamic_references=tuple(scan.dynamic_references[:1000]),
+                dynamic_references=tuple(dynamic_references),
                 target_metadata=scan.target_metadata,
-                coverage=tuple(scan.coverage),
+                coverage=tuple(coverage),
                 build_duration_ms=build_duration_ms,
                 build_profile=dict(scan.profile),
+                automation_action_profiles=tuple(profiles),
+                automation_read_failures=tuple(read_failures),
+                dynamic_reference_overflow_count=(
+                    dynamic_reference_overflow_count
+                ),
+                dynamic_reference_overflow_fingerprint=(
+                    dynamic_reference_overflow_fingerprint
+                ),
             )
             # Publish the complete replacement atomically after every build step.
             self.snapshot = replacement
@@ -235,7 +363,7 @@ class DependencyIndex:
             self._last_refresh_completed_at = self._build_completed_at
             self._last_refresh_failure_category = None
             METRICS.set_dependency_index_state(
-                source_count=len(scan.coverage),
+                source_count=len(coverage),
                 edge_count=len(findings),
                 unresolved_count=len(scan.dynamic_references),
                 built_at=replacement.built_at,

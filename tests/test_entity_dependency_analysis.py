@@ -15,7 +15,10 @@ from ha_mcp_engineering.dependency.extraction import (  # noqa: E402
     resolve_blueprint_roles,
     valid_entity_id,
 )
-from ha_mcp_engineering.dependency.index import DependencyIndex  # noqa: E402
+from ha_mcp_engineering.dependency.index import (  # noqa: E402
+    MAX_DYNAMIC_REFERENCES,
+    DependencyIndex,
+)
 from ha_mcp_engineering.dependency.models import (  # noqa: E402
     DependencyFinding,
     DependencyScanResult,
@@ -29,6 +32,9 @@ from ha_mcp_engineering.dependency.provider import (  # noqa: E402
 )
 from ha_mcp_engineering.dependency.service import EntityDependencyAnalysisService  # noqa: E402
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError, InvalidRequestError  # noqa: E402
+from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
+    build_helper_dependency_risk_binding,
+)
 from ha_mcp_engineering.observability import METRICS  # noqa: E402
 from ha_mcp_engineering.providers import EvidenceRequest, ProviderCapability  # noqa: E402
 from ha_mcp_engineering.tools import get_registered_server, registered_tools  # noqa: E402
@@ -156,6 +162,35 @@ class ExtractionTests(unittest.TestCase):
         self.assertEqual({item.target_entity_id for item in findings}, {TARGET})
         self.assertGreaterEqual(len(dynamic), 2)
         self.assertTrue(all(len(item.excerpt or "") <= 254 for item in dynamic))
+
+    def test_dynamic_domain_inference_requires_a_complete_safe_expression(self):
+        cases = {
+            "{{ states('sensor.' ~ room) }}": ("sensor",),
+            "{{ states('sensor.' ~ room if use_sensor else helper_entity) }}": None,
+            "{{ states('sensor.' ~ room and helper_entity) }}": None,
+            "{{ states('sensor.' ~ room or helper_entity) }}": None,
+            "{{ states(('sensor.' ~ room)) }}": None,
+            "{{ states('sensor.' ~ room | lower) }}": None,
+        }
+        for index, (template, expected) in enumerate(cases.items()):
+            with self.subTest(template=template):
+                findings, dynamic = extract_document(
+                    source_type="automation",
+                    source_id=f"domain-proof-{index}",
+                    config={
+                        "condition": [
+                            {
+                                "condition": "template",
+                                "value_template": template,
+                            }
+                        ]
+                    },
+                )
+                self.assertEqual(findings, [])
+                self.assertEqual(len(dynamic), 1)
+                self.assertEqual(
+                    dynamic[0].possible_entity_domains, expected
+                )
 
     def test_blueprint_inputs_and_resolved_roles(self):
         config = {"use_blueprint": {"path": "example/test.yaml", "input": {"motion": [TARGET, "sensor.other"], "webhook_secret": "private.value"}}}
@@ -304,6 +339,88 @@ class IndexAndAnalysisTests(unittest.IsolatedAsyncioTestCase):
             "current_index_state",
         )
 
+    async def test_dynamic_reference_overflow_is_deterministic_and_non_conclusive(self):
+        constrained = [
+            DynamicReference(
+                evidence_id=f"ev_sensor_{index:04d}",
+                source_type="automation",
+                source_id=f"a_sensor_{index:04d}",
+                config_path="$.condition[0].value_template",
+                warning="Dynamic template reference could not be resolved statically.",
+                excerpt="{{ states('sensor.' ~ room) }}",
+                source_entity_id=f"automation.a_sensor_{index:04d}",
+                possible_entity_domains=("sensor",),
+            )
+            for index in range(MAX_DYNAMIC_REFERENCES)
+        ]
+        relevant = DynamicReference(
+            evidence_id="ev_z_relevant",
+            source_type="automation",
+            source_id="z_relevant",
+            config_path="$.condition[0].value_template",
+            warning="Dynamic template reference could not be resolved statically.",
+            excerpt="{{ states(entity_variable) }}",
+            source_entity_id="automation.z_relevant",
+            possible_entity_domains=None,
+        )
+        ordered_scan = scan(dynamic=[*constrained, relevant])
+        reversed_scan = scan(dynamic=[relevant, *reversed(constrained)])
+        first_index = DependencyIndex(FakeProvider(ordered_scan))
+        second_index = DependencyIndex(FakeProvider(reversed_scan))
+
+        first, _rebuilt, _duration = await first_index.get(refresh=True)
+        second, _rebuilt, _duration = await second_index.get(refresh=True)
+
+        self.assertEqual(
+            len(first.dynamic_references), MAX_DYNAMIC_REFERENCES
+        )
+        self.assertTrue(
+            all(
+                item.possible_entity_domains == ("sensor",)
+                for item in first.dynamic_references
+            )
+        )
+        self.assertEqual(first.dynamic_reference_overflow_count, 1)
+        self.assertEqual(
+            first.dynamic_reference_overflow_fingerprint,
+            second.dynamic_reference_overflow_fingerprint,
+        )
+        self.assertEqual(first.fingerprint, second.fingerprint)
+        automation_coverage = next(
+            item
+            for item in first.coverage
+            if item.source_type == "automation"
+        )
+        self.assertEqual(automation_coverage.completeness, "partial")
+        self.assertTrue(
+            any(
+                "exceeded the bounded index payload" in warning
+                for warning in automation_coverage.warnings
+            )
+        )
+
+        observed = build_helper_dependency_risk_binding(
+            first,
+            entity_id="input_boolean.target",
+            index_metadata={
+                "freshness": "current",
+                "evidence_stale": False,
+                "invalidated": False,
+            },
+        )
+
+        self.assertEqual(observed["completeness"], "truncated")
+        self.assertFalse(observed["evidence_complete"])
+        self.assertFalse(observed["execution_eligible"])
+        self.assertEqual(
+            observed["dynamic_reference_overflow_count"], 1
+        )
+        self.assertEqual(
+            observed["dynamic_reference_overflow_fingerprint"],
+            first.dynamic_reference_overflow_fingerprint,
+        )
+        self.assertLess(len(json.dumps(observed)), 60_000)
+
     async def test_indirect_group_chain_is_bounded_and_no_action_causality(self):
         membership = finding(source_type="group", source_id="g", source_entity_id="group.example", relation="group_member", path="$.entities")
         inbound = finding(target="group.example", source_id="uses-group", relation="condition", path="$.condition.entity_id")
@@ -366,6 +483,30 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
         statuses = {item.source_type: item for item in result.coverage}
         self.assertEqual(statuses["automation"].completeness, "partial")
         self.assertEqual(statuses["automation"].failed_item_count, 1)
+        self.assertEqual(len(result.automation_read_failures), 1)
+        self.assertEqual(
+            result.automation_read_failures[0].source_entity_id,
+            "automation.bad",
+        )
+        self.assertEqual(
+            result.automation_read_failures[0].reason_code,
+            "automation_config_unreadable",
+        )
+        indexed, _rebuilt, _lookup_ms = await DependencyIndex(
+            FakeProvider(result)
+        ).get(refresh=True)
+        helper_binding = build_helper_dependency_risk_binding(
+            indexed,
+            entity_id="input_boolean.synthetic_exact",
+            index_metadata={
+                "freshness": "current",
+                "evidence_stale": False,
+                "invalidated": False,
+            },
+        )
+        self.assertFalse(helper_binding["evidence_complete"])
+        self.assertFalse(helper_binding["execution_eligible"])
+        self.assertEqual(helper_binding["unreadable_automation_count"], 1)
         self.assertEqual(statuses["blueprint"].completeness, "partial")
         self.assertTrue(any(item.relation == "blueprint_input" for item in result.findings))
         self.assertEqual(statuses["dashboard"].completeness, "unavailable")
@@ -376,7 +517,7 @@ class ToolContractTests(unittest.TestCase):
     def test_tool_is_registered_once_and_schema_is_exact(self):
         tools = registered_tools(get_registered_server()).values()
         matches = [tool for tool in tools if tool.name == "entity_dependency_analysis"]
-        self.assertEqual(len(tools), 50)
+        self.assertEqual(len(tools), 51)
         self.assertEqual(len(matches), 1)
         schema = matches[0].parameters
         self.assertEqual(

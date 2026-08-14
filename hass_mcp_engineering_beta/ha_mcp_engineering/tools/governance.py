@@ -104,6 +104,43 @@ async def create_reload_plan(
     )
 
 
+async def create_helper_state_plan(
+    entity_id: Annotated[
+        str,
+        Field(
+            min_length=15,
+            max_length=128,
+            pattern=r"^input_boolean\.[a-z0-9_]{1,114}$",
+        ),
+    ],
+    desired_state: Literal["on", "off"],
+    expiration_minutes: Annotated[int, Field(ge=5, le=1440)] = 120,
+) -> str:
+    """Propose one exact input_boolean on/off transition without dispatch.
+
+    Planning reads the exact current state. If it already matches, the tool
+    returns a verified no-change result and creates no plan. Otherwise the
+    exact target and desired state require external administrator approval and
+    the shared apply_change_plan lifecycle. Toggle, arbitrary services,
+    service data, physical domains, and fallback are unreachable.
+    """
+    return await run_structured(
+        "create_helper_state_plan",
+        "Created or resolved one exact governed input-boolean state proposal.",
+        lambda: GOVERNANCE.require().create_helper_state_plan(
+            entity_id=entity_id,
+            desired_state=desired_state,
+            expiration_minutes=expiration_minutes,
+        ),
+        metadata={
+            "resource_type": "input_boolean",
+            "resource_id": entity_id,
+            "operation": "set_input_boolean_state",
+        },
+        response_limit=SETTINGS.response_size_limit,
+    )
+
+
 async def create_addon_restart_plan(
     addon_slug: Annotated[
         str,
@@ -403,6 +440,7 @@ async def rollback_change(plan_id: str, expected_plan_hash: str = "") -> str:
 GOVERNANCE_TOOLS = (
     create_backup_plan,
     create_reload_plan,
+    create_helper_state_plan,
     create_addon_restart_plan,
     create_home_assistant_restart_plan,
     create_change_plan,

@@ -37,6 +37,9 @@ from ha_mcp_engineering.dependency.provider import (  # noqa: E402
 from ha_mcp_engineering.dependency.service import (  # noqa: E402
     EntityDependencyAnalysisService,
 )
+from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
+    F3RuntimeIntegration,
+)
 from ha_mcp_engineering.impact.provider import DirectHaImpactProvider  # noqa: E402
 from ha_mcp_engineering.impact.service import (  # noqa: E402
     ChangeImpactAnalysisService,
@@ -58,6 +61,14 @@ from ha_mcp_engineering.governance.resources import (  # noqa: E402
 )
 from ha_mcp_engineering.governance.normalize import (  # noqa: E402
     normalize_automation,
+)
+from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
+    HelperDependencyRiskService,
+)
+from ha_mcp_engineering.governance.helper_state import (  # noqa: E402
+    HELPER_STATE_PROVIDER,
+    HelperStateGateway,
+    HelperStateGatewayError,
 )
 from ha_mcp_engineering.governance.service import (  # noqa: E402
     AutomationGateway,
@@ -1005,6 +1016,49 @@ class _LegacyAutomationCompatibilityGateway:
         return await self.gateway.validate_all()
 
 
+class _ObservedHelperStateGateway:
+    """Observe only bounded lifecycle facts around the real exact gateway."""
+
+    def __init__(self, gateway: HelperStateGateway):
+        self.gateway = gateway
+        self.dispatches: list[dict[str, str]] = []
+        self.lifecycle_trace: list[str] = []
+        self.lose_next_response = False
+
+    async def read_state(self, entity_id: str) -> dict[str, Any]:
+        return await self.gateway.read_state(entity_id)
+
+    async def planning_evidence(self, entity_id: str) -> dict[str, Any]:
+        return await self.gateway.planning_evidence(entity_id)
+
+    async def set_state(
+        self,
+        entity_id: str,
+        desired_state: str,
+        *,
+        before_dispatch,
+    ):
+        async def record_durable_intent() -> None:
+            await before_dispatch()
+            self.lifecycle_trace.append("durable_intent_committed")
+
+        result = await self.gateway.set_state(
+            entity_id,
+            desired_state,
+            before_dispatch=record_durable_intent,
+        )
+        self.dispatches.append(
+            {"entity_id": entity_id, "desired_state": desired_state}
+        )
+        self.lifecycle_trace.append("provider_dispatched")
+        if self.lose_next_response:
+            self.lose_next_response = False
+            raise HelperStateGatewayError(
+                "dispatch_indeterminate", dispatched=True
+            )
+        return result
+
+
 def _assert_exact_resource(
     resource_type: str,
     resource_id: str,
@@ -1230,6 +1284,241 @@ async def _run_governed_configuration_contract(
                 item["execution_status"] == "applied_verified"
                 for item in reapplied["operations"]
             )
+        finally:
+            end_request(context)
+
+
+async def _approve_helper_state_plan(
+    service: ChangeGovernanceService,
+    created: dict[str, Any],
+    *,
+    principal: str,
+) -> dict[str, Any]:
+    plan = created["plan"]
+    pending = service.approve(plan["plan_id"], plan["plan_hash"])
+    approved = await _decide_f2_action(
+        service,
+        plan,
+        pending,
+        principal=principal,
+    )
+    assert approved["status"] == "approved"
+    assert approved["approval_kind"] == "apply"
+    return plan
+
+
+def _assert_helper_state_task(
+    service: ChangeGovernanceService,
+    runtime: F3RuntimeIntegration,
+    applied: dict[str, Any],
+    *,
+    provider_response_received: bool,
+) -> None:
+    assert applied["task_state"] == "succeeded_verified"
+    task = service.get_execution_task(applied["task_id"])
+    assert task["state"] == "succeeded_verified"
+    assert task["provider_attempt_count"] == 1
+    assert task["provider_attempts"][0]["response_received"] is (
+        provider_response_received
+    )
+    declarations = runtime.children.declarations_for_task(
+        applied["task_id"]
+    )
+    assert len(declarations) == 1
+    child = runtime.children.get(declarations[0]["child_id"])
+    assert child is not None
+    assert child.normalized_outcome == "succeeded_verified"
+    assert child.dispatch_count == 1
+    assert child.dispatch_intent is not None
+
+
+async def _run_governed_helper_state_contract(
+    gateway: ConfigurationResourceGateway,
+    rest: HomeAssistantRestClient,
+    websocket: HomeAssistantWebSocketClient,
+    token: str,
+) -> dict[str, object]:
+    """Exercise the exact helper state lifecycle against disposable Core."""
+
+    exact_gateway = _ObservedHelperStateGateway(
+        HelperStateGateway(rest, websocket)
+    )
+    dependency_index = DependencyIndex(
+        DirectHaDependencyProvider(
+            rest,
+            websocket,
+            secret="disposable-beta37-dependency-evidence",
+        )
+    )
+    dependency_risk = HelperDependencyRiskService(dependency_index)
+
+    async def forbidden_upstream_identity() -> dict[str, str]:
+        raise AssertionError(
+            "exact helper state unexpectedly requested delegated identity"
+        )
+
+    with tempfile.TemporaryDirectory(
+        prefix="beta37-real-ha-helper-state-"
+    ) as directory:
+        contract_root = Path(directory)
+        audit_secret = "disposable-beta37-helper-state-audit-secret"
+        legacy_gateway = _LegacyAutomationCompatibilityGateway(gateway)
+        service = ChangeGovernanceService(
+            ChangePlanRepository(contract_root / "plans"),
+            legacy_gateway,
+            AuditLogger(
+                str(contract_root / "audit.jsonl"), audit_secret
+            ),
+            sensitive_values=(audit_secret, token),
+            helper_state_gateway=exact_gateway,
+            helper_dependency_risk_reader=dependency_risk.assess,
+        )
+        runtime = F3RuntimeIntegration(
+            service=service,
+            storage_root=str(contract_root / "plans"),
+            configuration_gateway=gateway,
+            backup_gateway=None,
+            lifecycle_gateway=None,
+            helper_state_gateway=exact_gateway,
+            provider_identity_reader=forbidden_upstream_identity,
+            retention_days=90,
+        )
+        service.f3_runtime = runtime
+        await runtime.recover_once("startup")
+
+        telemetry, context = begin_request(
+            "beta37-real-ha-helper-state-contract"
+        )
+        telemetry.caller_id = "beta37-real-ha-helper-state-caller"
+        try:
+            entity_id = RESOURCE_IDS["input_boolean"]
+            initial = await exact_gateway.read_state(entity_id)
+            assert initial["state"] == "off"
+
+            dispatch_baseline = len(exact_gateway.dispatches)
+            trace_baseline = len(exact_gateway.lifecycle_trace)
+            turn_on = await service.create_helper_state_plan(
+                entity_id=entity_id,
+                desired_state="on",
+                expiration_minutes=5,
+            )
+            assert turn_on["provider"] == HELPER_STATE_PROVIDER
+            assert turn_on["fallback"] == "none"
+            assert turn_on["plan"]["risk"]["level"] == "low"
+            helper_policy = turn_on["plan"]["policy_decision"]
+            assert helper_policy["policy_class"] == "standard_admin"
+            assert helper_policy["risk_delta"] == "low"
+            assert helper_policy["physical_consequence"] == "none"
+            assert turn_on["plan"]["validation_results"][
+                "dependency_evidence_complete"
+            ] is True
+            assert len(exact_gateway.dispatches) == dispatch_baseline
+            assert (await exact_gateway.read_state(entity_id))["state"] == (
+                "off"
+            )
+
+            on_plan = await _approve_helper_state_plan(
+                service,
+                turn_on,
+                principal=(
+                    "home_assistant_admin_ingress:"
+                    "disposable-beta37-on-reviewer"
+                ),
+            )
+            on_result = await service.apply(
+                on_plan["plan_id"], on_plan["plan_hash"]
+            )
+            _assert_helper_state_task(
+                service,
+                runtime,
+                on_result,
+                provider_response_received=True,
+            )
+            assert len(exact_gateway.dispatches) == dispatch_baseline + 1
+            assert exact_gateway.dispatches[-1] == {
+                "entity_id": entity_id,
+                "desired_state": "on",
+            }
+            assert exact_gateway.lifecycle_trace[trace_baseline:] == [
+                "durable_intent_committed",
+                "provider_dispatched",
+            ]
+            assert (await exact_gateway.read_state(entity_id))["state"] == (
+                "on"
+            )
+
+            duplicate = await service.apply(
+                on_plan["plan_id"], on_plan["plan_hash"]
+            )
+            assert duplicate["status"] == "already_applied"
+            assert duplicate["redispatch_performed"] is False
+            assert len(exact_gateway.dispatches) == dispatch_baseline + 1
+
+            turn_off = await service.create_helper_state_plan(
+                entity_id=entity_id,
+                desired_state="off",
+                expiration_minutes=5,
+            )
+            off_plan = await _approve_helper_state_plan(
+                service,
+                turn_off,
+                principal=(
+                    "home_assistant_admin_ingress:"
+                    "disposable-beta37-off-reviewer"
+                ),
+            )
+            assert off_plan["plan_id"] != on_plan["plan_id"]
+            off_result = await service.apply(
+                off_plan["plan_id"], off_plan["plan_hash"]
+            )
+            _assert_helper_state_task(
+                service,
+                runtime,
+                off_result,
+                provider_response_received=True,
+            )
+            assert len(exact_gateway.dispatches) == dispatch_baseline + 2
+            assert exact_gateway.dispatches[-1]["desired_state"] == "off"
+            assert (await exact_gateway.read_state(entity_id))["state"] == (
+                "off"
+            )
+
+            uncertain = await service.create_helper_state_plan(
+                entity_id=entity_id,
+                desired_state="on",
+                expiration_minutes=5,
+            )
+            uncertain_plan = await _approve_helper_state_plan(
+                service,
+                uncertain,
+                principal=(
+                    "home_assistant_admin_ingress:"
+                    "disposable-beta37-uncertain-reviewer"
+                ),
+            )
+            exact_gateway.lose_next_response = True
+            uncertain_result = await service.apply(
+                uncertain_plan["plan_id"], uncertain_plan["plan_hash"]
+            )
+            _assert_helper_state_task(
+                service,
+                runtime,
+                uncertain_result,
+                provider_response_received=False,
+            )
+            assert len(exact_gateway.dispatches) == dispatch_baseline + 3
+            assert (await exact_gateway.read_state(entity_id))["state"] == (
+                "on"
+            )
+            assert runtime.health()["fallback_count"] == 0
+            return {
+                "off_to_on": "succeeded_verified",
+                "duplicate_dispatch_count": 0,
+                "on_to_off": "succeeded_verified",
+                "uncertain_response": "readback_verified",
+                "provider_dispatch_count": 3,
+                "fallback_count": 0,
+            }
         finally:
             end_request(context)
 
@@ -2727,6 +3016,11 @@ async def run_contracts() -> None:
 
         phase = "governed_configuration_plan"
         await _run_governed_configuration_contract(gateway, token)
+
+        phase = "governed_helper_state"
+        await _run_governed_helper_state_contract(
+            gateway, rest, websocket, token
+        )
 
         phase = "legacy_automation_compatibility"
         await _run_legacy_automation_compatibility_contract(

@@ -60,6 +60,10 @@ from ..governance.models import (
     PlanStatus,
     StepExecutionStatus,
 )
+from ..governance.helper_state import (
+    HELPER_STATE_PROVIDER_SLUG,
+    helper_state_provider_evidence,
+)
 from ..governance.normalize import stable_hash
 from ..governance.resources import resource_fingerprint
 from ..governance.task_models import ExecutionTaskState, TERMINAL_TASK_STATES
@@ -314,6 +318,57 @@ class _AuditedConfigurationGateway:
         return result
 
 
+class _AuditedHelperStateGateway:
+    """Audit the one direct mutation boundary and bounded exact readbacks."""
+
+    def __init__(self, delegate: Any, auditor: Callable[[str], None]):
+        self.delegate = delegate
+        self.auditor = auditor
+
+    async def planning_evidence(self, entity_id: str):
+        self.auditor("provider_readback_started")
+        try:
+            result = await self.delegate.planning_evidence(entity_id)
+        except Exception:
+            self.auditor("provider_readback_failed")
+            raise
+        self.auditor("provider_readback_received")
+        return result
+
+    async def read_state(self, entity_id: str):
+        self.auditor("provider_readback_started")
+        try:
+            result = await self.delegate.read_state(entity_id)
+        except Exception:
+            self.auditor("provider_readback_failed")
+            raise
+        self.auditor("provider_readback_received")
+        return result
+
+    async def set_state(
+        self, entity_id: str, desired_state: str, *, before_dispatch
+    ):
+        async def boundary():
+            await before_dispatch()
+            self.auditor("provider_invocation_started")
+
+        try:
+            result = await self.delegate.set_state(
+                entity_id,
+                desired_state,
+                before_dispatch=boundary,
+            )
+        except Exception as exc:
+            self.auditor(
+                "provider_response_lost"
+                if getattr(exc, "dispatched", False)
+                else "provider_invocation_refused"
+            )
+            raise
+        self.auditor("provider_response_received")
+        return result
+
+
 class _EvidenceCapturingBackupGateway:
     """Persist only C2's bounded backup identity evidence."""
 
@@ -460,6 +515,7 @@ class F3RuntimeIntegration:
         lifecycle_gateway: Any,
         provider_identity_reader: Callable[[], Awaitable[dict[str, str]]],
         retention_days: int,
+        helper_state_gateway: Any = None,
         dashboard_gateway: Any | None = None,
     ):
         self.service = service
@@ -509,6 +565,17 @@ class F3RuntimeIntegration:
         self.operational_adapter = OperationalAdministrationAdapter(
             backup_gateway=captured_backup,
             lifecycle_gateway=captured_lifecycle,
+            helper_state_gateway=(
+                _AuditedHelperStateGateway(
+                    helper_state_gateway,
+                    self._audit_provider_boundary,
+                )
+                if helper_state_gateway is not None
+                else None
+            ),
+            helper_dependency_risk_reader=(
+                service.helper_dependency_risk_reader
+            ),
             evidence_reader=self.evidence_reader,
             authority_reader=self._operational_authority,
             now=service.now,
@@ -765,6 +832,7 @@ class F3RuntimeIntegration:
                 ChangeOperation.CONTROLLED_RELOAD,
                 ChangeOperation.RESTART_ADDON,
                 ChangeOperation.RESTART_HOME_ASSISTANT,
+                ChangeOperation.SET_INPUT_BOOLEAN_STATE,
                 ChangeOperation.UPDATE_DASHBOARD,
             }
         )
@@ -870,7 +938,15 @@ class F3RuntimeIntegration:
             sequence = prepare_configuration_sequence((prepared,))
             return (prepared,), sequence.lock_requests, sequence.sequence_hash
 
-        identity = provider_identity or await self._provider_identity()
+        if plan.operation is ChangeOperation.SET_INPUT_BOOLEAN_STATE:
+            identity = {
+                "slug": HELPER_STATE_PROVIDER_SLUG,
+                "evidence_hash": stable_hash(
+                    helper_state_provider_evidence()
+                ),
+            }
+        else:
+            identity = provider_identity or await self._provider_identity()
         operation_id = plan.operation.value
         child_id = deterministic_child_id(task.task_id, plan.plan_id, operation_id, 0)
         if plan.operation is ChangeOperation.UPDATE_DASHBOARD:
@@ -980,7 +1056,12 @@ class F3RuntimeIntegration:
                     approval_bundle_hash=approval_hash,
                     selective_hold_keys=holds,
                     provider_dependency_key=(
-                        f"addon:{operation.authoritative_provider_slug}"
+                        (
+                            "home_assistant:core"
+                            if plan.operation
+                            is ChangeOperation.SET_INPUT_BOOLEAN_STATE
+                            else f"addon:{operation.authoritative_provider_slug}"
+                        )
                         if plan.contract_version == 3
                         else None
                     ),
@@ -1012,16 +1093,36 @@ class F3RuntimeIntegration:
         provider_identity = None
         if plan.contract_version == 3:
             provider_key = declarations[0]["provider_dependency_key"]
-            provider_identity = {
-                "slug": provider_key.split(":", 1)[1],
-                "evidence_hash": declarations[0]["provider_identity_evidence_hash"],
-            }
+            provider_identity = (
+                {
+                    "slug": HELPER_STATE_PROVIDER_SLUG,
+                    "evidence_hash": stable_hash(
+                        helper_state_provider_evidence()
+                    ),
+                }
+                if plan.operation is ChangeOperation.SET_INPUT_BOOLEAN_STATE
+                else {
+                    "slug": provider_key.split(":", 1)[1],
+                    "evidence_hash": declarations[0][
+                        "provider_identity_evidence_hash"
+                    ],
+                }
+            )
+            if declarations[0]["provider_identity_evidence_hash"] != (
+                provider_identity["evidence_hash"]
+            ):
+                raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
             if all(
                 (record := self.children.get(item["child_id"])) is None
                 or record.dispatch_intent is None
                 for item in declarations
             ):
-                current_identity = await self._provider_identity()
+                current_identity = (
+                    provider_identity
+                    if plan.operation
+                    is ChangeOperation.SET_INPUT_BOOLEAN_STATE
+                    else await self._provider_identity()
+                )
                 if current_identity != provider_identity:
                     raise GovernanceError(
                         ErrorCode.OPERATIONAL_PROVIDER_UNAVAILABLE,
@@ -1069,7 +1170,24 @@ class F3RuntimeIntegration:
                     active += 1
                 if (
                     record.normalized_outcome == "succeeded_verified"
-                    and (record.dispatch_intent is None or record.dispatch_count != 1)
+                    and (
+                        (
+                            record.dispatch_intent is None
+                            and not (
+                                record.dispatch_count == 0
+                                and record.preflight_completed
+                                and any(
+                                    event.get("event_type")
+                                    == "preflight_noop_verified"
+                                    for event in record.events
+                                )
+                            )
+                        )
+                        or (
+                            record.dispatch_intent is not None
+                            and record.dispatch_count != 1
+                        )
+                    )
                 ):
                     raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
                 prior_all_verified = (
@@ -1150,6 +1268,17 @@ class F3RuntimeIntegration:
         elif plan.operation == ChangeOperation.RESTART_ADDON:
             self._merge_lock_mode(
                 values, f"addon:{plan.target_id}", LockMode.EXCLUSIVE
+            )
+        elif plan.operation == ChangeOperation.SET_INPUT_BOOLEAN_STATE:
+            self._merge_lock_mode(
+                values,
+                resource_lock_key("input_boolean", plan.target_id),
+                LockMode.EXCLUSIVE,
+            )
+            self._merge_lock_mode(
+                values,
+                "reload:input_boolean",
+                LockMode.SHARED,
             )
         return values
 

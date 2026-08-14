@@ -33,6 +33,7 @@ _PROPOSAL_ANNOTATIONS = ToolAnnotations(
 _PROPOSAL_TOOLS = {
     "create_backup_plan",
     "create_reload_plan",
+    "create_helper_state_plan",
     "create_addon_restart_plan",
     "create_home_assistant_restart_plan",
     "create_change_plan",
@@ -131,6 +132,13 @@ for capability in CAPABILITIES:
     _SDK_TOOLS.remove_exact(name)
     _SERVER.tool(name=name)(wrapped)
     setattr(compatibility, name, wrapped)
+
+
+# Freeze the exact local catalog before any admitted upstream reads are added.
+# Exact-image and readmission contracts import this one executable declaration
+# rather than maintaining independent numeric copies.
+ENGINEERING_STATIC_TOOL_NAMES = tuple(sorted(_SDK_TOOLS.snapshot()))
+ENGINEERING_STATIC_TOOL_COUNT = len(ENGINEERING_STATIC_TOOL_NAMES)
 
 
 def get_registered_server():

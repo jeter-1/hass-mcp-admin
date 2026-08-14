@@ -29,6 +29,7 @@ from ha_mcp_engineering.f3.operational_models import (
     CREATE_FULL_BACKUP,
     RESTART_ADDON,
     RESTART_HOME_ASSISTANT,
+    SET_INPUT_BOOLEAN_STATE,
     OperationalAuthoritySnapshot,
     OperationalEvidenceProjection,
     OperationalPreparationRequest,
@@ -58,6 +59,11 @@ from ha_mcp_engineering.governance.models import (
 )
 from ha_mcp_engineering.governance.operational import OperationalGatewayError
 from ha_mcp_engineering.governance.operational_lifecycle import LifecycleGatewayError
+from ha_mcp_engineering.governance.helper_state import (
+    HELPER_STATE_PROVIDER_SLUG,
+    HelperStateGatewayError,
+    helper_state_provider_evidence,
+)
 
 
 NOW = datetime(2026, 8, 4, 12, 0, tzinfo=timezone.utc)
@@ -72,6 +78,8 @@ PROVIDER_IDENTITY_HASH = "d" * 64
 
 
 def provider_evidence(operation: str, *, version: str = "8.0.0") -> dict[str, Any]:
+    if operation == SET_INPUT_BOOLEAN_STATE:
+        return helper_state_provider_evidence()
     entry = (
         "ha-mcp-v8.0.0-d65630f6"
         if version == "8.0.0"
@@ -188,7 +196,66 @@ def baseline_for(
     target_id: str,
     version: str = "8.0.0",
     target_class: str = "other_addon",
+    dependency_automation_ids: tuple[str, ...] = (),
 ) -> dict[str, Any]:
+    if operation == SET_INPUT_BOOLEAN_STATE:
+        downstream_profiles = [
+            {
+                "automation_id": f"automation.{resource_id}",
+                "automation_resource_id": resource_id,
+                "relationships": ["trigger"],
+                "physical_consequence": "none",
+                "complete": True,
+                "truncated": False,
+                "action_domains": ["notify"],
+                "services": ["notify.notify"],
+                "reason_codes": ["proven_benign_action_family"],
+                "effect_projection_model": "automation-action-effect-v2",
+                "effect_targets": [],
+                "effect_data": [],
+                "effect_structure_fingerprint": stable_hash(
+                    {"automation": resource_id, "structure": "notify"}
+                ),
+                "effect_projection_fingerprint": stable_hash(
+                    {"automation": resource_id, "effect": "notify"}
+                ),
+                "effect_projection_clipped": False,
+                "profile_fingerprint": stable_hash(
+                    {"automation": resource_id, "profile": "benign"}
+                ),
+            }
+            for resource_id in dependency_automation_ids
+        ]
+        material = {
+            "model": "helper-dependency-risk-v2",
+            "entity_id": target_id,
+            "completeness": "complete",
+            "evidence_complete": True,
+            "execution_eligible": True,
+            "physical_consequence": "none",
+            "relevant_downstream_object_ids": [
+                f"automation.{resource_id}"
+                for resource_id in dependency_automation_ids
+            ],
+            "downstream_automation_resource_ids": list(
+                dependency_automation_ids
+            ),
+            "consequential_downstream_object_ids": [],
+            "downstream_profiles": downstream_profiles,
+            "target_relevant_dynamic_reference_count": 0,
+            "target_relevant_dynamic_reference_fingerprints": [],
+            "unresolved_dynamic_reference_count": 0,
+            "truncated": False,
+        }
+        return {
+            "entity_id": target_id,
+            "state": "off",
+            "last_changed": NOW.isoformat(),
+            "dependency_risk": {
+                **material,
+                "evidence_fingerprint": stable_hash(material),
+            },
+        }
     if operation == CREATE_FULL_BACKUP:
         return {
             "inventory_readable": True,
@@ -273,8 +340,18 @@ def _policy(operation: str) -> ChangePolicyDecision:
             if elevated
             else ApprovalPolicyClass.STANDARD_ADMIN
         ),
-        risk_delta=RiskDelta.HIGH if elevated else RiskDelta.MODERATE,
-        physical_consequence=PhysicalConsequence.INDIRECT,
+        risk_delta=(
+            RiskDelta.HIGH
+            if elevated
+            else RiskDelta.LOW
+            if operation == SET_INPUT_BOOLEAN_STATE
+            else RiskDelta.MODERATE
+        ),
+        physical_consequence=(
+            PhysicalConsequence.NONE
+            if operation == SET_INPUT_BOOLEAN_STATE
+            else PhysicalConsequence.INDIRECT
+        ),
         reason_codes=(
             "addon_restart_elevated_policy"
             if operation == RESTART_ADDON
@@ -282,6 +359,8 @@ def _policy(operation: str) -> ChangePolicyDecision:
             if operation == RESTART_HOME_ASSISTANT
             else "full_backup_standard_policy"
             if operation == CREATE_FULL_BACKUP
+            else "exact_input_boolean_state_standard_policy"
+            if operation == SET_INPUT_BOOLEAN_STATE
             else "controlled_reload_standard_policy",
         ),
         required_acknowledgements=(
@@ -303,24 +382,28 @@ def make_plan(
     target_id: str | None = None,
     version: str = "8.0.0",
     target_class: str = "other_addon",
+    dependency_automation_ids: tuple[str, ...] = (),
 ) -> ChangePlan:
     target_id = target_id or {
         CREATE_FULL_BACKUP: "local_full_backup",
         CONTROLLED_RELOAD: "automation",
         RESTART_ADDON: "local_example",
         RESTART_HOME_ASSISTANT: "core",
+        SET_INPUT_BOOLEAN_STATE: "input_boolean.synthetic_exact",
     }[operation]
     target_type = {
         CREATE_FULL_BACKUP: "backup",
         CONTROLLED_RELOAD: "reload_domain",
         RESTART_ADDON: "addon",
         RESTART_HOME_ASSISTANT: "home_assistant",
+        SET_INPUT_BOOLEAN_STATE: "input_boolean",
     }[operation]
     baseline = baseline_for(
         operation,
         target_id=target_id,
         version=version,
         target_class=target_class,
+        dependency_automation_ids=dependency_automation_ids,
     )
     provider = provider_evidence(operation, version=version)
     elevated = operation in {RESTART_ADDON, RESTART_HOME_ASSISTANT}
@@ -338,12 +421,19 @@ def make_plan(
         if elevated
         else None
     )
-    requested = "Synthetic Backup" if operation == CREATE_FULL_BACKUP else target_id
+    requested = (
+        "Synthetic Backup"
+        if operation == CREATE_FULL_BACKUP
+        else "on"
+        if operation == SET_INPUT_BOOLEAN_STATE
+        else target_id
+    )
     verification_required = {
         CREATE_FULL_BACKUP: ["new_backup_identifier", "exact_name"],
         CONTROLLED_RELOAD: ["post_reload_configuration_valid"],
         RESTART_ADDON: ["restart_evidence", "running_state"],
         RESTART_HOME_ASSISTANT: ["outage", "reconnect", "runtime_restored"],
+        SET_INPUT_BOOLEAN_STATE: ["exact_entity_id", "exact_desired_state"],
     }[operation]
     effects = {
         CREATE_FULL_BACKUP: [
@@ -353,6 +443,7 @@ def make_plan(
         CONTROLLED_RELOAD: [f"Reload the exact {target_id} configuration domain."],
         RESTART_ADDON: [f"Restart the exact installed add-on {target_id}."],
         RESTART_HOME_ASSISTANT: ["Restart Home Assistant Core once."],
+        SET_INPUT_BOOLEAN_STATE: ["Set the exact input_boolean state to on."],
     }[operation]
     limitations = [
         "Rollback is unavailable.",
@@ -419,10 +510,23 @@ def make_plan(
         normalized_current_config=None,
         current_state_fingerprint=stable_hash(baseline),
         proposed_config_hash=stable_hash(
-            {"operation": operation, "target_type": target_type, "target_id": target_id}
+            {
+                "operation": operation,
+                **(
+                    {"entity_id": target_id, "desired_state": requested}
+                    if operation == SET_INPUT_BOOLEAN_STATE
+                    else {"target_type": target_type, "target_id": target_id}
+                ),
+            }
         ),
         risk=ChangeRiskAssessment(
-            level=RiskLevel.HIGH if elevated else RiskLevel.MEDIUM,
+            level=(
+                RiskLevel.HIGH
+                if elevated
+                else RiskLevel.LOW
+                if operation == SET_INPUT_BOOLEAN_STATE
+                else RiskLevel.MEDIUM
+            ),
             reasons=["Synthetic exact baseline risk."],
             warnings=["A dispatched operation is never blindly repeated."],
         ),
@@ -763,6 +867,37 @@ class FakeLifecycleGateway:
         }
 
 
+class FakeHelperStateGateway:
+    def __init__(self, baseline: dict[str, Any], *, trace: list[str]) -> None:
+        self.baseline = deepcopy(baseline)
+        self.trace = trace
+        self.provider_dispatches = 0
+
+    async def planning_evidence(self, entity_id: str):
+        if entity_id != self.baseline["entity_id"]:
+            raise HelperStateGatewayError("entity_not_found")
+        return {
+            "provider": helper_state_provider_evidence(),
+            "baseline": deepcopy(self.baseline),
+        }
+
+    async def set_state(self, entity_id, desired_state, *, before_dispatch):
+        await before_dispatch()
+        self.trace.append("provider")
+        self.provider_dispatches += 1
+        self.baseline["entity_id"] = entity_id
+        self.baseline["state"] = desired_state
+        self.baseline["last_changed"] = (
+            NOW + timedelta(seconds=1)
+        ).isoformat()
+        return SimpleNamespace(provider_response_received=True)
+
+    async def read_state(self, entity_id: str):
+        if entity_id != self.baseline["entity_id"]:
+            raise HelperStateGatewayError("entity_not_found")
+        return deepcopy(self.baseline)
+
+
 @dataclass
 class FixtureContext:
     plan: ChangePlan
@@ -782,12 +917,14 @@ def make_context(
     target_id: str | None = None,
     version: str = "8.0.0",
     target_class: str = "other_addon",
+    dependency_automation_ids: tuple[str, ...] = (),
 ) -> FixtureContext:
     plan = make_plan(
         operation,
         target_id=target_id,
         version=version,
         target_class=target_class,
+        dependency_automation_ids=dependency_automation_ids,
     )
     trace: list[str] = []
     backup = FakeBackupGateway(
@@ -803,6 +940,46 @@ def make_context(
         authoritative_evidence=evidence,
         trace=trace,
     )
+    helper = FakeHelperStateGateway(
+        {
+            key: value
+            for key, value in baseline_for(
+                SET_INPUT_BOOLEAN_STATE,
+                target_id="input_boolean.synthetic_exact",
+                version=version,
+            ).items()
+            if key != "dependency_risk"
+        },
+        trace=trace,
+    )
+
+    async def helper_dependency_risk_reader(
+        entity_id: str, *, refresh: bool = True
+    ):
+        if entity_id != "input_boolean.synthetic_exact" or refresh is not True:
+            raise AssertionError("synthetic helper dependency read changed")
+        trace.append("helper_dependency_read")
+        return {
+            "binding": deepcopy(
+                baseline_for(
+                    SET_INPUT_BOOLEAN_STATE,
+                    target_id=entity_id,
+                    version=version,
+                    dependency_automation_ids=(
+                        dependency_automation_ids
+                    ),
+                )["dependency_risk"]
+            ),
+            "provenance": {
+                "provider": "dependency_index",
+                "completeness": "complete",
+                "generation": 1,
+                "fingerprint": "9" * 64,
+                "freshness": "current",
+                "fallback": "none",
+                "fallback_occurred": False,
+            },
+        }
     approval = SyntheticApprovalAuthority(trace)
     approval_hash = stable_hash(
         {
@@ -868,6 +1045,8 @@ def make_context(
     adapter = OperationalAdministrationAdapter(
         backup_gateway=backup,
         lifecycle_gateway=lifecycle,
+        helper_state_gateway=helper,
+        helper_dependency_risk_reader=helper_dependency_risk_reader,
         evidence_reader=evidence,
         authority_reader=lambda _prepared: authority,
         now=lambda: NOW,
@@ -880,14 +1059,26 @@ def make_context(
 
 
 async def prepare_context(context: FixtureContext):
+    direct_helper = (
+        getattr(context.plan.operation, "value", context.plan.operation)
+        == SET_INPUT_BOOLEAN_STATE
+    )
     prepared = await context.adapter.prepare(
         OperationalPreparationRequest(
             plan=context.plan,
             expected_plan_hash=PLAN_HASH,
             public_task_id=PUBLIC_TASK_ID,
             child_execution_id=TASK_ID,
-            authoritative_provider_slug=PROVIDER_SLUG,
-            provider_identity_evidence_hash=PROVIDER_IDENTITY_HASH,
+            authoritative_provider_slug=(
+                HELPER_STATE_PROVIDER_SLUG
+                if direct_helper
+                else PROVIDER_SLUG
+            ),
+            provider_identity_evidence_hash=(
+                stable_hash(helper_state_provider_evidence())
+                if direct_helper
+                else PROVIDER_IDENTITY_HASH
+            ),
         )
     )
     context.authority = replace(

@@ -15,6 +15,17 @@ import json
 import re
 from typing import Any, Protocol
 
+from ..governance.helper_state import (
+    HELPER_STATE_PROVIDER,
+    HELPER_STATE_PROVIDER_CONTRACT,
+    HELPER_STATE_PROVIDER_OPERATION,
+    HELPER_STATE_PROVIDER_SLUG,
+    helper_state_provider_evidence,
+    validate_desired_state,
+    validate_input_boolean_entity_id,
+)
+from ..f3_configuration.locks import resource_lock_key
+
 from ha_mcp_engineering.f3.contracts import (
     AdapterCapabilityDescriptor,
     DispatchResult,
@@ -48,12 +59,14 @@ CREATE_FULL_BACKUP = "create_full_backup"
 CONTROLLED_RELOAD = "controlled_reload"
 RESTART_ADDON = "restart_addon"
 RESTART_HOME_ASSISTANT = "restart_home_assistant"
+SET_INPUT_BOOLEAN_STATE = "set_input_boolean_state"
 
 SUPPORTED_OPERATIONS = (
     CREATE_FULL_BACKUP,
     CONTROLLED_RELOAD,
     RESTART_ADDON,
     RESTART_HOME_ASSISTANT,
+    SET_INPUT_BOOLEAN_STATE,
 )
 
 CAPABILITY_IDENTITIES = {
@@ -61,6 +74,7 @@ CAPABILITY_IDENTITIES = {
     CONTROLLED_RELOAD: "reload_home_assistant_configuration_domain",
     RESTART_ADDON: "restart_installed_home_assistant_addon",
     RESTART_HOME_ASSISTANT: "restart_home_assistant_core",
+    SET_INPUT_BOOLEAN_STATE: "set_exact_input_boolean_state",
 }
 
 TARGET_TYPES = {
@@ -68,6 +82,7 @@ TARGET_TYPES = {
     CONTROLLED_RELOAD: "reload_domain",
     RESTART_ADDON: "addon",
     RESTART_HOME_ASSISTANT: "home_assistant",
+    SET_INPUT_BOOLEAN_STATE: "input_boolean",
 }
 
 TARGET_CLASSES = {
@@ -75,6 +90,7 @@ TARGET_CLASSES = {
     CONTROLLED_RELOAD: "home_assistant_configuration_domain",
     RESTART_ADDON: "installed_home_assistant_addon",
     RESTART_HOME_ASSISTANT: "home_assistant_core",
+    SET_INPUT_BOOLEAN_STATE: "exact_input_boolean_entity",
 }
 
 PROVIDER_OPERATIONS = {
@@ -82,6 +98,7 @@ PROVIDER_OPERATIONS = {
     CONTROLLED_RELOAD: "ha_reload_core",
     RESTART_ADDON: "ha_manage_addon",
     RESTART_HOME_ASSISTANT: "ha_restart",
+    SET_INPUT_BOOLEAN_STATE: HELPER_STATE_PROVIDER_OPERATION,
 }
 
 PROVIDER_IDENTITIES = {
@@ -89,6 +106,15 @@ PROVIDER_IDENTITIES = {
     CONTROLLED_RELOAD: "upstream_operational_lifecycle",
     RESTART_ADDON: "upstream_operational_lifecycle",
     RESTART_HOME_ASSISTANT: "upstream_operational_lifecycle",
+    SET_INPUT_BOOLEAN_STATE: HELPER_STATE_PROVIDER,
+}
+
+PROVIDER_CONTRACT_MODELS = {
+    CREATE_FULL_BACKUP: OPERATIONAL_PROVIDER_CONTRACT_MODEL,
+    CONTROLLED_RELOAD: OPERATIONAL_PROVIDER_CONTRACT_MODEL,
+    RESTART_ADDON: OPERATIONAL_PROVIDER_CONTRACT_MODEL,
+    RESTART_HOME_ASSISTANT: OPERATIONAL_PROVIDER_CONTRACT_MODEL,
+    SET_INPUT_BOOLEAN_STATE: HELPER_STATE_PROVIDER_CONTRACT,
 }
 
 VERIFICATION_MODELS = {
@@ -96,6 +122,7 @@ VERIFICATION_MODELS = {
     CONTROLLED_RELOAD: "f3-controlled-reload-effect-readback-v1",
     RESTART_ADDON: "f3-addon-restart-exact-readback-v1",
     RESTART_HOME_ASSISTANT: "f3-home-assistant-restart-outage-recovery-v1",
+    SET_INPUT_BOOLEAN_STATE: "f3-input-boolean-exact-state-readback-v1",
 }
 
 EVIDENCE_DEADLINE_CLASSES = {
@@ -103,6 +130,7 @@ EVIDENCE_DEADLINE_CLASSES = {
     CONTROLLED_RELOAD: "short_reload_evidence",
     RESTART_ADDON: "addon_restart_evidence",
     RESTART_HOME_ASSISTANT: "home_assistant_restart_evidence",
+    SET_INPUT_BOOLEAN_STATE: "short_helper_state_evidence",
 }
 
 EXPECTED_EFFECT_CODES = {
@@ -110,6 +138,7 @@ EXPECTED_EFFECT_CODES = {
     CONTROLLED_RELOAD: ("configuration_domain_reloaded",),
     RESTART_ADDON: ("installed_addon_restarted",),
     RESTART_HOME_ASSISTANT: ("home_assistant_core_restarted",),
+    SET_INPUT_BOOLEAN_STATE: ("input_boolean_exact_state_set",),
 }
 
 POLICY_EXPECTATIONS = {
@@ -117,6 +146,7 @@ POLICY_EXPECTATIONS = {
     CONTROLLED_RELOAD: ("standard_admin", "moderate", "indirect"),
     RESTART_ADDON: ("elevated_admin", "high", "indirect"),
     RESTART_HOME_ASSISTANT: ("elevated_admin", "high", "indirect"),
+    SET_INPUT_BOOLEAN_STATE: ("standard_admin", "low", "none"),
 }
 
 RISK_LEVEL_EXPECTATIONS = {
@@ -124,13 +154,35 @@ RISK_LEVEL_EXPECTATIONS = {
     CONTROLLED_RELOAD: "medium",
     RESTART_ADDON: "high",
     RESTART_HOME_ASSISTANT: "high",
+    SET_INPUT_BOOLEAN_STATE: "low",
 }
+
+
+def operational_policy_expectation_is_valid(
+    operation: str,
+    policy: tuple[str, str, str],
+    risk_level: str,
+) -> bool:
+    """Validate the fixed policy families and dependency-aware helper cases."""
+
+    if operation != SET_INPUT_BOOLEAN_STATE:
+        return bool(
+            policy == POLICY_EXPECTATIONS[operation]
+            and risk_level == RISK_LEVEL_EXPECTATIONS[operation]
+        )
+    return (policy, risk_level) in {
+        (("standard_admin", "low", "none"), "low"),
+        (("elevated_admin", "high", "indirect"), "high"),
+        (("elevated_admin", "high", "direct"), "high"),
+        (("elevated_admin", "high", "safety_critical"), "high"),
+    }
 
 EVIDENCE_DEADLINE_SECONDS = {
     CREATE_FULL_BACKUP: 86_400,
     CONTROLLED_RELOAD: 900,
     RESTART_ADDON: 1_800,
     RESTART_HOME_ASSISTANT: 1_800,
+    SET_INPUT_BOOLEAN_STATE: 120,
 }
 
 RELOAD_PROVIDER_TARGETS = {
@@ -225,7 +277,7 @@ class OperationalCapabilityDescriptor(AdapterCapabilityDescriptor):
             raise ValueError("target class is invalid")
         if self.provider != PROVIDER_IDENTITIES[operation]:
             raise ValueError("provider identity is invalid")
-        if self.provider_contract_model != OPERATIONAL_PROVIDER_CONTRACT_MODEL:
+        if self.provider_contract_model != PROVIDER_CONTRACT_MODELS[operation]:
             raise ValueError("provider contract is invalid")
         if self.provider_operation != PROVIDER_OPERATIONS[operation]:
             raise ValueError("provider operation is invalid")
@@ -460,6 +512,14 @@ def provider_arguments(
         if target_id != "core":
             raise ValueError("Home Assistant target is invalid")
         return {"confirm": True}
+    if operation == SET_INPUT_BOOLEAN_STATE:
+        validate_input_boolean_entity_id(target_id)
+        desired_state = validate_desired_state(requested_name)
+        return {
+            "domain": "input_boolean",
+            "service": "turn_on" if desired_state == "on" else "turn_off",
+            "target": {"entity_id": target_id},
+        }
     raise ValueError("unknown operational operation")
 
 
@@ -484,6 +544,9 @@ def operational_escalation_policy(
         if target_id != "core":
             raise ValueError("Home Assistant target is invalid")
         keys = ("home_assistant:core",)
+    elif operation == SET_INPUT_BOOLEAN_STATE:
+        validate_input_boolean_entity_id(target_id)
+        keys = (resource_lock_key("input_boolean", target_id),)
     else:
         raise ValueError("unknown operational hold model")
     return keys, EVIDENCE_DEADLINE_SECONDS[operation]
@@ -635,19 +698,22 @@ def validate_prepared_operational_authority(
         raise ValueError("operational plan contract is unsupported")
     _parse_aware(operation.plan_expires_at, field_name="plan_expires_at")
 
-    expected_policy = POLICY_EXPECTATIONS[expected_operation]
-    if (
-        operation.policy_class,
-        operation.risk_delta,
-        operation.physical_consequence,
-    ) != expected_policy:
+    if not operational_policy_expectation_is_valid(
+        expected_operation,
+        (
+            operation.policy_class,
+            operation.risk_delta,
+            operation.physical_consequence,
+        ),
+        operation.risk_level,
+    ):
         raise ValueError("prepared policy expectation is invalid")
-    if operation.risk_level != RISK_LEVEL_EXPECTATIONS[expected_operation]:
-        raise ValueError("prepared risk level is invalid")
 
     if operation.provider_id != PROVIDER_IDENTITIES[expected_operation]:
         raise ValueError("prepared provider identity is invalid")
-    if operation.provider_contract_model != OPERATIONAL_PROVIDER_CONTRACT_MODEL:
+    if operation.provider_contract_model != PROVIDER_CONTRACT_MODELS[
+        expected_operation
+    ]:
         raise ValueError("prepared provider contract is invalid")
     if operation.provider_operation != PROVIDER_OPERATIONS[expected_operation]:
         raise ValueError("prepared provider operation is invalid")
@@ -679,6 +745,13 @@ def validate_prepared_operational_authority(
     )
     if provider_evidence.get("provider") != operation.provider_id:
         raise ValueError("prepared provider evidence is invalid")
+    if expected_operation == SET_INPUT_BOOLEAN_STATE and (
+        operation.authoritative_provider_slug != HELPER_STATE_PROVIDER_SLUG
+        or provider_evidence != helper_state_provider_evidence()
+        or operation.provider_identity_evidence_hash
+        != stable_hash(provider_evidence)
+    ):
+        raise ValueError("prepared direct provider evidence is invalid")
     decoded_object(operation.baseline_json, field_name="baseline")
 
     if operation.expected_effects != EXPECTED_EFFECT_CODES[expected_operation]:
@@ -762,4 +835,5 @@ __all__ = [
     "recompute_operational_prepared_hash",
     "validate_prepared_operational_authority",
     "operational_escalation_policy",
+    "operational_policy_expectation_is_valid",
 ]

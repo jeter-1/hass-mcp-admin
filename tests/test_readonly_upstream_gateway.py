@@ -46,7 +46,11 @@ from ha_mcp_engineering.request_context import (  # noqa: E402
     end_request,
 )
 from ha_mcp_engineering.routing import AuthenticatedMcpGateway  # noqa: E402
-from ha_mcp_engineering.tools import get_registered_server, registered_tools  # noqa: E402
+from ha_mcp_engineering.tools import (  # noqa: E402
+    ENGINEERING_STATIC_TOOL_COUNT,
+    get_registered_server,
+    registered_tools,
+)
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     ReviewedToolAnnotations,
     UpstreamToolPolicy,
@@ -1347,8 +1351,12 @@ class PolicyInventoryTests(unittest.TestCase):
         self.assertTrue(all(item.read_only for item in automatic_annotations.values()))
         self.assertTrue(all(not item.destructive for item in automatic_annotations.values()))
 
-    def test_engineering_catalog_is_50_without_upstream_discovery(self):
-        self.assertEqual(len(registered_tools(get_registered_server()).values()), 50)
+    def test_engineering_catalog_is_51_without_upstream_discovery(self):
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 51)
+        self.assertEqual(
+            len(registered_tools(get_registered_server()).values()),
+            ENGINEERING_STATIC_TOOL_COUNT,
+        )
 
     def test_exact_image_acceptance_is_committed_to_ci(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
@@ -1357,20 +1365,14 @@ class PolicyInventoryTests(unittest.TestCase):
         acceptance = (
             ROOT / "scripts" / "exact_image_read_gateway_acceptance.py"
         ).read_text(encoding="utf-8")
-        acceptance_tree = ast.parse(acceptance)
-        baseline_assignment = next(
-            node
-            for node in acceptance_tree.body
-            if isinstance(node, ast.Assign)
-            and any(
-                isinstance(target, ast.Name)
-                and target.id == "EXPECTED_ENGINEERING_BASELINE_COUNT"
-                for target in node.targets
-            )
-        )
         self.assertEqual(
-            ast.literal_eval(baseline_assignment.value),
+            ENGINEERING_STATIC_TOOL_COUNT,
             len(registered_tools(get_registered_server()).values()),
+        )
+        self.assertIn(
+            "EXPECTED_ENGINEERING_BASELINE_COUNT = "
+            "ENGINEERING_STATIC_TOOL_COUNT",
+            acceptance,
         )
         self.assertIn(
             "len(base_names) == EXPECTED_ENGINEERING_BASELINE_COUNT",
@@ -2274,7 +2276,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         )
         catalog = build_capability_catalog()
         self.assertEqual(catalog["dynamic_upstream_count"], 1)
-        self.assertEqual(catalog["engineering_registered_count"], 50)
+        self.assertEqual(catalog["engineering_registered_count"], 51)
         route = capability_for_tool("ha_get_state")
         self.assertEqual(route["provider"], "upstream_read_gateway")
         self.assertEqual(route["operation_class"], "automatic_read")
@@ -4645,12 +4647,12 @@ class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["dynamically_exposed_count"], 26)
         self.assertEqual(len(health["exposed_tools"]), 26)
         self.assertEqual(catalog["dynamic_upstream_count"], 26)
-        self.assertEqual(catalog["registered_count"], 76)
+        self.assertEqual(catalog["registered_count"], 77)
         self.assertEqual(
             catalog["upstream_read_gateway"]["dynamically_exposed_count"], 26
         )
         self.assertEqual(metadata["dynamic_upstream_tool_count"], 26)
-        self.assertEqual(metadata["tool_count"], 76)
+        self.assertEqual(metadata["tool_count"], 77)
         self.assertEqual(capability_for_tool("ha_read_0")["fallback"], "none")
 
         task.cancel()

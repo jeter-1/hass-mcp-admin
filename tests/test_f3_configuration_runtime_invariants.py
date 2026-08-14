@@ -67,7 +67,7 @@ class RuntimeInertInvariantTests(unittest.TestCase):
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     decorators.extend(ast.unparse(item) for item in node.decorator_list)
         self.assertFalse(any("tool" in item for item in decorators), decorators)
-        self.assertEqual(len(registered_tools(get_registered_server())), 50)
+        self.assertEqual(len(registered_tools(get_registered_server())), 51)
 
     def test_task_and_plan_vocabularies_are_unchanged(self):
         self.assertEqual(TASK_SCHEMA_VERSION, 1)
@@ -102,6 +102,7 @@ class RuntimeInertInvariantTests(unittest.TestCase):
                 "controlled_reload",
                 "restart_addon",
                 "restart_home_assistant",
+                "set_input_boolean_state",
             },
         )
 

@@ -18,17 +18,23 @@ from ha_mcp_engineering.f3.operational_adapter import (
     execute_operational,
     validate_execution_binding,
 )
-from ha_mcp_engineering.f3.contracts import RecoveryContext
+from ha_mcp_engineering.f3.contracts import (
+    LockMode,
+    RecoveryContext,
+)
+from ha_mcp_engineering.f3.locks import DurableLockStore, LockConflict
+from ha_mcp_engineering.f3.models import LockOwner, LockTiming
 from ha_mcp_engineering.f3.operational_models import (
     CAPABILITY_IDENTITIES,
     CONTROLLED_RELOAD,
     CREATE_FULL_BACKUP,
     OPERATIONAL_PREPARED_AUTHORITY_MODEL,
-    OPERATIONAL_PROVIDER_CONTRACT_MODEL,
+    PROVIDER_CONTRACT_MODELS,
     PROVIDER_OPERATIONS,
     RELOAD_PROVIDER_TARGETS,
     RESTART_ADDON,
     RESTART_HOME_ASSISTANT,
+    SET_INPUT_BOOLEAN_STATE,
     SUPPORTED_OPERATIONS,
     OperationalPreparationRequest,
     canonical_json,
@@ -37,6 +43,12 @@ from ha_mcp_engineering.f3.operational_models import (
     validate_prepared_operational_authority,
 )
 from ha_mcp_engineering.f3.persistence import DurableExecutionRepository
+from ha_mcp_engineering.f3_configuration.locks import (
+    helper_dependency_lock_key,
+    lock_set_hash,
+    resource_lock_key,
+    unconstrained_helper_dependency_lock_key,
+)
 from ha_mcp_engineering.governance.models import ApprovalState
 
 from tests.f3_operational_fixtures import (
@@ -54,6 +66,7 @@ from tests.f3_configuration_fixtures import (  # noqa: E402
     SyntheticConfigurationGateway,
     adapter_for as configuration_adapter_for,
     proposal_for as configuration_proposal_for,
+    valid_config as configuration_valid_config,
 )
 
 
@@ -73,7 +86,10 @@ class OperationalCapabilityAndPreparationTests(unittest.IsolatedAsyncioTestCase)
             with self.subTest(operation=operation):
                 self.assertEqual(capability.capability_id, CAPABILITY_IDENTITIES[operation])
                 self.assertEqual(capability.provider_operation, PROVIDER_OPERATIONS[operation])
-                self.assertEqual(capability.provider_contract_model, OPERATIONAL_PROVIDER_CONTRACT_MODEL)
+                self.assertEqual(
+                    capability.provider_contract_model,
+                    PROVIDER_CONTRACT_MODELS[operation],
+                )
                 self.assertFalse(capability.rollback_supported)
                 self.assertTrue(capability.recovery_supported)
 
@@ -130,6 +146,11 @@ class OperationalCapabilityAndPreparationTests(unittest.IsolatedAsyncioTestCase)
             CONTROLLED_RELOAD: {"target": "automations"},
             RESTART_ADDON: {"slug": "local_example", "action": "restart"},
             RESTART_HOME_ASSISTANT: {"confirm": True},
+            SET_INPUT_BOOLEAN_STATE: {
+                "domain": "input_boolean",
+                "service": "turn_on",
+                "target": {"entity_id": "input_boolean.synthetic_exact"},
+            },
         }
         prohibited = {
             "restore",
@@ -537,6 +558,14 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
                 "addon:local_ha_mcp": "shared",
                 "home_assistant:core": "exclusive",
             },
+            SET_INPUT_BOOLEAN_STATE: {
+                "helper:input_boolean.synthetic_exact": "exclusive",
+                "helper_dependency:input_boolean.synthetic_exact": "shared",
+                "helper_dependency:input_boolean_dynamic": "shared",
+                "home_assistant:core": "shared",
+                "reload:automation": "shared",
+                "reload:input_boolean": "shared",
+            },
         }
         for operation, keys in expected.items():
             with self.subTest(operation=operation):
@@ -602,6 +631,411 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(operational_reload.mode.value, "exclusive")
                 self.assertEqual(config_reload.mode.value, "shared")
+
+    @staticmethod
+    def _lock_owner(name: str) -> LockOwner:
+        return LockOwner(
+            f"owner-{name}",
+            f"task-{name}",
+            f"plan-{name}",
+            f"operation-{name}",
+            f"attempt-{name}",
+        )
+
+    async def _helper_lock_sets(self):
+        operational_context = make_context(
+            self.root / "state",
+            SET_INPUT_BOOLEAN_STATE,
+            target_id="input_boolean.vacation_mode",
+        )
+        state = await prepare_context(operational_context)
+        state_locks = operational_context.adapter.lock_requests(state)
+
+        configuration_gateway = SyntheticConfigurationGateway()
+        configuration_gateway.states[
+            ("input_boolean", "input_boolean.vacation_mode")
+        ] = configuration_proposal_for(
+            "input_boolean", "update"
+        ).current_config()
+        configuration_adapter = configuration_adapter_for(
+            "input_boolean", "update", configuration_gateway
+        )
+        configuration = await configuration_adapter.prepare(
+            configuration_proposal_for("input_boolean", "update")
+        )
+        configuration_locks = configuration_adapter.lock_requests(
+            configuration
+        )
+
+        reload_context = make_context(
+            self.root / "reload-input-boolean",
+            CONTROLLED_RELOAD,
+            target_id="input_boolean",
+        )
+        reload_operation = await prepare_context(reload_context)
+        reload_locks = reload_context.adapter.lock_requests(reload_operation)
+        return state, state_locks, configuration_locks, reload_locks
+
+    async def test_helper_state_and_same_helper_configuration_conflict_both_directions(self):
+        _state, state_locks, configuration_locks, _reload_locks = (
+            await self._helper_lock_sets()
+        )
+        timing = LockTiming(60, 10, 0)
+        for first, second, first_name, second_name in (
+            (state_locks, configuration_locks, "state", "configuration"),
+            (configuration_locks, state_locks, "configuration", "state"),
+        ):
+            with self.subTest(first=first_name):
+                with tempfile.TemporaryDirectory() as temporary:
+                    store = DurableLockStore(temporary)
+                    handle = store.acquire_once(
+                        first,
+                        owner=self._lock_owner(first_name),
+                        timing=timing,
+                    )
+                    with self.assertRaises(LockConflict):
+                        store.acquire_once(
+                            second,
+                            owner=self._lock_owner(second_name),
+                            timing=timing,
+                        )
+                    store.release(handle)
+
+    async def test_helper_state_and_matching_reload_conflict_both_directions(self):
+        _state, state_locks, _configuration_locks, reload_locks = (
+            await self._helper_lock_sets()
+        )
+        timing = LockTiming(60, 10, 0)
+        for first, second, first_name, second_name in (
+            (state_locks, reload_locks, "state", "reload"),
+            (reload_locks, state_locks, "reload", "state"),
+        ):
+            with self.subTest(first=first_name):
+                with tempfile.TemporaryDirectory() as temporary:
+                    store = DurableLockStore(temporary)
+                    handle = store.acquire_once(
+                        first,
+                        owner=self._lock_owner(first_name),
+                        timing=timing,
+                    )
+                    with self.assertRaises(LockConflict):
+                        store.acquire_once(
+                            second,
+                            owner=self._lock_owner(second_name),
+                            timing=timing,
+                        )
+                    store.release(handle)
+
+    async def test_unrelated_helper_state_and_configuration_operations_remain_concurrent(self):
+        state_a_context = make_context(
+            self.root / "state-a",
+            SET_INPUT_BOOLEAN_STATE,
+            target_id="input_boolean.helper_a",
+        )
+        state_b_context = make_context(
+            self.root / "state-b",
+            SET_INPUT_BOOLEAN_STATE,
+            target_id="input_boolean.helper_b",
+        )
+        state_a = await prepare_context(state_a_context)
+        state_b = await prepare_context(state_b_context)
+        state_a_locks = state_a_context.adapter.lock_requests(state_a)
+        state_b_locks = state_b_context.adapter.lock_requests(state_b)
+
+        configuration_gateway = SyntheticConfigurationGateway()
+        configuration_adapter = configuration_adapter_for(
+            "input_boolean", "update", configuration_gateway
+        )
+        configuration = await configuration_adapter.prepare(
+            configuration_proposal_for("input_boolean", "update")
+        )
+        configuration_locks = configuration_adapter.lock_requests(
+            configuration
+        )
+        timing = LockTiming(60, 10, 0)
+
+        for first, second, names in (
+            (state_a_locks, state_b_locks, ("state-a", "state-b")),
+            (
+                configuration_locks,
+                state_b_locks,
+                ("configuration-a", "state-b"),
+            ),
+        ):
+            with self.subTest(pair=names):
+                with tempfile.TemporaryDirectory() as temporary:
+                    store = DurableLockStore(temporary)
+                    first_handle = store.acquire_once(
+                        first,
+                        owner=self._lock_owner(names[0]),
+                        timing=timing,
+                    )
+                    second_handle = store.acquire_once(
+                        second,
+                        owner=self._lock_owner(names[1]),
+                        timing=timing,
+                    )
+                    store.release(second_handle)
+                    store.release(first_handle)
+
+    async def test_helper_lock_order_hash_and_recovery_identity_are_deterministic(self):
+        state, state_locks, _configuration_locks, _reload_locks = (
+            await self._helper_lock_sets()
+        )
+        expected_resource = resource_lock_key(
+            "input_boolean", "input_boolean.vacation_mode"
+        )
+
+        self.assertEqual(
+            [item.key for item in state_locks],
+            sorted(item.key for item in state_locks),
+        )
+        self.assertEqual(
+            lock_set_hash(state_locks),
+            lock_set_hash(tuple(reversed(state_locks))),
+        )
+        self.assertEqual(state.selective_hold_keys, (expected_resource,))
+        self.assertEqual(
+            {item.key: item.mode for item in state_locks},
+            {
+                expected_resource: LockMode.EXCLUSIVE,
+                helper_dependency_lock_key(
+                    "input_boolean.vacation_mode"
+                ): LockMode.SHARED,
+                unconstrained_helper_dependency_lock_key(): LockMode.SHARED,
+                "home_assistant:core": LockMode.SHARED,
+                "reload:automation": LockMode.SHARED,
+                "reload:input_boolean": LockMode.SHARED,
+            },
+        )
+
+    async def test_helper_serializes_with_bound_automation_and_reload(self):
+        helper_context = make_context(
+            self.root / "helper-bound",
+            SET_INPUT_BOOLEAN_STATE,
+            dependency_automation_ids=("porch_light",),
+        )
+        helper = await prepare_context(helper_context)
+        helper_locks = helper_context.adapter.lock_requests(helper)
+
+        configuration_gateway = SyntheticConfigurationGateway()
+        configuration_gateway.states[("automation", "porch_light")] = (
+            configuration_proposal_for(
+                "automation", "update"
+            ).current_config()
+        )
+        configuration_adapter = configuration_adapter_for(
+            "automation", "update", configuration_gateway
+        )
+        configuration = await configuration_adapter.prepare(
+            configuration_proposal_for("automation", "update")
+        )
+        configuration_locks = configuration_adapter.lock_requests(
+            configuration
+        )
+
+        reload_context = make_context(
+            self.root / "reload-automation",
+            CONTROLLED_RELOAD,
+            target_id="automation",
+        )
+        reload_operation = await prepare_context(reload_context)
+        reload_locks = reload_context.adapter.lock_requests(reload_operation)
+
+        self.assertEqual(
+            {item.key: item.mode for item in helper_locks},
+            {
+                "automation:porch_light": LockMode.SHARED,
+                "helper:input_boolean.synthetic_exact": LockMode.EXCLUSIVE,
+                "helper_dependency:input_boolean.synthetic_exact": (
+                    LockMode.SHARED
+                ),
+                "helper_dependency:input_boolean_dynamic": LockMode.SHARED,
+                "home_assistant:core": LockMode.SHARED,
+                "reload:automation": LockMode.SHARED,
+                "reload:input_boolean": LockMode.SHARED,
+            },
+        )
+        timing = LockTiming(60, 10, 0)
+        for first, second, names in (
+            (
+                helper_locks,
+                configuration_locks,
+                ("helper", "automation-configuration"),
+            ),
+            (
+                configuration_locks,
+                helper_locks,
+                ("automation-configuration", "helper"),
+            ),
+            (helper_locks, reload_locks, ("helper", "automation-reload")),
+            (reload_locks, helper_locks, ("automation-reload", "helper")),
+        ):
+            with self.subTest(pair=names):
+                with tempfile.TemporaryDirectory() as temporary:
+                    store = DurableLockStore(temporary)
+                    handle = store.acquire_once(
+                        first,
+                        owner=self._lock_owner(names[0]),
+                        timing=timing,
+                    )
+                    with self.assertRaises(LockConflict):
+                        store.acquire_once(
+                            second,
+                            owner=self._lock_owner(names[1]),
+                            timing=timing,
+                        )
+                    store.release(handle)
+
+    async def test_unrelated_automation_configuration_remains_concurrent(self):
+        helper_context = make_context(
+            self.root / "helper-unrelated",
+            SET_INPUT_BOOLEAN_STATE,
+            dependency_automation_ids=("other_automation",),
+        )
+        helper = await prepare_context(helper_context)
+        helper_locks = helper_context.adapter.lock_requests(helper)
+
+        configuration_gateway = SyntheticConfigurationGateway()
+        configuration_gateway.states[("automation", "porch_light")] = (
+            configuration_proposal_for(
+                "automation", "update"
+            ).current_config()
+        )
+        configuration_adapter = configuration_adapter_for(
+            "automation", "update", configuration_gateway
+        )
+        configuration = await configuration_adapter.prepare(
+            configuration_proposal_for("automation", "update")
+        )
+        configuration_locks = configuration_adapter.lock_requests(
+            configuration
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            store = DurableLockStore(temporary)
+            timing = LockTiming(60, 10, 0)
+            helper_handle = store.acquire_once(
+                helper_locks,
+                owner=self._lock_owner("helper"),
+                timing=timing,
+            )
+            configuration_handle = store.acquire_once(
+                configuration_locks,
+                owner=self._lock_owner("unrelated-configuration"),
+                timing=timing,
+            )
+            store.release(configuration_handle)
+            store.release(helper_handle)
+
+    async def test_new_relevant_automation_content_conflicts_but_unrelated_remains_concurrent(self):
+        helper_context = make_context(
+            self.root / "content-derived-helper",
+            SET_INPUT_BOOLEAN_STATE,
+            target_id="input_boolean.synthetic_exact",
+        )
+        helper = await prepare_context(helper_context)
+        helper_locks = helper_context.adapter.lock_requests(helper)
+        base = configuration_valid_config("automation")
+        relevant = configuration_valid_config("automation")
+        relevant["condition"] = [
+            {
+                "condition": "state",
+                "entity_id": "input_boolean.synthetic_exact",
+                "state": "on",
+            }
+        ]
+        altered = {
+            **relevant,
+            "action": [{"service": "light.turn_off"}],
+        }
+        dynamic = configuration_valid_config("automation")
+        dynamic["condition"] = [
+            {
+                "condition": "template",
+                "value_template": "{{ states(entity_variable) }}",
+            }
+        ]
+
+        async def configuration_locks(action, current, proposed):
+            gateway = SyntheticConfigurationGateway()
+            proposal = configuration_proposal_for(
+                "automation",
+                action,
+                current_config=current,
+                proposed_config=proposed,
+            )
+            if current is not None:
+                gateway.states[("automation", "porch_light")] = current
+            adapter = configuration_adapter_for(
+                "automation", action, gateway
+            )
+            prepared = await adapter.prepare(proposal)
+            return adapter.lock_requests(prepared)
+
+        relevant_cases = (
+            ("create", None, relevant, "create_adds_dependency"),
+            ("update", base, relevant, "update_adds_dependency"),
+            ("update", relevant, base, "update_removes_dependency"),
+            ("update", relevant, altered, "update_alters_dependency"),
+            ("update", base, dynamic, "unconstrained_dynamic"),
+        )
+        timing = LockTiming(60, 10, 0)
+        with tempfile.TemporaryDirectory() as temporary:
+            store = DurableLockStore(temporary)
+            helper_handle = store.acquire_once(
+                helper_locks,
+                owner=self._lock_owner("helper-content"),
+                timing=timing,
+            )
+            for action, current, proposed, name in relevant_cases:
+                with self.subTest(case=name):
+                    locks = await configuration_locks(
+                        action, current, proposed
+                    )
+                    with self.assertRaises(LockConflict):
+                        store.acquire_once(
+                            locks,
+                            owner=self._lock_owner(name),
+                            timing=timing,
+                        )
+
+            unrelated_locks = await configuration_locks(
+                "update",
+                base,
+                configuration_valid_config("automation", updated=True),
+            )
+            unrelated_handle = store.acquire_once(
+                unrelated_locks,
+                owner=self._lock_owner("unrelated-content"),
+                timing=timing,
+            )
+            store.release(unrelated_handle)
+            store.release(helper_handle)
+
+    async def test_dependency_refresh_occurs_only_after_exact_locks_are_held(self):
+        context = make_context(
+            self.root / "refresh-after-locks",
+            SET_INPUT_BOOLEAN_STATE,
+            dependency_automation_ids=("porch_light",),
+        )
+        prepared = await prepare_context(context)
+        locks = context.adapter.lock_requests(prepared)
+
+        missing = await context.adapter.preflight(
+            prepared, acquired_locks=locks[:-1]
+        )
+
+        self.assertFalse(missing.eligible)
+        self.assertEqual(missing.outcome, "lock_conflict")
+        self.assertNotIn("helper_dependency_read", context.trace)
+
+        exact = await context.adapter.preflight(
+            prepared, acquired_locks=locks
+        )
+
+        self.assertTrue(exact.eligible)
+        self.assertEqual(context.trace[-1], "helper_dependency_read")
 
     async def test_unrelated_reload_domains_and_addons_remain_compatible(self):
         reload_keys = []
@@ -790,6 +1224,151 @@ class OperationalExecutorIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result.dispatch_count, 1)
                 self.assertEqual(gateway.provider_dispatches, 1)
                 self.assertEqual(gateway.simulated_effects, 1)
+
+    async def test_dependency_mutation_races_are_resolved_after_helper_preflight(self):
+        context = make_context(
+            self.root / "executor-dependency-race",
+            SET_INPUT_BOOLEAN_STATE,
+            target_id="input_boolean.synthetic_exact",
+        )
+        prepared = await prepare_context(context)
+        unrelated = configuration_valid_config("automation")
+        relevant = configuration_valid_config("automation", updated=True)
+        relevant["condition"] = [
+            {
+                "condition": "state",
+                "entity_id": "input_boolean.synthetic_exact",
+                "state": "on",
+            }
+        ]
+        altered = {
+            **relevant,
+            "action": [{"service": "light.turn_off"}],
+        }
+
+        async def configuration_locks(
+            action, current, proposed, *, target="porch_light"
+        ):
+            current = (
+                {**current, "id": target}
+                if current is not None
+                else None
+            )
+            proposed = {**proposed, "id": target}
+            gateway = SyntheticConfigurationGateway()
+            if current is not None:
+                gateway.states[("automation", target)] = current
+            adapter = configuration_adapter_for(
+                "automation", action, gateway
+            )
+            proposal = configuration_proposal_for(
+                "automation",
+                action,
+                current_config=current,
+                proposed_config=proposed,
+            )
+            configuration = await adapter.prepare(
+                replace(proposal, target_id=target)
+            )
+            return adapter.lock_requests(configuration)
+
+        conflicting = {
+            "create_adds": await configuration_locks(
+                "create", None, relevant
+            ),
+            "update_adds": await configuration_locks(
+                "update",
+                unrelated,
+                relevant,
+            ),
+            "update_removes": await configuration_locks(
+                "update", relevant, unrelated
+            ),
+            "update_alters": await configuration_locks(
+                "update", relevant, altered
+            ),
+        }
+        unrelated_locks = await configuration_locks(
+            "update",
+            unrelated,
+            configuration_valid_config("automation", updated=True),
+            target="unrelated_automation",
+        )
+        reload_context = make_context(
+            self.root / "executor-dependency-race-reload",
+            CONTROLLED_RELOAD,
+            target_id="automation",
+        )
+        reload_prepared = await prepare_context(reload_context)
+        reload_locks = reload_context.adapter.lock_requests(reload_prepared)
+        blocked: set[str] = set()
+        conflict_keys: dict[str, tuple[str, ...]] = {}
+        concurrent: set[str] = set()
+        executor = None
+
+        def attempt_race(stage):
+            if stage != "after_preflight_before_durable_intent":
+                return
+            candidates = {
+                # Exercise the compatible reader before the conflicting
+                # reload writer enters the lock store's fairness queue.
+                "unrelated": unrelated_locks,
+                **conflicting,
+                "reload": reload_locks,
+            }
+            for name, requests in candidates.items():
+                try:
+                    handle = executor.lock_store.acquire_once(
+                        requests,
+                        owner=LockOwner(
+                            f"owner-{name}",
+                            f"task-{name}",
+                            f"plan-{name}",
+                            f"operation-{name}",
+                            f"attempt-{name}",
+                        ),
+                        timing=LockTiming(60, 10, 0),
+                        now=executor.now(),
+                    )
+                except LockConflict as exc:
+                    blocked.add(name)
+                    conflict_keys[name] = exc.keys
+                else:
+                    concurrent.add(name)
+                    executor.lock_store.release(handle)
+
+        executor = make_executor(
+            self.root / "executor-dependency-race",
+            prepared=prepared,
+            executor_fault_hook=attempt_race,
+        )
+        result = await execute_operational(
+            executor,
+            adapter=context.adapter,
+            prepared=prepared,
+            identity=execution_identity(),
+            approval_consumption=context.approval.consume,
+        )
+
+        self.assertEqual(
+            blocked,
+            {
+                "create_adds",
+                "update_adds",
+                "update_removes",
+                "update_alters",
+                "reload",
+            },
+            conflict_keys,
+        )
+        self.assertEqual(concurrent, {"unrelated"})
+        self.assertEqual(result.outcome, "succeeded_verified")
+        self.assertEqual(
+            context.adapter.strategies[
+                SET_INPUT_BOOLEAN_STATE
+            ].gateway.provider_dispatches,
+            1,
+        )
 
     async def test_home_assistant_restart_recovers_outage_then_verifies(self):
         context = make_context(self.root, RESTART_HOME_ASSISTANT)

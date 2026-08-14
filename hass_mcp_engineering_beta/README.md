@@ -1,12 +1,13 @@
 # HA MCP Engineering Server Beta
 
 This directory contains the Engineering v2 add-on. The currently advertised
-version is `2.2.0-beta.26`; staged version `2.2.0-beta.27` separates read-only
-automation/script registry metadata from governed REST configuration and
-reports conclusive provider rejections truthfully. Beta 26 corrected retained
-plan-store scaling without changing public tools, authority, providers, or
-compatibility. Beta 25 promoted only `ha_search` after its successful bounded
-live canary. Beta 23 added an evidence-bound
+version is `2.2.0-beta.36`; staged version `2.2.0-beta.37` adds one exact,
+governed `input_boolean` on/off action with external approval, durable
+single-dispatch execution, authoritative readback, no fallback, and a
+separately governed reverse plan. Beta 36 corrected bounded Supervisor
+self-identity reads for approval notifications; its Android cold-start body
+navigation defect remains separate future work. Beta 25 promoted only
+`ha_search` after its successful bounded live canary. Beta 23 added an evidence-bound
 compatibility-family compiler and exact reviewed `ha-mcp` 8.1.1
 authority without weakening Beta 22 approval review or Beta 20 F3 behavior.
 The exact 8.1.0 profile admits 24 delegated reads and keeps `ha_search` and
@@ -425,6 +426,10 @@ and compatibility boundaries. See
 [`../docs/OPERATIONAL_ADMINISTRATION.md`](../docs/OPERATIONAL_ADMINISTRATION.md)
 for the 2.1A operational plan, constrained backup provider, exact-once apply,
 verification, recovery, audit, health, and rollback-unavailable contracts.
+See
+[`../docs/HAMCP_089_EXACT_HELPER_STATE.md`](../docs/HAMCP_089_EXACT_HELPER_STATE.md)
+for the exact governed `input_boolean` on/off action, direct-provider boundary,
+authoritative readback, no-redispatch recovery, and separate reverse-plan rule.
 
 Beta 24 changes automation normalization and plan hashes. Re-create pending or
 approved pre-Beta-24 plans; they are not silently migrated. The

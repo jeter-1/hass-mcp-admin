@@ -61,6 +61,7 @@ SINGLE_DISPATCH_OPERATIONS = frozenset(
         ChangeOperation.CONTROLLED_RELOAD.value,
         ChangeOperation.RESTART_ADDON.value,
         ChangeOperation.RESTART_HOME_ASSISTANT.value,
+        ChangeOperation.SET_INPUT_BOOLEAN_STATE.value,
         ChangeOperation.UPDATE_DASHBOARD.value,
     }
 )

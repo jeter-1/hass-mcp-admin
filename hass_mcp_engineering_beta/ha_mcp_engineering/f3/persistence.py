@@ -773,6 +773,62 @@ class DurableExecutionRepository:
             mutator=update,
         )
 
+    def terminalize_verified_no_dispatch(
+        self,
+        task_id: str,
+        *,
+        owner_id: str,
+        claim_generation: int,
+        resulting_state_fingerprint: str,
+        evidence_hash: str,
+        diagnostic_codes: tuple[str, ...] = (),
+        now: datetime | None = None,
+    ) -> ExecutionRecord:
+        """Record exact preflight proof that makes dispatch unnecessary."""
+
+        validate_sha256(
+            resulting_state_fingerprint,
+            field_name="resulting_state_fingerprint",
+        )
+        validate_sha256(evidence_hash, field_name="evidence_hash")
+        now_text = timestamp(now or utc_now())
+
+        def update(record: ExecutionRecord) -> None:
+            if (
+                record.dispatch_intent is not None
+                or record.dispatch_count
+                or not record.lock_tokens
+            ):
+                raise ExecutionStorageError(
+                    "verified no-dispatch boundary is invalid"
+                )
+            record.preflight_completed = True
+            record.normalized_outcome = "succeeded_verified"
+            record.task_state = "succeeded_verified"
+            record.state = "terminal"
+            record.terminal = True
+            record.evidence = self._bounded_evidence(
+                {
+                    "evidence_hash": evidence_hash,
+                    "resulting_state_fingerprint": (
+                        resulting_state_fingerprint
+                    ),
+                }
+            )
+            append_execution_event(
+                record,
+                event_type="preflight_noop_verified",
+                occurred_at=now_text,
+                diagnostic_codes=bounded_diagnostics(diagnostic_codes),
+            )
+
+        return self.mutate_claimed(
+            task_id,
+            owner_id=owner_id,
+            claim_generation=claim_generation,
+            mutator=update,
+        )
+
     def cancel(self, task_id: str, *, now: datetime | None = None) -> bool:
         now_text = timestamp(now or utc_now())
         with self._exclusive_transaction():

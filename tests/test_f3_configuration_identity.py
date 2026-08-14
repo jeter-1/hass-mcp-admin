@@ -23,10 +23,12 @@ from ha_mcp_engineering.f3.locks import DurableLockStore, LockConflict
 from ha_mcp_engineering.f3.models import LockOwner, LockTiming
 from ha_mcp_engineering.f3_configuration.locks import (
     complete_configuration_lock_set,
+    helper_dependency_lock_key,
     lock_set_hash,
     normalize_lock_requests,
     operation_lock_requests,
     resource_lock_key,
+    unconstrained_helper_dependency_lock_key,
 )
 from ha_mcp_engineering.f3_configuration.strategies import (
     CAPABILITY_IDENTITIES,
@@ -414,6 +416,128 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertNotIn("reload:automation", different_locks)
         self.assertIn("reload:script", different_locks)
+
+    async def test_automation_dependency_locks_derive_from_current_and_proposed_content(self):
+        helper = "input_boolean.synthetic_exact"
+        unrelated = valid_config("automation")
+        relevant = valid_config("automation")
+        relevant["condition"] = [
+            {
+                "condition": "state",
+                "entity_id": helper,
+                "state": "on",
+            }
+        ]
+        altered = {**relevant, "action": [{"service": "light.turn_off"}]}
+        cases = (
+            ("create", None, relevant, "add_create"),
+            ("update", unrelated, relevant, "add_update"),
+            ("update", relevant, unrelated, "remove_update"),
+            ("update", relevant, altered, "retain_alter_update"),
+        )
+        expected = helper_dependency_lock_key(helper)
+        for action, current, proposed, name in cases:
+            with self.subTest(case=name):
+                prepared = await self._prepared(
+                    "automation",
+                    action,
+                    current_config=current,
+                    proposed_config=proposed,
+                )
+                locks = {
+                    item.key: item
+                    for item in operation_lock_requests(prepared)
+                }
+                self.assertEqual(locks[expected].mode, LockMode.EXCLUSIVE)
+
+        unrelated_prepared = await self._prepared(
+            "automation",
+            "update",
+            current_config=unrelated,
+            proposed_config=valid_config("automation", updated=True),
+        )
+        self.assertNotIn(
+            expected,
+            {
+                item.key
+                for item in operation_lock_requests(unrelated_prepared)
+            },
+        )
+
+    async def test_unconstrained_dynamic_dependency_uses_conservative_lock_only(self):
+        base = valid_config("automation")
+        unconstrained = valid_config("automation")
+        unconstrained["condition"] = [
+            {
+                "condition": "template",
+                "value_template": "{{ states(entity_variable) }}",
+            }
+        ]
+        sensor_constrained = valid_config("automation")
+        sensor_constrained["condition"] = [
+            {
+                "condition": "template",
+                "value_template": "{{ states('sensor.' ~ room) }}",
+            }
+        ]
+        dynamic_key = unconstrained_helper_dependency_lock_key()
+        dynamic_prepared = await self._prepared(
+            "automation",
+            "update",
+            current_config=base,
+            proposed_config=unconstrained,
+        )
+        constrained_prepared = await self._prepared(
+            "automation",
+            "update",
+            current_config=base,
+            proposed_config=sensor_constrained,
+        )
+
+        self.assertIn(
+            dynamic_key,
+            {item.key for item in operation_lock_requests(dynamic_prepared)},
+        )
+        self.assertNotIn(
+            dynamic_key,
+            {
+                item.key
+                for item in operation_lock_requests(constrained_prepared)
+            },
+        )
+
+        ambiguous_expressions = (
+            "'sensor.' ~ room if use_sensor else helper_entity",
+            "'sensor.' ~ room and helper_entity",
+            "'sensor.' ~ room or helper_entity",
+            "('sensor.' ~ room)",
+            "'sensor.' ~ room | lower",
+        )
+        for index, expression in enumerate(ambiguous_expressions):
+            with self.subTest(expression=expression):
+                ambiguous = valid_config("automation")
+                ambiguous["condition"] = [
+                    {
+                        "condition": "template",
+                        "value_template": (
+                            "{{ states(" + expression + ") }}"
+                        ),
+                    }
+                ]
+                prepared = await self._prepared(
+                    "automation",
+                    "update",
+                    operation_id=f"ambiguous_{index}",
+                    current_config=base,
+                    proposed_config=ambiguous,
+                )
+                self.assertIn(
+                    dynamic_key,
+                    {
+                        item.key
+                        for item in operation_lock_requests(prepared)
+                    },
+                )
 
     async def test_matching_reload_and_restart_exclusive_locks_conflict_atomically(self):
         timing = LockTiming(60, 10, 0)

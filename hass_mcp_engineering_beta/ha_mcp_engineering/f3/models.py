@@ -502,6 +502,23 @@ class ExecutionRecord:
         self._validate_lock_tokens(self.lock_tokens)
         if self.dispatch_intent is None and self.dispatch_count:
             raise ValueError("dispatch count exists without durable intent")
+        if (
+            self.terminal
+            and self.normalized_outcome == "succeeded_verified"
+            and self.dispatch_intent is None
+            and (
+                not self.preflight_completed
+                or not any(
+                    event.get("event_type") == "preflight_noop_verified"
+                    for event in self.events
+                )
+                or set(self.evidence)
+                != {"evidence_hash", "resulting_state_fingerprint"}
+            )
+        ):
+            raise ValueError(
+                "verified no-dispatch execution lacks exact preflight proof"
+            )
         if self.dispatch_intent is not None:
             required = {
                 "committed_at", "evidence_deadline", "request_id", "provider_operation",

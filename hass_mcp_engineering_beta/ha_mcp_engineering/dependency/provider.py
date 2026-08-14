@@ -21,7 +21,13 @@ from ..providers import (
     ProviderResult,
 )
 from .extraction import extract_document, resolve_blueprint_roles
-from .models import DependencyScanResult, SOURCE_TYPES, SourceCoverageItem
+from .models import (
+    AutomationReadFailure,
+    AutomationActionRiskProfile,
+    DependencyScanResult,
+    SOURCE_TYPES,
+    SourceCoverageItem,
+)
 
 
 class DependencySourceProvider(EngineeringEvidenceProvider):
@@ -79,9 +85,20 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         )
 
     async def scan(self) -> DependencyScanResult:
+        # Import after the dependency package is initialized; governance uses
+        # this shared index at runtime and a module-level import would create a
+        # package initialization cycle.
+        from ..governance.risk import (
+            automation_action_consequence_profile,
+        )
+
         scan_started = time.perf_counter()
         findings = []
         dynamic = []
+        automation_action_profiles: list[
+            AutomationActionRiskProfile
+        ] = []
+        automation_read_failures: list[AutomationReadFailure] = []
         metadata: dict[str, dict[str, Any]] = {}
         coverage: list[SourceCoverageItem] = []
         request_counts: Counter[str] = Counter()
@@ -175,7 +192,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             attrs = state.get("attributes") if isinstance(state.get("attributes"), dict) else {}
             internal_id = attrs.get("id")
             if not internal_id:
-                return state, None, "Automation has no internal configuration ID."
+                return state, None, "automation_id_missing"
             try:
                 config = await request(
                     "automation_config",
@@ -183,10 +200,10 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                     queued=True,
                 )
                 if not isinstance(config, dict):
-                    return state, None, "Automation configuration response was invalid."
+                    return state, None, "automation_config_invalid"
                 return state, config, None
             except Exception:
-                return state, None, "Automation configuration could not be read."
+                return state, None, "automation_config_unreadable"
 
         auto_started = time.perf_counter()
         results = await asyncio.gather(*(fetch_automation(state) for state in automations))
@@ -198,6 +215,19 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             internal_id = str(attrs.get("id") or state.get("entity_id"))
             if failure or config is None:
                 failed += 1
+                automation_read_failures.append(
+                    AutomationReadFailure(
+                        source_id=internal_id,
+                        source_entity_id=(
+                            str(state.get("entity_id"))
+                            if state.get("entity_id")
+                            else None
+                        ),
+                        reason_code=str(
+                            failure or "automation_config_unreadable"
+                        ),
+                    )
+                )
                 continue
             extracted, unresolved = extract_document(
                 source_type="automation",
@@ -211,13 +241,73 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             findings.extend(extracted)
             dynamic.extend(unresolved)
             blueprint = config.get("use_blueprint")
+            action_config = config
             if isinstance(blueprint, dict):
                 path = blueprint.get("path")
                 parsed = _read_blueprint(path) if isinstance(path, str) else None
                 if parsed is None:
                     blueprint_failures += 1
+                    action_config = {
+                        "action": [
+                            {"service": "{{ unresolved_blueprint_action }}"}
+                        ]
+                    }
                 else:
                     findings.extend(resolve_blueprint_roles(extracted, parsed, source_id=internal_id))
+                    action_config = parsed
+            consequence = automation_action_consequence_profile(
+                action_config
+            )
+            automation_action_profiles.append(
+                AutomationActionRiskProfile(
+                    source_id=internal_id,
+                    source_entity_id=(
+                        str(state.get("entity_id"))
+                        if state.get("entity_id")
+                        else None
+                    ),
+                    risk_level=str(consequence["risk_level"]),
+                    physical_consequence=str(
+                        consequence["physical_consequence"]
+                    ),
+                    complete=bool(consequence["complete"]),
+                    truncated=bool(consequence["truncated"]),
+                    action_domains=tuple(
+                        str(item)
+                        for item in consequence["action_domains"]
+                    ),
+                    services=tuple(
+                        str(item) for item in consequence["services"]
+                    ),
+                    reason_codes=tuple(
+                        str(item)
+                        for item in consequence["reason_codes"]
+                    ),
+                    effect_projection_model=str(
+                        consequence["effect_projection_model"]
+                    ),
+                    effect_targets=tuple(
+                        str(item)
+                        for item in consequence["effect_targets"]
+                    ),
+                    effect_data=tuple(
+                        str(item)
+                        for item in consequence["effect_data"]
+                    ),
+                    effect_structure_fingerprint=str(
+                        consequence["effect_structure_fingerprint"]
+                    ),
+                    effect_projection_fingerprint=str(
+                        consequence["effect_projection_fingerprint"]
+                    ),
+                    effect_projection_clipped=bool(
+                        consequence["effect_projection_clipped"]
+                    ),
+                    evidence_fingerprint=str(
+                        consequence["evidence_fingerprint"]
+                    ),
+                )
+            )
 
         automation_status = "complete" if failed == 0 else ("partial" if results else "unavailable")
         coverage.append(
@@ -288,6 +378,8 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 "scan_wall_time_ms": round((time.perf_counter() - scan_started) * 1000, 3),
                 "build_wall_clock_ms": round((time.perf_counter() - scan_started) * 1000, 3),
             },
+            automation_action_profiles=automation_action_profiles,
+            automation_read_failures=automation_read_failures,
         )
 
 

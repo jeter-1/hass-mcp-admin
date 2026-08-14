@@ -58,6 +58,12 @@ OPERATIONAL_REGISTRATIONS = (
     ("restart_home_assistant_core", "restart_home_assistant", "home_assistant"),
 )
 
+HELPER_STATE_REGISTRATION = (
+    "set_exact_input_boolean_state",
+    "set_input_boolean_state",
+    "input_boolean",
+)
+
 DASHBOARD_REGISTRATION = (
     "update_existing_dashboard",
     "update_dashboard",
@@ -134,6 +140,31 @@ class ClosedAdapterRegistry:
         adapters = dict(configuration_adapters)
         for capability, _operation, _target in OPERATIONAL_REGISTRATIONS:
             adapters[capability] = operational_adapter
+        capability, operation, target = HELPER_STATE_REGISTRATION
+        entries.append(
+            AdapterRegistration(
+                capability_id=capability,
+                adapter_id="operational_administration",
+                operation_family="operational_administration",
+                plan_operation=operation,
+                target_type=target,
+                action=operation,
+                provider_model="direct-ha-exact-input-boolean-v1",
+                resource_lock_model="f3-operational-complete-lock-graph-v1",
+                provider_dependency_lock_model=(
+                    "home_assistant_core_shared_dependency"
+                ),
+                provider_admission_model="code_owned_closed_contract",
+                verification_model="f3-input-boolean-exact-state-readback-v1",
+                recovery_model="exact_state_readback_only",
+                rollback_declaration="separate_governed_reverse_plan",
+                runtime_route="apply_change_plan",
+                historical_compatibility="new_plan_required",
+                required_releases=(),
+                required_protocol="direct-home-assistant-api-v1",
+            )
+        )
+        adapters[capability] = operational_adapter
         capability, operation, target = DASHBOARD_REGISTRATION
         entries.append(
             AdapterRegistration(
@@ -166,6 +197,7 @@ class ClosedAdapterRegistry:
             for item in (
                 *CONFIGURATION_REGISTRATIONS,
                 *OPERATIONAL_REGISTRATIONS,
+                HELPER_STATE_REGISTRATION,
                 DASHBOARD_REGISTRATION,
             )
         }
@@ -177,16 +209,32 @@ class ClosedAdapterRegistry:
         for entry in self._entries:
             if entry.contract_model != F3_ADAPTER_CONTRACT_MODEL:
                 raise AdapterRegistryError("F3 adapter model is unsupported")
+            direct_helper = entry.capability_id == HELPER_STATE_REGISTRATION[0]
             if (
-                entry.required_releases
-                not in {
-                    ("7.14.2", "8.0.0"),
-                    ("8.1.1", "8.2.0"),
-                }
-                or entry.required_protocol != "2025-03-26"
+                (
+                    direct_helper
+                    and (
+                        entry.required_releases != ()
+                        or entry.required_protocol
+                        != "direct-home-assistant-api-v1"
+                        or entry.provider_admission_model
+                        != "code_owned_closed_contract"
+                    )
+                )
+                or (
+                    not direct_helper
+                    and (
+                        entry.required_releases
+                        not in {
+                            ("7.14.2", "8.0.0"),
+                            ("8.1.1", "8.2.0"),
+                        }
+                        or entry.required_protocol != "2025-03-26"
+                        or entry.provider_admission_model
+                        != "exact_reviewed_release_registry"
+                    )
+                )
                 or entry.runtime_route != "apply_change_plan"
-                or entry.provider_admission_model
-                != "exact_reviewed_release_registry"
                 or not entry.resource_lock_model
                 or not entry.provider_dependency_lock_model
                 or entry.target_type not in {

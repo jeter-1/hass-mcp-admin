@@ -30,6 +30,7 @@ EXECUTOR_COUNTERS = frozenset(
     {
         "executions_started",
         "preflight_rejections",
+        "preflight_noop_successes",
         "durable_intents_committed",
         "durable_intent_failures",
         "dispatch_attempts",

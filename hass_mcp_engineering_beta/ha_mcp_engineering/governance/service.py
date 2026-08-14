@@ -119,6 +119,18 @@ from .operational_lifecycle import (
     RESTART_OUTAGE_ELIGIBILITY_WINDOW_SECONDS,
     RELOAD_SERVICES,
 )
+from .helper_state import (
+    HELPER_STATE_PROVIDER,
+    HELPER_STATE_PROVIDER_CONTRACT,
+    HelperStateGatewayError,
+    validate_desired_state,
+    validate_input_boolean_entity_id,
+)
+from .helper_dependency import (
+    HELPER_DEPENDENCY_RISK_MODEL,
+    helper_dependency_risk_assessment,
+    read_runtime_helper_dependency_risk,
+)
 from .validation import sanitize_context, validate_automation
 from .semantic_projection import (
     SemanticProjectionError,
@@ -392,6 +404,11 @@ class ChangeGovernanceService:
         sensitive_values: tuple[str, ...] = (),
         operational_gateway: BackupAdministrationGateway | Any | None = None,
         lifecycle_gateway: OperationalLifecycleGateway | Any | None = None,
+        helper_state_gateway: Any | None = None,
+        helper_dependency_risk_reader: Callable[..., Awaitable[
+            dict[str, Any]
+        ]]
+        | None = None,
         task_repository: ExecutionTaskRepository | None = None,
         dashboard_gateway: Any | None = None,
         provider_identity_reader: Callable[[], Awaitable[dict[str, str]]] | None = None,
@@ -404,6 +421,11 @@ class ChangeGovernanceService:
         self.sensitive_values = tuple(value for value in sensitive_values if value)
         self.operational_gateway = operational_gateway
         self.lifecycle_gateway = lifecycle_gateway
+        self.helper_state_gateway = helper_state_gateway
+        self.helper_dependency_risk_reader = (
+            helper_dependency_risk_reader
+            or read_runtime_helper_dependency_risk
+        )
         self.dashboard_gateway = dashboard_gateway
         self.provider_identity_reader = provider_identity_reader
         self.approval_notifications = approval_notifications
@@ -3024,6 +3046,213 @@ class ChangeGovernanceService:
             "status": "awaiting_approval",
             "proposal_only": True,
             "provider_dispatch_occurred": False,
+            "plan": self._public(plan, include_configs=False),
+        }
+
+    async def create_helper_state_plan(
+        self,
+        *,
+        entity_id: str,
+        desired_state: str,
+        expiration_minutes: int = 120,
+        caller_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Propose one exact input-boolean state change without dispatch."""
+
+        if self.helper_state_gateway is None:
+            raise GovernanceError(ErrorCode.OPERATIONAL_PROVIDER_UNAVAILABLE)
+        try:
+            entity_id = validate_input_boolean_entity_id(entity_id)
+            desired_state = validate_desired_state(desired_state)
+        except (TypeError, ValueError) as exc:
+            raise GovernanceError(
+                ErrorCode.INVALID_REQUEST,
+                details={"reason": "invalid_exact_helper_state_request"},
+            ) from exc
+        expiration_minutes = max(5, min(int(expiration_minutes), 1440))
+        try:
+            evidence = await self.helper_state_gateway.planning_evidence(
+                entity_id
+            )
+        except HelperStateGatewayError as exc:
+            code = {
+                "entity_not_found": ErrorCode.ENTITY_NOT_FOUND,
+                "permission_failure": ErrorCode.AUTHORIZATION_FAILURE,
+                "provider_timeout": ErrorCode.HA_TIMEOUT,
+                "provider_unavailable": ErrorCode.HA_UNAVAILABLE,
+            }.get(exc.category, ErrorCode.HA_API_ERROR)
+            raise GovernanceError(code) from None
+        provider_evidence = evidence.get("provider")
+        baseline = evidence.get("baseline")
+        if (
+            not isinstance(provider_evidence, dict)
+            or provider_evidence.get("provider") != HELPER_STATE_PROVIDER
+            or provider_evidence.get("provider_contract_model")
+            != HELPER_STATE_PROVIDER_CONTRACT
+            or not isinstance(baseline, dict)
+            or baseline.get("entity_id") != entity_id
+            or baseline.get("state") not in {"on", "off"}
+        ):
+            raise GovernanceError(ErrorCode.INTERNAL_INVARIANT_VIOLATION)
+        if baseline["state"] == desired_state:
+            return {
+                "status": "no_change",
+                "outcome": "already_in_desired_state",
+                "plan_created": False,
+                "proposal_only": True,
+                "provider_dispatch_occurred": False,
+                "verified": True,
+                "target_type": "input_boolean",
+                "target_id": entity_id,
+                "desired_state": desired_state,
+                "observed_state_fingerprint": stable_hash(baseline),
+                "provider": HELPER_STATE_PROVIDER,
+                "fallback": "none",
+                "fallback_occurred": False,
+            }
+        dependency_evidence = await self.helper_dependency_risk_reader(
+            entity_id, refresh=True
+        )
+        dependency_binding = dependency_evidence.get("binding")
+        if not isinstance(dependency_binding, dict):
+            raise GovernanceError(ErrorCode.INTERNAL_INVARIANT_VIOLATION)
+        bound_baseline = {
+            **baseline,
+            "dependency_risk": dependency_binding,
+        }
+        now = self.now()
+        risk = helper_dependency_risk_assessment(dependency_evidence)
+        operational = OperationalPlanDetails(
+            schema_version=1,
+            family="operational_administration",
+            operation=ChangeOperation.SET_INPUT_BOOLEAN_STATE.value,
+            requested_name=desired_state,
+            provider=HELPER_STATE_PROVIDER,
+            provider_capability_evidence=provider_evidence,
+            expected_effects=[
+                f"Set {entity_id} to the exact state {desired_state}.",
+            ],
+            preconditions=[
+                "The exact entity remains available as an input_boolean.",
+                "The planned state fingerprint remains current, or the desired state is already observed.",
+                "The normalized dependency-risk evidence remains complete and unchanged.",
+                "One unexpired external administrator approval is bound to this plan hash.",
+            ],
+            verification_contract={
+                "version": 1,
+                "operation": ChangeOperation.SET_INPUT_BOOLEAN_STATE.value,
+                "required": [
+                    "exact_entity_id",
+                    "exact_desired_state",
+                    "authoritative_state_readback",
+                ],
+                "no_blind_redispatch": True,
+                "idempotent_preflight_noop": True,
+            },
+            baseline=bound_baseline,
+            dispatch={
+                "attempt_count": 0,
+                "dispatched": False,
+                "request_id": None,
+                "attempted_at": None,
+                "provider_response_received": False,
+            },
+            verification=RecoveryVerification(),
+            limitations=[
+                "Only input_boolean on and off are supported.",
+                "Toggle, arbitrary services, service data, and fallback are unavailable.",
+                "Recovery performs exact readback and never blindly redispatches.",
+                "Reversal requires a separately planned and approved opposite state.",
+            ],
+            rollback_available=False,
+        )
+        plan = ChangePlan(
+            plan_id=self._new_id(),
+            plan_version=1,
+            created_at=now.isoformat(),
+            updated_at=now.isoformat(),
+            expires_at=(
+                now + timedelta(minutes=expiration_minutes)
+            ).isoformat(),
+            status=PlanStatus.AWAITING_APPROVAL,
+            title=f"Set {entity_id} {desired_state}"[:160],
+            description=(
+                "Set one exact Home Assistant input_boolean state through the "
+                "governed direct-provider lifecycle."
+            ),
+            requested_by=current_caller_id(),
+            target=ChangeTarget("input_boolean", entity_id),
+            operation=ChangeOperation.SET_INPUT_BOOLEAN_STATE,
+            proposed_config={"state": desired_state},
+            current_config={"state": baseline["state"]},
+            normalized_proposed_config={"state": desired_state},
+            normalized_current_config={"state": baseline["state"]},
+            current_state_fingerprint=stable_hash(bound_baseline),
+            proposed_config_hash=stable_hash(
+                {
+                    "operation": ChangeOperation.SET_INPUT_BOOLEAN_STATE.value,
+                    "entity_id": entity_id,
+                    "desired_state": desired_state,
+                }
+            ),
+            risk=risk,
+            normalization_version=1,
+            warnings=list(risk.warnings),
+            validation_results={
+                "valid": True,
+                "planning_write_performed": False,
+                "provider_available": True,
+                "entity_state_readable": True,
+                "dependency_evidence_complete": (
+                    dependency_binding.get("evidence_complete") is True
+                ),
+                "dependency_evidence_completeness": (
+                    dependency_binding.get("completeness")
+                ),
+            },
+            dry_run_results={
+                "operation": ChangeOperation.SET_INPUT_BOOLEAN_STATE.value,
+                "from_state": baseline["state"],
+                "to_state": desired_state,
+                "provider_dispatch_occurred": False,
+                "rollback_available": False,
+                "dependency_risk": {
+                    "completeness": dependency_binding.get(
+                        "completeness"
+                    ),
+                    "physical_consequence": dependency_binding.get(
+                        "physical_consequence"
+                    ),
+                    "evidence_fingerprint": dependency_binding.get(
+                        "evidence_fingerprint"
+                    ),
+                },
+            },
+            rollback=ChangeRollback(available=False, status="unavailable"),
+            caller_context=_sanitize_configuration_caller_context(
+                caller_context,
+                known_secrets=self.sensitive_values,
+            ),
+            contract_version=OPERATIONAL_PLAN_CONTRACT_VERSION,
+            plan_family="operational_administration",
+            operational=operational,
+            execution_outcome="not_applied",
+        )
+        plan.policy_decision = evaluate_change_policy(plan)
+        self._bind_new_plan_policy(plan)
+        self._supersede_prior(plan)
+        self._record(
+            plan,
+            "set_input_boolean_state_plan_created",
+            "success",
+        )
+        return {
+            "status": "awaiting_approval",
+            "proposal_only": True,
+            "provider_dispatch_occurred": False,
+            "provider": HELPER_STATE_PROVIDER,
+            "fallback": "none",
+            "fallback_occurred": False,
             "plan": self._public(plan, include_configs=False),
         }
 
@@ -10045,6 +10274,88 @@ class ChangeGovernanceService:
                         != plan.proposed_config_hash,
                     )
                 )
+            elif plan.operation == ChangeOperation.SET_INPUT_BOOLEAN_STATE:
+                try:
+                    exact_entity_id = validate_input_boolean_entity_id(
+                        plan.target_id
+                    )
+                    exact_desired_state = validate_desired_state(
+                        operational.requested_name if operational else ""
+                    )
+                except (TypeError, ValueError):
+                    exact_entity_id = ""
+                    exact_desired_state = ""
+                evidence = (
+                    operational.provider_capability_evidence
+                    if operational is not None
+                    and isinstance(
+                        operational.provider_capability_evidence, dict
+                    )
+                    else {}
+                )
+                baseline = (
+                    operational.baseline
+                    if operational is not None
+                    and isinstance(operational.baseline, dict)
+                    else {}
+                )
+                dependency_risk = baseline.get("dependency_risk")
+                invalid = invalid or any(
+                    (
+                        plan.target_type != "input_boolean",
+                        exact_entity_id != plan.target_id,
+                        exact_desired_state
+                        != (
+                            operational.requested_name
+                            if operational
+                            else None
+                        ),
+                        baseline.get("entity_id") != plan.target_id,
+                        baseline.get("state") not in {"on", "off"},
+                        not isinstance(dependency_risk, dict),
+                        (
+                            dependency_risk.get("model")
+                            if isinstance(dependency_risk, dict)
+                            else None
+                        )
+                        != HELPER_DEPENDENCY_RISK_MODEL,
+                        not isinstance(
+                            (
+                                dependency_risk.get(
+                                    "evidence_fingerprint"
+                                )
+                                if isinstance(dependency_risk, dict)
+                                else None
+                            ),
+                            str,
+                        ),
+                        (
+                            operational.provider
+                            if operational
+                            else None
+                        )
+                        != HELPER_STATE_PROVIDER,
+                        evidence.get("provider_contract_model")
+                        != HELPER_STATE_PROVIDER_CONTRACT,
+                        constraints.get("domain") != "input_boolean",
+                        constraints.get("target") != "exact_entity_id",
+                        constraints.get("arbitrary_service_allowed")
+                        is not False,
+                        constraints.get(
+                            "arbitrary_service_data_allowed"
+                        )
+                        is not False,
+                        constraints.get("fallback_allowed") is not False,
+                        stable_hash(
+                            {
+                                "operation": plan.operation.value,
+                                "entity_id": plan.target_id,
+                                "desired_state": exact_desired_state,
+                            }
+                        )
+                        != plan.proposed_config_hash,
+                    )
+                )
             else:
                 invalid = True
             if invalid:
@@ -10868,6 +11179,7 @@ class ChangeGovernanceService:
                 ChangeOperation.CONTROLLED_RELOAD,
                 ChangeOperation.RESTART_ADDON,
                 ChangeOperation.RESTART_HOME_ASSISTANT,
+                ChangeOperation.SET_INPUT_BOOLEAN_STATE,
             )
         )
         tasks_by_plan = {task.plan_id: task for task in tasks}
@@ -10986,6 +11298,13 @@ class ChangeGovernanceService:
                 "fallback_policy": "none",
             }
         )
+        helper_state_provider_health = {
+            "provider": HELPER_STATE_PROVIDER,
+            "configured": self.helper_state_gateway is not None,
+            "operational_status": "configured_unprobed",
+            "fallback_count": 0,
+            "fallback_policy": "none",
+        }
         by_type: dict[str, dict[str, Any]] = {}
         for operation in lifecycle_types:
             operation_plans = [
@@ -11002,6 +11321,9 @@ class ChangeGovernanceService:
                 backup_provider_health
                 if operation
                 == ChangeOperation.CREATE_FULL_BACKUP.value
+                else helper_state_provider_health
+                if operation
+                == ChangeOperation.SET_INPUT_BOOLEAN_STATE.value
                 else lifecycle_provider_health
             )
             by_type[operation] = {
@@ -11135,6 +11457,11 @@ class ChangeGovernanceService:
                     "operational_status"
                 ),
                 "provider_contract_status": (
+                    "code_owned_exact"
+                    if operation
+                    == ChangeOperation.SET_INPUT_BOOLEAN_STATE.value
+                    and provider_health.get("configured") is True
+                    else
                     "exact"
                     if provider_health.get("operational_status")
                     == "available"

@@ -93,7 +93,11 @@ def extract_document(
             )
         )
 
-    def add_dynamic(path: str, text: str):
+    def add_dynamic(
+        path: str,
+        text: str,
+        possible_entity_domains: tuple[str, ...] | None,
+    ):
         safe = _bounded(text, 240, secret)
         dynamic.append(
             DynamicReference(
@@ -106,6 +110,7 @@ def extract_document(
                 source_entity_id=_bounded(source_entity_id, 128, secret),
                 source_name=_bounded(source_name, 160, secret),
                 source_state=_bounded(source_state, 32, secret),
+                possible_entity_domains=possible_entity_domains,
             )
         )
 
@@ -139,11 +144,13 @@ def extract_document(
             ):
                 return
             if _is_template(value, parent_key):
-                literals, unresolved = _template_references(value)
+                literals, unresolved, possible_domains = (
+                    _template_references(value)
+                )
                 for entity in literals:
                     add(entity, "template_literal", path, match_type="template_literal", excerpt=value)
                 if unresolved:
-                    add_dynamic(path, value)
+                    add_dynamic(path, value, possible_domains)
 
     walk(config, "$", "other_structured_reference")
     return _deduplicate(findings), _deduplicate_dynamic(dynamic)
@@ -242,7 +249,9 @@ def _is_template(value: str, key: str) -> bool:
     return "{{" in value or "{%" in value or key in TEMPLATE_KEYS
 
 
-def _template_references(value: str) -> tuple[list[str], bool]:
+def _template_references(
+    value: str,
+) -> tuple[list[str], bool, tuple[str, ...] | None]:
     """Extract references only from recognized Home Assistant template syntax.
 
     The scanner never executes Jinja and never promotes arbitrary dotted tokens.
@@ -251,13 +260,30 @@ def _template_references(value: str) -> tuple[list[str], bool]:
     """
 
     exact: set[str] = set()
-    unresolved = False
+    unresolved_constraints: list[frozenset[str] | None] = []
     for segment in _template_code_segments(value):
         bounded = segment[:MAX_TEMPLATE_SEGMENT_CHARS]
-        found, dynamic = _scan_template_segment(bounded)
+        found, constraints = _scan_template_segment(bounded)
         exact.update(found)
-        unresolved = unresolved or dynamic or len(segment) > len(bounded)
-    return sorted(exact), unresolved
+        unresolved_constraints.extend(constraints)
+        if len(segment) > len(bounded):
+            unresolved_constraints.append(None)
+    if not unresolved_constraints:
+        return sorted(exact), False, None
+    if any(item is None for item in unresolved_constraints):
+        possible_domains = None
+    else:
+        possible_domains = tuple(
+            sorted(
+                {
+                    domain
+                    for item in unresolved_constraints
+                    for domain in item or ()
+                },
+                key=lambda item: item.encode("utf-8"),
+            )
+        ) or None
+    return sorted(exact), True, possible_domains
 
 
 def _template_code_segments(value: str) -> list[str]:
@@ -285,9 +311,11 @@ def _template_code_segments(value: str) -> list[str]:
     return segments
 
 
-def _scan_template_segment(value: str, *, depth: int = 0) -> tuple[set[str], bool]:
+def _scan_template_segment(
+    value: str, *, depth: int = 0
+) -> tuple[set[str], list[frozenset[str] | None]]:
     exact: set[str] = set()
-    unresolved = False
+    unresolved: list[frozenset[str] | None] = []
     cursor = 0
     while cursor < len(value):
         char = value[cursor]
@@ -313,7 +341,7 @@ def _scan_template_segment(value: str, *, depth: int = 0) -> tuple[set[str], boo
         if lookahead < len(value) and value[lookahead] == "(":
             inner, end = _extract_balanced(value, lookahead, "(", ")")
             if inner is None:
-                unresolved = True
+                unresolved.append(None)
                 cursor = lookahead + 1
                 continue
             arguments = _split_top_level_args(inner)
@@ -321,7 +349,9 @@ def _scan_template_segment(value: str, *, depth: int = 0) -> tuple[set[str], boo
             for argument in target_arguments:
                 literals = _literal_string_arguments(argument)
                 if literals is None:
-                    unresolved = True
+                    unresolved.append(
+                        _constrained_dynamic_entity_domains(argument)
+                    )
                     continue
                 exact.update(item for item in literals if valid_entity_id(item))
             if depth < MAX_TEMPLATE_NESTING:
@@ -329,21 +359,23 @@ def _scan_template_segment(value: str, *, depth: int = 0) -> tuple[set[str], boo
                     inner, depth=depth + 1
                 )
                 exact.update(nested)
-                unresolved = unresolved or nested_dynamic
+                unresolved.extend(nested_dynamic)
             elif any(helper in inner for helper in ENTITY_TEMPLATE_HELPERS):
-                unresolved = True
+                unresolved.append(None)
             cursor = end
             continue
 
         if name == "states" and lookahead < len(value) and value[lookahead] == "[":
             inner, end = _extract_balanced(value, lookahead, "[", "]")
             if inner is None:
-                unresolved = True
+                unresolved.append(None)
                 cursor = lookahead + 1
                 continue
             literals = _literal_string_arguments(inner)
             if literals is None:
-                unresolved = True
+                unresolved.append(
+                    _constrained_dynamic_entity_domains(inner)
+                )
             else:
                 exact.update(item for item in literals if valid_entity_id(item))
             cursor = end
@@ -357,6 +389,27 @@ def _scan_template_segment(value: str, *, depth: int = 0) -> tuple[set[str], boo
                     exact.add(entity_id)
                 cursor = lookahead + match.end()
     return exact, unresolved
+
+
+def _constrained_dynamic_entity_domains(
+    argument: str,
+) -> frozenset[str] | None:
+    """Recognize one complete fixed-domain plus simple-name expression."""
+
+    match = re.fullmatch(
+        r"\s*(?P<quote>['\"])(?P<domain>[a-z0-9_]+)\."
+        r"(?P=quote)\s*~\s*"
+        r"(?P<suffix>[A-Za-z_][A-Za-z0-9_]*)\s*",
+        argument,
+    )
+    if match is None:
+        return None
+    domain = match.group("domain")
+    if not ENTITY_ID_COMPONENT.fullmatch(domain) or not any(
+        character.isalpha() for character in domain
+    ):
+        return None
+    return frozenset({domain})
 
 
 def _extract_balanced(
