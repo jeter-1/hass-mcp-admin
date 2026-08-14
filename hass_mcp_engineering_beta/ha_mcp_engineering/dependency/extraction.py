@@ -8,6 +8,11 @@ import re
 from typing import Any, Iterable
 
 from ..logging_config import redact_data
+from .dynamic_resolution import (
+    BoundedTemplateContext,
+    CandidateResolution,
+    MAX_DYNAMIC_LABEL_SELECTORS,
+)
 from .models import DependencyFinding, DynamicReference, evidence_id
 
 
@@ -67,6 +72,7 @@ def extract_document(
     dynamic: list[DynamicReference] = []
     blueprint = config.get("use_blueprint") if isinstance(config, dict) else None
     blueprint_path = blueprint.get("path") if isinstance(blueprint, dict) else None
+    resolved_selector_count = 0
 
     def add(entity_id: str, relation: str, path: str, *, match_type: str = "structured_exact", blueprint_input: str | None = None, excerpt: str | None = None):
         if not valid_entity_id(entity_id):
@@ -96,8 +102,25 @@ def extract_document(
     def add_dynamic(
         path: str,
         text: str,
-        possible_entity_domains: tuple[str, ...] | None,
+        resolution: CandidateResolution,
     ):
+        nonlocal resolved_selector_count
+        safe_selectors = tuple(
+            value
+            for selector in resolution.literal_label_selectors
+            if isinstance(
+                (value := _bounded(selector, 128, secret)), str
+            )
+        )
+        selector_sanitization_incomplete = bool(
+            safe_selectors != resolution.literal_label_selectors
+        )
+        resolved_selector_count += len(
+            safe_selectors
+        )
+        selector_limit_exceeded = (
+            resolved_selector_count > MAX_DYNAMIC_LABEL_SELECTORS
+        )
         safe = _bounded(text, 240, secret)
         dynamic.append(
             DynamicReference(
@@ -110,7 +133,29 @@ def extract_document(
                 source_entity_id=_bounded(source_entity_id, 128, secret),
                 source_name=_bounded(source_name, 160, secret),
                 source_state=_bounded(source_state, 32, secret),
-                possible_entity_domains=possible_entity_domains,
+                possible_entity_domains=(
+                    resolution.possible_entity_domains
+                ),
+                possible_entity_ids=resolution.entity_ids,
+                literal_label_selectors=(
+                    safe_selectors
+                ),
+                candidate_resolution_kind=(
+                    "resolution_limit"
+                    if selector_limit_exceeded
+                    else "unresolved"
+                    if selector_sanitization_incomplete
+                    else resolution.kind
+                ),
+                candidate_resolution_complete=bool(
+                    resolution.complete
+                    and not selector_limit_exceeded
+                    and not selector_sanitization_incomplete
+                ),
+                candidate_resolution_limit_exceeded=bool(
+                    resolution.limit_exceeded
+                    or selector_limit_exceeded
+                ),
             )
         )
 
@@ -144,13 +189,13 @@ def extract_document(
             ):
                 return
             if _is_template(value, parent_key):
-                literals, unresolved, possible_domains = (
+                literals, unresolved, resolution = (
                     _template_references(value)
                 )
                 for entity in literals:
                     add(entity, "template_literal", path, match_type="template_literal", excerpt=value)
                 if unresolved:
-                    add_dynamic(path, value, possible_domains)
+                    add_dynamic(path, value, resolution)
 
     walk(config, "$", "other_structured_reference")
     return _deduplicate(findings), _deduplicate_dynamic(dynamic)
@@ -251,7 +296,7 @@ def _is_template(value: str, key: str) -> bool:
 
 def _template_references(
     value: str,
-) -> tuple[list[str], bool, tuple[str, ...] | None]:
+) -> tuple[list[str], bool, CandidateResolution]:
     """Extract references only from recognized Home Assistant template syntax.
 
     The scanner never executes Jinja and never promotes arbitrary dotted tokens.
@@ -260,34 +305,85 @@ def _template_references(
     """
 
     exact: set[str] = set()
-    unresolved_constraints: list[frozenset[str] | None] = []
-    for segment in _template_code_segments(value):
+    dynamic_resolutions: list[CandidateResolution] = []
+    context = BoundedTemplateContext(valid_entity_id)
+    for segment_type, segment in _template_segments(value):
         bounded = segment[:MAX_TEMPLATE_SEGMENT_CHARS]
-        found, constraints = _scan_template_segment(bounded)
+        if segment_type == "statement":
+            context.apply_statement(bounded)
+        found, resolutions = _scan_template_segment(
+            bounded, candidate_context=context
+        )
         exact.update(found)
-        unresolved_constraints.extend(constraints)
+        dynamic_resolutions.extend(resolutions)
         if len(segment) > len(bounded):
-            unresolved_constraints.append(None)
-    if not unresolved_constraints:
-        return sorted(exact), False, None
-    if any(item is None for item in unresolved_constraints):
-        possible_domains = None
-    else:
-        possible_domains = tuple(
-            sorted(
-                {
-                    domain
-                    for item in unresolved_constraints
-                    for domain in item or ()
-                },
-                key=lambda item: item.encode("utf-8"),
+            dynamic_resolutions.append(
+                CandidateResolution(
+                    complete=False,
+                    limit_exceeded=True,
+                    kind="resolution_limit",
+                )
             )
-        ) or None
-    return sorted(exact), True, possible_domains
+    if not dynamic_resolutions:
+        return sorted(exact), False, CandidateResolution()
+    complete = all(item.complete for item in dynamic_resolutions)
+    limit_exceeded = any(
+        item.limit_exceeded for item in dynamic_resolutions
+    )
+    entity_ids = sorted(
+        {
+            entity_id
+            for item in dynamic_resolutions
+            for entity_id in item.entity_ids
+        }
+    )
+    labels = sorted(
+        {
+            label
+            for item in dynamic_resolutions
+            for label in item.literal_label_selectors
+        }
+    )
+    if len(entity_ids) > MAX_LITERAL_ARGUMENTS:
+        entity_ids = entity_ids[:MAX_LITERAL_ARGUMENTS]
+        complete = False
+        limit_exceeded = True
+    if len(labels) > MAX_DYNAMIC_LABEL_SELECTORS:
+        labels = labels[:MAX_DYNAMIC_LABEL_SELECTORS]
+        complete = False
+        limit_exceeded = True
+    domains: tuple[str, ...] | None
+    if complete and not labels:
+        domain_values: set[str] = set()
+        for item in dynamic_resolutions:
+            if item.possible_entity_domains is None:
+                complete = False
+                break
+            domain_values.update(item.possible_entity_domains)
+        domains = tuple(sorted(domain_values)) if complete else None
+    else:
+        domains = None
+    kinds = {item.kind for item in dynamic_resolutions}
+    if limit_exceeded:
+        kind = "resolution_limit"
+    elif len(kinds) == 1:
+        kind = next(iter(kinds))
+    elif complete:
+        kind = "finite_union"
+    else:
+        kind = "unresolved"
+    return sorted(exact), True, CandidateResolution(
+        entity_ids=tuple(entity_ids),
+        literal_label_selectors=tuple(labels),
+        possible_entity_domains=domains,
+        complete=complete,
+        limit_exceeded=limit_exceeded,
+        kind=kind,
+    )
 
 
-def _template_code_segments(value: str) -> list[str]:
-    segments: list[str] = []
+def _template_segments(value: str) -> list[tuple[str, str]]:
+    segments: list[tuple[str, str]] = []
     saw_tag = False
     cursor = 0
     while cursor < len(value):
@@ -304,18 +400,26 @@ def _template_code_segments(value: str) -> list[str]:
         if end < 0:
             end = len(value)
         if opener != "{#":
-            segments.append(value[start + 2 : end])
+            segments.append(
+                (
+                    "statement" if opener == "{%" else "expression",
+                    value[start + 2 : end],
+                )
+            )
         cursor = min(len(value), end + 2)
     if not saw_tag:
-        return [value]
+        return [("expression", value)]
     return segments
 
 
 def _scan_template_segment(
-    value: str, *, depth: int = 0
-) -> tuple[set[str], list[frozenset[str] | None]]:
+    value: str,
+    *,
+    depth: int = 0,
+    candidate_context: BoundedTemplateContext | None = None,
+) -> tuple[set[str], list[CandidateResolution]]:
     exact: set[str] = set()
-    unresolved: list[frozenset[str] | None] = []
+    unresolved: list[CandidateResolution] = []
     cursor = 0
     while cursor < len(value):
         char = value[cursor]
@@ -341,7 +445,7 @@ def _scan_template_segment(
         if lookahead < len(value) and value[lookahead] == "(":
             inner, end = _extract_balanced(value, lookahead, "(", ")")
             if inner is None:
-                unresolved.append(None)
+                unresolved.append(CandidateResolution())
                 cursor = lookahead + 1
                 continue
             arguments = _split_top_level_args(inner)
@@ -350,31 +454,41 @@ def _scan_template_segment(
                 literals = _literal_string_arguments(argument)
                 if literals is None:
                     unresolved.append(
-                        _constrained_dynamic_entity_domains(argument)
+                        _resolve_dynamic_argument(
+                            argument, candidate_context
+                        )
                     )
                     continue
                 exact.update(item for item in literals if valid_entity_id(item))
             if depth < MAX_TEMPLATE_NESTING:
                 nested, nested_dynamic = _scan_template_segment(
-                    inner, depth=depth + 1
+                    inner,
+                    depth=depth + 1,
+                    candidate_context=candidate_context,
                 )
                 exact.update(nested)
                 unresolved.extend(nested_dynamic)
             elif any(helper in inner for helper in ENTITY_TEMPLATE_HELPERS):
-                unresolved.append(None)
+                unresolved.append(
+                    CandidateResolution(
+                        complete=False,
+                        limit_exceeded=True,
+                        kind="resolution_limit",
+                    )
+                )
             cursor = end
             continue
 
         if name == "states" and lookahead < len(value) and value[lookahead] == "[":
             inner, end = _extract_balanced(value, lookahead, "[", "]")
             if inner is None:
-                unresolved.append(None)
+                unresolved.append(CandidateResolution())
                 cursor = lookahead + 1
                 continue
             literals = _literal_string_arguments(inner)
             if literals is None:
                 unresolved.append(
-                    _constrained_dynamic_entity_domains(inner)
+                    _resolve_dynamic_argument(inner, candidate_context)
                 )
             else:
                 exact.update(item for item in literals if valid_entity_id(item))
@@ -389,6 +503,24 @@ def _scan_template_segment(
                     exact.add(entity_id)
                 cursor = lookahead + match.end()
     return exact, unresolved
+
+
+def _resolve_dynamic_argument(
+    argument: str,
+    candidate_context: BoundedTemplateContext | None,
+) -> CandidateResolution:
+    if candidate_context is not None:
+        resolved = candidate_context.resolve(argument)
+        if resolved.complete or resolved.limit_exceeded:
+            return resolved
+    domains = _constrained_dynamic_entity_domains(argument)
+    if domains is not None:
+        return CandidateResolution(
+            possible_entity_domains=tuple(sorted(domains)),
+            complete=True,
+            kind="proven_domain",
+        )
+    return CandidateResolution()
 
 
 def _constrained_dynamic_entity_domains(

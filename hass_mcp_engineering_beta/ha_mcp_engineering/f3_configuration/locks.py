@@ -88,11 +88,26 @@ def _automation_helper_dependency_locks(
             if item.target_entity_id.startswith("input_boolean.")
             and item.relation not in _NON_CAUSAL_AUTOMATION_RELATIONS
         )
+        exact_helpers.update(
+            entity_id
+            for item in dynamic
+            for entity_id in item.possible_entity_ids
+            if entity_id.startswith("input_boolean.")
+        )
         unconstrained = bool(
             unconstrained
             or any(
-                item.possible_entity_domains is None
-                or "input_boolean" in item.possible_entity_domains
+                item.literal_label_selectors
+                or not item.candidate_resolution_complete
+                or item.candidate_resolution_limit_exceeded
+                or (
+                    not item.possible_entity_ids
+                    and (
+                        item.possible_entity_domains is None
+                        or "input_boolean"
+                        in item.possible_entity_domains
+                    )
+                )
                 for item in dynamic
             )
         )

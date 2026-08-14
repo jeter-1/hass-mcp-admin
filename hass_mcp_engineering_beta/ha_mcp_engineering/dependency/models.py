@@ -54,6 +54,11 @@ class DynamicReference:
     source_name: str | None = None
     source_state: str | None = None
     possible_entity_domains: tuple[str, ...] | None = None
+    possible_entity_ids: tuple[str, ...] = ()
+    literal_label_selectors: tuple[str, ...] = ()
+    candidate_resolution_kind: str = "unresolved"
+    candidate_resolution_complete: bool = False
+    candidate_resolution_limit_exceeded: bool = False
 
 
 @dataclass(frozen=True)
@@ -136,6 +141,14 @@ class DependencyScanResult:
     automation_read_failures: list[AutomationReadFailure] = field(
         default_factory=list
     )
+    label_memberships: dict[str, tuple[str, ...]] = field(
+        default_factory=dict
+    )
+    label_membership_fingerprints: dict[str, str] = field(
+        default_factory=dict
+    )
+    label_membership_truncated: tuple[str, ...] = ()
+    label_registry_complete: bool = False
 
 
 @dataclass
@@ -154,6 +167,14 @@ class DependencyIndexSnapshot:
     automation_read_failures: tuple[AutomationReadFailure, ...] = ()
     dynamic_reference_overflow_count: int = 0
     dynamic_reference_overflow_fingerprint: str | None = None
+    label_memberships: dict[str, tuple[str, ...]] = field(
+        default_factory=dict
+    )
+    label_membership_fingerprints: dict[str, str] = field(
+        default_factory=dict
+    )
+    label_membership_truncated: tuple[str, ...] = ()
+    label_registry_complete: bool = False
 
 
 def evidence_id(*parts: Any) -> str:
@@ -180,6 +201,17 @@ def dynamic_reference_material(item: DynamicReference) -> dict[str, Any]:
             list(item.possible_entity_domains)
             if isinstance(item.possible_entity_domains, tuple)
             else None
+        ),
+        "possible_entity_ids": list(item.possible_entity_ids),
+        "literal_label_selectors": list(
+            item.literal_label_selectors
+        ),
+        "candidate_resolution_kind": item.candidate_resolution_kind,
+        "candidate_resolution_complete": (
+            item.candidate_resolution_complete
+        ),
+        "candidate_resolution_limit_exceeded": (
+            item.candidate_resolution_limit_exceeded
         ),
         "excerpt_fingerprint": excerpt_fingerprint,
     }
@@ -209,6 +241,9 @@ def snapshot_fingerprint(
     ] = (),
     dynamic_reference_overflow_count: int = 0,
     dynamic_reference_overflow_fingerprint: str | None = None,
+    label_membership_fingerprints: dict[str, str] | None = None,
+    label_membership_truncated: tuple[str, ...] = (),
+    label_registry_complete: bool = False,
 ) -> str:
     payload = {
         "generation": generation,
@@ -238,6 +273,13 @@ def snapshot_fingerprint(
         "dynamic_reference_overflow": {
             "count": max(0, int(dynamic_reference_overflow_count)),
             "fingerprint": dynamic_reference_overflow_fingerprint,
+        },
+        "label_resolution": {
+            "complete": bool(label_registry_complete),
+            "membership_fingerprints": dict(
+                sorted((label_membership_fingerprints or {}).items())
+            ),
+            "truncated": sorted(label_membership_truncated),
         },
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))

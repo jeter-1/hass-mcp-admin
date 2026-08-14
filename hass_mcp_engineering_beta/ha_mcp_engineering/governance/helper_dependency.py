@@ -6,7 +6,10 @@ import re
 from typing import Any
 
 from ..dependency.index import DependencyIndex
-from ..dependency.models import DependencyIndexSnapshot
+from ..dependency.models import (
+    DependencyIndexSnapshot,
+    dynamic_reference_fingerprint,
+)
 from .models import ChangeRiskAssessment, RiskLevel
 from .normalize import stable_hash
 
@@ -14,6 +17,9 @@ from .normalize import stable_hash
 HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v2"
 MAX_RELEVANT_AUTOMATIONS = 50
 MAX_RELEVANT_DYNAMIC_REFERENCES = 32
+MAX_DYNAMIC_REFERENCES_EVALUATED = 64
+MAX_RESOLVED_CANDIDATES_PER_EXPRESSION = 128
+MAX_TOTAL_RESOLVED_CANDIDATES = 512
 MAX_UNREADABLE_AUTOMATIONS = 50
 _AUTOMATION_RESOURCE_ID = re.compile(
     r"^[a-z0-9][a-z0-9_.-]{0,255}$"
@@ -57,48 +63,148 @@ def _safe_automation_resource_identity(
     return None
 
 
-def _dynamic_reference_is_target_relevant(
+def _resolved_dynamic_reference_evidence(
     item: Any,
     *,
-    source_ids: set[str],
+    snapshot: DependencyIndexSnapshot,
     entity_id: str,
-) -> bool:
-    if item.source_type != "automation":
-        return False
-    if item.source_id in source_ids:
-        return True
-    excerpt = item.excerpt.lower() if isinstance(item.excerpt, str) else ""
-    if entity_id in excerpt:
-        return True
+) -> dict[str, Any]:
+    direct_candidates = sorted(
+        {
+            value
+            for value in getattr(item, "possible_entity_ids", ())
+            if isinstance(value, str)
+        },
+        key=lambda value: value.encode("utf-8"),
+    )
+    labels = sorted(
+        {
+            value
+            for value in getattr(
+                item, "literal_label_selectors", ()
+            )
+            if isinstance(value, str)
+        },
+        key=lambda value: value.encode("utf-8"),
+    )
     possible_domains = getattr(item, "possible_entity_domains", None)
-    if (
-        isinstance(possible_domains, tuple)
-        and possible_domains
-        and "input_boolean" not in possible_domains
-    ):
-        return False
-    # An unresolved automation reference is target-relevant unless extraction
-    # proved that every possible entity belongs to another exact domain.
-    return True
+    exact_domains = (
+        sorted(set(possible_domains))
+        if isinstance(possible_domains, tuple)
+        else []
+    )
+    complete = bool(
+        getattr(item, "candidate_resolution_complete", False)
+    )
+    limit_exceeded = bool(
+        getattr(
+            item, "candidate_resolution_limit_exceeded", False
+        )
+    )
+    reason_codes: list[str] = []
+    label_fingerprints: dict[str, str] = {}
+    label_candidates: set[str] = set()
+    truncated_labels = set(snapshot.label_membership_truncated)
+    if labels:
+        if not snapshot.label_registry_complete:
+            complete = False
+            reason_codes.append("label_registry_evidence_incomplete")
+        for selector in labels:
+            membership = snapshot.label_memberships.get(selector)
+            fingerprint = snapshot.label_membership_fingerprints.get(
+                selector
+            )
+            if (
+                membership is None
+                or not isinstance(fingerprint, str)
+                or selector in truncated_labels
+            ):
+                complete = False
+                reason_codes.append(
+                    "label_membership_evidence_incomplete"
+                )
+                continue
+            label_candidates.update(membership)
+            label_fingerprints[selector] = fingerprint
+
+    candidates = sorted(
+        set(direct_candidates).union(label_candidates),
+        key=lambda value: value.encode("utf-8"),
+    )
+    if len(candidates) > MAX_RESOLVED_CANDIDATES_PER_EXPRESSION:
+        candidates = candidates[
+            :MAX_RESOLVED_CANDIDATES_PER_EXPRESSION
+        ]
+        complete = False
+        limit_exceeded = True
+        reason_codes.append("dynamic_reference_resolution_limit_exceeded")
+    if limit_exceeded:
+        complete = False
+        reason_codes.append("dynamic_reference_resolution_limit_exceeded")
+
+    # Preserve the Beta 37 exact-domain proof for its narrowly reviewed shape,
+    # including historical in-memory test fixtures that predate the additive
+    # candidate fields.
+    proven_other_domain = bool(
+        not limit_exceeded
+        and exact_domains
+        and "input_boolean" not in exact_domains
+    )
+    if proven_other_domain and not labels:
+        complete = True
+    if complete and candidates:
+        target_membership = (
+            "included" if entity_id in candidates else "excluded"
+        )
+    elif complete and proven_other_domain:
+        target_membership = "excluded"
+    else:
+        target_membership = "unresolved"
+        reason_codes.append("dynamic_reference_target_unresolved")
+
+    expression_fingerprint = dynamic_reference_fingerprint(item)
+    configuration_path = str(item.config_path)
+    if len(configuration_path.encode("utf-8")) > 256:
+        configuration_path = (
+            "oversized_sha256:" + stable_hash(configuration_path)
+        )
+    evidence = {
+        "source_object_id": _safe_automation_identity(
+            item.source_id, item.source_entity_id
+        ),
+        "configuration_path": configuration_path,
+        "expression_fingerprint": expression_fingerprint,
+        "resolution_kind": str(
+            getattr(item, "candidate_resolution_kind", "unresolved")
+        ),
+        "candidate_entity_ids": candidates,
+        "candidate_set_fingerprint": stable_hash(candidates),
+        "explicit_candidate_fingerprint": stable_hash(
+            direct_candidates
+        ),
+        "literal_label_selectors": labels,
+        "label_membership_fingerprints": dict(
+            sorted(label_fingerprints.items())
+        ),
+        "possible_entity_domains": exact_domains,
+        "target_membership": target_membership,
+        "complete": complete,
+        "truncated": limit_exceeded,
+        "reason_codes": sorted(set(reason_codes)),
+    }
+    return {
+        **evidence,
+        "evidence_fingerprint": stable_hash(evidence),
+        "source_id": item.source_id,
+    }
 
 
-def _bounded_dynamic_fingerprints(items: list[Any]) -> tuple[list[str], bool]:
+def _bounded_dynamic_fingerprints(
+    items: list[dict[str, Any]],
+) -> tuple[list[str], bool]:
     values = sorted(
         {
-            stable_hash(
-                {
-                    "source_id": item.source_id,
-                    "source_entity_id": item.source_entity_id,
-                    "config_path": item.config_path,
-                    "warning": item.warning,
-                    "excerpt": item.excerpt,
-                    "possible_entity_domains": list(
-                        item.possible_entity_domains
-                    )
-                    if isinstance(item.possible_entity_domains, tuple)
-                    else None,
-                }
-            )
+            str(item["evidence_fingerprint"])
             for item in items
         }
     )
@@ -205,12 +311,17 @@ def _failed_binding(entity_id: str, completeness: str) -> dict[str, Any]:
         "downstream_profiles": [],
         "target_relevant_dynamic_reference_count": 0,
         "target_relevant_dynamic_reference_fingerprints": [],
+        "resolved_dynamic_reference_evidence": [],
+        "resolved_target_dynamic_reference_count": 0,
         "unresolved_dynamic_reference_count": 0,
         "unreadable_automation_count": 0,
         "unreadable_automation_ids": [],
         "unreadable_automation_fingerprint": stable_hash([]),
         "dynamic_reference_overflow_count": 0,
         "dynamic_reference_overflow_fingerprint": None,
+        "dynamic_evaluation_overflow_count": 0,
+        "dynamic_evaluation_overflow_fingerprint": None,
+        "dynamic_resolution_reason_codes": [],
         "truncated": completeness == "truncated",
     }
     return {
@@ -233,7 +344,6 @@ def build_helper_dependency_risk_binding(
         item.source_id: item
         for item in snapshot.automation_action_profiles
     }
-    relevant_source_ids = sorted(sources)
     dynamic_reference_overflow_count = max(
         0,
         int(
@@ -255,19 +365,59 @@ def build_helper_dependency_risk_binding(
                 "state": "fingerprint_unavailable",
             }
         )
+    resolved_dynamic_evidence = sorted(
+        (
+            _resolved_dynamic_reference_evidence(
+                item, snapshot=snapshot, entity_id=entity_id
+            )
+            for item in snapshot.dynamic_references
+            if item.source_type == "automation"
+        ),
+        key=lambda item: item["evidence_fingerprint"],
+    )
+    retained_dynamic_evidence: list[dict[str, Any]] = []
+    omitted_dynamic_evidence: list[dict[str, Any]] = []
+    retained_candidate_count = 0
+    for item in resolved_dynamic_evidence:
+        candidate_count = len(item["candidate_entity_ids"])
+        if (
+            len(retained_dynamic_evidence)
+            >= MAX_DYNAMIC_REFERENCES_EVALUATED
+            or retained_candidate_count + candidate_count
+            > MAX_TOTAL_RESOLVED_CANDIDATES
+        ):
+            omitted_dynamic_evidence.append(item)
+            continue
+        retained_dynamic_evidence.append(item)
+        retained_candidate_count += candidate_count
+    dynamic_evaluation_overflow = len(omitted_dynamic_evidence)
+    dynamic_evaluation_overflow_fingerprint = (
+        stable_hash(
+            [
+                item["evidence_fingerprint"]
+                for item in omitted_dynamic_evidence
+            ]
+        )
+        if dynamic_evaluation_overflow
+        else None
+    )
+    resolved_dynamic_evidence = retained_dynamic_evidence
+    for item in resolved_dynamic_evidence:
+        if item["target_membership"] == "included":
+            sources.setdefault(item["source_id"], set()).add(
+                "template_dynamic_candidate"
+            )
+    relevant_source_ids = sorted(sources)
     truncated = bool(
         len(relevant_source_ids) > MAX_RELEVANT_AUTOMATIONS
         or dynamic_reference_overflow_count
+        or dynamic_evaluation_overflow
     )
     selected_source_ids = relevant_source_ids[:MAX_RELEVANT_AUTOMATIONS]
     relevant_dynamic = [
         item
-        for item in snapshot.dynamic_references
-        if _dynamic_reference_is_target_relevant(
-            item,
-            source_ids=set(relevant_source_ids),
-            entity_id=entity_id,
-        )
+        for item in resolved_dynamic_evidence
+        if item["target_membership"] == "unresolved"
     ]
     dynamic_fingerprints, dynamic_truncated = (
         _bounded_dynamic_fingerprints(relevant_dynamic)
@@ -448,6 +598,18 @@ def build_helper_dependency_risk_binding(
         "target_relevant_dynamic_reference_fingerprints": (
             dynamic_fingerprints
         ),
+        "resolved_dynamic_reference_evidence": [
+            {
+                key: value
+                for key, value in item.items()
+                if key != "source_id"
+            }
+            for item in resolved_dynamic_evidence
+        ],
+        "resolved_target_dynamic_reference_count": sum(
+            item["target_membership"] == "included"
+            for item in resolved_dynamic_evidence
+        ),
         "unresolved_dynamic_reference_count": len(relevant_dynamic),
         "unreadable_automation_count": unreadable_automation_count,
         "unreadable_automation_ids": unreadable_automation_ids,
@@ -460,12 +622,31 @@ def build_helper_dependency_risk_binding(
         "dynamic_reference_overflow_fingerprint": (
             dynamic_reference_overflow_fingerprint
         ),
+        "dynamic_evaluation_overflow_count": (
+            dynamic_evaluation_overflow
+        ),
+        "dynamic_evaluation_overflow_fingerprint": (
+            dynamic_evaluation_overflow_fingerprint
+        ),
+        "dynamic_resolution_reason_codes": (
+            ["dynamic_reference_resolution_limit_exceeded"]
+            if dynamic_evaluation_overflow
+            or any(
+                item["truncated"]
+                for item in resolved_dynamic_evidence
+            )
+            else []
+        ),
         "truncated": truncated,
     }
     return {
         **material,
         "unrelated_dynamic_reference_count": max(
-            0, len(snapshot.dynamic_references) - len(relevant_dynamic)
+            0,
+            sum(
+                item["target_membership"] == "excluded"
+                for item in resolved_dynamic_evidence
+            ),
         ),
         "coverage_diagnostics": [
             {
