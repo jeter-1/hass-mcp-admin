@@ -35,7 +35,10 @@ Otherwise planning reads the shared dependency index and projects bounded,
 target-specific downstream automation/action-consequence evidence. Complete
 evidence creates a low-risk `standard_admin` contract-v3 operational plan only
 when every relevant action is mechanically proven benign, such as a bounded
-notification, or has no effect action. Direct physical actions elevate the
+ordinary static notification containing only a message and optional title, or
+has no effect action. Mobile notification commands, templated notification
+content, and unreviewed notification extensions are unknown/incomplete rather
+than harmless. Direct physical actions elevate the
 existing governance policy proportionally. Generic broad targets, scene or
 script activation, custom action domains, relevant dynamic references, and
 other effects that cannot be resolved are classified as unknown/incomplete;
@@ -43,12 +46,14 @@ they are never described as harmless. Incomplete, stale, failed, unsupported,
 or truncated target-relevant evidence cannot claim conclusive low risk and is
 not dispatch-eligible.
 
-Completeness is target-specific. Unrelated dynamic references and unrelated
-configuration-read failures remain visible as coverage diagnostics but do not
-automatically disable a helper whose relevant evidence is complete. A dynamic
-reference, missing action profile, or unreadable source tied to the exact
-helper remains non-conclusive. Collection, retained profiles, dynamic evidence,
-and output are bounded.
+Completeness is target-specific only when the source evidence proves
+unrelatedness. A readable static reference to another helper or an unresolved
+template mechanically constrained to a non-`input_boolean` domain remains a
+diagnostic without disabling this helper. An unconstrained dynamic reference,
+a missing action profile, or any unreadable automation configuration remains
+plausibly relevant and non-conclusive because its relationship cannot be
+proved. Collection, retained identities and profiles, dynamic evidence, and
+output are bounded.
 
 The immutable plan binds the exact target, desired state, state baseline,
 normalized dependency evidence and fingerprint, exact downstream automation
@@ -74,11 +79,15 @@ The action holds the same canonical
 `helper:input_boolean.<object_id>` resource used by helper configuration and a
 shared `reload:input_boolean` dependency. It also holds each approval-bound
 `automation:<internal_id>` resource and shared `reload:automation` dependency.
-This serializes same-helper state and configuration operations, blocks relevant
-automation update or reload drift across preflight, dispatch, readback, and
-verification, and keeps unrelated helpers and unrelated automation updates
-concurrent. The final dependency refresh occurs only after the complete lock
-set is held.
+The helper action additionally holds shared exact
+`helper_dependency:input_boolean.<object_id>` and unconstrained-template
+dependency keys. Engineering automation create/update operations derive
+exclusive dependency keys from both current and proposed content, including
+added, retained, or removed helper references; unconstrained dynamic content
+uses the conservative template key. This blocks newly relevant automation
+changes across preflight, dispatch, readback, and verification while keeping
+statically proven unrelated automation updates concurrent. The final dependency
+refresh occurs only after the complete lock set is held.
 
 The only permitted WebSocket command shapes are:
 
@@ -127,13 +136,15 @@ Source acceptance must prove:
   not;
 - switches, lights, fans, scenes, generic Home Assistant actions, physical
   domains, transitive actions, broad selectors, and custom domains are never
-  affirmatively misclassified as harmless, while proven-benign notifications
-  remain low risk;
-- relevant dynamic or unreadable dependency evidence stays non-conclusive,
-  while unrelated uncertainty does not globally disable helper execution;
-- relevant automation configuration and reload operations conflict with helper
-  execution after exact lock acquisition while unrelated automation work
-  remains concurrent;
+  affirmatively misclassified as harmless, while ordinary static notifications
+  remain low risk and mobile commands, templates, or extensions do not;
+- unconstrained dynamic or unreadable automation evidence stays
+  non-conclusive, while extractor-proven non-helper dynamic domains and exact
+  references to another helper remain unrelated;
+- automation create/update operations that add, retain, remove, or materially
+  alter the helper dependency conflict with helper execution after exact lock
+  acquisition; relevant reloads conflict and unrelated automation work remains
+  concurrent;
 - duplicate apply and lost-response recovery never redispatch;
 - verification mismatch is reported as a post-dispatch failure;
 - `toggle`, non-`input_boolean` targets, arbitrary service data, ha-mcp

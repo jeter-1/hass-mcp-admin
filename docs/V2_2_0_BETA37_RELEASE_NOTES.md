@@ -15,14 +15,20 @@ already-desired helper returns a verified no-change result without creating a
 plan or dispatching a service. A real change obtains bounded dependency and
 action-consequence evidence for the exact helper before classifying risk.
 Complete evidence remains `standard_admin`/low/none only for actions proven
-benign, such as bounded notifications, or for automations with no effect action.
+benign, such as an ordinary bounded static notification containing only a
+message and optional title, or for automations with no effect action. Mobile
+notification commands, templated notification content, and unreviewed custom
+notification extensions are unknown/incomplete rather than harmless.
 Direct physical automation paths elevate the existing governance policy
 proportionally. Generic broad targets, transitive scene/script activation,
 custom domains, and unresolved target-relevant effects are unknown/incomplete,
 not harmless. Incomplete, stale, failed, unsupported, or truncated relevant
 evidence remains reviewable but cannot be described as conclusively low risk or
-dispatched. Unrelated dynamic references or configuration-read diagnostics stay
-visible without automatically disabling every helper.
+dispatched. A readable exact reference to another helper or an unresolved
+template proven to target only a non-`input_boolean` domain remains unrelated.
+Unconstrained dynamic references and unreadable automation configurations are
+plausibly relevant and non-conclusive; bounded failed identities remain visible
+in dependency evidence.
 
 The immutable plan binds the normalized dependency set, downstream automation
 identities, consequence classification, completeness, effect-relevant services,
@@ -56,10 +62,14 @@ remain concurrent under deterministic lock ordering.
 
 Helper execution also holds each exact downstream
 `automation:<internal_id>` resource and shared `reload:automation` dependency.
-Relevant automation configuration and reload therefore cannot change between
-final dependency preflight and dispatch. Unrelated automation configuration
-remains concurrent, and the final dependency refresh occurs only after the
-complete deterministic lock set is held.
+It also holds shared exact helper-dependency and unconstrained-template keys.
+Engineering automation create/update operations derive exclusive dependency
+keys from both current and proposed content, so an update that adds, retains,
+removes, or materially alters a helper reference cannot enter after final
+preflight. Unconstrained dynamic changes use the conservative template key;
+statically proven unrelated automation configuration remains concurrent. The
+final dependency refresh occurs only after the complete deterministic lock set
+is held.
 
 The executor durably records intent before the sole mutation opportunity and
 then performs an authoritative exact-state readback. Success requires the

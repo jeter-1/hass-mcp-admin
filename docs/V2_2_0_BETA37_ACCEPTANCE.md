@@ -64,13 +64,17 @@ consequence.
    the exact baseline/provider evidence, and `awaiting_approval`. Require
    `standard_admin`/low/none only when complete bounded evidence finds no
    consequential downstream path and every relevant action is proven benign.
+   Only an ordinary static notification with a bounded message and optional
+   title is benign; mobile notification commands, templated messages, and
+   unreviewed notification extensions must be unknown/incomplete.
    Direct physical paths must elevate governance. Generic broad targets,
    transitive scene/script actions, custom effects, and relevant unresolved
    evidence must remain unknown/incomplete rather than being called harmless.
    Incomplete, stale, failed, unsupported, or truncated target-relevant evidence
-   must not claim conclusive low risk or dispatch eligibility. Unrelated source
-   diagnostics remain visible but do not automatically poison this exact
-   helper's eligibility.
+   must not claim conclusive low risk or dispatch eligibility. An unreadable
+   automation or unconstrained dynamic entity lookup is plausibly relevant and
+   non-conclusive. Only readable static evidence or an extractor-proven
+   non-`input_boolean` domain constraint may establish unrelatedness.
 3. Review and approve the exact plan hash through authenticated Ingress. The
    known Android cold-start body-navigation defect is outside Beta 37; do not
    treat notification navigation as this capability's acceptance criterion.
@@ -115,6 +119,10 @@ success, zero dispatch, and unconsumed approval.
 - Audit and health must preserve direct-provider attribution, dispatch/response
   truth, verification result, request correlation, and zero fallback without
   retaining secrets or unbounded Home Assistant content.
+- Mobile `command_*` notifications, dynamic notification messages, and custom
+  effect-bearing notification data must never receive `none` consequence.
+- A real provider-shaped partial automation result with any failed read must
+  retain bounded failed identities and cannot become complete low-risk evidence.
 
 ## Operational boundaries
 
@@ -131,6 +139,12 @@ success, zero dispatch, and unconsumed approval.
   before its final dependency refresh. Relevant automation update/reload must
   conflict in both directions; unrelated automation configuration must remain
   concurrent.
+- The state path must hold shared exact helper-dependency and unconstrained
+  dynamic-template keys. Automation create/update lock calculation must inspect
+  both current and proposed content so adding, retaining, removing, or
+  materially altering this helper dependency conflicts through dispatch.
+  Domain-constrained non-helper and statically unrelated automation changes
+  must remain concurrent.
 - Do not change dashboards, dashboard metadata, automations, notification
   navigation, integrations, registries, credentials, deployment configuration,
   or provider policy during this acceptance.
