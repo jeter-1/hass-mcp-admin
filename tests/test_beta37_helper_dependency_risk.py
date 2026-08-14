@@ -819,7 +819,7 @@ class HelperDependencyRiskTests(unittest.IsolatedAsyncioTestCase):
             observed["target_relevant_dynamic_reference_count"], 1
         )
 
-    def test_unrelated_diagnostics_do_not_change_material_fingerprint(self):
+    def test_new_target_exclusion_evidence_changes_material_fingerprint(self):
         baseline = binding(snapshot())
         _findings, dynamic = extract_document(
             source_type="automation",
@@ -836,9 +836,15 @@ class HelperDependencyRiskTests(unittest.IsolatedAsyncioTestCase):
 
         observed = binding(snapshot(dynamic=tuple(dynamic)))
 
-        self.assertEqual(
+        self.assertNotEqual(
             observed["evidence_fingerprint"],
             baseline["evidence_fingerprint"],
+        )
+        self.assertEqual(
+            observed["resolved_dynamic_reference_evidence"][0][
+                "target_membership"
+            ],
+            "excluded",
         )
 
     def test_effect_relevant_changes_are_bound_but_alias_is_ignored(self):
