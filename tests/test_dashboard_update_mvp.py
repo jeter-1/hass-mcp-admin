@@ -8,13 +8,19 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 sys.path.insert(0, str(Path(__file__).parent))
 
-from f3_dashboard_support import make_preread  # noqa: E402
+from f3_dashboard_support import (  # noqa: E402
+    home_dashboard_patch_operations,
+    load_home_dashboard,
+    make_preread,
+)
+from ha_mcp_engineering.approval_web import _render_review  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.clients.mcp import (  # noqa: E402
     DashboardTransportError,
@@ -68,12 +74,14 @@ class _UnusedConfigurationGateway(ConfigurationResourceGateway):
 class _DashboardGateway:
     def __init__(self) -> None:
         self.configuration = {"title": "Before", "views": []}
+        self.version = "8.1.1"
         self.preread_count = 0
         self.best_practice_count = 0
         self.write_count = 0
         self.fail_after_write = False
         self.fail_before_write = False
         self.structured_rejection = False
+        self.mismatched_write = False
         self.last_write: dict[str, object] | None = None
 
     async def preread(self, *, url_path: str):
@@ -81,7 +89,7 @@ class _DashboardGateway:
         return make_preread(
             deepcopy(self.configuration),
             url_path=url_path,
-            version="8.1.1",
+            version=self.version,
         )
 
     async def best_practice_key(self) -> str:
@@ -107,6 +115,8 @@ class _DashboardGateway:
         if self.fail_before_write:
             raise RuntimeError("synthetic pre-provider response failure")
         self.configuration = deepcopy(arguments["configuration"])
+        if self.mismatched_write:
+            self.configuration["title"] = "Unexpected provider result"
         if self.fail_after_write:
             raise RuntimeError("synthetic lost provider response")
         return {
@@ -457,6 +467,187 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second["task_id"], result["task_id"])
         self.assertEqual(self.dashboard.write_count, 1)
 
+    async def test_map_title_canary_remains_completely_reviewable(self):
+        self.dashboard.version = "8.2.0"
+        self.dashboard.configuration = {"title": "Map", "views": []}
+        created = await self.service.create_dashboard_update_plan(
+            title="Rename map dashboard",
+            description="Previously accepted bounded title canary.",
+            url_path="map",
+            patch_operations=[
+                {
+                    "operation_id": "rename-map-title",
+                    "operation": "replace",
+                    "path": "/title",
+                    "value": "Map canary updated",
+                }
+            ],
+            expiration_minutes=30,
+        )
+
+        pending = self.service.approve(
+            created["plan_id"], created["plan_hash"]
+        )
+        review, csrf = await self.service.issue_external_csrf(
+            created["plan_id"], pending["challenge_id"]
+        )
+        projection = review["dashboard_review"]["approval_projection"]
+        self.assertTrue(projection["complete"])
+        self.assertEqual(projection["operation_count"], 1)
+        self.assertEqual(
+            projection["operations"][0]["proposed"]["value"],
+            "Map canary updated",
+        )
+        html = _render_review("", review, csrf)
+        self.assertIn("Map canary updated", html)
+        self.assertIn("Approve exact plan", html)
+        self.assertEqual(self.dashboard.write_count, 0)
+
+        await self._approve(created)
+        result = await self.service.apply(
+            created["plan_id"], created["plan_hash"]
+        )
+        self.assertEqual(result["task_state"], "succeeded_verified")
+        self.assertEqual(self.dashboard.configuration["title"], "Map canary updated")
+        self.assertEqual(self.dashboard.write_count, 1)
+        duplicate = await self.service.apply(
+            created["plan_id"], created["plan_hash"]
+        )
+        self.assertEqual(duplicate["status"], "already_applied")
+        self.assertEqual(self.dashboard.write_count, 1)
+
+    async def test_realistic_home_delta_is_approval_eligible_and_complete(self):
+        self.dashboard.version = "8.2.0"
+        self.dashboard.configuration = load_home_dashboard()
+        created = await self.service.create_dashboard_update_plan(
+            title="Update Home dashboard status",
+            description="Cleaner, Outdoor, and Needs Attention.",
+            url_path="home",
+            patch_operations=home_dashboard_patch_operations(),
+            expiration_minutes=30,
+        )
+
+        self.assertNotIn("proposed_config", created)
+        self.assertNotIn(
+            "sensor.local_outdoor_temperature", json.dumps(created)
+        )
+        self.assertEqual(
+            created["dry_run_results"]["semantic_leaf_change_count"], 51
+        )
+        self.assertEqual(
+            created["proposed_config_hash"],
+            "4c3b81d8fff6e2d54754a5e87f90f4972b4e4fb8e8c99e2144d0f9180611e466",
+        )
+        pending = self.service.approve(
+            created["plan_id"], created["plan_hash"]
+        )
+        review, csrf = await self.service.issue_external_csrf(
+            created["plan_id"], pending["challenge_id"]
+        )
+        projection = review["dashboard_review"]["approval_projection"]
+        self.assertEqual(projection["operation_count"], 4)
+        html = _render_review("", review, csrf)
+        for expected in (
+            "Cleaner",
+            "Outdoor",
+            "sensor.local_outdoor_temperature",
+            "Needs Attention",
+            "garage_presence",
+        ):
+            self.assertIn(expected, html)
+        self.assertNotIn("<collection preview omitted>", html)
+        self.assertIn("Approve exact plan", html)
+        self.assertEqual(self.dashboard.write_count, 0)
+
+    async def test_compiler_diagnostics_survive_governance_mapping(self):
+        self.dashboard.configuration = {
+            "values": {f"item_{index}": False for index in range(257)}
+        }
+        with self.assertRaises(GovernanceError) as caught:
+            await self.service.create_dashboard_update_plan(
+                title="Too many semantic leaves",
+                description="Structured compiler diagnostic.",
+                url_path="main-operations",
+                patch_operations=[
+                    {
+                        "operation_id": "replace-values",
+                        "operation": "replace",
+                        "path": "/values",
+                        "value": {
+                            f"item_{index}": True for index in range(257)
+                        },
+                    }
+                ],
+                expiration_minutes=30,
+            )
+
+        self.assertEqual(
+            caught.exception.code, ErrorCode.CONFIGURATION_VALIDATION_FAILED
+        )
+        self.assertEqual(
+            caught.exception.details,
+            {
+                "reason": "dashboard_patch_limit_exceeded",
+                "dashboard_error_code": "dashboard_patch_compilation_failed",
+                "constraint": "semantic_leaf_changes",
+                "observed": 257,
+                "limit": 256,
+                "stage": "compilation",
+            },
+        )
+        self.assertEqual(self.repository.list(), [])
+        self.assertEqual(self.dashboard.write_count, 0)
+
+    async def test_approval_projection_overflow_fails_during_planning(self):
+        with patch(
+            "ha_mcp_engineering.f3_dashboard.approval_projection."
+            "MAX_DASHBOARD_APPROVAL_PROJECTION_BYTES",
+            128,
+        ), self.assertRaises(GovernanceError) as caught:
+            await self._plan()
+
+        self.assertEqual(
+            caught.exception.code, ErrorCode.CONFIGURATION_VALIDATION_FAILED
+        )
+        self.assertEqual(
+            caught.exception.details["reason"],
+            "approval_projection_too_large",
+        )
+        self.assertEqual(
+            caught.exception.details["constraint"],
+            "approval_projection_bytes",
+        )
+        self.assertGreater(
+            caught.exception.details["observed"],
+            caught.exception.details["limit"],
+        )
+        self.assertEqual(self.repository.list(), [])
+        self.assertEqual(self.dashboard.write_count, 0)
+
+    async def test_incomplete_dashboard_review_cannot_be_approved(self):
+        created = await self._plan()
+        pending = self.service.approve(
+            created["plan_id"], created["plan_hash"]
+        )
+        plan = self.repository.get(created["plan_id"])
+        del plan.proposed_config["dashboard_update"]["approval_projection"]
+        self.repository.save(plan)
+
+        self.assertEqual(
+            self.service._configuration_projection_error(plan),
+            "approval_projection_malformed",
+        )
+
+        with self.assertRaises(GovernanceError) as caught:
+            await self.service.issue_external_csrf(
+                created["plan_id"], pending["challenge_id"]
+            )
+        self.assertEqual(
+            caught.exception.code,
+            ErrorCode.POLICY_SNAPSHOT_MISMATCH,
+        )
+        self.assertEqual(self.dashboard.write_count, 0)
+
     async def test_stale_dashboard_fails_before_dispatch(self):
         created = await self._plan()
         await self._approve(created)
@@ -468,6 +659,13 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["task_state"], "failed_pre_dispatch")
         self.assertEqual(self.dashboard.write_count, 0)
+        diagnostics = {
+            code
+            for child in self._execution_evidence(result["task_id"])
+            for event in child["events"]
+            for code in event["diagnostic_codes"]
+        }
+        self.assertIn("stale_or_provider_contract_mismatch", diagnostics)
 
     async def test_ha_mcp_8_1_1_hyphenless_target_fails_during_planning(self):
         with self.assertRaises(GovernanceError) as caught:
@@ -521,6 +719,27 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
             result["task_state"],
             {"failed_post_dispatch", "manual_review_required"},
         )
+        self.assertEqual(self.dashboard.write_count, 1)
+
+    async def test_mismatched_readback_is_truthful_and_never_redispatched(self):
+        created = await self._plan()
+        await self._approve(created)
+        self.dashboard.mismatched_write = True
+
+        result = await self.service.apply(
+            created["plan_id"], created["plan_hash"]
+        )
+
+        self.assertEqual(result["task_state"], "failed_post_dispatch")
+        self.assertEqual(
+            result["execution_task"]["terminal_outcome"],
+            "failed_post_dispatch",
+        )
+        self.assertEqual(self.dashboard.write_count, 1)
+        with self.assertRaises(GovernanceError):
+            await self.service.apply(
+                created["plan_id"], created["plan_hash"]
+            )
         self.assertEqual(self.dashboard.write_count, 1)
 
     async def test_structured_rejection_and_unchanged_reread_is_not_mismatch(self):

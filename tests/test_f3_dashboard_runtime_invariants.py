@@ -43,6 +43,9 @@ class DashboardRuntimeInvariantTests(unittest.TestCase):
         self.assertEqual(
             set(contacts),
             {
+                # Authenticated, inert approval rendering only; it has no
+                # provider, dispatch, or Home Assistant access.
+                "hass_mcp_engineering_beta/ha_mcp_engineering/approval_web.py",
                 "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
                 "hass_mcp_engineering_beta/ha_mcp_engineering/governance/runtime.py",
                 "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
