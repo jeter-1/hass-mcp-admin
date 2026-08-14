@@ -18,7 +18,11 @@ from .historical_policy import (
 from .operational_lifecycle import OperationalLifecycleGateway
 from .resources import ConfigurationResourceGateway
 from .operational import BackupAdministrationGateway
-from .helper_state import HelperStateGateway
+from .helper_state import (
+    HELPER_STATE_PROVIDER,
+    HELPER_STATE_PROVIDER_CONTRACT,
+    HelperStateGateway,
+)
 from .service import AutomationGateway, ChangeGovernanceService
 from .approval_notifications import ApprovalNotificationManager
 from .storage import ChangePlanRepository, ChangePlanStorageError
@@ -204,7 +208,9 @@ class GovernanceRuntime:
             )
         return self.service
 
-    def health_summary(self) -> dict[str, Any]:
+    def health_summary(
+        self, *, home_assistant_status: str | None = None
+    ) -> dict[str, Any]:
         if not self.service:
             operation_names = (
                 "create_full_backup",
@@ -230,7 +236,9 @@ class GovernanceRuntime:
                 "last_successful_operation_timestamp": None,
                 "last_failure_category": self.storage_error,
                 "fallback_count": 0,
+                "fallback": "none",
                 "provider_identity": None,
+                "provider_contract": None,
                 "provider_availability": "unavailable",
                 "provider_contract_status": "unavailable_or_unverified",
             }
@@ -346,7 +354,25 @@ class GovernanceRuntime:
                         operation: 0 for operation in operation_names
                     },
                     "operations": {
-                        operation: dict(unavailable_operation)
+                        operation: {
+                            **unavailable_operation,
+                            **(
+                                {
+                                    "provider_identity": (
+                                        HELPER_STATE_PROVIDER
+                                    ),
+                                    "provider_contract": (
+                                        HELPER_STATE_PROVIDER_CONTRACT
+                                    ),
+                                    "provider_contract_status": (
+                                        "code_owned_exact"
+                                    ),
+                                }
+                                if operation
+                                == "set_input_boolean_state"
+                                else {}
+                            ),
+                        }
                         for operation in operation_names
                     },
                     "backup_plans_created": 0,
@@ -370,11 +396,26 @@ class GovernanceRuntime:
                         "fallback_count": 0,
                         "fallback_policy": "none",
                     },
+                    "helper_state_provider": {
+                        "provider": HELPER_STATE_PROVIDER,
+                        "provider_contract": (
+                            HELPER_STATE_PROVIDER_CONTRACT
+                        ),
+                        "configured": False,
+                        "operational_status": "unavailable",
+                        "health": "unavailable",
+                        "fallback": "none",
+                        "fallback_count": 0,
+                        "fallback_policy": "none",
+                        "last_failure_category": self.storage_error,
+                    },
                     "fallback_count": 0,
                     "rollback_available": False,
                 },
             }
-        return self.service.health_summary()
+        return self.service.health_summary(
+            home_assistant_status=home_assistant_status
+        )
 
 
 GOVERNANCE = GovernanceRuntime()

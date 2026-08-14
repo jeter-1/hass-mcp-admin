@@ -187,7 +187,9 @@ class HealthRegistry:
             "retry_count": metrics["retry_count"],
             "timeout_count": metrics["timeout_count"],
             "governance": (
-                self.governance.health_summary()
+                self.governance.health_summary(
+                    home_assistant_status=ha_connection.get("status")
+                )
                 if self.governance
                 else {"enabled": False, "storage": {"configured": False}}
             ),
