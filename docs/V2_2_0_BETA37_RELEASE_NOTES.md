@@ -16,9 +16,13 @@ plan or dispatching a service. A real change obtains bounded dependency and
 action-consequence evidence for the exact helper before classifying risk.
 Complete evidence remains `standard_admin`/low/none only for actions proven
 benign, such as an ordinary bounded static notification containing only a
-message and optional title, or for automations with no effect action. Mobile
-notification commands, templated notification content, and unreviewed custom
-notification extensions are unknown/incomplete rather than harmless.
+message and optional title, or for automations with no effect action. A closed
+reviewed subset of bounded, nonphysical Companion UI controls—notification or
+badge clearing, widget or complication refresh, and kiosk screensaver
+display—also remains low risk with distinct effect attribution. Location or
+sensor refresh, device control, TTS, notification-channel mutation, other kiosk
+controls, templated notification content, and unreviewed custom notification
+extensions are unknown/incomplete rather than harmless.
 Direct physical automation paths elevate the existing governance policy
 proportionally. Generic broad targets, transitive scene/script activation,
 custom domains, and unresolved target-relevant effects are unknown/incomplete,
@@ -28,7 +32,13 @@ dispatched. A readable exact reference to another helper or an unresolved
 template proven to target only a non-`input_boolean` domain remains unrelated.
 Unconstrained dynamic references and unreadable automation configurations are
 plausibly relevant and non-conclusive; bounded failed identities remain visible
-in dependency evidence.
+in dependency evidence. Dynamic non-helper domain inference accepts only the
+complete canonical `'<domain>.' ~ <simple_name>` expression; compound
+conditionals, boolean operators, filters, parentheses, and other ambiguous
+forms remain unconstrained and acquire the conservative dependency lock.
+Dynamic-reference overflow is sorted deterministically, bounded to 1,000
+retained records, counted and fingerprinted, and makes the evidence
+non-conclusive regardless of provider ordering.
 
 The immutable plan binds the normalized dependency set, downstream automation
 identities, consequence classification, completeness, effect-relevant services,

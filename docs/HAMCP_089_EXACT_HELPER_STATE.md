@@ -36,15 +36,18 @@ target-specific downstream automation/action-consequence evidence. Complete
 evidence creates a low-risk `standard_admin` contract-v3 operational plan only
 when every relevant action is mechanically proven benign, such as a bounded
 ordinary static notification containing only a message and optional title, or
-has no effect action. Mobile notification commands, templated notification
-content, and unreviewed notification extensions are unknown/incomplete rather
-than harmless. Direct physical actions elevate the
-existing governance policy proportionally. Generic broad targets, scene or
-script activation, custom action domains, relevant dynamic references, and
-other effects that cannot be resolved are classified as unknown/incomplete;
-they are never described as harmless. Incomplete, stale, failed, unsupported,
-or truncated target-relevant evidence cannot claim conclusive low risk and is
-not dispatch-eligible.
+has no effect action. A closed reviewed subset of bounded, nonphysical
+Companion UI controls—notification or badge clearing, widget or complication
+refresh, and kiosk screensaver display—also remains low risk with distinct
+effect attribution. Location or sensor refresh, device control, TTS,
+notification-channel mutation, other kiosk controls, dynamic content, and
+unreviewed notification extensions are unknown/incomplete rather than
+harmless. Direct physical actions elevate the existing governance policy
+proportionally. Generic broad targets, scene or script activation, custom
+action domains, relevant dynamic references, and other effects that cannot be
+resolved are classified as unknown/incomplete; they are never described as
+harmless. Incomplete, stale, failed, unsupported, or truncated target-relevant
+evidence cannot claim conclusive low risk and is not dispatch-eligible.
 
 Completeness is target-specific only when the source evidence proves
 unrelatedness. A readable static reference to another helper or an unresolved
@@ -52,7 +55,11 @@ template mechanically constrained to a non-`input_boolean` domain remains a
 diagnostic without disabling this helper. An unconstrained dynamic reference,
 a missing action profile, or any unreadable automation configuration remains
 plausibly relevant and non-conclusive because its relationship cannot be
-proved. Collection, retained identities and profiles, dynamic evidence, and
+proved. Only the complete canonical expression `'<domain>.' ~ <simple_name>`
+may establish a dynamic non-helper domain; conditionals, boolean operators,
+filters, parentheses, and other compound forms remain unconstrained. Dynamic
+reference overflow is deterministically bounded, counted, fingerprinted, and
+non-conclusive. Collection, retained identities and profiles, dynamic evidence, and
 output are bounded.
 
 The immutable plan binds the exact target, desired state, state baseline,
@@ -137,10 +144,15 @@ Source acceptance must prove:
 - switches, lights, fans, scenes, generic Home Assistant actions, physical
   domains, transitive actions, broad selectors, and custom domains are never
   affirmatively misclassified as harmless, while ordinary static notifications
-  remain low risk and mobile commands, templates, or extensions do not;
+  and reviewed bounded UI controls remain low risk; location/sensor updates,
+  device control, TTS, channel mutation, other kiosk controls, templates, and
+  extensions do not;
 - unconstrained dynamic or unreadable automation evidence stays
   non-conclusive, while extractor-proven non-helper dynamic domains and exact
   references to another helper remain unrelated;
+- compound dynamic expressions cannot claim a non-helper domain or omit the
+  conservative dependency lock; dynamic-reference overflow is bounded,
+  fingerprinted, and non-conclusive regardless of provider ordering;
 - automation create/update operations that add, retain, remove, or materially
   alter the helper dependency conflict with helper execution after exact lock
   acquisition; relevant reloads conflict and unrelated automation work remains

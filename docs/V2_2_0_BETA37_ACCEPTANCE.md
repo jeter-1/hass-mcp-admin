@@ -64,9 +64,12 @@ consequence.
    the exact baseline/provider evidence, and `awaiting_approval`. Require
    `standard_admin`/low/none only when complete bounded evidence finds no
    consequential downstream path and every relevant action is proven benign.
-   Only an ordinary static notification with a bounded message and optional
-   title is benign; mobile notification commands, templated messages, and
-   unreviewed notification extensions must be unknown/incomplete.
+   An ordinary static notification with a bounded message and optional title is
+   benign. A closed reviewed subset of bounded, nonphysical Companion UI
+   controls may also remain low risk with distinct attribution. Location or
+   sensor refresh, device control, TTS, notification-channel mutation, other
+   kiosk controls, templated messages, and unreviewed notification extensions
+   must be unknown/incomplete.
    Direct physical paths must elevate governance. Generic broad targets,
    transitive scene/script actions, custom effects, and relevant unresolved
    evidence must remain unknown/incomplete rather than being called harmless.
@@ -74,7 +77,10 @@ consequence.
    must not claim conclusive low risk or dispatch eligibility. An unreadable
    automation or unconstrained dynamic entity lookup is plausibly relevant and
    non-conclusive. Only readable static evidence or an extractor-proven
-   non-`input_boolean` domain constraint may establish unrelatedness.
+   non-`input_boolean` domain constraint may establish unrelatedness. The domain
+   proof must cover the complete canonical expression; compound conditionals,
+   boolean expressions, parentheses, filters, or dynamic-reference overflow
+   remain non-conclusive.
 3. Review and approve the exact plan hash through authenticated Ingress. The
    known Android cold-start body-navigation defect is outside Beta 37; do not
    treat notification navigation as this capability's acceptance criterion.
@@ -119,10 +125,17 @@ success, zero dispatch, and unconsumed approval.
 - Audit and health must preserve direct-provider attribution, dispatch/response
   truth, verification result, request correlation, and zero fallback without
   retaining secrets or unbounded Home Assistant content.
-- Mobile `command_*` notifications, dynamic notification messages, and custom
+- Location/sensor refresh, device control, TTS, notification-channel mutation,
+  other unreviewed kiosk controls, dynamic notification messages, and custom
   effect-bearing notification data must never receive `none` consequence.
+- Bounded notification/badge clearing, widget/complication refresh, and kiosk
+  screensaver display may remain `standard_admin`/low/none only through the
+  closed reviewed payload contracts and distinct nonphysical-control reason.
 - A real provider-shaped partial automation result with any failed read must
   retain bounded failed identities and cannot become complete low-risk evidence.
+- More than 1,000 dynamic references must produce deterministic retained
+  evidence plus bounded overflow count/fingerprint evidence; the helper plan
+  must be truncated and non-dispatchable regardless of provider ordering.
 
 ## Operational boundaries
 
@@ -144,7 +157,9 @@ success, zero dispatch, and unconsumed approval.
   both current and proposed content so adding, retaining, removing, or
   materially altering this helper dependency conflicts through dispatch.
   Domain-constrained non-helper and statically unrelated automation changes
-  must remain concurrent.
+  must remain concurrent. Only a complete fixed-domain plus simple-name
+  expression may omit the conservative dynamic lock; compound expressions must
+  acquire it.
 - Do not change dashboards, dashboard metadata, automations, notification
   navigation, integrations, registries, credentials, deployment configuration,
   or provider policy during this acceptance.
