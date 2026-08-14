@@ -227,6 +227,24 @@ class HelperDependencyRiskTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(observed["execution_eligible"])
         self.assertNotEqual(observed["physical_consequence"], "none")
 
+    def test_oversized_action_value_is_bounded_and_incomplete(self):
+        oversized = "x" * 300 + ".turn_on"
+
+        profile = automation_action_consequence_profile(
+            {"action": [{"service": oversized}]}
+        )
+
+        self.assertTrue(profile["truncated"])
+        self.assertFalse(profile["complete"])
+        self.assertEqual(profile["physical_consequence"], "unknown")
+        self.assertEqual(len(profile["services"]), 1)
+        self.assertTrue(
+            profile["services"][0].startswith("oversized_sha256:")
+        )
+        self.assertLessEqual(
+            len(profile["services"][0].encode("utf-8")), 256
+        )
+
     async def test_dependency_source_failure_is_bounded_and_conservative(self):
         class FailingIndex:
             async def get(self, *, refresh):

@@ -67,6 +67,7 @@ _HELPER_SAFETY_CRITICAL_DOMAINS = frozenset(
 )
 _HELPER_INDIRECT_SERVICE_DOMAINS = frozenset({"automation", "script"})
 _HELPER_PROFILE_LIMIT = 32
+_HELPER_PROFILE_VALUE_BYTES = 256
 
 
 def _walk(value: Any) -> Iterable[Any]:
@@ -457,6 +458,25 @@ def _device_action_domains(config: dict[str, Any]) -> set[str]:
     return domains
 
 
+def _bounded_helper_profile_values(
+    values: Iterable[str],
+) -> tuple[list[str], bool]:
+    """Return deterministic bounded values and whether evidence was clipped."""
+
+    bounded: set[str] = set()
+    clipped = False
+    for value in values:
+        encoded = value.encode("utf-8")
+        if len(encoded) > _HELPER_PROFILE_VALUE_BYTES:
+            clipped = True
+            value = "oversized_sha256:" + hashlib.sha256(encoded).hexdigest()
+        bounded.add(value)
+    ordered = sorted(bounded)
+    return ordered[:_HELPER_PROFILE_LIMIT], (
+        clipped or len(ordered) > _HELPER_PROFILE_LIMIT
+    )
+
+
 def automation_action_consequence_profile(
     config: dict[str, Any],
 ) -> dict[str, Any]:
@@ -503,7 +523,15 @@ def automation_action_consequence_profile(
         or "high_risk_service" in triggers
     )
     indirect = bool(action_domains & _HELPER_INDIRECT_SERVICE_DOMAINS)
-    incomplete = bool(warnings or indirect)
+    all_domains, domains_truncated = _bounded_helper_profile_values(
+        action_domains
+    )
+    all_services, services_truncated = _bounded_helper_profile_values(
+        services
+    )
+    incomplete = bool(
+        warnings or indirect or domains_truncated or services_truncated
+    )
     if consequential and "omitted_action_target" in triggers:
         incomplete = True
 
@@ -528,12 +556,9 @@ def automation_action_consequence_profile(
     if warnings:
         reasons.append("action_structure_incomplete")
 
-    all_domains = sorted(action_domains)
-    all_services = sorted(services)
-    all_reasons = sorted(set(reasons))
+    all_reasons, reasons_truncated = _bounded_helper_profile_values(reasons)
     truncated = any(
-        len(values) > _HELPER_PROFILE_LIMIT
-        for values in (all_domains, all_services, all_reasons)
+        (domains_truncated, services_truncated, reasons_truncated)
     )
     complete = not incomplete and not truncated
     normalized = {
@@ -542,9 +567,9 @@ def automation_action_consequence_profile(
         "physical_consequence": consequence,
         "complete": complete,
         "truncated": truncated,
-        "action_domains": all_domains[:_HELPER_PROFILE_LIMIT],
-        "services": all_services[:_HELPER_PROFILE_LIMIT],
-        "reason_codes": all_reasons[:_HELPER_PROFILE_LIMIT],
+        "action_domains": all_domains,
+        "services": all_services,
+        "reason_codes": all_reasons,
     }
     encoded = json.dumps(
         normalized,
