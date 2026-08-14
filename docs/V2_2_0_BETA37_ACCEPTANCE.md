@@ -15,14 +15,16 @@ that controls safety-critical or broad household behavior.
    configuration, provider compatibility artifacts, and immutable upstream
    admission policy are unchanged.
 3. Require the focused HAMCP-089 positive, no-change, stale-state,
-   response-loss, verification-failure, invalid-target, routing, metadata,
-   schema, audit, persistence, recovery, and no-fallback tests.
+   dependency-risk, dependency-drift, response-loss, verification-failure,
+   invalid-target, cross-family lock, routing, metadata, schema, audit,
+   persistence, recovery, and no-fallback tests.
 4. Require the complete unit, Fast, Full, Evidence, dependency, vulnerability,
    YAML, PowerShell, secret, whitespace, packaging, exact-image, and stable-v1
    gates applicable to the promotion candidate.
 5. Confirm source reports 51 static tools: 25 canonical and 26
-   Engineering-native. When all reviewed reads are admitted, expect 77 total;
-   otherwise require truthful per-tool admission and the exact lower count.
+   Engineering-native. Exact reviewed totals are 77 for 7.14.2, 75 for 8.0.0
+   and 8.1.0, and 76 for 8.1.1 and 8.2.0. Require exact equality for the
+   selected release; do not substitute a lower-bound assertion.
 6. Confirm no test or source path can dispatch `toggle`, a non-`input_boolean`
    target, arbitrary service data, generic service forwarding, ha-mcp write
    delegation, or fallback.
@@ -38,8 +40,8 @@ Before any live mutation, confirm through read-only runtime inspection:
 - its annotations identify a proposal-only non-read-only tool, while
   `apply_change_plan` remains the only execution route;
 - capability metadata identifies `direct_home_assistant_state`, contract
-  `direct-ha-exact-input-boolean-v1`, no fallback, low risk, external approval,
-  exact readback, and separate reverse-plan recovery;
+  `direct-ha-exact-input-boolean-v1`, no fallback, dependency-aware risk,
+  external approval, exact readback, and separate reverse-plan recovery;
 - Home Assistant connectivity, governance storage, external approval, F3,
   audit, and provider health are available; and
 - the actual static/delegated counts and catalog fingerprint match the approved
@@ -55,11 +57,14 @@ Record the helper's dependencies and confirm it has no critical physical
 consequence.
 
 1. Read and record the exact helper `entity_id`, current `on`/`off` state,
-   `last_changed`, and relevant automation dependencies.
+   `last_changed`, and complete bounded automation-dependency evidence.
 2. Choose the opposite explicit desired state and create one
    `create_helper_state_plan` proposal. Require zero dispatch during planning,
-   the exact baseline/provider evidence, low-risk classification, and
-   `awaiting_approval`.
+   the exact baseline/provider evidence, and `awaiting_approval`. Require
+   `standard_admin`/low/none only when complete bounded evidence finds no
+   consequential downstream path. Consequential paths must elevate governance;
+   incomplete, stale, failed, unsupported, or truncated evidence must not claim
+   conclusive low risk or dispatch eligibility.
 3. Review and approve the exact plan hash through authenticated Ingress. The
    known Android cold-start body-navigation defect is outside Beta 37; do not
    treat notification navigation as this capability's acceptance criterion.
@@ -72,6 +77,12 @@ consequence.
    it once, and require exact readback of the recorded pre-state. This is
    cleanup through a new governed change, not automatic rollback.
 
+Source/CI acceptance also exercises this lifecycle against disposable Home
+Assistant 2026.7.2, 2026.8.0, and 2026.8.1. It proves off-to-on, duplicate
+suppression, a separately approved on-to-off plan, and response-loss readback
+through production code. This is disposable CI evidence, not household/live
+acceptance.
+
 If the initial helper is already in the requested state, require a verified
 no-change response, no plan, no approval, and no dispatch. To test final
 preflight no-op separately, an authorized operator may place the disposable
@@ -82,6 +93,10 @@ success, zero dispatch, and unconsumed approval.
 
 - Baseline drift to a state other than the desired state must fail before
   approval consumption or dispatch.
+- A material normalized dependency-evidence change after approval must report
+  dependency-risk drift and fail before dispatch. A generation or timestamp
+  change with identical normalized risk evidence must not cause a false
+  rejection.
 - Confirmed provider rejection must be reported as post-dispatch failure.
 - Lost provider response may succeed only when independent readback observes
   the exact desired state; it must never trigger redispatch.
@@ -97,6 +112,11 @@ success, zero dispatch, and unconsumed approval.
 - Do not use a physical device, lock, cover, alarm, climate entity, ordinary
   switch, light, or safety-relevant helper.
 - Do not use `toggle`; both the forward and cleanup state must be explicit.
+- The state path must use the same
+  `helper:input_boolean.<object_id>` exclusive resource identity as helper
+  configuration and a shared `reload:input_boolean` dependency. Same-helper
+  configuration and controlled reload must conflict; unrelated helpers must
+  remain concurrent.
 - Do not change dashboards, dashboard metadata, automations, notification
   navigation, integrations, registries, credentials, deployment configuration,
   or provider policy during this acceptance.

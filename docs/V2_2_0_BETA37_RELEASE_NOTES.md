@@ -12,8 +12,20 @@ separately publishes Beta 37.
 `input_boolean.<object_id>`, desired state `on` or `off`, and a bounded plan
 expiration. Planning reads the exact current Home Assistant state first. An
 already-desired helper returns a verified no-change result without creating a
-plan or dispatching a service. A real change creates a low-risk immutable plan
-awaiting external Home Assistant administrator approval.
+plan or dispatching a service. A real change obtains bounded dependency and
+action-consequence evidence for the exact helper before classifying risk.
+Complete evidence with no consequential path remains
+`standard_admin`/low/none. Consequential automation paths elevate the existing
+governance policy proportionally. Incomplete, stale, failed, unsupported, or
+truncated evidence remains reviewable but cannot be described as conclusively
+low risk or dispatched.
+
+The immutable plan binds the normalized dependency set, downstream automation
+identities, consequence classification, completeness, and evidence
+fingerprint without retaining unbounded automation bodies. F3 refreshes that
+evidence before dispatch. A material normalized change invalidates the prior
+approval as dependency-risk drift; generation-only or other irrelevant source
+metadata changes do not create a false rejection.
 
 This is an Engineering-native direct-provider contract. It does not delegate a
 write to ha-mcp and has no fallback. The only reachable commands are exact
@@ -26,7 +38,15 @@ service forwarding remain unavailable.
 F3 re-reads the exact state immediately before dispatch. An unchanged baseline
 permits one mutation. An already-reached desired state terminalizes as verified
 success with zero dispatch and leaves approval unconsumed. Any other state or
-fingerprint drift fails before dispatch.
+state fingerprint drift fails before dispatch independently of dependency-risk
+drift.
+
+State, helper-configuration, and controlled-reload operations now share the
+canonical `helper:input_boolean.<object_id>` identity and
+`reload:input_boolean` lock relationship. Same-helper configuration and state
+actions serialize in both directions, a controlled input-boolean reload cannot
+overlap state preflight/dispatch/readback/verification, and unrelated helpers
+remain concurrent under deterministic lock ordering.
 
 The executor durably records intent before the sole mutation opportunity and
 then performs an authoritative exact-state readback. Success requires the
@@ -38,11 +58,21 @@ Automatic rollback is not available. Reversal is a separately planned and
 approved request for the opposite exact state. The complete contract is in
 [`HAMCP_089_EXACT_HELPER_STATE.md`](HAMCP_089_EXACT_HELPER_STATE.md).
 
+The existing disposable Home Assistant CI contract now exercises the production
+helper-state gateway and F3 lifecycle on 2026.7.2, 2026.8.0, and 2026.8.1. It
+proves off-to-on, duplicate suppression, separately approved on-to-off, one
+actual WebSocket dispatch per plan, REST readback, durable intent ordering, no
+fallback, and response-loss reconciliation without redispatch. This is
+disposable CI acceptance only; Beta 37 does not claim household/live
+acceptance.
+
 ## Catalog and preserved boundaries
 
 - Static registration is 51 tools: 25 canonical and 26 Engineering-native.
-  With all 26 reviewed delegated reads admitted, the expected connector total
-  is 77; runtime admission remains per-tool and may expose fewer.
+  Exact reviewed totals are 77 for 7.14.2, 75 for 8.0.0 and 8.1.0, and 76 for
+  8.1.1 and 8.2.0. Exact-image and readmission jobs derive their local count
+  from the executable static registry declaration and preserve equality
+  assertions.
 - Stable v1.1.2 is unchanged.
 - Existing public tool schemas, provider admission, upstream read routing,
   dashboard behavior, approval authority, audit redaction, and zero-fallback

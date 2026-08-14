@@ -31,11 +31,19 @@ Planning reads `/states/<exact_entity_id>` and captures the authoritative
 the desired state, planning returns a verified no-change result, creates no
 plan, and performs no dispatch.
 
-Otherwise planning creates a low-risk contract-v3 operational plan in
-`awaiting_approval`. The immutable plan binds the exact target, desired state,
-baseline fingerprint, code-owned direct-provider contract, and no-fallback
-policy. Approval uses the existing external Home Assistant administrator
-challenge and exact plan hash. The MCP caller cannot self-approve.
+Otherwise planning reads the shared dependency index and projects bounded,
+target-specific downstream automation/action-consequence evidence. Complete
+evidence with no consequential path creates a low-risk
+`standard_admin` contract-v3 operational plan. Consequential paths elevate the
+existing governance policy proportionally. Incomplete, stale, failed,
+unsupported, or truncated evidence cannot claim conclusive low risk and is not
+dispatch-eligible.
+
+The immutable plan binds the exact target, desired state, state baseline,
+normalized dependency evidence and fingerprint, code-owned direct-provider
+contract, and no-fallback policy without retaining unbounded automation bodies.
+Approval uses the existing external Home Assistant administrator challenge and
+exact plan hash. The MCP caller cannot self-approve.
 
 Immediately before the sole mutation opportunity, F3 reads the exact state
 again:
@@ -43,7 +51,16 @@ again:
 - an unchanged baseline permits one dispatch;
 - the desired state already present terminalizes as verified success with zero
   dispatch and without consuming the approval;
-- any other state or fingerprint change fails as stale before dispatch.
+- any other state fingerprint change fails as stale before dispatch; and
+- a material normalized dependency-risk change invalidates the prior approval
+  and fails separately before dispatch.
+
+The action holds the same canonical
+`helper:input_boolean.<object_id>` resource used by helper configuration and a
+shared `reload:input_boolean` dependency. This serializes same-helper state and
+configuration operations and blocks controlled input-boolean reload across
+preflight, dispatch, readback, and verification without blocking unrelated
+helpers.
 
 The only permitted WebSocket command shapes are:
 
@@ -85,12 +102,19 @@ Source acceptance must prove:
   passes authoritative readback;
 - planning and final-preflight already-desired cases dispatch zero times;
 - stale state fails before dispatch;
+- material dependency-risk drift fails before dispatch while irrelevant index
+  generation changes do not;
 - duplicate apply and lost-response recovery never redispatch;
 - verification mismatch is reported as a post-dispatch failure;
 - `toggle`, non-`input_boolean` targets, arbitrary service data, ha-mcp
   delegation, and fallback cannot reach a mutation transport;
 - catalog schemas, capability metadata, audit attribution, provider identity,
   static tool counts, and F3 registry declarations remain consistent.
+
+The disposable Home Assistant contract runs the production gateway/F3 path on
+2026.7.2, 2026.8.0, and 2026.8.1 for off-to-on, duplicate, separately approved
+on-to-off, and response-loss/readback cases. It does not constitute household
+or deployed-runtime acceptance.
 
 Live acceptance requires separate deployment authorization and a named test
 helper with recorded pre-state, exact expected state, readback, and a separately
