@@ -981,6 +981,10 @@ class GatewayAndHealthTests(unittest.TestCase):
                     compatibility,
                     "rest",
                     AsyncMock(return_value={"version": "2026.8.1"}),
+                ), patch.object(
+                    compatibility,
+                    "ws_command",
+                    AsyncMock(return_value={"version": "2026.8.1"}),
                 ):
                     healthy = json.loads(
                         asyncio.run(
@@ -993,6 +997,10 @@ class GatewayAndHealthTests(unittest.TestCase):
                     AsyncMock(
                         side_effect=RuntimeError("synthetic outage")
                     ),
+                ), patch.object(
+                    compatibility,
+                    "ws_command",
+                    AsyncMock(return_value={"version": "2026.8.1"}),
                 ):
                     unavailable = json.loads(
                         asyncio.run(
@@ -1029,6 +1037,47 @@ class GatewayAndHealthTests(unittest.TestCase):
                 operation["provider_identity"],
                 "upstream_operational_lifecycle",
             )
+
+    def test_helper_provider_health_requires_rest_and_websocket(self):
+        with tempfile.TemporaryDirectory() as directory:
+            create_application(settings(str(Path(directory) / "audit.jsonl")))
+            previous_governance = HEALTH.governance
+            HEALTH.governance = ChangeGovernanceService(
+                ChangePlanRepository(Path(directory) / "governance-health"),
+                object(),
+                helper_state_gateway=HelperStateGateway(object(), object()),
+            )
+            try:
+                with patch.object(
+                    compatibility,
+                    "rest",
+                    AsyncMock(return_value={"version": "2026.8.1"}),
+                ), patch.object(
+                    compatibility,
+                    "ws_command",
+                    AsyncMock(side_effect=RuntimeError("synthetic ws outage")),
+                ) as websocket_probe:
+                    observed = json.loads(
+                        asyncio.run(
+                            compatibility.get_server_health(check_ha=True)
+                        )
+                    )["data"]
+            finally:
+                HEALTH.governance = previous_governance
+
+        provider = observed["governance"][
+            "operational_administration"
+        ]["helper_state_provider"]
+        self.assertEqual(
+            websocket_probe.await_args.args[0], {"type": "get_config"}
+        )
+        self.assertEqual(provider["operational_status"], "unavailable")
+        self.assertEqual(provider["health"], "degraded")
+        self.assertEqual(
+            provider["last_failure_category"],
+            "home_assistant_websocket_unavailable",
+        )
+        self.assertEqual(provider["fallback"], "none")
 
     def test_get_server_health_is_beta_only(self):
         beta_names = {

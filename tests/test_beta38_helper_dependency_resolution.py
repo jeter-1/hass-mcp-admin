@@ -150,6 +150,120 @@ def _dynamic(template: str, source_id: str = "bounded_dynamic"):
 
 
 class BoundedDynamicResolutionTests(unittest.TestCase):
+    def test_home_assistant_filter_and_test_forms_retain_exact_helpers(self):
+        forms = (
+            f'{{{{ "{TARGET}" | states }}}}',
+            f'{{{{ "{TARGET}" | state_attr("friendly_name") }}}}',
+            f'{{{{ "{TARGET}" | has_value }}}}',
+            f'{{{{ "{TARGET}" is is_state("on") }}}}',
+            f'{{{{ "{TARGET}" is is_state_attr("mode", "on") }}}}',
+            f'{{{{ "{TARGET}" is has_value }}}}',
+            f'{{{{ has_value("{TARGET}") }}}}',
+        )
+
+        for index, template in enumerate(forms):
+            with self.subTest(template=template):
+                findings, dynamic = _dynamic(
+                    template, source_id=f"exact_operator_{index}"
+                )
+                self.assertEqual(dynamic, [])
+                self.assertEqual(
+                    {item.target_entity_id for item in findings},
+                    {TARGET},
+                )
+
+    def test_exact_filter_dependency_retains_consequential_profile(self):
+        source_id = "exact_filter_consequence"
+        findings, dynamic = _dynamic(
+            f'{{{{ "{TARGET}" | states }}}}', source_id=source_id
+        )
+        observed = _binding(
+            _snapshot(
+                findings=findings,
+                profiles=(_profile(source_id, "cover.open_cover"),),
+            )
+        )
+
+        self.assertEqual(dynamic, [])
+        self.assertTrue(observed["evidence_complete"])
+        self.assertEqual(observed["physical_consequence"], "direct")
+        self.assertEqual(
+            observed["relevant_downstream_object_ids"],
+            [f"automation.{source_id}"],
+        )
+
+    def test_dynamic_filter_and_test_operands_remain_non_conclusive(self):
+        forms = (
+            "{{ helper_entity | states }}",
+            "{{ helper_entity | state_attr('friendly_name') }}",
+            "{{ helper_entity | has_value }}",
+            "{{ helper_entity is is_state('on') }}",
+            "{{ helper_entity is is_state_attr('mode', 'on') }}",
+            "{{ helper_entity is has_value }}",
+        )
+
+        for index, template in enumerate(forms):
+            with self.subTest(template=template):
+                findings, dynamic = _dynamic(
+                    template, source_id=f"dynamic_operator_{index}"
+                )
+                observed = _binding(
+                    _snapshot(dynamic=dynamic)
+                )
+                self.assertEqual(findings, [])
+                self.assertEqual(len(dynamic), 1)
+                self.assertFalse(
+                    dynamic[0].candidate_resolution_complete
+                )
+                self.assertFalse(observed["evidence_complete"])
+                self.assertFalse(observed["execution_eligible"])
+
+    def test_domain_state_collection_is_target_specific(self):
+        _input_findings, input_dynamic = _dynamic(
+            "{{ states.input_boolean "
+            "| selectattr('state', 'eq', 'on') | list }}",
+            source_id="input_boolean_collection",
+        )
+        input_binding = _binding(_snapshot(dynamic=input_dynamic))
+
+        _sensor_findings, sensor_dynamic = _dynamic(
+            "{{ states.sensor "
+            "| selectattr('state', 'eq', 'on') | list }}",
+            source_id="sensor_collection",
+        )
+        sensor_binding = _binding(_snapshot(dynamic=sensor_dynamic))
+
+        self.assertEqual(
+            input_dynamic[0].possible_entity_domains,
+            ("input_boolean",),
+        )
+        self.assertFalse(input_binding["evidence_complete"])
+        self.assertFalse(input_binding["execution_eligible"])
+        self.assertEqual(
+            sensor_dynamic[0].possible_entity_domains, ("sensor",)
+        )
+        self.assertTrue(sensor_binding["evidence_complete"])
+        self.assertTrue(sensor_binding["execution_eligible"])
+
+    def test_unrestricted_or_malformed_state_access_never_disappears(self):
+        forms = (
+            "{{ states | selectattr('state', 'eq', 'on') | list }}",
+            "{% for entity in states %}{{ entity.entity_id }}{% endfor %}",
+            "{{ states('not-an-entity') }}",
+            "{{ states['input_boolean']['target'] }}",
+        )
+
+        for index, template in enumerate(forms):
+            with self.subTest(template=template):
+                findings, dynamic = _dynamic(
+                    template, source_id=f"unbounded_state_{index}"
+                )
+                observed = _binding(_snapshot(dynamic=dynamic))
+                self.assertEqual(findings, [])
+                self.assertGreaterEqual(len(dynamic), 1)
+                self.assertFalse(observed["evidence_complete"])
+                self.assertFalse(observed["execution_eligible"])
+
     def test_literal_list_dictionary_field_excludes_exact_helper(self):
         findings, dynamic = _dynamic(
             "{% for c in [{'id': 'sensor.a'}, {'id': 'sensor.b'}] %}"
@@ -617,9 +731,12 @@ class HelperStateHealthAttributionTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def _provider(self, status: str):
+    def _provider(
+        self, rest_status: str, websocket_status: str | None = None
+    ):
         summary = self.service.health_summary(
-            home_assistant_status=status
+            home_assistant_status=rest_status,
+            home_assistant_websocket_status=websocket_status,
         )
         operational = summary["operational_administration"]
         return (
@@ -629,7 +746,9 @@ class HelperStateHealthAttributionTests(unittest.TestCase):
         )
 
     def test_connected_health_uses_exact_native_provider(self):
-        provider, operation, _lifecycle = self._provider("connected")
+        provider, operation, _lifecycle = self._provider(
+            "connected", "connected"
+        )
 
         self.assertEqual(provider["provider"], HELPER_STATE_PROVIDER)
         self.assertEqual(
@@ -648,22 +767,28 @@ class HelperStateHealthAttributionTests(unittest.TestCase):
         )
 
     def test_unavailable_ha_is_truthful_without_provider_substitution(self):
-        provider, operation, lifecycle_before = self._provider("unavailable")
-        _healthy, _healthy_operation, lifecycle_after = self._provider("connected")
+        provider, operation, lifecycle_before = self._provider(
+            "unavailable", "connected"
+        )
+        _healthy, _healthy_operation, lifecycle_after = self._provider(
+            "connected", "connected"
+        )
 
         self.assertEqual(provider["provider"], HELPER_STATE_PROVIDER)
         self.assertEqual(provider["operational_status"], "unavailable")
         self.assertEqual(provider["health"], "degraded")
         self.assertEqual(
             provider["last_failure_category"],
-            "home_assistant_unavailable",
+            "home_assistant_rest_unavailable",
         )
         self.assertEqual(operation["provider_identity"], HELPER_STATE_PROVIDER)
         self.assertEqual(operation["fallback"], "none")
         self.assertEqual(lifecycle_before, lifecycle_after)
 
     def test_capability_and_health_share_canonical_attribution(self):
-        provider, operation, _lifecycle = self._provider("connected")
+        provider, operation, _lifecycle = self._provider(
+            "connected", "connected"
+        )
         capability = helper_state_provider_evidence()
 
         self.assertEqual(capability["provider"], provider["provider"])
@@ -673,6 +798,31 @@ class HelperStateHealthAttributionTests(unittest.TestCase):
         )
         self.assertEqual(operation["provider_identity"], capability["provider"])
         self.assertEqual(capability["fallback"], "none")
+
+    def test_rest_only_or_skipped_probe_never_claims_available(self):
+        rest_only, operation, _lifecycle = self._provider(
+            "connected", "unavailable"
+        )
+        unprobed, _unprobed_operation, _ = self._provider(
+            "not_checked", "not_checked"
+        )
+
+        self.assertEqual(rest_only["operational_status"], "unavailable")
+        self.assertEqual(rest_only["health"], "degraded")
+        self.assertEqual(
+            rest_only["last_failure_category"],
+            "home_assistant_websocket_unavailable",
+        )
+        self.assertEqual(
+            rest_only["transport_health"],
+            {"rest": "connected", "websocket": "unavailable"},
+        )
+        self.assertEqual(operation["provider_availability"], "unavailable")
+        self.assertEqual(operation["fallback"], "none")
+        self.assertEqual(
+            unprobed["operational_status"], "configured_unprobed"
+        )
+        self.assertEqual(unprobed["health"], "unknown")
 
     def test_unconfigured_helper_provider_is_not_reported_available(self):
         service = ChangeGovernanceService(

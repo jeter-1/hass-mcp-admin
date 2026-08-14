@@ -240,13 +240,21 @@ class TrustedContextExtractionTests(unittest.TestCase):
     def test_recognized_literal_template_helpers_remain_exact(self):
         self.assertEqual(
             ENTITY_TEMPLATE_HELPERS,
-            {"states", "is_state", "is_state_attr", "state_attr", "expand"},
+            {
+                "states",
+                "is_state",
+                "is_state_attr",
+                "state_attr",
+                "has_value",
+                "expand",
+            },
         )
         templates = (
             "{{ states('sensor.missing_example') }}",
             "{{ is_state('binary_sensor.missing_example', 'on') }}",
             "{{ state_attr('sensor.missing_example', 'unit') }}",
             "{{ is_state_attr('climate.missing_example', 'hvac_mode', 'cool') }}",
+            "{{ has_value('sensor.missing_example') }}",
             "{{ expand('group.missing_example') | list }}",
             "{{ states['input_boolean.missing_example'] }}",
             "{{ states.customdomain.missing_example.state }}",

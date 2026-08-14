@@ -12,8 +12,13 @@ The dependency extractor now recognizes a closed static-analysis grammar for
 finite entity candidates. Supported evidence includes literal entity lists,
 literal maps and dictionary fields, finite conditional unions, bounded nested
 unions, and literal `label_entities('exact-label')` selectors combined with
-explicit finite lists. The resolver never executes Jinja or calls arbitrary
-template functions.
+explicit finite lists. The extractor also covers the reviewed Home Assistant
+state-read function, filter, and test forms for `states`, `state_attr`,
+`is_state`, `is_state_attr`, and `has_value`, plus `states.<domain>`
+collections. Exact operands remain exact dependencies; ambiguous operands and
+target-domain collections remain non-conclusive. A proven non-target domain can
+still be excluded for the exact helper. The resolver never executes Jinja or
+calls arbitrary template functions.
 
 For the exact helper being planned, a complete candidate set that excludes the
 helper is proven unrelated. A candidate set or exact label membership that
@@ -28,11 +33,13 @@ membership, relevant automation, completeness, or freshness change alters the
 material dependency binding, so final preflight rejects the old approval before
 dispatch.
 
-Dynamic label names, arbitrary calls or filters, unrestricted state iteration,
-unknown macros or functions, malformed entity values, failed or partial label
-registry evidence, and any expression or membership overflow remain
-non-conclusive. Limits are explicit; evidence is never silently discarded and
-no helper-specific allowlist or risk bypass exists.
+Dynamic label names, arbitrary calls, unreviewed filters/tests, unrestricted
+state iteration, unknown macros or functions, malformed entity values, failed
+or partial label registry evidence, and any expression or membership overflow
+remain non-conclusive. Reviewed state-read syntax that cannot be resolved emits
+bounded incomplete evidence rather than disappearing from the index. Limits
+are explicit; evidence is never silently discarded and no helper-specific
+allowlist or risk bypass exists.
 
 The source regression fixture models
 `input_boolean.mcp_f2_standard_admin_test_flag` without placing that identity in
@@ -51,11 +58,14 @@ elevate governance, and incomplete evidence remains non-dispatchable.
 - fallback: `none`.
 
 The provider appears in the operational provider section and the
-`set_input_boolean_state` operation entry. A successful read-only Home Assistant
-health probe reports it available/healthy; an unavailable Home Assistant probe
-reports it unavailable/degraded. Configuration and availability never claim
-that a state action executed successfully, and the upstream lifecycle provider
-is never substituted.
+`set_input_boolean_state` operation entry. Availability requires both a
+successful REST `/config` probe for its exact read/readback path and a
+successful read-only WebSocket `get_config` probe for its dispatch transport.
+REST-only evidence does not report the provider healthy. Either unavailable
+required transport reports unavailable/degraded, while a skipped check remains
+configured/unprobed. These probes never call a service or claim that a state
+action executed successfully, and the upstream lifecycle provider is never
+substituted.
 
 ## Preserved boundaries
 

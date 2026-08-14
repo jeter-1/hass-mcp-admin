@@ -10622,7 +10622,10 @@ class ChangeGovernanceService:
         return {"status": "rolled_back", "plan": self._public(plan, include_configs=False)}
 
     def health_summary(
-        self, *, home_assistant_status: str | None = None
+        self,
+        *,
+        home_assistant_status: str | None = None,
+        home_assistant_websocket_status: str | None = None,
     ) -> dict[str, Any]:
         """Return live health over a generation-bound persisted aggregate."""
 
@@ -10681,7 +10684,10 @@ class ChangeGovernanceService:
         lifecycle_provider = self._lifecycle_provider_health_snapshot()
         helper_state_provider = (
             self._helper_state_provider_health_snapshot(
-                home_assistant_status=home_assistant_status
+                home_assistant_status=home_assistant_status,
+                home_assistant_websocket_status=(
+                    home_assistant_websocket_status
+                ),
             )
         )
         operational["provider"] = backup_provider
@@ -10824,7 +10830,10 @@ class ChangeGovernanceService:
             }
 
     def _helper_state_provider_health_snapshot(
-        self, *, home_assistant_status: str | None = None
+        self,
+        *,
+        home_assistant_status: str | None = None,
+        home_assistant_websocket_status: str | None = None,
     ) -> dict[str, Any]:
         if self.helper_state_gateway is None:
             return {
@@ -10860,17 +10869,41 @@ class ChangeGovernanceService:
             "last_failure_category": None,
             **snapshot,
         }
-        # The health tool's exact read-only core probe is availability evidence,
-        # not evidence that a helper action executed successfully.
-        if home_assistant_status == "connected":
+        result["transport_health"] = {
+            "rest": home_assistant_status or "not_checked",
+            "websocket": (
+                home_assistant_websocket_status or "not_checked"
+            ),
+        }
+        # Both read-only probes are required availability evidence for this
+        # exact provider: REST supplies state/readback while WebSocket supplies
+        # call_service dispatch.  Neither probe claims that an action ran.
+        if (
+            home_assistant_status == "connected"
+            and home_assistant_websocket_status == "connected"
+        ):
             result["operational_status"] = "available"
             result["health"] = "healthy"
             result["last_failure_category"] = None
-        elif home_assistant_status == "unavailable":
+        elif (
+            home_assistant_status == "unavailable"
+            or home_assistant_websocket_status == "unavailable"
+        ):
             result["operational_status"] = "unavailable"
             result["health"] = "degraded"
-            result["last_failure_category"] = (
-                "home_assistant_unavailable"
+            result["last_failure_category"] = next(
+                category
+                for unavailable, category in (
+                    (
+                        home_assistant_status == "unavailable",
+                        "home_assistant_rest_unavailable",
+                    ),
+                    (
+                        home_assistant_websocket_status == "unavailable",
+                        "home_assistant_websocket_unavailable",
+                    ),
+                )
+                if unavailable
             )
         result.update(
             {

@@ -19,7 +19,20 @@ from .models import DependencyFinding, DynamicReference, evidence_id
 ENTITY_ID_COMPONENT = re.compile(r"^[a-z0-9_]+$")
 ENTITY_BEARING_KEYS = frozenset({"entity_id"})
 ENTITY_TEMPLATE_HELPERS = frozenset(
-    {"states", "is_state", "is_state_attr", "state_attr", "expand"}
+    {
+        "states",
+        "is_state",
+        "is_state_attr",
+        "state_attr",
+        "has_value",
+        "expand",
+    }
+)
+ENTITY_TEMPLATE_FILTERS = frozenset(
+    {"states", "state_attr", "has_value"}
+)
+ENTITY_TEMPLATE_TESTS = frozenset(
+    {"is_state", "is_state_attr", "has_value"}
 )
 MAX_TEMPLATE_SEGMENT_CHARS = 65_536
 MAX_TEMPLATE_ARGUMENT_CHARS = 4_096
@@ -418,8 +431,9 @@ def _scan_template_segment(
     depth: int = 0,
     candidate_context: BoundedTemplateContext | None = None,
 ) -> tuple[set[str], list[CandidateResolution]]:
-    exact: set[str] = set()
-    unresolved: list[CandidateResolution] = []
+    exact, unresolved = _scan_template_entity_operators(
+        value, candidate_context=candidate_context
+    )
     cursor = 0
     while cursor < len(value):
         char = value[cursor]
@@ -438,6 +452,10 @@ def _scan_template_segment(
             continue
         if start > 0 and (value[start - 1].isalnum() or value[start - 1] in {"_", "."}):
             continue
+        if _is_filter_or_test_identifier(value, start):
+            # Filter and test arguments are not entity operands.  Their entity
+            # operand is projected by _scan_template_entity_operators().
+            continue
         lookahead = cursor
         while lookahead < len(value) and value[lookahead].isspace():
             lookahead += 1
@@ -450,6 +468,8 @@ def _scan_template_segment(
                 continue
             arguments = _split_top_level_args(inner)
             target_arguments = arguments if name == "expand" else arguments[:1]
+            if not target_arguments:
+                unresolved.append(CandidateResolution())
             for argument in target_arguments:
                 literals = _literal_string_arguments(argument)
                 if literals is None:
@@ -459,7 +479,12 @@ def _scan_template_segment(
                         )
                     )
                     continue
-                exact.update(item for item in literals if valid_entity_id(item))
+                entities = tuple(
+                    item for item in literals if valid_entity_id(item)
+                )
+                exact.update(entities)
+                if not literals or len(entities) != len(literals):
+                    unresolved.append(CandidateResolution())
             if depth < MAX_TEMPLATE_NESTING:
                 nested, nested_dynamic = _scan_template_segment(
                     inner,
@@ -491,7 +516,12 @@ def _scan_template_segment(
                     _resolve_dynamic_argument(inner, candidate_context)
                 )
             else:
-                exact.update(item for item in literals if valid_entity_id(item))
+                entities = tuple(
+                    item for item in literals if valid_entity_id(item)
+                )
+                exact.update(entities)
+                if not literals or len(entities) != len(literals):
+                    unresolved.append(CandidateResolution())
             cursor = end
             continue
 
@@ -502,7 +532,169 @@ def _scan_template_segment(
                 if valid_entity_id(entity_id):
                     exact.add(entity_id)
                 cursor = lookahead + match.end()
+                continue
+            domain_match = re.match(
+                r"\.([a-z0-9_]+)(?![a-z0-9_.])",
+                value[lookahead:],
+            )
+            if domain_match:
+                domain = domain_match.group(1)
+                if (
+                    ENTITY_ID_COMPONENT.fullmatch(domain)
+                    and any(character.isalpha() for character in domain)
+                ):
+                    unresolved.append(
+                        CandidateResolution(
+                            possible_entity_domains=(domain,),
+                            complete=True,
+                            kind="proven_domain_collection",
+                        )
+                    )
+                else:
+                    unresolved.append(CandidateResolution())
+                cursor = lookahead + domain_match.end()
+                continue
+        if name == "states":
+            # Bare ``states`` is the official all-state collection.  It can
+            # select the target helper and therefore must remain explicitly
+            # unresolved rather than disappearing as zero evidence.
+            unresolved.append(
+                CandidateResolution(kind="unrestricted_state_collection")
+            )
     return exact, unresolved
+
+
+def _scan_template_entity_operators(
+    value: str,
+    *,
+    candidate_context: BoundedTemplateContext | None,
+) -> tuple[set[str], list[CandidateResolution]]:
+    """Project reviewed Home Assistant entity filters and tests.
+
+    Jinja filters/tests place the entity operand before the operator, unlike
+    the equivalent function forms.  This scanner recognizes only those
+    reviewed operators and a bounded trailing operand atom.  Anything that
+    uses one of the operators but cannot be proven exact or finite is emitted
+    as unresolved evidence instead of disappearing from the index.
+    """
+
+    exact: set[str] = set()
+    unresolved: list[CandidateResolution] = []
+    cursor = 0
+    while cursor < len(value):
+        char = value[cursor]
+        if char in {"'", '"'}:
+            cursor = _skip_quoted(value, cursor)
+            continue
+        if char == "|":
+            name_start = cursor + 1
+            while name_start < len(value) and value[name_start].isspace():
+                name_start += 1
+            name_end = name_start
+            while name_end < len(value) and (
+                value[name_end].isalnum() or value[name_end] == "_"
+            ):
+                name_end += 1
+            if value[name_start:name_end] in ENTITY_TEMPLATE_FILTERS:
+                _project_template_operator_operand(
+                    value[:cursor],
+                    exact=exact,
+                    unresolved=unresolved,
+                    candidate_context=candidate_context,
+                )
+            cursor = max(cursor + 1, name_end)
+            continue
+        if char.isalpha() or char == "_":
+            start = cursor
+            cursor += 1
+            while cursor < len(value) and (
+                value[cursor].isalnum() or value[cursor] == "_"
+            ):
+                cursor += 1
+            if value[start:cursor] != "is":
+                continue
+            name_start = cursor
+            while name_start < len(value) and value[name_start].isspace():
+                name_start += 1
+            name_end = name_start
+            while name_end < len(value) and (
+                value[name_end].isalnum() or value[name_end] == "_"
+            ):
+                name_end += 1
+            if value[name_start:name_end] in ENTITY_TEMPLATE_TESTS:
+                _project_template_operator_operand(
+                    value[:start],
+                    exact=exact,
+                    unresolved=unresolved,
+                    candidate_context=candidate_context,
+                )
+            cursor = max(cursor, name_end)
+            continue
+        cursor += 1
+    return exact, unresolved
+
+
+def _project_template_operator_operand(
+    prefix: str,
+    *,
+    exact: set[str],
+    unresolved: list[CandidateResolution],
+    candidate_context: BoundedTemplateContext | None,
+) -> None:
+    operand = _trailing_template_operand(prefix)
+    if operand is None:
+        unresolved.append(CandidateResolution())
+        return
+    literals = _literal_string_arguments(operand)
+    if literals is not None:
+        entities = tuple(
+            item for item in literals if valid_entity_id(item)
+        )
+        if entities and len(entities) == len(literals):
+            exact.update(entities)
+            return
+        unresolved.append(CandidateResolution())
+        return
+    unresolved.append(
+        _resolve_dynamic_argument(operand, candidate_context)
+    )
+
+
+def _trailing_template_operand(value: str) -> str | None:
+    """Return one bounded trailing quoted literal or variable expression."""
+
+    bounded = value[-MAX_TEMPLATE_ARGUMENT_CHARS:].rstrip()
+    if not bounded:
+        return None
+    if bounded[-1] in {"'", '"'}:
+        quote = bounded[-1]
+        cursor = len(bounded) - 2
+        while cursor >= 0:
+            if bounded[cursor] == quote:
+                escapes = 0
+                previous = cursor - 1
+                while previous >= 0 and bounded[previous] == "\\":
+                    escapes += 1
+                    previous -= 1
+                if escapes % 2 == 0:
+                    return bounded[cursor:]
+            cursor -= 1
+        return None
+    match = re.search(
+        r"(?P<operand>[A-Za-z_][A-Za-z0-9_]*"
+        r"(?:\.[A-Za-z_][A-Za-z0-9_]*|\[[^\[\]]+\])*)\s*$",
+        bounded,
+    )
+    if match is None:
+        return None
+    return match.group("operand")
+
+
+def _is_filter_or_test_identifier(value: str, start: int) -> bool:
+    prefix = value[:start].rstrip()
+    if prefix.endswith("|"):
+        return True
+    return bool(re.search(r"\bis\s*$", prefix))
 
 
 def _resolve_dynamic_argument(

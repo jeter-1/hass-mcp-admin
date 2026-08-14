@@ -19,10 +19,12 @@ deployed MCP server or household Home Assistant.
    label-plus-list unions, exact target inclusion/exclusion, static dependency
    preservation, consequential dependencies, unknown expressions, dynamic
    labels, malformed candidates, selector/read failure, overflow, automation
-   drift, label drift, stale evidence, locks, duplicate apply, response loss,
-   and recovery.
-4. Require `get_server_health` tests for connected, unavailable, and unprobed
-   Home Assistant states. The helper operation must use provider
+   drift, label drift, stale evidence, exact state-read functions, filters and
+   tests, target/non-target domain collections, locks, duplicate apply,
+   response loss, and recovery.
+4. Require `get_server_health` tests for REST and WebSocket connected,
+   REST-only, unavailable, and unprobed Home Assistant states. The helper
+   operation must use provider
    `direct_home_assistant_state`, contract
    `direct-ha-exact-input-boolean-v1`, fallback `none`, and no upstream
    substitution.
@@ -41,16 +43,24 @@ The implementation may statically resolve only the reviewed finite grammar:
 - literal maps/dictionaries and finite field/value selection;
 - finite conditional unions whose branches are exact entity IDs;
 - exact non-target domains already proven by the reviewed Beta 37 grammar;
+- exact entity operands used with reviewed Home Assistant `states`,
+  `state_attr`, and `has_value` filters;
+- exact entity operands used with reviewed Home Assistant `is_state`,
+  `is_state_attr`, and `has_value` tests;
+- `states.<domain>` collections as exact domain evidence, with the target
+  domain remaining relevant and a proven non-target domain excluded;
 - literal `label_entities('exact-label')` membership from bounded entity and
   label registry evidence;
 - bounded unions and nesting of those constructs.
 
 The resolver must not render templates. Dynamic/computed label names, arbitrary
-calls or filters, unrestricted iteration, custom functions, macros, invalid
-entity IDs, read failures, partial membership, and any exceeded bound remain
-non-conclusive. The plan must contain bounded deterministic candidate,
-selector, membership, and expression evidence. Material changes must alter the
-dependency fingerprint checked at final preflight.
+calls, unreviewed filters/tests, unrestricted iteration, custom functions,
+macros, invalid entity IDs, read failures, partial membership, and any exceeded
+bound remain non-conclusive. A reviewed entity-read form that is not exact or
+finitely resolved must emit incomplete evidence; it must never become zero
+evidence. The plan must contain bounded deterministic candidate, selector,
+membership, and expression evidence. Material changes must alter the dependency
+fingerprint checked at final preflight.
 
 An exact target absent from complete candidates is excluded only for that
 target. An exact target present in the candidates remains a true dependency and
@@ -69,9 +79,10 @@ Before any mutation:
    `set_input_boolean_state` operation to report:
    `direct_home_assistant_state`,
    `direct-ha-exact-input-boolean-v1`, and fallback `none`.
-4. Require Home Assistant connected, the helper provider available/healthy,
-   governance storage and F3 healthy, approval authority 3, task schema 1,
-   external approval available, and no provider substitution.
+4. Require Home Assistant REST and read-only WebSocket probes both connected,
+   the helper provider available/healthy, governance storage and F3 healthy,
+   approval authority 3, task schema 1, external approval available, and no
+   provider substitution. REST-only evidence is not sufficient.
 5. Confirm the dependency index is current, automation coverage complete,
    blueprint coverage complete, and failed automation reads zero for the live
    canary evidence.

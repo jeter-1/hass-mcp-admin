@@ -506,6 +506,75 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
+    async def test_filter_test_and_domain_collection_dependency_locks(self):
+        helper = "input_boolean.synthetic_exact"
+        exact_key = helper_dependency_lock_key(helper)
+        dynamic_key = unconstrained_helper_dependency_lock_key()
+        base = valid_config("automation")
+        forms = (
+            f'{{{{ "{helper}" | states }}}}',
+            f'{{{{ "{helper}" | state_attr("friendly_name") }}}}',
+            f'{{{{ "{helper}" | has_value }}}}',
+            f'{{{{ "{helper}" is is_state("on") }}}}',
+            f'{{{{ "{helper}" is is_state_attr("mode", "on") }}}}',
+            f'{{{{ "{helper}" is has_value }}}}',
+        )
+        for action in ("create", "update"):
+            for index, template in enumerate(forms):
+                with self.subTest(action=action, template=template):
+                    relevant = valid_config("automation")
+                    relevant["condition"] = [
+                        {
+                            "condition": "template",
+                            "value_template": template,
+                        }
+                    ]
+                    prepared = await self._prepared(
+                        "automation",
+                        action,
+                        current_config=(base if action == "update" else None),
+                        proposed_config=relevant,
+                    )
+                    locks = {
+                        item.key
+                        for item in operation_lock_requests(prepared)
+                    }
+                    self.assertIn(exact_key, locks)
+
+        domain_cases = (
+            (
+                "{{ states.input_boolean "
+                "| selectattr('state', 'eq', 'on') | list }}",
+                True,
+            ),
+            (
+                "{{ states.sensor "
+                "| selectattr('state', 'eq', 'on') | list }}",
+                False,
+            ),
+            ("{{ helper_entity | states }}", True),
+        )
+        for template, expects_dynamic_lock in domain_cases:
+            with self.subTest(template=template):
+                proposed = valid_config("automation")
+                proposed["condition"] = [
+                    {
+                        "condition": "template",
+                        "value_template": template,
+                    }
+                ]
+                prepared = await self._prepared(
+                    "automation",
+                    "update",
+                    current_config=base,
+                    proposed_config=proposed,
+                )
+                locks = {
+                    item.key
+                    for item in operation_lock_requests(prepared)
+                }
+                self.assertEqual(dynamic_key in locks, expects_dynamic_lock)
+
         ambiguous_expressions = (
             "'sensor.' ~ room if use_sensor else helper_entity",
             "'sensor.' ~ room and helper_entity",

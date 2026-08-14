@@ -209,7 +209,10 @@ class GovernanceRuntime:
         return self.service
 
     def health_summary(
-        self, *, home_assistant_status: str | None = None
+        self,
+        *,
+        home_assistant_status: str | None = None,
+        home_assistant_websocket_status: str | None = None,
     ) -> dict[str, Any]:
         if not self.service:
             operation_names = (
@@ -414,7 +417,10 @@ class GovernanceRuntime:
                 },
             }
         return self.service.health_summary(
-            home_assistant_status=home_assistant_status
+            home_assistant_status=home_assistant_status,
+            home_assistant_websocket_status=(
+                home_assistant_websocket_status
+            ),
         )
 
 
