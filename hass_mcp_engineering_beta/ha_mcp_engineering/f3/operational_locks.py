@@ -6,7 +6,11 @@ from collections.abc import Iterable
 
 from ha_mcp_engineering.f3.contracts import LockMode, LockRequest, LockScope
 
-from ..f3_configuration.locks import resource_lock_key
+from ..f3_configuration.locks import (
+    helper_dependency_lock_key,
+    resource_lock_key,
+    unconstrained_helper_dependency_lock_key,
+)
 from ..governance.helper_dependency import (
     HELPER_DEPENDENCY_RISK_MODEL,
     MAX_RELEVANT_AUTOMATIONS,
@@ -175,6 +179,24 @@ class OperationalLockSetCalculator:
                         mode=LockMode.SHARED,
                         reason_codes=(
                             "bound_automation_reload_dependency",
+                        ),
+                    ),
+                    LockRequest(
+                        key=helper_dependency_lock_key(
+                            operation.target.target_id
+                        ),
+                        scopes=(LockScope.RESOURCE,),
+                        mode=LockMode.SHARED,
+                        reason_codes=(
+                            "exact_helper_dependency_stability",
+                        ),
+                    ),
+                    LockRequest(
+                        key=unconstrained_helper_dependency_lock_key(),
+                        scopes=(LockScope.RESOURCE,),
+                        mode=LockMode.SHARED,
+                        reason_codes=(
+                            "unconstrained_helper_dependency_stability",
                         ),
                     ),
                 )

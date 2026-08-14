@@ -7,6 +7,7 @@ from collections.abc import Iterable
 
 from ha_mcp_engineering.f3.contracts import LockMode, LockRequest, LockScope
 
+from ..dependency.extraction import extract_document, valid_entity_id
 from ..governance.normalize import stable_hash
 from .models import PreparedConfigurationOperation
 
@@ -14,6 +15,10 @@ from .models import PreparedConfigurationOperation
 _LOCK_KEY = re.compile(
     r"^[a-z][a-z0-9_]{0,63}:[a-z0-9][a-z0-9_.-]{0,255}$"
 )
+_NON_CAUSAL_AUTOMATION_RELATIONS = frozenset(
+    {"action_data", "action_target", "service_target"}
+)
+UNCONSTRAINED_INPUT_BOOLEAN_DEPENDENCY = "input_boolean_dynamic"
 
 
 def resource_lock_key(resource_type: str, target_id: str) -> str:
@@ -30,6 +35,92 @@ def resource_lock_key(resource_type: str, target_id: str) -> str:
     key = f"{prefix}:{target_id.lower()}"
     _validate_key(key)
     return key
+
+
+def helper_dependency_lock_key(entity_id: str) -> str:
+    """Return the exact causal-dependency lock for one input_boolean."""
+
+    if (
+        not valid_entity_id(entity_id)
+        or not entity_id.startswith("input_boolean.")
+    ):
+        raise ValueError("helper dependency identity is invalid")
+    key = f"helper_dependency:{entity_id}"
+    _validate_key(key)
+    return key
+
+
+def unconstrained_helper_dependency_lock_key() -> str:
+    key = (
+        "helper_dependency:"
+        + UNCONSTRAINED_INPUT_BOOLEAN_DEPENDENCY
+    )
+    _validate_key(key)
+    return key
+
+
+def _automation_helper_dependency_locks(
+    operation: PreparedConfigurationOperation,
+) -> tuple[LockRequest, ...]:
+    if operation.resource_type != "automation":
+        return ()
+    exact_helpers: set[str] = set()
+    unconstrained = False
+    configurations = (
+        operation.current_config(),
+        operation.proposed_config(),
+    )
+    for index, config in enumerate(configurations):
+        if config is None:
+            continue
+        findings, dynamic = extract_document(
+            source_type="automation",
+            source_id=f"lock_projection_{index}",
+            source_entity_id=None,
+            source_name=None,
+            source_state=None,
+            config=config,
+            secret="",
+        )
+        exact_helpers.update(
+            item.target_entity_id
+            for item in findings
+            if item.target_entity_id.startswith("input_boolean.")
+            and item.relation not in _NON_CAUSAL_AUTOMATION_RELATIONS
+        )
+        unconstrained = bool(
+            unconstrained
+            or any(
+                item.possible_entity_domains is None
+                or "input_boolean" in item.possible_entity_domains
+                for item in dynamic
+            )
+        )
+    requests = [
+        LockRequest(
+            key=helper_dependency_lock_key(entity_id),
+            scopes=(LockScope.RESOURCE,),
+            mode=LockMode.EXCLUSIVE,
+            reason_codes=(
+                "automation_helper_dependency_mutation",
+            ),
+        )
+        for entity_id in sorted(
+            exact_helpers, key=lambda item: item.encode("utf-8")
+        )
+    ]
+    if unconstrained:
+        requests.append(
+            LockRequest(
+                key=unconstrained_helper_dependency_lock_key(),
+                scopes=(LockScope.RESOURCE,),
+                mode=LockMode.EXCLUSIVE,
+                reason_codes=(
+                    "unconstrained_helper_dependency_mutation",
+                ),
+            )
+        )
+    return tuple(requests)
 
 
 def operation_lock_requests(
@@ -68,6 +159,7 @@ def operation_lock_requests(
                 mode=LockMode.SHARED,
                 reason_codes=("home_assistant_availability_dependency",),
             ),
+            *_automation_helper_dependency_locks(operation),
         )
     )
 
