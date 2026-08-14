@@ -29,6 +29,9 @@ from ha_mcp_engineering.dependency.provider import (  # noqa: E402
 )
 from ha_mcp_engineering.dependency.service import EntityDependencyAnalysisService  # noqa: E402
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError, InvalidRequestError  # noqa: E402
+from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
+    build_helper_dependency_risk_binding,
+)
 from ha_mcp_engineering.observability import METRICS  # noqa: E402
 from ha_mcp_engineering.providers import EvidenceRequest, ProviderCapability  # noqa: E402
 from ha_mcp_engineering.tools import get_registered_server, registered_tools  # noqa: E402
@@ -366,6 +369,30 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
         statuses = {item.source_type: item for item in result.coverage}
         self.assertEqual(statuses["automation"].completeness, "partial")
         self.assertEqual(statuses["automation"].failed_item_count, 1)
+        self.assertEqual(len(result.automation_read_failures), 1)
+        self.assertEqual(
+            result.automation_read_failures[0].source_entity_id,
+            "automation.bad",
+        )
+        self.assertEqual(
+            result.automation_read_failures[0].reason_code,
+            "automation_config_unreadable",
+        )
+        indexed, _rebuilt, _lookup_ms = await DependencyIndex(
+            FakeProvider(result)
+        ).get(refresh=True)
+        helper_binding = build_helper_dependency_risk_binding(
+            indexed,
+            entity_id="input_boolean.synthetic_exact",
+            index_metadata={
+                "freshness": "current",
+                "evidence_stale": False,
+                "invalidated": False,
+            },
+        )
+        self.assertFalse(helper_binding["evidence_complete"])
+        self.assertFalse(helper_binding["execution_eligible"])
+        self.assertEqual(helper_binding["unreadable_automation_count"], 1)
         self.assertEqual(statuses["blueprint"].completeness, "partial")
         self.assertTrue(any(item.relation == "blueprint_input" for item in result.findings))
         self.assertEqual(statuses["dashboard"].completeness, "unavailable")

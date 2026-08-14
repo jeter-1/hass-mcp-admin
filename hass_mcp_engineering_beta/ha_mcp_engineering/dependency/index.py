@@ -16,6 +16,7 @@ from .provider import DependencySourceProvider
 DEFAULT_SOFT_TTL_SECONDS = 600.0
 DEFAULT_HARD_TTL_SECONDS = 3600.0
 MAX_AUTOMATION_ACTION_PROFILES = 1_000
+MAX_AUTOMATION_READ_FAILURES = 1_000
 
 
 def _utc_now() -> str:
@@ -224,8 +225,24 @@ class DependencyIndex:
                 len(scan.automation_action_profiles)
                 > MAX_AUTOMATION_ACTION_PROFILES
             )
+            read_failures = sorted(
+                scan.automation_read_failures,
+                key=lambda item: (
+                    item.source_entity_id or "",
+                    item.source_id,
+                    item.reason_code,
+                ),
+            )[:MAX_AUTOMATION_READ_FAILURES]
+            read_failures_truncated = (
+                len(scan.automation_read_failures)
+                > MAX_AUTOMATION_READ_FAILURES
+            )
             coverage = list(scan.coverage)
-            if findings_truncated or profiles_truncated:
+            if (
+                findings_truncated
+                or profiles_truncated
+                or read_failures_truncated
+            ):
                 METRICS.record_dependency_truncation()
                 coverage = [
                     replace(
@@ -247,7 +264,11 @@ class DependencyIndex:
                     for item in coverage
                 ]
             fingerprint = snapshot_fingerprint(
-                findings, coverage, next_generation, profiles
+                findings,
+                coverage,
+                next_generation,
+                profiles,
+                read_failures,
             )
             build_duration_ms = (time.perf_counter() - build_started) * 1000
             replacement = DependencyIndexSnapshot(
@@ -262,6 +283,7 @@ class DependencyIndex:
                 build_duration_ms=build_duration_ms,
                 build_profile=dict(scan.profile),
                 automation_action_profiles=tuple(profiles),
+                automation_read_failures=tuple(read_failures),
             )
             # Publish the complete replacement atomically after every build step.
             self.snapshot = replacement

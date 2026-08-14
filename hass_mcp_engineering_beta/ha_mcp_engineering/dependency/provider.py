@@ -22,6 +22,7 @@ from ..providers import (
 )
 from .extraction import extract_document, resolve_blueprint_roles
 from .models import (
+    AutomationReadFailure,
     AutomationActionRiskProfile,
     DependencyScanResult,
     SOURCE_TYPES,
@@ -97,6 +98,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         automation_action_profiles: list[
             AutomationActionRiskProfile
         ] = []
+        automation_read_failures: list[AutomationReadFailure] = []
         metadata: dict[str, dict[str, Any]] = {}
         coverage: list[SourceCoverageItem] = []
         request_counts: Counter[str] = Counter()
@@ -190,7 +192,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             attrs = state.get("attributes") if isinstance(state.get("attributes"), dict) else {}
             internal_id = attrs.get("id")
             if not internal_id:
-                return state, None, "Automation has no internal configuration ID."
+                return state, None, "automation_id_missing"
             try:
                 config = await request(
                     "automation_config",
@@ -198,10 +200,10 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                     queued=True,
                 )
                 if not isinstance(config, dict):
-                    return state, None, "Automation configuration response was invalid."
+                    return state, None, "automation_config_invalid"
                 return state, config, None
             except Exception:
-                return state, None, "Automation configuration could not be read."
+                return state, None, "automation_config_unreadable"
 
         auto_started = time.perf_counter()
         results = await asyncio.gather(*(fetch_automation(state) for state in automations))
@@ -213,6 +215,19 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             internal_id = str(attrs.get("id") or state.get("entity_id"))
             if failure or config is None:
                 failed += 1
+                automation_read_failures.append(
+                    AutomationReadFailure(
+                        source_id=internal_id,
+                        source_entity_id=(
+                            str(state.get("entity_id"))
+                            if state.get("entity_id")
+                            else None
+                        ),
+                        reason_code=str(
+                            failure or "automation_config_unreadable"
+                        ),
+                    )
+                )
                 continue
             extracted, unresolved = extract_document(
                 source_type="automation",
@@ -364,6 +379,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 "build_wall_clock_ms": round((time.perf_counter() - scan_started) * 1000, 3),
             },
             automation_action_profiles=automation_action_profiles,
+            automation_read_failures=automation_read_failures,
         )
 
 

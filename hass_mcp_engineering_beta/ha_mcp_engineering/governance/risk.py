@@ -78,6 +78,8 @@ _HELPER_TRANSITIVE_EFFECT_DOMAINS = frozenset(
     {"automation", "scene", "script"}
 )
 _HELPER_PROVEN_BENIGN_SERVICE_DOMAINS = frozenset({"notify"})
+_HELPER_NOTIFICATION_TEXT_BYTES = 4_096
+_HELPER_NOTIFICATION_DATA_FIELDS = frozenset({"message", "title"})
 _HELPER_GENERIC_EFFECT_SERVICES = frozenset(
     {
         "homeassistant.toggle",
@@ -872,6 +874,65 @@ def _effect_action_families(config: dict[str, Any]) -> set[str]:
     return families
 
 
+def _notification_effect_semantics(
+    config: dict[str, Any],
+) -> tuple[bool, bool, tuple[str, ...]]:
+    """Prove only the ordinary static notification subset as effect-free."""
+
+    seen = False
+    reasons: set[str] = set()
+    for root_path, root in _action_roots(config):
+        for _path, step in _action_steps(root, root_path):
+            service = step.get("service", step.get("action"))
+            if (
+                not isinstance(service, str)
+                or _has_template(service)
+                or not service.startswith("notify.")
+            ):
+                continue
+            seen = True
+            direct_message = step.get("message")
+            if (
+                isinstance(direct_message, str)
+                and direct_message.strip().lower().startswith("command_")
+            ):
+                reasons.add("notification_command_effect")
+            elif isinstance(direct_message, str) and _has_template(
+                direct_message
+            ):
+                reasons.add("dynamic_notification_content")
+            if "data_template" in step:
+                reasons.add("dynamic_notification_content")
+            if "target" in step:
+                reasons.add("notification_extension_unreviewed")
+            payload = step.get("data")
+            if not isinstance(payload, dict):
+                reasons.add("notification_payload_unproven")
+                continue
+            if set(payload) - _HELPER_NOTIFICATION_DATA_FIELDS:
+                reasons.add("notification_extension_unreviewed")
+            message = payload.get("message")
+            if not isinstance(message, str) or not message:
+                reasons.add("notification_payload_unproven")
+            elif _has_template(message):
+                reasons.add("dynamic_notification_content")
+            elif message.strip().lower().startswith("command_"):
+                reasons.add("notification_command_effect")
+            elif len(message.encode("utf-8")) > _HELPER_NOTIFICATION_TEXT_BYTES:
+                reasons.add("notification_payload_unproven")
+            title = payload.get("title")
+            if title is not None:
+                if not isinstance(title, str) or _has_template(title):
+                    reasons.add("dynamic_notification_content")
+                elif len(title.encode("utf-8")) > (
+                    _HELPER_NOTIFICATION_TEXT_BYTES
+                ):
+                    reasons.add("notification_payload_unproven")
+    return seen, bool(seen and not reasons), tuple(
+        sorted(reasons, key=lambda item: item.encode("utf-8"))
+    )
+
+
 def automation_action_consequence_profile(
     config: dict[str, Any],
 ) -> dict[str, Any]:
@@ -897,6 +958,11 @@ def automation_action_consequence_profile(
     action_domains = service_domains | target_domains | device_domains
     action_families = _effect_action_families(config)
     effect = _automation_effect_projection(config)
+    (
+        notification_present,
+        notification_proven_benign,
+        notification_reason_codes,
+    ) = _notification_effect_semantics(config)
     triggers = {
         str(item.get("trigger"))
         for item in evidence
@@ -968,6 +1034,7 @@ def automation_action_consequence_profile(
         transitive
         or generic_unknown
         or unrecognized
+        or (notification_present and not notification_proven_benign)
         or warnings
         or (
             consequential
@@ -994,10 +1061,13 @@ def automation_action_consequence_profile(
         reasons.append("safety_critical_action_family")
     elif consequential:
         reasons.append("consequential_action_family")
+    elif unresolved_effect:
+        reasons.append("action_effect_unresolved")
     elif not services and not device_domains and not transitive:
         reasons.append("no_effect_action_detected")
     else:
         reasons.append("proven_benign_action_family")
+    reasons.extend(notification_reason_codes)
     if transitive:
         reasons.append("transitive_action_target_unresolved")
     if generic_unknown:

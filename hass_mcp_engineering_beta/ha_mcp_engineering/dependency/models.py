@@ -53,6 +53,16 @@ class DynamicReference:
     source_entity_id: str | None = None
     source_name: str | None = None
     source_state: str | None = None
+    possible_entity_domains: tuple[str, ...] | None = None
+
+
+@dataclass(frozen=True)
+class AutomationReadFailure:
+    """Bounded identity for an automation whose configuration was unreadable."""
+
+    source_id: str
+    source_entity_id: str | None
+    reason_code: str
 
 
 @dataclass(frozen=True)
@@ -123,6 +133,9 @@ class DependencyScanResult:
     automation_action_profiles: list[AutomationActionRiskProfile] = field(
         default_factory=list
     )
+    automation_read_failures: list[AutomationReadFailure] = field(
+        default_factory=list
+    )
 
 
 @dataclass
@@ -138,6 +151,7 @@ class DependencyIndexSnapshot:
     build_duration_ms: float = 0.0
     build_profile: dict[str, Any] = field(default_factory=dict)
     automation_action_profiles: tuple[AutomationActionRiskProfile, ...] = ()
+    automation_read_failures: tuple[AutomationReadFailure, ...] = ()
 
 
 def evidence_id(*parts: Any) -> str:
@@ -151,6 +165,9 @@ def snapshot_fingerprint(
     generation: int,
     automation_action_profiles: list[AutomationActionRiskProfile] | tuple[
         AutomationActionRiskProfile, ...
+    ] = (),
+    automation_read_failures: list[AutomationReadFailure] | tuple[
+        AutomationReadFailure, ...
     ] = (),
 ) -> str:
     payload = {
@@ -169,6 +186,10 @@ def snapshot_fingerprint(
                 item.truncated,
             )
             for item in automation_action_profiles
+        ],
+        "automation_read_failures": [
+            (item.source_id, item.source_entity_id, item.reason_code)
+            for item in automation_read_failures
         ],
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))

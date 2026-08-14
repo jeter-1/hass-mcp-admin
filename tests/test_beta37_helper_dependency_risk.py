@@ -13,11 +13,14 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.dependency.models import (  # noqa: E402
+    AutomationReadFailure,
     AutomationActionRiskProfile,
     DependencyFinding,
     DependencyIndexSnapshot,
-    DynamicReference,
     SourceCoverageItem,
+)
+from ha_mcp_engineering.dependency.extraction import (  # noqa: E402
+    extract_document,
 )
 from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
     HelperDependencyRiskService,
@@ -67,6 +70,9 @@ def snapshot(
     dynamic=(),
     findings=None,
     automation_warnings=(),
+    automation_failed_item_count: int = 0,
+    automation_read_failures=(),
+    blueprint_completeness: str = "complete",
 ) -> DependencyIndexSnapshot:
     if findings is None:
         findings = tuple(
@@ -96,16 +102,18 @@ def snapshot(
                 "direct_ha_api",
                 "automation_config",
                 automation_completeness,
+                failed_item_count=automation_failed_item_count,
                 warnings=list(automation_warnings),
             ),
             SourceCoverageItem(
                 "blueprint",
                 "direct_ha_api",
                 "blueprint_source",
-                "complete",
+                blueprint_completeness,
             ),
         ),
         automation_action_profiles=tuple(profiles),
+        automation_read_failures=tuple(automation_read_failures),
     )
 
 
@@ -175,6 +183,87 @@ class HelperDependencyRiskTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(profile.physical_consequence, "none")
         self.assertTrue(profile.complete)
         self.assertIn("proven_benign_action_family", profile.reason_codes)
+
+    def test_mobile_notification_commands_are_never_harmless(self):
+        for command in (
+            "command_flashlight",
+            "command_dnd",
+            "command_bluetooth",
+            "command_media",
+            "command_launch_application",
+        ):
+            with self.subTest(command=command):
+                profile = automation_action_consequence_profile(
+                    {
+                        "action": [
+                            {
+                                "service": "notify.mobile_app_disposable",
+                                "data": {
+                                    "message": command,
+                                    "command": "turn_on",
+                                },
+                            }
+                        ]
+                    }
+                )
+                self.assertNotEqual(
+                    profile["physical_consequence"], "none"
+                )
+                self.assertFalse(profile["complete"])
+                self.assertIn(
+                    "notification_command_effect",
+                    profile["reason_codes"],
+                )
+
+        flattened = automation_action_consequence_profile(
+            {
+                "action": [
+                    {
+                        "service": "notify.mobile_app_disposable",
+                        "message": "command_flashlight",
+                        "command": "turn_on",
+                    }
+                ]
+            }
+        )
+        self.assertNotEqual(flattened["physical_consequence"], "none")
+        self.assertFalse(flattened["complete"])
+
+    def test_dynamic_and_extended_notifications_are_non_conclusive(self):
+        cases = (
+            {
+                "data": {"message": "{{ command_message }}"},
+            },
+            {
+                "message": "{{ command_message }}",
+                "data": {"message": "ordinary"},
+            },
+            {
+                "data_template": {"message": "{{ message }}"},
+            },
+            {
+                "data": {
+                    "message": "ordinary",
+                    "data": {"custom_effect": "synthetic"},
+                },
+            },
+        )
+        for extension in cases:
+            with self.subTest(extension=extension):
+                profile = automation_action_consequence_profile(
+                    {
+                        "action": [
+                            {
+                                "service": "notify.mobile_app_disposable",
+                                **extension,
+                            }
+                        ]
+                    }
+                )
+                self.assertEqual(
+                    profile["physical_consequence"], "unknown"
+                )
+                self.assertFalse(profile["complete"])
 
     def test_common_physical_domains_are_never_declared_harmless(self):
         cases = {
@@ -303,7 +392,14 @@ class HelperDependencyRiskTests(unittest.IsolatedAsyncioTestCase):
     def test_entity_id_fallback_maps_to_configuration_lock_identity(self):
         profile = action_profile(
             "automation.benign_fallback",
-            {"action": [{"service": "notify.notify"}]},
+            {
+                "action": [
+                    {
+                        "service": "notify.notify",
+                        "data": {"message": "bounded"},
+                    }
+                ]
+            },
         )
 
         observed = binding(snapshot((profile,)))
@@ -316,7 +412,14 @@ class HelperDependencyRiskTests(unittest.IsolatedAsyncioTestCase):
     def test_multiple_automations_retain_worst_consequence(self):
         benign = action_profile(
             "benign",
-            {"action": [{"service": "notify.notify"}]},
+            {
+                "action": [
+                    {
+                        "service": "notify.notify",
+                        "data": {"message": "bounded"},
+                    }
+                ]
+            },
         )
         climate = action_profile(
             "climate",
@@ -367,9 +470,9 @@ class HelperDependencyRiskTests(unittest.IsolatedAsyncioTestCase):
     def test_unrelated_partial_coverage_does_not_poison_target(self):
         observed = binding(
             snapshot(
-                automation_completeness="partial",
+                blueprint_completeness="partial",
                 automation_warnings=(
-                    "1 unrelated automation configuration could not be read.",
+                    "1 unrelated blueprint could not be read.",
                 ),
             )
         )
@@ -377,8 +480,74 @@ class HelperDependencyRiskTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(observed["evidence_complete"])
         self.assertEqual(observed["physical_consequence"], "none")
         self.assertEqual(
-            observed["coverage_diagnostics"][0]["completeness"],
+            observed["coverage_diagnostics"][1]["completeness"],
             "partial",
+        )
+
+    def test_unreadable_automation_identity_prevents_complete_evidence(self):
+        failure = AutomationReadFailure(
+            source_id="unreadable",
+            source_entity_id="automation.unreadable",
+            reason_code="automation_config_unreadable",
+        )
+        observed = binding(
+            snapshot(
+                automation_completeness="partial",
+                automation_failed_item_count=1,
+                automation_read_failures=(failure,),
+            )
+        )
+
+        self.assertFalse(observed["evidence_complete"])
+        self.assertFalse(observed["execution_eligible"])
+        self.assertEqual(observed["physical_consequence"], "unknown")
+        self.assertEqual(observed["unreadable_automation_count"], 1)
+        self.assertEqual(
+            observed["unreadable_automation_ids"],
+            ["automation.unreadable"],
+        )
+
+    def test_provider_partial_failed_count_cannot_become_complete(self):
+        observed = binding(
+            snapshot(
+                automation_completeness="partial",
+                automation_failed_item_count=1,
+            )
+        )
+
+        self.assertFalse(observed["evidence_complete"])
+        self.assertEqual(observed["unreadable_automation_count"], 1)
+        self.assertTrue(
+            observed["unreadable_automation_ids"][0].startswith(
+                "unidentified_sha256:"
+            )
+        )
+
+    def test_unreadable_automation_evidence_is_bounded(self):
+        failures = tuple(
+            AutomationReadFailure(
+                source_id=f"unreadable_{index:03d}",
+                source_entity_id=f"automation.unreadable_{index:03d}",
+                reason_code="automation_config_unreadable",
+            )
+            for index in range(60)
+        )
+        observed = binding(
+            snapshot(
+                automation_completeness="partial",
+                automation_failed_item_count=60,
+                automation_read_failures=failures,
+            )
+        )
+
+        self.assertEqual(observed["completeness"], "truncated")
+        self.assertFalse(observed["execution_eligible"])
+        self.assertEqual(observed["unreadable_automation_count"], 60)
+        self.assertLessEqual(len(observed["unreadable_automation_ids"]), 50)
+        self.assertTrue(
+            observed["unreadable_automation_ids"][-1].startswith(
+                "overflow_sha256:"
+            )
         )
 
     def test_relevant_missing_action_profile_remains_non_conclusive(self):
@@ -404,17 +573,23 @@ class HelperDependencyRiskTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(observed["physical_consequence"], "unknown")
 
     def test_unrelated_dynamic_reference_does_not_poison_target(self):
-        unrelated = DynamicReference(
-            evidence_id="ev_" + "2" * 24,
+        findings, dynamic = extract_document(
             source_type="automation",
             source_id="unrelated",
-            config_path="$.condition[0].value_template",
-            warning="Dynamic reference cannot be statically resolved.",
-            excerpt="states('sensor.unrelated')",
             source_entity_id="automation.unrelated",
+            config={
+                "condition": [
+                    {
+                        "condition": "template",
+                        "value_template": "{{ states('sensor.' ~ room) }}",
+                    }
+                ]
+            },
         )
+        self.assertEqual(findings, [])
+        self.assertEqual(dynamic[0].possible_entity_domains, ("sensor",))
 
-        observed = binding(snapshot(dynamic=(unrelated,)))
+        observed = binding(snapshot(dynamic=tuple(dynamic)))
 
         self.assertTrue(observed["evidence_complete"])
         self.assertEqual(observed["unrelated_dynamic_reference_count"], 1)
@@ -423,33 +598,50 @@ class HelperDependencyRiskTests(unittest.IsolatedAsyncioTestCase):
         )
 
     def test_dynamic_reference_to_other_exact_helper_is_unrelated(self):
-        unrelated = DynamicReference(
-            evidence_id="ev_" + "5" * 24,
+        findings, dynamic = extract_document(
             source_type="automation",
             source_id="unrelated_helper",
-            config_path="$.condition[0].value_template",
-            warning="Dynamic reference cannot be statically resolved.",
-            excerpt="is_state('input_boolean.other_helper', 'on')",
             source_entity_id="automation.unrelated_helper",
+            config={
+                "condition": [
+                    {
+                        "condition": "template",
+                        "value_template": (
+                            "{{ is_state('input_boolean.other_helper', 'on') }}"
+                        ),
+                    }
+                ]
+            },
+        )
+        self.assertEqual(dynamic, [])
+        self.assertEqual(
+            {item.target_entity_id for item in findings},
+            {"input_boolean.other_helper"},
         )
 
-        observed = binding(snapshot(dynamic=(unrelated,)))
+        observed = binding(snapshot(findings=tuple(findings)))
 
         self.assertTrue(observed["evidence_complete"])
-        self.assertEqual(observed["unrelated_dynamic_reference_count"], 1)
+        self.assertEqual(observed["unrelated_dynamic_reference_count"], 0)
 
     def test_relevant_dynamic_reference_remains_non_conclusive(self):
-        relevant = DynamicReference(
-            evidence_id="ev_" + "3" * 24,
+        findings, dynamic = extract_document(
             source_type="automation",
             source_id="dynamic_guard",
-            config_path="$.condition[0].value_template",
-            warning="Dynamic reference cannot be statically resolved.",
-            excerpt=f"is_state('{ENTITY_ID}', 'on')",
             source_entity_id="automation.dynamic_guard",
+            config={
+                "condition": [
+                    {
+                        "condition": "template",
+                        "value_template": "{{ states(entity_variable) }}",
+                    }
+                ]
+            },
         )
+        self.assertEqual(findings, [])
+        self.assertIsNone(dynamic[0].possible_entity_domains)
 
-        observed = binding(snapshot(dynamic=(relevant,)))
+        observed = binding(snapshot(dynamic=tuple(dynamic)))
 
         self.assertFalse(observed["evidence_complete"])
         self.assertEqual(observed["physical_consequence"], "unknown")
@@ -459,16 +651,20 @@ class HelperDependencyRiskTests(unittest.IsolatedAsyncioTestCase):
 
     def test_unrelated_diagnostics_do_not_change_material_fingerprint(self):
         baseline = binding(snapshot())
-        unrelated = DynamicReference(
-            evidence_id="ev_" + "4" * 24,
+        _findings, dynamic = extract_document(
             source_type="automation",
             source_id="unrelated",
-            config_path="$.condition[0].value_template",
-            warning="Dynamic reference cannot be statically resolved.",
-            excerpt="states('sensor.unrelated')",
+            config={
+                "condition": [
+                    {
+                        "condition": "template",
+                        "value_template": "{{ states('sensor.' ~ room) }}",
+                    }
+                ]
+            },
         )
 
-        observed = binding(snapshot(dynamic=(unrelated,)))
+        observed = binding(snapshot(dynamic=tuple(dynamic)))
 
         self.assertEqual(
             observed["evidence_fingerprint"],
@@ -624,7 +820,14 @@ class HelperDependencyRiskTests(unittest.IsolatedAsyncioTestCase):
         profiles = tuple(
             action_profile(
                 f"bounded_{index:03d}",
-                {"action": [{"service": "notify.notify"}]},
+                {
+                    "action": [
+                        {
+                            "service": "notify.notify",
+                            "data": {"message": "bounded"},
+                        }
+                    ]
+                },
             )
             for index in range(60)
         )
@@ -637,7 +840,15 @@ class HelperDependencyRiskTests(unittest.IsolatedAsyncioTestCase):
 
     def test_truncated_profile_never_claims_conclusive_low(self):
         benign = action_profile(
-            "benign", {"action": [{"service": "notify.notify"}]}
+            "benign",
+            {
+                "action": [
+                    {
+                        "service": "notify.notify",
+                        "data": {"message": "bounded"},
+                    }
+                ]
+            },
         )
         truncated = replace(benign, complete=False, truncated=True)
 

@@ -14,11 +14,9 @@ from .normalize import stable_hash
 HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v2"
 MAX_RELEVANT_AUTOMATIONS = 50
 MAX_RELEVANT_DYNAMIC_REFERENCES = 32
+MAX_UNREADABLE_AUTOMATIONS = 50
 _AUTOMATION_RESOURCE_ID = re.compile(
     r"^[a-z0-9][a-z0-9_.-]{0,255}$"
-)
-_INPUT_BOOLEAN_LITERAL = re.compile(
-    r"\binput_boolean\.[a-z0-9_]+\b"
 )
 _CONSEQUENCE_RANK = {
     "none": 0,
@@ -72,12 +70,16 @@ def _dynamic_reference_is_target_relevant(
     excerpt = item.excerpt.lower() if isinstance(item.excerpt, str) else ""
     if entity_id in excerpt:
         return True
-    literal_helpers = set(_INPUT_BOOLEAN_LITERAL.findall(excerpt))
-    unresolved_remainder = _INPUT_BOOLEAN_LITERAL.sub("", excerpt)
-    return bool(
-        "input_boolean" in unresolved_remainder
-        or (literal_helpers and entity_id in literal_helpers)
-    )
+    possible_domains = getattr(item, "possible_entity_domains", None)
+    if (
+        isinstance(possible_domains, tuple)
+        and possible_domains
+        and "input_boolean" not in possible_domains
+    ):
+        return False
+    # An unresolved automation reference is target-relevant unless extraction
+    # proved that every possible entity belongs to another exact domain.
+    return True
 
 
 def _bounded_dynamic_fingerprints(items: list[Any]) -> tuple[list[str], bool]:
@@ -90,6 +92,11 @@ def _bounded_dynamic_fingerprints(items: list[Any]) -> tuple[list[str], bool]:
                     "config_path": item.config_path,
                     "warning": item.warning,
                     "excerpt": item.excerpt,
+                    "possible_entity_domains": list(
+                        item.possible_entity_domains
+                    )
+                    if isinstance(item.possible_entity_domains, tuple)
+                    else None,
                 }
             )
             for item in items
@@ -100,6 +107,52 @@ def _bounded_dynamic_fingerprints(items: list[Any]) -> tuple[list[str], bool]:
     retained = values[: MAX_RELEVANT_DYNAMIC_REFERENCES - 1]
     retained.append("overflow_sha256:" + stable_hash(values))
     return retained, True
+
+
+def _bounded_unreadable_automation_evidence(
+    snapshot: DependencyIndexSnapshot,
+    coverage_failed_count: int,
+) -> tuple[list[str], int, str, bool]:
+    projected = sorted(
+        {
+            _safe_automation_identity(
+                item.source_id, item.source_entity_id
+            )
+            for item in snapshot.automation_read_failures
+        },
+        key=lambda item: item.encode("utf-8"),
+    )
+    count = max(coverage_failed_count, len(projected))
+    fingerprint = stable_hash(
+        {
+            "count": count,
+            "failures": [
+                {
+                    "automation_id": _safe_automation_identity(
+                        item.source_id, item.source_entity_id
+                    ),
+                    "reason_code": item.reason_code,
+                }
+                for item in sorted(
+                    snapshot.automation_read_failures,
+                    key=lambda candidate: (
+                        candidate.source_entity_id or "",
+                        candidate.source_id,
+                        candidate.reason_code,
+                    ),
+                )
+            ],
+        }
+    )
+    clipped = len(projected) > MAX_UNREADABLE_AUTOMATIONS
+    if clipped:
+        projected = [
+            *projected[: MAX_UNREADABLE_AUTOMATIONS - 1],
+            "overflow_sha256:" + fingerprint,
+        ]
+    elif count and not projected:
+        projected = ["unidentified_sha256:" + fingerprint]
+    return projected, count, fingerprint, clipped
 
 
 def _causal_automation_sources(
@@ -153,6 +206,9 @@ def _failed_binding(entity_id: str, completeness: str) -> dict[str, Any]:
         "target_relevant_dynamic_reference_count": 0,
         "target_relevant_dynamic_reference_fingerprints": [],
         "unresolved_dynamic_reference_count": 0,
+        "unreadable_automation_count": 0,
+        "unreadable_automation_ids": [],
+        "unreadable_automation_fingerprint": stable_hash([]),
         "truncated": completeness == "truncated",
     }
     return {
@@ -204,6 +260,20 @@ def build_helper_dependency_risk_binding(
         or automation_coverage.completeness
         in {"unavailable", "unsupported"}
     )
+    coverage_failed_count = (
+        automation_coverage.failed_item_count
+        if automation_coverage is not None
+        else 0
+    )
+    (
+        unreadable_automation_ids,
+        unreadable_automation_count,
+        unreadable_automation_fingerprint,
+        unreadable_automations_clipped,
+    ) = _bounded_unreadable_automation_evidence(
+        snapshot, coverage_failed_count
+    )
+    automation_read_uncertainty = unreadable_automation_count > 0
     index_payload_truncated = any(
         "exceeded the bounded index payload" in warning
         for item in snapshot.coverage
@@ -294,6 +364,7 @@ def build_helper_dependency_risk_binding(
                 observed_consequence = profile.physical_consequence
         downstream_profiles.append(projected)
 
+    truncated = truncated or unreadable_automations_clipped
     evidence_complete = bool(
         fresh
         and not relevant_dynamic
@@ -301,6 +372,7 @@ def build_helper_dependency_risk_binding(
         and not profile_incomplete
         and not truncated
         and not automation_source_unavailable
+        and not automation_read_uncertainty
         and not index_payload_truncated
     )
     if not evidence_complete and observed_consequence == "none":
@@ -351,6 +423,11 @@ def build_helper_dependency_risk_binding(
             dynamic_fingerprints
         ),
         "unresolved_dynamic_reference_count": len(relevant_dynamic),
+        "unreadable_automation_count": unreadable_automation_count,
+        "unreadable_automation_ids": unreadable_automation_ids,
+        "unreadable_automation_fingerprint": (
+            unreadable_automation_fingerprint
+        ),
         "truncated": truncated,
     }
     return {
