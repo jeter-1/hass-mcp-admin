@@ -289,7 +289,7 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
         self.assertIn("HomeAssistantWebSocketClient", constructors)
 
         service_calls = calls_under(self.tree, "ChangeGovernanceService")
-        self.assertEqual(len(service_calls), 3)
+        self.assertEqual(len(service_calls), 4)
         governed_gateway_constructors = []
         for service_call in service_calls:
             service_argument_names = {
@@ -316,7 +316,7 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
             governed_gateway_constructors.count(
                 "_LegacyAutomationCompatibilityGateway"
             ),
-            1,
+            2,
         )
         observed = next(
             node
@@ -352,6 +352,48 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
             for call in calls_under(self.functions["run_contracts"])
         }
         self.assertIn(legacy_contract.name, runner_calls)
+
+    def test_beta37_helper_state_uses_real_f3_lifecycle_on_every_ha_lane(self):
+        contract = self.functions[
+            "_run_governed_helper_state_contract"
+        ]
+        contract_text = ast.unparse(contract)
+        for required in (
+            "HelperStateGateway",
+            "DirectHaDependencyProvider",
+            "HelperDependencyRiskService",
+            "F3RuntimeIntegration",
+            "create_helper_state_plan",
+            "succeeded_verified",
+            "already_applied",
+            "redispatch_performed",
+            "durable_intent_committed",
+            "provider_dispatched",
+            "lose_next_response",
+            "provider_response_received=False",
+            "fallback_count",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, contract_text)
+
+        self.assertEqual(
+            len(calls_under(contract, "create_helper_state_plan")), 3
+        )
+        self.assertEqual(len(calls_under(contract, "apply")), 4)
+        self.assertEqual(
+            len(calls_under(contract, "_approve_helper_state_plan")), 3
+        )
+        self.assertEqual(
+            len(calls_under(contract, "_assert_helper_state_task")), 3
+        )
+        self.assertNotIn("/services/", contract_text)
+        self.assertNotIn("ha_call_service", contract_text)
+
+        runner_calls = {
+            call_name(call)
+            for call in calls_under(self.functions["run_contracts"])
+        }
+        self.assertIn(contract.name, runner_calls)
 
     def test_all_four_resources_have_create_read_update_reread_coverage(self):
         resource_ids = self.contract.RESOURCE_IDS
