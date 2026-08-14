@@ -700,6 +700,26 @@ def _scan_template_collection_entity_operators(
             else []
         )
 
+    conditional = _split_top_level_conditional(value)
+    if conditional is not None:
+        resolutions: list[CandidateResolution] = []
+        for branch in conditional:
+            if not _contains_collection_operator(branch):
+                continue
+            if scan_budget[0] <= 0:
+                resolutions.append(_candidate_resolution_limit())
+                break
+            scan_budget[0] -= 1
+            resolutions.extend(
+                _scan_template_collection_entity_operators(
+                    branch,
+                    candidate_context=candidate_context,
+                    depth=depth + 1,
+                    scan_budget=scan_budget,
+                )
+            )
+        return _bound_candidate_resolutions(resolutions)
+
     resolutions = _scan_top_level_collection_entity_operator(
         value, candidate_context=candidate_context
     )
@@ -717,18 +737,17 @@ def _scan_template_collection_entity_operators(
         inner, end = _extract_balanced(value, cursor, char, closer)
         if inner is None:
             if _contains_collection_operator(value[cursor:]):
-                resolutions.append(CandidateResolution())
-            cursor += 1
-            continue
+                if scan_budget[0] > 0:
+                    scan_budget[0] -= 1
+                resolutions.append(_candidate_resolution_limit())
+            # The remaining fragment is malformed.  Do not retry every later
+            # opener against the same suffix: that turns one bounded scan into
+            # quadratic work.  One explicit limit result conservatively binds
+            # the whole malformed remainder.
+            break
         if scan_budget[0] <= 0 or depth >= MAX_TEMPLATE_NESTING:
             if _contains_collection_operator(inner):
-                resolutions.append(
-                    CandidateResolution(
-                        complete=False,
-                        limit_exceeded=True,
-                        kind="resolution_limit",
-                    )
-                )
+                resolutions.append(_candidate_resolution_limit())
             cursor = end
             continue
         scan_budget[0] -= 1
@@ -741,7 +760,26 @@ def _scan_template_collection_entity_operators(
             )
         )
         cursor = end
-    return resolutions
+    return _bound_candidate_resolutions(resolutions)
+
+
+def _candidate_resolution_limit() -> CandidateResolution:
+    return CandidateResolution(
+        complete=False,
+        limit_exceeded=True,
+        kind="resolution_limit",
+    )
+
+
+def _bound_candidate_resolutions(
+    resolutions: list[CandidateResolution],
+) -> list[CandidateResolution]:
+    if len(resolutions) <= MAX_LITERAL_ARGUMENTS:
+        return resolutions
+    return [
+        *resolutions[: MAX_LITERAL_ARGUMENTS - 1],
+        _candidate_resolution_limit(),
+    ]
 
 
 def _scan_top_level_collection_entity_operator(
@@ -879,6 +917,55 @@ def _split_top_level_pipeline(value: str) -> list[str]:
     return parts
 
 
+def _split_top_level_conditional(
+    value: str,
+) -> tuple[str, str, str] | None:
+    """Split one bounded Jinja inline conditional without evaluating it."""
+
+    stack: list[str] = []
+    pairs = {"(": ")", "[": "]", "{": "}"}
+    if_start: int | None = None
+    if_end: int | None = None
+    cursor = 0
+    while cursor < len(value):
+        char = value[cursor]
+        if char in {"'", '"'}:
+            cursor = _skip_quoted(value, cursor)
+            continue
+        if char in pairs:
+            stack.append(pairs[char])
+            cursor += 1
+            continue
+        if stack and char == stack[-1]:
+            stack.pop()
+            cursor += 1
+            continue
+        if stack:
+            cursor += 1
+            continue
+        if char.isalpha() or char == "_":
+            start = cursor
+            cursor += 1
+            while cursor < len(value) and (
+                value[cursor].isalnum() or value[cursor] == "_"
+            ):
+                cursor += 1
+            token = value[start:cursor]
+            if token == "if" and if_start is None:
+                if_start = start
+                if_end = cursor
+            elif token == "else" and if_start is not None:
+                true_branch = value[:if_start].strip()
+                condition = value[if_end:start].strip()
+                false_branch = value[cursor:].strip()
+                if true_branch and condition and false_branch:
+                    return true_branch, condition, false_branch
+                return None
+            continue
+        cursor += 1
+    return None
+
+
 def _parse_pipeline_stage(
     stage: str,
 ) -> tuple[str, list[str] | None] | None:
@@ -972,6 +1059,23 @@ def _resolve_collection_candidate_expression(
                 candidate_context,
                 depth=depth + 1,
             )
+    conditional = _split_top_level_conditional(bounded)
+    if conditional is not None:
+        true_branch, _condition, false_branch = conditional
+        return _merge_collection_candidate_resolutions(
+            (
+                _resolve_collection_candidate_expression(
+                    true_branch,
+                    candidate_context,
+                    depth=depth + 1,
+                ),
+                _resolve_collection_candidate_expression(
+                    false_branch,
+                    candidate_context,
+                    depth=depth + 1,
+                ),
+            )
+        )
     pipeline = _split_top_level_pipeline(bounded)
     if len(pipeline) > 1:
         if not _pipeline_preserves_collection_candidates(pipeline[1:]):
@@ -986,7 +1090,7 @@ def _resolve_collection_candidate_expression(
         entity_ids = tuple(
             sorted({item for item in literals if valid_entity_id(item)})
         )
-        complete = bool(entity_ids and len(entity_ids) == len(literals))
+        complete = len(entity_ids) == len(literals)
         return CandidateResolution(
             entity_ids=entity_ids,
             possible_entity_domains=(
@@ -1018,6 +1122,67 @@ def _resolve_collection_candidate_expression(
             )
         return CandidateResolution()
     return _resolve_dynamic_argument(bounded, candidate_context)
+
+
+def _merge_collection_candidate_resolutions(
+    resolutions: tuple[CandidateResolution, ...],
+) -> CandidateResolution:
+    entity_ids = tuple(
+        sorted(
+            {
+                entity_id
+                for resolution in resolutions
+                for entity_id in resolution.entity_ids
+            }
+        )
+    )
+    labels = tuple(
+        sorted(
+            {
+                label
+                for resolution in resolutions
+                for label in resolution.literal_label_selectors
+            }
+        )
+    )
+    limit_exceeded = any(
+        resolution.limit_exceeded for resolution in resolutions
+    )
+    complete = all(resolution.complete for resolution in resolutions)
+    if (
+        len(entity_ids) > MAX_LITERAL_ARGUMENTS
+        or len(labels) > MAX_DYNAMIC_LABEL_SELECTORS
+    ):
+        limit_exceeded = True
+        complete = False
+    entity_ids = entity_ids[:MAX_LITERAL_ARGUMENTS]
+    labels = labels[:MAX_DYNAMIC_LABEL_SELECTORS]
+    domains: tuple[str, ...] | None = None
+    if complete and not labels:
+        domain_values: set[str] = set()
+        for resolution in resolutions:
+            if resolution.possible_entity_domains is None:
+                complete = False
+                break
+            domain_values.update(resolution.possible_entity_domains)
+        if complete:
+            domains = tuple(sorted(domain_values))
+    return CandidateResolution(
+        entity_ids=entity_ids,
+        literal_label_selectors=labels,
+        possible_entity_domains=domains,
+        complete=complete,
+        limit_exceeded=limit_exceeded,
+        kind=(
+            "resolution_limit"
+            if limit_exceeded
+            else (
+                "finite_conditional_collection"
+                if complete
+                else "unresolved"
+            )
+        ),
+    )
 
 
 def _project_template_operator_operand(

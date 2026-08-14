@@ -12,7 +12,10 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
-from ha_mcp_engineering.dependency.extraction import extract_document  # noqa: E402
+from ha_mcp_engineering.dependency.extraction import (  # noqa: E402
+    MAX_TEMPLATE_SEGMENT_CHARS,
+    extract_document,
+)
 from ha_mcp_engineering.dependency.models import (  # noqa: E402
     AutomationActionRiskProfile,
     DependencyFinding,
@@ -229,6 +232,148 @@ class BoundedDynamicResolutionTests(unittest.TestCase):
                 self.assertEqual(
                     dynamic[0].possible_entity_ids, (TARGET,)
                 )
+
+    def test_inline_conditional_collection_branches_preserve_exact_candidates(self):
+        cases = (
+            (
+                f'{{{{ ["{TARGET}"] | select("is_state", "on") '
+                "if enabled else [] }}",
+                (TARGET,),
+            ),
+            (
+                '{{ ["sensor.a"] | select("is_state", "on") '
+                "if enabled else [] }}",
+                ("sensor.a",),
+            ),
+            (
+                f'{{{{ (["{TARGET}"] | select("is_state", "on") '
+                '| list) if enabled else (["sensor.b"] '
+                '| map("states") | list) }}',
+                (TARGET, "sensor.b"),
+            ),
+        )
+
+        for index, (template, expected) in enumerate(cases):
+            with self.subTest(template=template):
+                findings, dynamic = _dynamic(
+                    template, source_id=f"conditional_exact_{index}"
+                )
+                self.assertEqual(findings, [])
+                self.assertEqual(len(dynamic), 1)
+                self.assertTrue(
+                    dynamic[0].candidate_resolution_complete
+                )
+                self.assertEqual(
+                    dynamic[0].possible_entity_ids, expected
+                )
+
+    def test_inline_conditional_dynamic_branch_remains_incomplete(self):
+        findings, dynamic = _dynamic(
+            f'{{{{ (["{TARGET}"] | select("is_state", "on") '
+            "| list) if enabled else (helper_entities "
+            '| map("states") | list) }}',
+            source_id="conditional_dynamic_branch",
+        )
+        observed = _binding(_snapshot(dynamic=dynamic))
+
+        self.assertEqual(findings, [])
+        self.assertEqual(len(dynamic), 1)
+        self.assertEqual(dynamic[0].possible_entity_ids, (TARGET,))
+        self.assertFalse(dynamic[0].candidate_resolution_complete)
+        self.assertFalse(observed["evidence_complete"])
+        self.assertFalse(observed["execution_eligible"])
+
+    def test_inline_conditional_dependency_retains_consequential_profile(self):
+        source_id = "conditional_collection_consequence"
+        findings, dynamic = _dynamic(
+            f'{{{{ ["{TARGET}"] | select("is_state", "on") '
+            "if enabled else [] }}",
+            source_id=source_id,
+        )
+        observed = _binding(
+            _snapshot(
+                dynamic=dynamic,
+                profiles=(_profile(source_id, "cover.open_cover"),),
+            )
+        )
+
+        self.assertEqual(findings, [])
+        self.assertTrue(observed["evidence_complete"])
+        self.assertEqual(observed["physical_consequence"], "direct")
+        self.assertEqual(
+            observed["relevant_downstream_object_ids"],
+            [f"automation.{source_id}"],
+        )
+
+    def test_inline_conditional_candidate_and_operator_drift_changes_binding(self):
+        source_id = "conditional_collection_drift"
+        templates = (
+            f'{{{{ ["{TARGET}"] | select("is_state", "on") '
+            "if enabled else [] }}",
+            f'{{{{ ["{TARGET}"] | map("states") '
+            "if enabled else [] }}",
+            '{{ ["sensor.a"] | select("is_state", "on") '
+            "if enabled else [] }}",
+        )
+        bindings = []
+        for template in templates:
+            _findings, dynamic = _dynamic(template, source_id=source_id)
+            bindings.append(
+                _binding(
+                    _snapshot(
+                        dynamic=dynamic,
+                        profiles=(_profile(source_id),),
+                    )
+                )
+            )
+
+        self.assertNotEqual(
+            bindings[0]["evidence_fingerprint"],
+            bindings[1]["evidence_fingerprint"],
+        )
+        self.assertNotEqual(
+            bindings[0]["evidence_fingerprint"],
+            bindings[2]["evidence_fingerprint"],
+        )
+
+    def test_malformed_nested_collection_scan_is_bounded_and_explicit(self):
+        operator = (
+            f'["{TARGET}"] | select("is_state", "on") | list'
+        )
+        elapsed_by_size = {}
+        for opener_count in (8_000, 32_000):
+            template = "{{ " + "(" * opener_count + operator + " }}"
+            started = time.perf_counter()
+            findings, dynamic = _dynamic(
+                template, source_id=f"malformed_{opener_count}"
+            )
+            elapsed_by_size[opener_count] = time.perf_counter() - started
+            self.assertEqual(findings, [])
+            self.assertEqual(len(dynamic), 1)
+            self.assertFalse(dynamic[0].candidate_resolution_complete)
+            self.assertTrue(
+                dynamic[0].candidate_resolution_limit_exceeded
+            )
+
+        max_openers = MAX_TEMPLATE_SEGMENT_CHARS - len(operator) - 1
+        maximum = "{{ " + "(" * max_openers + operator + " }}"
+        started = time.perf_counter()
+        findings, dynamic = _dynamic(
+            maximum, source_id="malformed_maximum"
+        )
+        maximum_elapsed = time.perf_counter() - started
+
+        self.assertEqual(findings, [])
+        self.assertEqual(len(dynamic), 1)
+        self.assertTrue(dynamic[0].candidate_resolution_limit_exceeded)
+        self.assertFalse(
+            _binding(_snapshot(dynamic=dynamic))["evidence_complete"]
+        )
+        self.assertLess(maximum_elapsed, 1.0)
+        self.assertLess(
+            elapsed_by_size[32_000],
+            max(0.20, elapsed_by_size[8_000] * 8),
+        )
 
     def test_nested_collection_dependency_retains_consequential_profile(self):
         source_id = "nested_collection_consequence"

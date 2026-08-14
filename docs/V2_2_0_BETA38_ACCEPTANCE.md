@@ -77,7 +77,9 @@ and expression evidence. Material candidate or operator changes must alter the
 dependency fingerprint checked at final preflight. Parenthesized or nested
 reviewed collection reads have the same exact-or-incomplete requirement as
 their outermost equivalents; exceeding the nesting or scan bound is explicitly
-non-conclusive.
+non-conclusive. Malformed delimiter tails must consume the same bounded scan
+budget, complete with near-linear cost, and emit one bounded limit result rather
+than rescanning the same suffix.
 
 An exact target absent from complete candidates is excluded only for that
 target. An exact target present in the candidates remains a true dependency and

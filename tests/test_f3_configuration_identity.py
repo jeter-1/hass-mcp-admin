@@ -689,6 +689,8 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
             '| map("states") | list }}}}',
             f'{{{{ (["{helper}"] '
             '| reject("has_value") | list) if enabled else [] }}}}',
+            f'{{{{ ["{helper}"] | select("is_state", "on") '
+            "if enabled else [] }}",
         )
         for action in ("create", "update"):
             for index, template in enumerate(exact_forms):
@@ -722,6 +724,13 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
             '| select(test_name, "on") | list) | count }}}}',
             '{{ (helper_entities | map("states") | list) '
             'if enabled else [] }}',
+            f'{{{{ (["{helper}"] | select("is_state", "on") '
+            "| list) if enabled else (helper_entities "
+            '| map("states") | list) }}',
+            "{{ "
+            + "(" * 10_000
+            + f'["{helper}"] | select("is_state", "on") | list'
+            + " }}",
         )
         for index, template in enumerate(dynamic_forms):
             with self.subTest(template=template):
@@ -768,6 +777,32 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
         }
         self.assertNotIn(exact_key, unrelated_locks)
         self.assertNotIn(dynamic_key, unrelated_locks)
+
+        conditional_unrelated = valid_config("automation")
+        conditional_unrelated["condition"] = [
+            {
+                "condition": "template",
+                "value_template": (
+                    '{{ ["sensor.a"] | select("is_state", "on") '
+                    "if enabled else [] }}"
+                ),
+            }
+        ]
+        conditional_unrelated_prepared = await self._prepared(
+            "automation",
+            "update",
+            operation_id="conditional_unrelated",
+            current_config=base,
+            proposed_config=conditional_unrelated,
+        )
+        conditional_unrelated_locks = {
+            item.key
+            for item in operation_lock_requests(
+                conditional_unrelated_prepared
+            )
+        }
+        self.assertNotIn(exact_key, conditional_unrelated_locks)
+        self.assertNotIn(dynamic_key, conditional_unrelated_locks)
 
     async def test_matching_reload_and_restart_exclusive_locks_conflict_atomically(self):
         timing = LockTiming(60, 10, 0)

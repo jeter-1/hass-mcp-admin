@@ -32,7 +32,9 @@ parentheses, containers, and conditional branches. Exact nested candidates
 remain exact; ambiguous nested collections or operators and exceeded nesting
 or scan bounds remain explicitly incomplete. A later outer filter cannot cause
 an inner reviewed state-read pipeline to disappear from dependency evidence or
-F3 lock projection.
+F3 lock projection. Malformed delimiter tails are scanned once under the shared
+budget and produce explicit incomplete limit evidence instead of repeated
+suffix rescans.
 
 For the exact helper being planned, a complete candidate set that excludes the
 helper is proven unrelated. A candidate set or exact label membership that
