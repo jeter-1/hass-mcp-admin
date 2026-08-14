@@ -18,7 +18,12 @@ from ha_mcp_engineering.f3.operational_adapter import (
     execute_operational,
     validate_execution_binding,
 )
-from ha_mcp_engineering.f3.contracts import RecoveryContext
+from ha_mcp_engineering.f3.contracts import (
+    LockMode,
+    RecoveryContext,
+)
+from ha_mcp_engineering.f3.locks import DurableLockStore, LockConflict
+from ha_mcp_engineering.f3.models import LockOwner, LockTiming
 from ha_mcp_engineering.f3.operational_models import (
     CAPABILITY_IDENTITIES,
     CONTROLLED_RELOAD,
@@ -38,6 +43,10 @@ from ha_mcp_engineering.f3.operational_models import (
     validate_prepared_operational_authority,
 )
 from ha_mcp_engineering.f3.persistence import DurableExecutionRepository
+from ha_mcp_engineering.f3_configuration.locks import (
+    lock_set_hash,
+    resource_lock_key,
+)
 from ha_mcp_engineering.governance.models import ApprovalState
 
 from tests.f3_operational_fixtures import (
@@ -546,6 +555,11 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
                 "addon:local_ha_mcp": "shared",
                 "home_assistant:core": "exclusive",
             },
+            SET_INPUT_BOOLEAN_STATE: {
+                "helper:input_boolean.synthetic_exact": "exclusive",
+                "home_assistant:core": "shared",
+                "reload:input_boolean": "shared",
+            },
         }
         for operation, keys in expected.items():
             with self.subTest(operation=operation):
@@ -611,6 +625,178 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(operational_reload.mode.value, "exclusive")
                 self.assertEqual(config_reload.mode.value, "shared")
+
+    @staticmethod
+    def _lock_owner(name: str) -> LockOwner:
+        return LockOwner(
+            f"owner-{name}",
+            f"task-{name}",
+            f"plan-{name}",
+            f"operation-{name}",
+            f"attempt-{name}",
+        )
+
+    async def _helper_lock_sets(self):
+        operational_context = make_context(
+            self.root / "state",
+            SET_INPUT_BOOLEAN_STATE,
+            target_id="input_boolean.vacation_mode",
+        )
+        state = await prepare_context(operational_context)
+        state_locks = operational_context.adapter.lock_requests(state)
+
+        configuration_gateway = SyntheticConfigurationGateway()
+        configuration_gateway.states[
+            ("input_boolean", "input_boolean.vacation_mode")
+        ] = configuration_proposal_for(
+            "input_boolean", "update"
+        ).current_config()
+        configuration_adapter = configuration_adapter_for(
+            "input_boolean", "update", configuration_gateway
+        )
+        configuration = await configuration_adapter.prepare(
+            configuration_proposal_for("input_boolean", "update")
+        )
+        configuration_locks = configuration_adapter.lock_requests(
+            configuration
+        )
+
+        reload_context = make_context(
+            self.root / "reload-input-boolean",
+            CONTROLLED_RELOAD,
+            target_id="input_boolean",
+        )
+        reload_operation = await prepare_context(reload_context)
+        reload_locks = reload_context.adapter.lock_requests(reload_operation)
+        return state, state_locks, configuration_locks, reload_locks
+
+    async def test_helper_state_and_same_helper_configuration_conflict_both_directions(self):
+        _state, state_locks, configuration_locks, _reload_locks = (
+            await self._helper_lock_sets()
+        )
+        timing = LockTiming(60, 10, 0)
+        for first, second, first_name, second_name in (
+            (state_locks, configuration_locks, "state", "configuration"),
+            (configuration_locks, state_locks, "configuration", "state"),
+        ):
+            with self.subTest(first=first_name):
+                with tempfile.TemporaryDirectory() as temporary:
+                    store = DurableLockStore(temporary)
+                    handle = store.acquire_once(
+                        first,
+                        owner=self._lock_owner(first_name),
+                        timing=timing,
+                    )
+                    with self.assertRaises(LockConflict):
+                        store.acquire_once(
+                            second,
+                            owner=self._lock_owner(second_name),
+                            timing=timing,
+                        )
+                    store.release(handle)
+
+    async def test_helper_state_and_matching_reload_conflict_both_directions(self):
+        _state, state_locks, _configuration_locks, reload_locks = (
+            await self._helper_lock_sets()
+        )
+        timing = LockTiming(60, 10, 0)
+        for first, second, first_name, second_name in (
+            (state_locks, reload_locks, "state", "reload"),
+            (reload_locks, state_locks, "reload", "state"),
+        ):
+            with self.subTest(first=first_name):
+                with tempfile.TemporaryDirectory() as temporary:
+                    store = DurableLockStore(temporary)
+                    handle = store.acquire_once(
+                        first,
+                        owner=self._lock_owner(first_name),
+                        timing=timing,
+                    )
+                    with self.assertRaises(LockConflict):
+                        store.acquire_once(
+                            second,
+                            owner=self._lock_owner(second_name),
+                            timing=timing,
+                        )
+                    store.release(handle)
+
+    async def test_unrelated_helper_state_and_configuration_operations_remain_concurrent(self):
+        state_a_context = make_context(
+            self.root / "state-a",
+            SET_INPUT_BOOLEAN_STATE,
+            target_id="input_boolean.helper_a",
+        )
+        state_b_context = make_context(
+            self.root / "state-b",
+            SET_INPUT_BOOLEAN_STATE,
+            target_id="input_boolean.helper_b",
+        )
+        state_a = await prepare_context(state_a_context)
+        state_b = await prepare_context(state_b_context)
+        state_a_locks = state_a_context.adapter.lock_requests(state_a)
+        state_b_locks = state_b_context.adapter.lock_requests(state_b)
+
+        configuration_gateway = SyntheticConfigurationGateway()
+        configuration_adapter = configuration_adapter_for(
+            "input_boolean", "update", configuration_gateway
+        )
+        configuration = await configuration_adapter.prepare(
+            configuration_proposal_for("input_boolean", "update")
+        )
+        configuration_locks = configuration_adapter.lock_requests(
+            configuration
+        )
+        timing = LockTiming(60, 10, 0)
+
+        for first, second, names in (
+            (state_a_locks, state_b_locks, ("state-a", "state-b")),
+            (
+                configuration_locks,
+                state_b_locks,
+                ("configuration-a", "state-b"),
+            ),
+        ):
+            with self.subTest(pair=names):
+                with tempfile.TemporaryDirectory() as temporary:
+                    store = DurableLockStore(temporary)
+                    first_handle = store.acquire_once(
+                        first,
+                        owner=self._lock_owner(names[0]),
+                        timing=timing,
+                    )
+                    second_handle = store.acquire_once(
+                        second,
+                        owner=self._lock_owner(names[1]),
+                        timing=timing,
+                    )
+                    store.release(second_handle)
+                    store.release(first_handle)
+
+    async def test_helper_lock_order_hash_and_recovery_identity_are_deterministic(self):
+        state, state_locks, _configuration_locks, _reload_locks = (
+            await self._helper_lock_sets()
+        )
+        expected_resource = resource_lock_key(
+            "input_boolean", "input_boolean.vacation_mode"
+        )
+
+        self.assertEqual(
+            [item.key for item in state_locks],
+            sorted(item.key for item in state_locks),
+        )
+        self.assertEqual(
+            lock_set_hash(state_locks),
+            lock_set_hash(tuple(reversed(state_locks))),
+        )
+        self.assertEqual(state.selective_hold_keys, (expected_resource,))
+        self.assertEqual(
+            {item.key: item.mode for item in state_locks},
+            {
+                expected_resource: LockMode.EXCLUSIVE,
+                "home_assistant:core": LockMode.SHARED,
+                "reload:input_boolean": LockMode.SHARED,
+            },
+        )
 
     async def test_unrelated_reload_domains_and_addons_remain_compatible(self):
         reload_keys = []

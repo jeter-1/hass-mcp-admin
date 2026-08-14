@@ -6,6 +6,7 @@ from collections.abc import Iterable
 
 from ha_mcp_engineering.f3.contracts import LockMode, LockRequest, LockScope
 
+from ..f3_configuration.locks import resource_lock_key
 from .models import validate_lock_key
 from .operational_models import (
     CONTROLLED_RELOAD,
@@ -119,12 +120,26 @@ class OperationalLockSetCalculator:
                 )
             )
         elif operation.operation == SET_INPUT_BOOLEAN_STATE:
-            requests.append(
-                LockRequest(
-                    key=f"input_boolean:{operation.target.target_id}",
-                    scopes=(LockScope.RESOURCE,),
-                    mode=LockMode.EXCLUSIVE,
-                    reason_codes=("exact_input_boolean_state_mutation",),
+            requests.extend(
+                (
+                    LockRequest(
+                        key=resource_lock_key(
+                            "input_boolean", operation.target.target_id
+                        ),
+                        scopes=(LockScope.RESOURCE,),
+                        mode=LockMode.EXCLUSIVE,
+                        reason_codes=(
+                            "exact_input_boolean_state_mutation",
+                        ),
+                    ),
+                    LockRequest(
+                        key="reload:input_boolean",
+                        scopes=(LockScope.RESOURCE,),
+                        mode=LockMode.SHARED,
+                        reason_codes=(
+                            "matching_configuration_reload_dependency",
+                        ),
+                    ),
                 )
             )
         elif operation.operation != RESTART_HOME_ASSISTANT:

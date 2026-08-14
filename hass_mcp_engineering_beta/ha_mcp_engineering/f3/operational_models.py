@@ -24,6 +24,7 @@ from ..governance.helper_state import (
     validate_desired_state,
     validate_input_boolean_entity_id,
 )
+from ..f3_configuration.locks import resource_lock_key
 
 from ha_mcp_engineering.f3.contracts import (
     AdapterCapabilityDescriptor,
@@ -545,7 +546,7 @@ def operational_escalation_policy(
         keys = ("home_assistant:core",)
     elif operation == SET_INPUT_BOOLEAN_STATE:
         validate_input_boolean_entity_id(target_id)
-        keys = (f"input_boolean:{target_id}",)
+        keys = (resource_lock_key("input_boolean", target_id),)
     else:
         raise ValueError("unknown operational hold model")
     return keys, EVIDENCE_DEADLINE_SECONDS[operation]

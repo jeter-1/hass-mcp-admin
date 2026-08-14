@@ -1272,8 +1272,13 @@ class F3RuntimeIntegration:
         elif plan.operation == ChangeOperation.SET_INPUT_BOOLEAN_STATE:
             self._merge_lock_mode(
                 values,
-                f"input_boolean:{plan.target_id}",
+                resource_lock_key("input_boolean", plan.target_id),
                 LockMode.EXCLUSIVE,
+            )
+            self._merge_lock_mode(
+                values,
+                "reload:input_boolean",
+                LockMode.SHARED,
             )
         return values
 
