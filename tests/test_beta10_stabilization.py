@@ -5,6 +5,8 @@ import sys
 import unittest
 from unittest.mock import AsyncMock, patch
 
+import aiohttp
+
 
 ROOT = Path(__file__).resolve().parents[1]
 BETA_DIR = ROOT / "hass_mcp_engineering_beta"
@@ -63,6 +65,7 @@ class FakeWebSocketSession:
     def __init__(self, websocket=None, connection_error=None):
         self.websocket = websocket
         self.connection_error = connection_error
+        self.websocket_timeout = None
 
     async def __aenter__(self):
         return self
@@ -70,7 +73,8 @@ class FakeWebSocketSession:
     async def __aexit__(self, exc_type, exc, tb):
         return False
 
-    def ws_connect(self, _url):
+    def ws_connect(self, _url, *, timeout=None):
+        self.websocket_timeout = timeout
         if self.connection_error:
             raise self.connection_error
         return self.websocket
@@ -107,12 +111,16 @@ class Beta10WebSocketTransportTests(unittest.IsolatedAsyncioTestCase):
                 {"id": 1, "type": "result", "success": True, "result": []},
             ]
         )
+        session = FakeWebSocketSession(websocket)
         with patch(
             "ha_mcp_engineering.clients.websocket.aiohttp.ClientSession",
-            return_value=FakeWebSocketSession(websocket),
+            return_value=session,
         ):
             result = await self.client.command({"type": "system_log/list"})
         self.assertEqual(result, [])
+        self.assertIsInstance(session.websocket_timeout, aiohttp.ClientWSTimeout)
+        self.assertEqual(session.websocket_timeout.ws_receive, 1)
+        self.assertEqual(session.websocket_timeout.ws_close, 1)
         self.assertEqual(websocket.sent[-1], {"id": 1, "type": "system_log/list"})
         self.assertIn("system_log/list", self.telemetry.endpoint_categories)
         self.assertEqual(METRICS.snapshot()["home_assistant_latency"]["count"], 1)

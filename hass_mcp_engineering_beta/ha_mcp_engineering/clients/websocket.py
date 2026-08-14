@@ -65,9 +65,16 @@ class HomeAssistantWebSocketClient:
         if telemetry:
             telemetry.begin_ha_attempt(started)
         timeout = aiohttp.ClientTimeout(total=self.settings.ha_timeout_seconds)
+        websocket_timeout = aiohttp.ClientWSTimeout(
+            ws_receive=self.settings.ha_timeout_seconds,
+            ws_close=self.settings.ha_timeout_seconds,
+        )
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.ws_connect(self.settings.websocket_url) as websocket:
+                async with session.ws_connect(
+                    self.settings.websocket_url,
+                    timeout=websocket_timeout,
+                ) as websocket:
                     message = await websocket.receive_json()
                     if message.get("type") != "auth_required":
                         self._record(started, category)
