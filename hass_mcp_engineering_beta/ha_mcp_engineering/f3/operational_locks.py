@@ -7,6 +7,10 @@ from collections.abc import Iterable
 from ha_mcp_engineering.f3.contracts import LockMode, LockRequest, LockScope
 
 from ..f3_configuration.locks import resource_lock_key
+from ..governance.helper_dependency import (
+    HELPER_DEPENDENCY_RISK_MODEL,
+    MAX_RELEVANT_AUTOMATIONS,
+)
 from .models import validate_lock_key
 from .operational_models import (
     CONTROLLED_RELOAD,
@@ -16,6 +20,28 @@ from .operational_models import (
     SET_INPUT_BOOLEAN_STATE,
     PreparedOperationalOperation,
 )
+
+
+def _bound_downstream_automation_resources(
+    operation: PreparedOperationalOperation,
+) -> tuple[str, ...]:
+    baseline = operation.baseline
+    binding = baseline.get("dependency_risk")
+    if not isinstance(binding, dict) or (
+        binding.get("model") != HELPER_DEPENDENCY_RISK_MODEL
+    ):
+        raise ValueError("helper dependency lock evidence is invalid")
+    values = binding.get("downstream_automation_resource_ids")
+    if (
+        not isinstance(values, list)
+        or len(values) > MAX_RELEVANT_AUTOMATIONS
+        or any(not isinstance(value, str) for value in values)
+        or values != sorted(set(values), key=lambda item: item.encode("utf-8"))
+    ):
+        raise ValueError("helper dependency lock resources are invalid")
+    for value in values:
+        resource_lock_key("automation", value)
+    return tuple(values)
 
 
 def normalize_operational_lock_requests(
@@ -120,6 +146,9 @@ class OperationalLockSetCalculator:
                 )
             )
         elif operation.operation == SET_INPUT_BOOLEAN_STATE:
+            downstream_automations = (
+                _bound_downstream_automation_resources(operation)
+            )
             requests.extend(
                 (
                     LockRequest(
@@ -140,7 +169,26 @@ class OperationalLockSetCalculator:
                             "matching_configuration_reload_dependency",
                         ),
                     ),
+                    LockRequest(
+                        key="reload:automation",
+                        scopes=(LockScope.RESOURCE,),
+                        mode=LockMode.SHARED,
+                        reason_codes=(
+                            "bound_automation_reload_dependency",
+                        ),
+                    ),
                 )
+            )
+            requests.extend(
+                LockRequest(
+                    key=resource_lock_key("automation", resource_id),
+                    scopes=(LockScope.RESOURCE,),
+                    mode=LockMode.SHARED,
+                    reason_codes=(
+                        "bound_downstream_automation_dependency",
+                    ),
+                )
+                for resource_id in downstream_automations
             )
         elif operation.operation != RESTART_HOME_ASSISTANT:
             raise ValueError("unknown operational lock model")

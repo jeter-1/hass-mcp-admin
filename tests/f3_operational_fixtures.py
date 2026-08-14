@@ -196,18 +196,54 @@ def baseline_for(
     target_id: str,
     version: str = "8.0.0",
     target_class: str = "other_addon",
+    dependency_automation_ids: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     if operation == SET_INPUT_BOOLEAN_STATE:
+        downstream_profiles = [
+            {
+                "automation_id": f"automation.{resource_id}",
+                "automation_resource_id": resource_id,
+                "relationships": ["trigger"],
+                "physical_consequence": "none",
+                "complete": True,
+                "truncated": False,
+                "action_domains": ["notify"],
+                "services": ["notify.notify"],
+                "reason_codes": ["proven_benign_action_family"],
+                "effect_projection_model": "automation-action-effect-v2",
+                "effect_targets": [],
+                "effect_data": [],
+                "effect_structure_fingerprint": stable_hash(
+                    {"automation": resource_id, "structure": "notify"}
+                ),
+                "effect_projection_fingerprint": stable_hash(
+                    {"automation": resource_id, "effect": "notify"}
+                ),
+                "effect_projection_clipped": False,
+                "profile_fingerprint": stable_hash(
+                    {"automation": resource_id, "profile": "benign"}
+                ),
+            }
+            for resource_id in dependency_automation_ids
+        ]
         material = {
-            "model": "helper-dependency-risk-v1",
+            "model": "helper-dependency-risk-v2",
             "entity_id": target_id,
             "completeness": "complete",
             "evidence_complete": True,
             "execution_eligible": True,
             "physical_consequence": "none",
-            "relevant_downstream_object_ids": [],
+            "relevant_downstream_object_ids": [
+                f"automation.{resource_id}"
+                for resource_id in dependency_automation_ids
+            ],
+            "downstream_automation_resource_ids": list(
+                dependency_automation_ids
+            ),
             "consequential_downstream_object_ids": [],
-            "downstream_profiles": [],
+            "downstream_profiles": downstream_profiles,
+            "target_relevant_dynamic_reference_count": 0,
+            "target_relevant_dynamic_reference_fingerprints": [],
             "unresolved_dynamic_reference_count": 0,
             "truncated": False,
         }
@@ -346,6 +382,7 @@ def make_plan(
     target_id: str | None = None,
     version: str = "8.0.0",
     target_class: str = "other_addon",
+    dependency_automation_ids: tuple[str, ...] = (),
 ) -> ChangePlan:
     target_id = target_id or {
         CREATE_FULL_BACKUP: "local_full_backup",
@@ -366,6 +403,7 @@ def make_plan(
         target_id=target_id,
         version=version,
         target_class=target_class,
+        dependency_automation_ids=dependency_automation_ids,
     )
     provider = provider_evidence(operation, version=version)
     elevated = operation in {RESTART_ADDON, RESTART_HOME_ASSISTANT}
@@ -879,12 +917,14 @@ def make_context(
     target_id: str | None = None,
     version: str = "8.0.0",
     target_class: str = "other_addon",
+    dependency_automation_ids: tuple[str, ...] = (),
 ) -> FixtureContext:
     plan = make_plan(
         operation,
         target_id=target_id,
         version=version,
         target_class=target_class,
+        dependency_automation_ids=dependency_automation_ids,
     )
     trace: list[str] = []
     backup = FakeBackupGateway(
@@ -918,12 +958,16 @@ def make_context(
     ):
         if entity_id != "input_boolean.synthetic_exact" or refresh is not True:
             raise AssertionError("synthetic helper dependency read changed")
+        trace.append("helper_dependency_read")
         return {
             "binding": deepcopy(
                 baseline_for(
                     SET_INPUT_BOOLEAN_STATE,
                     target_id=entity_id,
                     version=version,
+                    dependency_automation_ids=(
+                        dependency_automation_ids
+                    ),
                 )["dependency_risk"]
             ),
             "provenance": {

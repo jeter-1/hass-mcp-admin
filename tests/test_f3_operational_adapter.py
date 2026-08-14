@@ -558,6 +558,7 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
             SET_INPUT_BOOLEAN_STATE: {
                 "helper:input_boolean.synthetic_exact": "exclusive",
                 "home_assistant:core": "shared",
+                "reload:automation": "shared",
                 "reload:input_boolean": "shared",
             },
         }
@@ -794,9 +795,149 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
             {
                 expected_resource: LockMode.EXCLUSIVE,
                 "home_assistant:core": LockMode.SHARED,
+                "reload:automation": LockMode.SHARED,
                 "reload:input_boolean": LockMode.SHARED,
             },
         )
+
+    async def test_helper_serializes_with_bound_automation_and_reload(self):
+        helper_context = make_context(
+            self.root / "helper-bound",
+            SET_INPUT_BOOLEAN_STATE,
+            dependency_automation_ids=("porch_light",),
+        )
+        helper = await prepare_context(helper_context)
+        helper_locks = helper_context.adapter.lock_requests(helper)
+
+        configuration_gateway = SyntheticConfigurationGateway()
+        configuration_gateway.states[("automation", "porch_light")] = (
+            configuration_proposal_for(
+                "automation", "update"
+            ).current_config()
+        )
+        configuration_adapter = configuration_adapter_for(
+            "automation", "update", configuration_gateway
+        )
+        configuration = await configuration_adapter.prepare(
+            configuration_proposal_for("automation", "update")
+        )
+        configuration_locks = configuration_adapter.lock_requests(
+            configuration
+        )
+
+        reload_context = make_context(
+            self.root / "reload-automation",
+            CONTROLLED_RELOAD,
+            target_id="automation",
+        )
+        reload_operation = await prepare_context(reload_context)
+        reload_locks = reload_context.adapter.lock_requests(reload_operation)
+
+        self.assertEqual(
+            {item.key: item.mode for item in helper_locks},
+            {
+                "automation:porch_light": LockMode.SHARED,
+                "helper:input_boolean.synthetic_exact": LockMode.EXCLUSIVE,
+                "home_assistant:core": LockMode.SHARED,
+                "reload:automation": LockMode.SHARED,
+                "reload:input_boolean": LockMode.SHARED,
+            },
+        )
+        timing = LockTiming(60, 10, 0)
+        for first, second, names in (
+            (
+                helper_locks,
+                configuration_locks,
+                ("helper", "automation-configuration"),
+            ),
+            (
+                configuration_locks,
+                helper_locks,
+                ("automation-configuration", "helper"),
+            ),
+            (helper_locks, reload_locks, ("helper", "automation-reload")),
+            (reload_locks, helper_locks, ("automation-reload", "helper")),
+        ):
+            with self.subTest(pair=names):
+                with tempfile.TemporaryDirectory() as temporary:
+                    store = DurableLockStore(temporary)
+                    handle = store.acquire_once(
+                        first,
+                        owner=self._lock_owner(names[0]),
+                        timing=timing,
+                    )
+                    with self.assertRaises(LockConflict):
+                        store.acquire_once(
+                            second,
+                            owner=self._lock_owner(names[1]),
+                            timing=timing,
+                        )
+                    store.release(handle)
+
+    async def test_unrelated_automation_configuration_remains_concurrent(self):
+        helper_context = make_context(
+            self.root / "helper-unrelated",
+            SET_INPUT_BOOLEAN_STATE,
+            dependency_automation_ids=("other_automation",),
+        )
+        helper = await prepare_context(helper_context)
+        helper_locks = helper_context.adapter.lock_requests(helper)
+
+        configuration_gateway = SyntheticConfigurationGateway()
+        configuration_gateway.states[("automation", "porch_light")] = (
+            configuration_proposal_for(
+                "automation", "update"
+            ).current_config()
+        )
+        configuration_adapter = configuration_adapter_for(
+            "automation", "update", configuration_gateway
+        )
+        configuration = await configuration_adapter.prepare(
+            configuration_proposal_for("automation", "update")
+        )
+        configuration_locks = configuration_adapter.lock_requests(
+            configuration
+        )
+
+        with tempfile.TemporaryDirectory() as temporary:
+            store = DurableLockStore(temporary)
+            timing = LockTiming(60, 10, 0)
+            helper_handle = store.acquire_once(
+                helper_locks,
+                owner=self._lock_owner("helper"),
+                timing=timing,
+            )
+            configuration_handle = store.acquire_once(
+                configuration_locks,
+                owner=self._lock_owner("unrelated-configuration"),
+                timing=timing,
+            )
+            store.release(configuration_handle)
+            store.release(helper_handle)
+
+    async def test_dependency_refresh_occurs_only_after_exact_locks_are_held(self):
+        context = make_context(
+            self.root / "refresh-after-locks",
+            SET_INPUT_BOOLEAN_STATE,
+            dependency_automation_ids=("porch_light",),
+        )
+        prepared = await prepare_context(context)
+        locks = context.adapter.lock_requests(prepared)
+
+        missing = await context.adapter.preflight(
+            prepared, acquired_locks=locks[:-1]
+        )
+
+        self.assertFalse(missing.eligible)
+        self.assertEqual(missing.outcome, "lock_conflict")
+        self.assertNotIn("helper_dependency_read", context.trace)
+
+        exact = await context.adapter.preflight(
+            prepared, acquired_locks=locks
+        )
+
+        self.assertTrue(exact.eligible)
+        self.assertEqual(context.trace[-1], "helper_dependency_read")
 
     async def test_unrelated_reload_domains_and_addons_remain_compatible(self):
         reload_keys = []
