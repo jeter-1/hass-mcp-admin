@@ -10850,11 +10850,16 @@ class ChangeGovernanceService:
         snapshot_reader = getattr(
             self.helper_state_gateway, "health_snapshot", None
         )
+        snapshot_failure: str | None = None
         if callable(snapshot_reader):
             try:
                 snapshot = dict(snapshot_reader())
-            except Exception:
+            except Exception as exc:
                 snapshot = {}
+                snapshot_failure = (
+                    "helper_state_health_snapshot_failed:"
+                    f"{type(exc).__name__[:48]}"
+                )
         else:
             snapshot = {}
         result = {
@@ -10905,6 +10910,10 @@ class ChangeGovernanceService:
                 )
                 if unavailable
             )
+        if snapshot_failure is not None:
+            result["operational_status"] = "unavailable"
+            result["health"] = "degraded"
+            result["last_failure_category"] = snapshot_failure
         result.update(
             {
                 "provider": HELPER_STATE_PROVIDER,

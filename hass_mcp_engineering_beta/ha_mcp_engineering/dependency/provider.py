@@ -543,7 +543,7 @@ def _build_label_membership_evidence(
         exact_labels = {
             label for label in labels if isinstance(label, str)
         }
-        if len(exact_labels) != len(labels):
+        if any(not isinstance(label, str) for label in labels):
             complete = False
         for selector, label_ids in label_ids_by_selector.items():
             if exact_labels.intersection(label_ids):

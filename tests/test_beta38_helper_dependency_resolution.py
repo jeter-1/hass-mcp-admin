@@ -1129,6 +1129,35 @@ class LabelRegistryEvidenceTests(unittest.IsolatedAsyncioTestCase):
             64,
         )
 
+    async def test_duplicate_entity_labels_preserve_complete_evidence(self):
+        provider = DirectHaDependencyProvider(
+            _DependencyRest(self._config()),
+            _DependencyWebSocket(
+                [
+                    {
+                        "entity_id": "sensor.a",
+                        "labels": [
+                            "climate_watch_id",
+                            "climate_watch_id",
+                        ],
+                    }
+                ],
+                [
+                    {
+                        "label_id": "climate_watch_id",
+                        "name": "climate_watch",
+                    }
+                ],
+            ),
+        )
+
+        result = await provider.scan()
+
+        self.assertTrue(result.label_registry_complete)
+        self.assertEqual(
+            result.label_memberships["climate_watch"], ("sensor.a",)
+        )
+
     async def test_failed_or_oversized_label_evidence_is_non_conclusive(self):
         failed = DirectHaDependencyProvider(
             _DependencyRest(self._config()),
@@ -1199,6 +1228,11 @@ class _HealthHelperGateway:
         }
 
 
+class _FailingHealthHelperGateway:
+    def health_snapshot(self):
+        raise RuntimeError("synthetic helper health failure")
+
+
 class HelperStateHealthAttributionTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -1265,6 +1299,28 @@ class HelperStateHealthAttributionTests(unittest.TestCase):
         self.assertEqual(operation["provider_identity"], HELPER_STATE_PROVIDER)
         self.assertEqual(operation["fallback"], "none")
         self.assertEqual(lifecycle_before, lifecycle_after)
+
+    def test_snapshot_failure_cannot_report_provider_available(self):
+        service = ChangeGovernanceService(
+            ChangePlanRepository(Path(self.temp.name) / "snapshot_failure"),
+            object(),
+            helper_state_gateway=_FailingHealthHelperGateway(),
+        )
+
+        operational = service.health_summary(
+            home_assistant_status="connected",
+            home_assistant_websocket_status="connected",
+        )["operational_administration"]
+        provider = operational["helper_state_provider"]
+        operation = operational["operations"]["set_input_boolean_state"]
+
+        self.assertEqual(provider["operational_status"], "unavailable")
+        self.assertEqual(provider["health"], "degraded")
+        self.assertEqual(
+            provider["last_failure_category"],
+            "helper_state_health_snapshot_failed:RuntimeError",
+        )
+        self.assertEqual(operation["provider_availability"], "unavailable")
 
     def test_capability_and_health_share_canonical_attribution(self):
         provider, operation, _lifecycle = self._provider(
