@@ -201,6 +201,112 @@ class BoundedDynamicResolutionTests(unittest.TestCase):
                     dynamic[0].possible_entity_ids, (TARGET,)
                 )
 
+    def test_parenthesized_and_nested_collection_forms_retain_candidates(self):
+        forms = (
+            f'{{{{ (["{TARGET}"] '
+            '| select("is_state", "on") | list) | count }}}}',
+            f'{{{{ (["{TARGET}"] | map("states") | list) '
+            '| select("defined") | list }}}}',
+            f'{{{{ (["{TARGET}"] '
+            '| select("is_state", "on") | list) '
+            '| map("states") | list }}}}',
+            f'{{{{ (["{TARGET}"] '
+            '| reject("has_value") | list) if enabled else [] }}}}',
+            f'{{{{ ((["{TARGET}"] | map("state_attr", '
+            '"friendly_name") | list) | list) | count }}}}',
+        )
+
+        for index, template in enumerate(forms):
+            with self.subTest(template=template):
+                findings, dynamic = _dynamic(
+                    template, source_id=f"nested_collection_{index}"
+                )
+                self.assertEqual(findings, [])
+                self.assertEqual(len(dynamic), 1)
+                self.assertTrue(
+                    dynamic[0].candidate_resolution_complete
+                )
+                self.assertEqual(
+                    dynamic[0].possible_entity_ids, (TARGET,)
+                )
+
+    def test_nested_collection_dependency_retains_consequential_profile(self):
+        source_id = "nested_collection_consequence"
+        findings, dynamic = _dynamic(
+            f'{{{{ (["{TARGET}"] '
+            '| select("is_state", "on") | list) | count }}}}',
+            source_id=source_id,
+        )
+        observed = _binding(
+            _snapshot(
+                dynamic=dynamic,
+                profiles=(_profile(source_id, "cover.open_cover"),),
+            )
+        )
+
+        self.assertEqual(findings, [])
+        self.assertTrue(observed["evidence_complete"])
+        self.assertTrue(observed["execution_eligible"])
+        self.assertEqual(observed["physical_consequence"], "direct")
+        self.assertEqual(
+            observed["relevant_downstream_object_ids"],
+            [f"automation.{source_id}"],
+        )
+
+    def test_nested_collections_are_target_specific_or_incomplete(self):
+        _findings, unrelated = _dynamic(
+            '{{ (["sensor.a", "sensor.b"] '
+            '| select("is_state", "on") | list) | count }}',
+            source_id="nested_unrelated_collection",
+        )
+        unrelated_binding = _binding(_snapshot(dynamic=unrelated))
+        self.assertTrue(unrelated_binding["evidence_complete"])
+        self.assertTrue(unrelated_binding["execution_eligible"])
+        self.assertEqual(
+            unrelated_binding["physical_consequence"], "none"
+        )
+
+        forms = (
+            '{{ (helper_entities '
+            '| select("is_state", "on") | list) | count }}',
+            f'{{{{ (["{TARGET}"] '
+            '| select(test_name, "on") | list) | count }}}}',
+            '{{ (helper_entities | map("states") | list) '
+            'if enabled else [] }}',
+        )
+        for index, template in enumerate(forms):
+            with self.subTest(template=template):
+                findings, dynamic = _dynamic(
+                    template,
+                    source_id=f"nested_incomplete_collection_{index}",
+                )
+                observed = _binding(_snapshot(dynamic=dynamic))
+                self.assertEqual(findings, [])
+                self.assertEqual(len(dynamic), 1)
+                self.assertFalse(
+                    dynamic[0].candidate_resolution_complete
+                )
+                self.assertFalse(observed["evidence_complete"])
+                self.assertFalse(observed["execution_eligible"])
+
+        over_nested = (
+            "{{ "
+            + "(" * 10
+            + f'["{TARGET}"] | select("is_state", "on") | list'
+            + ")" * 10
+            + " }}"
+        )
+        _findings, over_nested_dynamic = _dynamic(
+            over_nested, source_id="nested_collection_limit"
+        )
+        self.assertEqual(len(over_nested_dynamic), 1)
+        self.assertFalse(
+            over_nested_dynamic[0].candidate_resolution_complete
+        )
+        self.assertTrue(
+            over_nested_dynamic[0].candidate_resolution_limit_exceeded
+        )
+
     def test_collection_dependency_retains_consequential_profile(self):
         source_id = "collection_filter_consequence"
         findings, dynamic = _dynamic(
@@ -313,6 +419,43 @@ class BoundedDynamicResolutionTests(unittest.TestCase):
         self.assertNotEqual(
             before["evidence_fingerprint"],
             candidate_after["evidence_fingerprint"],
+        )
+
+        _findings, nested_before_dynamic = _dynamic(
+            f'{{{{ (["{TARGET}"] '
+            '| select("is_state", "on") | list) | count }}}}',
+            source_id=source_id,
+        )
+        _findings, nested_operator_dynamic = _dynamic(
+            f'{{{{ (["{TARGET}"] | map("states") | list) '
+            '| count }}}}',
+            source_id=source_id,
+        )
+        _findings, nested_candidate_dynamic = _dynamic(
+            '{{ (["sensor.a"] '
+            '| select("is_state", "on") | list) | count }}',
+            source_id=source_id,
+        )
+        nested_before = _binding(
+            _snapshot(dynamic=nested_before_dynamic, profiles=profile)
+        )
+        nested_operator_after = _binding(
+            _snapshot(
+                dynamic=nested_operator_dynamic, profiles=profile
+            )
+        )
+        nested_candidate_after = _binding(
+            _snapshot(
+                dynamic=nested_candidate_dynamic, profiles=profile
+            )
+        )
+        self.assertNotEqual(
+            nested_before["evidence_fingerprint"],
+            nested_operator_after["evidence_fingerprint"],
+        )
+        self.assertNotEqual(
+            nested_before["evidence_fingerprint"],
+            nested_candidate_after["evidence_fingerprint"],
         )
 
     def test_exact_filter_dependency_retains_consequential_profile(self):

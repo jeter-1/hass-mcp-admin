@@ -670,6 +670,8 @@ def _scan_template_collection_entity_operators(
     value: str,
     *,
     candidate_context: BoundedTemplateContext | None,
+    depth: int = 0,
+    scan_budget: list[int] | None = None,
 ) -> list[CandidateResolution]:
     """Project bounded candidates used by reviewed collection operators.
 
@@ -678,8 +680,76 @@ def _scan_template_collection_entity_operators(
     their entity candidates from the collection to the left of the pipeline,
     not from the quoted filter/test name.  Only a finite literal/context value
     or an exact ``states.<domain>`` collection is conclusive.  Any ambiguous
-    collection or operator remains explicit incomplete evidence.
+    collection or operator remains explicit incomplete evidence. Parenthesized
+    and container-nested expressions are inspected recursively within the same
+    static bounds; templates are never rendered.
     """
+
+    if scan_budget is None:
+        scan_budget = [MAX_LITERAL_ARGUMENTS]
+    if depth > MAX_TEMPLATE_NESTING:
+        return (
+            [
+                CandidateResolution(
+                    complete=False,
+                    limit_exceeded=True,
+                    kind="resolution_limit",
+                )
+            ]
+            if _contains_collection_operator(value)
+            else []
+        )
+
+    resolutions = _scan_top_level_collection_entity_operator(
+        value, candidate_context=candidate_context
+    )
+    pairs = {"(": ")", "[": "]", "{": "}"}
+    cursor = 0
+    while cursor < len(value):
+        char = value[cursor]
+        if char in {"'", '"'}:
+            cursor = _skip_quoted(value, cursor)
+            continue
+        closer = pairs.get(char)
+        if closer is None:
+            cursor += 1
+            continue
+        inner, end = _extract_balanced(value, cursor, char, closer)
+        if inner is None:
+            if _contains_collection_operator(value[cursor:]):
+                resolutions.append(CandidateResolution())
+            cursor += 1
+            continue
+        if scan_budget[0] <= 0 or depth >= MAX_TEMPLATE_NESTING:
+            if _contains_collection_operator(inner):
+                resolutions.append(
+                    CandidateResolution(
+                        complete=False,
+                        limit_exceeded=True,
+                        kind="resolution_limit",
+                    )
+                )
+            cursor = end
+            continue
+        scan_budget[0] -= 1
+        resolutions.extend(
+            _scan_template_collection_entity_operators(
+                inner,
+                candidate_context=candidate_context,
+                depth=depth + 1,
+                scan_budget=scan_budget,
+            )
+        )
+        cursor = end
+    return resolutions
+
+
+def _scan_top_level_collection_entity_operator(
+    value: str,
+    *,
+    candidate_context: BoundedTemplateContext | None,
+) -> list[CandidateResolution]:
+    """Project the first reviewed operator in one outermost pipeline."""
 
     parts = _split_top_level_pipeline(value)
     if len(parts) < 2:
@@ -753,6 +823,37 @@ def _scan_template_collection_entity_operators(
             ]
         prior_stages.append(stage)
     return []
+
+
+def _contains_collection_operator(value: str) -> bool:
+    """Return whether a bounded fragment contains a reviewed collection stage."""
+
+    cursor = 0
+    names = (
+        ENTITY_COLLECTION_TEST_FILTERS
+        | ENTITY_COLLECTION_ATTRIBUTE_TEST_FILTERS
+        | {ENTITY_COLLECTION_MAP_FILTER}
+    )
+    while cursor < len(value):
+        char = value[cursor]
+        if char in {"'", '"'}:
+            cursor = _skip_quoted(value, cursor)
+            continue
+        if char != "|":
+            cursor += 1
+            continue
+        start = cursor + 1
+        while start < len(value) and value[start].isspace():
+            start += 1
+        end = start
+        while end < len(value) and (
+            value[end].isalnum() or value[end] == "_"
+        ):
+            end += 1
+        if value[start:end] in names:
+            return True
+        cursor = max(cursor + 1, end)
+    return False
 
 
 def _split_top_level_pipeline(value: str) -> list[str]:
@@ -845,7 +946,15 @@ def _map_stage_preserves_entity_candidates(
 def _resolve_collection_candidate_expression(
     expression: str,
     candidate_context: BoundedTemplateContext | None,
+    *,
+    depth: int = 0,
 ) -> CandidateResolution:
+    if depth > MAX_TEMPLATE_NESTING:
+        return CandidateResolution(
+            complete=False,
+            limit_exceeded=True,
+            kind="resolution_limit",
+        )
     bounded = expression.strip()
     if not bounded:
         return CandidateResolution()
@@ -854,6 +963,23 @@ def _resolve_collection_candidate_expression(
             complete=False,
             limit_exceeded=True,
             kind="resolution_limit",
+        )
+    if bounded.startswith("("):
+        inner, end = _extract_balanced(bounded, 0, "(", ")")
+        if inner is not None and end == len(bounded):
+            return _resolve_collection_candidate_expression(
+                inner,
+                candidate_context,
+                depth=depth + 1,
+            )
+    pipeline = _split_top_level_pipeline(bounded)
+    if len(pipeline) > 1:
+        if not _pipeline_preserves_collection_candidates(pipeline[1:]):
+            return CandidateResolution()
+        return _resolve_collection_candidate_expression(
+            pipeline[0],
+            candidate_context,
+            depth=depth + 1,
         )
     literals = _literal_string_arguments(bounded)
     if literals is not None:

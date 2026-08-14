@@ -27,6 +27,13 @@ collections remain non-conclusive. A proven non-target domain can still be
 excluded for the exact helper. The resolver never executes Jinja or calls
 arbitrary template functions.
 
+The same reviewed collection pipelines are inspected within bounded
+parentheses, containers, and conditional branches. Exact nested candidates
+remain exact; ambiguous nested collections or operators and exceeded nesting
+or scan bounds remain explicitly incomplete. A later outer filter cannot cause
+an inner reviewed state-read pipeline to disappear from dependency evidence or
+F3 lock projection.
+
 For the exact helper being planned, a complete candidate set that excludes the
 helper is proven unrelated. A candidate set or exact label membership that
 includes the helper is retained as a real causal dependency and the downstream

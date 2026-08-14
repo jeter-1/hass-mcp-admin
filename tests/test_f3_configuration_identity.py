@@ -674,6 +674,101 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
                     },
                 )
 
+    async def test_nested_collection_dependency_locks_are_exact_or_conservative(self):
+        helper = "input_boolean.synthetic_exact"
+        exact_key = helper_dependency_lock_key(helper)
+        dynamic_key = unconstrained_helper_dependency_lock_key()
+        base = valid_config("automation")
+        exact_forms = (
+            f'{{{{ (["{helper}"] '
+            '| select("is_state", "on") | list) | count }}}}',
+            f'{{{{ (["{helper}"] | map("states") | list) '
+            '| select("defined") | list }}}}',
+            f'{{{{ (["{helper}"] '
+            '| select("is_state", "on") | list) '
+            '| map("states") | list }}}}',
+            f'{{{{ (["{helper}"] '
+            '| reject("has_value") | list) if enabled else [] }}}}',
+        )
+        for action in ("create", "update"):
+            for index, template in enumerate(exact_forms):
+                with self.subTest(action=action, template=template):
+                    relevant = valid_config("automation")
+                    relevant["condition"] = [
+                        {
+                            "condition": "template",
+                            "value_template": template,
+                        }
+                    ]
+                    prepared = await self._prepared(
+                        "automation",
+                        action,
+                        operation_id=f"nested_exact_{action}_{index}",
+                        current_config=(
+                            base if action == "update" else None
+                        ),
+                        proposed_config=relevant,
+                    )
+                    locks = {
+                        item.key
+                        for item in operation_lock_requests(prepared)
+                    }
+                    self.assertIn(exact_key, locks)
+
+        dynamic_forms = (
+            '{{ (helper_entities '
+            '| select("is_state", "on") | list) | count }}',
+            f'{{{{ (["{helper}"] '
+            '| select(test_name, "on") | list) | count }}}}',
+            '{{ (helper_entities | map("states") | list) '
+            'if enabled else [] }}',
+        )
+        for index, template in enumerate(dynamic_forms):
+            with self.subTest(template=template):
+                unresolved = valid_config("automation")
+                unresolved["condition"] = [
+                    {
+                        "condition": "template",
+                        "value_template": template,
+                    }
+                ]
+                prepared = await self._prepared(
+                    "automation",
+                    "update",
+                    operation_id=f"nested_dynamic_{index}",
+                    current_config=base,
+                    proposed_config=unresolved,
+                )
+                locks = {
+                    item.key
+                    for item in operation_lock_requests(prepared)
+                }
+                self.assertIn(dynamic_key, locks)
+
+        unrelated = valid_config("automation")
+        unrelated["condition"] = [
+            {
+                "condition": "template",
+                "value_template": (
+                    '{{ (["sensor.a", "sensor.b"] '
+                    '| select("is_state", "on") | list) | count }}'
+                ),
+            }
+        ]
+        unrelated_prepared = await self._prepared(
+            "automation",
+            "update",
+            operation_id="nested_unrelated",
+            current_config=base,
+            proposed_config=unrelated,
+        )
+        unrelated_locks = {
+            item.key
+            for item in operation_lock_requests(unrelated_prepared)
+        }
+        self.assertNotIn(exact_key, unrelated_locks)
+        self.assertNotIn(dynamic_key, unrelated_locks)
+
     async def test_matching_reload_and_restart_exclusive_locks_conflict_atomically(self):
         timing = LockTiming(60, 10, 0)
         expected_reload = {

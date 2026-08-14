@@ -21,8 +21,9 @@ deployed MCP server or household Home Assistant.
    labels, malformed candidates, selector/read failure, overflow, automation
    drift, label drift, stale evidence, exact state-read functions, direct and
    negated tests, finite `select`/`reject` tests, finite `map` filters,
-   target/non-target domain collections, locks, duplicate apply, response
-   loss, and recovery.
+   parenthesized and conditional-branch collection pipelines,
+   target/non-target domain collections, locks, duplicate apply, response loss,
+   and recovery.
 4. Require `get_server_health` tests for REST and WebSocket connected,
    REST-only, unavailable, and unprobed Home Assistant states. The helper
    operation must use provider
@@ -55,6 +56,8 @@ The implementation may statically resolve only the reviewed finite grammar:
   non-conclusive unless their candidates are otherwise finitely proven;
 - finite exact entity collections used with reviewed `states`, `state_attr`,
   or `has_value` filters through `map`;
+- parenthesized or bounded container/conditional nesting of the reviewed
+  collection pipelines above, including later candidate-preserving filters;
 - direct `is not <reviewed-test>` forms, which retain the same entity
   dependency as the positive test;
 - `states.<domain>` collections as exact domain evidence, with the target
@@ -71,7 +74,10 @@ whose collection, operator, or candidate set is not exact or finitely resolved
 must emit incomplete evidence; it must never become zero evidence. The plan
 must contain bounded deterministic candidate, operator, selector, membership,
 and expression evidence. Material candidate or operator changes must alter the
-dependency fingerprint checked at final preflight.
+dependency fingerprint checked at final preflight. Parenthesized or nested
+reviewed collection reads have the same exact-or-incomplete requirement as
+their outermost equivalents; exceeding the nesting or scan bound is explicitly
+non-conclusive.
 
 An exact target absent from complete candidates is excluded only for that
 target. An exact target present in the candidates remains a true dependency and
