@@ -69,20 +69,26 @@ rejected. A missing target is never treated as permission to create it.
 The patch representation is `f3-dashboard-json-pointer-patch-v1`:
 
 - only canonical RFC 6901 pointers are accepted;
-- the empty root pointer, array append `-`, wildcard and predicate selectors,
+- the final array token `-` is accepted only for `add` and means append;
+- numeric array `add` accepts `0..len(array)`, inserts before an existing
+  element, and accepts `len(array)` as append;
+- the empty root pointer, intermediate `-`, wildcard and predicate selectors,
   executable expressions, `move`, and `copy` are prohibited;
 - `replace` and `remove` require an existing exact path;
 - `add` requires an existing unambiguous parent and cannot overwrite;
-- recursive semantic leaf changes must fit the 16-change approval projection;
+- recursive semantic leaf changes must fit the 256-leaf compiler complexity
+  bound, which is not a human-review sufficiency threshold;
 - the result is built from a deep copy of the complete raw configuration; and
 - undeclared structure, including custom-card fields, must remain equal.
 
 The full input and result are private artifacts. Public approval review may
-show bounded, sanitized before/after previews for the declared changed paths so
-an administrator can make a meaningful decision. It never exposes the complete
-dashboard or compiled setter payload. Audit, health, and errors expose only
-bounded paths, change kinds, counts, hashes, typed categories, and reviewed
-provider identity.
+show bounded semantic previews, but the authenticated approval page must show
+the complete before/after value for every declared patch operation. If that
+complete dashboard-specific projection cannot fit its review bound, planning
+fails; approval is never offered for a truncated projection. The review never
+exposes the complete dashboard or compiled setter payload. Audit, health, and
+errors expose only bounded paths, change kinds, counts, hashes, typed
+categories, and reviewed provider identity.
 
 ## Exact provider evidence boundary
 
