@@ -1400,7 +1400,7 @@ async def _run_governed_helper_state_contract(
             turn_on = await service.create_helper_state_plan(
                 entity_id=entity_id,
                 desired_state="on",
-                expires_in_seconds=120,
+                expiration_minutes=5,
             )
             assert turn_on["provider"] == HELPER_STATE_PROVIDER
             assert turn_on["fallback"] == "none"
@@ -1457,7 +1457,7 @@ async def _run_governed_helper_state_contract(
             turn_off = await service.create_helper_state_plan(
                 entity_id=entity_id,
                 desired_state="off",
-                expires_in_seconds=120,
+                expiration_minutes=5,
             )
             off_plan = await _approve_helper_state_plan(
                 service,
@@ -1486,7 +1486,7 @@ async def _run_governed_helper_state_contract(
             uncertain = await service.create_helper_state_plan(
                 entity_id=entity_id,
                 desired_state="on",
-                expires_in_seconds=120,
+                expiration_minutes=5,
             )
             uncertain_plan = await _approve_helper_state_plan(
                 service,

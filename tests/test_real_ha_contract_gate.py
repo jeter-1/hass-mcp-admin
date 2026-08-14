@@ -376,9 +376,20 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
             with self.subTest(required=required):
                 self.assertIn(required, contract_text)
 
-        self.assertEqual(
-            len(calls_under(contract, "create_helper_state_plan")), 3
+        helper_plan_calls = calls_under(
+            contract, "create_helper_state_plan"
         )
+        self.assertEqual(len(helper_plan_calls), 3)
+        for call in helper_plan_calls:
+            with self.subTest(call=ast.unparse(call)):
+                keywords = {
+                    keyword.arg: ast.literal_eval(keyword.value)
+                    for keyword in call.keywords
+                    if keyword.arg
+                    in {"expiration_minutes", "expires_in_seconds"}
+                }
+                self.assertEqual(keywords["expiration_minutes"], 5)
+                self.assertNotIn("expires_in_seconds", keywords)
         self.assertEqual(len(calls_under(contract, "apply")), 4)
         self.assertEqual(
             len(calls_under(contract, "_approve_helper_state_plan")), 3
