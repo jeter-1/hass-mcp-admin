@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ..dependency.index import DependencyIndex
@@ -10,8 +11,15 @@ from .models import ChangeRiskAssessment, RiskLevel
 from .normalize import stable_hash
 
 
-HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v1"
+HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v2"
 MAX_RELEVANT_AUTOMATIONS = 50
+MAX_RELEVANT_DYNAMIC_REFERENCES = 32
+_AUTOMATION_RESOURCE_ID = re.compile(
+    r"^[a-z0-9][a-z0-9_.-]{0,255}$"
+)
+_INPUT_BOOLEAN_LITERAL = re.compile(
+    r"\binput_boolean\.[a-z0-9_]+\b"
+)
 _CONSEQUENCE_RANK = {
     "none": 0,
     "unknown": 1,
@@ -34,6 +42,64 @@ def _safe_automation_identity(
     ):
         return source_entity_id
     return "automation_source_" + stable_hash(str(source_id))[:16]
+
+
+def _safe_automation_resource_identity(
+    source_id: str, source_entity_id: str | None
+) -> str | None:
+    candidate = source_id
+    if source_id == source_entity_id and source_id.startswith("automation."):
+        candidate = source_id.removeprefix("automation.")
+    if (
+        isinstance(candidate, str)
+        and candidate == candidate.strip().lower()
+        and _AUTOMATION_RESOURCE_ID.fullmatch(candidate)
+    ):
+        return candidate
+    return None
+
+
+def _dynamic_reference_is_target_relevant(
+    item: Any,
+    *,
+    source_ids: set[str],
+    entity_id: str,
+) -> bool:
+    if item.source_type != "automation":
+        return False
+    if item.source_id in source_ids:
+        return True
+    excerpt = item.excerpt.lower() if isinstance(item.excerpt, str) else ""
+    if entity_id in excerpt:
+        return True
+    literal_helpers = set(_INPUT_BOOLEAN_LITERAL.findall(excerpt))
+    unresolved_remainder = _INPUT_BOOLEAN_LITERAL.sub("", excerpt)
+    return bool(
+        "input_boolean" in unresolved_remainder
+        or (literal_helpers and entity_id in literal_helpers)
+    )
+
+
+def _bounded_dynamic_fingerprints(items: list[Any]) -> tuple[list[str], bool]:
+    values = sorted(
+        {
+            stable_hash(
+                {
+                    "source_id": item.source_id,
+                    "source_entity_id": item.source_entity_id,
+                    "config_path": item.config_path,
+                    "warning": item.warning,
+                    "excerpt": item.excerpt,
+                }
+            )
+            for item in items
+        }
+    )
+    if len(values) <= MAX_RELEVANT_DYNAMIC_REFERENCES:
+        return values, False
+    retained = values[: MAX_RELEVANT_DYNAMIC_REFERENCES - 1]
+    retained.append("overflow_sha256:" + stable_hash(values))
+    return retained, True
 
 
 def _causal_automation_sources(
@@ -81,12 +147,19 @@ def _failed_binding(entity_id: str, completeness: str) -> dict[str, Any]:
         "execution_eligible": False,
         "physical_consequence": "unknown",
         "relevant_downstream_object_ids": [],
+        "downstream_automation_resource_ids": [],
         "consequential_downstream_object_ids": [],
         "downstream_profiles": [],
+        "target_relevant_dynamic_reference_count": 0,
+        "target_relevant_dynamic_reference_fingerprints": [],
         "unresolved_dynamic_reference_count": 0,
         "truncated": completeness == "truncated",
     }
-    return {**material, "evidence_fingerprint": stable_hash(material)}
+    return {
+        **material,
+        "unrelated_dynamic_reference_count": 0,
+        "evidence_fingerprint": stable_hash(material),
+    }
 
 
 def build_helper_dependency_risk_binding(
@@ -102,18 +175,39 @@ def build_helper_dependency_risk_binding(
         item.source_id: item
         for item in snapshot.automation_action_profiles
     }
-    dynamic_count = len(snapshot.dynamic_references)
     relevant_source_ids = sorted(sources)
     truncated = len(relevant_source_ids) > MAX_RELEVANT_AUTOMATIONS
     selected_source_ids = relevant_source_ids[:MAX_RELEVANT_AUTOMATIONS]
-    coverage = {
-        item.source_type: item.completeness
+    relevant_dynamic = [
+        item
+        for item in snapshot.dynamic_references
+        if _dynamic_reference_is_target_relevant(
+            item,
+            source_ids=set(relevant_source_ids),
+            entity_id=entity_id,
+        )
+    ]
+    dynamic_fingerprints, dynamic_truncated = (
+        _bounded_dynamic_fingerprints(relevant_dynamic)
+    )
+    truncated = truncated or dynamic_truncated
+    automation_coverage = next(
+        (
+            item
+            for item in snapshot.coverage
+            if item.source_type == "automation"
+        ),
+        None,
+    )
+    automation_source_unavailable = bool(
+        automation_coverage is None
+        or automation_coverage.completeness
+        in {"unavailable", "unsupported"}
+    )
+    index_payload_truncated = any(
+        "exceeded the bounded index payload" in warning
         for item in snapshot.coverage
-        if item.source_type in {"automation", "blueprint"}
-    }
-    coverage_complete = all(
-        coverage.get(source_type) == "complete"
-        for source_type in ("automation", "blueprint")
+        for warning in item.warnings
     )
     fresh = (
         index_metadata.get("freshness") == "current"
@@ -127,11 +221,16 @@ def build_helper_dependency_risk_binding(
     observed_consequence = "none"
     for source_id in selected_source_ids:
         profile = profiles_by_source.get(source_id)
+        resource_id = _safe_automation_resource_identity(
+            source_id,
+            profile.source_entity_id if profile is not None else None,
+        )
         if profile is None:
             missing_profile = True
             identity = _safe_automation_identity(source_id, None)
             projected = {
                 "automation_id": identity,
+                "automation_resource_id": resource_id,
                 "relationships": sorted(sources[source_id]),
                 "physical_consequence": "unknown",
                 "complete": False,
@@ -139,6 +238,16 @@ def build_helper_dependency_risk_binding(
                 "action_domains": [],
                 "services": [],
                 "reason_codes": ["action_profile_unavailable"],
+                "effect_projection_model": "unavailable",
+                "effect_targets": [],
+                "effect_data": [],
+                "effect_structure_fingerprint": stable_hash(
+                    {"source_id": source_id, "structure": "unavailable"}
+                ),
+                "effect_projection_fingerprint": stable_hash(
+                    {"source_id": source_id, "effect": "unavailable"}
+                ),
+                "effect_projection_clipped": False,
                 "profile_fingerprint": stable_hash(
                     {"source_id": source_id, "missing": True}
                 ),
@@ -149,6 +258,7 @@ def build_helper_dependency_risk_binding(
             )
             projected = {
                 "automation_id": identity,
+                "automation_resource_id": resource_id,
                 "relationships": sorted(sources[source_id]),
                 "physical_consequence": profile.physical_consequence,
                 "complete": profile.complete,
@@ -156,9 +266,27 @@ def build_helper_dependency_risk_binding(
                 "action_domains": list(profile.action_domains),
                 "services": list(profile.services),
                 "reason_codes": list(profile.reason_codes),
+                "effect_projection_model": (
+                    profile.effect_projection_model
+                ),
+                "effect_targets": list(profile.effect_targets),
+                "effect_data": list(profile.effect_data),
+                "effect_structure_fingerprint": (
+                    profile.effect_structure_fingerprint
+                ),
+                "effect_projection_fingerprint": (
+                    profile.effect_projection_fingerprint
+                ),
+                "effect_projection_clipped": (
+                    profile.effect_projection_clipped
+                ),
                 "profile_fingerprint": profile.evidence_fingerprint,
             }
-            profile_incomplete = profile_incomplete or not profile.complete
+            profile_incomplete = bool(
+                profile_incomplete
+                or not profile.complete
+                or resource_id is None
+            )
             truncated = truncated or profile.truncated
             if _CONSEQUENCE_RANK.get(
                 profile.physical_consequence, 1
@@ -167,12 +295,13 @@ def build_helper_dependency_risk_binding(
         downstream_profiles.append(projected)
 
     evidence_complete = bool(
-        coverage_complete
-        and fresh
-        and not dynamic_count
+        fresh
+        and not relevant_dynamic
         and not missing_profile
         and not profile_incomplete
         and not truncated
+        and not automation_source_unavailable
+        and not index_payload_truncated
     )
     if not evidence_complete and observed_consequence == "none":
         observed_consequence = "unknown"
@@ -180,7 +309,7 @@ def build_helper_dependency_risk_binding(
         completeness = "truncated"
     elif evidence_complete:
         completeness = "complete"
-    elif any(value in {"unsupported", "unavailable"} for value in coverage.values()):
+    elif automation_source_unavailable:
         completeness = "unsupported"
     elif not fresh:
         completeness = "stale"
@@ -191,6 +320,13 @@ def build_helper_dependency_risk_binding(
     relevant_ids = [
         item["automation_id"] for item in downstream_profiles
     ]
+    resource_ids = sorted(
+        {
+            item["automation_resource_id"]
+            for item in downstream_profiles
+            if isinstance(item.get("automation_resource_id"), str)
+        }
+    )
     consequential_ids = [
         item["automation_id"]
         for item in downstream_profiles
@@ -205,12 +341,35 @@ def build_helper_dependency_risk_binding(
         "execution_eligible": evidence_complete,
         "physical_consequence": observed_consequence,
         "relevant_downstream_object_ids": relevant_ids,
+        "downstream_automation_resource_ids": resource_ids,
         "consequential_downstream_object_ids": consequential_ids,
         "downstream_profiles": downstream_profiles,
-        "unresolved_dynamic_reference_count": dynamic_count,
+        "target_relevant_dynamic_reference_count": len(
+            relevant_dynamic
+        ),
+        "target_relevant_dynamic_reference_fingerprints": (
+            dynamic_fingerprints
+        ),
+        "unresolved_dynamic_reference_count": len(relevant_dynamic),
         "truncated": truncated,
     }
-    return {**material, "evidence_fingerprint": stable_hash(material)}
+    return {
+        **material,
+        "unrelated_dynamic_reference_count": max(
+            0, len(snapshot.dynamic_references) - len(relevant_dynamic)
+        ),
+        "coverage_diagnostics": [
+            {
+                "source_type": item.source_type,
+                "completeness": item.completeness,
+                "failed_item_count": item.failed_item_count,
+                "warning_count": len(item.warnings),
+            }
+            for item in snapshot.coverage
+            if item.source_type in {"automation", "blueprint"}
+        ],
+        "evidence_fingerprint": stable_hash(material),
+    }
 
 
 class HelperDependencyRiskService:

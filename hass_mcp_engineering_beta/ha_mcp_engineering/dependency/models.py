@@ -68,6 +68,12 @@ class AutomationActionRiskProfile:
     action_domains: tuple[str, ...]
     services: tuple[str, ...]
     reason_codes: tuple[str, ...]
+    effect_projection_model: str
+    effect_targets: tuple[str, ...]
+    effect_data: tuple[str, ...]
+    effect_structure_fingerprint: str
+    effect_projection_fingerprint: str
+    effect_projection_clipped: bool
     evidence_fingerprint: str
 
 

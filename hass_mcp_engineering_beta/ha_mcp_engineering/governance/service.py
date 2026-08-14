@@ -127,6 +127,7 @@ from .helper_state import (
     validate_input_boolean_entity_id,
 )
 from .helper_dependency import (
+    HELPER_DEPENDENCY_RISK_MODEL,
     helper_dependency_risk_assessment,
     read_runtime_helper_dependency_risk,
 )
@@ -10317,7 +10318,7 @@ class ChangeGovernanceService:
                             if isinstance(dependency_risk, dict)
                             else None
                         )
-                        != "helper-dependency-risk-v1",
+                        != HELPER_DEPENDENCY_RISK_MODEL,
                         not isinstance(
                             (
                                 dependency_risk.get(

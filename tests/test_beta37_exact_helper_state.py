@@ -159,30 +159,80 @@ class FakeDependencyRiskReader:
         self.automation_ids: list[str] = []
         self.consequence = "none"
         self.complete = True
+        self.effect_revision = "v1"
 
     async def __call__(self, entity_id: str, *, refresh: bool = True):
         if entity_id != self.entity_id or refresh is not True:
             raise AssertionError("dependency risk was not refreshed exactly")
+        resource_ids = [
+            automation_id.removeprefix("automation.")
+            for automation_id in self.automation_ids
+        ]
+        profiles = [
+            {
+                "automation_id": automation_id,
+                "automation_resource_id": resource_id,
+                "relationships": ["trigger"],
+                "physical_consequence": self.consequence,
+                "complete": self.complete,
+                "truncated": False,
+                "action_domains": (
+                    ["cover"] if self.consequence != "none" else ["notify"]
+                ),
+                "services": (
+                    ["cover.open_cover"]
+                    if self.consequence != "none"
+                    else ["notify.notify"]
+                ),
+                "reason_codes": [
+                    "consequential_action_family"
+                    if self.consequence != "none"
+                    else "proven_benign_action_family"
+                ],
+                "effect_projection_model": "automation-action-effect-v2",
+                "effect_targets": [],
+                "effect_data": [],
+                "effect_structure_fingerprint": stable_hash(
+                    {
+                        "automation": automation_id,
+                        "structure": self.effect_revision,
+                    }
+                ),
+                "effect_projection_fingerprint": stable_hash(
+                    {
+                        "automation": automation_id,
+                        "effect": self.effect_revision,
+                    }
+                ),
+                "effect_projection_clipped": False,
+                "profile_fingerprint": stable_hash(
+                    {
+                        "automation": automation_id,
+                        "profile": self.effect_revision,
+                    }
+                ),
+            }
+            for automation_id, resource_id in zip(
+                self.automation_ids, resource_ids
+            )
+        ]
         material = {
-            "model": "helper-dependency-risk-v1",
+            "model": "helper-dependency-risk-v2",
             "entity_id": entity_id,
             "completeness": "complete" if self.complete else "partial",
             "evidence_complete": self.complete,
             "execution_eligible": self.complete,
             "physical_consequence": self.consequence,
             "relevant_downstream_object_ids": list(self.automation_ids),
+            "downstream_automation_resource_ids": resource_ids,
             "consequential_downstream_object_ids": (
                 list(self.automation_ids)
                 if self.consequence in {"direct", "safety_critical"}
                 else []
             ),
-            "downstream_profiles": [
-                {
-                    "automation_id": automation_id,
-                    "physical_consequence": self.consequence,
-                }
-                for automation_id in self.automation_ids
-            ],
+            "downstream_profiles": profiles,
+            "target_relevant_dynamic_reference_count": 0,
+            "target_relevant_dynamic_reference_fingerprints": [],
             "unresolved_dynamic_reference_count": 0,
             "truncated": False,
         }
@@ -404,6 +454,19 @@ class ExactHelperStateRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["task_state"], "succeeded_verified")
         self.assertEqual(self.helper.dispatch_count, 1)
+
+    async def test_effect_detail_change_rejects_before_dispatch(self):
+        self.dependency.automation_ids = ["automation.benign_notify"]
+        plan = await self.create_and_grant()
+        self.dependency.effect_revision = "v2-target-or-data-changed"
+
+        result = await self.service.apply(
+            plan["plan_id"], plan["plan_hash"]
+        )
+
+        self.assertEqual(result["task_state"], "failed_pre_dispatch")
+        self.assertFalse(result["provider_dispatch_occurred"])
+        self.assertEqual(self.helper.dispatch_count, 0)
 
     async def test_preflight_already_desired_succeeds_without_consuming_approval(self):
         plan = await self.create_and_grant()

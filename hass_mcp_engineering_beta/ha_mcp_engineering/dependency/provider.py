@@ -268,6 +268,26 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                         str(item)
                         for item in consequence["reason_codes"]
                     ),
+                    effect_projection_model=str(
+                        consequence["effect_projection_model"]
+                    ),
+                    effect_targets=tuple(
+                        str(item)
+                        for item in consequence["effect_targets"]
+                    ),
+                    effect_data=tuple(
+                        str(item)
+                        for item in consequence["effect_data"]
+                    ),
+                    effect_structure_fingerprint=str(
+                        consequence["effect_structure_fingerprint"]
+                    ),
+                    effect_projection_fingerprint=str(
+                        consequence["effect_projection_fingerprint"]
+                    ),
+                    effect_projection_clipped=bool(
+                        consequence["effect_projection_clipped"]
+                    ),
                     evidence_fingerprint=str(
                         consequence["evidence_fingerprint"]
                     ),
