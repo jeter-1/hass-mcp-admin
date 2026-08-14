@@ -573,6 +573,9 @@ class F3RuntimeIntegration:
                 if helper_state_gateway is not None
                 else None
             ),
+            helper_dependency_risk_reader=(
+                service.helper_dependency_risk_reader
+            ),
             evidence_reader=self.evidence_reader,
             authority_reader=self._operational_authority,
             now=service.now,

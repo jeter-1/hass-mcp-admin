@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import time
 from typing import Any
@@ -14,6 +15,7 @@ from .provider import DependencySourceProvider
 
 DEFAULT_SOFT_TTL_SECONDS = 600.0
 DEFAULT_HARD_TTL_SECONDS = 3600.0
+MAX_AUTOMATION_ACTION_PROFILES = 1_000
 
 
 def _utc_now() -> str:
@@ -210,9 +212,43 @@ class DependencyIndex:
             scan = await self.provider.scan()
             next_generation = self.generation + 1
             findings = sorted(scan.findings, key=lambda item: item.evidence_id)[: self.max_edges]
-            if len(scan.findings) > self.max_edges:
+            findings_truncated = len(scan.findings) > self.max_edges
+            profiles = sorted(
+                scan.automation_action_profiles,
+                key=lambda item: (
+                    item.source_entity_id or "",
+                    item.source_id,
+                ),
+            )[:MAX_AUTOMATION_ACTION_PROFILES]
+            profiles_truncated = (
+                len(scan.automation_action_profiles)
+                > MAX_AUTOMATION_ACTION_PROFILES
+            )
+            coverage = list(scan.coverage)
+            if findings_truncated or profiles_truncated:
                 METRICS.record_dependency_truncation()
-            fingerprint = snapshot_fingerprint(findings, scan.coverage, next_generation)
+                coverage = [
+                    replace(
+                        item,
+                        completeness=(
+                            "partial"
+                            if item.source_type == "automation"
+                            else item.completeness
+                        ),
+                        warnings=(
+                            [
+                                *item.warnings,
+                                "Automation dependency evidence exceeded the bounded index payload.",
+                            ]
+                            if item.source_type == "automation"
+                            else list(item.warnings)
+                        ),
+                    )
+                    for item in coverage
+                ]
+            fingerprint = snapshot_fingerprint(
+                findings, coverage, next_generation, profiles
+            )
             build_duration_ms = (time.perf_counter() - build_started) * 1000
             replacement = DependencyIndexSnapshot(
                 fingerprint=fingerprint,
@@ -222,9 +258,10 @@ class DependencyIndex:
                 findings=tuple(findings),
                 dynamic_references=tuple(scan.dynamic_references[:1000]),
                 target_metadata=scan.target_metadata,
-                coverage=tuple(scan.coverage),
+                coverage=tuple(coverage),
                 build_duration_ms=build_duration_ms,
                 build_profile=dict(scan.profile),
+                automation_action_profiles=tuple(profiles),
             )
             # Publish the complete replacement atomically after every build step.
             self.snapshot = replacement
@@ -235,7 +272,7 @@ class DependencyIndex:
             self._last_refresh_completed_at = self._build_completed_at
             self._last_refresh_failure_category = None
             METRICS.set_dependency_index_state(
-                source_count=len(scan.coverage),
+                source_count=len(coverage),
                 edge_count=len(findings),
                 unresolved_count=len(scan.dynamic_references),
                 built_at=replacement.built_at,

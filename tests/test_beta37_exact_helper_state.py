@@ -39,6 +39,7 @@ from ha_mcp_engineering.governance.service import (  # noqa: E402
 from ha_mcp_engineering.governance.storage import (  # noqa: E402
     ChangePlanRepository,
 )
+from ha_mcp_engineering.governance.normalize import stable_hash  # noqa: E402
 from ha_mcp_engineering.request_context import (  # noqa: E402
     begin_request,
     end_request,
@@ -151,6 +152,58 @@ class FakeHelperStateGateway:
         )()
 
 
+class FakeDependencyRiskReader:
+    def __init__(self, entity_id: str) -> None:
+        self.entity_id = entity_id
+        self.generation = 1
+        self.automation_ids: list[str] = []
+        self.consequence = "none"
+        self.complete = True
+
+    async def __call__(self, entity_id: str, *, refresh: bool = True):
+        if entity_id != self.entity_id or refresh is not True:
+            raise AssertionError("dependency risk was not refreshed exactly")
+        material = {
+            "model": "helper-dependency-risk-v1",
+            "entity_id": entity_id,
+            "completeness": "complete" if self.complete else "partial",
+            "evidence_complete": self.complete,
+            "execution_eligible": self.complete,
+            "physical_consequence": self.consequence,
+            "relevant_downstream_object_ids": list(self.automation_ids),
+            "consequential_downstream_object_ids": (
+                list(self.automation_ids)
+                if self.consequence in {"direct", "safety_critical"}
+                else []
+            ),
+            "downstream_profiles": [
+                {
+                    "automation_id": automation_id,
+                    "physical_consequence": self.consequence,
+                }
+                for automation_id in self.automation_ids
+            ],
+            "unresolved_dynamic_reference_count": 0,
+            "truncated": False,
+        }
+        binding = {
+            **material,
+            "evidence_fingerprint": stable_hash(material),
+        }
+        return {
+            "binding": binding,
+            "provenance": {
+                "provider": "dependency_index",
+                "completeness": binding["completeness"],
+                "generation": self.generation,
+                "fingerprint": f"{self.generation:064x}",
+                "freshness": "current",
+                "fallback": "none",
+                "fallback_occurred": False,
+            },
+        }
+
+
 async def forbidden_upstream_identity():
     raise AssertionError("direct helper state must not depend on ha-mcp identity")
 
@@ -160,6 +213,9 @@ class ExactHelperStateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.clock = Clock()
         self.helper = FakeHelperStateGateway()
+        self.dependency = FakeDependencyRiskReader(
+            self.helper.entity_id
+        )
         root = Path(self.temp.name)
         self.service = ChangeGovernanceService(
             ChangePlanRepository(root / "plans"),
@@ -167,6 +223,7 @@ class ExactHelperStateRuntimeTests(unittest.IsolatedAsyncioTestCase):
             AuditLogger(str(root / "audit.jsonl"), "synthetic-beta37-secret"),
             now=self.clock,
             helper_state_gateway=self.helper,
+            helper_dependency_risk_reader=self.dependency,
         )
         self.telemetry, self.context = begin_request("beta37-helper-state")
         self.telemetry.caller_id = "mcp-requester"
@@ -256,6 +313,96 @@ class ExactHelperStateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(repeated["status"], "already_applied")
         self.assertFalse(repeated["redispatch_performed"])
+        self.assertEqual(self.helper.dispatch_count, 1)
+
+    async def test_harmless_helper_plan_uses_standard_low_no_consequence_policy(self):
+        created = await self.service.create_helper_state_plan(
+            entity_id=self.helper.entity_id,
+            desired_state="on",
+        )
+        plan = created["plan"]
+
+        self.assertEqual(plan["risk"]["level"], "low")
+        self.assertEqual(
+            plan["policy_decision"]["policy_class"], "standard_admin"
+        )
+        self.assertEqual(plan["policy_decision"]["risk_delta"], "low")
+        self.assertEqual(
+            plan["policy_decision"]["physical_consequence"], "none"
+        )
+
+    async def test_consequential_dependency_elevates_governance(self):
+        self.dependency.automation_ids = ["automation.opens_cover"]
+        self.dependency.consequence = "direct"
+
+        created = await self.service.create_helper_state_plan(
+            entity_id=self.helper.entity_id,
+            desired_state="on",
+        )
+        plan = created["plan"]
+
+        self.assertEqual(plan["risk"]["level"], "high")
+        self.assertEqual(
+            plan["policy_decision"]["policy_class"], "elevated_admin"
+        )
+        self.assertEqual(
+            plan["policy_decision"]["physical_consequence"], "direct"
+        )
+        self.assertEqual(
+            plan["policy_decision"]["required_acknowledgements"],
+            ["plan_approval", "elevated_risk_acknowledgement"],
+        )
+
+    async def test_incomplete_dependency_evidence_is_reviewable_but_not_low(self):
+        self.dependency.complete = False
+
+        created = await self.service.create_helper_state_plan(
+            entity_id=self.helper.entity_id,
+            desired_state="on",
+        )
+        plan = created["plan"]
+
+        self.assertEqual(plan["risk"]["level"], "high")
+        self.assertFalse(plan["risk"]["apply_allowed"])
+        self.assertEqual(
+            plan["policy_decision"]["policy_class"], "elevated_admin"
+        )
+        self.assertEqual(
+            plan["policy_decision"]["physical_consequence"], "indirect"
+        )
+
+    async def test_dependency_fingerprint_change_rejects_before_dispatch(self):
+        plan = await self.create_and_grant()
+        self.dependency.automation_ids = ["automation.new_cover_path"]
+        self.dependency.consequence = "direct"
+
+        result = await self.service.apply(
+            plan["plan_id"], plan["plan_hash"]
+        )
+        child = self.runtime.children.get(
+            self.runtime.children.declarations_for_task(result["task_id"])[0][
+                "child_id"
+            ]
+        )
+
+        self.assertEqual(result["task_state"], "failed_pre_dispatch")
+        self.assertEqual(self.helper.dispatch_count, 0)
+        self.assertTrue(
+            any(
+                "dependency_risk_drift" in event["diagnostic_codes"]
+                for event in child.events
+            )
+        )
+
+    async def test_irrelevant_dependency_generation_change_does_not_reject(self):
+        plan = await self.create_and_grant()
+        self.dependency.generation += 1
+
+        result = await self.service.apply(
+            plan["plan_id"], plan["plan_hash"]
+        )
+
+        self.assertEqual(result["task_state"], "succeeded_verified")
         self.assertEqual(self.helper.dispatch_count, 1)
 
     async def test_preflight_already_desired_succeeds_without_consuming_approval(self):

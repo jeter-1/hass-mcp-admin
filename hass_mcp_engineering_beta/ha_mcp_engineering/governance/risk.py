@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any, Iterable
 
@@ -51,6 +52,21 @@ _ACTION_SIMPLE_FAMILIES = frozenset(
 )
 _ACTION_DEVICE_DISCRIMINATORS = frozenset({"device_id", "domain", "type"})
 _TARGET_SELECTORS = ("entity_id", "device_id", "area_id")
+_HELPER_CONSEQUENTIAL_DOMAINS = frozenset(
+    {
+        "alarm_control_panel",
+        "climate",
+        "cover",
+        "lock",
+        "valve",
+        "water_heater",
+    }
+)
+_HELPER_SAFETY_CRITICAL_DOMAINS = frozenset(
+    {"alarm_control_panel", "lock", "valve"}
+)
+_HELPER_INDIRECT_SERVICE_DOMAINS = frozenset({"automation", "script"})
+_HELPER_PROFILE_LIMIT = 32
 
 
 def _walk(value: Any) -> Iterable[Any]:
@@ -419,6 +435,129 @@ def _structured_analysis(
         sorted(warnings),
         targets,
     )
+
+
+def _device_action_domains(config: dict[str, Any]) -> set[str]:
+    """Return literal device-action domains from action roots only."""
+
+    domains: set[str] = set()
+    for _root_path, root in _action_roots(config):
+        for value in _walk(root):
+            if not isinstance(value, dict):
+                continue
+            domain = value.get("domain")
+            if (
+                isinstance(domain, str)
+                and domain == domain.strip().lower()
+                and domain
+                and isinstance(value.get("device_id"), str)
+                and isinstance(value.get("type"), str)
+            ):
+                domains.add(domain)
+    return domains
+
+
+def automation_action_consequence_profile(
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    """Project bounded downstream consequence evidence using the F2 parser.
+
+    This is not a second automation parser or approval model. It reuses the
+    structure-first F2 action analysis and returns only the normalized facts
+    needed to assess an exact helper dependency.
+    """
+
+    services, evidence, warnings, targets = _structured_analysis(config)
+    service_domains = {
+        service.split(".", 1)[0]
+        for service in services
+        if "." in service
+    }
+    target_domains = {
+        target.split(".", 1)[0]
+        for target in targets
+        if "." in target and not _has_template(target)
+    }
+    device_domains = _device_action_domains(config)
+    action_domains = service_domains | target_domains | device_domains
+    triggers = {
+        str(item.get("trigger"))
+        for item in evidence
+        if isinstance(item, dict) and isinstance(item.get("trigger"), str)
+    }
+
+    safety_critical = bool(
+        action_domains & _HELPER_SAFETY_CRITICAL_DOMAINS
+        or triggers
+        & {
+            "garage_cover_target",
+            "safety_critical_service",
+            "sensitive_blueprint_input",
+            "sensitive_entity_domain",
+            "water_control_target",
+        }
+    )
+    consequential = bool(
+        safety_critical
+        or action_domains & _HELPER_CONSEQUENTIAL_DOMAINS
+        or "high_risk_service" in triggers
+    )
+    indirect = bool(action_domains & _HELPER_INDIRECT_SERVICE_DOMAINS)
+    incomplete = bool(warnings or indirect)
+    if consequential and "omitted_action_target" in triggers:
+        incomplete = True
+
+    consequence = (
+        "safety_critical"
+        if safety_critical
+        else "direct"
+        if consequential
+        else "unknown"
+        if incomplete
+        else "none"
+    )
+    reasons = []
+    if safety_critical:
+        reasons.append("safety_critical_action_family")
+    elif consequential:
+        reasons.append("consequential_action_family")
+    else:
+        reasons.append("no_consequential_action_family_detected")
+    if indirect:
+        reasons.append("transitive_action_target_unresolved")
+    if warnings:
+        reasons.append("action_structure_incomplete")
+
+    all_domains = sorted(action_domains)
+    all_services = sorted(services)
+    all_reasons = sorted(set(reasons))
+    truncated = any(
+        len(values) > _HELPER_PROFILE_LIMIT
+        for values in (all_domains, all_services, all_reasons)
+    )
+    complete = not incomplete and not truncated
+    normalized = {
+        "model": "automation-action-consequence-v1",
+        "risk_level": "high" if consequence != "none" or not complete else "low",
+        "physical_consequence": consequence,
+        "complete": complete,
+        "truncated": truncated,
+        "action_domains": all_domains[:_HELPER_PROFILE_LIMIT],
+        "services": all_services[:_HELPER_PROFILE_LIMIT],
+        "reason_codes": all_reasons[:_HELPER_PROFILE_LIMIT],
+    }
+    encoded = json.dumps(
+        normalized,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+    return {
+        **normalized,
+        "evidence_fingerprint": hashlib.sha256(
+            encoded.encode("utf-8")
+        ).hexdigest(),
+    }
 
 
 def _is_high_service(service: str) -> bool:

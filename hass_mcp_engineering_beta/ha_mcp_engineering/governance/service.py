@@ -126,6 +126,10 @@ from .helper_state import (
     validate_desired_state,
     validate_input_boolean_entity_id,
 )
+from .helper_dependency import (
+    helper_dependency_risk_assessment,
+    read_runtime_helper_dependency_risk,
+)
 from .validation import sanitize_context, validate_automation
 from .semantic_projection import (
     SemanticProjectionError,
@@ -400,6 +404,10 @@ class ChangeGovernanceService:
         operational_gateway: BackupAdministrationGateway | Any | None = None,
         lifecycle_gateway: OperationalLifecycleGateway | Any | None = None,
         helper_state_gateway: Any | None = None,
+        helper_dependency_risk_reader: Callable[..., Awaitable[
+            dict[str, Any]
+        ]]
+        | None = None,
         task_repository: ExecutionTaskRepository | None = None,
         dashboard_gateway: Any | None = None,
         provider_identity_reader: Callable[[], Awaitable[dict[str, str]]] | None = None,
@@ -413,6 +421,10 @@ class ChangeGovernanceService:
         self.operational_gateway = operational_gateway
         self.lifecycle_gateway = lifecycle_gateway
         self.helper_state_gateway = helper_state_gateway
+        self.helper_dependency_risk_reader = (
+            helper_dependency_risk_reader
+            or read_runtime_helper_dependency_risk
+        )
         self.dashboard_gateway = dashboard_gateway
         self.provider_identity_reader = provider_identity_reader
         self.approval_notifications = approval_notifications
@@ -3097,22 +3109,18 @@ class ChangeGovernanceService:
                 "fallback": "none",
                 "fallback_occurred": False,
             }
-        now = self.now()
-        risk = ChangeRiskAssessment(
-            level=RiskLevel.LOW,
-            reasons=[
-                "The exact virtual input_boolean state is a reversible runtime write.",
-                "The helper can influence automations that reference it.",
-            ],
-            apply_allowed=True,
-            evidence=[
-                {
-                    "field": "operation",
-                    "trigger": "exact_input_boolean_state",
-                }
-            ],
-            warnings=[],
+        dependency_evidence = await self.helper_dependency_risk_reader(
+            entity_id, refresh=True
         )
+        dependency_binding = dependency_evidence.get("binding")
+        if not isinstance(dependency_binding, dict):
+            raise GovernanceError(ErrorCode.INTERNAL_INVARIANT_VIOLATION)
+        bound_baseline = {
+            **baseline,
+            "dependency_risk": dependency_binding,
+        }
+        now = self.now()
+        risk = helper_dependency_risk_assessment(dependency_evidence)
         operational = OperationalPlanDetails(
             schema_version=1,
             family="operational_administration",
@@ -3126,6 +3134,7 @@ class ChangeGovernanceService:
             preconditions=[
                 "The exact entity remains available as an input_boolean.",
                 "The planned state fingerprint remains current, or the desired state is already observed.",
+                "The normalized dependency-risk evidence remains complete and unchanged.",
                 "One unexpired external administrator approval is bound to this plan hash.",
             ],
             verification_contract={
@@ -3139,7 +3148,7 @@ class ChangeGovernanceService:
                 "no_blind_redispatch": True,
                 "idempotent_preflight_noop": True,
             },
-            baseline=baseline,
+            baseline=bound_baseline,
             dispatch={
                 "attempt_count": 0,
                 "dispatched": False,
@@ -3177,7 +3186,7 @@ class ChangeGovernanceService:
             current_config={"state": baseline["state"]},
             normalized_proposed_config={"state": desired_state},
             normalized_current_config={"state": baseline["state"]},
-            current_state_fingerprint=stable_hash(baseline),
+            current_state_fingerprint=stable_hash(bound_baseline),
             proposed_config_hash=stable_hash(
                 {
                     "operation": ChangeOperation.SET_INPUT_BOOLEAN_STATE.value,
@@ -3187,12 +3196,18 @@ class ChangeGovernanceService:
             ),
             risk=risk,
             normalization_version=1,
-            warnings=[],
+            warnings=list(risk.warnings),
             validation_results={
                 "valid": True,
                 "planning_write_performed": False,
                 "provider_available": True,
                 "entity_state_readable": True,
+                "dependency_evidence_complete": (
+                    dependency_binding.get("evidence_complete") is True
+                ),
+                "dependency_evidence_completeness": (
+                    dependency_binding.get("completeness")
+                ),
             },
             dry_run_results={
                 "operation": ChangeOperation.SET_INPUT_BOOLEAN_STATE.value,
@@ -3200,6 +3215,17 @@ class ChangeGovernanceService:
                 "to_state": desired_state,
                 "provider_dispatch_occurred": False,
                 "rollback_available": False,
+                "dependency_risk": {
+                    "completeness": dependency_binding.get(
+                        "completeness"
+                    ),
+                    "physical_consequence": dependency_binding.get(
+                        "physical_consequence"
+                    ),
+                    "evidence_fingerprint": dependency_binding.get(
+                        "evidence_fingerprint"
+                    ),
+                },
             },
             rollback=ChangeRollback(available=False, status="unavailable"),
             caller_context=_sanitize_configuration_caller_context(
@@ -10272,6 +10298,7 @@ class ChangeGovernanceService:
                     and isinstance(operational.baseline, dict)
                     else {}
                 )
+                dependency_risk = baseline.get("dependency_risk")
                 invalid = invalid or any(
                     (
                         plan.target_type != "input_boolean",
@@ -10284,6 +10311,23 @@ class ChangeGovernanceService:
                         ),
                         baseline.get("entity_id") != plan.target_id,
                         baseline.get("state") not in {"on", "off"},
+                        not isinstance(dependency_risk, dict),
+                        (
+                            dependency_risk.get("model")
+                            if isinstance(dependency_risk, dict)
+                            else None
+                        )
+                        != "helper-dependency-risk-v1",
+                        not isinstance(
+                            (
+                                dependency_risk.get(
+                                    "evidence_fingerprint"
+                                )
+                                if isinstance(dependency_risk, dict)
+                                else None
+                            ),
+                            str,
+                        ),
                         (
                             operational.provider
                             if operational

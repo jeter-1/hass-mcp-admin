@@ -55,6 +55,22 @@ class DynamicReference:
     source_state: str | None = None
 
 
+@dataclass(frozen=True)
+class AutomationActionRiskProfile:
+    """Bounded normalized action consequence for one automation source."""
+
+    source_id: str
+    source_entity_id: str | None
+    risk_level: str
+    physical_consequence: str
+    complete: bool
+    truncated: bool
+    action_domains: tuple[str, ...]
+    services: tuple[str, ...]
+    reason_codes: tuple[str, ...]
+    evidence_fingerprint: str
+
+
 @dataclass
 class SourceCoverageItem:
     source_type: str
@@ -98,6 +114,9 @@ class DependencyScanResult:
     target_metadata: dict[str, dict[str, Any]]
     coverage: list[SourceCoverageItem]
     profile: dict[str, Any] = field(default_factory=dict)
+    automation_action_profiles: list[AutomationActionRiskProfile] = field(
+        default_factory=list
+    )
 
 
 @dataclass
@@ -112,6 +131,7 @@ class DependencyIndexSnapshot:
     coverage: tuple[SourceCoverageItem, ...]
     build_duration_ms: float = 0.0
     build_profile: dict[str, Any] = field(default_factory=dict)
+    automation_action_profiles: tuple[AutomationActionRiskProfile, ...] = ()
 
 
 def evidence_id(*parts: Any) -> str:
@@ -120,7 +140,12 @@ def evidence_id(*parts: Any) -> str:
 
 
 def snapshot_fingerprint(
-    findings: list[DependencyFinding], coverage: list[SourceCoverageItem], generation: int
+    findings: list[DependencyFinding],
+    coverage: list[SourceCoverageItem],
+    generation: int,
+    automation_action_profiles: list[AutomationActionRiskProfile] | tuple[
+        AutomationActionRiskProfile, ...
+    ] = (),
 ) -> str:
     payload = {
         "generation": generation,
@@ -129,6 +154,16 @@ def snapshot_fingerprint(
             for item in findings
         ],
         "coverage": [(item.source_type, item.completeness, item.failed_item_count) for item in coverage],
+        "automation_action_profiles": [
+            (
+                item.source_id,
+                item.source_entity_id,
+                item.evidence_fingerprint,
+                item.complete,
+                item.truncated,
+            )
+            for item in automation_action_profiles
+        ],
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()

@@ -380,12 +380,67 @@ def _single_plan_policy(
             ),
         )
     if plan.operation == ChangeOperation.SET_INPUT_BOOLEAN_STATE:
+        baseline = (
+            plan.operational.baseline
+            if plan.operational is not None
+            and isinstance(plan.operational.baseline, dict)
+            else {}
+        )
+        dependency = baseline.get("dependency_risk")
+        if not isinstance(dependency, dict):
+            return (
+                OperationPolicyClassification(
+                    ApprovalPolicyClass.PROHIBITED,
+                    RiskDelta.CRITICAL,
+                    PhysicalConsequence.NONE,
+                    ("helper_dependency_evidence_missing",),
+                ),
+            )
+        complete = dependency.get("evidence_complete") is True
+        consequence = dependency.get("physical_consequence")
+        if complete and consequence == "none":
+            return (
+                OperationPolicyClassification(
+                    ApprovalPolicyClass.STANDARD_ADMIN,
+                    RiskDelta.LOW,
+                    PhysicalConsequence.NONE,
+                    (
+                        "exact_input_boolean_state_standard_policy",
+                        "helper_dependency_evidence_complete",
+                        "no_consequential_dependency_detected",
+                    ),
+                ),
+            )
+        if complete and consequence in {
+            "direct",
+            "safety_critical",
+        }:
+            return (
+                OperationPolicyClassification(
+                    ApprovalPolicyClass.ELEVATED_ADMIN,
+                    RiskDelta.HIGH,
+                    (
+                        PhysicalConsequence.SAFETY_CRITICAL
+                        if consequence == "safety_critical"
+                        else PhysicalConsequence.DIRECT
+                    ),
+                    (
+                        "consequential_helper_dependency_detected",
+                        "exact_input_boolean_state_elevated_policy",
+                        "helper_dependency_evidence_complete",
+                    ),
+                ),
+            )
         return (
             OperationPolicyClassification(
-                ApprovalPolicyClass.STANDARD_ADMIN,
-                RiskDelta.LOW,
+                ApprovalPolicyClass.ELEVATED_ADMIN,
+                RiskDelta.HIGH,
                 PhysicalConsequence.INDIRECT,
-                ("exact_input_boolean_state_standard_policy",),
+                (
+                    "exact_input_boolean_state_elevated_policy",
+                    "helper_dependency_evidence_incomplete",
+                    "low_risk_not_established",
+                ),
             ),
         )
     if plan.operation == ChangeOperation.UPDATE_DASHBOARD:

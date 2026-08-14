@@ -24,6 +24,9 @@ from ha_mcp_engineering.f3.locks import (
 )
 
 from ..governance.models import ApprovalState, ChangePlan, PlanStatus
+from ..governance.helper_dependency import (
+    read_runtime_helper_dependency_risk,
+)
 from .operational_locks import OperationalLockSetCalculator
 from .operational_models import (
     CAPABILITY_IDENTITIES,
@@ -33,7 +36,6 @@ from .operational_models import (
     OPERATIONAL_ADAPTER_ID,
     OPERATIONAL_PLAN_CONTRACT_VERSION,
     OPERATIONAL_PREPARED_AUTHORITY_MODEL,
-    POLICY_EXPECTATIONS,
     PROVIDER_CONTRACT_MODELS,
     PROVIDER_OPERATIONS,
     RESTART_ADDON,
@@ -50,6 +52,7 @@ from .operational_models import (
     PreparedOperationalOperation,
     canonical_json,
     operational_escalation_policy,
+    operational_policy_expectation_is_valid,
     provider_arguments,
     recompute_operational_prepared_hash,
     stable_hash,
@@ -176,6 +179,10 @@ class OperationalAdministrationAdapter:
         evidence_reader: OperationalEvidenceReader,
         authority_reader: AuthorityReader,
         helper_state_gateway: Any = None,
+        helper_dependency_risk_reader: Callable[..., Awaitable[
+            dict[str, Any]
+        ]]
+        | None = None,
         metrics: OperationalMetrics | None = None,
         events: OperationalEventRecorder | None = None,
         lock_calculator: OperationalLockSetCalculator | None = None,
@@ -192,6 +199,11 @@ class OperationalAdministrationAdapter:
             backup_gateway=backup_gateway,
             lifecycle_gateway=lifecycle_gateway,
             helper_state_gateway=helper_state_gateway,
+            helper_dependency_risk_reader=(
+                helper_dependency_risk_reader
+                if helper_dependency_risk_reader is not None
+                else read_runtime_helper_dependency_risk
+            ),
             metrics=self.metrics,
         )
         if tuple(sorted(self.strategies)) != tuple(sorted(SUPPORTED_OPERATIONS)):
@@ -269,7 +281,11 @@ class OperationalAdministrationAdapter:
             _enum_value(policy.risk_delta),
             _enum_value(policy.physical_consequence),
         )
-        if policy_values != POLICY_EXPECTATIONS[operation]:
+        if not operational_policy_expectation_is_valid(
+            operation,
+            policy_values,
+            _enum_value(plan.risk.level),
+        ):
             raise OperationalAdapterError("policy_snapshot_mismatch")
         if operational.provider != strategy.capability.provider:
             raise OperationalAdapterError("provider_identity_mismatch")

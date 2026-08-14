@@ -198,10 +198,27 @@ def baseline_for(
     target_class: str = "other_addon",
 ) -> dict[str, Any]:
     if operation == SET_INPUT_BOOLEAN_STATE:
+        material = {
+            "model": "helper-dependency-risk-v1",
+            "entity_id": target_id,
+            "completeness": "complete",
+            "evidence_complete": True,
+            "execution_eligible": True,
+            "physical_consequence": "none",
+            "relevant_downstream_object_ids": [],
+            "consequential_downstream_object_ids": [],
+            "downstream_profiles": [],
+            "unresolved_dynamic_reference_count": 0,
+            "truncated": False,
+        }
         return {
             "entity_id": target_id,
             "state": "off",
             "last_changed": NOW.isoformat(),
+            "dependency_risk": {
+                **material,
+                "evidence_fingerprint": stable_hash(material),
+            },
         }
     if operation == CREATE_FULL_BACKUP:
         return {
@@ -294,7 +311,11 @@ def _policy(operation: str) -> ChangePolicyDecision:
             if operation == SET_INPUT_BOOLEAN_STATE
             else RiskDelta.MODERATE
         ),
-        physical_consequence=PhysicalConsequence.INDIRECT,
+        physical_consequence=(
+            PhysicalConsequence.NONE
+            if operation == SET_INPUT_BOOLEAN_STATE
+            else PhysicalConsequence.INDIRECT
+        ),
         reason_codes=(
             "addon_restart_elevated_policy"
             if operation == RESTART_ADDON
@@ -880,13 +901,41 @@ def make_context(
         trace=trace,
     )
     helper = FakeHelperStateGateway(
-        baseline_for(
-            SET_INPUT_BOOLEAN_STATE,
-            target_id="input_boolean.synthetic_exact",
-            version=version,
-        ),
+        {
+            key: value
+            for key, value in baseline_for(
+                SET_INPUT_BOOLEAN_STATE,
+                target_id="input_boolean.synthetic_exact",
+                version=version,
+            ).items()
+            if key != "dependency_risk"
+        },
         trace=trace,
     )
+
+    async def helper_dependency_risk_reader(
+        entity_id: str, *, refresh: bool = True
+    ):
+        if entity_id != "input_boolean.synthetic_exact" or refresh is not True:
+            raise AssertionError("synthetic helper dependency read changed")
+        return {
+            "binding": deepcopy(
+                baseline_for(
+                    SET_INPUT_BOOLEAN_STATE,
+                    target_id=entity_id,
+                    version=version,
+                )["dependency_risk"]
+            ),
+            "provenance": {
+                "provider": "dependency_index",
+                "completeness": "complete",
+                "generation": 1,
+                "fingerprint": "9" * 64,
+                "freshness": "current",
+                "fallback": "none",
+                "fallback_occurred": False,
+            },
+        }
     approval = SyntheticApprovalAuthority(trace)
     approval_hash = stable_hash(
         {
@@ -953,6 +1002,7 @@ def make_context(
         backup_gateway=backup,
         lifecycle_gateway=lifecycle,
         helper_state_gateway=helper,
+        helper_dependency_risk_reader=helper_dependency_risk_reader,
         evidence_reader=evidence,
         authority_reader=lambda _prepared: authority,
         now=lambda: NOW,

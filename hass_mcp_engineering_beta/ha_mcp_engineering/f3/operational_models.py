@@ -145,7 +145,7 @@ POLICY_EXPECTATIONS = {
     CONTROLLED_RELOAD: ("standard_admin", "moderate", "indirect"),
     RESTART_ADDON: ("elevated_admin", "high", "indirect"),
     RESTART_HOME_ASSISTANT: ("elevated_admin", "high", "indirect"),
-    SET_INPUT_BOOLEAN_STATE: ("standard_admin", "low", "indirect"),
+    SET_INPUT_BOOLEAN_STATE: ("standard_admin", "low", "none"),
 }
 
 RISK_LEVEL_EXPECTATIONS = {
@@ -155,6 +155,26 @@ RISK_LEVEL_EXPECTATIONS = {
     RESTART_HOME_ASSISTANT: "high",
     SET_INPUT_BOOLEAN_STATE: "low",
 }
+
+
+def operational_policy_expectation_is_valid(
+    operation: str,
+    policy: tuple[str, str, str],
+    risk_level: str,
+) -> bool:
+    """Validate the fixed policy families and dependency-aware helper cases."""
+
+    if operation != SET_INPUT_BOOLEAN_STATE:
+        return bool(
+            policy == POLICY_EXPECTATIONS[operation]
+            and risk_level == RISK_LEVEL_EXPECTATIONS[operation]
+        )
+    return (policy, risk_level) in {
+        (("standard_admin", "low", "none"), "low"),
+        (("elevated_admin", "high", "indirect"), "high"),
+        (("elevated_admin", "high", "direct"), "high"),
+        (("elevated_admin", "high", "safety_critical"), "high"),
+    }
 
 EVIDENCE_DEADLINE_SECONDS = {
     CREATE_FULL_BACKUP: 86_400,
@@ -677,15 +697,16 @@ def validate_prepared_operational_authority(
         raise ValueError("operational plan contract is unsupported")
     _parse_aware(operation.plan_expires_at, field_name="plan_expires_at")
 
-    expected_policy = POLICY_EXPECTATIONS[expected_operation]
-    if (
-        operation.policy_class,
-        operation.risk_delta,
-        operation.physical_consequence,
-    ) != expected_policy:
+    if not operational_policy_expectation_is_valid(
+        expected_operation,
+        (
+            operation.policy_class,
+            operation.risk_delta,
+            operation.physical_consequence,
+        ),
+        operation.risk_level,
+    ):
         raise ValueError("prepared policy expectation is invalid")
-    if operation.risk_level != RISK_LEVEL_EXPECTATIONS[expected_operation]:
-        raise ValueError("prepared risk level is invalid")
 
     if operation.provider_id != PROVIDER_IDENTITIES[expected_operation]:
         raise ValueError("prepared provider identity is invalid")
@@ -813,4 +834,5 @@ __all__ = [
     "recompute_operational_prepared_hash",
     "validate_prepared_operational_authority",
     "operational_escalation_policy",
+    "operational_policy_expectation_is_valid",
 ]

@@ -749,10 +749,14 @@ class InputBooleanStateOperationStrategy(OperationalStrategy):
         self,
         gateway: HelperStateGateway,
         *,
+        dependency_risk_reader: Callable[..., Awaitable[
+            dict[str, Any]
+        ]],
         metrics: OperationalMetrics,
     ) -> None:
         super().__init__(metrics=metrics)
         self.gateway = gateway
+        self.dependency_risk_reader = dependency_risk_reader
 
     async def preflight_evidence(self, prepared):
         self.metrics.increment(self.operation, "state_reads")
@@ -763,20 +767,69 @@ class InputBooleanStateOperationStrategy(OperationalStrategy):
         except HelperStateGatewayError as exc:
             return False, exc.category, ("entity_state",), None
         provider = fresh.get("provider")
-        baseline = fresh.get("baseline")
+        state_baseline = fresh.get("baseline")
         if not isinstance(provider, dict) or not _provider_matches(
             prepared.provider_evidence,
             provider,
             HELPER_STATE_PROVIDER_FIELDS,
         ):
             return False, "exact_contract_mismatch", ("provider_contract",), fresh
-        if not isinstance(baseline, dict):
+        if not isinstance(state_baseline, dict):
             return False, "invalid_provider_response", ("entity_state",), fresh
-        if baseline.get("state") == prepared.requested_name:
-            return False, "already_desired", (), fresh
-        if baseline != prepared.baseline:
+        try:
+            dependency = await self.dependency_risk_reader(
+                prepared.target.target_id, refresh=True
+            )
+        except Exception:
+            dependency = None
+        binding = (
+            dependency.get("binding")
+            if isinstance(dependency, dict)
+            else None
+        )
+        if not isinstance(binding, dict):
+            return (
+                False,
+                "dependency_evidence_unavailable",
+                ("dependency_risk",),
+                fresh,
+            )
+        combined = {
+            "provider": provider,
+            "baseline": {
+                **state_baseline,
+                "dependency_risk": binding,
+            },
+        }
+        if state_baseline.get("state") == prepared.requested_name:
+            return False, "already_desired", (), combined
+        planned = prepared.baseline
+        planned_dependency = planned.get("dependency_risk")
+        if binding.get("evidence_complete") is not True:
+            return (
+                False,
+                "dependency_evidence_incomplete",
+                ("dependency_risk_completeness",),
+                combined,
+            )
+        if (
+            not isinstance(planned_dependency, dict)
+            or binding.get("evidence_fingerprint")
+            != planned_dependency.get("evidence_fingerprint")
+        ):
+            return (
+                False,
+                "dependency_risk_drift",
+                ("dependency_risk_fingerprint",),
+                combined,
+            )
+        planned_state = {
+            key: planned.get(key)
+            for key in ("entity_id", "state", "last_changed")
+        }
+        if state_baseline != planned_state:
             return False, "stale_baseline", ("entity_state",), fresh
-        return True, "eligible", (), fresh
+        return True, "eligible", (), combined
 
     async def dispatch(self, prepared, *, before_dispatch):
         try:
@@ -851,6 +904,9 @@ def default_strategies(
     backup_gateway: BackupAdministrationGateway,
     lifecycle_gateway: OperationalLifecycleGateway,
     helper_state_gateway: HelperStateGateway,
+    helper_dependency_risk_reader: Callable[..., Awaitable[
+        dict[str, Any]
+    ]],
     metrics: OperationalMetrics,
 ) -> dict[str, OperationalStrategy]:
     strategies: tuple[OperationalStrategy, ...] = (
@@ -867,7 +923,9 @@ def default_strategies(
             lifecycle_gateway, metrics=metrics
         ),
         InputBooleanStateOperationStrategy(
-            helper_state_gateway, metrics=metrics
+            helper_state_gateway,
+            dependency_risk_reader=helper_dependency_risk_reader,
+            metrics=metrics,
         ),
     )
     return {strategy.operation: strategy for strategy in strategies}
