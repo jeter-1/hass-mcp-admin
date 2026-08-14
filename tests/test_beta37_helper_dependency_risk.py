@@ -149,7 +149,10 @@ class HelperDependencyRiskTests(unittest.IsolatedAsyncioTestCase):
                 "action": [
                     {
                         "service": "notify.mobile_app_disposable",
-                        "data": {"message": "bounded"},
+                        "data": {
+                            "message": "bounded",
+                            "title": "Bounded title",
+                        },
                     }
                 ]
             },
@@ -183,6 +186,134 @@ class HelperDependencyRiskTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(profile.physical_consequence, "none")
         self.assertTrue(profile.complete)
         self.assertIn("proven_benign_action_family", profile.reason_codes)
+
+    def test_reviewed_nonphysical_notification_controls_remain_low_risk(self):
+        cases = (
+            {"message": "clear_badge"},
+            {
+                "message": "clear_notification",
+                "data": {"tag": "bounded-review-tag"},
+            },
+            {"message": "kiosk_hide_screensaver"},
+            {"message": "kiosk_show_screensaver"},
+            {"message": "update_complications"},
+            {"message": "update_widgets"},
+        )
+        for payload in cases:
+            with self.subTest(message=payload["message"]):
+                profile = automation_action_consequence_profile(
+                    {
+                        "action": [
+                            {
+                                "service": "notify.mobile_app_disposable",
+                                "data": payload,
+                            }
+                        ]
+                    }
+                )
+                self.assertEqual(
+                    profile["physical_consequence"], "none"
+                )
+                self.assertEqual(profile["risk_level"], "low")
+                self.assertTrue(profile["complete"])
+                self.assertIn(
+                    "reviewed_nonphysical_notification_control",
+                    profile["reason_codes"],
+                )
+
+        first_tag = "first-bounded-review-tag"
+        second_tag = "second-bounded-review-tag"
+        first = action_profile(
+            "first_clear",
+            {
+                "action": [
+                    {
+                        "service": "notify.mobile_app_disposable",
+                        "data": {
+                            "message": "clear_notification",
+                            "data": {"tag": first_tag},
+                        },
+                    }
+                ]
+            },
+        )
+        second = action_profile(
+            "second_clear",
+            {
+                "action": [
+                    {
+                        "service": "notify.mobile_app_disposable",
+                        "data": {
+                            "message": "clear_notification",
+                            "data": {"tag": second_tag},
+                        },
+                    }
+                ]
+            },
+        )
+        self.assertNotEqual(
+            first.effect_projection_fingerprint,
+            second.effect_projection_fingerprint,
+        )
+        self.assertNotIn(first_tag, str(first))
+        self.assertNotIn(second_tag, str(second))
+
+    def test_stateful_and_unreviewed_notification_controls_are_non_conclusive(self):
+        for command in (
+            "request_location_update",
+            "remove_channel",
+            "TTS",
+            "kiosk_default",
+            "kiosk_hide_camera",
+            "kiosk_reload",
+            "kiosk_set_brightness",
+            "kiosk_set_volume",
+            "kiosk_show_camera",
+        ):
+            with self.subTest(command=command):
+                profile = automation_action_consequence_profile(
+                    {
+                        "action": [
+                            {
+                                "service": "notify.mobile_app_disposable",
+                                "data": {"message": command},
+                            }
+                        ]
+                    }
+                )
+                self.assertEqual(
+                    profile["physical_consequence"], "unknown"
+                )
+                self.assertFalse(profile["complete"])
+                self.assertIn(
+                    "notification_control_effect",
+                    profile["reason_codes"],
+                )
+
+    def test_reviewed_notification_control_rejects_unreviewed_payload(self):
+        profile = automation_action_consequence_profile(
+            {
+                "action": [
+                    {
+                        "service": "notify.mobile_app_disposable",
+                        "data": {
+                            "message": "clear_notification",
+                            "data": {
+                                "tag": "bounded-review-tag",
+                                "custom_effect": "synthetic",
+                            },
+                        },
+                    }
+                ]
+            }
+        )
+
+        self.assertEqual(profile["physical_consequence"], "unknown")
+        self.assertFalse(profile["complete"])
+        self.assertIn(
+            "notification_extension_unreviewed",
+            profile["reason_codes"],
+        )
 
     def test_mobile_notification_commands_are_never_harmless(self):
         for command in (
@@ -596,6 +727,45 @@ class HelperDependencyRiskTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             observed["target_relevant_dynamic_reference_count"], 0
         )
+
+    def test_compound_dynamic_domain_expressions_remain_unconstrained(self):
+        expressions = (
+            "'sensor.' ~ room if use_sensor else helper_entity",
+            "'sensor.' ~ room and helper_entity",
+            "'sensor.' ~ room or helper_entity",
+            "('sensor.' ~ room)",
+            "'sensor.' ~ room | lower",
+        )
+        for index, expression in enumerate(expressions):
+            with self.subTest(expression=expression):
+                findings, dynamic = extract_document(
+                    source_type="automation",
+                    source_id=f"ambiguous_{index}",
+                    source_entity_id=f"automation.ambiguous_{index}",
+                    config={
+                        "condition": [
+                            {
+                                "condition": "template",
+                                "value_template": (
+                                    "{{ states(" + expression + ") }}"
+                                ),
+                            }
+                        ]
+                    },
+                )
+                self.assertEqual(findings, [])
+                self.assertEqual(len(dynamic), 1)
+                self.assertIsNone(
+                    dynamic[0].possible_entity_domains
+                )
+
+                observed = binding(snapshot(dynamic=tuple(dynamic)))
+
+                self.assertFalse(observed["evidence_complete"])
+                self.assertFalse(observed["execution_eligible"])
+                self.assertEqual(
+                    observed["physical_consequence"], "unknown"
+                )
 
     def test_dynamic_reference_to_other_exact_helper_is_unrelated(self):
         findings, dynamic = extract_document(

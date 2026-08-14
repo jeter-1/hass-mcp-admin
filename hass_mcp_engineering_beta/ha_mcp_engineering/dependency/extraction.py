@@ -394,13 +394,13 @@ def _scan_template_segment(
 def _constrained_dynamic_entity_domains(
     argument: str,
 ) -> frozenset[str] | None:
-    """Recognize only a fixed canonical domain prefix in Jinja concatenation."""
+    """Recognize one complete fixed-domain plus simple-name expression."""
 
     match = re.fullmatch(
         r"\s*(?P<quote>['\"])(?P<domain>[a-z0-9_]+)\."
-        r"(?P=quote)\s*~\s*.+",
+        r"(?P=quote)\s*~\s*"
+        r"(?P<suffix>[A-Za-z_][A-Za-z0-9_]*)\s*",
         argument,
-        flags=re.DOTALL,
     )
     if match is None:
         return None

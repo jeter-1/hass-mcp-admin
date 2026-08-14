@@ -506,6 +506,39 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
+        ambiguous_expressions = (
+            "'sensor.' ~ room if use_sensor else helper_entity",
+            "'sensor.' ~ room and helper_entity",
+            "'sensor.' ~ room or helper_entity",
+            "('sensor.' ~ room)",
+            "'sensor.' ~ room | lower",
+        )
+        for index, expression in enumerate(ambiguous_expressions):
+            with self.subTest(expression=expression):
+                ambiguous = valid_config("automation")
+                ambiguous["condition"] = [
+                    {
+                        "condition": "template",
+                        "value_template": (
+                            "{{ states(" + expression + ") }}"
+                        ),
+                    }
+                ]
+                prepared = await self._prepared(
+                    "automation",
+                    "update",
+                    operation_id=f"ambiguous_{index}",
+                    current_config=base,
+                    proposed_config=ambiguous,
+                )
+                self.assertIn(
+                    dynamic_key,
+                    {
+                        item.key
+                        for item in operation_lock_requests(prepared)
+                    },
+                )
+
     async def test_matching_reload_and_restart_exclusive_locks_conflict_atomically(self):
         timing = LockTiming(60, 10, 0)
         expected_reload = {

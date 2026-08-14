@@ -80,6 +80,23 @@ _HELPER_TRANSITIVE_EFFECT_DOMAINS = frozenset(
 _HELPER_PROVEN_BENIGN_SERVICE_DOMAINS = frozenset({"notify"})
 _HELPER_NOTIFICATION_TEXT_BYTES = 4_096
 _HELPER_NOTIFICATION_DATA_FIELDS = frozenset({"message", "title"})
+_HELPER_REVIEWED_NONPHYSICAL_NOTIFICATION_CONTROLS = frozenset(
+    {
+        "clear_badge",
+        "clear_notification",
+        "kiosk_hide_screensaver",
+        "kiosk_show_screensaver",
+        "update_complications",
+        "update_widgets",
+    }
+)
+_HELPER_EFFECTFUL_NOTIFICATION_CONTROLS = frozenset(
+    {
+        "remove_channel",
+        "request_location_update",
+        "tts",
+    }
+)
 _HELPER_GENERIC_EFFECT_SERVICES = frozenset(
     {
         "homeassistant.toggle",
@@ -877,10 +894,66 @@ def _effect_action_families(config: dict[str, Any]) -> set[str]:
 def _notification_effect_semantics(
     config: dict[str, Any],
 ) -> tuple[bool, bool, tuple[str, ...]]:
-    """Prove only the ordinary static notification subset as effect-free."""
+    """Classify static notification display and reviewed control subsets."""
 
     seen = False
-    reasons: set[str] = set()
+    blocking_reasons: set[str] = set()
+    reason_codes: set[str] = set()
+
+    def classify_message(message: str) -> str:
+        normalized = message.strip().lower()
+        if normalized in (
+            _HELPER_REVIEWED_NONPHYSICAL_NOTIFICATION_CONTROLS
+        ):
+            return "reviewed_nonphysical_control"
+        if (
+            normalized in _HELPER_EFFECTFUL_NOTIFICATION_CONTROLS
+            or normalized.startswith("command_")
+            or normalized.startswith("kiosk_")
+        ):
+            return "effectful_control"
+        return "ordinary_display"
+
+    def reviewed_control_payload_is_bounded(
+        message: str, payload: dict[str, Any]
+    ) -> bool:
+        normalized = message.strip().lower()
+        if normalized != "clear_notification":
+            return set(payload) == {"message"}
+        if set(payload) == {"message"}:
+            return True
+        if set(payload) != {"message", "data"}:
+            return False
+        control_data = payload.get("data")
+        if not isinstance(control_data, dict) or set(control_data) != {
+            "tag"
+        }:
+            return False
+        tag = control_data.get("tag")
+        return bool(
+            isinstance(tag, str)
+            and tag
+            and not _has_template(tag)
+            and len(tag.encode("utf-8"))
+            <= _HELPER_PROFILE_VALUE_BYTES
+        )
+
+    def note_message(message: str) -> str:
+        kind = classify_message(message)
+        if kind == "reviewed_nonphysical_control":
+            reason_codes.add(
+                "reviewed_nonphysical_notification_control"
+            )
+        elif kind == "effectful_control":
+            code = (
+                "notification_command_effect"
+                if message.strip().lower().startswith("command_")
+                else "notification_control_effect"
+            )
+            blocking_reasons.add(code)
+            reason_codes.add(code)
+        return kind
+
     for root_path, root in _action_roots(config):
         for _path, step in _action_steps(root, root_path):
             service = step.get("service", step.get("action"))
@@ -892,44 +965,65 @@ def _notification_effect_semantics(
                 continue
             seen = True
             direct_message = step.get("message")
-            if (
-                isinstance(direct_message, str)
-                and direct_message.strip().lower().startswith("command_")
-            ):
-                reasons.add("notification_command_effect")
-            elif isinstance(direct_message, str) and _has_template(
+            if isinstance(direct_message, str) and _has_template(
                 direct_message
             ):
-                reasons.add("dynamic_notification_content")
+                blocking_reasons.add("dynamic_notification_content")
+                reason_codes.add("dynamic_notification_content")
+            elif isinstance(direct_message, str):
+                note_message(direct_message)
             if "data_template" in step:
-                reasons.add("dynamic_notification_content")
+                blocking_reasons.add("dynamic_notification_content")
+                reason_codes.add("dynamic_notification_content")
             if "target" in step:
-                reasons.add("notification_extension_unreviewed")
+                blocking_reasons.add("notification_extension_unreviewed")
+                reason_codes.add("notification_extension_unreviewed")
             payload = step.get("data")
             if not isinstance(payload, dict):
-                reasons.add("notification_payload_unproven")
+                blocking_reasons.add("notification_payload_unproven")
+                reason_codes.add("notification_payload_unproven")
                 continue
-            if set(payload) - _HELPER_NOTIFICATION_DATA_FIELDS:
-                reasons.add("notification_extension_unreviewed")
             message = payload.get("message")
             if not isinstance(message, str) or not message:
-                reasons.add("notification_payload_unproven")
+                blocking_reasons.add("notification_payload_unproven")
+                reason_codes.add("notification_payload_unproven")
             elif _has_template(message):
-                reasons.add("dynamic_notification_content")
-            elif message.strip().lower().startswith("command_"):
-                reasons.add("notification_command_effect")
+                blocking_reasons.add("dynamic_notification_content")
+                reason_codes.add("dynamic_notification_content")
             elif len(message.encode("utf-8")) > _HELPER_NOTIFICATION_TEXT_BYTES:
-                reasons.add("notification_payload_unproven")
+                blocking_reasons.add("notification_payload_unproven")
+                reason_codes.add("notification_payload_unproven")
+            else:
+                kind = note_message(message)
+                if kind == "reviewed_nonphysical_control":
+                    if not reviewed_control_payload_is_bounded(
+                        message, payload
+                    ):
+                        blocking_reasons.add(
+                            "notification_extension_unreviewed"
+                        )
+                        reason_codes.add(
+                            "notification_extension_unreviewed"
+                        )
+                elif set(payload) - _HELPER_NOTIFICATION_DATA_FIELDS:
+                    blocking_reasons.add(
+                        "notification_extension_unreviewed"
+                    )
+                    reason_codes.add(
+                        "notification_extension_unreviewed"
+                    )
             title = payload.get("title")
             if title is not None:
                 if not isinstance(title, str) or _has_template(title):
-                    reasons.add("dynamic_notification_content")
+                    blocking_reasons.add("dynamic_notification_content")
+                    reason_codes.add("dynamic_notification_content")
                 elif len(title.encode("utf-8")) > (
                     _HELPER_NOTIFICATION_TEXT_BYTES
                 ):
-                    reasons.add("notification_payload_unproven")
-    return seen, bool(seen and not reasons), tuple(
-        sorted(reasons, key=lambda item: item.encode("utf-8"))
+                    blocking_reasons.add("notification_payload_unproven")
+                    reason_codes.add("notification_payload_unproven")
+    return seen, bool(seen and not blocking_reasons), tuple(
+        sorted(reason_codes, key=lambda item: item.encode("utf-8"))
     )
 
 

@@ -152,11 +152,46 @@ class DependencyIndexSnapshot:
     build_profile: dict[str, Any] = field(default_factory=dict)
     automation_action_profiles: tuple[AutomationActionRiskProfile, ...] = ()
     automation_read_failures: tuple[AutomationReadFailure, ...] = ()
+    dynamic_reference_overflow_count: int = 0
+    dynamic_reference_overflow_fingerprint: str | None = None
 
 
 def evidence_id(*parts: Any) -> str:
     encoded = json.dumps(parts, sort_keys=True, separators=(",", ":"), default=str)
     return "ev_" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:24]
+
+
+def dynamic_reference_material(item: DynamicReference) -> dict[str, Any]:
+    """Return bounded deterministic identity without exposing raw templates."""
+
+    excerpt_fingerprint = (
+        hashlib.sha256(item.excerpt.encode("utf-8")).hexdigest()
+        if isinstance(item.excerpt, str)
+        else None
+    )
+    return {
+        "evidence_id": item.evidence_id,
+        "source_type": item.source_type,
+        "source_id": item.source_id,
+        "source_entity_id": item.source_entity_id,
+        "config_path": item.config_path,
+        "warning": item.warning,
+        "possible_entity_domains": (
+            list(item.possible_entity_domains)
+            if isinstance(item.possible_entity_domains, tuple)
+            else None
+        ),
+        "excerpt_fingerprint": excerpt_fingerprint,
+    }
+
+
+def dynamic_reference_fingerprint(item: DynamicReference) -> str:
+    encoded = json.dumps(
+        dynamic_reference_material(item),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def snapshot_fingerprint(
@@ -169,6 +204,11 @@ def snapshot_fingerprint(
     automation_read_failures: list[AutomationReadFailure] | tuple[
         AutomationReadFailure, ...
     ] = (),
+    dynamic_references: list[DynamicReference] | tuple[
+        DynamicReference, ...
+    ] = (),
+    dynamic_reference_overflow_count: int = 0,
+    dynamic_reference_overflow_fingerprint: str | None = None,
 ) -> str:
     payload = {
         "generation": generation,
@@ -191,6 +231,14 @@ def snapshot_fingerprint(
             (item.source_id, item.source_entity_id, item.reason_code)
             for item in automation_read_failures
         ],
+        "dynamic_references": sorted(
+            dynamic_reference_fingerprint(item)
+            for item in dynamic_references
+        ),
+        "dynamic_reference_overflow": {
+            "count": max(0, int(dynamic_reference_overflow_count)),
+            "fingerprint": dynamic_reference_overflow_fingerprint,
+        },
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()

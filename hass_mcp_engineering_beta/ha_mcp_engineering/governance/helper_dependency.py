@@ -209,6 +209,8 @@ def _failed_binding(entity_id: str, completeness: str) -> dict[str, Any]:
         "unreadable_automation_count": 0,
         "unreadable_automation_ids": [],
         "unreadable_automation_fingerprint": stable_hash([]),
+        "dynamic_reference_overflow_count": 0,
+        "dynamic_reference_overflow_fingerprint": None,
         "truncated": completeness == "truncated",
     }
     return {
@@ -232,7 +234,31 @@ def build_helper_dependency_risk_binding(
         for item in snapshot.automation_action_profiles
     }
     relevant_source_ids = sorted(sources)
-    truncated = len(relevant_source_ids) > MAX_RELEVANT_AUTOMATIONS
+    dynamic_reference_overflow_count = max(
+        0,
+        int(
+            getattr(
+                snapshot, "dynamic_reference_overflow_count", 0
+            )
+            or 0
+        ),
+    )
+    dynamic_reference_overflow_fingerprint = getattr(
+        snapshot, "dynamic_reference_overflow_fingerprint", None
+    )
+    if dynamic_reference_overflow_count and not isinstance(
+        dynamic_reference_overflow_fingerprint, str
+    ):
+        dynamic_reference_overflow_fingerprint = stable_hash(
+            {
+                "count": dynamic_reference_overflow_count,
+                "state": "fingerprint_unavailable",
+            }
+        )
+    truncated = bool(
+        len(relevant_source_ids) > MAX_RELEVANT_AUTOMATIONS
+        or dynamic_reference_overflow_count
+    )
     selected_source_ids = relevant_source_ids[:MAX_RELEVANT_AUTOMATIONS]
     relevant_dynamic = [
         item
@@ -427,6 +453,12 @@ def build_helper_dependency_risk_binding(
         "unreadable_automation_ids": unreadable_automation_ids,
         "unreadable_automation_fingerprint": (
             unreadable_automation_fingerprint
+        ),
+        "dynamic_reference_overflow_count": (
+            dynamic_reference_overflow_count
+        ),
+        "dynamic_reference_overflow_fingerprint": (
+            dynamic_reference_overflow_fingerprint
         ),
         "truncated": truncated,
     }
