@@ -16,8 +16,9 @@ that controls safety-critical or broad household behavior.
    admission policy are unchanged.
 3. Require the focused HAMCP-089 positive, no-change, stale-state,
    dependency-risk, dependency-drift, response-loss, verification-failure,
-   invalid-target, cross-family lock, routing, metadata, schema, audit,
-   persistence, recovery, and no-fallback tests.
+   invalid-target, consequence-family, effect-projection, target-specific
+   completeness, cross-family lock, downstream-automation lock, routing,
+   metadata, schema, audit, persistence, recovery, and no-fallback tests.
 4. Require the complete unit, Fast, Full, Evidence, dependency, vulnerability,
    YAML, PowerShell, secret, whitespace, packaging, exact-image, and stable-v1
    gates applicable to the promotion candidate.
@@ -62,9 +63,14 @@ consequence.
    `create_helper_state_plan` proposal. Require zero dispatch during planning,
    the exact baseline/provider evidence, and `awaiting_approval`. Require
    `standard_admin`/low/none only when complete bounded evidence finds no
-   consequential downstream path. Consequential paths must elevate governance;
-   incomplete, stale, failed, unsupported, or truncated evidence must not claim
-   conclusive low risk or dispatch eligibility.
+   consequential downstream path and every relevant action is proven benign.
+   Direct physical paths must elevate governance. Generic broad targets,
+   transitive scene/script actions, custom effects, and relevant unresolved
+   evidence must remain unknown/incomplete rather than being called harmless.
+   Incomplete, stale, failed, unsupported, or truncated target-relevant evidence
+   must not claim conclusive low risk or dispatch eligibility. Unrelated source
+   diagnostics remain visible but do not automatically poison this exact
+   helper's eligibility.
 3. Review and approve the exact plan hash through authenticated Ingress. The
    known Android cold-start body-navigation defect is outside Beta 37; do not
    treat notification navigation as this capability's acceptance criterion.
@@ -94,9 +100,12 @@ success, zero dispatch, and unconsumed approval.
 - Baseline drift to a state other than the desired state must fail before
   approval consumption or dispatch.
 - A material normalized dependency-evidence change after approval must report
-  dependency-risk drift and fail before dispatch. A generation or timestamp
-  change with identical normalized risk evidence must not cause a false
-  rejection.
+  dependency-risk drift and fail before dispatch. This includes service, exact
+  entity target, device/area/floor/label selector, risk-relevant action data,
+  or normalized action-structure changes. Sensitive and oversized values must
+  contribute through bounded hashes. A generation, timestamp, alias, or other
+  display-only change with identical normalized effect evidence must not cause
+  a false rejection.
 - Confirmed provider rejection must be reported as post-dispatch failure.
 - Lost provider response may succeed only when independent readback observes
   the exact desired state; it must never trigger redispatch.
@@ -117,6 +126,11 @@ success, zero dispatch, and unconsumed approval.
   configuration and a shared `reload:input_boolean` dependency. Same-helper
   configuration and controlled reload must conflict; unrelated helpers must
   remain concurrent.
+- The state path must also hold every bound
+  `automation:<internal_id>` resource and shared `reload:automation` dependency
+  before its final dependency refresh. Relevant automation update/reload must
+  conflict in both directions; unrelated automation configuration must remain
+  concurrent.
 - Do not change dashboards, dashboard metadata, automations, notification
   navigation, integrations, registries, credentials, deployment configuration,
   or provider policy during this acceptance.

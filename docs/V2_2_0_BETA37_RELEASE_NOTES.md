@@ -14,18 +14,24 @@ expiration. Planning reads the exact current Home Assistant state first. An
 already-desired helper returns a verified no-change result without creating a
 plan or dispatching a service. A real change obtains bounded dependency and
 action-consequence evidence for the exact helper before classifying risk.
-Complete evidence with no consequential path remains
-`standard_admin`/low/none. Consequential automation paths elevate the existing
-governance policy proportionally. Incomplete, stale, failed, unsupported, or
-truncated evidence remains reviewable but cannot be described as conclusively
-low risk or dispatched.
+Complete evidence remains `standard_admin`/low/none only for actions proven
+benign, such as bounded notifications, or for automations with no effect action.
+Direct physical automation paths elevate the existing governance policy
+proportionally. Generic broad targets, transitive scene/script activation,
+custom domains, and unresolved target-relevant effects are unknown/incomplete,
+not harmless. Incomplete, stale, failed, unsupported, or truncated relevant
+evidence remains reviewable but cannot be described as conclusively low risk or
+dispatched. Unrelated dynamic references or configuration-read diagnostics stay
+visible without automatically disabling every helper.
 
 The immutable plan binds the normalized dependency set, downstream automation
-identities, consequence classification, completeness, and evidence
-fingerprint without retaining unbounded automation bodies. F3 refreshes that
-evidence before dispatch. A material normalized change invalidates the prior
-approval as dependency-risk drift; generation-only or other irrelevant source
-metadata changes do not create a false rejection.
+identities, consequence classification, completeness, effect-relevant services,
+exact and broad target selectors, action data, normalized structure, and
+evidence fingerprint without retaining unbounded automation bodies. Sensitive
+or oversized values contribute through bounded hashes. F3 refreshes that
+evidence before dispatch. A material normalized effect change invalidates the
+prior approval as dependency-risk drift; generation-only, alias, description,
+or other display-only metadata changes do not create a false rejection.
 
 This is an Engineering-native direct-provider contract. It does not delegate a
 write to ha-mcp and has no fallback. The only reachable commands are exact
@@ -47,6 +53,13 @@ canonical `helper:input_boolean.<object_id>` identity and
 actions serialize in both directions, a controlled input-boolean reload cannot
 overlap state preflight/dispatch/readback/verification, and unrelated helpers
 remain concurrent under deterministic lock ordering.
+
+Helper execution also holds each exact downstream
+`automation:<internal_id>` resource and shared `reload:automation` dependency.
+Relevant automation configuration and reload therefore cannot change between
+final dependency preflight and dispatch. Unrelated automation configuration
+remains concurrent, and the final dependency refresh occurs only after the
+complete deterministic lock set is held.
 
 The executor durably records intent before the sole mutation opportunity and
 then performs an authoritative exact-state readback. Success requires the

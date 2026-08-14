@@ -33,17 +33,32 @@ plan, and performs no dispatch.
 
 Otherwise planning reads the shared dependency index and projects bounded,
 target-specific downstream automation/action-consequence evidence. Complete
-evidence with no consequential path creates a low-risk
-`standard_admin` contract-v3 operational plan. Consequential paths elevate the
-existing governance policy proportionally. Incomplete, stale, failed,
-unsupported, or truncated evidence cannot claim conclusive low risk and is not
-dispatch-eligible.
+evidence creates a low-risk `standard_admin` contract-v3 operational plan only
+when every relevant action is mechanically proven benign, such as a bounded
+notification, or has no effect action. Direct physical actions elevate the
+existing governance policy proportionally. Generic broad targets, scene or
+script activation, custom action domains, relevant dynamic references, and
+other effects that cannot be resolved are classified as unknown/incomplete;
+they are never described as harmless. Incomplete, stale, failed, unsupported,
+or truncated target-relevant evidence cannot claim conclusive low risk and is
+not dispatch-eligible.
+
+Completeness is target-specific. Unrelated dynamic references and unrelated
+configuration-read failures remain visible as coverage diagnostics but do not
+automatically disable a helper whose relevant evidence is complete. A dynamic
+reference, missing action profile, or unreadable source tied to the exact
+helper remains non-conclusive. Collection, retained profiles, dynamic evidence,
+and output are bounded.
 
 The immutable plan binds the exact target, desired state, state baseline,
-normalized dependency evidence and fingerprint, code-owned direct-provider
-contract, and no-fallback policy without retaining unbounded automation bodies.
-Approval uses the existing external Home Assistant administrator challenge and
-exact plan hash. The MCP caller cannot self-approve.
+normalized dependency evidence and fingerprint, exact downstream automation
+resource identities, effect-relevant services, targets and selectors, action
+data, and normalized action structure. Sensitive or oversized values contribute
+through bounded hashes and unbounded automation bodies are not retained.
+Display-only aliases and descriptions do not invalidate approval. The plan also
+binds the code-owned direct-provider contract and no-fallback policy. Approval
+uses the existing external Home Assistant administrator challenge and exact
+plan hash. The MCP caller cannot self-approve.
 
 Immediately before the sole mutation opportunity, F3 reads the exact state
 again:
@@ -57,10 +72,13 @@ again:
 
 The action holds the same canonical
 `helper:input_boolean.<object_id>` resource used by helper configuration and a
-shared `reload:input_boolean` dependency. This serializes same-helper state and
-configuration operations and blocks controlled input-boolean reload across
-preflight, dispatch, readback, and verification without blocking unrelated
-helpers.
+shared `reload:input_boolean` dependency. It also holds each approval-bound
+`automation:<internal_id>` resource and shared `reload:automation` dependency.
+This serializes same-helper state and configuration operations, blocks relevant
+automation update or reload drift across preflight, dispatch, readback, and
+verification, and keeps unrelated helpers and unrelated automation updates
+concurrent. The final dependency refresh occurs only after the complete lock
+set is held.
 
 The only permitted WebSocket command shapes are:
 
@@ -104,6 +122,18 @@ Source acceptance must prove:
 - stale state fails before dispatch;
 - material dependency-risk drift fails before dispatch while irrelevant index
   generation changes do not;
+- effect-relevant service, exact target, broad selector, action-data, or action
+  structure changes cause dependency drift while display-only alias changes do
+  not;
+- switches, lights, fans, scenes, generic Home Assistant actions, physical
+  domains, transitive actions, broad selectors, and custom domains are never
+  affirmatively misclassified as harmless, while proven-benign notifications
+  remain low risk;
+- relevant dynamic or unreadable dependency evidence stays non-conclusive,
+  while unrelated uncertainty does not globally disable helper execution;
+- relevant automation configuration and reload operations conflict with helper
+  execution after exact lock acquisition while unrelated automation work
+  remains concurrent;
 - duplicate apply and lost-response recovery never redispatch;
 - verification mismatch is reported as a post-dispatch failure;
 - `toggle`, non-`input_boolean` targets, arbitrary service data, ha-mcp
