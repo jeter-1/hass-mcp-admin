@@ -158,6 +158,9 @@ class BoundedDynamicResolutionTests(unittest.TestCase):
             f'{{{{ "{TARGET}" is is_state("on") }}}}',
             f'{{{{ "{TARGET}" is is_state_attr("mode", "on") }}}}',
             f'{{{{ "{TARGET}" is has_value }}}}',
+            f'{{{{ "{TARGET}" is not is_state("off") }}}}',
+            f'{{{{ "{TARGET}" is not is_state_attr("mode", "off") }}}}',
+            f'{{{{ "{TARGET}" is not has_value }}}}',
             f'{{{{ has_value("{TARGET}") }}}}',
         )
 
@@ -171,6 +174,146 @@ class BoundedDynamicResolutionTests(unittest.TestCase):
                     {item.target_entity_id for item in findings},
                     {TARGET},
                 )
+
+    def test_collection_filters_and_maps_retain_finite_exact_candidates(self):
+        forms = (
+            f'{{{{ ["{TARGET}"] | select("is_state", "on") | list }}}}',
+            f'{{{{ ["{TARGET}"] '
+            '| select("is_state_attr", "mode", "on") | list }}',
+            f'{{{{ ["{TARGET}"] | select("has_value") | list }}}}',
+            f'{{{{ ["{TARGET}"] | reject("is_state", "off") | list }}}}',
+            f'{{{{ ["{TARGET}"] | map("states") | list }}}}',
+            f'{{{{ ["{TARGET}"] | map("state_attr", "friendly_name") | list }}}}',
+            f'{{{{ ["{TARGET}"] | map("has_value") | list }}}}',
+        )
+
+        for index, template in enumerate(forms):
+            with self.subTest(template=template):
+                findings, dynamic = _dynamic(
+                    template, source_id=f"collection_operator_{index}"
+                )
+                self.assertEqual(findings, [])
+                self.assertEqual(len(dynamic), 1)
+                self.assertTrue(
+                    dynamic[0].candidate_resolution_complete
+                )
+                self.assertEqual(
+                    dynamic[0].possible_entity_ids, (TARGET,)
+                )
+
+    def test_collection_dependency_retains_consequential_profile(self):
+        source_id = "collection_filter_consequence"
+        findings, dynamic = _dynamic(
+            f'{{{{ ["{TARGET}"] | select("is_state", "on") | list }}}}',
+            source_id=source_id,
+        )
+        observed = _binding(
+            _snapshot(
+                dynamic=dynamic,
+                profiles=(_profile(source_id, "cover.open_cover"),),
+            )
+        )
+
+        self.assertEqual(findings, [])
+        self.assertTrue(observed["evidence_complete"])
+        self.assertTrue(observed["execution_eligible"])
+        self.assertEqual(observed["physical_consequence"], "direct")
+        self.assertEqual(
+            observed["relevant_downstream_object_ids"],
+            [f"automation.{source_id}"],
+        )
+
+    def test_collection_candidates_are_target_specific_or_incomplete(self):
+        _findings, unrelated = _dynamic(
+            '{{ ["sensor.a", "sensor.b"] '
+            '| select("is_state", "on") | list }}',
+            source_id="unrelated_collection",
+        )
+        unrelated_binding = _binding(_snapshot(dynamic=unrelated))
+        self.assertTrue(unrelated_binding["evidence_complete"])
+        self.assertTrue(unrelated_binding["execution_eligible"])
+        self.assertEqual(
+            unrelated_binding["physical_consequence"], "none"
+        )
+
+        _findings, mapped_domain = _dynamic(
+            "{{ states.sensor | map(attribute='entity_id') "
+            '| select("is_state", "on") | list }}',
+            source_id="mapped_sensor_collection",
+        )
+        mapped_binding = _binding(_snapshot(dynamic=mapped_domain))
+        self.assertTrue(mapped_binding["evidence_complete"])
+        self.assertTrue(mapped_binding["execution_eligible"])
+
+        _findings, attribute_domain = _dynamic(
+            "{{ states.sensor "
+            "| selectattr('entity_id', 'has_value') | list }}",
+            source_id="attribute_sensor_collection",
+        )
+        attribute_binding = _binding(
+            _snapshot(dynamic=attribute_domain)
+        )
+        self.assertTrue(attribute_binding["evidence_complete"])
+        self.assertTrue(attribute_binding["execution_eligible"])
+
+        forms = (
+            '{{ helper_entities | select("is_state", "on") | list }}',
+            '{{ [helper_entity] | map("states") | list }}',
+            f'{{{{ ["{TARGET}"] | select(test_name, "on") | list }}}}',
+            f'{{{{ [{{"entity_id": "{TARGET}"}}] '
+            '| selectattr("entity_id", "has_value") | list }}',
+            f'{{{{ ["{TARGET}"] '
+            '| selectattr(attribute_name, "has_value") | list }}',
+            f'{{{{ ["{TARGET}"] | map( }}}}',
+        )
+        for index, template in enumerate(forms):
+            with self.subTest(template=template):
+                findings, dynamic = _dynamic(
+                    template, source_id=f"incomplete_collection_{index}"
+                )
+                observed = _binding(_snapshot(dynamic=dynamic))
+                self.assertEqual(findings, [])
+                self.assertEqual(len(dynamic), 1)
+                self.assertFalse(
+                    dynamic[0].candidate_resolution_complete
+                )
+                self.assertFalse(observed["evidence_complete"])
+                self.assertFalse(observed["execution_eligible"])
+
+    def test_collection_candidate_and_operator_drift_changes_binding(self):
+        source_id = "collection_operator_drift"
+        _findings, before_dynamic = _dynamic(
+            f'{{{{ ["{TARGET}"] | map("states") | list }}}}',
+            source_id=source_id,
+        )
+        _findings, operator_dynamic = _dynamic(
+            f'{{{{ ["{TARGET}"] '
+            '| map("state_attr", "friendly_name") | list }}',
+            source_id=source_id,
+        )
+        _findings, candidate_dynamic = _dynamic(
+            '{{ ["sensor.a"] | map("states") | list }}',
+            source_id=source_id,
+        )
+        profile = (_profile(source_id),)
+        before = _binding(
+            _snapshot(dynamic=before_dynamic, profiles=profile)
+        )
+        operator_after = _binding(
+            _snapshot(dynamic=operator_dynamic, profiles=profile)
+        )
+        candidate_after = _binding(
+            _snapshot(dynamic=candidate_dynamic, profiles=profile)
+        )
+
+        self.assertNotEqual(
+            before["evidence_fingerprint"],
+            operator_after["evidence_fingerprint"],
+        )
+        self.assertNotEqual(
+            before["evidence_fingerprint"],
+            candidate_after["evidence_fingerprint"],
+        )
 
     def test_exact_filter_dependency_retains_consequential_profile(self):
         source_id = "exact_filter_consequence"

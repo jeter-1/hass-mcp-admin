@@ -19,9 +19,10 @@ deployed MCP server or household Home Assistant.
    label-plus-list unions, exact target inclusion/exclusion, static dependency
    preservation, consequential dependencies, unknown expressions, dynamic
    labels, malformed candidates, selector/read failure, overflow, automation
-   drift, label drift, stale evidence, exact state-read functions, filters and
-   tests, target/non-target domain collections, locks, duplicate apply,
-   response loss, and recovery.
+   drift, label drift, stale evidence, exact state-read functions, direct and
+   negated tests, finite `select`/`reject` tests, finite `map` filters,
+   target/non-target domain collections, locks, duplicate apply, response
+   loss, and recovery.
 4. Require `get_server_health` tests for REST and WebSocket connected,
    REST-only, unavailable, and unprobed Home Assistant states. The helper
    operation must use provider
@@ -47,6 +48,15 @@ The implementation may statically resolve only the reviewed finite grammar:
   `state_attr`, and `has_value` filters;
 - exact entity operands used with reviewed Home Assistant `is_state`,
   `is_state_attr`, and `has_value` tests;
+- finite exact entity collections used with reviewed `is_state`,
+  `is_state_attr`, or `has_value` tests through `select`/`reject`;
+- exact-domain state collections used through `selectattr`/`rejectattr` when
+  the exact tested attribute is `entity_id`; other attribute collections stay
+  non-conclusive unless their candidates are otherwise finitely proven;
+- finite exact entity collections used with reviewed `states`, `state_attr`,
+  or `has_value` filters through `map`;
+- direct `is not <reviewed-test>` forms, which retain the same entity
+  dependency as the positive test;
 - `states.<domain>` collections as exact domain evidence, with the target
   domain remaining relevant and a proven non-target domain excluded;
 - literal `label_entities('exact-label')` membership from bounded entity and
@@ -56,11 +66,12 @@ The implementation may statically resolve only the reviewed finite grammar:
 The resolver must not render templates. Dynamic/computed label names, arbitrary
 calls, unreviewed filters/tests, unrestricted iteration, custom functions,
 macros, invalid entity IDs, read failures, partial membership, and any exceeded
-bound remain non-conclusive. A reviewed entity-read form that is not exact or
-finitely resolved must emit incomplete evidence; it must never become zero
-evidence. The plan must contain bounded deterministic candidate, selector,
-membership, and expression evidence. Material changes must alter the dependency
-fingerprint checked at final preflight.
+bound remain non-conclusive. A reviewed direct or collection entity-read form
+whose collection, operator, or candidate set is not exact or finitely resolved
+must emit incomplete evidence; it must never become zero evidence. The plan
+must contain bounded deterministic candidate, operator, selector, membership,
+and expression evidence. Material candidate or operator changes must alter the
+dependency fingerprint checked at final preflight.
 
 An exact target absent from complete candidates is excluded only for that
 target. An exact target present in the candidates remains a true dependency and

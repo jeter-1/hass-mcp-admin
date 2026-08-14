@@ -518,6 +518,17 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
             f'{{{{ "{helper}" is is_state("on") }}}}',
             f'{{{{ "{helper}" is is_state_attr("mode", "on") }}}}',
             f'{{{{ "{helper}" is has_value }}}}',
+            f'{{{{ "{helper}" is not is_state("off") }}}}',
+            f'{{{{ "{helper}" is not is_state_attr("mode", "off") }}}}',
+            f'{{{{ "{helper}" is not has_value }}}}',
+            f'{{{{ ["{helper}"] | select("is_state", "on") | list }}}}',
+            f'{{{{ ["{helper}"] '
+            '| select("is_state_attr", "mode", "on") | list }}',
+            f'{{{{ ["{helper}"] | select("has_value") | list }}}}',
+            f'{{{{ ["{helper}"] | map("states") | list }}}}',
+            f'{{{{ ["{helper}"] '
+            '| map("state_attr", "friendly_name") | list }}',
+            f'{{{{ ["{helper}"] | map("has_value") | list }}}}',
         )
         for action in ("create", "update"):
             for index, template in enumerate(forms):
@@ -574,6 +585,61 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
                     for item in operation_lock_requests(prepared)
                 }
                 self.assertEqual(dynamic_key in locks, expects_dynamic_lock)
+
+        collection_cases = (
+            (
+                '{{ ["sensor.a"] | select("is_state", "on") | list }}',
+                False,
+            ),
+            (
+                "{{ states.sensor | map(attribute='entity_id') "
+                '| select("is_state", "on") | list }}',
+                False,
+            ),
+            (
+                "{{ states.sensor "
+                "| rejectattr('entity_id', 'has_value') | list }}",
+                False,
+            ),
+            (
+                '{{ helper_entities '
+                '| select("is_state", "on") | list }}',
+                True,
+            ),
+            (
+                f'{{{{ ["{helper}"] '
+                '| select(test_name, "on") | list }}',
+                True,
+            ),
+            (
+                f'{{{{ [{{"entity_id": "{helper}"}}] '
+                '| selectattr("entity_id", "has_value") | list }}',
+                True,
+            ),
+            (f'{{{{ ["{helper}"] | map( }}}}', True),
+        )
+        for template, expects_dynamic_lock in collection_cases:
+            with self.subTest(template=template):
+                proposed = valid_config("automation")
+                proposed["condition"] = [
+                    {
+                        "condition": "template",
+                        "value_template": template,
+                    }
+                ]
+                prepared = await self._prepared(
+                    "automation",
+                    "update",
+                    current_config=base,
+                    proposed_config=proposed,
+                )
+                locks = {
+                    item.key
+                    for item in operation_lock_requests(prepared)
+                }
+                self.assertEqual(
+                    dynamic_key in locks, expects_dynamic_lock
+                )
 
         ambiguous_expressions = (
             "'sensor.' ~ room if use_sensor else helper_entity",

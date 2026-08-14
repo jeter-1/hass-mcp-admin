@@ -34,6 +34,23 @@ ENTITY_TEMPLATE_FILTERS = frozenset(
 ENTITY_TEMPLATE_TESTS = frozenset(
     {"is_state", "is_state_attr", "has_value"}
 )
+ENTITY_COLLECTION_TEST_FILTERS = frozenset({"select", "reject"})
+ENTITY_COLLECTION_ATTRIBUTE_TEST_FILTERS = frozenset(
+    {"selectattr", "rejectattr"}
+)
+ENTITY_COLLECTION_MAP_FILTER = "map"
+COLLECTION_CANDIDATE_PRESERVING_FILTERS = frozenset(
+    {
+        "select",
+        "reject",
+        "selectattr",
+        "rejectattr",
+        "list",
+        "unique",
+        "sort",
+        "reverse",
+    }
+)
 MAX_TEMPLATE_SEGMENT_CHARS = 65_536
 MAX_TEMPLATE_ARGUMENT_CHARS = 4_096
 MAX_LITERAL_ARGUMENTS = 100
@@ -579,7 +596,9 @@ def _scan_template_entity_operators(
     """
 
     exact: set[str] = set()
-    unresolved: list[CandidateResolution] = []
+    unresolved = _scan_template_collection_entity_operators(
+        value, candidate_context=candidate_context
+    )
     cursor = 0
     while cursor < len(value):
         char = value[cursor]
@@ -621,6 +640,19 @@ def _scan_template_entity_operators(
                 value[name_end].isalnum() or value[name_end] == "_"
             ):
                 name_end += 1
+            if value[name_start:name_end] == "not":
+                name_start = name_end
+                while (
+                    name_start < len(value)
+                    and value[name_start].isspace()
+                ):
+                    name_start += 1
+                name_end = name_start
+                while name_end < len(value) and (
+                    value[name_end].isalnum()
+                    or value[name_end] == "_"
+                ):
+                    name_end += 1
             if value[name_start:name_end] in ENTITY_TEMPLATE_TESTS:
                 _project_template_operator_operand(
                     value[:start],
@@ -632,6 +664,234 @@ def _scan_template_entity_operators(
             continue
         cursor += 1
     return exact, unresolved
+
+
+def _scan_template_collection_entity_operators(
+    value: str,
+    *,
+    candidate_context: BoundedTemplateContext | None,
+) -> list[CandidateResolution]:
+    """Project bounded candidates used by reviewed collection operators.
+
+    Home Assistant exposes state-aware filters and tests through Jinja's
+    ``map``/``select``/``reject`` collection operators.  These operators receive
+    their entity candidates from the collection to the left of the pipeline,
+    not from the quoted filter/test name.  Only a finite literal/context value
+    or an exact ``states.<domain>`` collection is conclusive.  Any ambiguous
+    collection or operator remains explicit incomplete evidence.
+    """
+
+    parts = _split_top_level_pipeline(value)
+    if len(parts) < 2:
+        return []
+    base_expression = parts[0]
+    prior_stages: list[str] = []
+    for stage in parts[1:]:
+        parsed = _parse_pipeline_stage(stage)
+        if parsed is None:
+            prior_stages.append(stage)
+            continue
+        filter_name, arguments = parsed
+        operator_name: str | None = None
+        reviewed = False
+        operator_unresolved = False
+        if filter_name in ENTITY_COLLECTION_TEST_FILTERS:
+            if arguments is None:
+                operator_unresolved = True
+            elif arguments:
+                operator_name = _literal_operator_name(arguments[0])
+                reviewed = operator_name in ENTITY_TEMPLATE_TESTS
+                operator_unresolved = operator_name is None
+        elif filter_name in ENTITY_COLLECTION_ATTRIBUTE_TEST_FILTERS:
+            if arguments is None:
+                operator_unresolved = True
+            elif len(arguments) >= 2:
+                attribute_name = _literal_operator_name(arguments[0])
+                operator_name = _literal_operator_name(arguments[1])
+                reviewed = bool(
+                    attribute_name == "entity_id"
+                    and operator_name in ENTITY_TEMPLATE_TESTS
+                )
+                operator_unresolved = bool(
+                    operator_name is None
+                    or (
+                        operator_name in ENTITY_TEMPLATE_TESTS
+                        and attribute_name != "entity_id"
+                    )
+                )
+        elif filter_name == ENTITY_COLLECTION_MAP_FILTER:
+            if arguments is None:
+                operator_unresolved = True
+            elif arguments:
+                operator_name = _literal_operator_name(arguments[0])
+                reviewed = operator_name in ENTITY_TEMPLATE_FILTERS
+                operator_unresolved = bool(
+                    operator_name is None
+                    and not re.match(
+                        r"\s*attribute\s*=", arguments[0]
+                    )
+                )
+
+        if reviewed or operator_unresolved:
+            if not _pipeline_preserves_collection_candidates(prior_stages):
+                resolution = CandidateResolution()
+            elif operator_unresolved:
+                resolution = CandidateResolution()
+            else:
+                resolution = _resolve_collection_candidate_expression(
+                    base_expression, candidate_context
+                )
+            kind_operator = operator_name or "unresolved_operator"
+            return [
+                replace(
+                    resolution,
+                    kind=(
+                        f"collection_{filter_name}_{kind_operator}_"
+                        f"{resolution.kind}"
+                    ),
+                )
+            ]
+        prior_stages.append(stage)
+    return []
+
+
+def _split_top_level_pipeline(value: str) -> list[str]:
+    parts: list[str] = []
+    start = 0
+    stack: list[str] = []
+    pairs = {"(": ")", "[": "]", "{": "}"}
+    cursor = 0
+    while cursor < len(value):
+        char = value[cursor]
+        if char in {"'", '"'}:
+            cursor = _skip_quoted(value, cursor)
+            continue
+        if char in pairs:
+            stack.append(pairs[char])
+        elif stack and char == stack[-1]:
+            stack.pop()
+        elif char == "|" and not stack:
+            parts.append(value[start:cursor].strip())
+            start = cursor + 1
+        cursor += 1
+    parts.append(value[start:].strip())
+    return parts
+
+
+def _parse_pipeline_stage(
+    stage: str,
+) -> tuple[str, list[str] | None] | None:
+    match = re.match(r"\s*([A-Za-z_][A-Za-z0-9_]*)", stage)
+    if match is None:
+        return None
+    name = match.group(1)
+    cursor = match.end()
+    while cursor < len(stage) and stage[cursor].isspace():
+        cursor += 1
+    if cursor == len(stage):
+        return name, []
+    if stage[cursor] != "(":
+        return name, None
+    inner, end = _extract_balanced(stage, cursor, "(", ")")
+    if inner is None or stage[end:].strip():
+        return name, None
+    return name, _split_top_level_args(inner)
+
+
+def _literal_operator_name(argument: str) -> str | None:
+    if len(argument) > MAX_TEMPLATE_ARGUMENT_CHARS:
+        return None
+    try:
+        parsed = ast.literal_eval(argument.strip())
+    except (RecursionError, SyntaxError, ValueError):
+        return None
+    if not isinstance(parsed, str):
+        return None
+    return parsed
+
+
+def _pipeline_preserves_collection_candidates(
+    stages: list[str],
+) -> bool:
+    for stage in stages:
+        parsed = _parse_pipeline_stage(stage)
+        if parsed is None:
+            return False
+        name, arguments = parsed
+        if name == ENTITY_COLLECTION_MAP_FILTER:
+            if _map_stage_preserves_entity_candidates(arguments):
+                continue
+            return False
+        if name not in COLLECTION_CANDIDATE_PRESERVING_FILTERS:
+            return False
+        if arguments is None:
+            return False
+    return True
+
+
+def _map_stage_preserves_entity_candidates(
+    arguments: list[str] | None,
+) -> bool:
+    if arguments is None or len(arguments) != 1:
+        return False
+    return bool(
+        re.fullmatch(
+            r"\s*attribute\s*=\s*(['\"])entity_id\1\s*",
+            arguments[0],
+        )
+    )
+
+
+def _resolve_collection_candidate_expression(
+    expression: str,
+    candidate_context: BoundedTemplateContext | None,
+) -> CandidateResolution:
+    bounded = expression.strip()
+    if not bounded:
+        return CandidateResolution()
+    if len(bounded) > MAX_TEMPLATE_ARGUMENT_CHARS:
+        return CandidateResolution(
+            complete=False,
+            limit_exceeded=True,
+            kind="resolution_limit",
+        )
+    literals = _literal_string_arguments(bounded)
+    if literals is not None:
+        entity_ids = tuple(
+            sorted({item for item in literals if valid_entity_id(item)})
+        )
+        complete = bool(entity_ids and len(entity_ids) == len(literals))
+        return CandidateResolution(
+            entity_ids=entity_ids,
+            possible_entity_domains=(
+                tuple(
+                    sorted(
+                        {item.split(".", 1)[0] for item in entity_ids}
+                    )
+                )
+                if complete
+                else None
+            ),
+            complete=complete,
+            kind=(
+                "finite_collection_candidates"
+                if complete
+                else "unresolved"
+            ),
+        )
+    domain_match = re.fullmatch(r"states\.([a-z0-9_]+)", bounded)
+    if domain_match is not None:
+        domain = domain_match.group(1)
+        if ENTITY_ID_COMPONENT.fullmatch(domain) and any(
+            character.isalpha() for character in domain
+        ):
+            return CandidateResolution(
+                possible_entity_domains=(domain,),
+                complete=True,
+                kind="proven_domain_collection",
+            )
+        return CandidateResolution()
+    return _resolve_dynamic_argument(bounded, candidate_context)
 
 
 def _project_template_operator_operand(
@@ -694,7 +954,7 @@ def _is_filter_or_test_identifier(value: str, start: int) -> bool:
     prefix = value[:start].rstrip()
     if prefix.endswith("|"):
         return True
-    return bool(re.search(r"\bis\s*$", prefix))
+    return bool(re.search(r"\bis(?:\s+not)?\s*$", prefix))
 
 
 def _resolve_dynamic_argument(
