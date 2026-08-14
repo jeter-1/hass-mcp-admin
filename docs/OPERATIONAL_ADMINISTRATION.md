@@ -2,6 +2,12 @@
 
 Version: `2.2.0-beta.15`
 
+HAMCP-089 extends the current source with a fifth proposal path for one exact
+governed `input_boolean` state. Its direct-provider, approval, dispatch,
+readback, no-redispatch, and reverse-change boundaries are specified in
+[`HAMCP_089_EXACT_HELPER_STATE.md`](HAMCP_089_EXACT_HELPER_STATE.md). This does
+not alter the four upstream operational-provider contracts documented below.
+
 Beta 15 binds exact 8.0.0 add-on detail to its reviewed structured lifecycle
 response envelope and projects only the identity needed for restart planning.
 Beta 14's model-aware catalog validator remains authoritative. Supported

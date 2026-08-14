@@ -103,7 +103,7 @@ class Beta29ReleaseBoundaryTests(unittest.TestCase):
             EXACT_CONTRACTS["8.1.1"].compatibility_entry,
             "ha-mcp-v8.1.1-e1d76a6e",
         )
-        self.assertEqual(len(BETA_NATIVE_CAPABILITIES), 25)
+        self.assertEqual(len(BETA_NATIVE_CAPABILITIES), 26)
         dashboard = {
             item["tool"]: item for item in BETA_NATIVE_CAPABILITIES
         }["create_dashboard_update_plan"]

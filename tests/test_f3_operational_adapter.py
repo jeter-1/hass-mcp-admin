@@ -24,11 +24,12 @@ from ha_mcp_engineering.f3.operational_models import (
     CONTROLLED_RELOAD,
     CREATE_FULL_BACKUP,
     OPERATIONAL_PREPARED_AUTHORITY_MODEL,
-    OPERATIONAL_PROVIDER_CONTRACT_MODEL,
+    PROVIDER_CONTRACT_MODELS,
     PROVIDER_OPERATIONS,
     RELOAD_PROVIDER_TARGETS,
     RESTART_ADDON,
     RESTART_HOME_ASSISTANT,
+    SET_INPUT_BOOLEAN_STATE,
     SUPPORTED_OPERATIONS,
     OperationalPreparationRequest,
     canonical_json,
@@ -73,7 +74,10 @@ class OperationalCapabilityAndPreparationTests(unittest.IsolatedAsyncioTestCase)
             with self.subTest(operation=operation):
                 self.assertEqual(capability.capability_id, CAPABILITY_IDENTITIES[operation])
                 self.assertEqual(capability.provider_operation, PROVIDER_OPERATIONS[operation])
-                self.assertEqual(capability.provider_contract_model, OPERATIONAL_PROVIDER_CONTRACT_MODEL)
+                self.assertEqual(
+                    capability.provider_contract_model,
+                    PROVIDER_CONTRACT_MODELS[operation],
+                )
                 self.assertFalse(capability.rollback_supported)
                 self.assertTrue(capability.recovery_supported)
 
@@ -130,6 +134,11 @@ class OperationalCapabilityAndPreparationTests(unittest.IsolatedAsyncioTestCase)
             CONTROLLED_RELOAD: {"target": "automations"},
             RESTART_ADDON: {"slug": "local_example", "action": "restart"},
             RESTART_HOME_ASSISTANT: {"confirm": True},
+            SET_INPUT_BOOLEAN_STATE: {
+                "domain": "input_boolean",
+                "service": "turn_on",
+                "target": {"entity_id": "input_boolean.synthetic_exact"},
+            },
         }
         prohibited = {
             "restore",

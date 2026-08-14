@@ -318,6 +318,7 @@ class F3ContractDeclarationTests(unittest.TestCase):
                 "controlled_reload",
                 "restart_addon",
                 "restart_home_assistant",
+                "set_input_boolean_state",
             },
         )
         self.assertEqual(
@@ -340,7 +341,7 @@ class F3ContractDeclarationTests(unittest.TestCase):
                 "superseded",
             },
         )
-        self.assertEqual(len(registered_tools(get_registered_server())), 50)
+        self.assertEqual(len(registered_tools(get_registered_server())), 51)
 
     def test_canonical_contract_has_only_standard_library_imports(self):
         contract = (

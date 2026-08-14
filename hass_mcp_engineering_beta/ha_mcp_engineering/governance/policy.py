@@ -379,6 +379,15 @@ def _single_plan_policy(
                 ("home_assistant_restart_elevated_policy",),
             ),
         )
+    if plan.operation == ChangeOperation.SET_INPUT_BOOLEAN_STATE:
+        return (
+            OperationPolicyClassification(
+                ApprovalPolicyClass.STANDARD_ADMIN,
+                RiskDelta.LOW,
+                PhysicalConsequence.INDIRECT,
+                ("exact_input_boolean_state_standard_policy",),
+            ),
+        )
     if plan.operation == ChangeOperation.UPDATE_DASHBOARD:
         elevated = plan.risk.level is RiskLevel.HIGH
         return (

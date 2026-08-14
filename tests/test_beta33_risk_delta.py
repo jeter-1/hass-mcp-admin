@@ -542,7 +542,7 @@ class Beta33ReleaseBoundaryTests(unittest.TestCase):
         self.assert_beta33_documents_resolve_exactly()
 
     def test_scope_adds_no_tool_provider_or_fallback(self):
-        self.assertEqual(len(BETA_NATIVE_CAPABILITIES), 25)
+        self.assertEqual(len(BETA_NATIVE_CAPABILITIES), 26)
         source = (
             BETA_DIR
             / "ha_mcp_engineering"

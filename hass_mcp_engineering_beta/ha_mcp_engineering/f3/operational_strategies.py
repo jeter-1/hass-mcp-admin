@@ -16,15 +16,21 @@ from ..governance.operational_lifecycle import (
     LifecycleGatewayError,
     OperationalLifecycleGateway,
 )
+from ..governance.helper_state import (
+    HelperStateGateway,
+    HelperStateGatewayError,
+)
 from .operational_models import (
     CAPABILITY_IDENTITIES,
     CONTROLLED_RELOAD,
     CREATE_FULL_BACKUP,
     EVIDENCE_DEADLINE_CLASSES,
-    OPERATIONAL_PROVIDER_CONTRACT_MODEL,
+    PROVIDER_CONTRACT_MODELS,
+    PROVIDER_IDENTITIES,
     PROVIDER_OPERATIONS,
     RESTART_ADDON,
     RESTART_HOME_ASSISTANT,
+    SET_INPUT_BOOLEAN_STATE,
     TARGET_CLASSES,
     VERIFICATION_MODELS,
     OperationalCapabilityDescriptor,
@@ -74,6 +80,16 @@ LIFECYCLE_PROVIDER_FIELDS = COMMON_PROVIDER_FIELDS + (
     "lifecycle_addon_response_contract_model",
     "lifecycle_addon_response_envelope_variant",
     "tool_contract_fingerprints",
+)
+HELPER_STATE_PROVIDER_FIELDS = (
+    "provider",
+    "provider_contract_model",
+    "provider_operation",
+    "transport",
+    "readback_transport",
+    "argument_constraints",
+    "fallback",
+    "fallback_occurred",
 )
 
 
@@ -126,12 +142,8 @@ def _capability(
         exact_provider_contract_required=True,
         capability_id=CAPABILITY_IDENTITIES[operation],
         target_class=TARGET_CLASSES[operation],
-        provider=(
-            "upstream_operational_backup"
-            if operation == CREATE_FULL_BACKUP
-            else "upstream_operational_lifecycle"
-        ),
-        provider_contract_model=OPERATIONAL_PROVIDER_CONTRACT_MODEL,
+        provider=PROVIDER_IDENTITIES[operation],
+        provider_contract_model=PROVIDER_CONTRACT_MODELS[operation],
         provider_operation=PROVIDER_OPERATIONS[operation],
         argument_surface=argument_surface,
         verification_contract_model=VERIFICATION_MODELS[operation],
@@ -717,10 +729,128 @@ class HomeAssistantRestartOperationStrategy(OperationalStrategy):
         )
 
 
+class InputBooleanStateOperationStrategy(OperationalStrategy):
+    operation = SET_INPUT_BOOLEAN_STATE
+    capability = _capability(
+        SET_INPUT_BOOLEAN_STATE,
+        argument_surface=(
+            "domain=input_boolean",
+            "service=turn_on|turn_off",
+            "target=exact_entity_id",
+        ),
+        limitations=(
+            "input_boolean_only",
+            "toggle_unavailable",
+            "separate_reverse_plan_required",
+        ),
+    )
+
+    def __init__(
+        self,
+        gateway: HelperStateGateway,
+        *,
+        metrics: OperationalMetrics,
+    ) -> None:
+        super().__init__(metrics=metrics)
+        self.gateway = gateway
+
+    async def preflight_evidence(self, prepared):
+        self.metrics.increment(self.operation, "state_reads")
+        try:
+            fresh = await self.gateway.planning_evidence(
+                prepared.target.target_id
+            )
+        except HelperStateGatewayError as exc:
+            return False, exc.category, ("entity_state",), None
+        provider = fresh.get("provider")
+        baseline = fresh.get("baseline")
+        if not isinstance(provider, dict) or not _provider_matches(
+            prepared.provider_evidence,
+            provider,
+            HELPER_STATE_PROVIDER_FIELDS,
+        ):
+            return False, "exact_contract_mismatch", ("provider_contract",), fresh
+        if not isinstance(baseline, dict):
+            return False, "invalid_provider_response", ("entity_state",), fresh
+        if baseline.get("state") == prepared.requested_name:
+            return False, "already_desired", (), fresh
+        if baseline != prepared.baseline:
+            return False, "stale_baseline", ("entity_state",), fresh
+        return True, "eligible", (), fresh
+
+    async def dispatch(self, prepared, *, before_dispatch):
+        try:
+            result = await self.gateway.set_state(
+                prepared.target.target_id,
+                prepared.requested_name,
+                before_dispatch=before_dispatch,
+            )
+        except HelperStateGatewayError as exc:
+            if not exc.dispatched:
+                raise
+            confirmed = exc.category == "provider_rejected"
+            return StrategyDispatch(
+                response_received=confirmed,
+                response_evidence_hash=stable_hash(
+                    {"category": exc.category, "confirmed": confirmed}
+                ),
+                confirmed_failure=confirmed,
+                diagnostic_code=(
+                    "provider_rejection_confirmed"
+                    if confirmed
+                    else "provider_response_lost"
+                ),
+            )
+        return StrategyDispatch(
+            response_received=result.provider_response_received,
+            response_evidence_hash=stable_hash(
+                {
+                    "provider_response_received": (
+                        result.provider_response_received
+                    )
+                }
+            ),
+        )
+
+    async def observe(
+        self,
+        prepared,
+        *,
+        provider_response_received,
+        recovering,
+        evidence,
+    ):
+        del provider_response_received, recovering, evidence
+        self.metrics.increment(self.operation, "state_reads")
+        try:
+            state = await self.gateway.read_state(prepared.target.target_id)
+        except HelperStateGatewayError as exc:
+            status = "failed" if exc.category == "entity_not_found" else "pending"
+            return StrategyObservation(
+                status=status,
+                mismatch_fields=("entity_state",),
+                evidence_hash=stable_hash({"category": exc.category}),
+                diagnostic_codes=(f"helper_state_{status}",),
+                provider_reachable=(False if status == "pending" else True),
+                target_reachable=(False if status == "failed" else None),
+            )
+        verified = state.get("state") == prepared.requested_name
+        status = "verified" if verified else "failed"
+        return StrategyObservation(
+            status=status,
+            mismatch_fields=() if verified else ("entity_state",),
+            evidence_hash=stable_hash(state),
+            diagnostic_codes=(f"helper_state_{status}",),
+            provider_reachable=True,
+            target_reachable=True,
+        )
+
+
 def default_strategies(
     *,
     backup_gateway: BackupAdministrationGateway,
     lifecycle_gateway: OperationalLifecycleGateway,
+    helper_state_gateway: HelperStateGateway,
     metrics: OperationalMetrics,
 ) -> dict[str, OperationalStrategy]:
     strategies: tuple[OperationalStrategy, ...] = (
@@ -735,6 +865,9 @@ def default_strategies(
         ),
         HomeAssistantRestartOperationStrategy(
             lifecycle_gateway, metrics=metrics
+        ),
+        InputBooleanStateOperationStrategy(
+            helper_state_gateway, metrics=metrics
         ),
     )
     return {strategy.operation: strategy for strategy in strategies}

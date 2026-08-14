@@ -181,6 +181,7 @@ class RC1PublicContractTests(unittest.TestCase):
                         *F1_ADDITIVE_TOOL_NAMES,
                         "run_held_read_canary",
                         "create_dashboard_update_plan",
+                        "create_helper_state_plan",
                     )
                 )
             ),
@@ -422,7 +423,7 @@ class RC1PublicContractTests(unittest.TestCase):
             BETA26_DIRECT_POLICY_SHA256,
         )
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(classifications), 50)
+        self.assertEqual(len(classifications), 51)
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

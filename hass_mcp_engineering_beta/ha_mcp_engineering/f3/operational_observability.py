@@ -64,6 +64,7 @@ OPERATION_COUNTERS = {
             "terminal_reconciliations",
         }
     ),
+    "set_input_boolean_state": frozenset({"state_reads"}),
 }
 
 _SAFE_CODE = re.compile(r"^[a-z][a-z0-9_]{0,95}$")

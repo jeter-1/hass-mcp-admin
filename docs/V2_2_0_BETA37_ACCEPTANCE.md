@@ -1,0 +1,104 @@
+# Engineering 2.2.0-beta.37 acceptance
+
+This procedure applies only after independent review, protected merge,
+promotion, publication, separately authorized deployment, and separately
+authorized live mutation. Source validation must not access the deployed MCP or
+Home Assistant. Use a dedicated disposable `input_boolean`; never use a helper
+that controls safety-critical or broad household behavior.
+
+## Pre-deployment gates
+
+1. Confirm the accepted source baseline is the Beta 36 tag commit, the
+   advertised source before promotion remains `2.2.0-beta.36`, and
+   `.release/next-version` stages only `2.2.0-beta.37`.
+2. Confirm stable v1.1.2, workflows, container build inputs, add-on deployment
+   configuration, provider compatibility artifacts, and immutable upstream
+   admission policy are unchanged.
+3. Require the focused HAMCP-089 positive, no-change, stale-state,
+   response-loss, verification-failure, invalid-target, routing, metadata,
+   schema, audit, persistence, recovery, and no-fallback tests.
+4. Require the complete unit, Fast, Full, Evidence, dependency, vulnerability,
+   YAML, PowerShell, secret, whitespace, packaging, exact-image, and stable-v1
+   gates applicable to the promotion candidate.
+5. Confirm source reports 51 static tools: 25 canonical and 26
+   Engineering-native. When all reviewed reads are admitted, expect 77 total;
+   otherwise require truthful per-tool admission and the exact lower count.
+6. Confirm no test or source path can dispatch `toggle`, a non-`input_boolean`
+   target, arbitrary service data, generic service forwarding, ha-mcp write
+   delegation, or fallback.
+
+## Post-deployment read-only entry gate
+
+Before any live mutation, confirm through read-only runtime inspection:
+
+- Engineering identifies exactly as `2.2.0-beta.37` and build/image provenance
+  matches the approved artifact;
+- the runtime catalog contains `create_helper_state_plan` with exact
+  `entity_id`, `desired_state`, and `expiration_minutes` inputs;
+- its annotations identify a proposal-only non-read-only tool, while
+  `apply_change_plan` remains the only execution route;
+- capability metadata identifies `direct_home_assistant_state`, contract
+  `direct-ha-exact-input-boolean-v1`, no fallback, low risk, external approval,
+  exact readback, and separate reverse-plan recovery;
+- Home Assistant connectivity, governance storage, external approval, F3,
+  audit, and provider health are available; and
+- the actual static/delegated counts and catalog fingerprint match the approved
+  release contract or are truthfully explained by per-tool upstream admission.
+
+Stop before mutation on a version, build, schema, provider, approval, fallback,
+health, or catalog mismatch.
+
+## Approved live helper test
+
+Josh must separately approve the exact test helper and both state changes.
+Record the helper's dependencies and confirm it has no critical physical
+consequence.
+
+1. Read and record the exact helper `entity_id`, current `on`/`off` state,
+   `last_changed`, and relevant automation dependencies.
+2. Choose the opposite explicit desired state and create one
+   `create_helper_state_plan` proposal. Require zero dispatch during planning,
+   the exact baseline/provider evidence, low-risk classification, and
+   `awaiting_approval`.
+3. Review and approve the exact plan hash through authenticated Ingress. The
+   known Android cold-start body-navigation defect is outside Beta 37; do not
+   treat notification navigation as this capability's acceptance criterion.
+4. Apply once. Require one durable intent, exactly one fixed
+   `input_boolean.turn_on` or `input_boolean.turn_off` dispatch, authoritative
+   exact-state readback, terminal `succeeded_verified`, and zero fallback.
+5. Apply the same plan again. Require `already_applied`, zero redispatch, and
+   the same durable task identity.
+6. Create a fresh proposal for the original state, approve it separately, apply
+   it once, and require exact readback of the recorded pre-state. This is
+   cleanup through a new governed change, not automatic rollback.
+
+If the initial helper is already in the requested state, require a verified
+no-change response, no plan, no approval, and no dispatch. To test final
+preflight no-op separately, an authorized operator may place the disposable
+helper into the desired state after approval but before apply; require verified
+success, zero dispatch, and unconsumed approval.
+
+## Failure and truthfulness acceptance
+
+- Baseline drift to a state other than the desired state must fail before
+  approval consumption or dispatch.
+- Confirmed provider rejection must be reported as post-dispatch failure.
+- Lost provider response may succeed only when independent readback observes
+  the exact desired state; it must never trigger redispatch.
+- A wrong readback must be `failed_post_dispatch`, not success or rollback.
+- Readback unavailability must remain pending or fail according to its bounded
+  evidence deadline without blind retry of the mutation.
+- Audit and health must preserve direct-provider attribution, dispatch/response
+  truth, verification result, request correlation, and zero fallback without
+  retaining secrets or unbounded Home Assistant content.
+
+## Operational boundaries
+
+- Do not use a physical device, lock, cover, alarm, climate entity, ordinary
+  switch, light, or safety-relevant helper.
+- Do not use `toggle`; both the forward and cleanup state must be explicit.
+- Do not change dashboards, dashboard metadata, automations, notification
+  navigation, integrations, registries, credentials, deployment configuration,
+  or provider policy during this acceptance.
+- Do not merge, promote, publish, deploy, restart, or execute the live helper
+  test without the separate authorization required for that action.

@@ -33,6 +33,7 @@ _PROPOSAL_ANNOTATIONS = ToolAnnotations(
 _PROPOSAL_TOOLS = {
     "create_backup_plan",
     "create_reload_plan",
+    "create_helper_state_plan",
     "create_addon_restart_plan",
     "create_home_assistant_restart_plan",
     "create_change_plan",

@@ -12,6 +12,7 @@ from .operational_models import (
     CREATE_FULL_BACKUP,
     RESTART_ADDON,
     RESTART_HOME_ASSISTANT,
+    SET_INPUT_BOOLEAN_STATE,
     PreparedOperationalOperation,
 )
 
@@ -65,7 +66,6 @@ class OperationalLockSetCalculator:
         self, operation: PreparedOperationalOperation
     ) -> tuple[LockRequest, ...]:
         operation.validate()
-        provider_key = f"addon:{operation.authoritative_provider_slug}"
         requests: list[LockRequest] = [
             LockRequest(
                 key="home_assistant:core",
@@ -81,13 +81,16 @@ class OperationalLockSetCalculator:
                     else "home_assistant_availability_dependency",
                 ),
             ),
-            LockRequest(
-                key=provider_key,
-                scopes=(LockScope.PROVIDER,),
-                mode=LockMode.SHARED,
-                reason_codes=("upstream_provider_dependency",),
-            ),
         ]
+        if operation.operation != SET_INPUT_BOOLEAN_STATE:
+            requests.append(
+                LockRequest(
+                    key=f"addon:{operation.authoritative_provider_slug}",
+                    scopes=(LockScope.PROVIDER,),
+                    mode=LockMode.SHARED,
+                    reason_codes=("upstream_provider_dependency",),
+                )
+            )
         if operation.operation == CREATE_FULL_BACKUP:
             requests.append(
                 LockRequest(
@@ -113,6 +116,15 @@ class OperationalLockSetCalculator:
                     scopes=(LockScope.RESOURCE,),
                     mode=LockMode.EXCLUSIVE,
                     reason_codes=("installed_addon_restart",),
+                )
+            )
+        elif operation.operation == SET_INPUT_BOOLEAN_STATE:
+            requests.append(
+                LockRequest(
+                    key=f"input_boolean:{operation.target.target_id}",
+                    scopes=(LockScope.RESOURCE,),
+                    mode=LockMode.EXCLUSIVE,
+                    reason_codes=("exact_input_boolean_state_mutation",),
                 )
             )
         elif operation.operation != RESTART_HOME_ASSISTANT:

@@ -82,7 +82,7 @@ from ha_mcp_engineering.version import SERVER_VERSION  # noqa: E402
 from ha_mcp_engineering.request_context import current_request_id  # noqa: E402
 
 
-EXPECTED_ENGINEERING_BASELINE_COUNT = 50
+EXPECTED_ENGINEERING_BASELINE_COUNT = 51
 ACCEPTANCE_TIMEOUT_SECONDS = 120
 MAX_DIAGNOSTIC_ITEMS = 32
 MAX_FAILURE_MESSAGE_CHARS = 512

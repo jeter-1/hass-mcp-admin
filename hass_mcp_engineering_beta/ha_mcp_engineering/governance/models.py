@@ -35,6 +35,7 @@ class ChangeOperation(str, Enum):
     CONTROLLED_RELOAD = "controlled_reload"
     RESTART_ADDON = "restart_addon"
     RESTART_HOME_ASSISTANT = "restart_home_assistant"
+    SET_INPUT_BOOLEAN_STATE = "set_input_boolean_state"
     UPDATE_DASHBOARD = "update_dashboard"
 
 

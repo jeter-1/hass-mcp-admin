@@ -18,6 +18,7 @@ from .historical_policy import (
 from .operational_lifecycle import OperationalLifecycleGateway
 from .resources import ConfigurationResourceGateway
 from .operational import BackupAdministrationGateway
+from .helper_state import HelperStateGateway
 from .service import AutomationGateway, ChangeGovernanceService
 from .approval_notifications import ApprovalNotificationManager
 from .storage import ChangePlanRepository, ChangePlanStorageError
@@ -137,6 +138,9 @@ class GovernanceRuntime:
             resource_gateway = ConfigurationResourceGateway(
                 rest_client, websocket_client
             )
+            helper_state_gateway = HelperStateGateway(
+                rest_client, websocket_client
+            )
             approval_notifications = ApprovalNotificationManager(
                 rest_client,
                 audit,
@@ -153,6 +157,7 @@ class GovernanceRuntime:
                 sensitive_values=(settings.access_secret, settings.ha_token),
                 operational_gateway=operational_gateway,
                 lifecycle_gateway=lifecycle_gateway,
+                helper_state_gateway=helper_state_gateway,
                 task_repository=task_repository,
                 dashboard_gateway=dashboard_gateway,
                 provider_identity_reader=provider_identity_reader,
@@ -166,6 +171,7 @@ class GovernanceRuntime:
                 configuration_gateway=resource_gateway,
                 backup_gateway=operational_gateway,
                 lifecycle_gateway=lifecycle_gateway,
+                helper_state_gateway=helper_state_gateway,
                 dashboard_gateway=dashboard_gateway,
                 provider_identity_reader=provider_identity_reader,
                 retention_days=settings.governance_retention_days,
@@ -205,6 +211,7 @@ class GovernanceRuntime:
                 "controlled_reload",
                 "restart_addon",
                 "restart_home_assistant",
+                "set_input_boolean_state",
             )
             unavailable_operation = {
                 "plans_created": 0,

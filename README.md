@@ -107,10 +107,10 @@ Current tools:
 | Blueprints | `list_blueprints`, `get_blueprint` |
 | State | `get_entity`, `search_entities` |
 | Registries | `list_areas`, `list_devices`, `list_entity_registry`, `search_services`, `list_services` |
-| Operations | `get_audit_log`; proposal-only `create_backup_plan`, `create_reload_plan`, `create_addon_restart_plan`, `create_home_assistant_restart_plan`; durable `get_execution_task`, `list_execution_tasks`, and pre-dispatch-only `cancel_execution_task` |
+| Operations | `get_audit_log`; proposal-only `create_backup_plan`, `create_reload_plan`, `create_addon_restart_plan`, `create_home_assistant_restart_plan`, and exact-`input_boolean` `create_helper_state_plan`; durable `get_execution_task`, `list_execution_tasks`, and pre-dispatch-only `cancel_execution_task` |
 | Beta analysis | `entity_dependency_analysis`, `automation_reliability_analysis`, `change_impact_analysis`, `configuration_integrity_analysis`, `incident_correlation`, `handoff_generation` |
-| Governance | four operational proposal tools plus `create_change_plan`, `create_configuration_plan`, `get_change_plan`, `list_change_plans`, `approve_change_plan`, `apply_change_plan`, `rollback_change` |
-| General execution | `call_service` is compatibility-visible but fails closed in v2; Phase 1 does not delegate service execution or any upstream write |
+| Governance | five operational proposal tools plus `create_change_plan`, `create_configuration_plan`, `get_change_plan`, `list_change_plans`, `approve_change_plan`, `apply_change_plan`, `rollback_change` |
+| General execution | `call_service` is compatibility-visible but fails closed in v2; Engineering does not delegate service execution or any upstream write. HAMCP-089 permits only the separately governed exact `input_boolean` state contract documented below. |
 | Reviewed upstream reads | Exact `ha-mcp` 7.14.2 admits up to 26 reviewed reads; exact 8.0.0 admits 24 and holds `ha_search` plus `ha_get_operation_status` for a later canary. Unknown releases expose none, and no new or write tool is inferred into policy. See [ADR-006](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md). |
 
 It runs against the Supervisor's internal HA proxy, so **no long-lived access token is

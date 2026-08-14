@@ -442,6 +442,35 @@ class SharedOperationExecutor:
             )
             preflight_outcome = self._validate_preflight(prepared, preflight)
             if preflight_outcome is not None:
+                if preflight_outcome == "succeeded_verified":
+                    record = (
+                        self.execution_repository
+                        .terminalize_verified_no_dispatch(
+                            identity.task_id,
+                            owner_id=identity.owner_id,
+                            claim_generation=claim.claim_generation,
+                            resulting_state_fingerprint=str(
+                                getattr(
+                                    preflight,
+                                    "observed_state_fingerprint",
+                                )
+                            ),
+                            evidence_hash=str(
+                                getattr(preflight, "evidence_hash")
+                            ),
+                            diagnostic_codes=self._diagnostic_codes(
+                                preflight
+                            ),
+                            now=self.now(),
+                        )
+                    )
+                    self.metrics.increment("verification_successes")
+                    self.metrics.increment("preflight_noop_successes")
+                    self._release_safely(handle)
+                    return self._result(
+                        record,
+                        extra_codes=self._diagnostic_codes(preflight),
+                    )
                 self.metrics.increment("preflight_rejections")
                 record = self.execution_repository.terminalize_pre_dispatch(
                     identity.task_id,
@@ -463,6 +492,10 @@ class SharedOperationExecutor:
         except SimulatedProcessLoss:
             raise
         except Exception:
+            persisted = self.execution_repository.get(identity.task_id)
+            if persisted is not None and persisted.terminal:
+                self._release_safely(handle)
+                return self._result(persisted)
             record = self._terminal_pre_dispatch(
                 claim,
                 identity,
@@ -635,6 +668,50 @@ class SharedOperationExecutor:
         except (AttributeError, ValueError) as exc:
             raise AdapterContractViolation("preflight result is invalid") from exc
         if eligible is not True:
+            if outcome == "succeeded_verified":
+                target = getattr(preflight, "confirmed_target", None)
+                prepared_target = getattr(prepared, "target")
+                if (
+                    target is None
+                    or getattr(target, "target_type", None)
+                    != getattr(prepared_target, "target_type")
+                    or getattr(target, "target_id", None)
+                    != getattr(prepared_target, "target_id")
+                ):
+                    raise AdapterContractViolation(
+                        "verified no-dispatch target identity changed"
+                    )
+                try:
+                    validate_identifier(
+                        getattr(preflight, "provider_contract"),
+                        field_name="provider_contract",
+                    )
+                    validate_identifier(
+                        getattr(preflight, "provider_operation"),
+                        field_name="provider_operation",
+                    )
+                    validate_sha256(
+                        getattr(preflight, "provider_arguments_hash"),
+                        field_name="provider_arguments_hash",
+                    )
+                    validate_sha256(
+                        getattr(preflight, "observed_state_fingerprint"),
+                        field_name="observed_state_fingerprint",
+                    )
+                    validate_sha256(
+                        getattr(preflight, "evidence_hash"),
+                        field_name="evidence_hash",
+                    )
+                    codes = self._diagnostic_codes(preflight)
+                except (AttributeError, TypeError, ValueError) as exc:
+                    raise AdapterContractViolation(
+                        "verified no-dispatch evidence is invalid"
+                    ) from exc
+                if "desired_state_already_reached" not in codes:
+                    raise AdapterContractViolation(
+                        "verified no-dispatch reason is invalid"
+                    )
+                return outcome
             if outcome not in {
                 "preflight_rejected",
                 "provider_unavailable_pre_dispatch",
