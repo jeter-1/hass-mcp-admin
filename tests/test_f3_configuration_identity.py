@@ -717,6 +717,20 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
                     }
                     self.assertIn(exact_key, locks)
 
+        reviewed_helper_operator = (
+            f'["{helper}"] | select("is_state", "on") | list'
+        )
+        malformed_forms = tuple(
+            "{{ " + delimiter + reviewed_helper_operator + " }}"
+            for delimiter in ("(", "[", "{")
+        ) + tuple(
+            "{{ " + reviewed_helper_operator + " + " + delimiter + " }}"
+            for delimiter in ("(", "[", "{")
+        ) + (
+            "{{ "
+            + reviewed_helper_operator
+            + " if enabled else ( }}",
+        )
         dynamic_forms = (
             '{{ (helper_entities '
             '| select("is_state", "on") | list) | count }}',
@@ -731,7 +745,7 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
             + "(" * 10_000
             + f'["{helper}"] | select("is_state", "on") | list'
             + " }}",
-        )
+        ) + malformed_forms
         for index, template in enumerate(dynamic_forms):
             with self.subTest(template=template):
                 unresolved = valid_config("automation")

@@ -687,6 +687,11 @@ def _scan_template_collection_entity_operators(
 
     if scan_budget is None:
         scan_budget = [MAX_LITERAL_ARGUMENTS]
+    contains_collection_operator = _contains_collection_operator(value)
+    malformed_collection_fragment = bool(
+        contains_collection_operator
+        and _has_unmatched_structural_delimiter(value)
+    )
     if depth > MAX_TEMPLATE_NESTING:
         return (
             [
@@ -696,7 +701,7 @@ def _scan_template_collection_entity_operators(
                     kind="resolution_limit",
                 )
             ]
-            if _contains_collection_operator(value)
+            if contains_collection_operator
             else []
         )
 
@@ -718,11 +723,20 @@ def _scan_template_collection_entity_operators(
                     scan_budget=scan_budget,
                 )
             )
+        if malformed_collection_fragment:
+            if scan_budget[0] > 0:
+                scan_budget[0] -= 1
+            resolutions.append(_candidate_resolution_limit())
         return _bound_candidate_resolutions(resolutions)
 
     resolutions = _scan_top_level_collection_entity_operator(
         value, candidate_context=candidate_context
     )
+    if malformed_collection_fragment:
+        if scan_budget[0] > 0:
+            scan_budget[0] -= 1
+        resolutions.append(_candidate_resolution_limit())
+        return _bound_candidate_resolutions(resolutions)
     pairs = {"(": ")", "[": "]", "{": "}"}
     cursor = 0
     while cursor < len(value):
@@ -892,6 +906,28 @@ def _contains_collection_operator(value: str) -> bool:
             return True
         cursor = max(cursor + 1, end)
     return False
+
+
+def _has_unmatched_structural_delimiter(value: str) -> bool:
+    """Return whether one static fragment has mismatched grouping syntax."""
+
+    pairs = {"(": ")", "[": "]", "{": "}"}
+    closers = set(pairs.values())
+    stack: list[str] = []
+    cursor = 0
+    while cursor < len(value):
+        char = value[cursor]
+        if char in {"'", '"'}:
+            cursor = _skip_quoted(value, cursor)
+            continue
+        if char in pairs:
+            stack.append(pairs[char])
+        elif char in closers:
+            if not stack or stack[-1] != char:
+                return True
+            stack.pop()
+        cursor += 1
+    return bool(stack)
 
 
 def _split_top_level_pipeline(value: str) -> list[str]:

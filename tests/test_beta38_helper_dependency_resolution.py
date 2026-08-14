@@ -355,25 +355,75 @@ class BoundedDynamicResolutionTests(unittest.TestCase):
                 dynamic[0].candidate_resolution_limit_exceeded
             )
 
-        max_openers = MAX_TEMPLATE_SEGMENT_CHARS - len(operator) - 1
-        maximum = "{{ " + "(" * max_openers + operator + " }}"
-        started = time.perf_counter()
-        findings, dynamic = _dynamic(
-            maximum, source_id="malformed_maximum"
-        )
-        maximum_elapsed = time.perf_counter() - started
+        max_prefix = MAX_TEMPLATE_SEGMENT_CHARS - len(operator) - 1
+        for pattern_index, pattern in enumerate(("(", "[", "{", "([{")):
+            with self.subTest(maximum_pattern=pattern):
+                malformed_prefix = (
+                    pattern * ((max_prefix // len(pattern)) + 1)
+                )[:max_prefix]
+                maximum = "{{ " + malformed_prefix + operator + " }}"
+                started = time.perf_counter()
+                findings, dynamic = _dynamic(
+                    maximum,
+                    source_id=f"malformed_maximum_{pattern_index}",
+                )
+                maximum_elapsed = time.perf_counter() - started
 
-        self.assertEqual(findings, [])
-        self.assertEqual(len(dynamic), 1)
-        self.assertTrue(dynamic[0].candidate_resolution_limit_exceeded)
-        self.assertFalse(
-            _binding(_snapshot(dynamic=dynamic))["evidence_complete"]
-        )
-        self.assertLess(maximum_elapsed, 1.0)
+                self.assertEqual(findings, [])
+                self.assertEqual(len(dynamic), 1)
+                self.assertTrue(
+                    dynamic[0].candidate_resolution_limit_exceeded
+                )
+                self.assertFalse(
+                    _binding(_snapshot(dynamic=dynamic))[
+                        "evidence_complete"
+                    ]
+                )
+                self.assertLess(maximum_elapsed, 1.0)
         self.assertLess(
             elapsed_by_size[32_000],
             max(0.20, elapsed_by_size[8_000] * 8),
         )
+
+    def test_malformed_delimiters_after_collection_remain_incomplete(self):
+        operator = '["sensor.a"] | select("is_state", "on") | list'
+        cases = []
+        for delimiter in ("(", "[", "{"):
+            cases.extend(
+                (
+                    (delimiter + operator, ()),
+                    (operator + " + " + delimiter, ("sensor.a",)),
+                )
+            )
+        cases.append(
+            (
+                operator + " if enabled else (",
+                ("sensor.a",),
+            )
+        )
+
+        for index, (expression, expected_candidates) in enumerate(cases):
+            with self.subTest(expression=expression):
+                findings, dynamic = _dynamic(
+                    "{{ " + expression + " }}",
+                    source_id=f"malformed_position_{index}",
+                )
+                observed = _binding(_snapshot(dynamic=dynamic))
+
+                self.assertEqual(findings, [])
+                self.assertEqual(len(dynamic), 1)
+                self.assertEqual(
+                    dynamic[0].possible_entity_ids,
+                    expected_candidates,
+                )
+                self.assertFalse(
+                    dynamic[0].candidate_resolution_complete
+                )
+                self.assertTrue(
+                    dynamic[0].candidate_resolution_limit_exceeded
+                )
+                self.assertFalse(observed["evidence_complete"])
+                self.assertFalse(observed["execution_eligible"])
 
     def test_nested_collection_dependency_retains_consequential_profile(self):
         source_id = "nested_collection_consequence"
