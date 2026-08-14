@@ -46,7 +46,11 @@ from ha_mcp_engineering.request_context import (  # noqa: E402
     end_request,
 )
 from ha_mcp_engineering.routing import AuthenticatedMcpGateway  # noqa: E402
-from ha_mcp_engineering.tools import get_registered_server, registered_tools  # noqa: E402
+from ha_mcp_engineering.tools import (  # noqa: E402
+    ENGINEERING_STATIC_TOOL_COUNT,
+    get_registered_server,
+    registered_tools,
+)
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     ReviewedToolAnnotations,
     UpstreamToolPolicy,
@@ -1348,7 +1352,11 @@ class PolicyInventoryTests(unittest.TestCase):
         self.assertTrue(all(not item.destructive for item in automatic_annotations.values()))
 
     def test_engineering_catalog_is_51_without_upstream_discovery(self):
-        self.assertEqual(len(registered_tools(get_registered_server()).values()), 51)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 51)
+        self.assertEqual(
+            len(registered_tools(get_registered_server()).values()),
+            ENGINEERING_STATIC_TOOL_COUNT,
+        )
 
     def test_exact_image_acceptance_is_committed_to_ci(self):
         workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
@@ -1357,20 +1365,14 @@ class PolicyInventoryTests(unittest.TestCase):
         acceptance = (
             ROOT / "scripts" / "exact_image_read_gateway_acceptance.py"
         ).read_text(encoding="utf-8")
-        acceptance_tree = ast.parse(acceptance)
-        baseline_assignment = next(
-            node
-            for node in acceptance_tree.body
-            if isinstance(node, ast.Assign)
-            and any(
-                isinstance(target, ast.Name)
-                and target.id == "EXPECTED_ENGINEERING_BASELINE_COUNT"
-                for target in node.targets
-            )
-        )
         self.assertEqual(
-            ast.literal_eval(baseline_assignment.value),
+            ENGINEERING_STATIC_TOOL_COUNT,
             len(registered_tools(get_registered_server()).values()),
+        )
+        self.assertIn(
+            "EXPECTED_ENGINEERING_BASELINE_COUNT = "
+            "ENGINEERING_STATIC_TOOL_COUNT",
+            acceptance,
         )
         self.assertIn(
             "len(base_names) == EXPECTED_ENGINEERING_BASELINE_COUNT",

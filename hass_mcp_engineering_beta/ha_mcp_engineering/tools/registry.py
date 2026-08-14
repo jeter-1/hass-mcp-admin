@@ -134,5 +134,12 @@ for capability in CAPABILITIES:
     setattr(compatibility, name, wrapped)
 
 
+# Freeze the exact local catalog before any admitted upstream reads are added.
+# Exact-image and readmission contracts import this one executable declaration
+# rather than maintaining independent numeric copies.
+ENGINEERING_STATIC_TOOL_NAMES = tuple(sorted(_SDK_TOOLS.snapshot()))
+ENGINEERING_STATIC_TOOL_COUNT = len(ENGINEERING_STATIC_TOOL_NAMES)
+
+
 def get_registered_server():
     return _SERVER

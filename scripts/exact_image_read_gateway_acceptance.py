@@ -31,6 +31,7 @@ BETA = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA))
 
 from ha_mcp_engineering.tools import (  # noqa: E402
+    ENGINEERING_STATIC_TOOL_COUNT,
     get_registered_server,
     registered_tools,
 )
@@ -82,7 +83,7 @@ from ha_mcp_engineering.version import SERVER_VERSION  # noqa: E402
 from ha_mcp_engineering.request_context import current_request_id  # noqa: E402
 
 
-EXPECTED_ENGINEERING_BASELINE_COUNT = 51
+EXPECTED_ENGINEERING_BASELINE_COUNT = ENGINEERING_STATIC_TOOL_COUNT
 ACCEPTANCE_TIMEOUT_SECONDS = 120
 MAX_DIAGNOSTIC_ITEMS = 32
 MAX_FAILURE_MESSAGE_CHARS = 512
