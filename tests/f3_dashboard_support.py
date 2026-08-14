@@ -24,10 +24,137 @@ from ha_mcp_engineering.f3_dashboard.provider import EXACT_CONTRACTS
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "f3_dashboard" / "storage_dashboard.json"
+HOME_FIXTURE = (
+    Path(__file__).parent
+    / "fixtures"
+    / "f3_dashboard"
+    / "home_dashboard_existing.json"
+)
 
 
 def load_dashboard() -> dict[str, Any]:
     return json.loads(FIXTURE.read_text(encoding="utf-8"))
+
+
+def load_home_dashboard() -> dict[str, Any]:
+    """Load the deterministic Home-shaped existing-dashboard contract."""
+
+    return json.loads(HOME_FIXTURE.read_text(encoding="utf-8"))
+
+
+def home_dashboard_patch_operations() -> list[dict[str, Any]]:
+    """Return the exact Cleaner, Outdoor, and Needs Attention delta."""
+
+    cleaner = {
+        "type": "template",
+        "content": "Cleaner",
+        "entity": "input_boolean.cleaner_mode",
+        "icon": "mdi:broom",
+    }
+    outdoor = {
+        "type": "template",
+        "content": "Outdoor",
+        "entity": "sensor.local_outdoor_temperature",
+    }
+    needs_attention = {
+        "title": "Needs Attention",
+        "cards": [
+            {"type": "heading", "heading": "Needs Attention"},
+            {
+                "type": "conditional",
+                "conditions": [
+                    {
+                        "condition": "or",
+                        "conditions": [
+                            {
+                                "condition": "state",
+                                "entity": "cover.garage_door",
+                                "state": "open",
+                            },
+                            {
+                                "condition": "state",
+                                "entity": "lock.front_door",
+                                "state": "unlocked",
+                            },
+                            {
+                                "condition": "state",
+                                "entity": "binary_sensor.exterior_doors",
+                                "state": "on",
+                            },
+                            {
+                                "condition": "and",
+                                "conditions": [
+                                    {
+                                        "condition": "state",
+                                        "entity": "input_select.home_mode",
+                                        "state": "Away",
+                                    },
+                                    {
+                                        "condition": "state",
+                                        "entity": "alarm_control_panel.home",
+                                        "state_not": "armed_away",
+                                    },
+                                ],
+                            },
+                            {
+                                "condition": "state",
+                                "entity": "climate.home",
+                                "state": "unavailable",
+                            },
+                            {
+                                "condition": "state",
+                                "entity": "binary_sensor.garage_presence",
+                                "state": "unavailable",
+                            },
+                            {
+                                "condition": "state",
+                                "entity": "sensor.local_outdoor_temperature",
+                                "state": "unavailable",
+                            },
+                        ],
+                    }
+                ],
+                "card": {
+                    "type": "entities",
+                    "title": "Needs Attention",
+                    "entities": [
+                        "cover.garage_door",
+                        "lock.front_door",
+                        "binary_sensor.exterior_doors",
+                        "alarm_control_panel.home",
+                        "climate.home",
+                        "binary_sensor.garage_presence",
+                        "sensor.local_outdoor_temperature",
+                    ],
+                },
+            },
+        ],
+    }
+    return [
+        {
+            "operation_id": "insert-cleaner-chip",
+            "operation": "add",
+            "path": "/views/0/sections/0/cards/1/chips/2",
+            "value": cleaner,
+        },
+        {
+            "operation_id": "replace-climate-chip",
+            "operation": "replace",
+            "path": "/views/0/sections/1/cards/1/chips/2",
+            "value": outdoor,
+        },
+        {
+            "operation_id": "remove-prompted-chip",
+            "operation": "remove",
+            "path": "/views/0/sections/1/cards/1/chips/3",
+        },
+        {
+            "operation_id": "insert-needs-attention",
+            "operation": "add",
+            "path": "/views/0/sections/0/cards/-",
+            "value": needs_attention,
+        },
+    ]
 
 
 def make_preread(
