@@ -756,6 +756,16 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
             "{% set level2 = {'next': level1.get} %}"
             "{{ level2.get('next')('next')"
             f"('{helper}')('{helper}') }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{% set dynamic_key = 'get' %}"
+            "{{ helpers[dynamic_key]("
+            "'missing', is_state)("
+            f"'{helper}', 'on') }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            f"{{{{ helpers[states('{helper}')] }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{% set lookup = is_state %}"
+            f"{{{{ helpers[lookup('{helper}', 'on')] }}}}",
         )
         conservative_templates = (
             "{% set original = states %}"
@@ -918,6 +928,25 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
             "if enabled else unknown_mapping %}"
             "{% set getter = helpers.get %}"
             f"{{{{ getter('lookup')('{helper}') }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers[dynamic_key]("
+            "'missing', is_state)("
+            f"'{helper}', 'on') }}}}",
+            "{% set helpers = {'get': 'ordinary', "
+            "'items': 'ordinary', 'keys': 'ordinary', "
+            "'values': 'ordinary', 'message': 'ready'} %}"
+            "{{ helpers[dynamic_key]().get("
+            "'missing', is_state)("
+            f"'{helper}', 'on') }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            f"{{{{ helpers[dynamic_key](*['missing', is_state])"
+            f"('{helper}', 'on') }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.get(*('missing', is_state))("
+            f"'{helper}', 'on') }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{% set lookup = unknown_callable %}"
+            f"{{{{ helpers[lookup('{helper}', 'on')] }}}}",
             deep_argument_template,
             method_chain_template,
         )
@@ -1010,6 +1039,15 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
             "{{ (messages | batch(2, 'ordinary') | first)[1] }}",
             "{% set messages = ['ready'] %}"
             "{{ (messages | slice(2, 'ordinary') | list | first)[1] }}",
+            "{% set helpers = {'message': 'ready', 'title': 'done'} %}"
+            "{% set dynamic_key = 'message' if enabled else 'title' %}"
+            "{{ helpers[dynamic_key] }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{% set dynamic_key = 'get' %}"
+            "{{ helpers[dynamic_key]('missing', 'fallback') }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{% set dynamic_key = 'keys' if enabled else 'values' %}"
+            "{{ helpers[dynamic_key]() | list }}",
         )
 
         for template in exact_templates:

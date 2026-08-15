@@ -54,7 +54,20 @@ access checks the item first. The reviewed read-only methods `get`, `items`,
 `keys`, and `values` therefore cannot be shadowed by same-named mapping keys
 under dot access; same-named bracket items retain literal item semantics.
 When a bracket method-name item is absent, the reviewed grammar applies Jinja's
-attribute fallback and retains the corresponding bounded mapping method.
+attribute fallback and retains the corresponding bounded mapping method. An
+unresolved bracket key is evaluated against both its bounded item values and
+every unshadowed reviewed mapping-method fallback. A bare lookup remains
+non-selector dataflow when all possible values are proven ordinary, but later
+method consumption that can introduce a reviewed entity helper remains
+non-conclusive. An unresolved key also retains a bounded marker for unreviewed
+mapping attributes such as `copy`; invoking or iterating that fallback, or
+consuming a result returned by it, remains non-conclusive. A finite key proven
+to be `get` retains exact bounded method semantics; a literal bracket item named
+`get` still shadows the method. Entity lookups used to compute a bracket key
+are scanned as eager dependencies and cannot disappear behind mapping analysis.
+Dynamic positional or keyword argument unpacking is outside the reviewed
+method grammar and remains incomplete. Shared fallback bases are traversed once
+within the existing static bounds rather than once per possible method.
 `get` with a bounded literal key/default, finite `values`, and finite `keys`
 preserve exact helper or candidate provenance. Helper-capable `items` flows and
 dynamic or unsupported method results remain conservative because tuple or

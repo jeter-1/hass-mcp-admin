@@ -86,6 +86,8 @@ class CallableBindingResolution:
     entity_helpers: tuple[str, ...] = ()
     has_bounded_members: bool = False
     mapping_method: str | None = None
+    mapping_method_options: tuple[str, ...] = ()
+    unreviewed_mapping_attribute_fallback: bool = False
     limit_exceeded: bool = False
 
 
@@ -103,6 +105,9 @@ class _StaticValue:
     entity_helpers: set[str] = field(default_factory=set)
     mapping_method: str | None = None
     mapping_method_base: "_StaticValue | None" = None
+    mapping_method_options: set[str] = field(default_factory=set)
+    mapping_method_option_base: "_StaticValue | None" = None
+    unreviewed_mapping_attribute_fallback: bool = False
 
 
 def _empty_incomplete(*, limit: bool = False) -> _StaticValue:
@@ -128,6 +133,11 @@ def _iteration_copy(value: _StaticValue) -> _StaticValue:
         entity_helpers=set(value.entity_helpers),
         mapping_method=value.mapping_method,
         mapping_method_base=value.mapping_method_base,
+        mapping_method_options=set(value.mapping_method_options),
+        mapping_method_option_base=value.mapping_method_option_base,
+        unreviewed_mapping_attribute_fallback=(
+            value.unreviewed_mapping_attribute_fallback
+        ),
     )
 
 
@@ -157,6 +167,11 @@ def _collection_copy(
         limit_exceeded=value.limit_exceeded,
         kinds=set(value.kinds).union({kind}),
         entity_helpers=set(value.entity_helpers),
+        mapping_method_options=set(value.mapping_method_options),
+        mapping_method_option_base=value.mapping_method_option_base,
+        unreviewed_mapping_attribute_fallback=(
+            value.unreviewed_mapping_attribute_fallback
+        ),
     )
 
 
@@ -169,6 +184,9 @@ def _merge_values(
     field_groups: dict[str, list[_StaticValue]] = {}
     iteration_values: list[_StaticValue] = []
     mapping_method_values: list[_StaticValue] = []
+    mapping_method_options: set[str] = set()
+    mapping_method_option_bases: list[_StaticValue] = []
+    unreviewed_mapping_attribute_fallback = False
     mapping_values: list[_StaticValue] = []
     for value in values:
         result.entity_ids.update(value.entity_ids)
@@ -186,6 +204,15 @@ def _merge_values(
             iteration_values.append(value.iteration)
         if value.mapping_method is not None:
             mapping_method_values.append(value)
+        mapping_method_options.update(value.mapping_method_options)
+        if value.mapping_method_option_base is not None:
+            mapping_method_option_bases.append(
+                value.mapping_method_option_base
+            )
+        unreviewed_mapping_attribute_fallback = bool(
+            unreviewed_mapping_attribute_fallback
+            or value.unreviewed_mapping_attribute_fallback
+        )
         if "mapping_object" in value.kinds:
             mapping_values.append(value)
     if (
@@ -234,14 +261,36 @@ def _merge_values(
             len(mapping_method_values) == len(values)
             and len(method_names) == 1
             and len(method_bases) == len(mapping_method_values)
+            and not mapping_method_options
+            and not unreviewed_mapping_attribute_fallback
         ):
             result.mapping_method = next(iter(method_names))
             result.mapping_method_base = _merge_values(
                 method_bases, depth=depth + 1
             )
         else:
-            result.complete = False
-            result.kinds.add("unresolved")
+            for value in mapping_method_values:
+                if (
+                    value.mapping_method is not None
+                    and value.mapping_method_base is not None
+                ):
+                    mapping_method_options.add(value.mapping_method)
+                    mapping_method_option_bases.append(
+                        value.mapping_method_base
+                    )
+    result.mapping_method_options = mapping_method_options
+    unique_option_bases = list(
+        {id(base): base for base in mapping_method_option_bases}.values()
+    )
+    if len(unique_option_bases) == 1:
+        result.mapping_method_option_base = unique_option_bases[0]
+    elif unique_option_bases:
+        result.mapping_method_option_base = _merge_values(
+            unique_option_bases, depth=depth + 1
+        )
+    result.unreviewed_mapping_attribute_fallback = (
+        unreviewed_mapping_attribute_fallback
+    )
     return result
 
 
@@ -507,9 +556,18 @@ class BoundedTemplateContext:
             complete=bool(trusted and value.complete),
             entity_helpers=tuple(sorted(value.entity_helpers)),
             has_bounded_members=bool(
-                value.fields or "mapping_object" in value.kinds
+                value.fields
+                or "mapping_object" in value.kinds
+                or value.mapping_method_options
+                or value.unreviewed_mapping_attribute_fallback
             ),
             mapping_method=value.mapping_method,
+            mapping_method_options=tuple(
+                sorted(value.mapping_method_options)
+            ),
+            unreviewed_mapping_attribute_fallback=(
+                value.unreviewed_mapping_attribute_fallback
+            ),
             limit_exceeded=value.limit_exceeded,
         )
 
@@ -535,7 +593,7 @@ class BoundedTemplateContext:
         except (SyntaxError, ValueError):
             return CallableBindingResolution(locally_bound=True)
 
-        root_name, bounded = self._bounded_member_root(node)
+        root_name, _bounded = self._bounded_member_root(node)
         if root_name is None:
             return CallableBindingResolution()
         root = self.callable_binding(root_name)
@@ -548,27 +606,23 @@ class BoundedTemplateContext:
             )
 
         value = self._evaluate_node(node, depth=0)
-        if not bounded and (
-            not value.complete
-            or value.entity_helpers
-            or value.fields
-            or value.mapping_method is not None
-        ):
-            # A computed key may choose any bounded member.  It is ordinary
-            # only when every possible value is conclusively non-helper;
-            # otherwise it cannot exclude selector provenance.
-            return CallableBindingResolution(
-                locally_bound=True,
-                limit_exceeded=value.limit_exceeded,
-            )
         return CallableBindingResolution(
             locally_bound=True,
             complete=value.complete,
             entity_helpers=tuple(sorted(value.entity_helpers)),
             has_bounded_members=bool(
-                value.fields or "mapping_object" in value.kinds
+                value.fields
+                or "mapping_object" in value.kinds
+                or value.mapping_method_options
+                or value.unreviewed_mapping_attribute_fallback
             ),
             mapping_method=value.mapping_method,
+            mapping_method_options=tuple(
+                sorted(value.mapping_method_options)
+            ),
+            unreviewed_mapping_attribute_fallback=(
+                value.unreviewed_mapping_attribute_fallback
+            ),
             limit_exceeded=value.limit_exceeded,
         )
 
@@ -595,6 +649,12 @@ class BoundedTemplateContext:
                 value.fields or value.iteration is not None
             ),
             mapping_method=value.mapping_method,
+            mapping_method_options=tuple(
+                sorted(value.mapping_method_options)
+            ),
+            unreviewed_mapping_attribute_fallback=(
+                value.unreviewed_mapping_attribute_fallback
+            ),
             limit_exceeded=limit_exceeded,
         )
 
@@ -859,13 +919,48 @@ class BoundedTemplateContext:
                 result = _merge_values(selected, depth=depth + 1)
                 result.kinds.add("mapping")
                 return result
-            if base.fields:
-                # An unknown key can select only one of these finite mapping
-                # values. Missing keys fail the template rather than creating a
-                # candidate outside the mapping.
-                result = _merge_values(
-                    list(base.fields.values()), depth=depth + 1
+            if base.fields or "mapping_object" in base.kinds:
+                # Jinja bracket lookup is item-first and then attribute-based.
+                # An unresolved key can select any bounded item plus any
+                # reviewed read method that is not proven shadowed in every
+                # mapping alternative. Keep those method possibilities
+                # deferred so a bare ordinary lookup stays low-friction while
+                # subsequent consumption can be evaluated conservatively.
+                result = (
+                    _merge_values(
+                        list(base.fields.values()), depth=depth + 1
+                    )
+                    if base.fields
+                    else _StaticValue()
                 )
+                if "mapping_object" in base.kinds:
+                    reviewed_fallbacks = (
+                        MAPPING_READ_METHODS.difference(
+                            base.required_fields
+                        )
+                    )
+                    if reviewed_fallbacks:
+                        result.mapping_method_options.update(
+                            reviewed_fallbacks
+                        )
+                        result.mapping_method_option_base = base
+                    result.unreviewed_mapping_attribute_fallback = bool(
+                        result.unreviewed_mapping_attribute_fallback
+                        or _MAPPING_ATTRIBUTE_NAMES.difference(
+                            MAPPING_READ_METHODS
+                        ).difference(base.required_fields)
+                    )
+                result.complete = bool(result.complete and base.complete)
+                result.limit_exceeded = bool(
+                    result.limit_exceeded or base.limit_exceeded
+                )
+                if result.entity_helpers or not result.complete:
+                    # An unresolved key can select a helper-bearing item as
+                    # well as an attribute fallback.  Keep the alternatives
+                    # bounded, but do not promote that mixed provenance to an
+                    # exact helper alias.
+                    result.complete = False
+                    result.kinds.add("unresolved")
                 result.kinds.add("mapping")
                 return result
             return _empty_incomplete()
@@ -908,6 +1003,22 @@ class BoundedTemplateContext:
             callable_value = self._evaluate_node(
                 node.func, depth=depth + 1
             )
+            if any(isinstance(argument, ast.Starred) for argument in node.args) or any(
+                keyword.arg is None for keyword in node.keywords
+            ):
+                # Jinja supports dynamic positional and keyword unpacking.
+                # One AST argument may therefore expand to a key, default, or
+                # other helper-bearing value outside the reviewed signatures.
+                return _empty_incomplete(
+                    limit=callable_value.limit_exceeded
+                )
+            if callable_value.mapping_method_options:
+                return self._evaluate_mapping_method_options(
+                    callable_value=callable_value,
+                    args=node.args,
+                    keywords=node.keywords,
+                    depth=depth,
+                )
             if (
                 callable_value.mapping_method is not None
                 and callable_value.mapping_method_base is not None
@@ -973,6 +1084,20 @@ class BoundedTemplateContext:
             else:
                 selected_values = [*base.fields.values(), default]
             value = _merge_values(selected_values, depth=depth + 1)
+            if not key.complete:
+                helpers, provenance_complete, provenance_limit = (
+                    _nested_entity_helper_provenance(value)
+                )
+                value.entity_helpers.update(helpers)
+                value.limit_exceeded = bool(
+                    value.limit_exceeded or provenance_limit
+                )
+                if helpers or not provenance_complete:
+                    # A dynamic key may return any bounded item or the
+                    # default.  Helper-bearing alternatives remain possible,
+                    # but cannot be represented as one conclusive alias.
+                    value.complete = False
+                    value.kinds.add("unresolved")
             value.kinds.add("mapping_get")
             return self._bind_mapping_base_evidence(value, base)
         if args:
@@ -1006,6 +1131,97 @@ class BoundedTemplateContext:
         return self._bind_mapping_base_evidence(
             _collection_copy(merged, kind="mapping_values"), base
         )
+
+    def _evaluate_mapping_method_options(
+        self,
+        *,
+        callable_value: _StaticValue,
+        args: list[ast.expr],
+        keywords: list[ast.keyword],
+        depth: int,
+    ) -> _StaticValue:
+        """Evaluate bounded method fallbacks only when they are consumed.
+
+        An unresolved bracket key can name a reviewed mapping method, but it
+        can also select an ordinary item or fail at runtime. Compatible method
+        calls are evaluated over the same bounded base. If every successful
+        possibility is proven ordinary the result remains low-friction. Any
+        helper-capable or incomplete result remains explicitly unresolved.
+        """
+
+        method_results: list[_StaticValue] = []
+        if (
+            callable_value.mapping_method is not None
+            and callable_value.mapping_method_base is not None
+        ):
+            method_results.append(
+                self._evaluate_mapping_method(
+                    method=callable_value.mapping_method,
+                    base=callable_value.mapping_method_base,
+                    args=args,
+                    keywords=keywords,
+                    depth=depth,
+                )
+            )
+        option_base = callable_value.mapping_method_option_base
+        for method in sorted(callable_value.mapping_method_options):
+            compatible = bool(
+                not keywords
+                and (
+                    (method == "get" and 1 <= len(args) <= 2)
+                    or (method != "get" and not args)
+                )
+            )
+            if not compatible:
+                continue
+            if option_base is None:
+                method_results.append(_empty_incomplete())
+                continue
+            method_results.append(
+                self._evaluate_mapping_method(
+                    method=method,
+                    base=option_base,
+                    args=args,
+                    keywords=keywords,
+                    depth=depth,
+                )
+            )
+
+        result = (
+            _merge_values(method_results, depth=depth + 1)
+            if method_results
+            else _StaticValue(kinds={"ordinary_runtime_error"})
+        )
+        result.complete = bool(
+            result.complete and callable_value.complete
+        )
+        result.limit_exceeded = bool(
+            result.limit_exceeded or callable_value.limit_exceeded
+        )
+        callable_helpers, _callable_complete, callable_limit = (
+            _nested_entity_helper_provenance(callable_value)
+        )
+        result.entity_helpers.update(callable_helpers)
+        result.limit_exceeded = bool(
+            result.limit_exceeded or callable_limit
+        )
+        helpers, _provenance_complete, provenance_limit = (
+            _nested_entity_helper_provenance(result)
+        )
+        result.entity_helpers.update(helpers)
+        result.limit_exceeded = bool(
+            result.limit_exceeded or provenance_limit
+        )
+        if (
+            callable_value.unreviewed_mapping_attribute_fallback
+            or callable_helpers
+            or not callable_value.complete
+            or helpers
+            or not result.complete
+        ):
+            result.complete = False
+            result.kinds.add("unresolved")
+        return result
 
     @staticmethod
     def _bind_mapping_base_evidence(

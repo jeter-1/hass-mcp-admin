@@ -35,9 +35,17 @@ Bound `get`, `items`, `keys`, and `values` method aliases retain the same bounde
 mapping provenance when invoked later or transported through another finite
 mapping, so assignment does not erase an exact or conservative helper
 dependency. Bracket method-name access uses the literal item when present and
-the reviewed mapping method when the item is absent. A bare reviewed helper used
-as a bounded default retains value provenance; an actual helper call in a method
-argument remains an eager dependency.
+the reviewed mapping method when the item is absent. Dynamic bracket keys now
+retain both bounded item possibilities and unshadowed read-method fallbacks.
+Compatible fallback consumption that can return a reviewed entity helper is
+conservative. Unreviewed attribute fallbacks such as `copy` remain incomplete
+when consumed, and dynamic argument unpacking does not bypass that boundary. A
+finite key proven to be `get` remains exact, and finite entirely ordinary
+possibilities remain low-friction. Entity lookups used to compute a bracket key
+are scanned eagerly. Fallback bases share one bounded provenance projection so
+repeated local bindings retain near-linear scan cost. A bare reviewed helper
+used as a bounded default retains value provenance; an actual helper call in a
+method argument remains an eager dependency.
 Conditional mapping alternatives retain bounded key-presence evidence, so a
 default remains part of selector provenance whenever any branch can select it.
 Incomplete bases cannot be promoted to complete by a method call. Consuming the

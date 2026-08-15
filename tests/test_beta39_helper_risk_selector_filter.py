@@ -905,6 +905,263 @@ class SpecializedHelperRiskSelectorTests(unittest.TestCase):
                 self.assertTrue(observed["evidence_complete"])
                 self.assertTrue(observed["execution_eligible"])
 
+    def test_dynamic_bracket_method_fallback_is_conservative(self):
+        templates = (
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers[dynamic_key]("
+            "'missing', is_state)("
+            f"'{TARGET}', 'on') }}}}",
+            "{% set helpers = {'get': 'ordinary', "
+            "'items': 'ordinary', 'keys': 'ordinary', "
+            "'values': 'ordinary', 'message': 'ready'} %}"
+            "{{ helpers[dynamic_key]().get("
+            "'missing', is_state)("
+            f"'{TARGET}', 'on') }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            f"{{{{ helpers[dynamic_key](*['missing', is_state])"
+            f"('{TARGET}', 'on') }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.get(*('missing', is_state))("
+            f"'{TARGET}', 'on') }}}}",
+        )
+        for index, template in enumerate(templates):
+            with self.subTest(template=template):
+                source_id = f"dynamic_bracket_method_fallback_{index}"
+                findings, dynamic = _dynamic(
+                    template,
+                    source_id=source_id,
+                )
+                observed = _binding(
+                    _snapshot(
+                        findings=findings,
+                        dynamic=dynamic,
+                        profiles=(
+                            _profile(source_id, "cover.open_cover"),
+                        ),
+                    )
+                )
+                risk = helper_dependency_risk_assessment(
+                    {
+                        "binding": observed,
+                        "provenance": {
+                            "provider": "dependency_index",
+                            "completeness": observed["completeness"],
+                        },
+                    }
+                )
+
+                self.assertEqual(findings, [])
+                self.assertTrue(dynamic)
+                self.assertTrue(
+                    any(
+                        item.entity_selector_present
+                        and not item.candidate_resolution_complete
+                        for item in dynamic
+                    )
+                )
+                self.assertFalse(observed["evidence_complete"])
+                self.assertFalse(observed["execution_eligible"])
+                self.assertGreater(
+                    observed[
+                        "target_relevant_dynamic_reference_count"
+                    ],
+                    0,
+                )
+                self.assertEqual(
+                    observed["physical_consequence"], "unknown"
+                )
+                self.assertEqual(risk.level, RiskLevel.HIGH)
+                self.assertFalse(risk.apply_allowed)
+
+    def test_dynamic_bracket_option_analysis_is_bounded(self):
+        repeats = 1_024
+        template = (
+            "{% set helpers = {'message': 'ready'} %}"
+            + "{% set helpers = {'x': helpers[dynamic_key]} %}"
+            * repeats
+            + "{{ helpers[dynamic_key]('missing', is_state)("
+            f"'{TARGET}', 'on') }}}}"
+        )
+        self.assertLess(len(template), MAX_TEMPLATE_SEGMENT_CHARS)
+
+        started = time.perf_counter()
+        findings, dynamic = _dynamic(
+            template,
+            source_id="dynamic_bracket_option_bound",
+        )
+        elapsed = time.perf_counter() - started
+        observed = _binding(_snapshot(dynamic=dynamic))
+
+        self.assertEqual(findings, [])
+        self.assertEqual(len(dynamic), 1)
+        self.assertTrue(dynamic[0].entity_selector_present)
+        self.assertFalse(dynamic[0].candidate_resolution_complete)
+        self.assertFalse(observed["evidence_complete"])
+        self.assertFalse(observed["execution_eligible"])
+        self.assertLess(elapsed, 1.0)
+
+    def test_bounded_get_key_retains_exact_helper_dependency(self):
+        source_id = "bounded_dynamic_get_key"
+        findings, dynamic = _dynamic(
+            "{% set helpers = {'message': 'ready'} %}"
+            "{% set dynamic_key = 'get' %}"
+            "{{ helpers[dynamic_key]("
+            "'missing', is_state)("
+            f"'{TARGET}', 'on') }}}}",
+            source_id=source_id,
+        )
+        observed = _binding(
+            _snapshot(
+                findings=findings,
+                dynamic=dynamic,
+                profiles=(_profile(source_id, "cover.open_cover"),),
+            )
+        )
+        risk = helper_dependency_risk_assessment(
+            {
+                "binding": observed,
+                "provenance": {
+                    "provider": "dependency_index",
+                    "completeness": observed["completeness"],
+                },
+            }
+        )
+        candidates = {
+            item.target_entity_id for item in findings
+        }.union(
+            entity_id
+            for item in dynamic
+            for entity_id in item.possible_entity_ids
+        )
+
+        self.assertEqual(candidates, {TARGET})
+        self.assertTrue(
+            all(item.candidate_resolution_complete for item in dynamic)
+        )
+        self.assertTrue(observed["evidence_complete"])
+        self.assertTrue(observed["execution_eligible"])
+        self.assertEqual(
+            observed["relevant_downstream_object_ids"],
+            [f"automation.{source_id}"],
+        )
+        self.assertEqual(observed["physical_consequence"], "direct")
+        self.assertEqual(risk.level, RiskLevel.HIGH)
+        self.assertTrue(risk.apply_allowed)
+
+    def test_dynamic_bracket_preserves_proven_ordinary_paths(self):
+        templates = (
+            "{% set helpers = {'message': 'ready', 'title': 'done'} %}"
+            "{% set dynamic_key = 'message' if enabled else 'title' %}"
+            "{{ helpers[dynamic_key] }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{% set dynamic_key = 'get' %}"
+            "{{ helpers[dynamic_key]('missing', 'fallback') }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{% set dynamic_key = 'keys' if enabled else 'values' %}"
+            "{{ helpers[dynamic_key]() | list }}",
+            "{% set helpers = {'get': 'ordinary'} %}"
+            "{{ helpers['get'] }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.get('message') }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.items() | list }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.values() | list }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.keys() | list }}",
+        )
+
+        for index, template in enumerate(templates):
+            with self.subTest(template=template):
+                findings, dynamic = _dynamic(
+                    template,
+                    source_id=f"dynamic_bracket_ordinary_{index}",
+                )
+                observed = _binding(_snapshot(dynamic=dynamic))
+
+                self.assertEqual(findings, [])
+                self.assertEqual(dynamic, [])
+                self.assertTrue(observed["evidence_complete"])
+                self.assertTrue(observed["execution_eligible"])
+
+    def test_bracket_key_entity_reads_are_never_skipped(self):
+        exact_templates = (
+            "{% set helpers = {'message': 'ready'} %}"
+            f"{{{{ helpers[states('{TARGET}')] }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            f"{{{{ helpers[is_state('{TARGET}', 'on')] }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{% set lookup = is_state %}"
+            f"{{{{ helpers[lookup('{TARGET}', 'on')] }}}}",
+        )
+        for index, template in enumerate(exact_templates):
+            with self.subTest(kind="exact", template=template):
+                findings, dynamic = _dynamic(
+                    template,
+                    source_id=f"bracket_key_exact_{index}",
+                )
+                candidates = {
+                    item.target_entity_id for item in findings
+                }.union(
+                    entity_id
+                    for item in dynamic
+                    for entity_id in item.possible_entity_ids
+                )
+                self.assertEqual(candidates, {TARGET})
+
+        findings, dynamic = _dynamic(
+            "{% set helpers = {'message': 'ready'} %}"
+            "{% set lookup = unknown_callable %}"
+            f"{{{{ helpers[lookup('{TARGET}', 'on')] }}}}",
+            source_id="bracket_key_unknown_alias",
+        )
+        observed = _binding(_snapshot(dynamic=dynamic))
+
+        self.assertEqual(findings, [])
+        self.assertTrue(dynamic)
+        self.assertTrue(
+            all(item.entity_selector_present for item in dynamic)
+        )
+        self.assertFalse(observed["evidence_complete"])
+        self.assertFalse(observed["execution_eligible"])
+
+    def test_dynamic_bracket_fallback_changes_approval_binding(self):
+        source_id = "dynamic_bracket_fallback_drift"
+        before_findings, before_dynamic = _dynamic(
+            "{% set helpers = {'message': 'ready', 'title': 'done'} %}"
+            "{% set dynamic_key = 'message' if enabled else 'title' %}"
+            "{{ helpers[dynamic_key] }}",
+            source_id=source_id,
+        )
+        after_findings, after_dynamic = _dynamic(
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers[dynamic_key]("
+            "'missing', is_state)("
+            f"'{TARGET}', 'on') }}}}",
+            source_id=source_id,
+        )
+        before = _binding(
+            _snapshot(
+                findings=before_findings,
+                dynamic=before_dynamic,
+                profiles=(_profile(source_id),),
+            )
+        )
+        after = _binding(
+            _snapshot(
+                findings=after_findings,
+                dynamic=after_dynamic,
+                profiles=(_profile(source_id),),
+            )
+        )
+
+        self.assertTrue(before["evidence_complete"])
+        self.assertFalse(after["evidence_complete"])
+        self.assertNotEqual(
+            before["evidence_fingerprint"],
+            after["evidence_fingerprint"],
+        )
+
     def test_malformed_mapping_projection_scan_is_bounded_and_explicit(self):
         fragment = "| map("
         repeats = MAX_TEMPLATE_SEGMENT_CHARS // len(fragment)

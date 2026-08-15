@@ -598,7 +598,11 @@ def _scan_template_segment(
                 candidate_context is not None
                 and callable_binding is not None
                 and callable_binding.locally_bound
-                and callable_binding.mapping_method is not None
+                and (
+                    callable_binding.mapping_method is not None
+                    or callable_binding.mapping_method_options
+                    or callable_binding.unreviewed_mapping_attribute_fallback
+                )
                 and lookahead < len(value)
                 and value[lookahead] == "("
             ):
@@ -745,6 +749,10 @@ def _scan_template_segment(
                     )
                 )
                 or callable_binding.entity_helpers
+                or (
+                    callable_binding.unreviewed_mapping_attribute_fallback
+                    and collection_use
+                )
             ):
                 # Bracket, dot, bare collection iteration, or mixed helper
                 # provenance can still select an exact Home Assistant entity.
@@ -1222,6 +1230,8 @@ def _fragment_pipeline_selector_transport(
                 not binding.complete
                 or binding.entity_helpers
                 or binding.mapping_method is not None
+                or binding.mapping_method_options
+                or binding.unreviewed_mapping_attribute_fallback
             ):
                 return CandidateResolution(
                     complete=False,
@@ -1337,6 +1347,7 @@ def _direct_member_binding(
                     True,
                     tuple(method_arguments),
                 )
+            method_arguments.append(_inner)
         else:
             break
 
