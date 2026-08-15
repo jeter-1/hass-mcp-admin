@@ -321,6 +321,219 @@ class SpecializedHelperRiskSelectorTests(unittest.TestCase):
                     1,
                 )
 
+    def test_states_collection_aliases_retain_exact_dependency(self):
+        templates = (
+            "{% set lookup = states %}"
+            f"{{{{ lookup['{TARGET}'] }}}}",
+            "{% set first = states %}{% set lookup = first %}"
+            f"{{{{ lookup['{TARGET}'] }}}}",
+            "{% set helpers = {'lookup': states} %}"
+            "{% set lookup = helpers.lookup %}"
+            f"{{{{ lookup['{TARGET}'] }}}}",
+            "{% set helpers = {'lookup': states} %}"
+            "{% set lookup = helpers['lookup'] %}"
+            f"{{{{ lookup['{TARGET}'] }}}}",
+            "{% for lookup in [states] %}"
+            f"{{{{ lookup['{TARGET}'] }}}}"
+            "{% endfor %}",
+            "{% set lookup = states %}"
+            "{{ lookup.input_boolean."
+            f"{TARGET.split('.', 1)[1]} }}}}",
+        )
+        for index, template in enumerate(templates):
+            with self.subTest(template=template):
+                source_id = f"states_collection_alias_{index}"
+                findings, dynamic = _dynamic(
+                    template, source_id=source_id
+                )
+                observed = _binding(
+                    _snapshot(
+                        findings=findings,
+                        dynamic=dynamic,
+                        profiles=(
+                            _profile(source_id, "cover.open_cover"),
+                        ),
+                    )
+                )
+                risk = helper_dependency_risk_assessment(
+                    {
+                        "binding": observed,
+                        "provenance": {
+                            "provider": "dependency_index",
+                            "completeness": observed["completeness"],
+                        },
+                    }
+                )
+
+                self.assertEqual(
+                    {item.target_entity_id for item in findings},
+                    {TARGET},
+                )
+                self.assertEqual(dynamic, [])
+                self.assertTrue(observed["evidence_complete"])
+                self.assertEqual(
+                    observed["relevant_downstream_object_ids"],
+                    [f"automation.{source_id}"],
+                )
+                self.assertEqual(
+                    observed["physical_consequence"], "direct"
+                )
+                self.assertEqual(risk.level, RiskLevel.HIGH)
+                self.assertTrue(risk.apply_allowed)
+
+    def test_uncertain_collection_aliases_remain_incomplete(self):
+        templates = (
+            "{% set original = states %}"
+            "{% set lookup = original if enabled else unknown_collection %}"
+            f"{{{{ lookup['{TARGET}'] }}}}",
+            "{% set lookup = states if enabled else is_state %}"
+            f"{{{{ lookup['{TARGET}'] }}}}",
+            "{% set states = states if enabled else is_state %}"
+            f"{{{{ states['{TARGET}'] }}}}",
+            "{% set lookup = unknown_collection %}"
+            f"{{{{ lookup['{TARGET}'] }}}}",
+            "{% set states = unknown_collection %}"
+            f"{{{{ states['{TARGET}'] }}}}",
+            "{% set lookup = unknown_collection %}"
+            "{{ lookup.input_boolean."
+            f"{TARGET.split('.', 1)[1]} }}}}",
+            "{% set lookup = unknown_collection %}"
+            "{% for item in lookup %}{{ item }}{% endfor %}",
+        )
+        for index, template in enumerate(templates):
+            with self.subTest(template=template):
+                source_id = f"uncertain_collection_alias_{index}"
+                findings, dynamic = _dynamic(
+                    template, source_id=source_id
+                )
+                observed = _binding(
+                    _snapshot(
+                        findings=findings,
+                        dynamic=dynamic,
+                        profiles=(
+                            _profile(source_id, "cover.open_cover"),
+                        ),
+                    )
+                )
+                risk = helper_dependency_risk_assessment(
+                    {
+                        "binding": observed,
+                        "provenance": {
+                            "provider": "dependency_index",
+                            "completeness": observed["completeness"],
+                        },
+                    }
+                )
+
+                self.assertEqual(findings, [])
+                self.assertTrue(dynamic)
+                self.assertTrue(
+                    all(item.entity_selector_present for item in dynamic)
+                )
+                self.assertFalse(observed["evidence_complete"])
+                self.assertFalse(observed["execution_eligible"])
+                self.assertEqual(risk.level, RiskLevel.HIGH)
+                self.assertFalse(risk.apply_allowed)
+
+    def test_bare_and_iterated_states_aliases_remain_incomplete(self):
+        templates = (
+            "{% set lookup = states %}{{ lookup }}",
+            "{% set lookup = states %}"
+            "{% for item in lookup %}{{ item }}{% endfor %}",
+        )
+        for index, template in enumerate(templates):
+            with self.subTest(template=template):
+                _findings, dynamic = _dynamic(
+                    template,
+                    source_id=f"states_collection_use_{index}",
+                )
+                observed = _binding(_snapshot(dynamic=dynamic))
+
+                self.assertTrue(dynamic)
+                self.assertTrue(
+                    all(item.entity_selector_present for item in dynamic)
+                )
+                self.assertFalse(observed["evidence_complete"])
+                self.assertFalse(observed["execution_eligible"])
+
+    def test_unreviewed_scope_aliases_remain_incomplete(self):
+        templates = (
+            "{% macro check() %}"
+            "{% set lookup = is_state %}"
+            f"{{{{ lookup('{TARGET}', 'on') }}}}"
+            "{% endmacro %}{{ check() }}",
+            "{% with lookup = is_state %}"
+            f"{{{{ lookup('{TARGET}', 'on') }}}}"
+            "{% endwith %}",
+            "{% set lookup = states %}{% macro check() %}"
+            f"{{{{ lookup['{TARGET}'] }}}}"
+            "{% endmacro %}{{ check() }}",
+            "{% macro check(lookup) %}"
+            f"{{{{ lookup('{TARGET}') }}}}"
+            "{% endmacro %}{{ check(unknown_callable) }}",
+            "{% call(lookup) supply(is_state) %}"
+            f"{{{{ lookup('{TARGET}', 'on') }}}}"
+            "{% endcall %}",
+        )
+        for index, template in enumerate(templates):
+            with self.subTest(template=template):
+                source_id = f"unreviewed_scope_alias_{index}"
+                findings, dynamic = _dynamic(
+                    template, source_id=source_id
+                )
+                observed = _binding(
+                    _snapshot(
+                        findings=findings,
+                        dynamic=dynamic,
+                        profiles=(
+                            _profile(source_id, "cover.open_cover"),
+                        ),
+                    )
+                )
+                risk = helper_dependency_risk_assessment(
+                    {
+                        "binding": observed,
+                        "provenance": {
+                            "provider": "dependency_index",
+                            "completeness": observed["completeness"],
+                        },
+                    }
+                )
+
+                self.assertEqual(findings, [])
+                self.assertTrue(dynamic)
+                self.assertTrue(
+                    any(item.entity_selector_present for item in dynamic)
+                )
+                self.assertFalse(observed["evidence_complete"])
+                self.assertFalse(observed["execution_eligible"])
+                self.assertEqual(risk.level, RiskLevel.HIGH)
+                self.assertFalse(risk.apply_allowed)
+
+    def test_collection_alias_classification_drift_changes_binding(self):
+        before = _binding(
+            _snapshot(
+                dynamic=_dynamic_items(
+                    ORDINARY_DYNAMIC_TEMPLATES[:1],
+                    "collection_alias_drift",
+                )
+            )
+        )
+        _findings, after_dynamic = _dynamic(
+            "{% set original = states %}"
+            "{% set lookup = original if enabled else unknown_collection %}"
+            f"{{{{ lookup['{TARGET}'] }}}}",
+            source_id="collection_alias_drift_0",
+        )
+        after = _binding(_snapshot(dynamic=after_dynamic))
+
+        self.assertTrue(before["evidence_complete"])
+        self.assertFalse(after["evidence_complete"])
+        self.assertNotEqual(
+            before["evidence_fingerprint"],
+            after["evidence_fingerprint"],
+        )
+
     def test_callable_alias_classification_drift_changes_binding(self):
         before_dynamic = _dynamic_items(
             ORDINARY_DYNAMIC_TEMPLATES[:1], "callable_alias_drift"

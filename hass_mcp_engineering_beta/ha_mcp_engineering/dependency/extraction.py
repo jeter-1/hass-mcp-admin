@@ -360,12 +360,24 @@ def _template_references(
             binding_expression = context.binding_expression(bounded)
             if binding_expression is not None:
                 scan_value = binding_expression
+        callable_alias_transport = bool(
+            segment_type == "statement"
+            and context.is_callable_alias_transport_statement(bounded)
+        )
         found, resolutions = _scan_template_segment(
             scan_value,
             candidate_context=context,
             binding_value=bool(
                 binding_expression is not None
-                and context.is_assignment_statement(bounded)
+                and (
+                    context.is_assignment_statement(bounded)
+                    or callable_alias_transport
+                )
+            ),
+            collection_use=bool(
+                binding_expression is not None
+                and context.is_iteration_statement(bounded)
+                and not callable_alias_transport
             ),
         )
         exact.update(found)
@@ -383,7 +395,7 @@ def _template_references(
                     kind="resolution_limit",
                 )
             )
-    if dynamic_resolutions and not context.control_flow_complete:
+    if not context.control_flow_complete:
         dynamic_resolutions.append(
             CandidateResolution(
                 complete=False,
@@ -498,6 +510,7 @@ def _scan_template_segment(
     depth: int = 0,
     candidate_context: BoundedTemplateContext | None = None,
     binding_value: bool = False,
+    collection_use: bool = False,
 ) -> tuple[set[str], list[CandidateResolution]]:
     exact, unresolved = _scan_template_entity_operators(
         value, candidate_context=candidate_context
@@ -591,9 +604,34 @@ def _scan_template_segment(
                 # collection.  A proven alias retains bracket/domain/bare
                 # collection semantics when it is not called.
                 name = "states"
+            elif binding_value:
+                # Binding expressions may transport unresolved callable
+                # provenance into a later selector-bearing use.  The binding
+                # itself does not select an entity.
+                continue
+            elif (
+                (
+                    not callable_binding.complete
+                    and (
+                        (
+                            lookahead < len(value)
+                            and value[lookahead] in {"[", "."}
+                        )
+                        or collection_use
+                    )
+                )
+                or callable_binding.entity_helpers
+            ):
+                # Bracket, dot, bare collection iteration, or mixed helper
+                # provenance can still select an exact Home Assistant entity.
+                # Preserve bounded uncertainty instead of treating it as
+                # ordinary formatting or dropping it as zero evidence.
+                unresolved.append(CandidateResolution())
+                continue
             elif name in ENTITY_TEMPLATE_HELPERS:
                 # A reviewed non-call use of a shadowing local is ordinary
-                # template dataflow, even when the bound value is callable.
+                # template dataflow only after callable provenance has been
+                # excluded above.
                 unresolved.append(
                     CandidateResolution(
                         possible_entity_domains=(),

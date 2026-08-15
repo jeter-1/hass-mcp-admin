@@ -36,6 +36,16 @@ _ELIF_STATEMENT = re.compile(r"^\s*elif\b")
 _UNREVIEWED_SCOPE_STATEMENT = re.compile(
     r"^\s*(?:macro|endmacro|call|endcall|block|endblock|filter|endfilter|with|endwith)\b"
 )
+_MACRO_SCOPE_STATEMENT = re.compile(
+    rf"^\s*macro\s+{_NAME}\s*\((?P<arguments>.*?)\)", re.DOTALL
+)
+_WITH_SCOPE_STATEMENT = re.compile(
+    r"^\s*with\s+(?P<bindings>.*?)\s*$", re.DOTALL
+)
+_CALL_SCOPE_STATEMENT = re.compile(
+    r"^\s*call\s*\((?P<arguments>.*?)\)", re.DOTALL
+)
+_SCOPE_ASSIGNMENT_NAME = re.compile(rf"(?:^|,)\s*(?P<name>{_NAME})\s*=")
 
 
 @dataclass(frozen=True)
@@ -162,6 +172,8 @@ class BoundedTemplateContext:
         self._conditional_depth = 0
         self._control_flow_valid = True
         self._binding_analysis_enabled = True
+        self._uncertain_bindings: set[str] = set()
+        self._uncertain_binding_overflow = False
 
     def apply_statement(self, statement: str) -> None:
         """Apply only reviewed binding statements; ignore all other Jinja."""
@@ -174,13 +186,25 @@ class BoundedTemplateContext:
             return
         if _UNREVIEWED_SCOPE_STATEMENT.match(statement):
             # Macro/call/block/filter/with scopes have binding semantics outside
-            # this deliberately small grammar.  Once one appears, no local
-            # binding may suppress a possible Home Assistant entity helper.
+            # this deliberately small grammar.  Preserve the names that can
+            # flow through that scope as uncertain rather than erasing their
+            # possible Home Assistant entity-helper provenance.
+            self._remember_uncertain_bindings(
+                (
+                    *self._bindings,
+                    *self._unreviewed_scope_binding_names(statement),
+                )
+            )
             self._binding_analysis_enabled = False
             self._bindings.clear()
             self._trusted_bindings.clear()
             return
         if not self._binding_analysis_enabled:
+            for pattern in (_SET_STATEMENT, _FOR_STATEMENT):
+                match = pattern.match(statement)
+                if match is not None:
+                    self._remember_uncertain_bindings((match.group("name"),))
+                    break
             return
         if _IF_STATEMENT.match(statement):
             self._conditional_depth += 1
@@ -295,12 +319,39 @@ class BoundedTemplateContext:
 
         return _SET_STATEMENT.match(statement) is not None
 
+    @staticmethod
+    def is_iteration_statement(statement: str) -> bool:
+        """Return whether *statement* is a reviewed ``for`` binding."""
+
+        return _FOR_STATEMENT.match(statement) is not None
+
+    def is_callable_alias_transport_statement(self, statement: str) -> bool:
+        """Return whether a ``for`` iterable transports reviewed callables.
+
+        A finite container such as ``[states]`` carries the callable into the
+        loop target; it does not itself iterate Home Assistant's state
+        collection.  Direct ``for item in states`` remains a collection read.
+        """
+
+        match = _FOR_STATEMENT.match(statement)
+        if match is None:
+            return False
+        collection = self._evaluate(match.group("expression"))
+        return bool(
+            collection.iteration is not None
+            and collection.iteration.entity_helpers
+        )
+
     def is_locally_bound(self, name: str) -> bool:
         """Return whether reviewed template dataflow shadows a global helper."""
 
         return bool(
-            self._binding_analysis_enabled
-            and name in self._trusted_bindings
+            (
+                self._binding_analysis_enabled
+                and name in self._trusted_bindings
+            )
+            or name in self._uncertain_bindings
+            or self._uncertain_binding_overflow
         )
 
     def callable_binding(self, name: str) -> CallableBindingResolution:
@@ -311,6 +362,11 @@ class BoundedTemplateContext:
         Unknown or conditionally established values remain incomplete.
         """
 
+        if (
+            name in self._uncertain_bindings
+            or self._uncertain_binding_overflow
+        ):
+            return CallableBindingResolution(locally_bound=True)
         if not self._binding_analysis_enabled or name not in self._bindings:
             return CallableBindingResolution()
         value = self._bindings[name]
@@ -320,6 +376,40 @@ class BoundedTemplateContext:
             complete=bool(trusted and value.complete),
             entity_helpers=tuple(sorted(value.entity_helpers)),
         )
+
+    def _remember_uncertain_bindings(self, names: tuple[str, ...]) -> None:
+        """Retain a deterministic bounded set of unreviewed local names."""
+
+        combined = sorted(self._uncertain_bindings.union(names))
+        if len(combined) > MAX_DYNAMIC_CANDIDATES:
+            self._uncertain_binding_overflow = True
+        self._uncertain_bindings = set(
+            combined[:MAX_DYNAMIC_CANDIDATES]
+        )
+
+    @staticmethod
+    def _unreviewed_scope_binding_names(statement: str) -> set[str]:
+        """Return bounded local names introduced by an unreviewed scope."""
+
+        parameter_scope = _MACRO_SCOPE_STATEMENT.match(statement)
+        if parameter_scope is None:
+            parameter_scope = _CALL_SCOPE_STATEMENT.match(statement)
+        if parameter_scope is not None:
+            names: set[str] = set()
+            for argument in parameter_scope.group("arguments").split(","):
+                candidate = argument.split("=", 1)[0].strip().lstrip("*")
+                if re.fullmatch(_NAME, candidate):
+                    names.add(candidate)
+            return names
+        with_scope = _WITH_SCOPE_STATEMENT.match(statement)
+        if with_scope is None:
+            return set()
+        return {
+            match.group("name")
+            for match in _SCOPE_ASSIGNMENT_NAME.finditer(
+                with_scope.group("bindings")
+            )
+        }
 
     @property
     def control_flow_complete(self) -> bool:

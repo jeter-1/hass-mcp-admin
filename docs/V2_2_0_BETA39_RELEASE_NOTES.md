@@ -14,8 +14,12 @@ reference actually contains a Home Assistant entity selector. A reviewed local
 dataflow only when its bounded value provenance is proven non-entity. Known
 callable aliases of reviewed Home Assistant entity helpers retain the canonical
 helper's exact selector semantics; unproven callable aliases remain
-non-conclusive. The record remains bounded and approval-bound with its reference
-kind, selector-presence flag, expression fingerprint, source identity, and
+non-conclusive. A uniquely proven `states` alias also retains canonical bracket,
+dot, bare-collection, and iteration semantics. Mixed or unknown collection
+aliases remain non-conclusive. Aliases crossing deliberately unreviewed macro or
+`with` scopes retain bounded uncertainty instead of disappearing from evidence.
+The record remains bounded and approval-bound with its reference kind,
+selector-presence flag, expression fingerprint, source identity, and
 `target_membership: not_applicable` classification.
 
 The specialized helper-risk service excludes only those mechanically proven

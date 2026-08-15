@@ -36,7 +36,11 @@ template dataflow only when bounded static evidence proves both the binding and
 its value are non-entity dataflow. A known callable alias of `states`,
 `state_attr`, `is_state`, `is_state_attr`, `has_value`, `expand`, or another
 reviewed entity helper retains that helper's selector semantics. An unproven
-callable binding remains non-conclusive.
+callable binding remains non-conclusive. A uniquely proven `states` alias also
+retains bracket, dot, bare-collection, and iteration semantics. Exact bracket or
+dot targets remain exact dependencies; bare state collections remain
+non-conclusive. Mixed, unknown, or incomplete collection provenance must never
+be represented as ordinary formatting.
 Configuration path names are diagnostic and never decide selector semantics.
 
 Each excluded non-selector record binds bounded source identity, reference kind,
@@ -49,6 +53,10 @@ The following remain non-conclusive:
 - unbounded `states(variable)` and `states[dynamic_value]`;
 - unknown macros or functions that may produce entity IDs;
 - callable bindings whose provenance cannot be proven non-entity;
+- mixed or unknown aliases used with call, bracket, dot, or collection
+  iteration syntax;
+- entity-helper aliases crossing macro, `with`, or another deliberately
+  unreviewed Jinja scope unless the bounded grammar proves the exact selector;
 - dynamic/computed label and registry selectors;
 - unrestricted iteration over Home Assistant states;
 - conditionally shadowed or otherwise uncertain helper names;

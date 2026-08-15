@@ -623,6 +623,99 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(dynamic_key, keys)
         self.assertNotIn(exact_key, keys)
 
+    async def test_collection_and_unreviewed_aliases_take_dependency_locks(self):
+        helper = "input_boolean.synthetic_exact"
+        exact_key = helper_dependency_lock_key(helper)
+        dynamic_key = unconstrained_helper_dependency_lock_key()
+        base = valid_config("automation")
+        exact_templates = (
+            "{% set lookup = states %}"
+            f"{{{{ lookup['{helper}'] }}}}",
+            "{% set first = states %}{% set lookup = first %}"
+            f"{{{{ lookup['{helper}'] }}}}",
+            "{% set helpers = {'lookup': states} %}"
+            "{% set lookup = helpers.lookup %}"
+            f"{{{{ lookup['{helper}'] }}}}",
+            "{% set helpers = {'lookup': states} %}"
+            "{% set lookup = helpers['lookup'] %}"
+            f"{{{{ lookup['{helper}'] }}}}",
+            "{% for lookup in [states] %}"
+            f"{{{{ lookup['{helper}'] }}}}"
+            "{% endfor %}",
+            "{% set lookup = states %}"
+            "{{ lookup.input_boolean.synthetic_exact }}",
+        )
+        conservative_templates = (
+            "{% set original = states %}"
+            "{% set lookup = original if enabled else unknown_collection %}"
+            f"{{{{ lookup['{helper}'] }}}}",
+            "{% set lookup = states if enabled else is_state %}"
+            f"{{{{ lookup['{helper}'] }}}}",
+            "{% set lookup = unknown_collection %}"
+            f"{{{{ lookup['{helper}'] }}}}",
+            "{% set lookup = unknown_collection %}"
+            "{{ lookup.input_boolean.synthetic_exact }}",
+            "{% set lookup = states %}{{ lookup }}",
+            "{% set lookup = states %}"
+            "{% for item in lookup %}{{ item }}{% endfor %}",
+            "{% macro check() %}{% set lookup = is_state %}"
+            f"{{{{ lookup('{helper}', 'on') }}}}"
+            "{% endmacro %}{{ check() }}",
+            "{% with lookup = is_state %}"
+            f"{{{{ lookup('{helper}', 'on') }}}}"
+            "{% endwith %}",
+            "{% set lookup = states %}{% macro check() %}"
+            f"{{{{ lookup['{helper}'] }}}}"
+            "{% endmacro %}{{ check() }}",
+            "{% call(lookup) supply(is_state) %}"
+            f"{{{{ lookup('{helper}', 'on') }}}}"
+            "{% endcall %}",
+        )
+
+        for template in exact_templates:
+            with self.subTest(kind="exact", template=template):
+                proposed = valid_config("automation")
+                proposed["condition"] = [
+                    {
+                        "condition": "template",
+                        "value_template": template,
+                    }
+                ]
+                prepared = await self._prepared(
+                    "automation",
+                    "update",
+                    current_config=base,
+                    proposed_config=proposed,
+                )
+                keys = {
+                    item.key
+                    for item in operation_lock_requests(prepared)
+                }
+                self.assertIn(exact_key, keys)
+                self.assertNotIn(dynamic_key, keys)
+
+        for template in conservative_templates:
+            with self.subTest(kind="conservative", template=template):
+                proposed = valid_config("automation")
+                proposed["condition"] = [
+                    {
+                        "condition": "template",
+                        "value_template": template,
+                    }
+                ]
+                prepared = await self._prepared(
+                    "automation",
+                    "update",
+                    current_config=base,
+                    proposed_config=proposed,
+                )
+                keys = {
+                    item.key
+                    for item in operation_lock_requests(prepared)
+                }
+                self.assertIn(dynamic_key, keys)
+                self.assertNotIn(exact_key, keys)
+
     async def test_filter_test_and_domain_collection_dependency_locks(self):
         helper = "input_boolean.synthetic_exact"
         exact_key = helper_dependency_lock_key(helper)
