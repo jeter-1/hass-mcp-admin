@@ -29,6 +29,13 @@ _FOR_STATEMENT = re.compile(
     re.DOTALL,
 )
 _END_FOR_STATEMENT = re.compile(r"^\s*endfor\b")
+_IF_STATEMENT = re.compile(r"^\s*if\b")
+_END_IF_STATEMENT = re.compile(r"^\s*endif\b")
+_ELSE_STATEMENT = re.compile(r"^\s*else\b")
+_ELIF_STATEMENT = re.compile(r"^\s*elif\b")
+_UNREVIEWED_SCOPE_STATEMENT = re.compile(
+    r"^\s*(?:macro|endmacro|call|endcall|block|endblock|filter|endfilter|with|endwith)\b"
+)
 
 
 @dataclass(frozen=True)
@@ -41,6 +48,7 @@ class CandidateResolution:
     complete: bool = False
     limit_exceeded: bool = False
     kind: str = "unresolved"
+    entity_selector_present: bool = True
 
 
 @dataclass
@@ -128,26 +136,99 @@ class BoundedTemplateContext:
     def __init__(self, entity_id_validator: Callable[[str], bool]):
         self._valid_entity_id = entity_id_validator
         self._bindings: dict[str, _StaticValue] = {}
-        self._loop_stack: list[tuple[str, _StaticValue | None]] = []
+        self._trusted_bindings: set[str] = set()
+        self._loop_stack: list[
+            tuple[str, _StaticValue | None, bool]
+        ] = []
+        self._control_stack: list[str] = []
+        self._conditional_depth = 0
+        self._control_flow_valid = True
+        self._binding_analysis_enabled = True
 
     def apply_statement(self, statement: str) -> None:
         """Apply only reviewed binding statements; ignore all other Jinja."""
 
         if len(statement) > MAX_DYNAMIC_EXPRESSION_CHARS:
+            self._control_flow_valid = False
+            self._binding_analysis_enabled = False
+            self._bindings.clear()
+            self._trusted_bindings.clear()
             return
-        if _END_FOR_STATEMENT.match(statement):
-            if self._loop_stack:
-                name, prior = self._loop_stack.pop()
+        if _UNREVIEWED_SCOPE_STATEMENT.match(statement):
+            # Macro/call/block/filter/with scopes have binding semantics outside
+            # this deliberately small grammar.  Once one appears, no local
+            # binding may suppress a possible Home Assistant entity helper.
+            self._binding_analysis_enabled = False
+            self._bindings.clear()
+            self._trusted_bindings.clear()
+            return
+        if not self._binding_analysis_enabled:
+            return
+        if _IF_STATEMENT.match(statement):
+            self._conditional_depth += 1
+            self._control_stack.append("if")
+            return
+        if _END_IF_STATEMENT.match(statement):
+            if not self._control_stack or self._control_stack[-1] != "if":
+                self._control_flow_valid = False
+                self._binding_analysis_enabled = False
+                self._bindings.clear()
+                self._trusted_bindings.clear()
+                return
+            self._control_stack.pop()
+            self._conditional_depth = max(
+                0, self._conditional_depth - 1
+            )
+            return
+        if _ELIF_STATEMENT.match(statement) or _ELSE_STATEMENT.match(statement):
+            if not self._control_stack:
+                self._control_flow_valid = False
+                self._binding_analysis_enabled = False
+                self._bindings.clear()
+                self._trusted_bindings.clear()
+                return
+            if self._control_stack[-1] == "for":
+                # Jinja's loop target is not a proven binding in a ``for``
+                # ``else`` branch because that branch runs when iteration did
+                # not establish the target.
+                name, prior, prior_trusted = self._loop_stack[-1]
                 if prior is None:
                     self._bindings.pop(name, None)
                 else:
                     self._bindings[name] = prior
+                if prior_trusted:
+                    self._trusted_bindings.add(name)
+                else:
+                    self._trusted_bindings.discard(name)
+            return
+        if _END_FOR_STATEMENT.match(statement):
+            if (
+                not self._loop_stack
+                or not self._control_stack
+                or self._control_stack[-1] != "for"
+            ):
+                self._control_flow_valid = False
+                self._binding_analysis_enabled = False
+                self._bindings.clear()
+                self._trusted_bindings.clear()
+                return
+            self._control_stack.pop()
+            name, prior, prior_trusted = self._loop_stack.pop()
+            if prior is None:
+                self._bindings.pop(name, None)
+            else:
+                self._bindings[name] = prior
+            if prior_trusted:
+                self._trusted_bindings.add(name)
+            else:
+                self._trusted_bindings.discard(name)
             return
         match = _SET_STATEMENT.match(statement)
         if match is not None:
             name = match.group("name")
             value = self._evaluate(match.group("expression"))
             prior = self._bindings.get(name)
+            prior_trusted = name in self._trusted_bindings
             # Repeated assignments can represent conditional Jinja branches.
             # Unioning them is conservative and still finite.
             self._bindings[name] = (
@@ -155,6 +236,13 @@ class BoundedTemplateContext:
                 if prior is not None
                 else value
             )
+            if prior_trusted or (
+                self._conditional_depth == 0
+                and not self._loop_stack
+            ):
+                self._trusted_bindings.add(name)
+            else:
+                self._trusted_bindings.discard(name)
             return
         match = _FOR_STATEMENT.match(statement)
         if match is None:
@@ -162,8 +250,45 @@ class BoundedTemplateContext:
         name = match.group("name")
         collection = self._evaluate(match.group("expression"))
         loop_value = collection.iteration or collection
-        self._loop_stack.append((name, self._bindings.get(name)))
+        self._loop_stack.append(
+            (
+                name,
+                self._bindings.get(name),
+                name in self._trusted_bindings,
+            )
+        )
+        self._control_stack.append("for")
         self._bindings[name] = loop_value
+        self._trusted_bindings.add(name)
+
+    @staticmethod
+    def binding_expression(statement: str) -> str | None:
+        """Return the evaluated RHS/iterable for a reviewed binding."""
+
+        for pattern in (_SET_STATEMENT, _FOR_STATEMENT):
+            match = pattern.match(statement)
+            if match is not None:
+                return match.group("expression")
+        return None
+
+    def is_locally_bound(self, name: str) -> bool:
+        """Return whether reviewed template dataflow shadows a global helper."""
+
+        return bool(
+            self._binding_analysis_enabled
+            and name in self._trusted_bindings
+        )
+
+    @property
+    def control_flow_complete(self) -> bool:
+        """Return whether reviewed binding scopes closed without mismatch."""
+
+        return bool(
+            self._control_flow_valid
+            and not self._control_stack
+            and not self._loop_stack
+            and self._conditional_depth == 0
+        )
 
     def resolve(self, expression: str) -> CandidateResolution:
         if len(expression) > MAX_DYNAMIC_EXPRESSION_CHARS:
@@ -269,7 +394,12 @@ class BoundedTemplateContext:
                 kinds={"mapping"},
             )
         if isinstance(node, ast.Name):
-            return self._bindings.get(node.id, _empty_incomplete())
+            if (
+                self._binding_analysis_enabled
+                and node.id in self._trusted_bindings
+            ):
+                return self._bindings.get(node.id, _empty_incomplete())
+            return _empty_incomplete()
         if isinstance(node, ast.Attribute):
             base = self._evaluate_node(node.value, depth=depth + 1)
             result = base.fields.get(node.attr, _empty_incomplete())

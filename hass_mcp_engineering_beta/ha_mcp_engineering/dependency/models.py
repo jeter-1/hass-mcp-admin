@@ -59,6 +59,8 @@ class DynamicReference:
     candidate_resolution_kind: str = "unresolved"
     candidate_resolution_complete: bool = False
     candidate_resolution_limit_exceeded: bool = False
+    reference_kind: str = "dynamic_entity_selector"
+    entity_selector_present: bool = True
 
 
 @dataclass(frozen=True)
@@ -213,6 +215,8 @@ def dynamic_reference_material(item: DynamicReference) -> dict[str, Any]:
         "candidate_resolution_limit_exceeded": (
             item.candidate_resolution_limit_exceeded
         ),
+        "reference_kind": item.reference_kind,
+        "entity_selector_present": item.entity_selector_present,
         "excerpt_fingerprint": excerpt_fingerprint,
     }
 

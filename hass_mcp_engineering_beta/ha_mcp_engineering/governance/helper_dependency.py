@@ -18,6 +18,7 @@ HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v2"
 MAX_RELEVANT_AUTOMATIONS = 50
 MAX_RELEVANT_DYNAMIC_REFERENCES = 32
 MAX_DYNAMIC_REFERENCES_EVALUATED = 64
+MAX_NON_ENTITY_DYNAMIC_REFERENCES = 64
 MAX_RESOLVED_CANDIDATES_PER_EXPRESSION = 128
 MAX_TOTAL_RESOLVED_CANDIDATES = 512
 MAX_UNREADABLE_AUTOMATIONS = 50
@@ -101,6 +102,64 @@ def _resolved_dynamic_reference_evidence(
             item, "candidate_resolution_limit_exceeded", False
         )
     )
+    reference_kind = str(
+        getattr(item, "reference_kind", "dynamic_entity_selector")
+    )
+    claimed_entity_selector_present = bool(
+        getattr(item, "entity_selector_present", True)
+    )
+    proven_non_entity_template = bool(
+        not claimed_entity_selector_present
+        and reference_kind == "ordinary_dynamic_template"
+        and not direct_candidates
+        and not labels
+        and not exact_domains
+        and complete
+        and not limit_exceeded
+    )
+    entity_selector_present = not proven_non_entity_template
+    if not entity_selector_present:
+        candidates: list[str] = []
+        target_membership = "not_applicable"
+        reason_codes: list[str] = []
+        label_fingerprints: dict[str, str] = {}
+        expression_fingerprint = dynamic_reference_fingerprint(item)
+        configuration_path = str(item.config_path)
+        if len(configuration_path.encode("utf-8")) > 256:
+            configuration_path = (
+                "oversized_sha256:" + stable_hash(configuration_path)
+            )
+        evidence = {
+            "source_object_id": _safe_automation_identity(
+                item.source_id, item.source_entity_id
+            ),
+            "configuration_path": configuration_path,
+            "expression_fingerprint": expression_fingerprint,
+            "reference_kind": reference_kind,
+            "entity_selector_present": False,
+            "resolution_kind": str(
+                getattr(
+                    item,
+                    "candidate_resolution_kind",
+                    "ordinary_dynamic_template",
+                )
+            ),
+            "candidate_entity_ids": candidates,
+            "candidate_set_fingerprint": stable_hash(candidates),
+            "explicit_candidate_fingerprint": stable_hash([]),
+            "literal_label_selectors": [],
+            "label_membership_fingerprints": label_fingerprints,
+            "possible_entity_domains": [],
+            "target_membership": target_membership,
+            "complete": True,
+            "truncated": False,
+            "reason_codes": reason_codes,
+        }
+        return {
+            **evidence,
+            "evidence_fingerprint": stable_hash(evidence),
+            "source_id": item.source_id,
+        }
     reason_codes: list[str] = []
     label_fingerprints: dict[str, str] = {}
     label_candidates: set[str] = set()
@@ -174,6 +233,8 @@ def _resolved_dynamic_reference_evidence(
         ),
         "configuration_path": configuration_path,
         "expression_fingerprint": expression_fingerprint,
+        "reference_kind": "dynamic_entity_selector",
+        "entity_selector_present": True,
         "resolution_kind": str(
             getattr(item, "candidate_resolution_kind", "unresolved")
         ),
@@ -313,6 +374,10 @@ def _failed_binding(entity_id: str, completeness: str) -> dict[str, Any]:
         "target_relevant_dynamic_reference_fingerprints": [],
         "resolved_dynamic_reference_evidence": [],
         "resolved_target_dynamic_reference_count": 0,
+        "non_entity_dynamic_reference_count": 0,
+        "non_entity_dynamic_reference_fingerprints": [],
+        "non_entity_dynamic_evaluation_overflow_count": 0,
+        "non_entity_dynamic_evaluation_overflow_fingerprint": None,
         "unresolved_dynamic_reference_count": 0,
         "unreadable_automation_count": 0,
         "unreadable_automation_ids": [],
@@ -375,10 +440,20 @@ def build_helper_dependency_risk_binding(
         ),
         key=lambda item: item["evidence_fingerprint"],
     )
+    non_entity_dynamic_evidence = [
+        item
+        for item in resolved_dynamic_evidence
+        if item["entity_selector_present"] is False
+    ]
+    selector_dynamic_evidence = [
+        item
+        for item in resolved_dynamic_evidence
+        if item["entity_selector_present"] is True
+    ]
     retained_dynamic_evidence: list[dict[str, Any]] = []
     omitted_dynamic_evidence: list[dict[str, Any]] = []
     retained_candidate_count = 0
-    for item in resolved_dynamic_evidence:
+    for item in selector_dynamic_evidence:
         candidate_count = len(item["candidate_entity_ids"])
         if (
             len(retained_dynamic_evidence)
@@ -401,7 +476,35 @@ def build_helper_dependency_risk_binding(
         if dynamic_evaluation_overflow
         else None
     )
-    resolved_dynamic_evidence = retained_dynamic_evidence
+    retained_non_entity_dynamic_evidence = (
+        non_entity_dynamic_evidence[:MAX_NON_ENTITY_DYNAMIC_REFERENCES]
+    )
+    omitted_non_entity_dynamic_evidence = (
+        non_entity_dynamic_evidence[MAX_NON_ENTITY_DYNAMIC_REFERENCES:]
+    )
+    non_entity_dynamic_overflow = len(
+        omitted_non_entity_dynamic_evidence
+    )
+    non_entity_dynamic_overflow_fingerprint = (
+        stable_hash(
+            [
+                item["evidence_fingerprint"]
+                for item in omitted_non_entity_dynamic_evidence
+            ]
+        )
+        if non_entity_dynamic_overflow
+        else None
+    )
+    non_entity_dynamic_fingerprints, _ = _bounded_dynamic_fingerprints(
+        non_entity_dynamic_evidence
+    )
+    resolved_dynamic_evidence = sorted(
+        [
+            *retained_dynamic_evidence,
+            *retained_non_entity_dynamic_evidence,
+        ],
+        key=lambda item: item["evidence_fingerprint"],
+    )
     for item in resolved_dynamic_evidence:
         if item["target_membership"] == "included":
             sources.setdefault(item["source_id"], set()).add(
@@ -609,6 +712,18 @@ def build_helper_dependency_risk_binding(
         "resolved_target_dynamic_reference_count": sum(
             item["target_membership"] == "included"
             for item in resolved_dynamic_evidence
+        ),
+        "non_entity_dynamic_reference_count": len(
+            non_entity_dynamic_evidence
+        ),
+        "non_entity_dynamic_reference_fingerprints": (
+            non_entity_dynamic_fingerprints
+        ),
+        "non_entity_dynamic_evaluation_overflow_count": (
+            non_entity_dynamic_overflow
+        ),
+        "non_entity_dynamic_evaluation_overflow_fingerprint": (
+            non_entity_dynamic_overflow_fingerprint
         ),
         "unresolved_dynamic_reference_count": len(relevant_dynamic),
         "unreadable_automation_count": unreadable_automation_count,

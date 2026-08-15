@@ -45,6 +45,7 @@ from ha_mcp_engineering.request_context import (  # noqa: E402
     end_request,
 )
 from ha_mcp_engineering.errors import (  # noqa: E402
+    ErrorCode,
     GovernanceError,
     HomeAssistantApiError,
 )
@@ -160,6 +161,7 @@ class FakeDependencyRiskReader:
         self.consequence = "none"
         self.complete = True
         self.effect_revision = "v1"
+        self.selector_revision: str | None = None
 
     async def __call__(self, entity_id: str, *, refresh: bool = True):
         if entity_id != self.entity_id or refresh is not True:
@@ -234,6 +236,7 @@ class FakeDependencyRiskReader:
             "target_relevant_dynamic_reference_count": 0,
             "target_relevant_dynamic_reference_fingerprints": [],
             "unresolved_dynamic_reference_count": 0,
+            "selector_classification_fixture": self.selector_revision,
             "truncated": False,
         }
         binding = {
@@ -380,6 +383,10 @@ class ExactHelperStateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             plan["policy_decision"]["physical_consequence"], "none"
         )
+        self.assertTrue(plan["approval_actionable"])
+        self.assertEqual(
+            plan["next_required_operation"], "approve_change_plan"
+        )
 
     async def test_consequential_dependency_elevates_governance(self):
         self.dependency.automation_ids = ["automation.opens_cover"]
@@ -402,6 +409,10 @@ class ExactHelperStateRuntimeTests(unittest.IsolatedAsyncioTestCase):
             plan["policy_decision"]["required_acknowledgements"],
             ["plan_approval", "elevated_risk_acknowledgement"],
         )
+        self.assertTrue(plan["approval_actionable"])
+        self.assertEqual(
+            plan["next_required_operation"], "approve_change_plan"
+        )
 
     async def test_incomplete_dependency_evidence_is_reviewable_but_not_low(self):
         self.dependency.complete = False
@@ -420,6 +431,47 @@ class ExactHelperStateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             plan["policy_decision"]["physical_consequence"], "indirect"
         )
+        self.assertFalse(plan["approval_actionable"])
+        self.assertIsNone(plan["next_required_operation"])
+        self.assertFalse(plan["approval_challenge_created"])
+
+        with self.assertRaises(GovernanceError) as captured:
+            self.service.approve(plan["plan_id"], plan["plan_hash"])
+        self.assertEqual(
+            captured.exception.code,
+            ErrorCode.OPERATIONAL_VALIDATION_FAILED,
+        )
+        saved = self.service._load(plan["plan_id"])
+        self.assertEqual(saved.approval.state, ApprovalState.REQUIRED)
+        self.assertIsNone(saved.approval.challenge_id)
+        self.assertEqual(self.helper.dispatch_count, 0)
+
+    async def test_approval_request_never_dispatches_helper_state(self):
+        created = await self.service.create_helper_state_plan(
+            entity_id=self.helper.entity_id,
+            desired_state="on",
+        )
+        plan = created["plan"]
+
+        pending = self.service.approve(
+            plan["plan_id"], plan["plan_hash"]
+        )
+
+        self.assertEqual(pending["approval_lifecycle"], "approval_pending_external")
+        self.assertEqual(self.helper.dispatch_count, 0)
+
+    async def test_selector_classification_drift_rejects_before_dispatch(self):
+        self.dependency.selector_revision = "ordinary_dynamic_template"
+        plan = await self.create_and_grant()
+        self.dependency.selector_revision = "dynamic_entity_selector"
+
+        result = await self.service.apply(
+            plan["plan_id"], plan["plan_hash"]
+        )
+
+        self.assertEqual(result["task_state"], "failed_pre_dispatch")
+        self.assertFalse(result["provider_dispatch_occurred"])
+        self.assertEqual(self.helper.dispatch_count, 0)
 
     async def test_dependency_fingerprint_change_rejects_before_dispatch(self):
         plan = await self.create_and_grant()

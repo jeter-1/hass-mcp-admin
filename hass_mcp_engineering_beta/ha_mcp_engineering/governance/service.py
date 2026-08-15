@@ -2467,11 +2467,7 @@ class ChangeGovernanceService:
         value["next_required_operation"] = (
             "approve_change_plan"
             if approval_lifecycle == "approval_not_requested"
-            and (
-                plan.policy_decision is None
-                or plan.policy_decision.policy_class
-                != ApprovalPolicyClass.PROHIBITED
-            )
+            and self._approval_is_actionable(plan)
             else None
         )
         value["plan_hash"] = self.plan_hash(plan)
@@ -2583,6 +2579,8 @@ class ChangeGovernanceService:
     def _approval_is_actionable(self, plan: ChangePlan) -> bool:
         """Project actionability without upgrading legacy authority records."""
 
+        if not self._helper_state_plan_execution_eligible(plan):
+            return False
         decision = plan.policy_decision
         if decision is None:
             return bool(
@@ -2614,6 +2612,51 @@ class ChangeGovernanceService:
                 "approval_pending_external",
                 "pending_elevated_risk_acknowledgement",
             }
+        )
+
+    @staticmethod
+    def _helper_state_plan_execution_eligible(
+        plan: ChangePlan,
+    ) -> bool:
+        """Fail closed only for evidence-ineligible helper-state plans."""
+
+        if plan.operation is not ChangeOperation.SET_INPUT_BOOLEAN_STATE:
+            return True
+        operational = plan.operational
+        baseline = (
+            operational.baseline
+            if operational is not None
+            and isinstance(operational.baseline, dict)
+            else {}
+        )
+        dependency_risk = baseline.get("dependency_risk")
+        return bool(
+            plan.risk.apply_allowed
+            and isinstance(dependency_risk, dict)
+            and dependency_risk.get("evidence_complete") is True
+            and dependency_risk.get("execution_eligible") is True
+        )
+
+    def _require_helper_state_approval_eligible(
+        self, plan: ChangePlan
+    ) -> None:
+        if self._helper_state_plan_execution_eligible(plan):
+            return
+        raise GovernanceError(
+            ErrorCode.OPERATIONAL_VALIDATION_FAILED,
+            details={
+                "operation": plan.operation.value,
+                "resource_id": plan.plan_id,
+                "failure_category": "dependency_evidence_incomplete",
+                "failure_stage": "approval_preparation",
+                "provider_dispatch_occurred": False,
+                "action_attempted": False,
+                "fallback": "none",
+                "fallback_occurred": False,
+                "required_action": (
+                    "resolve_dependency_evidence_and_create_fresh_plan"
+                ),
+            },
         )
 
     def _summary(self, plan: ChangePlan) -> dict[str, Any]:
@@ -4586,6 +4629,7 @@ class ChangeGovernanceService:
                 ErrorCode.APPROVAL_AUTHORITY_MISMATCH,
                 details={"resource_id": plan.plan_id, "reason": "active_plan_must_be_recreated"},
             )
+        self._require_helper_state_approval_eligible(plan)
         # Final preparation is the last semantic recomputation. A failure here
         # cannot create an approval challenge or any durable execution task.
         self._require_configuration_projection(plan, recompute=True)
@@ -5092,6 +5136,7 @@ class ChangeGovernanceService:
                 raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
             if plan.approval.state == ApprovalState.EXPIRED:
                 raise GovernanceError(ErrorCode.EXTERNAL_APPROVAL_EXPIRED)
+            self._require_helper_state_approval_eligible(plan)
             self._require_configuration_projection(plan)
             calculated = self.plan_hash(plan)
             action, active_challenge, _requested, _expires = (
@@ -5145,6 +5190,7 @@ class ChangeGovernanceService:
                 raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
             if plan.approval.state == ApprovalState.EXPIRED:
                 raise GovernanceError(ErrorCode.EXTERNAL_APPROVAL_EXPIRED)
+            self._require_helper_state_approval_eligible(plan)
             self._require_policy_snapshot(plan)
             self._require_configuration_projection(plan)
             calculated = self.plan_hash(plan)

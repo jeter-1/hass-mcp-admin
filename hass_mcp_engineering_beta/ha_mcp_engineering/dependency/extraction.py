@@ -158,7 +158,11 @@ def extract_document(
                 source_type=source_type,
                 source_id=source_id,
                 config_path=path,
-                warning="Dynamic template reference could not be resolved statically.",
+                warning=(
+                    "Dynamic template content contains no entity selector."
+                    if not resolution.entity_selector_present
+                    else "Dynamic template reference could not be resolved statically."
+                ),
                 excerpt=safe,
                 source_entity_id=_bounded(source_entity_id, 128, secret),
                 source_name=_bounded(source_name, 160, secret),
@@ -185,6 +189,14 @@ def extract_document(
                 candidate_resolution_limit_exceeded=bool(
                     resolution.limit_exceeded
                     or selector_limit_exceeded
+                ),
+                reference_kind=(
+                    "dynamic_entity_selector"
+                    if resolution.entity_selector_present
+                    else "ordinary_dynamic_template"
+                ),
+                entity_selector_present=(
+                    resolution.entity_selector_present
                 ),
             )
         )
@@ -339,13 +351,21 @@ def _template_references(
     context = BoundedTemplateContext(valid_entity_id)
     for segment_type, segment in _template_segments(value):
         bounded = segment[:MAX_TEMPLATE_SEGMENT_CHARS]
+        scan_value = bounded
         if segment_type == "statement":
-            context.apply_statement(bounded)
+            binding_expression = context.binding_expression(bounded)
+            if binding_expression is not None:
+                scan_value = binding_expression
         found, resolutions = _scan_template_segment(
-            bounded, candidate_context=context
+            scan_value, candidate_context=context
         )
         exact.update(found)
         dynamic_resolutions.extend(resolutions)
+        if segment_type == "statement":
+            # Jinja evaluates a set/for expression before introducing its new
+            # local binding.  Scan the right-hand side against the prior
+            # context, then make the binding available to later segments.
+            context.apply_statement(bounded)
         if len(segment) > len(bounded):
             dynamic_resolutions.append(
                 CandidateResolution(
@@ -354,23 +374,43 @@ def _template_references(
                     kind="resolution_limit",
                 )
             )
+    if dynamic_resolutions and not context.control_flow_complete:
+        dynamic_resolutions.append(
+            CandidateResolution(
+                complete=False,
+                limit_exceeded=True,
+                kind="resolution_limit",
+            )
+        )
     if not dynamic_resolutions:
         return sorted(exact), False, CandidateResolution()
-    complete = all(item.complete for item in dynamic_resolutions)
+    selector_resolutions = [
+        item
+        for item in dynamic_resolutions
+        if item.entity_selector_present
+    ]
+    if not selector_resolutions:
+        return sorted(exact), True, CandidateResolution(
+            possible_entity_domains=(),
+            complete=True,
+            kind="ordinary_dynamic_template",
+            entity_selector_present=False,
+        )
+    complete = all(item.complete for item in selector_resolutions)
     limit_exceeded = any(
-        item.limit_exceeded for item in dynamic_resolutions
+        item.limit_exceeded for item in selector_resolutions
     )
     entity_ids = sorted(
         {
             entity_id
-            for item in dynamic_resolutions
+            for item in selector_resolutions
             for entity_id in item.entity_ids
         }
     )
     labels = sorted(
         {
             label
-            for item in dynamic_resolutions
+            for item in selector_resolutions
             for label in item.literal_label_selectors
         }
     )
@@ -385,7 +425,7 @@ def _template_references(
     domains: tuple[str, ...] | None
     if complete and not labels:
         domain_values: set[str] = set()
-        for item in dynamic_resolutions:
+        for item in selector_resolutions:
             if item.possible_entity_domains is None:
                 complete = False
                 break
@@ -393,7 +433,7 @@ def _template_references(
         domains = tuple(sorted(domain_values)) if complete else None
     else:
         domains = None
-    kinds = {item.kind for item in dynamic_resolutions}
+    kinds = {item.kind for item in selector_resolutions}
     if limit_exceeded:
         kind = "resolution_limit"
     elif len(kinds) == 1:
@@ -409,6 +449,7 @@ def _template_references(
         complete=complete,
         limit_exceeded=limit_exceeded,
         kind=kind,
+        entity_selector_present=True,
     )
 
 
@@ -472,6 +513,22 @@ def _scan_template_segment(
         if _is_filter_or_test_identifier(value, start):
             # Filter and test arguments are not entity operands.  Their entity
             # operand is projected by _scan_template_entity_operators().
+            continue
+        if (
+            candidate_context is not None
+            and candidate_context.is_locally_bound(name)
+        ):
+            # A reviewed ``set`` or ``for`` binding shadows Home Assistant's
+            # global helper.  The token remains approval-bound evidence, but
+            # it is ordinary template dataflow rather than an entity selector.
+            unresolved.append(
+                CandidateResolution(
+                    possible_entity_domains=(),
+                    complete=True,
+                    kind="ordinary_dynamic_template",
+                    entity_selector_present=False,
+                )
+            )
             continue
         lookahead = cursor
         while lookahead < len(value) and value[lookahead].isspace():

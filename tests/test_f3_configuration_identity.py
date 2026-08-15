@@ -506,6 +506,57 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
+    async def test_non_selector_template_dataflow_does_not_take_helper_lock(self):
+        base = valid_config("automation")
+        ordinary = valid_config("automation")
+        ordinary["action"] = [
+            {
+                "service": "notify.notify",
+                "data": {
+                    "message": (
+                        "{% set states = messages %}"
+                        "{{ states | join(', ') }}"
+                    )
+                },
+            }
+        ]
+        selector = valid_config("automation")
+        selector["condition"] = [
+            {
+                "condition": "template",
+                "value_template": "{{ states(variable) }}",
+            }
+        ]
+        dynamic_key = unconstrained_helper_dependency_lock_key()
+
+        ordinary_prepared = await self._prepared(
+            "automation",
+            "update",
+            current_config=base,
+            proposed_config=ordinary,
+        )
+        selector_prepared = await self._prepared(
+            "automation",
+            "update",
+            current_config=ordinary,
+            proposed_config=selector,
+        )
+
+        self.assertNotIn(
+            dynamic_key,
+            {
+                item.key
+                for item in operation_lock_requests(ordinary_prepared)
+            },
+        )
+        self.assertIn(
+            dynamic_key,
+            {
+                item.key
+                for item in operation_lock_requests(selector_prepared)
+            },
+        )
+
     async def test_filter_test_and_domain_collection_dependency_locks(self):
         helper = "input_boolean.synthetic_exact"
         exact_key = helper_dependency_lock_key(helper)
