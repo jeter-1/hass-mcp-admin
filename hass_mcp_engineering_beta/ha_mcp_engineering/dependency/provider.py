@@ -5,6 +5,8 @@ from __future__ import annotations
 from abc import abstractmethod
 import asyncio
 from collections import Counter, defaultdict
+import hashlib
+import json
 from pathlib import Path
 import time
 from typing import Any
@@ -20,7 +22,11 @@ from ..providers import (
     ProviderCoverage,
     ProviderResult,
 )
-from .extraction import extract_document, resolve_blueprint_roles
+from .extraction import (
+    extract_document,
+    resolve_blueprint_roles,
+    valid_entity_id,
+)
 from .models import (
     AutomationReadFailure,
     AutomationActionRiskProfile,
@@ -28,6 +34,12 @@ from .models import (
     SOURCE_TYPES,
     SourceCoverageItem,
 )
+
+
+MAX_LABEL_REGISTRY_ENTRIES = 1_000
+MAX_LABEL_MEMBERSHIP = 128
+MAX_LITERAL_LABEL_SELECTORS = 256
+MAX_ENTITY_LABELS = 64
 
 
 class DependencySourceProvider(EngineeringEvidenceProvider):
@@ -100,6 +112,10 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         ] = []
         automation_read_failures: list[AutomationReadFailure] = []
         metadata: dict[str, dict[str, Any]] = {}
+        label_memberships: dict[str, tuple[str, ...]] = {}
+        label_membership_fingerprints: dict[str, str] = {}
+        label_membership_truncated: tuple[str, ...] = ()
+        label_registry_complete = False
         coverage: list[SourceCoverageItem] = []
         request_counts: Counter[str] = Counter()
         request_time_ms: dict[str, float] = defaultdict(float)
@@ -309,6 +325,67 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 )
             )
 
+        literal_label_selectors = sorted(
+            {
+                selector
+                for item in dynamic
+                for selector in item.literal_label_selectors
+            },
+            key=lambda item: item.encode("utf-8"),
+        )
+        label_warning: list[str] = []
+        if literal_label_selectors:
+            if len(literal_label_selectors) > MAX_LITERAL_LABEL_SELECTORS:
+                literal_label_selectors = literal_label_selectors[
+                    :MAX_LITERAL_LABEL_SELECTORS
+                ]
+                label_warning.append(
+                    "Literal label selectors exceeded the bounded dependency payload."
+                )
+            label_registry: list[Any] = []
+            try:
+                label_registry = await request(
+                    "label_registry_inventory",
+                    lambda: self.websocket_client.command(
+                        {"type": "config/label_registry/list"}
+                    ),
+                )
+                if not isinstance(label_registry, list):
+                    label_registry = []
+                    label_warning.append(
+                        "Label registry returned an invalid response."
+                    )
+                elif len(label_registry) > MAX_LABEL_REGISTRY_ENTRIES:
+                    label_registry = sorted(
+                        label_registry,
+                        key=lambda item: json.dumps(
+                            item, sort_keys=True, default=str
+                        ),
+                    )[:MAX_LABEL_REGISTRY_ENTRIES]
+                    label_warning.append(
+                        "Label registry exceeded the bounded dependency payload."
+                    )
+            except Exception:
+                label_warning.append(
+                    "Label registry could not be read for dynamic dependency resolution."
+                )
+            (
+                label_memberships,
+                label_membership_fingerprints,
+                label_membership_truncated,
+                membership_complete,
+            ) = _build_label_membership_evidence(
+                literal_label_selectors,
+                entity_registry=registry,
+                label_registry=label_registry,
+            )
+            label_registry_complete = bool(
+                membership_complete
+                and not registry_warning
+                and not label_warning
+            )
+            registry_warning.extend(label_warning)
+
         automation_status = "complete" if failed == 0 else ("partial" if results else "unavailable")
         coverage.append(
             SourceCoverageItem(
@@ -380,6 +457,14 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             },
             automation_action_profiles=automation_action_profiles,
             automation_read_failures=automation_read_failures,
+            label_memberships=label_memberships,
+            label_membership_fingerprints=(
+                label_membership_fingerprints
+            ),
+            label_membership_truncated=(
+                label_membership_truncated
+            ),
+            label_registry_complete=label_registry_complete,
         )
 
 
@@ -406,3 +491,80 @@ def _read_blueprint(path: str | None) -> dict[str, Any] | None:
         except Exception:
             return None
     return None
+
+
+def _build_label_membership_evidence(
+    selectors: list[str],
+    *,
+    entity_registry: list[Any],
+    label_registry: list[Any],
+) -> tuple[
+    dict[str, tuple[str, ...]],
+    dict[str, str],
+    tuple[str, ...],
+    bool,
+]:
+    """Resolve exact literal label names/IDs without template execution."""
+
+    complete = True
+    label_ids_by_selector: dict[str, set[str]] = {
+        selector: set() for selector in selectors
+    }
+    for item in label_registry:
+        if not isinstance(item, dict):
+            complete = False
+            continue
+        label_id = item.get("label_id")
+        name = item.get("name")
+        if not isinstance(label_id, str) or not label_id:
+            complete = False
+            continue
+        for selector in selectors:
+            if selector == label_id or selector == name:
+                label_ids_by_selector[selector].add(label_id)
+
+    memberships: dict[str, set[str]] = {
+        selector: set() for selector in selectors
+    }
+    for item in entity_registry:
+        if not isinstance(item, dict):
+            complete = False
+            continue
+        entity_id = item.get("entity_id")
+        labels = item.get("labels", [])
+        if not isinstance(labels, list):
+            complete = False
+            continue
+        if len(labels) > MAX_ENTITY_LABELS:
+            complete = False
+            continue
+        if not isinstance(entity_id, str) or not valid_entity_id(entity_id):
+            continue
+        exact_labels = {
+            label for label in labels if isinstance(label, str)
+        }
+        if any(not isinstance(label, str) for label in labels):
+            complete = False
+        for selector, label_ids in label_ids_by_selector.items():
+            if exact_labels.intersection(label_ids):
+                memberships[selector].add(entity_id)
+
+    retained: dict[str, tuple[str, ...]] = {}
+    fingerprints: dict[str, str] = {}
+    truncated: list[str] = []
+    for selector in selectors:
+        ordered = sorted(
+            memberships[selector], key=lambda item: item.encode("utf-8")
+        )
+        encoded = json.dumps(
+            ordered, separators=(",", ":"), ensure_ascii=True
+        )
+        fingerprints[selector] = hashlib.sha256(
+            encoded.encode("utf-8")
+        ).hexdigest()
+        if len(ordered) > MAX_LABEL_MEMBERSHIP:
+            truncated.append(selector)
+            retained[selector] = tuple(ordered[:MAX_LABEL_MEMBERSHIP])
+        else:
+            retained[selector] = tuple(ordered)
+    return retained, fingerprints, tuple(sorted(truncated)), complete

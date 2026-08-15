@@ -34,6 +34,16 @@ from ha_mcp_engineering.errors import (  # noqa: E402
     error_definition,
     map_exception,
 )
+from ha_mcp_engineering.governance.helper_state import (  # noqa: E402
+    HelperStateGateway,
+)
+from ha_mcp_engineering.governance.service import (  # noqa: E402
+    ChangeGovernanceService,
+)
+from ha_mcp_engineering.governance.storage import (  # noqa: E402
+    ChangePlanRepository,
+)
+from ha_mcp_engineering.health import HEALTH  # noqa: E402
 from ha_mcp_engineering.logging_config import JsonFormatter, log_event, redact_data  # noqa: E402
 from ha_mcp_engineering.models import FailureResponse, SuccessResponse, Timing  # noqa: E402
 from ha_mcp_engineering.observability import METRICS, RuntimeMetrics  # noqa: E402
@@ -715,6 +725,28 @@ class GatewayAndHealthTests(unittest.TestCase):
         health = payload["data"]
         self.assertEqual(health["server"]["version"], SERVER_VERSION)
         self.assertEqual(health["registered_tool_count"], 51)
+        helper_provider = health["governance"][
+            "operational_administration"
+        ]["helper_state_provider"]
+        helper_operation = health["governance"][
+            "operational_administration"
+        ]["operations"]["set_input_boolean_state"]
+        self.assertEqual(
+            helper_provider["provider"], "direct_home_assistant_state"
+        )
+        self.assertEqual(
+            helper_provider["provider_contract"],
+            "direct-ha-exact-input-boolean-v1",
+        )
+        self.assertEqual(helper_provider["fallback"], "none")
+        self.assertEqual(
+            helper_operation["provider_identity"],
+            "direct_home_assistant_state",
+        )
+        self.assertEqual(
+            helper_operation["provider_contract"],
+            "direct-ha-exact-input-boolean-v1",
+        )
         self.assertIn("handoff_generation", health)
         self.assertIn("automation_reliability_analysis", health)
         self.assertIn("governance", health)
@@ -920,15 +952,132 @@ class GatewayAndHealthTests(unittest.TestCase):
         self.assertIn("dependency_analysis", health)
         dependency = health["dependency_analysis"]
         self.assertIn("findings_truncation_event_count", dependency)
-        self.assertIn("current_index_unresolved_dynamic_reference_count", dependency)
+        self.assertIn(
+            "current_index_unresolved_dynamic_reference_count",
+            dependency,
+        )
         self.assertEqual(
-            dependency["counter_semantics"]["findings_truncation_event_count"],
+            dependency["counter_semantics"][
+                "findings_truncation_event_count"
+            ],
             "cumulative_process_events",
         )
         encoded = json.dumps(payload)
         self.assertNotIn(SECRET, encoded)
         self.assertNotIn("test-ha-token", encoded)
         self.assertNotIn("/mcp", encoded)
+
+    def test_helper_provider_health_tracks_exact_ha_probe_without_substitution(self):
+        with tempfile.TemporaryDirectory() as directory:
+            create_application(settings(str(Path(directory) / "audit.jsonl")))
+            previous_governance = HEALTH.governance
+            HEALTH.governance = ChangeGovernanceService(
+                ChangePlanRepository(Path(directory) / "governance-health"),
+                object(),
+                helper_state_gateway=HelperStateGateway(object(), object()),
+            )
+            try:
+                with patch.object(
+                    compatibility,
+                    "rest",
+                    AsyncMock(return_value={"version": "2026.8.1"}),
+                ), patch.object(
+                    compatibility,
+                    "ws_command",
+                    AsyncMock(return_value={"version": "2026.8.1"}),
+                ):
+                    healthy = json.loads(
+                        asyncio.run(
+                            compatibility.get_server_health(check_ha=True)
+                        )
+                    )["data"]
+                with patch.object(
+                    compatibility,
+                    "rest",
+                    AsyncMock(
+                        side_effect=RuntimeError("synthetic outage")
+                    ),
+                ), patch.object(
+                    compatibility,
+                    "ws_command",
+                    AsyncMock(return_value={"version": "2026.8.1"}),
+                ):
+                    unavailable = json.loads(
+                        asyncio.run(
+                            compatibility.get_server_health(check_ha=True)
+                        )
+                    )["data"]
+            finally:
+                HEALTH.governance = previous_governance
+
+        for health, expected in (
+            (healthy, "available"),
+            (unavailable, "unavailable"),
+        ):
+            provider = health["governance"][
+                "operational_administration"
+            ]["helper_state_provider"]
+            operation = health["governance"][
+                "operational_administration"
+            ]["operations"]["set_input_boolean_state"]
+            self.assertEqual(
+                provider["provider"], "direct_home_assistant_state"
+            )
+            self.assertEqual(
+                provider["provider_contract"],
+                "direct-ha-exact-input-boolean-v1",
+            )
+            self.assertEqual(provider["operational_status"], expected)
+            self.assertEqual(provider["fallback"], "none")
+            self.assertEqual(
+                operation["provider_identity"],
+                "direct_home_assistant_state",
+            )
+            self.assertNotEqual(
+                operation["provider_identity"],
+                "upstream_operational_lifecycle",
+            )
+
+    def test_helper_provider_health_requires_rest_and_websocket(self):
+        with tempfile.TemporaryDirectory() as directory:
+            create_application(settings(str(Path(directory) / "audit.jsonl")))
+            previous_governance = HEALTH.governance
+            HEALTH.governance = ChangeGovernanceService(
+                ChangePlanRepository(Path(directory) / "governance-health"),
+                object(),
+                helper_state_gateway=HelperStateGateway(object(), object()),
+            )
+            try:
+                with patch.object(
+                    compatibility,
+                    "rest",
+                    AsyncMock(return_value={"version": "2026.8.1"}),
+                ), patch.object(
+                    compatibility,
+                    "ws_command",
+                    AsyncMock(side_effect=RuntimeError("synthetic ws outage")),
+                ) as websocket_probe:
+                    observed = json.loads(
+                        asyncio.run(
+                            compatibility.get_server_health(check_ha=True)
+                        )
+                    )["data"]
+            finally:
+                HEALTH.governance = previous_governance
+
+        provider = observed["governance"][
+            "operational_administration"
+        ]["helper_state_provider"]
+        self.assertEqual(
+            websocket_probe.await_args.args[0], {"type": "get_config"}
+        )
+        self.assertEqual(provider["operational_status"], "unavailable")
+        self.assertEqual(provider["health"], "degraded")
+        self.assertEqual(
+            provider["last_failure_category"],
+            "home_assistant_websocket_unavailable",
+        )
+        self.assertEqual(provider["fallback"], "none")
 
     def test_get_server_health_is_beta_only(self):
         beta_names = {

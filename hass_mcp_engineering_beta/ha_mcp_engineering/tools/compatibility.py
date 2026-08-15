@@ -196,21 +196,45 @@ async def get_server_health(check_ha: bool = True) -> str:
     """
     async def action():
         if not check_ha:
-            connection = {"checked": False, "status": "not_checked"}
+            connection = {
+                "checked": False,
+                "status": "not_checked",
+                "rest_status": "not_checked",
+                "websocket_status": "not_checked",
+            }
         else:
+            connection = {"checked": True}
             try:
                 config = await rest("GET", "/config")
-                connection = {
-                    "checked": True,
-                    "status": "connected",
-                    "version": config.get("version") if isinstance(config, dict) else None,
-                }
+                connection.update(
+                    {
+                        "status": "connected",
+                        "rest_status": "connected",
+                        "version": (
+                            config.get("version")
+                            if isinstance(config, dict)
+                            else None
+                        ),
+                    }
+                )
             except Exception as exc:
-                connection = {
-                    "checked": True,
-                    "status": "unavailable",
-                    "error_category": type(exc).__name__,
-                }
+                connection.update(
+                    {
+                        "status": "unavailable",
+                        "rest_status": "unavailable",
+                        "error_category": type(exc).__name__,
+                        "rest_error_category": type(exc).__name__,
+                    }
+                )
+            try:
+                # Read-only, bounded transport/capability evidence for the
+                # helper provider's WebSocket dispatch path.  This does not
+                # call a service or establish target-specific authorization.
+                await ws_command({"type": "get_config"})
+                connection["websocket_status"] = "connected"
+            except Exception as exc:
+                connection["websocket_status"] = "unavailable"
+                connection["websocket_error_category"] = type(exc).__name__
         upstream_health = UPSTREAM_DASHBOARD.health_snapshot()
         if (
             check_ha

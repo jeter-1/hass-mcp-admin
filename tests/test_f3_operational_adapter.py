@@ -956,6 +956,27 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
                 "value_template": "{{ states(entity_variable) }}",
             }
         ]
+        bounded_relevant = configuration_valid_config("automation")
+        bounded_relevant["condition"] = [
+            {
+                "condition": "template",
+                "value_template": (
+                    "{% for entity in ['sensor.a', "
+                    "'input_boolean.synthetic_exact'] %}"
+                    "{{ states(entity) }}{% endfor %}"
+                ),
+            }
+        ]
+        bounded_unrelated = configuration_valid_config("automation")
+        bounded_unrelated["condition"] = [
+            {
+                "condition": "template",
+                "value_template": (
+                    "{% for entity in ['sensor.a', 'sensor.b'] %}"
+                    "{{ states(entity) }}{% endfor %}"
+                ),
+            }
+        ]
 
         async def configuration_locks(action, current, proposed):
             gateway = SyntheticConfigurationGateway()
@@ -979,6 +1000,12 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
             ("update", relevant, base, "update_removes_dependency"),
             ("update", relevant, altered, "update_alters_dependency"),
             ("update", base, dynamic, "unconstrained_dynamic"),
+            (
+                "update",
+                base,
+                bounded_relevant,
+                "bounded_dynamic_adds_exact_dependency",
+            ),
         )
         timing = LockTiming(60, 10, 0)
         with tempfile.TemporaryDirectory() as temporary:
@@ -1003,7 +1030,7 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
             unrelated_locks = await configuration_locks(
                 "update",
                 base,
-                configuration_valid_config("automation", updated=True),
+                bounded_unrelated,
             )
             unrelated_handle = store.acquire_once(
                 unrelated_locks,

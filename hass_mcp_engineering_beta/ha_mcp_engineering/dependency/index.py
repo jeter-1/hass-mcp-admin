@@ -332,6 +332,15 @@ class DependencyIndex:
                 dynamic_reference_overflow_fingerprint=(
                     dynamic_reference_overflow_fingerprint
                 ),
+                label_membership_fingerprints=(
+                    scan.label_membership_fingerprints
+                ),
+                label_membership_truncated=(
+                    scan.label_membership_truncated
+                ),
+                label_registry_complete=(
+                    scan.label_registry_complete
+                ),
             )
             build_duration_ms = (time.perf_counter() - build_started) * 1000
             replacement = DependencyIndexSnapshot(
@@ -352,6 +361,16 @@ class DependencyIndex:
                 ),
                 dynamic_reference_overflow_fingerprint=(
                     dynamic_reference_overflow_fingerprint
+                ),
+                label_memberships=dict(scan.label_memberships),
+                label_membership_fingerprints=dict(
+                    scan.label_membership_fingerprints
+                ),
+                label_membership_truncated=tuple(
+                    scan.label_membership_truncated
+                ),
+                label_registry_complete=bool(
+                    scan.label_registry_complete
                 ),
             )
             # Publish the complete replacement atomically after every build step.

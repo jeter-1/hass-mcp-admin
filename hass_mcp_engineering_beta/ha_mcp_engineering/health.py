@@ -187,7 +187,14 @@ class HealthRegistry:
             "retry_count": metrics["retry_count"],
             "timeout_count": metrics["timeout_count"],
             "governance": (
-                self.governance.health_summary()
+                self.governance.health_summary(
+                    home_assistant_status=ha_connection.get(
+                        "rest_status", ha_connection.get("status")
+                    ),
+                    home_assistant_websocket_status=(
+                        ha_connection.get("websocket_status")
+                    ),
+                )
                 if self.governance
                 else {"enabled": False, "storage": {"configured": False}}
             ),

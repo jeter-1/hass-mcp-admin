@@ -10621,7 +10621,12 @@ class ChangeGovernanceService:
         self._record(plan, "rollback_succeeded", "success")
         return {"status": "rolled_back", "plan": self._public(plan, include_configs=False)}
 
-    def health_summary(self) -> dict[str, Any]:
+    def health_summary(
+        self,
+        *,
+        home_assistant_status: str | None = None,
+        home_assistant_websocket_status: str | None = None,
+    ) -> dict[str, Any]:
         """Return live health over a generation-bound persisted aggregate."""
 
         started = time.monotonic()
@@ -10677,12 +10682,24 @@ class ChangeGovernanceService:
         operational = summary["operational_administration"]
         backup_provider = self._backup_provider_health_snapshot()
         lifecycle_provider = self._lifecycle_provider_health_snapshot()
+        helper_state_provider = (
+            self._helper_state_provider_health_snapshot(
+                home_assistant_status=home_assistant_status,
+                home_assistant_websocket_status=(
+                    home_assistant_websocket_status
+                ),
+            )
+        )
         operational["provider"] = backup_provider
         operational["lifecycle_provider"] = lifecycle_provider
+        operational["helper_state_provider"] = helper_state_provider
         for operation, operation_health in operational["operations"].items():
             provider_health = (
                 backup_provider
                 if operation == ChangeOperation.CREATE_FULL_BACKUP.value
+                else helper_state_provider
+                if operation
+                == ChangeOperation.SET_INPUT_BOOLEAN_STATE.value
                 else lifecycle_provider
             )
             operation_health["provider_identity"] = provider_health.get(
@@ -10690,8 +10707,19 @@ class ChangeGovernanceService:
             )
             availability = provider_health.get("operational_status")
             operation_health["provider_availability"] = availability
+            operation_health["provider_contract"] = provider_health.get(
+                "provider_contract"
+            )
+            operation_health["fallback"] = provider_health.get(
+                "fallback", "none"
+            )
             operation_health["provider_contract_status"] = (
-                "exact"
+                "code_owned_exact"
+                if operation
+                == ChangeOperation.SET_INPUT_BOOLEAN_STATE.value
+                and provider_health.get("provider_contract")
+                == HELPER_STATE_PROVIDER_CONTRACT
+                else "exact"
                 if availability == "available"
                 else "unavailable_or_unverified"
             )
@@ -10800,6 +10828,103 @@ class ChangeGovernanceService:
                 "fallback_count": 0,
                 "fallback_policy": "none",
             }
+
+    def _helper_state_provider_health_snapshot(
+        self,
+        *,
+        home_assistant_status: str | None = None,
+        home_assistant_websocket_status: str | None = None,
+    ) -> dict[str, Any]:
+        if self.helper_state_gateway is None:
+            return {
+                "provider": HELPER_STATE_PROVIDER,
+                "provider_contract": HELPER_STATE_PROVIDER_CONTRACT,
+                "configured": False,
+                "operational_status": "unavailable",
+                "health": "unavailable",
+                "fallback": "none",
+                "fallback_count": 0,
+                "fallback_policy": "none",
+                "last_failure_category": "provider_unconfigured",
+            }
+        snapshot_reader = getattr(
+            self.helper_state_gateway, "health_snapshot", None
+        )
+        snapshot_failure: str | None = None
+        if callable(snapshot_reader):
+            try:
+                snapshot = dict(snapshot_reader())
+            except Exception as exc:
+                snapshot = {}
+                snapshot_failure = (
+                    "helper_state_health_snapshot_failed:"
+                    f"{type(exc).__name__[:48]}"
+                )
+        else:
+            snapshot = {}
+        result = {
+            "provider": HELPER_STATE_PROVIDER,
+            "provider_contract": HELPER_STATE_PROVIDER_CONTRACT,
+            "configured": True,
+            "operational_status": "configured_unprobed",
+            "health": "unknown",
+            "fallback": "none",
+            "fallback_count": 0,
+            "fallback_policy": "none",
+            "last_failure_category": None,
+            **snapshot,
+        }
+        result["transport_health"] = {
+            "rest": home_assistant_status or "not_checked",
+            "websocket": (
+                home_assistant_websocket_status or "not_checked"
+            ),
+        }
+        # Both read-only probes are required availability evidence for this
+        # exact provider: REST supplies state/readback while WebSocket supplies
+        # call_service dispatch.  Neither probe claims that an action ran.
+        if (
+            home_assistant_status == "connected"
+            and home_assistant_websocket_status == "connected"
+        ):
+            result["operational_status"] = "available"
+            result["health"] = "healthy"
+            result["last_failure_category"] = None
+        elif (
+            home_assistant_status == "unavailable"
+            or home_assistant_websocket_status == "unavailable"
+        ):
+            result["operational_status"] = "unavailable"
+            result["health"] = "degraded"
+            result["last_failure_category"] = next(
+                category
+                for unavailable, category in (
+                    (
+                        home_assistant_status == "unavailable",
+                        "home_assistant_rest_unavailable",
+                    ),
+                    (
+                        home_assistant_websocket_status == "unavailable",
+                        "home_assistant_websocket_unavailable",
+                    ),
+                )
+                if unavailable
+            )
+        if snapshot_failure is not None:
+            result["operational_status"] = "unavailable"
+            result["health"] = "degraded"
+            result["last_failure_category"] = snapshot_failure
+        result.update(
+            {
+                "provider": HELPER_STATE_PROVIDER,
+                "provider_contract": HELPER_STATE_PROVIDER_CONTRACT,
+                "configured": True,
+                "fallback": "none",
+                "fallback_count": 0,
+                "fallback_policy": "none",
+            }
+        )
+        return result
 
     def _build_health_summary(
         self, *, include_provider_health: bool = True
@@ -11298,13 +11423,21 @@ class ChangeGovernanceService:
                 "fallback_policy": "none",
             }
         )
-        helper_state_provider_health = {
-            "provider": HELPER_STATE_PROVIDER,
-            "configured": self.helper_state_gateway is not None,
-            "operational_status": "configured_unprobed",
-            "fallback_count": 0,
-            "fallback_policy": "none",
-        }
+        helper_state_provider_health = (
+            self._helper_state_provider_health_snapshot()
+            if include_provider_health
+            else {
+                "provider": HELPER_STATE_PROVIDER,
+                "provider_contract": HELPER_STATE_PROVIDER_CONTRACT,
+                "configured": self.helper_state_gateway is not None,
+                "operational_status": "configured_unprobed",
+                "health": "unknown",
+                "fallback": "none",
+                "fallback_count": 0,
+                "fallback_policy": "none",
+                "last_failure_category": None,
+            }
+        )
         by_type: dict[str, dict[str, Any]] = {}
         for operation in lifecycle_types:
             operation_plans = [
@@ -11453,6 +11586,9 @@ class ChangeGovernanceService:
                 ),
                 "fallback_count": 0,
                 "provider_identity": provider_health.get("provider"),
+                "provider_contract": provider_health.get(
+                    "provider_contract"
+                ),
                 "provider_availability": provider_health.get(
                     "operational_status"
                 ),
@@ -11483,6 +11619,7 @@ class ChangeGovernanceService:
                 )
                 for operation in lifecycle_types
             },
+            "helper_state_provider": helper_state_provider_health,
             "operations": by_type,
             "backup_plans_created": events.count(
                 "operational_backup_plan_created"

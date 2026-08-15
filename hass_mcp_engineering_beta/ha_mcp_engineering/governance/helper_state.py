@@ -81,6 +81,21 @@ class HelperStateGateway:
         self.rest_client = rest_client
         self.websocket_client = websocket_client
 
+    def health_snapshot(self) -> dict[str, Any]:
+        """Return configuration truth without claiming an execution probe."""
+
+        return {
+            "provider": HELPER_STATE_PROVIDER,
+            "provider_contract": HELPER_STATE_PROVIDER_CONTRACT,
+            "configured": True,
+            "operational_status": "configured_unprobed",
+            "health": "unknown",
+            "fallback": "none",
+            "fallback_count": 0,
+            "fallback_policy": "none",
+            "last_failure_category": None,
+        }
+
     async def read_state(self, entity_id: str) -> dict[str, Any]:
         entity_id = validate_input_boolean_entity_id(entity_id)
         try:
