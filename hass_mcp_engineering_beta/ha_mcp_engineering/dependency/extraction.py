@@ -348,16 +348,25 @@ def _template_references(
 
     exact: set[str] = set()
     dynamic_resolutions: list[CandidateResolution] = []
-    context = BoundedTemplateContext(valid_entity_id)
+    context = BoundedTemplateContext(
+        valid_entity_id,
+        entity_helper_names=ENTITY_TEMPLATE_HELPERS,
+    )
     for segment_type, segment in _template_segments(value):
         bounded = segment[:MAX_TEMPLATE_SEGMENT_CHARS]
         scan_value = bounded
+        binding_expression: str | None = None
         if segment_type == "statement":
             binding_expression = context.binding_expression(bounded)
             if binding_expression is not None:
                 scan_value = binding_expression
         found, resolutions = _scan_template_segment(
-            scan_value, candidate_context=context
+            scan_value,
+            candidate_context=context,
+            binding_value=bool(
+                binding_expression is not None
+                and context.is_assignment_statement(bounded)
+            ),
         )
         exact.update(found)
         dynamic_resolutions.extend(resolutions)
@@ -488,6 +497,7 @@ def _scan_template_segment(
     *,
     depth: int = 0,
     candidate_context: BoundedTemplateContext | None = None,
+    binding_value: bool = False,
 ) -> tuple[set[str], list[CandidateResolution]]:
     exact, unresolved = _scan_template_entity_operators(
         value, candidate_context=candidate_context
@@ -506,7 +516,15 @@ def _scan_template_segment(
         while cursor < len(value) and (value[cursor].isalnum() or value[cursor] == "_"):
             cursor += 1
         name = value[start:cursor]
-        if name not in ENTITY_TEMPLATE_HELPERS:
+        callable_binding = (
+            candidate_context.callable_binding(name)
+            if candidate_context is not None
+            else None
+        )
+        if name not in ENTITY_TEMPLATE_HELPERS and not (
+            callable_binding is not None
+            and callable_binding.locally_bound
+        ):
             continue
         if start > 0 and (value[start - 1].isalnum() or value[start - 1] in {"_", "."}):
             continue
@@ -514,25 +532,77 @@ def _scan_template_segment(
             # Filter and test arguments are not entity operands.  Their entity
             # operand is projected by _scan_template_entity_operators().
             continue
-        if (
-            candidate_context is not None
-            and candidate_context.is_locally_bound(name)
-        ):
-            # A reviewed ``set`` or ``for`` binding shadows Home Assistant's
-            # global helper.  The token remains approval-bound evidence, but
-            # it is ordinary template dataflow rather than an entity selector.
-            unresolved.append(
-                CandidateResolution(
-                    possible_entity_domains=(),
-                    complete=True,
-                    kind="ordinary_dynamic_template",
-                    entity_selector_present=False,
-                )
-            )
-            continue
         lookahead = cursor
         while lookahead < len(value) and value[lookahead].isspace():
             lookahead += 1
+
+        if callable_binding is not None and callable_binding.locally_bound:
+            if lookahead < len(value) and value[lookahead] == "(":
+                inner, end = _extract_balanced(value, lookahead, "(", ")")
+                if inner is None:
+                    unresolved.append(CandidateResolution())
+                    cursor = lookahead + 1
+                    continue
+                if not callable_binding.complete:
+                    # A local callable with unproven provenance may still be
+                    # an alias of a Home Assistant entity helper.  It must not
+                    # suppress target-membership uncertainty.
+                    unresolved.append(CandidateResolution())
+                    if depth < MAX_TEMPLATE_NESTING:
+                        nested, nested_dynamic = _scan_template_segment(
+                            inner,
+                            depth=depth + 1,
+                            candidate_context=candidate_context,
+                        )
+                        exact.update(nested)
+                        unresolved.extend(nested_dynamic)
+                    cursor = end
+                    continue
+                if not callable_binding.entity_helpers:
+                    unresolved.append(
+                        CandidateResolution(
+                            possible_entity_domains=(),
+                            complete=True,
+                            kind="ordinary_dynamic_template",
+                            entity_selector_present=False,
+                        )
+                    )
+                    if depth < MAX_TEMPLATE_NESTING:
+                        nested, nested_dynamic = _scan_template_segment(
+                            inner,
+                            depth=depth + 1,
+                            candidate_context=candidate_context,
+                        )
+                        exact.update(nested)
+                        unresolved.extend(nested_dynamic)
+                    cursor = end
+                    continue
+                if len(callable_binding.entity_helpers) != 1:
+                    unresolved.append(CandidateResolution())
+                    cursor = end
+                    continue
+                # A proven alias retains the exact canonical helper semantics.
+                name = callable_binding.entity_helpers[0]
+            elif (
+                callable_binding.complete
+                and callable_binding.entity_helpers == ("states",)
+            ):
+                # ``states`` is both callable and the official all-state
+                # collection.  A proven alias retains bracket/domain/bare
+                # collection semantics when it is not called.
+                name = "states"
+            elif name in ENTITY_TEMPLATE_HELPERS:
+                # A reviewed non-call use of a shadowing local is ordinary
+                # template dataflow, even when the bound value is callable.
+                unresolved.append(
+                    CandidateResolution(
+                        possible_entity_domains=(),
+                        complete=True,
+                        kind="ordinary_dynamic_template",
+                        entity_selector_present=False,
+                    )
+                )
+                continue
 
         if lookahead < len(value) and value[lookahead] == "(":
             inner, end = _extract_balanced(value, lookahead, "(", ")")
@@ -628,7 +698,7 @@ def _scan_template_segment(
                     unresolved.append(CandidateResolution())
                 cursor = lookahead + domain_match.end()
                 continue
-        if name == "states":
+        if name == "states" and not binding_value:
             # Bare ``states`` is the official all-state collection.  It can
             # select the target helper and therefore must remain explicitly
             # unresolved rather than disappearing as zero evidence.

@@ -51,6 +51,15 @@ class CandidateResolution:
     entity_selector_present: bool = True
 
 
+@dataclass(frozen=True)
+class CallableBindingResolution:
+    """Bounded provenance for one locally bound callable name."""
+
+    locally_bound: bool = False
+    complete: bool = False
+    entity_helpers: tuple[str, ...] = ()
+
+
 @dataclass
 class _StaticValue:
     entity_ids: set[str] = field(default_factory=set)
@@ -61,6 +70,7 @@ class _StaticValue:
     complete: bool = True
     limit_exceeded: bool = False
     kinds: set[str] = field(default_factory=set)
+    entity_helpers: set[str] = field(default_factory=set)
 
 
 def _empty_incomplete(*, limit: bool = False) -> _StaticValue:
@@ -82,6 +92,7 @@ def _iteration_copy(value: _StaticValue) -> _StaticValue:
         complete=value.complete,
         limit_exceeded=value.limit_exceeded,
         kinds=set(value.kinds),
+        entity_helpers=set(value.entity_helpers),
     )
 
 
@@ -102,6 +113,7 @@ def _merge_values(
             result.limit_exceeded or value.limit_exceeded
         )
         result.kinds.update(value.kinds)
+        result.entity_helpers.update(value.entity_helpers)
         for name, field_value in value.fields.items():
             field_groups.setdefault(name, []).append(field_value)
         if value.iteration is not None:
@@ -133,8 +145,14 @@ def _merge_values(
 class BoundedTemplateContext:
     """Track finite ``set`` and ``for`` bindings while scanning one template."""
 
-    def __init__(self, entity_id_validator: Callable[[str], bool]):
+    def __init__(
+        self,
+        entity_id_validator: Callable[[str], bool],
+        *,
+        entity_helper_names: frozenset[str] = frozenset(),
+    ):
         self._valid_entity_id = entity_id_validator
+        self._entity_helper_names = entity_helper_names
         self._bindings: dict[str, _StaticValue] = {}
         self._trusted_bindings: set[str] = set()
         self._loop_stack: list[
@@ -271,12 +289,36 @@ class BoundedTemplateContext:
                 return match.group("expression")
         return None
 
+    @staticmethod
+    def is_assignment_statement(statement: str) -> bool:
+        """Return whether *statement* is a reviewed ``set`` assignment."""
+
+        return _SET_STATEMENT.match(statement) is not None
+
     def is_locally_bound(self, name: str) -> bool:
         """Return whether reviewed template dataflow shadows a global helper."""
 
         return bool(
             self._binding_analysis_enabled
             and name in self._trusted_bindings
+        )
+
+    def callable_binding(self, name: str) -> CallableBindingResolution:
+        """Return bounded callable provenance for one reviewed binding.
+
+        Control-flow trust alone is not sufficient to suppress a helper-like
+        call: the assigned value may itself be a Home Assistant entity helper.
+        Unknown or conditionally established values remain incomplete.
+        """
+
+        if not self._binding_analysis_enabled or name not in self._bindings:
+            return CallableBindingResolution()
+        value = self._bindings[name]
+        trusted = name in self._trusted_bindings
+        return CallableBindingResolution(
+            locally_bound=True,
+            complete=bool(trusted and value.complete),
+            entity_helpers=tuple(sorted(value.entity_helpers)),
         )
 
     @property
@@ -399,6 +441,11 @@ class BoundedTemplateContext:
                 and node.id in self._trusted_bindings
             ):
                 return self._bindings.get(node.id, _empty_incomplete())
+            if node.id in self._entity_helper_names:
+                return _StaticValue(
+                    entity_helpers={node.id},
+                    kinds={"entity_helper_callable"},
+                )
             return _empty_incomplete()
         if isinstance(node, ast.Attribute):
             base = self._evaluate_node(node.value, depth=depth + 1)
@@ -488,6 +535,7 @@ class BoundedTemplateContext:
 
 __all__ = [
     "BoundedTemplateContext",
+    "CallableBindingResolution",
     "CandidateResolution",
     "MAX_DYNAMIC_CANDIDATES",
     "MAX_DYNAMIC_EXPRESSION_CHARS",

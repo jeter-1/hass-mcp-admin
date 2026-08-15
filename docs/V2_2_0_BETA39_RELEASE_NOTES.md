@@ -11,9 +11,12 @@ Beta 39.
 The shared dependency extractor now records whether one bounded dynamic
 reference actually contains a Home Assistant entity selector. A reviewed local
 `set` or `for` binding that shadows a global helper name is ordinary template
-dataflow, not an entity lookup. The record remains bounded and approval-bound
-with its reference kind, selector-presence flag, expression fingerprint,
-source identity, and `target_membership: not_applicable` classification.
+dataflow only when its bounded value provenance is proven non-entity. Known
+callable aliases of reviewed Home Assistant entity helpers retain the canonical
+helper's exact selector semantics; unproven callable aliases remain
+non-conclusive. The record remains bounded and approval-bound with its reference
+kind, selector-presence flag, expression fingerprint, source identity, and
+`target_membership: not_applicable` classification.
 
 The specialized helper-risk service excludes only those mechanically proven
 non-selector records from target-membership uncertainty. It does not use

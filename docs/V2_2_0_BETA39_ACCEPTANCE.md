@@ -32,7 +32,11 @@ or household Home Assistant.
 For one exact helper, only a dynamic reference containing a supported entity
 selection or lookup can affect target-membership completeness. A reviewed local
 binding that shadows a Home Assistant helper name is classified as ordinary
-template dataflow only when static control-flow evidence proves the binding.
+template dataflow only when bounded static evidence proves both the binding and
+its value are non-entity dataflow. A known callable alias of `states`,
+`state_attr`, `is_state`, `is_state_attr`, `has_value`, `expand`, or another
+reviewed entity helper retains that helper's selector semantics. An unproven
+callable binding remains non-conclusive.
 Configuration path names are diagnostic and never decide selector semantics.
 
 Each excluded non-selector record binds bounded source identity, reference kind,
@@ -44,6 +48,7 @@ The following remain non-conclusive:
 
 - unbounded `states(variable)` and `states[dynamic_value]`;
 - unknown macros or functions that may produce entity IDs;
+- callable bindings whose provenance cannot be proven non-entity;
 - dynamic/computed label and registry selectors;
 - unrestricted iteration over Home Assistant states;
 - conditionally shadowed or otherwise uncertain helper names;

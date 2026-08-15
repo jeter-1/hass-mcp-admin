@@ -557,6 +557,72 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
+    async def test_callable_aliases_take_exact_or_conservative_helper_lock(self):
+        helper = "input_boolean.synthetic_exact"
+        exact_key = helper_dependency_lock_key(helper)
+        dynamic_key = unconstrained_helper_dependency_lock_key()
+        base = valid_config("automation")
+        known_alias = valid_config("automation")
+        known_alias["condition"] = [
+            {
+                "condition": "template",
+                "value_template": (
+                    "{% set states = is_state %}"
+                    f"{{{{ states('{helper}', 'on') }}}}"
+                ),
+            }
+        ]
+        loop_alias = valid_config("automation")
+        loop_alias["condition"] = [
+            {
+                "condition": "template",
+                "value_template": (
+                    "{% for states in [is_state] %}"
+                    f"{{{{ states('{helper}', 'on') }}}}"
+                    "{% endfor %}"
+                ),
+            }
+        ]
+        unknown_alias = valid_config("automation")
+        unknown_alias["condition"] = [
+            {
+                "condition": "template",
+                "value_template": (
+                    "{% set states = unknown_callable %}"
+                    f"{{{{ states('{helper}') }}}}"
+                ),
+            }
+        ]
+
+        for proposed in (known_alias, loop_alias):
+            with self.subTest(
+                template=proposed["condition"][0]["value_template"]
+            ):
+                prepared = await self._prepared(
+                    "automation",
+                    "update",
+                    current_config=base,
+                    proposed_config=proposed,
+                )
+                keys = {
+                    item.key
+                    for item in operation_lock_requests(prepared)
+                }
+                self.assertIn(exact_key, keys)
+                self.assertNotIn(dynamic_key, keys)
+
+        prepared = await self._prepared(
+            "automation",
+            "update",
+            current_config=base,
+            proposed_config=unknown_alias,
+        )
+        keys = {
+            item.key for item in operation_lock_requests(prepared)
+        }
+        self.assertIn(dynamic_key, keys)
+        self.assertNotIn(exact_key, keys)
+
     async def test_filter_test_and_domain_collection_dependency_locks(self):
         helper = "input_boolean.synthetic_exact"
         exact_key = helper_dependency_lock_key(helper)

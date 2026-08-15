@@ -230,6 +230,127 @@ class SpecializedHelperRiskSelectorTests(unittest.TestCase):
         self.assertEqual(risk.level, RiskLevel.HIGH)
         self.assertTrue(risk.apply_allowed)
 
+    def test_known_entity_helper_callable_aliases_retain_exact_dependency(self):
+        templates = (
+            "{% set states = is_state %}"
+            f"{{{{ states('{TARGET}', 'on') }}}}",
+            "{% for states in [is_state] %}"
+            f"{{{{ states('{TARGET}', 'on') }}}}"
+            "{% endfor %}",
+            "{% set lookup = states %}"
+            f"{{{{ lookup('{TARGET}') }}}}",
+            "{% set lookup = state_attr %}"
+            f"{{{{ lookup('{TARGET}', 'friendly_name') }}}}",
+            "{% set lookup = is_state_attr %}"
+            f"{{{{ lookup('{TARGET}', 'mode', 'on') }}}}",
+            "{% set lookup = has_value %}"
+            f"{{{{ lookup('{TARGET}') }}}}",
+            "{% set lookup = expand %}"
+            f"{{{{ lookup('{TARGET}') }}}}",
+            "{% set first = is_state %}{% set lookup = first %}"
+            f"{{{{ lookup('{TARGET}', 'on') }}}}",
+        )
+        for index, template in enumerate(templates):
+            with self.subTest(template=template):
+                source_id = f"callable_alias_{index}"
+                findings, dynamic = _dynamic(
+                    template, source_id=source_id
+                )
+                observed = _binding(
+                    _snapshot(
+                        findings=findings,
+                        dynamic=dynamic,
+                        profiles=(
+                            _profile(source_id, "cover.open_cover"),
+                        ),
+                    )
+                )
+                risk = helper_dependency_risk_assessment(
+                    {
+                        "binding": observed,
+                        "provenance": {
+                            "provider": "dependency_index",
+                            "completeness": observed["completeness"],
+                        },
+                    }
+                )
+
+                self.assertEqual(
+                    {item.target_entity_id for item in findings},
+                    {TARGET},
+                )
+                self.assertEqual(dynamic, [])
+                self.assertTrue(observed["evidence_complete"])
+                self.assertEqual(
+                    observed["relevant_downstream_object_ids"],
+                    [f"automation.{source_id}"],
+                )
+                self.assertEqual(observed["physical_consequence"], "direct")
+                self.assertEqual(risk.level, RiskLevel.HIGH)
+                self.assertTrue(risk.apply_allowed)
+
+    def test_unknown_callable_alias_remains_incomplete(self):
+        templates = (
+            "{% set states = unknown_callable %}"
+            f"{{{{ states('{TARGET}') }}}}",
+            "{% set lookup = unknown_callable %}"
+            f"{{{{ lookup('{TARGET}') }}}}",
+            "{% if enabled %}{% set lookup = is_state %}{% endif %}"
+            f"{{{{ lookup('{TARGET}', 'on') }}}}",
+        )
+        for index, template in enumerate(templates):
+            with self.subTest(template=template):
+                findings, dynamic = _dynamic(
+                    template,
+                    source_id=f"unknown_callable_alias_{index}",
+                )
+                observed = _binding(_snapshot(dynamic=dynamic))
+
+                self.assertEqual(findings, [])
+                self.assertEqual(len(dynamic), 1)
+                self.assertTrue(dynamic[0].entity_selector_present)
+                self.assertFalse(
+                    dynamic[0].candidate_resolution_complete
+                )
+                self.assertFalse(observed["evidence_complete"])
+                self.assertFalse(observed["execution_eligible"])
+                self.assertEqual(
+                    observed[
+                        "target_relevant_dynamic_reference_count"
+                    ],
+                    1,
+                )
+
+    def test_callable_alias_classification_drift_changes_binding(self):
+        before_dynamic = _dynamic_items(
+            ORDINARY_DYNAMIC_TEMPLATES[:1], "callable_alias_drift"
+        )
+        after_findings, after_dynamic = _dynamic(
+            "{% set states = is_state %}"
+            f"{{{{ states('{TARGET}', 'on') }}}}",
+            source_id="callable_alias_drift_0",
+        )
+        before = _binding(_snapshot(dynamic=before_dynamic))
+        after = _binding(
+            _snapshot(
+                findings=after_findings,
+                dynamic=after_dynamic,
+                profiles=(_profile("callable_alias_drift_0"),),
+            )
+        )
+
+        self.assertTrue(before["evidence_complete"])
+        self.assertEqual(before["relevant_downstream_object_ids"], [])
+        self.assertTrue(after["evidence_complete"])
+        self.assertEqual(
+            after["relevant_downstream_object_ids"],
+            ["automation.callable_alias_drift_0"],
+        )
+        self.assertNotEqual(
+            before["evidence_fingerprint"],
+            after["evidence_fingerprint"],
+        )
+
     def test_incomplete_source_coverage_remains_conservative(self):
         snapshot = _snapshot(
             dynamic=_dynamic_items(
