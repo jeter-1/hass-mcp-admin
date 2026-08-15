@@ -47,6 +47,46 @@ variable is not required. Dynamic keys that can select a helper or incomplete
 value, and mixed, missing, malformed, or incomplete member provenance, remain
 non-conclusive. A mapping whose every possible selected value is proven
 non-helper remains ordinary template dataflow.
+
+Mapping member analysis follows Jinja lookup order. Dot access checks the
+mapping object's attributes before falling back to an item, while bracket
+access checks the item first. The reviewed read-only methods `get`, `items`,
+`keys`, and `values` therefore cannot be shadowed by same-named mapping keys
+under dot access; same-named bracket items retain literal item semantics.
+When a bracket method-name item is absent, the reviewed grammar applies Jinja's
+attribute fallback and retains the corresponding bounded mapping method.
+`get` with a bounded literal key/default, finite `values`, and finite `keys`
+preserve exact helper or candidate provenance. Helper-capable `items` flows and
+dynamic or unsupported method results remain conservative because tuple or
+arbitrary method execution is outside the reviewed grammar. Proven ordinary
+method results remain non-selector dataflow. Assigning or otherwise transporting
+one of these reviewed bound methods preserves the same bounded method and base
+mapping provenance, including transport through another finite literal mapping;
+later invocation cannot erase exact or conservative helper evidence. Method
+arguments are still scanned for eagerly evaluated entity lookups, while a bare
+reviewed helper used only as a transported default retains value provenance
+rather than being misclassified as an immediate entity read. Consuming the
+all-state collection in a filter, count, map, or other unsupported argument
+expression remains non-conclusive. Conditional mapping alternatives bind which
+keys exist in every branch so a possibly selected default cannot disappear.
+Incomplete mapping bases remain incomplete through every supported method
+result. Unsupported direct `attr` and collection `map` method projection over a
+local mapping is represented conservatively rather than silently bypassing
+dot/bracket analysis. Quoted display text is not treated as an operator, and
+the reviewed exact `map(attribute='entity_id')` path remains target-specific.
+When another unsupported finite pipeline transports a helper-bearing mapping
+and its result is immediately called, subscribed, or accessed as a member, the
+same bounded input provenance produces incomplete evidence. A mechanically
+proven ordinary pipeline input remains non-selector dataflow. Malformed
+attribute-projection scans terminate with one explicit limit result rather than
+rescanning an unmatched suffix.
+Value-introducing filter arguments are bound by reviewed signatures: `default`
+fallbacks, `map`/`groupby` defaults, and `batch`/`slice` fill values preserve
+helper provenance. Predicate, ordering, grouping-count, and boolean-mode
+arguments that cannot become returned values do not poison proven ordinary
+inputs. Duplicate, unknown, malformed, or over-limit signatures remain
+incomplete. Mismatched or unmatched structural delimiters in a pipeline produce
+one bounded limit record and conservative locking.
 Configuration path names are diagnostic and never decide selector semantics.
 
 Each excluded non-selector record binds bounded source identity, reference kind,
@@ -63,6 +103,12 @@ The following remain non-conclusive:
   iteration syntax;
 - dynamic mapping keys that may select a helper or incomplete value, or mapping
   members with mixed, missing, malformed, or incomplete helper provenance;
+- helper-capable or incomplete mapping-method results whose exact downstream
+  consumption is outside the bounded `get`/`items`/`keys`/`values` grammar;
+- unsupported direct `attr` or collection `map` method projection and
+  method-argument analysis that reaches the bounded nesting limit;
+- unsupported pipeline-result member consumption whose bounded input can carry
+  a reviewed entity helper or cannot be proven ordinary;
 - entity-helper aliases crossing macro, `with`, or another deliberately
   unreviewed Jinja scope unless the bounded grammar proves the exact selector;
 - dynamic/computed label and registry selectors;

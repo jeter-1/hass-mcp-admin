@@ -628,6 +628,31 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
         exact_key = helper_dependency_lock_key(helper)
         dynamic_key = unconstrained_helper_dependency_lock_key()
         base = valid_config("automation")
+        deep_argument = f"lookup('{helper}', 'on')"
+        for _index in range(10):
+            deep_argument = (
+                f"helpers.get('message', {deep_argument})"
+            )
+        deep_argument_template = (
+            "{% set lookup = is_state %}"
+            "{% set helpers = {'message': 'ready'} %}"
+            f"{{{{ {deep_argument} }}}}"
+        )
+        method_chain_statements = [
+            f"{{% set level0 = {{'{helper}': states}} %}}"
+        ]
+        for index in range(1, 11):
+            method_chain_statements.append(
+                "{% set level"
+                f"{index} = {{'next': level{index - 1}.get}} %}}"
+            )
+        method_chain_expression = (
+            "level10.get('next')" + "('next')" * 9
+        )
+        method_chain_expression += f"('{helper}')('{helper}')"
+        method_chain_template = "".join(method_chain_statements) + (
+            f"{{{{ {method_chain_expression} }}}}"
+        )
         exact_templates = (
             "{% set lookup = states %}"
             f"{{{{ lookup['{helper}'] }}}}",
@@ -656,6 +681,81 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
             f"{{{{ helpers.nested.lookup['{helper}'] }}}}",
             "{% set helpers = {'nested': {'lookup': is_state}} %}"
             f"{{{{ helpers['nested']['lookup']('{helper}', 'on') }}}}",
+            "{% set helpers = {'get': 'ordinary', "
+            f"'{helper}': states}} %}}"
+            f"{{{{ helpers.get('{helper}')('{helper}') }}}}",
+            "{% set helpers = {'get': 'ordinary', "
+            f"'{helper}': states}} %}}"
+            f"{{{{ helpers.get('{helper}')['{helper}'] }}}}",
+            "{% set helpers = {'get': is_state} %}"
+            f"{{{{ helpers['get']('{helper}', 'on') }}}}",
+            "{% set helpers = {'values': states} %}"
+            f"{{{{ helpers['values']['{helper}'] }}}}",
+            "{% set helpers = {'items': is_state} %}"
+            f"{{{{ helpers['items']('{helper}', 'on') }}}}",
+            "{% set helpers = {'keys': states} %}"
+            f"{{{{ helpers['keys']['{helper}'] }}}}",
+            "{% set helpers = {'nested': {'lookup': is_state}} %}"
+            f"{{{{ helpers.get('nested').get('lookup')('{helper}', 'on') }}}}",
+            "{% set helpers = {} %}"
+            f"{{{{ helpers.get('missing', is_state)('{helper}', 'on') }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            f"{{{{ helpers.get('message', states('{helper}')) }}}}",
+            "{% set helpers = {'lookup': is_state} %}"
+            "{% for lookup in helpers.values() %}"
+            f"{{{{ lookup('{helper}', 'on') }}}}"
+            "{% endfor %}",
+            f"{{% set helpers = {{'{helper}': 'ordinary'}} %}}"
+            "{% for entity in helpers.keys() %}"
+            "{{ states(entity) }}{% endfor %}",
+            f"{{% set helpers = {{'{helper}': states}} %}}"
+            "{% set getter = helpers.get %}"
+            f"{{{{ getter('{helper}')('{helper}') }}}}",
+            f"{{% set helpers = {{'{helper}': states}} %}}"
+            "{% set getter = helpers.get %}"
+            f"{{{{ getter('{helper}')['{helper}'] }}}}",
+            "{% set helpers = {'lookup': is_state} %}"
+            "{% set values = helpers.values %}"
+            "{% for lookup in values() %}"
+            f"{{{{ lookup('{helper}', 'on') }}}}"
+            "{% endfor %}",
+            f"{{% set helpers = {{'{helper}': 'ordinary'}} %}}"
+            "{% set keys = helpers.keys %}"
+            "{% for entity in keys() %}"
+            "{{ states(entity) }}{% endfor %}",
+            f"{{% set source = {{'{helper}': states}} %}}"
+            "{% set methods = {'getter': source.get} %}"
+            f"{{{{ methods.getter('{helper}')('{helper}') }}}}",
+            f"{{% set source = {{'{helper}': states}} %}}"
+            "{% set methods = {'getter': source.get} %}"
+            f"{{{{ methods['getter']('{helper}')['{helper}'] }}}}",
+            f"{{% set source = {{'{helper}': states}} %}}"
+            "{% set methods = {'getter': source.get} %}"
+            f"{{{{ methods.get('getter')('{helper}')['{helper}'] }}}}",
+            "{% set helpers = {} %}"
+            f"{{{{ helpers.get('missing', states)('{helper}') }}}}",
+            "{% set helpers = {} %}"
+            f"{{{{ helpers.get('missing', states)['{helper}'] }}}}",
+            f"{{% set helpers = {{'{helper}': 'ordinary'}} %}}"
+            "{% for entity in helpers['keys']() %}"
+            "{{ states(entity) }}{% endfor %}",
+            "{% set helpers = {'lookup': is_state} %}"
+            "{% for lookup in helpers['values']() %}"
+            f"{{{{ lookup('{helper}', 'on') }}}}"
+            "{% endfor %}",
+            f"{{% set with_value = {{'{helper}': 'ordinary'}} %}}"
+            "{% set without_value = {} %}"
+            "{% set getter = "
+            "with_value.get if enabled else without_value.get %}"
+            f"{{{{ getter('{helper}', states)['{helper}'] }}}}",
+            f"{{% set helpers = {{'{helper}': 'ordinary'}} "
+            "if enabled else {} %}"
+            f"{{{{ helpers.get('{helper}', states)['{helper}'] }}}}",
+            f"{{% set source = {{'{helper}': states}} %}}"
+            "{% set level1 = {'next': source.get} %}"
+            "{% set level2 = {'next': level1.get} %}"
+            "{{ level2.get('next')('next')"
+            f"('{helper}')('{helper}') }}}}",
         )
         conservative_templates = (
             "{% set original = states %}"
@@ -693,12 +793,223 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
             f"{{{{ helpers[dynamic_key]('{helper}') }}}}",
             "{% set helpers = {'nested': {'lookup': unknown_callable}} %}"
             f"{{{{ helpers.nested.lookup('{helper}') }}}}",
+            "{% set helpers = {'message': 'ready', 'lookup': states} %}"
+            f"{{{{ helpers.get(dynamic_key)('{helper}') }}}}",
+            "{% set helpers = {'lookup': states} %}"
+            "{{ helpers.items() | list }}",
+            "{% set helpers = {'lookup': states} %}"
+            "{{ helpers.values() | list }}",
+            "{% set helpers = {} %}"
+            f"{{{{ helpers.get('missing', unknown_callable)('{helper}') }}}}",
+            "{% set helpers = {'nested': {'lookup': unknown_callable}} %}"
+            f"{{{{ helpers.get('nested').get('lookup')('{helper}') }}}}",
+            "{% set helpers = {'message': 'ready', 'lookup': states} %}"
+            "{% set getter = helpers.get %}"
+            f"{{{{ getter(dynamic_key)('{helper}') }}}}",
+            "{% set helpers = {'lookup': states} %}"
+            "{% set items = helpers.items %}"
+            "{{ items() | list }}",
+            "{% set helpers = {'lookup': states} %}"
+            "{% set values = helpers.values if enabled else unknown_callable %}"
+            "{{ values() | list }}",
+            "{% set source = {'lookup': states} %}"
+            "{% set methods = "
+            "{'getter': source.get if enabled else unknown_callable} %}"
+            f"{{{{ methods.getter('lookup')('{helper}') }}}}",
+            "{% set source = {'lookup': states} %}"
+            "{% set methods = {'getter': source.get} %}"
+            f"{{{{ methods[dynamic_key]('lookup')('{helper}') }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.get('message', states | list) }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.get(states | list, 'fallback') }}",
+            f"{{% set helpers = {{'{helper}': states}} %}}"
+            f"{{{{ (helpers | attr('get'))('{helper}')('{helper}') }}}}",
+            f"{{% set helpers = {{'{helper}': states}} %}}"
+            f"{{{{ ((helpers) | attr('get'))('{helper}')('{helper}') }}}}",
+            f"{{% set source = {{'{helper}': states}} %}}"
+            "{% set outer = {'source': source} %}"
+            "{{ (outer['source'] | attr('get'))"
+            f"('{helper}')('{helper}') }}}}",
+            f"{{% set source = {{'{helper}': states}} %}}"
+            "{% set outer = {'source': source} %}"
+            "{{ (outer.get('source') | attr('get'))"
+            f"('{helper}')('{helper}') }}}}",
+            f"{{% set source = {{'{helper}': states}} %}}"
+            "{% set containers = [source] %}"
+            "{{ (containers | map(attribute='get') | first)"
+            f"('{helper}')('{helper}') }}}}",
+            f"{{% set source = {{'{helper}': states}} %}}"
+            "{% set containers = [source] %}"
+            "{{ (containers | map('attr', 'get') | first)"
+            f"('{helper}')('{helper}') }}}}",
+            f"{{% set source = {{'{helper}': states}} %}}"
+            "{% set containers = [source] %}"
+            "{{ (containers | map(attribute=method_name) | first)"
+            f"('{helper}')('{helper}') }}}}",
+            "{% set source = {'lookup': states} %}"
+            "{% set containers = [source] %}"
+            "{{ (containers | map(attribute='lookup') | first)"
+            f"('{helper}') }}}}",
+            "{% set source = {'nested': {'lookup': is_state}} %}"
+            "{% set containers = [source] %}"
+            "{{ (containers | map(attribute='nested.lookup') | first)"
+            f"('{helper}', 'on') }}}}",
+            f"{{% set containers = [{{'{helper}': states}}] %}}"
+            "{{ (containers | first)"
+            f".get('{helper}')['{helper}'] }}}}",
+            f"{{% set containers = [{{'{helper}': states}}] %}}"
+            "{{ (containers | select | first)"
+            f".get('{helper}')['{helper}'] }}}}",
+            f"{{% set containers = [{{'{helper}': states}}] %}}"
+            "{{ (containers | reject | first)"
+            f".get('{helper}')['{helper}'] }}}}",
+            f"{{% set containers = [{{'{helper}': states}}] %}}"
+            "{{ (containers | selectattr('message', 'defined') | first)"
+            f".get('{helper}')['{helper}'] }}}}",
+            f"{{% set containers = [{{'{helper}': states}}] %}}"
+            "{{ (containers | rejectattr('message', 'defined') | first)"
+            f".get('{helper}')['{helper}'] }}}}",
+            f"{{% set containers = [{{'{helper}': states}}] %}}"
+            "{{ ((containers | first) if enabled else {})"
+            f".get('{helper}')['{helper}'] }}}}",
+            f"{{% set containers = [{{'{helper}': states}}] %}}"
+            "{{ [(containers | first)][0]"
+            f".get('{helper}')['{helper}'] }}}}",
+            f"{{% set containers = [{{'{helper}': states}}] %}}"
+            "{{ {'selected': (containers | first)}['selected']"
+            f".get('{helper}')['{helper}'] }}}}",
+            f"{{% set containers = [{{'{helper}': states}}] %}}"
+            "{% set fallback = containers[0] %}"
+            "{{ (containers | map(attribute='missing', default=fallback)"
+            " | first)"
+            f".get('{helper}')['{helper}'] }}}}",
+            f"{{% set source = {{'{helper}': states}} %}}"
+            "{% set fallback = source.get %}{% set containers = [{}] %}"
+            "{{ (containers | map(attribute='missing', default=fallback)"
+            f" | first)('{helper}')['{helper}'] }}}}",
+            "{% set containers = [{}] %}"
+            "{{ (containers | map(attribute='missing', default=unknown)"
+            f" | first)('{helper}') }}}}",
+            "{% set containers = [{'message': 'ready'}] %}"
+            "{{ (containers | unknown_filter | first)"
+            f"('{helper}') }}}}",
+            "{% set containers = [{'lookup': states}] %}"
+            f"{{{{ (containers | first].lookup['{helper}'] }}}}",
+            "{% set containers = [{'lookup': states}] %}"
+            f"{{{{ [containers | first).lookup['{helper}'] }}}}",
+            "{% set containers = [{'lookup': states}] %}"
+            f"{{{{ {{containers | first].lookup['{helper}'] }}}}",
+            "{% set containers = [{}] %}"
+            f"{{% set fallback = {{'{helper}': states}} %}}"
+            "{{ ((containers | groupby('missing', default=fallback)"
+            f" | first)[0]).get('{helper}')['{helper}'] }}}}",
+            "{% set messages = ['ready'] %}"
+            f"{{{{ (messages | batch(2, states) | first)[1]('{helper}') }}}}",
+            "{% set messages = ['ready'] %}"
+            f"{{{{ (messages | slice(2, states) | list | first)[1]('{helper}') }}}}",
+            "{% set value = '' %}"
+            "{{ (value | default(default_value=states, boolean=true))"
+            f"('{helper}') }}}}",
+            "{% set value = 'ready' %}"
+            "{{ (value | default('fallback', true, boolean=false))"
+            ".upper() }}",
+            "{% set helpers = {'lookup': 'ordinary'} "
+            "if enabled else unknown_mapping %}"
+            "{% set getter = helpers.get %}"
+            f"{{{{ getter('lookup')('{helper}') }}}}",
+            deep_argument_template,
+            method_chain_template,
         )
         unrelated_templates = (
             "{% set helpers = {'lookup': states} %}"
             "{{ helpers.lookup['sensor.unrelated'] }}",
             "{% set helpers = {'message': 'ready'} %}"
             "{{ helpers.message }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.get('message') }}",
+            "{% set helpers = {'get': states, 'message': 'ready'} %}"
+            "{{ helpers.get('message') }}",
+            "{% set helpers = {'get': 'ready'} %}"
+            "{{ helpers['get'] }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.get(dynamic_key, 'fallback') }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.items() | list }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.values() | list }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.keys() | list }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{% set getter = helpers.get %}"
+            "{{ getter('message') }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{% set items = helpers.items %}"
+            "{{ items() | list }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{% set values = helpers.values %}"
+            "{{ values() | list }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{% set keys = helpers.keys %}"
+            "{{ keys() | list }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.get('message', states) }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers['get']('message') }}",
+            "{% set source = {'message': 'ready'} %}"
+            "{% set methods = {'getter': source.get} %}"
+            "{{ methods.getter('message') }}",
+            "{% set source = {'message': 'ready'} %}"
+            "{% set methods = {'getter': source.get} %}"
+            "{{ methods['getter']('message') }}",
+            "{% set with_value = {'message': 'ready'} %}"
+            "{% set without_value = {} %}"
+            "{% set getter = "
+            "with_value.get if enabled else without_value.get %}"
+            "{{ getter('message', 'fallback') }}",
+            f"{{% set first = {{'{helper}': 'ordinary'}} %}}"
+            f"{{% set second = {{'{helper}': 'ordinary'}} %}}"
+            "{% set getter = first.get if enabled else second.get %}"
+            f"{{{{ getter('{helper}', states) }}}}",
+            "{{ \"example | attr('get')\" }}",
+            "{{ 'documentation: | attr(' }}",
+            "{% set containers = [{'message': 'ready'}] %}"
+            "{{ (containers | first).get('message') }}",
+            "{% set containers = [{'message': 'ready'}] %}"
+            "{{ (containers | selectattr('message', 'defined') | first)"
+            ".get('message') }}",
+            "{% set containers = [{'message': 'ready'}] %}"
+            "{{ containers | map(attribute='message') | list }}",
+            "{% set containers = [{'message': 'ready'}] %}"
+            "{{ [((containers | first) if enabled else {})][0]"
+            ".get('message', 'fallback') }}",
+            "{% set containers = [{}] %}"
+            "{{ (containers | map(attribute='message', default='ready')"
+            " | first) }}",
+            "{% set containers = "
+            "[{'priority': 1, 'message': 'ready'}] %}"
+            "{{ (containers | selectattr('priority', 'eq', 1) | first)"
+            ".message }}",
+            "{% set containers = [{'message': 'ready'}] %}"
+            "{{ (containers | sort(reverse=true) | first).message }}",
+            "{% set messages = ['ready', 'done'] %}"
+            "{{ (messages | batch(2) | first)[0] }}",
+            "{% set value = 'ready' %}"
+            "{{ (value | default('fallback', use_boolean)).upper() }}",
+            "{% set value = 'ready' %}"
+            "{{ (value | default(default_value='fallback')).upper() }}",
+            "{% set value = 'ready' %}"
+            "{{ (value | default(boolean=true)).upper() }}",
+            "{% set value = 'ready' %}"
+            "{{ (value | default(default_value='fallback', "
+            "boolean=use_boolean)).upper() }}",
+            "{% set containers = [{}] %}"
+            "{{ (containers | groupby('missing', default='ordinary')"
+            " | first)[0] }}",
+            "{% set messages = ['ready'] %}"
+            "{{ (messages | batch(2, 'ordinary') | first)[1] }}",
+            "{% set messages = ['ready'] %}"
+            "{{ (messages | slice(2, 'ordinary') | list | first)[1] }}",
         )
 
         for template in exact_templates:

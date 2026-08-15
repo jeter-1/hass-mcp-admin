@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 import sys
+import time
 import unittest
 
 
@@ -16,6 +17,9 @@ from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
     helper_dependency_risk_assessment,
 )
 from ha_mcp_engineering.governance.models import RiskLevel  # noqa: E402
+from ha_mcp_engineering.dependency.extraction import (  # noqa: E402
+    MAX_TEMPLATE_SEGMENT_CHARS,
+)
 from ha_mcp_engineering.dependency.models import (  # noqa: E402
     SourceCoverageItem,
 )
@@ -538,6 +542,550 @@ class SpecializedHelperRiskSelectorTests(unittest.TestCase):
         self.assertEqual(ordinary_dynamic, [])
         self.assertTrue(ordinary["evidence_complete"])
         self.assertTrue(ordinary["execution_eligible"])
+
+    def test_mapping_methods_follow_jinja_attribute_and_item_semantics(self):
+        exact_templates = (
+            "{% set helpers = {'get': 'ordinary', "
+            f"'{TARGET}': states}} %}}"
+            f"{{{{ helpers.get('{TARGET}')('{TARGET}') }}}}",
+            "{% set helpers = {'get': 'ordinary', "
+            f"'{TARGET}': states}} %}}"
+            f"{{{{ helpers.get('{TARGET}')['{TARGET}'] }}}}",
+            "{% set helpers = {'get': is_state} %}"
+            f"{{{{ helpers['get']('{TARGET}', 'on') }}}}",
+            "{% set helpers = {'values': states} %}"
+            f"{{{{ helpers['values']['{TARGET}'] }}}}",
+            "{% set helpers = {'items': is_state} %}"
+            f"{{{{ helpers['items']('{TARGET}', 'on') }}}}",
+            "{% set helpers = {'keys': states} %}"
+            f"{{{{ helpers['keys']['{TARGET}'] }}}}",
+            "{% set helpers = {'nested': {'lookup': is_state}} %}"
+            f"{{{{ helpers.get('nested').get('lookup')('{TARGET}', 'on') }}}}",
+            "{% set helpers = {} %}"
+            f"{{{{ helpers.get('missing', is_state)('{TARGET}', 'on') }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            f"{{{{ helpers.get('message', states('{TARGET}')) }}}}",
+            "{% set helpers = {'lookup': is_state} %}"
+            "{% for lookup in helpers.values() %}"
+            f"{{{{ lookup('{TARGET}', 'on') }}}}"
+            "{% endfor %}",
+            f"{{% set helpers = {{'{TARGET}': 'ordinary'}} %}}"
+            "{% for entity in helpers.keys() %}"
+            "{{ states(entity) }}{% endfor %}",
+            f"{{% set helpers = {{'{TARGET}': states}} %}}"
+            "{% set getter = helpers.get %}"
+            f"{{{{ getter('{TARGET}')('{TARGET}') }}}}",
+            f"{{% set helpers = {{'{TARGET}': states}} %}}"
+            "{% set getter = helpers.get %}"
+            f"{{{{ getter('{TARGET}')['{TARGET}'] }}}}",
+            "{% set helpers = {'lookup': is_state} %}"
+            "{% set values = helpers.values %}"
+            "{% for lookup in values() %}"
+            f"{{{{ lookup('{TARGET}', 'on') }}}}"
+            "{% endfor %}",
+            f"{{% set helpers = {{'{TARGET}': 'ordinary'}} %}}"
+            "{% set keys = helpers.keys %}"
+            "{% for entity in keys() %}"
+            "{{ states(entity) }}{% endfor %}",
+            f"{{% set source = {{'{TARGET}': states}} %}}"
+            "{% set methods = {'getter': source.get} %}"
+            f"{{{{ methods.getter('{TARGET}')('{TARGET}') }}}}",
+            f"{{% set source = {{'{TARGET}': states}} %}}"
+            "{% set methods = {'getter': source.get} %}"
+            f"{{{{ methods['getter']('{TARGET}')['{TARGET}'] }}}}",
+            f"{{% set source = {{'{TARGET}': states}} %}}"
+            "{% set methods = {'getter': source.get} %}"
+            f"{{{{ methods.get('getter')('{TARGET}')['{TARGET}'] }}}}",
+            "{% set helpers = {} %}"
+            f"{{{{ helpers.get('missing', states)('{TARGET}') }}}}",
+            "{% set helpers = {} %}"
+            f"{{{{ helpers.get('missing', states)['{TARGET}'] }}}}",
+            f"{{% set helpers = {{'{TARGET}': 'ordinary'}} %}}"
+            "{% for entity in helpers['keys']() %}"
+            "{{ states(entity) }}{% endfor %}",
+            "{% set helpers = {'lookup': is_state} %}"
+            "{% for lookup in helpers['values']() %}"
+            f"{{{{ lookup('{TARGET}', 'on') }}}}"
+            "{% endfor %}",
+            f"{{% set with_value = {{'{TARGET}': 'ordinary'}} %}}"
+            "{% set without_value = {} %}"
+            "{% set getter = "
+            "with_value.get if enabled else without_value.get %}"
+            f"{{{{ getter('{TARGET}', states)['{TARGET}'] }}}}",
+            f"{{% set helpers = {{'{TARGET}': 'ordinary'}} "
+            "if enabled else {} %}"
+            f"{{{{ helpers.get('{TARGET}', states)['{TARGET}'] }}}}",
+            f"{{% set source = {{'{TARGET}': states}} %}}"
+            "{% set level1 = {'next': source.get} %}"
+            "{% set level2 = {'next': level1.get} %}"
+            "{{ level2.get('next')('next')"
+            f"('{TARGET}')('{TARGET}') }}}}",
+        )
+        for index, template in enumerate(exact_templates):
+            with self.subTest(kind="exact", template=template):
+                source_id = f"mapping_method_exact_{index}"
+                findings, dynamic = _dynamic(template, source_id=source_id)
+                observed = _binding(
+                    _snapshot(
+                        findings=findings,
+                        dynamic=dynamic,
+                        profiles=(
+                            _profile(source_id, "cover.open_cover"),
+                        ),
+                    )
+                )
+                risk = helper_dependency_risk_assessment(
+                    {
+                        "binding": observed,
+                        "provenance": {
+                            "provider": "dependency_index",
+                            "completeness": observed["completeness"],
+                        },
+                    }
+                )
+
+                exact_candidates = {
+                    item.target_entity_id for item in findings
+                }.union(
+                    entity_id
+                    for item in dynamic
+                    for entity_id in item.possible_entity_ids
+                )
+                self.assertEqual(exact_candidates, {TARGET})
+                self.assertTrue(
+                    all(
+                        item.candidate_resolution_complete
+                        for item in dynamic
+                    )
+                )
+                self.assertTrue(observed["evidence_complete"])
+                self.assertEqual(observed["physical_consequence"], "direct")
+                self.assertEqual(risk.level, RiskLevel.HIGH)
+                self.assertTrue(risk.apply_allowed)
+
+        uncertain_templates = (
+            "{% set helpers = {'message': 'ready', 'lookup': states} %}"
+            f"{{{{ helpers.get(dynamic_key)('{TARGET}') }}}}",
+            "{% set helpers = {'lookup': states} %}"
+            "{{ helpers.items() | list }}",
+            "{% set helpers = {'lookup': states} %}"
+            "{{ helpers.values() | list }}",
+            "{% set helpers = {} %}"
+            f"{{{{ helpers.get('missing', unknown_callable)('{TARGET}') }}}}",
+            "{% set helpers = {'nested': {'lookup': unknown_callable}} %}"
+            f"{{{{ helpers.get('nested').get('lookup')('{TARGET}') }}}}",
+            "{% set helpers = {'message': 'ready', 'lookup': states} %}"
+            "{% set getter = helpers.get %}"
+            f"{{{{ getter(dynamic_key)('{TARGET}') }}}}",
+            "{% set helpers = {'lookup': states} %}"
+            "{% set items = helpers.items %}"
+            "{{ items() | list }}",
+            "{% set helpers = {'lookup': states} %}"
+            "{% set values = helpers.values if enabled else unknown_callable %}"
+            "{{ values() | list }}",
+            "{% set source = {'lookup': states} %}"
+            "{% set methods = "
+            "{'getter': source.get if enabled else unknown_callable} %}"
+            f"{{{{ methods.getter('lookup')('{TARGET}') }}}}",
+            "{% set source = {'lookup': states} %}"
+            "{% set methods = {'getter': source.get} %}"
+            f"{{{{ methods[dynamic_key]('lookup')('{TARGET}') }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.get('message', states | list) }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.get(states | list, 'fallback') }}",
+            f"{{% set helpers = {{'{TARGET}': states}} %}}"
+            f"{{{{ (helpers | attr('get'))('{TARGET}')('{TARGET}') }}}}",
+            f"{{% set helpers = {{'{TARGET}': states}} %}}"
+            f"{{{{ ((helpers) | attr('get'))('{TARGET}')('{TARGET}') }}}}",
+            f"{{% set source = {{'{TARGET}': states}} %}}"
+            "{% set outer = {'source': source} %}"
+            "{{ (outer['source'] | attr('get'))"
+            f"('{TARGET}')('{TARGET}') }}}}",
+            f"{{% set source = {{'{TARGET}': states}} %}}"
+            "{% set outer = {'source': source} %}"
+            "{{ (outer.get('source') | attr('get'))"
+            f"('{TARGET}')('{TARGET}') }}}}",
+            f"{{% set source = {{'{TARGET}': states}} %}}"
+            "{% set containers = [source] %}"
+            "{{ (containers | map(attribute='get') | first)"
+            f"('{TARGET}')('{TARGET}') }}}}",
+            f"{{% set source = {{'{TARGET}': states}} %}}"
+            "{% set containers = [source] %}"
+            "{{ (containers | map('attr', 'get') | first)"
+            f"('{TARGET}')('{TARGET}') }}}}",
+            f"{{% set source = {{'{TARGET}': states}} %}}"
+            "{% set containers = [source] %}"
+            "{{ (containers | map(attribute=method_name) | first)"
+            f"('{TARGET}')('{TARGET}') }}}}",
+            f"{{% set source = {{'lookup': states}} %}}"
+            "{% set containers = [source] %}"
+            "{{ (containers | map(attribute='lookup') | first)"
+            f"('{TARGET}') }}}}",
+            f"{{% set source = {{'nested': {{'lookup': is_state}}}} %}}"
+            "{% set containers = [source] %}"
+            "{{ (containers | map(attribute='nested.lookup') | first)"
+            f"('{TARGET}', 'on') }}}}",
+            f"{{% set containers = [{{'{TARGET}': states}}] %}}"
+            "{{ (containers | first)"
+            f".get('{TARGET}')['{TARGET}'] }}}}",
+            f"{{% set containers = [{{'{TARGET}': states}}] %}}"
+            "{{ (containers | select | first)"
+            f".get('{TARGET}')['{TARGET}'] }}}}",
+            f"{{% set containers = [{{'{TARGET}': states}}] %}}"
+            "{{ (containers | reject | first)"
+            f".get('{TARGET}')['{TARGET}'] }}}}",
+            f"{{% set containers = [{{'{TARGET}': states}}] %}}"
+            "{{ (containers | selectattr('message', 'defined') | first)"
+            f".get('{TARGET}')['{TARGET}'] }}}}",
+            f"{{% set containers = [{{'{TARGET}': states}}] %}}"
+            "{{ (containers | rejectattr('message', 'defined') | first)"
+            f".get('{TARGET}')['{TARGET}'] }}}}",
+            f"{{% set containers = [{{'{TARGET}': states}}] %}}"
+            "{{ ((containers | first) if enabled else {})"
+            f".get('{TARGET}')['{TARGET}'] }}}}",
+            f"{{% set containers = [{{'{TARGET}': states}}] %}}"
+            "{{ [(containers | first)][0]"
+            f".get('{TARGET}')['{TARGET}'] }}}}",
+            f"{{% set containers = [{{'{TARGET}': states}}] %}}"
+            "{{ {'selected': (containers | first)}['selected']"
+            f".get('{TARGET}')['{TARGET}'] }}}}",
+            f"{{% set containers = [{{'{TARGET}': states}}] %}}"
+            "{% set fallback = containers[0] %}"
+            "{{ (containers | map(attribute='missing', default=fallback)"
+            " | first)"
+            f".get('{TARGET}')['{TARGET}'] }}}}",
+            f"{{% set source = {{'{TARGET}': states}} %}}"
+            "{% set fallback = source.get %}{% set containers = [{}] %}"
+            "{{ (containers | map(attribute='missing', default=fallback)"
+            f" | first)('{TARGET}')['{TARGET}'] }}}}",
+            "{% set containers = [{}] %}"
+            "{{ (containers | map(attribute='missing', default=unknown)"
+            f" | first)('{TARGET}') }}}}",
+            "{% set containers = [{'message': 'ready'}] %}"
+            "{{ (containers | unknown_filter | first)"
+            f"('{TARGET}') }}}}",
+            "{% set containers = [{'lookup': states}] %}"
+            f"{{{{ (containers | first].lookup['{TARGET}'] }}}}",
+            "{% set containers = [{'lookup': states}] %}"
+            f"{{{{ [containers | first).lookup['{TARGET}'] }}}}",
+            "{% set containers = [{'lookup': states}] %}"
+            f"{{{{ {{containers | first].lookup['{TARGET}'] }}}}",
+            "{% set containers = [{}] %}"
+            f"{{% set fallback = {{'{TARGET}': states}} %}}"
+            "{{ ((containers | groupby('missing', default=fallback)"
+            f" | first)[0]).get('{TARGET}')['{TARGET}'] }}}}",
+            "{% set messages = ['ready'] %}"
+            f"{{{{ (messages | batch(2, states) | first)[1]('{TARGET}') }}}}",
+            "{% set messages = ['ready'] %}"
+            f"{{{{ (messages | slice(2, states) | list | first)[1]('{TARGET}') }}}}",
+            "{% set value = '' %}"
+            "{{ (value | default(default_value=states, boolean=true))"
+            f"('{TARGET}') }}}}",
+            "{% set value = 'ready' %}"
+            "{{ (value | default('fallback', true, boolean=false))"
+            ".upper() }}",
+            "{% set helpers = {'lookup': 'ordinary'} "
+            "if enabled else unknown_mapping %}"
+            "{% set getter = helpers.get %}"
+            f"{{{{ getter('lookup')('{TARGET}') }}}}",
+        )
+        for index, template in enumerate(uncertain_templates):
+            with self.subTest(kind="uncertain", template=template):
+                findings, dynamic = _dynamic(
+                    template,
+                    source_id=f"mapping_method_uncertain_{index}",
+                )
+                observed = _binding(_snapshot(dynamic=dynamic))
+
+                self.assertEqual(findings, [])
+                self.assertTrue(dynamic)
+                self.assertTrue(
+                    all(item.entity_selector_present for item in dynamic)
+                )
+                self.assertFalse(observed["evidence_complete"])
+                self.assertFalse(observed["execution_eligible"])
+
+        ordinary_templates = (
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.get('message') }}",
+            "{% set helpers = {'get': states, 'message': 'ready'} %}"
+            "{{ helpers.get('message') }}",
+            "{% set helpers = {'get': 'ready'} %}"
+            "{{ helpers['get'] }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.get(dynamic_key, 'fallback') }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.items() | list }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.values() | list }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.keys() | list }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{% set getter = helpers.get %}"
+            "{{ getter('message') }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{% set items = helpers.items %}"
+            "{{ items() | list }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{% set values = helpers.values %}"
+            "{{ values() | list }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{% set keys = helpers.keys %}"
+            "{{ keys() | list }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.get('message', states) }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers['get']('message') }}",
+            "{% set source = {'message': 'ready'} %}"
+            "{% set methods = {'getter': source.get} %}"
+            "{{ methods.getter('message') }}",
+            "{% set source = {'message': 'ready'} %}"
+            "{% set methods = {'getter': source.get} %}"
+            "{{ methods['getter']('message') }}",
+            "{% set with_value = {'message': 'ready'} %}"
+            "{% set without_value = {} %}"
+            "{% set getter = "
+            "with_value.get if enabled else without_value.get %}"
+            "{{ getter('message', 'fallback') }}",
+            f"{{% set first = {{'{TARGET}': 'ordinary'}} %}}"
+            f"{{% set second = {{'{TARGET}': 'ordinary'}} %}}"
+            "{% set getter = first.get if enabled else second.get %}"
+            f"{{{{ getter('{TARGET}', states) }}}}",
+            "{{ \"example | attr('get')\" }}",
+            "{{ 'documentation: | attr(' }}",
+            "{% set containers = [{'message': 'ready'}] %}"
+            "{{ (containers | first).get('message') }}",
+            "{% set containers = [{'message': 'ready'}] %}"
+            "{{ (containers | selectattr('message', 'defined') | first)"
+            ".get('message') }}",
+            "{% set containers = [{'message': 'ready'}] %}"
+            "{{ containers | map(attribute='message') | list }}",
+            "{% set containers = [{'message': 'ready'}] %}"
+            "{{ [((containers | first) if enabled else {})][0]"
+            ".get('message', 'fallback') }}",
+            "{% set containers = [{}] %}"
+            "{{ (containers | map(attribute='message', default='ready')"
+            " | first) }}",
+            "{% set containers = "
+            "[{'priority': 1, 'message': 'ready'}] %}"
+            "{{ (containers | selectattr('priority', 'eq', 1) | first)"
+            ".message }}",
+            "{% set containers = [{'message': 'ready'}] %}"
+            "{{ (containers | sort(reverse=true) | first).message }}",
+            "{% set messages = ['ready', 'done'] %}"
+            "{{ (messages | batch(2) | first)[0] }}",
+            "{% set value = 'ready' %}"
+            "{{ (value | default('fallback', use_boolean)).upper() }}",
+            "{% set value = 'ready' %}"
+            "{{ (value | default(default_value='fallback')).upper() }}",
+            "{% set value = 'ready' %}"
+            "{{ (value | default(boolean=true)).upper() }}",
+            "{% set value = 'ready' %}"
+            "{{ (value | default(default_value='fallback', "
+            "boolean=use_boolean)).upper() }}",
+            "{% set containers = [{}] %}"
+            "{{ (containers | groupby('missing', default='ordinary')"
+            " | first)[0] }}",
+            "{% set messages = ['ready'] %}"
+            "{{ (messages | batch(2, 'ordinary') | first)[1] }}",
+            "{% set messages = ['ready'] %}"
+            "{{ (messages | slice(2, 'ordinary') | list | first)[1] }}",
+        )
+        for index, template in enumerate(ordinary_templates):
+            with self.subTest(kind="ordinary", template=template):
+                findings, dynamic = _dynamic(
+                    template,
+                    source_id=f"mapping_method_ordinary_{index}",
+                )
+                observed = _binding(_snapshot(dynamic=dynamic))
+
+                self.assertEqual(findings, [])
+                self.assertEqual(dynamic, [])
+                self.assertTrue(observed["evidence_complete"])
+                self.assertTrue(observed["execution_eligible"])
+
+    def test_malformed_mapping_projection_scan_is_bounded_and_explicit(self):
+        fragment = "| map("
+        repeats = MAX_TEMPLATE_SEGMENT_CHARS // len(fragment)
+        template = "{{ " + fragment * repeats + " }}"
+
+        started = time.perf_counter()
+        findings, dynamic = _dynamic(
+            template,
+            source_id="malformed_mapping_projection",
+        )
+        elapsed = time.perf_counter() - started
+        observed = _binding(_snapshot(dynamic=dynamic))
+
+        self.assertEqual(findings, [])
+        self.assertEqual(len(dynamic), 1)
+        self.assertTrue(dynamic[0].candidate_resolution_limit_exceeded)
+        self.assertFalse(observed["evidence_complete"])
+        self.assertFalse(observed["execution_eligible"])
+        self.assertLess(elapsed, 1.0)
+
+    def test_deep_consumed_pipeline_scan_is_bounded_and_explicit(self):
+        wrapper_count = 5_000
+        expression = (
+            "(" * wrapper_count
+            + "containers | first"
+            + ").message" * wrapper_count
+        )
+        self.assertLess(len(expression), MAX_TEMPLATE_SEGMENT_CHARS)
+        template = (
+            "{% set containers = [{'message': 'ready'}] %}"
+            "{{ " + expression + " }}"
+        )
+
+        started = time.perf_counter()
+        findings, dynamic = _dynamic(
+            template,
+            source_id="deep_consumed_pipeline",
+        )
+        elapsed = time.perf_counter() - started
+        observed = _binding(_snapshot(dynamic=dynamic))
+
+        self.assertEqual(findings, [])
+        self.assertEqual(len(dynamic), 1)
+        self.assertTrue(dynamic[0].candidate_resolution_limit_exceeded)
+        self.assertFalse(observed["evidence_complete"])
+        self.assertFalse(observed["execution_eligible"])
+        self.assertLess(elapsed, 1.0)
+
+    def test_mapping_method_drift_changes_approval_binding(self):
+        source_id = "mapping_method_drift"
+        before_findings, before_dynamic = _dynamic(
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.get('message') }}",
+            source_id=source_id,
+        )
+        after_findings, after_dynamic = _dynamic(
+            f"{{% set helpers = {{'{TARGET}': states}} %}}"
+            f"{{{{ helpers.get('{TARGET}')('{TARGET}') }}}}",
+            source_id=source_id,
+        )
+        before = _binding(
+            _snapshot(
+                findings=before_findings,
+                dynamic=before_dynamic,
+                profiles=(_profile(source_id),),
+            )
+        )
+        after = _binding(
+            _snapshot(
+                findings=after_findings,
+                dynamic=after_dynamic,
+                profiles=(_profile(source_id),),
+            )
+        )
+
+        self.assertTrue(before["evidence_complete"])
+        self.assertEqual(before["relevant_downstream_object_ids"], [])
+        self.assertTrue(after["evidence_complete"])
+        self.assertEqual(
+            after["relevant_downstream_object_ids"],
+            [f"automation.{source_id}"],
+        )
+        self.assertNotEqual(
+            before["evidence_fingerprint"],
+            after["evidence_fingerprint"],
+        )
+
+    def test_mapping_method_alias_drift_changes_approval_binding(self):
+        source_id = "mapping_method_alias_drift"
+        before_findings, before_dynamic = _dynamic(
+            "{% set helpers = {'message': 'ready'} %}"
+            "{% set getter = helpers.get %}"
+            "{{ getter('message') }}",
+            source_id=source_id,
+        )
+        after_findings, after_dynamic = _dynamic(
+            f"{{% set helpers = {{'{TARGET}': states}} %}}"
+            "{% set getter = helpers.get %}"
+            f"{{{{ getter('{TARGET}')('{TARGET}') }}}}",
+            source_id=source_id,
+        )
+        before = _binding(
+            _snapshot(
+                findings=before_findings,
+                dynamic=before_dynamic,
+                profiles=(_profile(source_id),),
+            )
+        )
+        after = _binding(
+            _snapshot(
+                findings=after_findings,
+                dynamic=after_dynamic,
+                profiles=(_profile(source_id),),
+            )
+        )
+
+        self.assertTrue(before["evidence_complete"])
+        self.assertEqual(before["relevant_downstream_object_ids"], [])
+        self.assertTrue(after["evidence_complete"])
+        self.assertEqual(
+            after["relevant_downstream_object_ids"],
+            [f"automation.{source_id}"],
+        )
+        self.assertNotEqual(
+            before["evidence_fingerprint"],
+            after["evidence_fingerprint"],
+        )
+
+    def test_nested_mapping_method_argument_limit_is_conservative(self):
+        expression = f"lookup('{TARGET}', 'on')"
+        for _index in range(10):
+            expression = f"helpers.get('message', {expression})"
+        template = (
+            "{% set lookup = is_state %}"
+            "{% set helpers = {'message': 'ready'} %}"
+            f"{{{{ {expression} }}}}"
+        )
+        findings, dynamic = _dynamic(
+            template, source_id="mapping_method_argument_depth"
+        )
+        observed = _binding(_snapshot(dynamic=dynamic))
+
+        self.assertEqual(findings, [])
+        self.assertTrue(dynamic)
+        self.assertTrue(
+            any(
+                item.candidate_resolution_limit_exceeded
+                for item in dynamic
+            )
+        )
+        self.assertFalse(observed["evidence_complete"])
+        self.assertFalse(observed["execution_eligible"])
+
+    def test_returned_mapping_method_chain_limit_is_conservative(self):
+        statements = [
+            f"{{% set level0 = {{'{TARGET}': states}} %}}"
+        ]
+        for index in range(1, 11):
+            statements.append(
+                "{% set level"
+                f"{index} = {{'next': level{index - 1}.get}} %}}"
+            )
+        expression = "level10.get('next')" + "('next')" * 9
+        expression += f"('{TARGET}')('{TARGET}')"
+        template = "".join(statements) + f"{{{{ {expression} }}}}"
+
+        findings, dynamic = _dynamic(
+            template, source_id="returned_mapping_method_depth"
+        )
+        observed = _binding(_snapshot(dynamic=dynamic))
+
+        self.assertEqual(findings, [])
+        self.assertTrue(dynamic)
+        self.assertTrue(
+            any(
+                item.candidate_resolution_limit_exceeded
+                for item in dynamic
+            )
+        )
+        self.assertFalse(observed["evidence_complete"])
+        self.assertFalse(observed["execution_eligible"])
 
     def test_direct_mapping_member_drift_changes_binding(self):
         before_findings, before_dynamic = _dynamic(

@@ -24,6 +24,37 @@ keys that may select a helper or incomplete value, and mixed, missing,
 malformed, or incomplete members, remain non-conclusive. A mapping whose every
 possible selected value is proven non-helper remains low-friction non-selector
 dataflow.
+Mapping access now follows Jinja's attribute-first dot semantics and item-first
+bracket semantics. The bounded analyzer recognizes the read-only dictionary
+methods `get`, `items`, `keys`, and `values`: finite helper/candidate provenance
+is retained, uncertain helper-capable method flows remain non-conclusive, and
+proven ordinary method results remain low-friction. Same-named literal mapping
+items are still reachable through bracket access. Method arguments remain part
+of dependency analysis because Jinja evaluates them before the method call.
+Bound `get`, `items`, `keys`, and `values` method aliases retain the same bounded
+mapping provenance when invoked later or transported through another finite
+mapping, so assignment does not erase an exact or conservative helper
+dependency. Bracket method-name access uses the literal item when present and
+the reviewed mapping method when the item is absent. A bare reviewed helper used
+as a bounded default retains value provenance; an actual helper call in a method
+argument remains an eager dependency.
+Conditional mapping alternatives retain bounded key-presence evidence, so a
+default remains part of selector provenance whenever any branch can select it.
+Incomplete bases cannot be promoted to complete by a method call. Consuming the
+all-state collection inside a method argument, exceeding the bounded argument
+depth, or retrieving a bound method through unsupported direct `attr` or
+collection `map` projection remains conservative rather than disappearing from
+evidence. Quoted display text is not treated as an operator, and the reviewed
+exact `map(attribute='entity_id')` path remains target-specific.
+Unsupported pipeline results that immediately feed a call, subscription, or
+member access retain bounded helper-bearing input provenance; proven ordinary
+inputs remain low-friction. Malformed projection scans stop after one bounded
+limit result instead of rescanning an unmatched suffix.
+Reviewed filter signatures bind only values that can enter pipeline output:
+`default`, `map`, and `groupby` fallbacks plus `batch`/`slice` fill values.
+Selection, ordering, size, and boolean-mode arguments remain ordinary when they
+cannot introduce helper provenance. Invalid signatures or structural delimiter
+mismatches remain bounded incomplete evidence with conservative locking.
 The record remains bounded and approval-bound with its reference kind,
 selector-presence flag, expression fingerprint, source identity, and
 `target_membership: not_applicable` classification.

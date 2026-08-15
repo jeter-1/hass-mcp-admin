@@ -18,6 +18,22 @@ MAX_DYNAMIC_EXPRESSION_CHARS = 4_096
 MAX_DYNAMIC_CANDIDATES = 128
 MAX_DYNAMIC_LABEL_SELECTORS = 32
 MAX_DYNAMIC_NESTING = 8
+MAPPING_READ_METHODS = frozenset({"get", "items", "keys", "values"})
+_MAPPING_ATTRIBUTE_NAMES = frozenset(
+    {
+        "clear",
+        "copy",
+        "fromkeys",
+        "get",
+        "items",
+        "keys",
+        "pop",
+        "popitem",
+        "setdefault",
+        "update",
+        "values",
+    }
+)
 
 _NAME = r"[A-Za-z_][A-Za-z0-9_]*"
 _SET_STATEMENT = re.compile(
@@ -69,6 +85,8 @@ class CallableBindingResolution:
     complete: bool = False
     entity_helpers: tuple[str, ...] = ()
     has_bounded_members: bool = False
+    mapping_method: str | None = None
+    limit_exceeded: bool = False
 
 
 @dataclass
@@ -77,11 +95,14 @@ class _StaticValue:
     literal_strings: set[str] = field(default_factory=set)
     labels: set[str] = field(default_factory=set)
     fields: dict[str, "_StaticValue"] = field(default_factory=dict)
+    required_fields: set[str] = field(default_factory=set)
     iteration: "_StaticValue | None" = None
     complete: bool = True
     limit_exceeded: bool = False
     kinds: set[str] = field(default_factory=set)
     entity_helpers: set[str] = field(default_factory=set)
+    mapping_method: str | None = None
+    mapping_method_base: "_StaticValue | None" = None
 
 
 def _empty_incomplete(*, limit: bool = False) -> _StaticValue:
@@ -100,9 +121,41 @@ def _iteration_copy(value: _StaticValue) -> _StaticValue:
         literal_strings=set(value.literal_strings),
         labels=set(value.labels),
         fields=dict(value.fields),
+        required_fields=set(value.required_fields),
         complete=value.complete,
         limit_exceeded=value.limit_exceeded,
         kinds=set(value.kinds),
+        entity_helpers=set(value.entity_helpers),
+        mapping_method=value.mapping_method,
+        mapping_method_base=value.mapping_method_base,
+    )
+
+
+def _collection_copy(
+    value: _StaticValue,
+    *,
+    kind: str,
+    iteration: _StaticValue | None = None,
+) -> _StaticValue:
+    """Return a bounded collection view without exposing value fields.
+
+    Mapping view methods return iterable objects, not another mapping.  The
+    candidate material and helper provenance remain available to reviewed
+    iteration while nested mapping members are not projected onto the view.
+    """
+
+    return _StaticValue(
+        entity_ids=set(value.entity_ids),
+        literal_strings=set(value.literal_strings),
+        labels=set(value.labels),
+        iteration=(
+            iteration
+            if iteration is not None
+            else _iteration_copy(value)
+        ),
+        complete=value.complete,
+        limit_exceeded=value.limit_exceeded,
+        kinds=set(value.kinds).union({kind}),
         entity_helpers=set(value.entity_helpers),
     )
 
@@ -115,6 +168,8 @@ def _merge_values(
     result = _StaticValue()
     field_groups: dict[str, list[_StaticValue]] = {}
     iteration_values: list[_StaticValue] = []
+    mapping_method_values: list[_StaticValue] = []
+    mapping_values: list[_StaticValue] = []
     for value in values:
         result.entity_ids.update(value.entity_ids)
         result.literal_strings.update(value.literal_strings)
@@ -129,6 +184,10 @@ def _merge_values(
             field_groups.setdefault(name, []).append(field_value)
         if value.iteration is not None:
             iteration_values.append(value.iteration)
+        if value.mapping_method is not None:
+            mapping_method_values.append(value)
+        if "mapping_object" in value.kinds:
+            mapping_values.append(value)
     if (
         len(result.entity_ids) > MAX_DYNAMIC_CANDIDATES
         or len(result.labels) > MAX_DYNAMIC_LABEL_SELECTORS
@@ -146,11 +205,82 @@ def _merge_values(
         name: _merge_values(group, depth=depth + 1)
         for name, group in sorted(field_groups.items())
     }
+    if mapping_values:
+        if len(mapping_values) == len(values):
+            required = set(mapping_values[0].required_fields)
+            for value in mapping_values[1:]:
+                required.intersection_update(value.required_fields)
+            result.required_fields = required
+        else:
+            # A non-mapping alternative means no mapping key can be proven
+            # present across every runtime branch.
+            result.required_fields = set()
+            result.complete = False
+            result.kinds.add("unresolved")
     if iteration_values:
         result.iteration = _merge_values(
             iteration_values, depth=depth + 1
         )
+    if mapping_method_values:
+        method_names = {
+            value.mapping_method for value in mapping_method_values
+        }
+        method_bases = [
+            value.mapping_method_base
+            for value in mapping_method_values
+            if value.mapping_method_base is not None
+        ]
+        if (
+            len(mapping_method_values) == len(values)
+            and len(method_names) == 1
+            and len(method_bases) == len(mapping_method_values)
+        ):
+            result.mapping_method = next(iter(method_names))
+            result.mapping_method_base = _merge_values(
+                method_bases, depth=depth + 1
+            )
+        else:
+            result.complete = False
+            result.kinds.add("unresolved")
     return result
+
+
+def _nested_entity_helper_provenance(
+    value: _StaticValue,
+    *,
+    depth: int = 0,
+) -> tuple[set[str], bool, bool]:
+    """Return bounded helper provenance carried anywhere in one static value."""
+
+    if depth > MAX_DYNAMIC_NESTING:
+        return set(), False, True
+    helpers = set(value.entity_helpers)
+    complete = value.complete
+    limit_exceeded = value.limit_exceeded
+    children = list(value.fields.values())
+    if value.iteration is not None:
+        children.append(value.iteration)
+    if value.mapping_method_base is not None:
+        children.append(value.mapping_method_base)
+    for child in children:
+        child_helpers, child_complete, child_limit = (
+            _nested_entity_helper_provenance(
+                child,
+                depth=depth + 1,
+            )
+        )
+        helpers.update(child_helpers)
+        complete = complete and child_complete
+        limit_exceeded = limit_exceeded or child_limit
+        if len(helpers) > MAX_DYNAMIC_CANDIDATES:
+            # The reviewed helper vocabulary is small; a larger nested result
+            # cannot add useful precision and remains conservatively bounded.
+            return (
+                set(sorted(helpers)[:MAX_DYNAMIC_CANDIDATES]),
+                False,
+                True,
+            )
+    return helpers, complete, limit_exceeded
 
 
 class BoundedTemplateContext:
@@ -376,7 +506,11 @@ class BoundedTemplateContext:
             locally_bound=True,
             complete=bool(trusted and value.complete),
             entity_helpers=tuple(sorted(value.entity_helpers)),
-            has_bounded_members=bool(value.fields),
+            has_bounded_members=bool(
+                value.fields or "mapping_object" in value.kinds
+            ),
+            mapping_method=value.mapping_method,
+            limit_exceeded=value.limit_exceeded,
         )
 
     def member_binding(self, expression: str) -> CallableBindingResolution:
@@ -389,10 +523,16 @@ class BoundedTemplateContext:
         """
 
         if len(expression) > MAX_DYNAMIC_EXPRESSION_CHARS:
-            return CallableBindingResolution(locally_bound=True)
+            return CallableBindingResolution(
+                locally_bound=True, limit_exceeded=True
+            )
         try:
             node = ast.parse(expression.strip(), mode="eval").body
-        except (RecursionError, SyntaxError, ValueError):
+        except RecursionError:
+            return CallableBindingResolution(
+                locally_bound=True, limit_exceeded=True
+            )
+        except (SyntaxError, ValueError):
             return CallableBindingResolution(locally_bound=True)
 
         root_name, bounded = self._bounded_member_root(node)
@@ -402,21 +542,60 @@ class BoundedTemplateContext:
         if not root.locally_bound:
             return CallableBindingResolution()
         if not root.complete:
-            return CallableBindingResolution(locally_bound=True)
+            return CallableBindingResolution(
+                locally_bound=True,
+                limit_exceeded=root.limit_exceeded,
+            )
 
         value = self._evaluate_node(node, depth=0)
         if not bounded and (
-            not value.complete or value.entity_helpers
+            not value.complete
+            or value.entity_helpers
+            or value.fields
+            or value.mapping_method is not None
         ):
             # A computed key may choose any bounded member.  It is ordinary
             # only when every possible value is conclusively non-helper;
             # otherwise it cannot exclude selector provenance.
-            return CallableBindingResolution(locally_bound=True)
+            return CallableBindingResolution(
+                locally_bound=True,
+                limit_exceeded=value.limit_exceeded,
+            )
         return CallableBindingResolution(
             locally_bound=True,
             complete=value.complete,
             entity_helpers=tuple(sorted(value.entity_helpers)),
-            has_bounded_members=bool(value.fields),
+            has_bounded_members=bool(
+                value.fields or "mapping_object" in value.kinds
+            ),
+            mapping_method=value.mapping_method,
+            limit_exceeded=value.limit_exceeded,
+        )
+
+    def selector_transport_binding(
+        self, expression: str
+    ) -> CallableBindingResolution:
+        """Describe helper provenance carried through a finite collection.
+
+        This does not evaluate a Jinja pipeline.  It only proves whether the
+        pipeline's bounded input is ordinary or can carry a reviewed Home
+        Assistant entity helper.  Unsupported pipeline consumption can then
+        fail closed without globally penalizing proven ordinary collections.
+        """
+
+        value = self._evaluate(expression)
+        helpers, complete, limit_exceeded = (
+            _nested_entity_helper_provenance(value)
+        )
+        return CallableBindingResolution(
+            locally_bound=True,
+            complete=complete,
+            entity_helpers=tuple(sorted(helpers)),
+            has_bounded_members=bool(
+                value.fields or value.iteration is not None
+            ),
+            mapping_method=value.mapping_method,
+            limit_exceeded=limit_exceeded,
         )
 
     @classmethod
@@ -437,6 +616,19 @@ class BoundedTemplateContext:
                 and 0 < len(node.slice.value) <= 128
             )
             return root, bool(bounded and literal_key)
+        if isinstance(node, ast.Call):
+            root, bounded = cls._bounded_member_root(node.func)
+            if root is None or node.keywords:
+                return root, False
+            literal_get_shape = bool(
+                1 <= len(node.args) <= 2
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+                and 0 < len(node.args[0].value) <= 128
+            )
+            return root, bool(
+                bounded and (not node.args or literal_get_shape)
+            )
         return None, False
 
     def _remember_uncertain_bindings(self, names: tuple[str, ...]) -> None:
@@ -553,6 +745,11 @@ class BoundedTemplateContext:
                     literal_strings={text}, kinds={"literal_string"}
                 )
             return _empty_incomplete(limit=len(text) > 128)
+        if isinstance(node, ast.Constant) and (
+            node.value is None
+            or isinstance(node.value, (bool, int, float))
+        ):
+            return _StaticValue(kinds={"literal_scalar"})
         if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             if len(node.elts) > MAX_DYNAMIC_CANDIDATES:
                 return _empty_incomplete(limit=True)
@@ -581,11 +778,12 @@ class BoundedTemplateContext:
                 )
             return _StaticValue(
                 fields=fields,
+                required_fields=set(fields),
                 complete=all(value.complete for value in fields.values()),
                 limit_exceeded=any(
                     value.limit_exceeded for value in fields.values()
                 ),
-                kinds={"mapping"},
+                kinds={"mapping", "mapping_object"},
             )
         if isinstance(node, ast.Name):
             if (
@@ -598,22 +796,66 @@ class BoundedTemplateContext:
                     entity_helpers={node.id},
                     kinds={"entity_helper_callable"},
                 )
+            if node.id.lower() in {"false", "none", "true"}:
+                return _StaticValue(kinds={"literal_scalar"})
             return _empty_incomplete()
         if isinstance(node, ast.Attribute):
             base = self._evaluate_node(node.value, depth=depth + 1)
-            result = base.fields.get(node.attr, _empty_incomplete())
-            if base.fields:
+            if (
+                "mapping_object" in base.kinds
+                and node.attr in _MAPPING_ATTRIBUTE_NAMES
+            ):
+                if node.attr in MAPPING_READ_METHODS:
+                    return _StaticValue(
+                        complete=base.complete,
+                        limit_exceeded=base.limit_exceeded,
+                        kinds={"mapping_method"},
+                        mapping_method=node.attr,
+                        mapping_method_base=base,
+                    )
+                return _empty_incomplete()
+            if node.attr not in base.fields:
+                return _empty_incomplete()
+            result = _merge_values(
+                [base.fields[node.attr]], depth=depth + 1
+            )
+            if "mapping_object" in base.kinds:
                 result.kinds.add("mapping")
             return result
         if isinstance(node, ast.Subscript):
             base = self._evaluate_node(node.value, depth=depth + 1)
             key = self._evaluate_node(node.slice, depth=depth + 1)
-            selected = [
-                base.fields[item]
-                for item in sorted(key.literal_strings)
-                if item in base.fields
-            ]
-            if selected and key.complete:
+            key_values = key.literal_strings.union(key.entity_ids)
+            selected: list[_StaticValue] = []
+            for item in sorted(key_values):
+                if item in base.fields:
+                    selected.append(base.fields[item])
+                if (
+                    "mapping_object" in base.kinds
+                    and item not in base.required_fields
+                ):
+                    # Jinja bracket lookup is item-first, then attribute.
+                    # A key missing from any bounded mapping alternative
+                    # contributes that branch's attribute fallback.
+                    if item in MAPPING_READ_METHODS:
+                        selected.append(
+                            _StaticValue(
+                                complete=base.complete,
+                                limit_exceeded=base.limit_exceeded,
+                                kinds={"mapping_method"},
+                                mapping_method=item,
+                                mapping_method_base=base,
+                            )
+                        )
+                    elif item in _MAPPING_ATTRIBUTE_NAMES:
+                        selected.append(_empty_incomplete())
+                    else:
+                        selected.append(
+                            _StaticValue(kinds={"ordinary_undefined"})
+                        )
+            if key.complete and key_values:
+                if not selected:
+                    return _StaticValue(kinds={"ordinary_undefined"})
                 result = _merge_values(selected, depth=depth + 1)
                 result.kinds.add("mapping")
                 return result
@@ -663,26 +905,125 @@ class BoundedTemplateContext:
                     labels={node.args[0].value},
                     kinds={"literal_label_selector"},
                 )
+            callable_value = self._evaluate_node(
+                node.func, depth=depth + 1
+            )
             if (
-                isinstance(node.func, ast.Attribute)
-                and node.func.attr == "values"
-                and not node.args
-                and not node.keywords
+                callable_value.mapping_method is not None
+                and callable_value.mapping_method_base is not None
             ):
-                base = self._evaluate_node(
-                    node.func.value, depth=depth + 1
+                return self._evaluate_mapping_method(
+                    method=callable_value.mapping_method,
+                    base=callable_value.mapping_method_base,
+                    args=node.args,
+                    keywords=node.keywords,
+                    depth=depth,
                 )
-                if base.fields:
-                    value = _merge_values(
-                        list(base.fields.values()), depth=depth + 1
-                    )
-                    value.iteration = _iteration_copy(value)
-                    value.kinds.add("mapping")
-                    return value
-            return _empty_incomplete()
+            return _empty_incomplete(
+                limit=callable_value.limit_exceeded
+            )
         # Boolean operators, filters, arbitrary calls, macros, and other Jinja
         # features are intentionally outside the reviewed grammar.
         return _empty_incomplete()
+
+    def _evaluate_mapping_method(
+        self,
+        *,
+        method: str,
+        base: _StaticValue,
+        args: list[ast.expr],
+        keywords: list[ast.keyword],
+        depth: int,
+    ) -> _StaticValue:
+        """Evaluate one reviewed read-only mapping method statically."""
+
+        if "mapping_object" not in base.kinds or keywords:
+            return _empty_incomplete(limit=base.limit_exceeded)
+        if method == "get":
+            if not 1 <= len(args) <= 2:
+                return _empty_incomplete()
+            default = (
+                self._evaluate_node(args[1], depth=depth + 1)
+                if len(args) == 2
+                else _StaticValue(kinds={"ordinary_value"})
+            )
+            key_node = args[0]
+            if (
+                isinstance(key_node, ast.Constant)
+                and isinstance(key_node.value, str)
+                and 0 < len(key_node.value) <= 128
+            ):
+                selected_values = [
+                    base.fields.get(key_node.value, default)
+                ]
+                if key_node.value not in base.required_fields:
+                    selected_values.append(default)
+                value = _merge_values(
+                    selected_values, depth=depth + 1
+                )
+                value.kinds.add("mapping_get")
+                return self._bind_mapping_base_evidence(value, base)
+            key = self._evaluate_node(key_node, depth=depth + 1)
+            key_values = key.literal_strings.union(key.entity_ids)
+            if key.complete and key_values:
+                selected_values = [
+                    base.fields.get(item, default)
+                    for item in sorted(key_values)
+                ]
+            else:
+                selected_values = [*base.fields.values(), default]
+            value = _merge_values(selected_values, depth=depth + 1)
+            value.kinds.add("mapping_get")
+            return self._bind_mapping_base_evidence(value, base)
+        if args:
+            return _empty_incomplete()
+        if method == "keys":
+            key_values = [
+                self._evaluate_node(
+                    ast.Constant(value=key), depth=depth + 1
+                )
+                for key in sorted(base.fields)
+            ]
+            merged = _merge_values(key_values, depth=depth + 1)
+            return self._bind_mapping_base_evidence(
+                _collection_copy(merged, kind="mapping_keys"), base
+            )
+        merged = _merge_values(
+            list(base.fields.values()), depth=depth + 1
+        )
+        if method == "items":
+            # Tuple destructuring is outside the reviewed grammar. Retain
+            # helper provenance on the view, but make a transported tuple
+            # element conservatively unknown.
+            return self._bind_mapping_base_evidence(
+                _collection_copy(
+                    merged,
+                    kind="mapping_items",
+                    iteration=_empty_incomplete(),
+                ),
+                base,
+            )
+        return self._bind_mapping_base_evidence(
+            _collection_copy(merged, kind="mapping_values"), base
+        )
+
+    @staticmethod
+    def _bind_mapping_base_evidence(
+        value: _StaticValue, base: _StaticValue
+    ) -> _StaticValue:
+        """Prevent an incomplete mapping base from becoming conclusive."""
+
+        value.complete = bool(value.complete and base.complete)
+        value.limit_exceeded = bool(
+            value.limit_exceeded or base.limit_exceeded
+        )
+        if not base.complete:
+            value.kinds.add(
+                "resolution_limit"
+                if base.limit_exceeded
+                else "unresolved"
+            )
+        return value
 
 
 __all__ = [
@@ -693,4 +1034,5 @@ __all__ = [
     "MAX_DYNAMIC_EXPRESSION_CHARS",
     "MAX_DYNAMIC_LABEL_SELECTORS",
     "MAX_DYNAMIC_NESTING",
+    "MAPPING_READ_METHODS",
 ]
