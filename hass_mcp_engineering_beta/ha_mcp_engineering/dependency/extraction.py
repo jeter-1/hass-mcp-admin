@@ -10,6 +10,7 @@ from typing import Any, Iterable
 from ..logging_config import redact_data
 from .dynamic_resolution import (
     BoundedTemplateContext,
+    CallableBindingResolution,
     CandidateResolution,
     MAX_DYNAMIC_LABEL_SELECTORS,
 )
@@ -545,6 +546,23 @@ def _scan_template_segment(
             # Filter and test arguments are not entity operands.  Their entity
             # operand is projected by _scan_template_entity_operators().
             continue
+        member_access = False
+        if (
+            candidate_context is not None
+            and callable_binding is not None
+            and callable_binding.locally_bound
+            and callable_binding.has_bounded_members
+        ):
+            (
+                callable_binding,
+                cursor,
+                member_access,
+            ) = _direct_member_binding(
+                value,
+                start=start,
+                root_end=cursor,
+                candidate_context=candidate_context,
+            )
         lookahead = cursor
         while lookahead < len(value) and value[lookahead].isspace():
             lookahead += 1
@@ -613,7 +631,8 @@ def _scan_template_segment(
                 (
                     not callable_binding.complete
                     and (
-                        (
+                        member_access
+                        or (
                             lookahead < len(value)
                             and value[lookahead] in {"[", "."}
                         )
@@ -744,6 +763,79 @@ def _scan_template_segment(
                 CandidateResolution(kind="unrestricted_state_collection")
             )
     return exact, unresolved
+
+
+def _direct_member_binding(
+    value: str,
+    *,
+    start: int,
+    root_end: int,
+    candidate_context: BoundedTemplateContext,
+) -> tuple[CallableBindingResolution, int, bool]:
+    """Resolve a bounded local mapping member before selector classification.
+
+    The first member that proves a reviewed entity helper becomes the
+    canonical selector.  Literal nested mappings may be traversed within the
+    existing nesting bound.  Dynamic or malformed member keys return
+    incomplete local provenance and are never treated as target exclusion.
+    """
+
+    binding = candidate_context.callable_binding(value[start:root_end])
+    cursor = root_end
+    consumed = False
+    for _depth in range(MAX_TEMPLATE_NESTING):
+        member_start = cursor
+        while member_start < len(value) and value[member_start].isspace():
+            member_start += 1
+        member_end = member_start
+        if member_start < len(value) and value[member_start] == ".":
+            match = re.match(
+                r"\.([A-Za-z_][A-Za-z0-9_]*)",
+                value[member_start:],
+            )
+            if match is None:
+                return (
+                    CallableBindingResolution(locally_bound=True),
+                    min(len(value), member_start + 1),
+                    True,
+                )
+            member_end = member_start + match.end()
+        elif member_start < len(value) and value[member_start] == "[":
+            _inner, member_end = _extract_balanced(
+                value, member_start, "[", "]"
+            )
+            if _inner is None:
+                return (
+                    CallableBindingResolution(locally_bound=True),
+                    member_end,
+                    True,
+                )
+        else:
+            break
+
+        candidate = candidate_context.member_binding(
+            value[start:member_end]
+        )
+        if not candidate.locally_bound:
+            break
+        binding = candidate
+        cursor = member_end
+        consumed = True
+        if candidate.entity_helpers or not candidate.complete:
+            break
+        if not candidate.has_bounded_members:
+            break
+    else:
+        next_cursor = cursor
+        while next_cursor < len(value) and value[next_cursor].isspace():
+            next_cursor += 1
+        if next_cursor < len(value) and value[next_cursor] in {".", "["}:
+            return (
+                CallableBindingResolution(locally_bound=True),
+                cursor,
+                True,
+            )
+    return binding, cursor, consumed
 
 
 def _scan_template_entity_operators(

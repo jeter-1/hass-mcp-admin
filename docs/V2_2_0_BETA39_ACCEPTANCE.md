@@ -40,7 +40,13 @@ callable binding remains non-conclusive. A uniquely proven `states` alias also
 retains bracket, dot, bare-collection, and iteration semantics. Exact bracket or
 dot targets remain exact dependencies; bare state collections remain
 non-conclusive. Mixed, unknown, or incomplete collection provenance must never
-be represented as ordinary formatting.
+be represented as ordinary formatting. A reviewed entity helper stored in a
+finite literal mapping retains its canonical semantics when consumed directly
+through a literal dot or string-key member path; copying the member to a second
+variable is not required. Dynamic keys that can select a helper or incomplete
+value, and mixed, missing, malformed, or incomplete member provenance, remain
+non-conclusive. A mapping whose every possible selected value is proven
+non-helper remains ordinary template dataflow.
 Configuration path names are diagnostic and never decide selector semantics.
 
 Each excluded non-selector record binds bounded source identity, reference kind,
@@ -55,6 +61,8 @@ The following remain non-conclusive:
 - callable bindings whose provenance cannot be proven non-entity;
 - mixed or unknown aliases used with call, bracket, dot, or collection
   iteration syntax;
+- dynamic mapping keys that may select a helper or incomplete value, or mapping
+  members with mixed, missing, malformed, or incomplete helper provenance;
 - entity-helper aliases crossing macro, `with`, or another deliberately
   unreviewed Jinja scope unless the bounded grammar proves the exact selector;
 - dynamic/computed label and registry selectors;

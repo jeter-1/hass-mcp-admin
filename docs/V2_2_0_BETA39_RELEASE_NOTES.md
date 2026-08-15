@@ -18,6 +18,12 @@ non-conclusive. A uniquely proven `states` alias also retains canonical bracket,
 dot, bare-collection, and iteration semantics. Mixed or unknown collection
 aliases remain non-conclusive. Aliases crossing deliberately unreviewed macro or
 `with` scopes retain bounded uncertainty instead of disappearing from evidence.
+Reviewed helpers stored in finite literal mappings now retain the same semantics
+when consumed directly through literal dot or string-key member access. Dynamic
+keys that may select a helper or incomplete value, and mixed, missing,
+malformed, or incomplete members, remain non-conclusive. A mapping whose every
+possible selected value is proven non-helper remains low-friction non-selector
+dataflow.
 The record remains bounded and approval-bound with its reference kind,
 selector-presence flag, expression fingerprint, source identity, and
 `target_membership: not_applicable` classification.

@@ -381,6 +381,202 @@ class SpecializedHelperRiskSelectorTests(unittest.TestCase):
                 self.assertEqual(risk.level, RiskLevel.HIGH)
                 self.assertTrue(risk.apply_allowed)
 
+    def test_direct_mapping_member_helpers_retain_exact_dependency(self):
+        templates = (
+            "{% set helpers = {'lookup': states} %}"
+            f"{{{{ helpers.lookup['{TARGET}'] }}}}",
+            "{% set helpers = {'lookup': states} %}"
+            f"{{{{ helpers['lookup']['{TARGET}'] }}}}",
+            "{% set helpers = {'lookup': is_state} %}"
+            f"{{{{ helpers.lookup('{TARGET}', 'on') }}}}",
+            "{% set helpers = {'lookup': is_state} %}"
+            f"{{{{ helpers['lookup']('{TARGET}', 'on') }}}}",
+            "{% set helpers = {'nested': {'lookup': states}} %}"
+            f"{{{{ helpers.nested.lookup['{TARGET}'] }}}}",
+            "{% set helpers = {'nested': {'lookup': is_state}} %}"
+            f"{{{{ helpers['nested']['lookup']('{TARGET}', 'on') }}}}",
+        )
+        for index, template in enumerate(templates):
+            with self.subTest(template=template):
+                source_id = f"direct_mapping_member_{index}"
+                findings, dynamic = _dynamic(
+                    template, source_id=source_id
+                )
+                observed = _binding(
+                    _snapshot(
+                        findings=findings,
+                        dynamic=dynamic,
+                        profiles=(
+                            _profile(source_id, "cover.open_cover"),
+                        ),
+                    )
+                )
+                risk = helper_dependency_risk_assessment(
+                    {
+                        "binding": observed,
+                        "provenance": {
+                            "provider": "dependency_index",
+                            "completeness": observed["completeness"],
+                        },
+                    }
+                )
+
+                self.assertEqual(
+                    {item.target_entity_id for item in findings},
+                    {TARGET},
+                )
+                self.assertEqual(dynamic, [])
+                self.assertTrue(observed["evidence_complete"])
+                self.assertEqual(
+                    observed["relevant_downstream_object_ids"],
+                    [f"automation.{source_id}"],
+                )
+                self.assertEqual(
+                    observed["physical_consequence"], "direct"
+                )
+                self.assertEqual(risk.level, RiskLevel.HIGH)
+                self.assertTrue(risk.apply_allowed)
+
+    def test_uncertain_direct_mapping_members_remain_incomplete(self):
+        templates = (
+            "{% set helpers = {'lookup': unknown_callable} %}"
+            f"{{{{ helpers.lookup('{TARGET}') }}}}",
+            "{% set helpers = "
+            "{'lookup': states if enabled else unknown_collection} %}"
+            f"{{{{ helpers.lookup['{TARGET}'] }}}}",
+            "{% set helpers = {'lookup': states} %}"
+            f"{{{{ helpers[dynamic_key]['{TARGET}'] }}}}",
+            "{% set helpers = {'lookup': states} %}"
+            f"{{{{ helpers[dynamic_key]('{TARGET}') }}}}",
+            "{% set helpers = {'nested': {'lookup': unknown_callable}} %}"
+            f"{{{{ helpers.nested.lookup('{TARGET}') }}}}",
+        )
+        for index, template in enumerate(templates):
+            with self.subTest(template=template):
+                source_id = f"uncertain_mapping_member_{index}"
+                findings, dynamic = _dynamic(
+                    template, source_id=source_id
+                )
+                observed = _binding(
+                    _snapshot(
+                        findings=findings,
+                        dynamic=dynamic,
+                        profiles=(
+                            _profile(source_id, "cover.open_cover"),
+                        ),
+                    )
+                )
+                risk = helper_dependency_risk_assessment(
+                    {
+                        "binding": observed,
+                        "provenance": {
+                            "provider": "dependency_index",
+                            "completeness": observed["completeness"],
+                        },
+                    }
+                )
+
+                self.assertEqual(findings, [])
+                self.assertTrue(dynamic)
+                self.assertTrue(
+                    all(item.entity_selector_present for item in dynamic)
+                )
+                self.assertFalse(observed["evidence_complete"])
+                self.assertFalse(observed["execution_eligible"])
+                self.assertEqual(risk.level, RiskLevel.HIGH)
+                self.assertFalse(risk.apply_allowed)
+
+    def test_direct_mapping_member_target_exclusion_and_ordinary_value(self):
+        findings, dynamic = _dynamic(
+            "{% set helpers = {'lookup': states} %}"
+            "{{ helpers.lookup['sensor.unrelated'] }}",
+            source_id="mapping_member_unrelated",
+        )
+        observed = _binding(
+            _snapshot(
+                findings=findings,
+                dynamic=dynamic,
+                profiles=(
+                    _profile(
+                        "mapping_member_unrelated", "cover.open_cover"
+                    ),
+                ),
+            )
+        )
+        risk = helper_dependency_risk_assessment(
+            {
+                "binding": observed,
+                "provenance": {
+                    "provider": "dependency_index",
+                    "completeness": observed["completeness"],
+                },
+            }
+        )
+
+        self.assertEqual(
+            {item.target_entity_id for item in findings},
+            {"sensor.unrelated"},
+        )
+        self.assertEqual(dynamic, [])
+        self.assertTrue(observed["evidence_complete"])
+        self.assertEqual(observed["relevant_downstream_object_ids"], [])
+        self.assertEqual(risk.level, RiskLevel.LOW)
+        self.assertTrue(risk.apply_allowed)
+
+        ordinary_findings, ordinary_dynamic = _dynamic(
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.message }}",
+            source_id="mapping_member_ordinary",
+        )
+        ordinary = _binding(
+            _snapshot(
+                findings=ordinary_findings,
+                dynamic=ordinary_dynamic,
+            )
+        )
+        self.assertEqual(ordinary_findings, [])
+        self.assertEqual(ordinary_dynamic, [])
+        self.assertTrue(ordinary["evidence_complete"])
+        self.assertTrue(ordinary["execution_eligible"])
+
+    def test_direct_mapping_member_drift_changes_binding(self):
+        before_findings, before_dynamic = _dynamic(
+            "{% set helpers = {'lookup': states} %}"
+            "{{ helpers.lookup['sensor.unrelated'] }}",
+            source_id="mapping_member_drift",
+        )
+        after_findings, after_dynamic = _dynamic(
+            "{% set helpers = {'lookup': states} %}"
+            f"{{{{ helpers.lookup['{TARGET}'] }}}}",
+            source_id="mapping_member_drift",
+        )
+        before = _binding(
+            _snapshot(
+                findings=before_findings,
+                dynamic=before_dynamic,
+                profiles=(_profile("mapping_member_drift"),),
+            )
+        )
+        after = _binding(
+            _snapshot(
+                findings=after_findings,
+                dynamic=after_dynamic,
+                profiles=(_profile("mapping_member_drift"),),
+            )
+        )
+
+        self.assertTrue(before["evidence_complete"])
+        self.assertEqual(before["relevant_downstream_object_ids"], [])
+        self.assertTrue(after["evidence_complete"])
+        self.assertEqual(
+            after["relevant_downstream_object_ids"],
+            ["automation.mapping_member_drift"],
+        )
+        self.assertNotEqual(
+            before["evidence_fingerprint"],
+            after["evidence_fingerprint"],
+        )
+
     def test_uncertain_collection_aliases_remain_incomplete(self):
         templates = (
             "{% set original = states %}"

@@ -68,6 +68,7 @@ class CallableBindingResolution:
     locally_bound: bool = False
     complete: bool = False
     entity_helpers: tuple[str, ...] = ()
+    has_bounded_members: bool = False
 
 
 @dataclass
@@ -375,7 +376,68 @@ class BoundedTemplateContext:
             locally_bound=True,
             complete=bool(trusted and value.complete),
             entity_helpers=tuple(sorted(value.entity_helpers)),
+            has_bounded_members=bool(value.fields),
         )
+
+    def member_binding(self, expression: str) -> CallableBindingResolution:
+        """Return helper provenance for one bounded direct member expression.
+
+        Only literal dot and string-key member paths are conclusive.  A
+        dynamic key, malformed path, missing member, or uncertain root remains
+        locally bound but incomplete so callers cannot erase selector
+        uncertainty.  No Jinja expression is executed.
+        """
+
+        if len(expression) > MAX_DYNAMIC_EXPRESSION_CHARS:
+            return CallableBindingResolution(locally_bound=True)
+        try:
+            node = ast.parse(expression.strip(), mode="eval").body
+        except (RecursionError, SyntaxError, ValueError):
+            return CallableBindingResolution(locally_bound=True)
+
+        root_name, bounded = self._bounded_member_root(node)
+        if root_name is None:
+            return CallableBindingResolution()
+        root = self.callable_binding(root_name)
+        if not root.locally_bound:
+            return CallableBindingResolution()
+        if not root.complete:
+            return CallableBindingResolution(locally_bound=True)
+
+        value = self._evaluate_node(node, depth=0)
+        if not bounded and (
+            not value.complete or value.entity_helpers
+        ):
+            # A computed key may choose any bounded member.  It is ordinary
+            # only when every possible value is conclusively non-helper;
+            # otherwise it cannot exclude selector provenance.
+            return CallableBindingResolution(locally_bound=True)
+        return CallableBindingResolution(
+            locally_bound=True,
+            complete=value.complete,
+            entity_helpers=tuple(sorted(value.entity_helpers)),
+            has_bounded_members=bool(value.fields),
+        )
+
+    @classmethod
+    def _bounded_member_root(
+        cls, node: ast.AST
+    ) -> tuple[str | None, bool]:
+        """Return the local root and whether every member key is literal."""
+
+        if isinstance(node, ast.Name):
+            return node.id, True
+        if isinstance(node, ast.Attribute):
+            return cls._bounded_member_root(node.value)
+        if isinstance(node, ast.Subscript):
+            root, bounded = cls._bounded_member_root(node.value)
+            literal_key = bool(
+                isinstance(node.slice, ast.Constant)
+                and isinstance(node.slice.value, str)
+                and 0 < len(node.slice.value) <= 128
+            )
+            return root, bool(bounded and literal_key)
+        return None, False
 
     def _remember_uncertain_bindings(self, names: tuple[str, ...]) -> None:
         """Retain a deterministic bounded set of unreviewed local names."""

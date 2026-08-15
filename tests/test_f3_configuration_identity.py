@@ -644,6 +644,18 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
             "{% endfor %}",
             "{% set lookup = states %}"
             "{{ lookup.input_boolean.synthetic_exact }}",
+            "{% set helpers = {'lookup': states} %}"
+            f"{{{{ helpers.lookup['{helper}'] }}}}",
+            "{% set helpers = {'lookup': states} %}"
+            f"{{{{ helpers['lookup']['{helper}'] }}}}",
+            "{% set helpers = {'lookup': is_state} %}"
+            f"{{{{ helpers.lookup('{helper}', 'on') }}}}",
+            "{% set helpers = {'lookup': is_state} %}"
+            f"{{{{ helpers['lookup']('{helper}', 'on') }}}}",
+            "{% set helpers = {'nested': {'lookup': states}} %}"
+            f"{{{{ helpers.nested.lookup['{helper}'] }}}}",
+            "{% set helpers = {'nested': {'lookup': is_state}} %}"
+            f"{{{{ helpers['nested']['lookup']('{helper}', 'on') }}}}",
         )
         conservative_templates = (
             "{% set original = states %}"
@@ -670,6 +682,23 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
             "{% call(lookup) supply(is_state) %}"
             f"{{{{ lookup('{helper}', 'on') }}}}"
             "{% endcall %}",
+            "{% set helpers = {'lookup': unknown_callable} %}"
+            f"{{{{ helpers.lookup('{helper}') }}}}",
+            "{% set helpers = "
+            "{'lookup': states if enabled else unknown_collection} %}"
+            f"{{{{ helpers.lookup['{helper}'] }}}}",
+            "{% set helpers = {'lookup': states} %}"
+            f"{{{{ helpers[dynamic_key]['{helper}'] }}}}",
+            "{% set helpers = {'lookup': states} %}"
+            f"{{{{ helpers[dynamic_key]('{helper}') }}}}",
+            "{% set helpers = {'nested': {'lookup': unknown_callable}} %}"
+            f"{{{{ helpers.nested.lookup('{helper}') }}}}",
+        )
+        unrelated_templates = (
+            "{% set helpers = {'lookup': states} %}"
+            "{{ helpers.lookup['sensor.unrelated'] }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.message }}",
         )
 
         for template in exact_templates:
@@ -715,6 +744,28 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
                 }
                 self.assertIn(dynamic_key, keys)
                 self.assertNotIn(exact_key, keys)
+
+        for template in unrelated_templates:
+            with self.subTest(kind="unrelated", template=template):
+                proposed = valid_config("automation")
+                proposed["condition"] = [
+                    {
+                        "condition": "template",
+                        "value_template": template,
+                    }
+                ]
+                prepared = await self._prepared(
+                    "automation",
+                    "update",
+                    current_config=base,
+                    proposed_config=proposed,
+                )
+                keys = {
+                    item.key
+                    for item in operation_lock_requests(prepared)
+                }
+                self.assertNotIn(exact_key, keys)
+                self.assertNotIn(dynamic_key, keys)
 
     async def test_filter_test_and_domain_collection_dependency_locks(self):
         helper = "input_boolean.synthetic_exact"
