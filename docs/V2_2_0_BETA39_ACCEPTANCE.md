@@ -75,7 +75,20 @@ arbitrary method execution is outside the reviewed grammar. Proven ordinary
 method results remain non-selector dataflow. Assigning or otherwise transporting
 one of these reviewed bound methods preserves the same bounded method and base
 mapping provenance, including transport through another finite literal mapping;
-later invocation cannot erase exact or conservative helper evidence. Method
+later invocation cannot erase exact or conservative helper evidence. Mapping
+method and reviewed entity-helper provenance also survive transparent grouping
+and bounded finite list, tuple, mapping, and conditional transport. A literal
+sequence index or mapping key retains the selected exact callable. A dynamic
+index/key or mixed transported result remains non-conclusive whenever any
+possible value can introduce a reviewed helper. Transport alone is not an
+entity lookup: a complete transported value proven ordinary remains
+non-selector dataflow until and unless it is consumed. Subsequent invocation or
+`states` subscription must produce exact selector evidence when the complete
+call chain is provable, or one conservative incomplete record otherwise.
+Helper names used in conditional tests, lookup keys, selector operands, or
+other eager/control positions are not transport and remain visible evidence.
+Malformed, over-depth, or over-budget transported expressions produce bounded
+limit evidence and conservative locking rather than disappearing. Method
 arguments are still scanned for eagerly evaluated entity lookups, while a bare
 reviewed helper used only as a transported default retains value provenance
 rather than being misclassified as an immediate entity read. Consuming the

@@ -13,6 +13,7 @@ from .dynamic_resolution import (
     CallableBindingResolution,
     CandidateResolution,
     MAPPING_READ_METHODS,
+    MAX_DYNAMIC_EXPRESSION_CHARS,
     MAX_DYNAMIC_LABEL_SELECTORS,
 )
 from .models import DependencyFinding, DynamicReference, evidence_id
@@ -529,6 +530,7 @@ def _scan_template_segment(
     binding_value: bool = False,
     collection_use: bool = False,
 ) -> tuple[set[str], list[CandidateResolution]]:
+    transported_helper_name_offsets: set[int] = set()
     exact, unresolved = _scan_template_entity_operators(
         value, candidate_context=candidate_context
     )
@@ -538,6 +540,38 @@ def _scan_template_segment(
             candidate_context=candidate_context,
         )
     )
+    if candidate_context is not None:
+        transported_exact, transported_dynamic = (
+            _scan_bounded_callable_consumption(
+                value,
+                candidate_context=candidate_context,
+            )
+        )
+        exact.update(transported_exact)
+        unresolved.extend(transported_dynamic)
+        malformed, nesting_limit = _bounded_structure_status(value)
+        transport_limit = any(
+            item.limit_exceeded for item in transported_dynamic
+        )
+        if not (
+            malformed
+            or nesting_limit
+            or transport_limit
+            or len(value) > MAX_DYNAMIC_EXPRESSION_CHARS
+        ):
+            transported_helper_name_offsets = (
+                _conclusive_transported_helper_name_offsets(
+                    value,
+                    candidate_context,
+                    include_root=binding_value,
+                )
+            )
+        if transported_dynamic and (
+            malformed
+            or nesting_limit
+            or len(value) > MAX_DYNAMIC_EXPRESSION_CHARS
+        ):
+            return exact, list(dict.fromkeys(unresolved))
     cursor = 0
     while cursor < len(value):
         char = value[cursor]
@@ -569,7 +603,7 @@ def _scan_template_segment(
             # operand is projected by _scan_template_entity_operators().
             continue
         member_access = False
-        member_arguments: tuple[str, ...] = ()
+        member_arguments: tuple[tuple[str | None, str], ...] = ()
         if (
             candidate_context is not None
             and callable_binding is not None
@@ -622,7 +656,16 @@ def _scan_template_segment(
                 member_access = True
                 break
             else:
-                member_arguments = (*member_arguments, inner)
+                method_name = callable_binding.mapping_method
+                if (
+                    method_name is None
+                    and callable_binding.mapping_method_options == ("get",)
+                ):
+                    method_name = "get"
+                member_arguments = (
+                    *member_arguments,
+                    (method_name, inner),
+                )
                 cursor = end
                 member_access = True
                 returned_method_steps += 1
@@ -646,16 +689,27 @@ def _scan_template_segment(
                         *member_arguments,
                         *nested_arguments,
                     )
-        for method_arguments in member_arguments:
+        for method_name, method_arguments in member_arguments:
             if depth < MAX_TEMPLATE_NESTING:
-                for argument in _split_top_level_args(method_arguments):
+                for argument_index, argument in enumerate(
+                    _split_top_level_args(method_arguments)
+                ):
+                    argument_binding_value = bool(
+                        method_name == "get"
+                        and argument_index == 1
+                        and (
+                            _is_transport_only_argument(argument)
+                            or _is_proven_transported_helper_value(
+                                argument,
+                                candidate_context=candidate_context,
+                            )
+                        )
+                    )
                     nested, nested_dynamic = _scan_template_segment(
                         argument,
                         depth=depth + 1,
                         candidate_context=candidate_context,
-                        binding_value=_is_transport_only_argument(
-                            argument
-                        ),
+                        binding_value=argument_binding_value,
                     )
                     exact.update(nested)
                     unresolved.extend(nested_dynamic)
@@ -673,6 +727,13 @@ def _scan_template_segment(
         lookahead = cursor
         while lookahead < len(value) and value[lookahead].isspace():
             lookahead += 1
+
+        if start in transported_helper_name_offsets:
+            # The bounded AST pass has already projected the complete later
+            # consumption of this exact reviewed helper.  Do not add a second
+            # conservative record merely because grouping or a finite
+            # container separates this token from that invocation.
+            continue
 
         if callable_binding is not None and callable_binding.locally_bound:
             if lookahead < len(value) and value[lookahead] == "(":
@@ -870,14 +931,752 @@ def _scan_template_segment(
                     unresolved.append(CandidateResolution())
                 cursor = lookahead + domain_match.end()
                 continue
-        if name == "states" and not binding_value:
+        if (
+            name == "states"
+            and start not in transported_helper_name_offsets
+        ):
             # Bare ``states`` is the official all-state collection.  It can
             # select the target helper and therefore must remain explicitly
             # unresolved rather than disappearing as zero evidence.
             unresolved.append(
                 CandidateResolution(kind="unrestricted_state_collection")
             )
-    return exact, unresolved
+    return exact, list(dict.fromkeys(unresolved))
+
+
+def _scan_bounded_callable_consumption(
+    value: str,
+    *,
+    candidate_context: BoundedTemplateContext,
+) -> tuple[set[str], list[CandidateResolution]]:
+    """Project selector callables transported by bounded Python-like syntax.
+
+    The token scanner remains authoritative for Home Assistant's Jinja filter
+    and test forms.  This complementary pass closes one invariant: grouping or
+    a finite container may transport a reviewed callable, but it may not erase
+    that callable's entity-selector provenance before later invocation or
+    subscription.  No template is rendered or executed.
+    """
+
+    if not _segment_may_carry_selector(value, candidate_context):
+        return set(), []
+    malformed, nesting_limit = _bounded_structure_status(value)
+    if (
+        malformed
+        or nesting_limit
+        or len(value) > MAX_DYNAMIC_EXPRESSION_CHARS
+    ):
+        return set(), [
+            CandidateResolution(
+                complete=False,
+                limit_exceeded=True,
+                kind="resolution_limit",
+            )
+        ]
+    if _contains_unquoted(value, "|") or _contains_unquoted(value, "~"):
+        fragments = _bounded_jinja_expression_fragments(value)
+        if fragments is None:
+            return set(), [
+                CandidateResolution(
+                    complete=False,
+                    limit_exceeded=True,
+                    kind="resolution_limit",
+                )
+            ]
+        if (
+            len(fragments) == 1
+            and fragments[0].strip() == value.strip()
+        ):
+            # A Jinja operator nested inside an unsupported wrapper cannot be
+            # re-submitted without recursion. Direct canonical helper syntax
+            # remains with the mature token scanner; transported local or
+            # grouped helper provenance fails closed as one bounded record.
+            existing_pipeline_resolution = (
+                _scan_consumed_pipeline_selector_transport(
+                    value,
+                    candidate_context=candidate_context,
+                )
+            )
+            if existing_pipeline_resolution:
+                return set(), existing_pipeline_resolution
+            if _has_consumed_grouped_pipeline_shape(value):
+                return set(), []
+            local_selector = _segment_has_local_selector_provenance(
+                value, candidate_context
+            )
+            canonical_selector = _contains_canonical_helper_name(value)
+            if local_selector or (
+                canonical_selector
+                and not _contains_direct_canonical_helper_consumption(value)
+            ):
+                return set(), [
+                    CandidateResolution(
+                        kind="unresolved_callable_transport"
+                    )
+                ]
+            return set(), []
+        exact: set[str] = set()
+        unresolved: list[CandidateResolution] = []
+        for fragment in fragments:
+            nested_exact, nested_unresolved = (
+                _scan_bounded_callable_consumption(
+                    fragment,
+                    candidate_context=candidate_context,
+                )
+            )
+            exact.update(nested_exact)
+            unresolved.extend(nested_unresolved)
+        return exact, list(dict.fromkeys(unresolved))
+    expression = value.strip()
+    try:
+        root = ast.parse(expression, mode="eval").body
+    except (RecursionError, SyntaxError, ValueError):
+        return set(), [
+            CandidateResolution(
+                complete=False,
+                limit_exceeded=True,
+                kind="resolution_limit",
+            )
+        ]
+
+    nodes = list(ast.walk(root))
+    if len(nodes) > MAX_LITERAL_ARGUMENTS:
+        return set(), [
+            CandidateResolution(
+                complete=False,
+                limit_exceeded=True,
+                kind="resolution_limit",
+            )
+        ]
+
+    exact: set[str] = set()
+    unresolved: list[CandidateResolution] = []
+    parents = {
+        child: parent
+        for parent in nodes
+        for child in ast.iter_child_nodes(parent)
+    }
+    for node in nodes:
+        if isinstance(node, ast.Call):
+            if (
+                isinstance(node.func, ast.Name)
+                and node.func.id in ENTITY_TEMPLATE_HELPERS
+                and node.lineno == node.func.lineno
+                and node.col_offset == node.func.col_offset
+            ):
+                # The existing token scanner retains the intended distinction
+                # between literal findings and finite dynamic candidates for
+                # direct canonical helper calls. This pass is only for a
+                # helper value transported before consumption.
+                continue
+            func_source = ast.get_source_segment(expression, node.func)
+            if not func_source:
+                continue
+            binding = candidate_context.expression_callable_binding(
+                func_source
+            )
+            if not binding.locally_bound:
+                continue
+            if binding.entity_helpers:
+                _project_callable_target(
+                    binding=binding,
+                    node=node,
+                    value=expression,
+                    candidate_context=candidate_context,
+                    exact=exact,
+                    unresolved=unresolved,
+                )
+            elif (
+                not binding.complete
+                and binding.mapping_method is None
+                and not binding.mapping_method_options
+                and not binding.unreviewed_mapping_attribute_fallback
+            ):
+                if _attribute_call_base_is_proven_ordinary(
+                    node.func,
+                    value=expression,
+                    candidate_context=candidate_context,
+                ):
+                    continue
+                unresolved.append(_binding_uncertainty(binding))
+        elif isinstance(node, ast.Subscript):
+            parent = parents.get(node)
+            if isinstance(parent, ast.Subscript) and parent.value is node:
+                # The outer subscription consumes the transported value. The
+                # inner finite selection is transport, not an entity lookup.
+                continue
+            base_source = ast.get_source_segment(expression, node.value)
+            if not base_source:
+                continue
+            binding = candidate_context.expression_callable_binding(
+                base_source
+            )
+            if not binding.locally_bound or not binding.entity_helpers:
+                continue
+            if binding.non_callable_possible:
+                # This subscript selects a helper from a finite container.
+                # Its parent call/subscript performs entity consumption and
+                # projects the actual target.
+                continue
+            if set(binding.entity_helpers) != {"states"}:
+                if not binding.complete:
+                    unresolved.append(_binding_uncertainty(binding))
+                continue
+            _project_selector_node(
+                node=node.slice,
+                value=expression,
+                candidate_context=candidate_context,
+                exact=exact,
+                unresolved=unresolved,
+                conclusive=bool(
+                    binding.complete
+                    and len(binding.entity_helpers) == 1
+                ),
+                limit_exceeded=binding.limit_exceeded,
+            )
+    return exact, list(dict.fromkeys(unresolved))
+
+
+def _conclusive_transported_helper_name_offsets(
+    value: str,
+    candidate_context: BoundedTemplateContext,
+    *,
+    include_root: bool = False,
+) -> set[int]:
+    """Return identifier offsets consumed as an exact reviewed helper value.
+
+    Suppression is token-specific.  A second bare ``states`` collection or
+    unconsumed helper in the same expression must retain its own evidence even
+    when another occurrence is transported and consumed exactly.
+    """
+
+    expression = value.strip()
+    leading_chars = len(value) - len(value.lstrip())
+    try:
+        root = ast.parse(expression, mode="eval").body
+    except (RecursionError, SyntaxError, ValueError):
+        return set()
+    lines = expression.splitlines(keepends=True)
+    line_starts = [0]
+    for index, character in enumerate(expression):
+        if character == "\n":
+            line_starts.append(index + 1)
+
+    nodes = list(ast.walk(root))
+    if len(nodes) > MAX_LITERAL_ARGUMENTS:
+        return set()
+    parents = {
+        child: parent
+        for parent in nodes
+        for child in ast.iter_child_nodes(parent)
+    }
+    origins: list[ast.AST] = []
+    root_consumes_helper = False
+    root_selector: ast.AST | None = None
+    if isinstance(root, ast.Call):
+        root_selector = root.func
+    elif isinstance(root, ast.Subscript):
+        root_selector = root.value
+    elif isinstance(root, ast.Attribute):
+        root_selector = root.value
+    if root_selector is not None:
+        selector_source = ast.get_source_segment(
+            expression, root_selector
+        )
+        selector_binding = (
+            candidate_context.expression_callable_binding(
+                selector_source
+            )
+            if selector_source
+            else CallableBindingResolution()
+        )
+        root_consumes_helper = bool(
+            (
+                isinstance(root_selector, ast.Name)
+                and root_selector.id in ENTITY_TEMPLATE_HELPERS
+            )
+            or selector_binding.entity_helpers
+        )
+    if include_root and not root_consumes_helper:
+        origins.append(root)
+    for node in nodes:
+        if isinstance(node, ast.Subscript):
+            origin = node.value
+        elif isinstance(node, ast.Call):
+            origin = node.func
+        else:
+            continue
+        if isinstance(origin, ast.Name):
+            # Direct canonical/local calls and subscriptions remain the token
+            # scanner's responsibility.  Only a compound finite transport
+            # needs duplicate-evidence suppression here.
+            continue
+        source = ast.get_source_segment(expression, origin)
+        if not source:
+            continue
+        binding = candidate_context.expression_callable_binding(source)
+        if (
+            binding.complete
+            and len(binding.entity_helpers) == 1
+            and not binding.non_callable_possible
+        ):
+            origins.append(origin)
+
+    offsets: set[int] = set()
+    for origin in origins:
+        for carried in ast.walk(origin):
+            if not (
+                isinstance(carried, ast.Name)
+                and carried.lineno <= len(line_starts)
+                and _is_transported_value_name(
+                    carried,
+                    origin=origin,
+                    parents=parents,
+                    expression=expression,
+                    candidate_context=candidate_context,
+                )
+            ):
+                continue
+            line = lines[carried.lineno - 1]
+            byte_prefix = line.encode("utf-8")[: carried.col_offset]
+            try:
+                column_chars = len(byte_prefix.decode("utf-8"))
+            except UnicodeDecodeError:
+                # AST offsets should end on a UTF-8 boundary.  If they do not,
+                # retain the conservative bare-collection evidence.
+                continue
+            offsets.add(
+                leading_chars
+                + line_starts[carried.lineno - 1]
+                + column_chars
+            )
+    return offsets
+
+
+def _is_transported_value_name(
+    node: ast.Name,
+    *,
+    origin: ast.AST,
+    parents: dict[ast.AST, ast.AST],
+    expression: str,
+    candidate_context: BoundedTemplateContext,
+) -> bool:
+    """Return whether one helper name contributes value, not control flow."""
+
+    current: ast.AST = node
+    while current is not origin:
+        parent = parents.get(current)
+        if parent is None:
+            return False
+        if isinstance(parent, ast.IfExp):
+            if current is parent.test:
+                return False
+        elif isinstance(parent, ast.Subscript):
+            if current is not parent.value:
+                return False
+        elif isinstance(parent, ast.Call):
+            if current is not parent.func:
+                if (
+                    len(parent.args) != 2
+                    or current is not parent.args[1]
+                    or parent.keywords
+                ):
+                    return False
+                func_source = ast.get_source_segment(
+                    expression, parent.func
+                )
+                if not func_source:
+                    return False
+                binding = candidate_context.expression_callable_binding(
+                    func_source
+                )
+                if not (
+                    binding.complete
+                    and (
+                        binding.mapping_method == "get"
+                        or binding.mapping_method_options == ("get",)
+                    )
+                ):
+                    return False
+        elif isinstance(parent, ast.Dict):
+            if current in parent.keys:
+                return False
+        elif isinstance(parent, (ast.List, ast.Tuple, ast.Set, ast.Attribute)):
+            pass
+        else:
+            return False
+        current = parent
+    return True
+
+
+def _project_callable_target(
+    *,
+    binding: CallableBindingResolution,
+    node: ast.Call,
+    value: str,
+    candidate_context: BoundedTemplateContext,
+    exact: set[str],
+    unresolved: list[CandidateResolution],
+) -> None:
+    helpers = set(binding.entity_helpers)
+    conclusive = bool(
+        binding.complete
+        and len(helpers) == 1
+    )
+    target_nodes = (
+        node.args
+        if helpers == {"expand"}
+        else node.args[:1]
+    )
+    if not target_nodes or node.keywords:
+        unresolved.append(
+            CandidateResolution(
+                complete=False,
+                limit_exceeded=binding.limit_exceeded,
+                kind=(
+                    "resolution_limit"
+                    if binding.limit_exceeded
+                    else "unresolved_callable_transport"
+                ),
+            )
+        )
+        return
+    for target_node in target_nodes:
+        _project_selector_node(
+            node=target_node,
+            value=value,
+            candidate_context=candidate_context,
+            exact=exact,
+            unresolved=unresolved,
+            conclusive=conclusive,
+            limit_exceeded=binding.limit_exceeded,
+        )
+
+
+def _attribute_call_base_is_proven_ordinary(
+    node: ast.AST,
+    *,
+    value: str,
+    candidate_context: BoundedTemplateContext,
+) -> bool:
+    if not isinstance(node, ast.Attribute):
+        return False
+    base_source = ast.get_source_segment(value, node.value)
+    if not base_source:
+        return False
+    base = candidate_context.expression_callable_binding(base_source)
+    return bool(
+        base.locally_bound
+        and base.complete
+        and base.non_callable_possible
+        and not base.entity_helpers
+        and base.mapping_method is None
+        and not base.mapping_method_options
+        and not base.unreviewed_mapping_attribute_fallback
+    )
+def _project_selector_node(
+    *,
+    node: ast.AST,
+    value: str,
+    candidate_context: BoundedTemplateContext,
+    exact: set[str],
+    unresolved: list[CandidateResolution],
+    conclusive: bool,
+    limit_exceeded: bool,
+) -> None:
+    source = ast.get_source_segment(value, node)
+    if not source:
+        unresolved.append(CandidateResolution())
+        return
+    literals = _literal_string_arguments(source)
+    if literals is not None:
+        entities = tuple(item for item in literals if valid_entity_id(item))
+        if conclusive and literals and len(entities) == len(literals):
+            exact.update(entities)
+            return
+        unresolved.append(
+            CandidateResolution(
+                complete=False,
+                limit_exceeded=limit_exceeded,
+                kind=(
+                    "resolution_limit"
+                    if limit_exceeded
+                    else "unresolved_callable_transport"
+                ),
+            )
+        )
+        return
+    resolution = _resolve_dynamic_argument(source, candidate_context)
+    if conclusive and resolution.complete:
+        # Only literal operands become static findings. Finite variables,
+        # mappings, conditionals, and label-derived sets remain complete
+        # dynamic evidence so their candidate provenance and drift binding are
+        # preserved.
+        unresolved.append(resolution)
+        return
+    unresolved.append(
+        CandidateResolution(
+            complete=False,
+            limit_exceeded=bool(
+                limit_exceeded or resolution.limit_exceeded
+            ),
+            kind=(
+                "resolution_limit"
+                if limit_exceeded or resolution.limit_exceeded
+                else "unresolved_callable_transport"
+            ),
+        )
+    )
+
+
+def _segment_may_carry_selector(
+    value: str,
+    candidate_context: BoundedTemplateContext,
+) -> bool:
+    """Return whether one segment names reviewed or uncertain provenance."""
+
+    cursor = 0
+    while cursor < len(value):
+        if value[cursor] in {"'", '"'}:
+            cursor = _skip_quoted(value, cursor)
+            continue
+        if not (value[cursor].isalpha() or value[cursor] == "_"):
+            cursor += 1
+            continue
+        start = cursor
+        cursor += 1
+        while cursor < len(value) and (
+            value[cursor].isalnum() or value[cursor] == "_"
+        ):
+            cursor += 1
+        name = value[start:cursor]
+        if name in ENTITY_TEMPLATE_HELPERS:
+            return True
+        binding = candidate_context.callable_binding(name)
+        if binding.locally_bound and (
+            not binding.complete
+            or binding.entity_helpers
+            or binding.has_bounded_members
+            or binding.mapping_method is not None
+            or binding.mapping_method_options
+            or binding.unreviewed_mapping_attribute_fallback
+        ):
+            return True
+    return False
+
+
+def _segment_has_local_selector_provenance(
+    value: str,
+    candidate_context: BoundedTemplateContext,
+) -> bool:
+    cursor = 0
+    while cursor < len(value):
+        if value[cursor] in {"'", '"'}:
+            cursor = _skip_quoted(value, cursor)
+            continue
+        if not (value[cursor].isalpha() or value[cursor] == "_"):
+            cursor += 1
+            continue
+        start = cursor
+        cursor += 1
+        while cursor < len(value) and (
+            value[cursor].isalnum() or value[cursor] == "_"
+        ):
+            cursor += 1
+        binding = candidate_context.callable_binding(value[start:cursor])
+        lookahead = cursor
+        while lookahead < len(value) and value[lookahead].isspace():
+            lookahead += 1
+        if binding.locally_bound and (
+            not binding.complete
+            or binding.entity_helpers
+            or binding.mapping_method is not None
+            or binding.mapping_method_options
+            or binding.unreviewed_mapping_attribute_fallback
+            or (
+                binding.has_bounded_members
+                and lookahead < len(value)
+                and value[lookahead] in {"(", "[", "."}
+            )
+        ):
+            return True
+    return False
+
+
+def _contains_direct_canonical_helper_consumption(value: str) -> bool:
+    cursor = 0
+    while cursor < len(value):
+        if value[cursor] in {"'", '"'}:
+            cursor = _skip_quoted(value, cursor)
+            continue
+        if not (value[cursor].isalpha() or value[cursor] == "_"):
+            cursor += 1
+            continue
+        start = cursor
+        cursor += 1
+        while cursor < len(value) and (
+            value[cursor].isalnum() or value[cursor] == "_"
+        ):
+            cursor += 1
+        name = value[start:cursor]
+        lookahead = cursor
+        while lookahead < len(value) and value[lookahead].isspace():
+            lookahead += 1
+        if (
+            name in ENTITY_TEMPLATE_HELPERS
+            and lookahead < len(value)
+            and value[lookahead] in {"(", "[", "."}
+        ):
+            return True
+    return False
+
+
+def _contains_canonical_helper_name(value: str) -> bool:
+    cursor = 0
+    while cursor < len(value):
+        if value[cursor] in {"'", '"'}:
+            cursor = _skip_quoted(value, cursor)
+            continue
+        if not (value[cursor].isalpha() or value[cursor] == "_"):
+            cursor += 1
+            continue
+        start = cursor
+        cursor += 1
+        while cursor < len(value) and (
+            value[cursor].isalnum() or value[cursor] == "_"
+        ):
+            cursor += 1
+        if value[start:cursor] in ENTITY_TEMPLATE_HELPERS:
+            return True
+    return False
+
+
+def _contains_unquoted(value: str, marker: str) -> bool:
+    cursor = 0
+    while cursor < len(value):
+        if value[cursor] in {"'", '"'}:
+            cursor = _skip_quoted(value, cursor)
+            continue
+        if value[cursor] == marker:
+            return True
+        cursor += 1
+    return False
+
+
+def _bounded_jinja_expression_fragments(
+    value: str,
+    *,
+    depth: int = 0,
+) -> tuple[str, ...] | None:
+    """Return bounded Python-compatible operands around Jinja operators."""
+
+    if depth > MAX_TEMPLATE_NESTING:
+        return None
+    pipeline = _split_top_level_pipeline(value)
+    if len(pipeline) > 1:
+        fragments = [pipeline[0]]
+        for stage in pipeline[1:]:
+            parsed = _parse_pipeline_stage(stage)
+            if parsed is None:
+                continue
+            _name, arguments = parsed
+            if arguments:
+                fragments.extend(arguments)
+        if len(fragments) > MAX_LITERAL_ARGUMENTS:
+            return None
+        return tuple(fragment for fragment in fragments if fragment.strip())
+
+    concatenated = _split_top_level_concat(value)
+    if len(concatenated) > 1:
+        if len(concatenated) > MAX_LITERAL_ARGUMENTS:
+            return None
+        return tuple(
+            fragment for fragment in concatenated if fragment.strip()
+        )
+
+    stripped = value.strip()
+    if stripped.startswith("("):
+        inner, end = _extract_balanced(stripped, 0, "(", ")")
+        if inner is not None and end == len(stripped):
+            return _bounded_jinja_expression_fragments(
+                inner, depth=depth + 1
+            )
+    return (value,)
+
+
+def _split_top_level_concat(value: str) -> list[str]:
+    parts: list[str] = []
+    start = 0
+    stack: list[str] = []
+    pairs = {"(": ")", "[": "]", "{": "}"}
+    cursor = 0
+    while cursor < len(value):
+        char = value[cursor]
+        if char in {"'", '"'}:
+            cursor = _skip_quoted(value, cursor)
+            continue
+        if char in pairs:
+            stack.append(pairs[char])
+        elif stack and char == stack[-1]:
+            stack.pop()
+        elif char == "~" and not stack:
+            parts.append(value[start:cursor])
+            start = cursor + 1
+        cursor += 1
+    parts.append(value[start:])
+    return parts
+
+
+def _has_consumed_grouped_pipeline_shape(value: str) -> bool:
+    pairs = {"(": ")", "[": "]", "{": "}"}
+    stack: list[tuple[str, int]] = []
+    cursor = 0
+    while cursor < len(value):
+        char = value[cursor]
+        if char in {"'", '"'}:
+            cursor = _skip_quoted(value, cursor)
+            continue
+        if char in pairs:
+            stack.append((char, cursor))
+        elif stack and char == pairs[stack[-1][0]]:
+            _opener, start = stack.pop()
+            suffix = cursor + 1
+            while suffix < len(value) and value[suffix].isspace():
+                suffix += 1
+            if (
+                _contains_unquoted(value[start + 1 : cursor], "|")
+                and suffix < len(value)
+                and value[suffix] in {"(", "[", "."}
+            ):
+                return True
+        cursor += 1
+    return False
+
+
+def _bounded_structure_status(value: str) -> tuple[bool, bool]:
+    """Return malformed/nesting-limit state in one linear bounded scan."""
+
+    pairs = {"(": ")", "[": "]", "{": "}"}
+    closing = set(pairs.values())
+    stack: list[str] = []
+    nesting_limit = False
+    cursor = 0
+    while cursor < len(value):
+        char = value[cursor]
+        if char in {"'", '"'}:
+            cursor = _skip_quoted(value, cursor)
+            continue
+        if char in pairs:
+            stack.append(char)
+            nesting_limit = bool(
+                nesting_limit or len(stack) > MAX_TEMPLATE_NESTING
+            )
+        elif char in closing:
+            if not stack or pairs[stack[-1]] != char:
+                return True, nesting_limit
+            stack.pop()
+        cursor += 1
+    return bool(stack), nesting_limit
 
 
 def _binding_uncertainty(
@@ -934,6 +1733,27 @@ def _is_transport_only_argument(value: str) -> bool:
         return False
 
     return transport_only(node)
+
+
+def _is_proven_transported_helper_value(
+    value: str,
+    *,
+    candidate_context: BoundedTemplateContext | None,
+) -> bool:
+    """Return whether one complete expression yields one reviewed helper."""
+
+    if candidate_context is None:
+        return False
+    binding = candidate_context.expression_callable_binding(value)
+    return bool(
+        binding.locally_bound
+        and binding.complete
+        and len(binding.entity_helpers) == 1
+        and not binding.non_callable_possible
+        and binding.mapping_method is None
+        and not binding.mapping_method_options
+        and not binding.unreviewed_mapping_attribute_fallback
+    )
 
 
 def _scan_unsupported_attr_filters(
@@ -1283,7 +2103,7 @@ def _direct_member_binding(
     CallableBindingResolution,
     int,
     bool,
-    tuple[str, ...],
+    tuple[tuple[str | None, str], ...],
 ]:
     """Resolve a bounded local mapping member before selector classification.
 
@@ -1296,7 +2116,7 @@ def _direct_member_binding(
     binding = candidate_context.member_binding(value[start:root_end])
     cursor = root_end
     consumed = False
-    method_arguments: list[str] = []
+    method_arguments: list[tuple[str | None, str]] = []
     for _depth in range(MAX_TEMPLATE_NESTING):
         member_start = cursor
         while member_start < len(value) and value[member_start].isspace():
@@ -1334,7 +2154,7 @@ def _direct_member_binding(
                         True,
                         tuple(method_arguments),
                     )
-                method_arguments.append(inner)
+                method_arguments.append((method_name, inner))
                 member_end = call_end
         elif member_start < len(value) and value[member_start] == "[":
             _inner, member_end = _extract_balanced(
@@ -1347,7 +2167,7 @@ def _direct_member_binding(
                     True,
                     tuple(method_arguments),
                 )
-            method_arguments.append(_inner)
+            method_arguments.append((None, _inner))
         else:
             break
 

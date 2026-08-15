@@ -34,7 +34,17 @@ of dependency analysis because Jinja evaluates them before the method call.
 Bound `get`, `items`, `keys`, and `values` method aliases retain the same bounded
 mapping provenance when invoked later or transported through another finite
 mapping, so assignment does not erase an exact or conservative helper
-dependency. Bracket method-name access uses the literal item when present and
+dependency. Grouping and bounded finite list, tuple, mapping, or conditional
+transport now preserve the same callable provenance through later invocation
+or `states` subscription. Exact finite selections remain exact; dynamic, mixed,
+malformed, or over-limit selections remain incomplete and conservatively
+locked. Merely displaying or carrying a value proven ordinary remains
+low-friction and does not create selector evidence. Conditional tests, lookup
+keys, and other eager selector operands remain evidence rather than being
+mistaken for transported values. This closes the prior gap where a closing
+parenthesis or container boundary could terminate provenance before the
+callable was consumed.
+Bracket method-name access uses the literal item when present and
 the reviewed mapping method when the item is absent. Dynamic bracket keys now
 retain both bounded item possibilities and unshadowed read-method fallbacks.
 Compatible fallback consumption that can return a reviewed entity helper is

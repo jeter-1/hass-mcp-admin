@@ -1162,6 +1162,402 @@ class SpecializedHelperRiskSelectorTests(unittest.TestCase):
             after["evidence_fingerprint"],
         )
 
+    def test_grouped_and_finite_callable_transport_preserves_provenance(self):
+        method_forms = (
+            "(helpers[dynamic_key])",
+            "((helpers[dynamic_key]))",
+            "[helpers[dynamic_key]][0]",
+            "(helpers[dynamic_key],)[0]",
+            "{'x': helpers[dynamic_key]}['x']",
+            "(helpers[dynamic_key] if enabled else helpers[dynamic_key])",
+        )
+        exact_prefix = (
+            "{% set helpers = {'message': 'ready'} %}"
+            "{% set dynamic_key = 'get' %}"
+        )
+        uncertain_prefix = "{% set helpers = {'message': 'ready'} %}"
+        for index, form in enumerate(method_forms):
+            with self.subTest(kind="exact", form=form):
+                source_id = f"transport_exact_{index}"
+                findings, dynamic = _dynamic(
+                    exact_prefix
+                    + "{{ "
+                    + form
+                    + "('missing', is_state)('"
+                    + TARGET
+                    + "', 'on') }}",
+                    source_id=source_id,
+                )
+                observed = _binding(
+                    _snapshot(
+                        findings=findings,
+                        dynamic=dynamic,
+                        profiles=(
+                            _profile(source_id, "cover.open_cover"),
+                        ),
+                    )
+                )
+                risk = helper_dependency_risk_assessment(
+                    {
+                        "binding": observed,
+                        "provenance": {
+                            "provider": "dependency_index",
+                            "completeness": observed["completeness"],
+                        },
+                    }
+                )
+                self.assertEqual(
+                    {item.target_entity_id for item in findings},
+                    {TARGET},
+                )
+                self.assertEqual(dynamic, [])
+                self.assertTrue(observed["evidence_complete"])
+                self.assertEqual(observed["physical_consequence"], "direct")
+                self.assertEqual(risk.level, RiskLevel.HIGH)
+                self.assertTrue(risk.apply_allowed)
+
+            with self.subTest(kind="uncertain", form=form):
+                source_id = f"transport_uncertain_{index}"
+                findings, dynamic = _dynamic(
+                    uncertain_prefix
+                    + "{{ "
+                    + form
+                    + "('missing', is_state)('"
+                    + TARGET
+                    + "', 'on') }}",
+                    source_id=source_id,
+                )
+                observed = _binding(
+                    _snapshot(
+                        findings=findings,
+                        dynamic=dynamic,
+                        profiles=(
+                            _profile(source_id, "cover.open_cover"),
+                        ),
+                    )
+                )
+                risk = helper_dependency_risk_assessment(
+                    {
+                        "binding": observed,
+                        "provenance": {
+                            "provider": "dependency_index",
+                            "completeness": observed["completeness"],
+                        },
+                    }
+                )
+                self.assertEqual(findings, [])
+                self.assertTrue(dynamic)
+                self.assertTrue(
+                    all(item.entity_selector_present for item in dynamic)
+                )
+                self.assertTrue(
+                    all(
+                        not item.candidate_resolution_complete
+                        for item in dynamic
+                    )
+                )
+                self.assertFalse(observed["evidence_complete"])
+                self.assertFalse(observed["execution_eligible"])
+                self.assertEqual(risk.level, RiskLevel.HIGH)
+                self.assertFalse(risk.apply_allowed)
+
+        nested_operator_forms = (
+            "((helpers.get)('missing', is_state)("
+            f"'{TARGET}', 'on')) | bool",
+            "'prefix' ~ (helpers.get)('missing', is_state)("
+            f"'{TARGET}', 'on')",
+        )
+        for index, expression in enumerate(nested_operator_forms):
+            findings, dynamic = _dynamic(
+                uncertain_prefix + "{{ " + expression + " }}",
+                source_id=f"transport_operator_exact_{index}",
+            )
+            self.assertEqual(
+                {item.target_entity_id for item in findings}, {TARGET}
+            )
+            self.assertEqual(dynamic, [])
+
+        unresolved_nested = (
+            "(helpers[dynamic_key])('missing', is_state)("
+            f"'{TARGET}', 'on') if enabled else ('ready' | upper)",
+            "unknown(((helpers.get)('missing', is_state)("
+            f"'{TARGET}', 'on')) | bool)",
+            "unknown('x' ~ (helpers.get)('missing', is_state)("
+            f"'{TARGET}', 'on'))",
+        )
+        for index, expression in enumerate(unresolved_nested):
+            findings, dynamic = _dynamic(
+                uncertain_prefix + "{{ " + expression + " }}",
+                source_id=f"transport_operator_uncertain_{index}",
+            )
+            observed = _binding(_snapshot(dynamic=dynamic))
+            self.assertEqual(findings, [])
+            self.assertTrue(dynamic)
+            self.assertFalse(observed["evidence_complete"])
+            self.assertFalse(observed["execution_eligible"])
+
+    def test_canonical_helpers_and_ordinary_values_survive_finite_transport(self):
+        exact_forms = (
+            f"(is_state)('{TARGET}', 'on')",
+            f"[is_state][0]('{TARGET}', 'on')",
+            f"(is_state,)[0]('{TARGET}', 'on')",
+            f"{{'x': is_state}}['x']('{TARGET}', 'on')",
+            f"(is_state if enabled else is_state)('{TARGET}', 'on')",
+            f"[states][0]['{TARGET}']",
+            f"(states,)[0]['{TARGET}']",
+            f"{{'x': states}}['x']['{TARGET}']",
+            f"(states if enabled else states)['{TARGET}']",
+            "['ordinary', helpers.get][-1]('missing', is_state)"
+            f"('{TARGET}', 'on')",
+            "(helpers.get)('missing', is_state)"
+            f"('{TARGET}', 'on')",
+            "(helpers['get'])('missing', is_state)"
+            f"('{TARGET}', 'on')",
+        )
+        prefix = "{% set helpers = {'message': 'ready'} %}"
+        for index, expression in enumerate(exact_forms):
+            with self.subTest(kind="exact", expression=expression):
+                findings, dynamic = _dynamic(
+                    prefix + "{{ " + expression + " }}",
+                    source_id=f"canonical_transport_{index}",
+                )
+                self.assertEqual(
+                    {item.target_entity_id for item in findings},
+                    {TARGET},
+                )
+                self.assertEqual(dynamic, [])
+
+        ordinary_forms = (
+            "[helpers.get('message')][0]",
+            "(helpers.get('message'),)[0]",
+            "{'x': helpers.get('message')}['x']",
+            "(helpers.get('message') if enabled else 'ready')",
+            "helpers.get('message').upper()",
+            "(helpers.get)('message').split(',')",
+        )
+        for index, expression in enumerate(ordinary_forms):
+            with self.subTest(kind="ordinary", expression=expression):
+                findings, dynamic = _dynamic(
+                    prefix + "{{ " + expression + " }}",
+                    source_id=f"ordinary_transport_{index}",
+                )
+                observed = _binding(_snapshot(dynamic=dynamic))
+                self.assertEqual(findings, [])
+                self.assertEqual(dynamic, [])
+                self.assertTrue(observed["evidence_complete"])
+                self.assertTrue(observed["execution_eligible"])
+
+    def test_transported_states_suppression_is_token_scoped(self):
+        source_id = "transported_and_bare_states"
+        findings, dynamic = _dynamic(
+            "{{ ([states][0]['"
+            + TARGET
+            + "'], states) }}",
+            source_id=source_id,
+        )
+        observed = _binding(
+            _snapshot(
+                findings=findings,
+                dynamic=dynamic,
+                profiles=(
+                    _profile(source_id, "cover.open_cover"),
+                ),
+            )
+        )
+
+        self.assertEqual(
+            {item.target_entity_id for item in findings},
+            {TARGET},
+        )
+        self.assertEqual(len(dynamic), 1)
+        self.assertEqual(
+            dynamic[0].reference_kind,
+            "dynamic_entity_selector",
+        )
+        self.assertTrue(dynamic[0].entity_selector_present)
+        self.assertFalse(observed["evidence_complete"])
+        self.assertFalse(observed["execution_eligible"])
+        self.assertEqual(observed["physical_consequence"], "direct")
+
+        finite_findings, finite_dynamic = _dynamic(
+            "{% set selected = 'sensor.a' %}"
+            "{{ [states][0][selected] }}",
+            source_id="transported_finite_states",
+        )
+        self.assertEqual(finite_findings, [])
+        self.assertEqual(len(finite_dynamic), 1)
+        self.assertTrue(finite_dynamic[0].candidate_resolution_complete)
+        self.assertEqual(
+            finite_dynamic[0].possible_entity_ids,
+            ("sensor.a",),
+        )
+
+        conditional_source = "transported_states_control_operand"
+        conditional_findings, conditional_dynamic = _dynamic(
+            "{{ (states if '"
+            + TARGET
+            + "' in states else states)['sensor.a'] }}",
+            source_id=conditional_source,
+        )
+        conditional = _binding(
+            _snapshot(
+                findings=conditional_findings,
+                dynamic=conditional_dynamic,
+                profiles=(
+                    _profile(
+                        conditional_source,
+                        "cover.open_cover",
+                    ),
+                ),
+            )
+        )
+        self.assertEqual(
+            {item.target_entity_id for item in conditional_findings},
+            {"sensor.a"},
+        )
+        self.assertEqual(len(conditional_dynamic), 1)
+        self.assertFalse(conditional["evidence_complete"])
+        self.assertFalse(conditional["execution_eligible"])
+        self.assertEqual(conditional["physical_consequence"], "unknown")
+
+        mixed_findings, mixed_dynamic = _dynamic(
+            "{{ (states if enabled else 'ordinary')['sensor.a'] }}",
+            source_id="transported_states_mixed_value",
+        )
+        mixed = _binding(
+            _snapshot(
+                findings=mixed_findings,
+                dynamic=mixed_dynamic,
+            )
+        )
+        self.assertTrue(mixed_dynamic)
+        self.assertFalse(mixed["evidence_complete"])
+        self.assertFalse(mixed["execution_eligible"])
+
+        key_findings, key_dynamic = _dynamic(
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.get(states, 'ordinary') }}",
+            source_id="transported_states_lookup_key",
+        )
+        key_binding = _binding(
+            _snapshot(
+                findings=key_findings,
+                dynamic=key_dynamic,
+            )
+        )
+        self.assertEqual(key_findings, [])
+        self.assertTrue(key_dynamic)
+        self.assertFalse(key_binding["evidence_complete"])
+        self.assertFalse(key_binding["execution_eligible"])
+
+    def test_method_returned_helpers_transport_remains_exact(self):
+        prefix = "{% set helpers = {'message': 'ready'} %}"
+        expressions = (
+            "helpers.get('missing', states)('" + TARGET + "')",
+            "[helpers.get('missing', states)][0]('" + TARGET + "')",
+            "(helpers.get('missing', states),)[0]('" + TARGET + "')",
+            "{'x': helpers.get('missing', states)}['x']('"
+            + TARGET
+            + "')",
+            "(helpers.get('missing', states) if enabled else states)('"
+            + TARGET
+            + "')",
+            "helpers.get('missing', helpers.get('missing2', states))('"
+            + TARGET
+            + "')",
+            "(helpers.get('missing', is_state))('"
+            + TARGET
+            + "', 'on')",
+            "[helpers.get('missing', is_state)][0]('"
+            + TARGET
+            + "', 'on')",
+            "(helpers.get('missing', is_state),)[0]('"
+            + TARGET
+            + "', 'on')",
+            "{'x': helpers.get('missing', is_state)}['x']('"
+            + TARGET
+            + "', 'on')",
+            "(helpers.get('missing', is_state) if enabled else is_state)('"
+            + TARGET
+            + "', 'on')",
+        )
+        for index, expression in enumerate(expressions):
+            with self.subTest(expression=expression):
+                findings, dynamic = _dynamic(
+                    prefix + "{{ " + expression + " }}",
+                    source_id=f"returned_helper_transport_{index}",
+                )
+                self.assertEqual(
+                    {item.target_entity_id for item in findings},
+                    {TARGET},
+                )
+                self.assertEqual(dynamic, [])
+
+    def test_transport_drift_and_bounds_are_explicit(self):
+        source_id = "transport_drift"
+        before_findings, before_dynamic = _dynamic(
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ [helpers.get('message')][0] }}",
+            source_id=source_id,
+        )
+        after_findings, after_dynamic = _dynamic(
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ [helpers[dynamic_key]][0]('missing', is_state)("
+            f"'{TARGET}', 'on') }}}}",
+            source_id=source_id,
+        )
+        before = _binding(
+            _snapshot(
+                findings=before_findings,
+                dynamic=before_dynamic,
+                profiles=(_profile(source_id),),
+            )
+        )
+        after = _binding(
+            _snapshot(
+                findings=after_findings,
+                dynamic=after_dynamic,
+                profiles=(_profile(source_id),),
+            )
+        )
+        self.assertTrue(before["evidence_complete"])
+        self.assertFalse(after["evidence_complete"])
+        self.assertNotEqual(
+            before["evidence_fingerprint"],
+            after["evidence_fingerprint"],
+        )
+
+        deep = (
+            "{% set helpers = {'message': 'ready'} %}{{ "
+            + "(" * 64
+            + "helpers.get"
+            + ")" * 64
+            + "('missing', is_state)('"
+            + TARGET
+            + "', 'on') }}"
+        )
+        malformed = (
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ [helpers.get][0]('missing', is_state)("
+            f"'{TARGET}', 'on') + ( }}}}"
+        )
+        for index, template in enumerate((deep, malformed)):
+            with self.subTest(kind="bounded", index=index):
+                started = time.perf_counter()
+                findings, dynamic = _dynamic(
+                    template, source_id=f"transport_bound_{index}"
+                )
+                elapsed = time.perf_counter() - started
+                observed = _binding(_snapshot(dynamic=dynamic))
+                self.assertEqual(findings, [])
+                self.assertEqual(len(dynamic), 1)
+                self.assertTrue(
+                    dynamic[0].candidate_resolution_limit_exceeded
+                )
+                self.assertFalse(observed["evidence_complete"])
+                self.assertFalse(observed["execution_eligible"])
+                self.assertLess(elapsed, 1.0)
+
     def test_malformed_mapping_projection_scan_is_bounded_and_explicit(self):
         fragment = "| map("
         repeats = MAX_TEMPLATE_SEGMENT_CHARS // len(fragment)
@@ -1343,6 +1739,35 @@ class SpecializedHelperRiskSelectorTests(unittest.TestCase):
         )
         self.assertFalse(observed["evidence_complete"])
         self.assertFalse(observed["execution_eligible"])
+
+    def test_shared_alias_graph_provenance_walk_is_bounded(self):
+        statements = [
+            "{% set helpers = {'message': 'ready'} %}",
+            "{% set level0 = helpers.get %}",
+        ]
+        for level in range(1, 9):
+            fields = ", ".join(
+                f"'{index}': level{level - 1}" for index in range(6)
+            )
+            statements.append(
+                f"{{% set level{level} = {{{fields}}} %}}"
+            )
+        template = "".join(statements) + "{{ (level8 | list)[0] }}"
+
+        started = time.monotonic()
+        findings, dynamic = _dynamic(
+            template,
+            source_id="shared_alias_graph_bound",
+        )
+        elapsed = time.monotonic() - started
+        observed = _binding(_snapshot(dynamic=dynamic))
+
+        self.assertEqual(findings, [])
+        self.assertEqual(len(dynamic), 1)
+        self.assertTrue(dynamic[0].candidate_resolution_limit_exceeded)
+        self.assertFalse(observed["evidence_complete"])
+        self.assertFalse(observed["execution_eligible"])
+        self.assertLess(elapsed, 1.0)
 
     def test_direct_mapping_member_drift_changes_binding(self):
         before_findings, before_dynamic = _dynamic(

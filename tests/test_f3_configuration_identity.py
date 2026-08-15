@@ -1116,6 +1116,275 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn(exact_key, keys)
                 self.assertNotIn(dynamic_key, keys)
 
+    async def test_grouped_and_finite_callable_transport_locks_match_evidence(self):
+        helper = "input_boolean.synthetic_exact"
+        exact_key = helper_dependency_lock_key(helper)
+        dynamic_lock = unconstrained_helper_dependency_lock_key()
+        base = valid_config("automation")
+        wrappers = (
+            "(helpers[dynamic_key])",
+            "((helpers[dynamic_key]))",
+            "[helpers[dynamic_key]][0]",
+            "(helpers[dynamic_key],)[0]",
+            "{'x': helpers[dynamic_key]}['x']",
+            "(helpers[dynamic_key] if enabled else helpers[dynamic_key])",
+        )
+        for exact in (True, False):
+            prefix = "{% set helpers = {'message': 'ready'} %}"
+            if exact:
+                prefix += "{% set dynamic_key = 'get' %}"
+            for action in ("create", "update"):
+                for index, wrapper in enumerate(wrappers):
+                    with self.subTest(
+                        exact=exact,
+                        action=action,
+                        wrapper=wrapper,
+                    ):
+                        proposed = valid_config("automation")
+                        proposed["condition"] = [
+                            {
+                                "condition": "template",
+                                "value_template": (
+                                    prefix
+                                    + "{{ "
+                                    + wrapper
+                                    + "('missing', is_state)('"
+                                    + helper
+                                    + "', 'on') }}"
+                                ),
+                            }
+                        ]
+                        prepared = await self._prepared(
+                            "automation",
+                            action,
+                            operation_id=(
+                                f"transport_{exact}_{action}_{index}"
+                            ),
+                            current_config=(
+                                base if action == "update" else None
+                            ),
+                            proposed_config=proposed,
+                        )
+                        keys = {
+                            item.key
+                            for item in operation_lock_requests(prepared)
+                        }
+                        if exact:
+                            self.assertIn(exact_key, keys)
+                            self.assertNotIn(dynamic_lock, keys)
+                        else:
+                            self.assertNotIn(exact_key, keys)
+                            self.assertIn(dynamic_lock, keys)
+
+        canonical = (
+            f"{{{{ [is_state][0]('{helper}', 'on') }}}}",
+            f"{{{{ [states][0]['{helper}'] }}}}",
+            f"{{{{ (states,)[0]['{helper}'] }}}}",
+            f"{{{{ {{'x': states}}['x']['{helper}'] }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ ['ordinary', helpers.get][-1]("
+            f"'missing', is_state)('{helper}', 'on') }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ (helpers.get)('missing', is_state)("
+            f"'{helper}', 'on') }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ ((helpers.get)('missing', is_state)("
+            f"'{helper}', 'on')) | bool }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.get('missing', states)("
+            f"'{helper}') }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ {'x': helpers.get('missing', states)}['x']("
+            f"'{helper}') }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.get('missing', "
+            "helpers.get('missing2', states))("
+            f"'{helper}') }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ (helpers.get('missing', is_state))("
+            f"'{helper}', 'on') }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ [helpers.get('missing', is_state)][0]("
+            f"'{helper}', 'on') }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ (helpers.get('missing', is_state),)[0]("
+            f"'{helper}', 'on') }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ {'x': helpers.get('missing', is_state)}['x']("
+            f"'{helper}', 'on') }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ (helpers.get('missing', is_state) if enabled "
+            "else is_state)("
+            f"'{helper}', 'on') }}}}",
+        )
+        ordinary = (
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ [helpers.get('message')][0] }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ {'x': helpers.get('message')}['x'] }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ helpers.get('message').upper() }}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ (helpers.get)('message').split(',') }}",
+        )
+        for template in canonical:
+            proposed = valid_config("automation")
+            proposed["condition"] = [
+                {"condition": "template", "value_template": template}
+            ]
+            prepared = await self._prepared(
+                "automation",
+                "update",
+                current_config=base,
+                proposed_config=proposed,
+            )
+            keys = {
+                item.key for item in operation_lock_requests(prepared)
+            }
+            self.assertIn(exact_key, keys)
+            self.assertNotIn(dynamic_lock, keys)
+
+        exact_and_unrestricted = (
+            "{{ ([states][0]['" + helper + "'], states) }}"
+        )
+        proposed = valid_config("automation")
+        proposed["condition"] = [
+            {
+                "condition": "template",
+                "value_template": exact_and_unrestricted,
+            }
+        ]
+        prepared = await self._prepared(
+            "automation",
+            "update",
+            current_config=base,
+            proposed_config=proposed,
+        )
+        keys = {
+            item.key for item in operation_lock_requests(prepared)
+        }
+        self.assertIn(exact_key, keys)
+        self.assertIn(dynamic_lock, keys)
+
+        proposed = valid_config("automation")
+        proposed["condition"] = [
+            {
+                "condition": "template",
+                "value_template": (
+                    "{{ (states if '"
+                    + helper
+                    + "' in states else states)['sensor.a'] }}"
+                ),
+            }
+        ]
+        prepared = await self._prepared(
+            "automation",
+            "update",
+            current_config=base,
+            proposed_config=proposed,
+        )
+        keys = {
+            item.key for item in operation_lock_requests(prepared)
+        }
+        self.assertNotIn(exact_key, keys)
+        self.assertIn(dynamic_lock, keys)
+
+        proposed = valid_config("automation")
+        proposed["condition"] = [
+            {
+                "condition": "template",
+                "value_template": (
+                    "{% set helpers = {'message': 'ready'} %}"
+                    "{{ helpers.get(states, 'ordinary') }}"
+                ),
+            }
+        ]
+        prepared = await self._prepared(
+            "automation",
+            "update",
+            current_config=base,
+            proposed_config=proposed,
+        )
+        keys = {
+            item.key for item in operation_lock_requests(prepared)
+        }
+        self.assertNotIn(exact_key, keys)
+        self.assertIn(dynamic_lock, keys)
+
+        statements = [
+            "{% set helpers = {'message': 'ready'} %}",
+            "{% set level0 = helpers.get %}",
+        ]
+        for level in range(1, 9):
+            fields = ", ".join(
+                f"'{index}': level{level - 1}" for index in range(6)
+            )
+            statements.append(
+                f"{{% set level{level} = {{{fields}}} %}}"
+            )
+        proposed = valid_config("automation")
+        proposed["condition"] = [
+            {
+                "condition": "template",
+                "value_template": (
+                    "".join(statements) + "{{ (level8 | list)[0] }}"
+                ),
+            }
+        ]
+        prepared = await self._prepared(
+            "automation",
+            "update",
+            current_config=base,
+            proposed_config=proposed,
+        )
+        keys = {
+            item.key for item in operation_lock_requests(prepared)
+        }
+        self.assertNotIn(exact_key, keys)
+        self.assertIn(dynamic_lock, keys)
+
+        for template in ordinary:
+            proposed = valid_config("automation")
+            proposed["condition"] = [
+                {"condition": "template", "value_template": template}
+            ]
+            prepared = await self._prepared(
+                "automation",
+                "update",
+                current_config=base,
+                proposed_config=proposed,
+            )
+            keys = {
+                item.key for item in operation_lock_requests(prepared)
+            }
+            self.assertNotIn(exact_key, keys)
+            self.assertNotIn(dynamic_lock, keys)
+
+        nested_uncertain = (
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ (helpers[dynamic_key])('missing', is_state)("
+            f"'{helper}', 'on') if enabled else ('ready' | upper) }}}}",
+            "{% set helpers = {'message': 'ready'} %}"
+            "{{ unknown(((helpers.get)('missing', is_state)("
+            f"'{helper}', 'on')) | bool) }}}}",
+        )
+        for template in nested_uncertain:
+            proposed = valid_config("automation")
+            proposed["condition"] = [
+                {"condition": "template", "value_template": template}
+            ]
+            prepared = await self._prepared(
+                "automation",
+                "update",
+                current_config=base,
+                proposed_config=proposed,
+            )
+            keys = {
+                item.key for item in operation_lock_requests(prepared)
+            }
+            self.assertNotIn(exact_key, keys)
+            self.assertIn(dynamic_lock, keys)
+
     async def test_filter_test_and_domain_collection_dependency_locks(self):
         helper = "input_boolean.synthetic_exact"
         exact_key = helper_dependency_lock_key(helper)

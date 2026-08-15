@@ -18,6 +18,7 @@ MAX_DYNAMIC_EXPRESSION_CHARS = 4_096
 MAX_DYNAMIC_CANDIDATES = 128
 MAX_DYNAMIC_LABEL_SELECTORS = 32
 MAX_DYNAMIC_NESTING = 8
+_MAX_PROVENANCE_WALK_NODES = MAX_DYNAMIC_CANDIDATES * 2
 MAPPING_READ_METHODS = frozenset({"get", "items", "keys", "values"})
 _MAPPING_ATTRIBUTE_NAMES = frozenset(
     {
@@ -88,6 +89,7 @@ class CallableBindingResolution:
     mapping_method: str | None = None
     mapping_method_options: tuple[str, ...] = ()
     unreviewed_mapping_attribute_fallback: bool = False
+    non_callable_possible: bool = False
     limit_exceeded: bool = False
 
 
@@ -99,6 +101,7 @@ class _StaticValue:
     fields: dict[str, "_StaticValue"] = field(default_factory=dict)
     required_fields: set[str] = field(default_factory=set)
     iteration: "_StaticValue | None" = None
+    sequence_items: tuple["_StaticValue", ...] | None = None
     complete: bool = True
     limit_exceeded: bool = False
     kinds: set[str] = field(default_factory=set)
@@ -108,6 +111,7 @@ class _StaticValue:
     mapping_method_options: set[str] = field(default_factory=set)
     mapping_method_option_base: "_StaticValue | None" = None
     unreviewed_mapping_attribute_fallback: bool = False
+    non_callable_possible: bool = False
 
 
 def _empty_incomplete(*, limit: bool = False) -> _StaticValue:
@@ -115,6 +119,7 @@ def _empty_incomplete(*, limit: bool = False) -> _StaticValue:
         complete=False,
         limit_exceeded=limit,
         kinds={"resolution_limit" if limit else "unresolved"},
+        non_callable_possible=True,
     )
 
 
@@ -138,6 +143,7 @@ def _iteration_copy(value: _StaticValue) -> _StaticValue:
         unreviewed_mapping_attribute_fallback=(
             value.unreviewed_mapping_attribute_fallback
         ),
+        non_callable_possible=value.non_callable_possible,
     )
 
 
@@ -172,6 +178,7 @@ def _collection_copy(
         unreviewed_mapping_attribute_fallback=(
             value.unreviewed_mapping_attribute_fallback
         ),
+        non_callable_possible=True,
     )
 
 
@@ -188,6 +195,7 @@ def _merge_values(
     mapping_method_option_bases: list[_StaticValue] = []
     unreviewed_mapping_attribute_fallback = False
     mapping_values: list[_StaticValue] = []
+    sequence_values: list[tuple[_StaticValue, ...]] = []
     for value in values:
         result.entity_ids.update(value.entity_ids)
         result.literal_strings.update(value.literal_strings)
@@ -213,6 +221,11 @@ def _merge_values(
             unreviewed_mapping_attribute_fallback
             or value.unreviewed_mapping_attribute_fallback
         )
+        result.non_callable_possible = bool(
+            result.non_callable_possible or value.non_callable_possible
+        )
+        if value.sequence_items is not None:
+            sequence_values.append(value.sequence_items)
         if "mapping_object" in value.kinds:
             mapping_values.append(value)
     if (
@@ -247,6 +260,18 @@ def _merge_values(
     if iteration_values:
         result.iteration = _merge_values(
             iteration_values, depth=depth + 1
+        )
+    if (
+        len(sequence_values) == len(values)
+        and sequence_values
+        and len({len(items) for items in sequence_values}) == 1
+    ):
+        result.sequence_items = tuple(
+            _merge_values(
+                [items[index] for items in sequence_values],
+                depth=depth + 1,
+            )
+            for index in range(len(sequence_values[0]))
         )
     if mapping_method_values:
         method_names = {
@@ -298,24 +323,43 @@ def _nested_entity_helper_provenance(
     value: _StaticValue,
     *,
     depth: int = 0,
+    _seen: set[int] | None = None,
+    _remaining: list[int] | None = None,
 ) -> tuple[set[str], bool, bool]:
     """Return bounded helper provenance carried anywhere in one static value."""
 
     if depth > MAX_DYNAMIC_NESTING:
         return set(), False, True
+    if _seen is None:
+        _seen = set()
+    if _remaining is None:
+        _remaining = [_MAX_PROVENANCE_WALK_NODES]
+    identity = id(value)
+    if identity in _seen:
+        return set(), True, False
+    if _remaining[0] <= 0:
+        return set(), False, True
+    _seen.add(identity)
+    _remaining[0] -= 1
     helpers = set(value.entity_helpers)
     complete = value.complete
     limit_exceeded = value.limit_exceeded
     children = list(value.fields.values())
     if value.iteration is not None:
         children.append(value.iteration)
+    if value.sequence_items is not None:
+        children.extend(value.sequence_items)
     if value.mapping_method_base is not None:
         children.append(value.mapping_method_base)
+    if value.mapping_method_option_base is not None:
+        children.append(value.mapping_method_option_base)
     for child in children:
         child_helpers, child_complete, child_limit = (
             _nested_entity_helper_provenance(
                 child,
                 depth=depth + 1,
+                _seen=_seen,
+                _remaining=_remaining,
             )
         )
         helpers.update(child_helpers)
@@ -330,6 +374,59 @@ def _nested_entity_helper_provenance(
                 True,
             )
     return helpers, complete, limit_exceeded
+
+
+def _nested_mapping_method_provenance(
+    value: _StaticValue,
+    *,
+    depth: int = 0,
+    _seen: set[int] | None = None,
+    _remaining: list[int] | None = None,
+) -> tuple[set[str], bool, bool, bool]:
+    """Return reviewed mapping methods carried inside one bounded value."""
+
+    if depth > MAX_DYNAMIC_NESTING:
+        return set(), True, False, True
+    if _seen is None:
+        _seen = set()
+    if _remaining is None:
+        _remaining = [_MAX_PROVENANCE_WALK_NODES]
+    identity = id(value)
+    if identity in _seen:
+        return set(), False, True, False
+    if _remaining[0] <= 0:
+        return set(), True, False, True
+    _seen.add(identity)
+    _remaining[0] -= 1
+    methods = set(value.mapping_method_options)
+    if value.mapping_method is not None:
+        methods.add(value.mapping_method)
+    unreviewed = value.unreviewed_mapping_attribute_fallback
+    complete = value.complete
+    limit_exceeded = value.limit_exceeded
+    children = list(value.fields.values())
+    if value.iteration is not None:
+        children.append(value.iteration)
+    if value.sequence_items is not None:
+        children.extend(value.sequence_items)
+    if value.mapping_method_base is not None:
+        children.append(value.mapping_method_base)
+    if value.mapping_method_option_base is not None:
+        children.append(value.mapping_method_option_base)
+    for child in children:
+        child_methods, child_unreviewed, child_complete, child_limit = (
+            _nested_mapping_method_provenance(
+                child,
+                depth=depth + 1,
+                _seen=_seen,
+                _remaining=_remaining,
+            )
+        )
+        methods.update(child_methods)
+        unreviewed = bool(unreviewed or child_unreviewed)
+        complete = bool(complete and child_complete)
+        limit_exceeded = bool(limit_exceeded or child_limit)
+    return methods, unreviewed, complete, limit_exceeded
 
 
 class BoundedTemplateContext:
@@ -568,6 +665,7 @@ class BoundedTemplateContext:
             unreviewed_mapping_attribute_fallback=(
                 value.unreviewed_mapping_attribute_fallback
             ),
+            non_callable_possible=value.non_callable_possible,
             limit_exceeded=value.limit_exceeded,
         )
 
@@ -623,6 +721,7 @@ class BoundedTemplateContext:
             unreviewed_mapping_attribute_fallback=(
                 value.unreviewed_mapping_attribute_fallback
             ),
+            non_callable_possible=value.non_callable_possible,
             limit_exceeded=value.limit_exceeded,
         )
 
@@ -638,15 +737,92 @@ class BoundedTemplateContext:
         """
 
         value = self._evaluate(expression)
+        provenance_budget = [_MAX_PROVENANCE_WALK_NODES]
         helpers, complete, limit_exceeded = (
-            _nested_entity_helper_provenance(value)
+            _nested_entity_helper_provenance(
+                value,
+                _remaining=provenance_budget,
+            )
+        )
+        (
+            nested_methods,
+            nested_unreviewed,
+            method_complete,
+            method_limit,
+        ) = _nested_mapping_method_provenance(
+            value,
+            _remaining=provenance_budget,
         )
         return CallableBindingResolution(
             locally_bound=True,
-            complete=complete,
+            complete=bool(complete and method_complete),
             entity_helpers=tuple(sorted(helpers)),
             has_bounded_members=bool(
                 value.fields or value.iteration is not None
+            ),
+            mapping_method=value.mapping_method,
+            mapping_method_options=tuple(
+                sorted(
+                    set(value.mapping_method_options).union(nested_methods)
+                )
+            ),
+            unreviewed_mapping_attribute_fallback=(
+                value.unreviewed_mapping_attribute_fallback
+                or nested_unreviewed
+            ),
+            non_callable_possible=value.non_callable_possible,
+            limit_exceeded=bool(limit_exceeded or method_limit),
+        )
+
+    def expression_callable_binding(
+        self, expression: str
+    ) -> CallableBindingResolution:
+        """Return top-level callable provenance for one bounded expression.
+
+        Parentheses are intentionally transparent, while finite containers,
+        conditional branches, mapping members, and method results retain the
+        callable value they transport.  Nested helper values are not promoted
+        unless the expression itself selects that value.
+        """
+
+        if len(expression) > MAX_DYNAMIC_EXPRESSION_CHARS:
+            return CallableBindingResolution(
+                locally_bound=True,
+                limit_exceeded=True,
+                non_callable_possible=True,
+            )
+        try:
+            node = ast.parse(expression.strip(), mode="eval").body
+        except RecursionError:
+            return CallableBindingResolution(
+                locally_bound=True,
+                limit_exceeded=True,
+                non_callable_possible=True,
+            )
+        except (SyntaxError, ValueError):
+            return CallableBindingResolution()
+
+        names = {
+            child.id for child in ast.walk(node) if isinstance(child, ast.Name)
+        }
+        relevant_name = bool(
+            names.intersection(self._entity_helper_names)
+            or any(self.is_locally_bound(name) for name in names)
+        )
+        if not relevant_name:
+            return CallableBindingResolution()
+
+        value = self._evaluate_node(node, depth=0)
+        return CallableBindingResolution(
+            locally_bound=True,
+            complete=value.complete,
+            entity_helpers=tuple(sorted(value.entity_helpers)),
+            has_bounded_members=bool(
+                value.fields
+                or value.sequence_items is not None
+                or "mapping_object" in value.kinds
+                or value.mapping_method_options
+                or value.unreviewed_mapping_attribute_fallback
             ),
             mapping_method=value.mapping_method,
             mapping_method_options=tuple(
@@ -655,7 +831,8 @@ class BoundedTemplateContext:
             unreviewed_mapping_attribute_fallback=(
                 value.unreviewed_mapping_attribute_fallback
             ),
-            limit_exceeded=limit_exceeded,
+            non_callable_possible=value.non_callable_possible,
+            limit_exceeded=value.limit_exceeded,
         )
 
     @classmethod
@@ -796,20 +973,26 @@ class BoundedTemplateContext:
             text = node.value
             if self._valid_entity_id(text):
                 return _StaticValue(
-                    entity_ids={text}, kinds={"literal_entity"}
+                    entity_ids={text},
+                    kinds={"literal_entity"},
+                    non_callable_possible=True,
                 )
             if len(text) <= 128 and all(
                 character >= " " for character in text
             ):
                 return _StaticValue(
-                    literal_strings={text}, kinds={"literal_string"}
+                    literal_strings={text},
+                    kinds={"literal_string"},
+                    non_callable_possible=True,
                 )
             return _empty_incomplete(limit=len(text) > 128)
         if isinstance(node, ast.Constant) and (
             node.value is None
             or isinstance(node.value, (bool, int, float))
         ):
-            return _StaticValue(kinds={"literal_scalar"})
+            return _StaticValue(
+                kinds={"literal_scalar"}, non_callable_possible=True
+            )
         if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             if len(node.elts) > MAX_DYNAMIC_CANDIDATES:
                 return _empty_incomplete(limit=True)
@@ -820,7 +1003,10 @@ class BoundedTemplateContext:
             merged = _merge_values(items, depth=depth + 1)
             result = _merge_values([merged], depth=depth + 1)
             result.iteration = merged
+            if isinstance(node, (ast.List, ast.Tuple)):
+                result.sequence_items = tuple(items)
             result.kinds.add("finite_collection")
+            result.non_callable_possible = True
             return result
         if isinstance(node, ast.Dict):
             if len(node.keys) > MAX_DYNAMIC_CANDIDATES:
@@ -844,6 +1030,7 @@ class BoundedTemplateContext:
                     value.limit_exceeded for value in fields.values()
                 ),
                 kinds={"mapping", "mapping_object"},
+                non_callable_possible=True,
             )
         if isinstance(node, ast.Name):
             if (
@@ -857,7 +1044,10 @@ class BoundedTemplateContext:
                     kinds={"entity_helper_callable"},
                 )
             if node.id.lower() in {"false", "none", "true"}:
-                return _StaticValue(kinds={"literal_scalar"})
+                return _StaticValue(
+                    kinds={"literal_scalar"},
+                    non_callable_possible=True,
+                )
             return _empty_incomplete()
         if isinstance(node, ast.Attribute):
             base = self._evaluate_node(node.value, depth=depth + 1)
@@ -884,6 +1074,40 @@ class BoundedTemplateContext:
             return result
         if isinstance(node, ast.Subscript):
             base = self._evaluate_node(node.value, depth=depth + 1)
+            if base.sequence_items is not None:
+                sequence_index = _literal_sequence_index(node.slice)
+                if sequence_index is not None:
+                    index = sequence_index
+                    if index < 0:
+                        index += len(base.sequence_items)
+                    if 0 <= index < len(base.sequence_items):
+                        return _merge_values(
+                            [base.sequence_items[index]],
+                            depth=depth + 1,
+                        )
+                    return _StaticValue(
+                        kinds={"ordinary_runtime_error"},
+                        non_callable_possible=True,
+                    )
+                result = _merge_values(
+                    list(base.sequence_items), depth=depth + 1
+                )
+                helpers, provenance_complete, provenance_limit = (
+                    _nested_entity_helper_provenance(result)
+                )
+                if (
+                    helpers
+                    or result.mapping_method is not None
+                    or result.mapping_method_options
+                    or result.unreviewed_mapping_attribute_fallback
+                    or not provenance_complete
+                ):
+                    result.complete = False
+                    result.kinds.add("unresolved")
+                result.limit_exceeded = bool(
+                    result.limit_exceeded or provenance_limit
+                )
+                return result
             key = self._evaluate_node(node.slice, depth=depth + 1)
             key_values = key.literal_strings.union(key.entity_ids)
             selected: list[_StaticValue] = []
@@ -911,11 +1135,17 @@ class BoundedTemplateContext:
                         selected.append(_empty_incomplete())
                     else:
                         selected.append(
-                            _StaticValue(kinds={"ordinary_undefined"})
+                            _StaticValue(
+                                kinds={"ordinary_undefined"},
+                                non_callable_possible=True,
+                            )
                         )
             if key.complete and key_values:
                 if not selected:
-                    return _StaticValue(kinds={"ordinary_undefined"})
+                    return _StaticValue(
+                        kinds={"ordinary_undefined"},
+                        non_callable_possible=True,
+                    )
                 result = _merge_values(selected, depth=depth + 1)
                 result.kinds.add("mapping")
                 return result
@@ -1012,30 +1242,96 @@ class BoundedTemplateContext:
                 return _empty_incomplete(
                     limit=callable_value.limit_exceeded
                 )
+            call_results: list[_StaticValue] = []
+            for helper in sorted(callable_value.entity_helpers):
+                call_results.append(
+                    self._evaluate_entity_helper_call(
+                        helper=helper,
+                        args=node.args,
+                        keywords=node.keywords,
+                        depth=depth,
+                    )
+                )
             if callable_value.mapping_method_options:
-                return self._evaluate_mapping_method_options(
-                    callable_value=callable_value,
-                    args=node.args,
-                    keywords=node.keywords,
-                    depth=depth,
+                call_results.append(
+                    self._evaluate_mapping_method_options(
+                        callable_value=callable_value,
+                        args=node.args,
+                        keywords=node.keywords,
+                        depth=depth,
+                    )
                 )
             if (
                 callable_value.mapping_method is not None
                 and callable_value.mapping_method_base is not None
             ):
-                return self._evaluate_mapping_method(
-                    method=callable_value.mapping_method,
-                    base=callable_value.mapping_method_base,
-                    args=node.args,
-                    keywords=node.keywords,
-                    depth=depth,
+                call_results.append(
+                    self._evaluate_mapping_method(
+                        method=callable_value.mapping_method,
+                        base=callable_value.mapping_method_base,
+                        args=node.args,
+                        keywords=node.keywords,
+                        depth=depth,
+                    )
                 )
-            return _empty_incomplete(
-                limit=callable_value.limit_exceeded
+            if not call_results:
+                return _empty_incomplete(
+                    limit=callable_value.limit_exceeded
+                )
+            result = _merge_values(call_results, depth=depth + 1)
+            if (
+                not callable_value.complete
+                or callable_value.non_callable_possible
+                or len(call_results) > 1
+                or len(callable_value.entity_helpers) > 1
+                or callable_value.unreviewed_mapping_attribute_fallback
+            ):
+                result.complete = False
+                result.kinds.add("unresolved")
+            result.limit_exceeded = bool(
+                result.limit_exceeded or callable_value.limit_exceeded
             )
+            return result
         # Boolean operators, filters, arbitrary calls, macros, and other Jinja
         # features are intentionally outside the reviewed grammar.
         return _empty_incomplete()
+
+    def _evaluate_entity_helper_call(
+        self,
+        *,
+        helper: str,
+        args: list[ast.expr],
+        keywords: list[ast.keyword],
+        depth: int,
+    ) -> _StaticValue:
+        """Project the entity operand of one reviewed helper invocation."""
+
+        if keywords or not args:
+            value = _empty_incomplete()
+            value.kinds.add("entity_selector_consumed")
+            return value
+        target_nodes = args if helper == "expand" else args[:1]
+        target_values = [
+            self._evaluate_node(node, depth=depth + 1)
+            for node in target_nodes
+        ]
+        value = _merge_values(target_values, depth=depth + 1)
+        invalid_values = bool(value.literal_strings)
+        if (
+            invalid_values
+            or not value.complete
+            or not (value.entity_ids or value.labels)
+        ):
+            value.complete = False
+            value.kinds.add("unresolved")
+        value.kinds.add("entity_selector_consumed")
+        value.non_callable_possible = True
+        value.entity_helpers.clear()
+        value.mapping_method = None
+        value.mapping_method_base = None
+        value.mapping_method_options.clear()
+        value.mapping_method_option_base = None
+        return value
 
     def _evaluate_mapping_method(
         self,
@@ -1240,6 +1536,24 @@ class BoundedTemplateContext:
                 else "unresolved"
             )
         return value
+
+
+def _literal_sequence_index(node: ast.AST) -> int | None:
+    if (
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, int)
+        and not isinstance(node.value, bool)
+    ):
+        return node.value
+    if (
+        isinstance(node, ast.UnaryOp)
+        and isinstance(node.op, ast.USub)
+        and isinstance(node.operand, ast.Constant)
+        and isinstance(node.operand.value, int)
+        and not isinstance(node.operand.value, bool)
+    ):
+        return -node.operand.value
+    return None
 
 
 __all__ = [
