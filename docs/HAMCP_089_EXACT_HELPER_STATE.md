@@ -67,6 +67,16 @@ depth, bindings, abstract-value/container growth, candidates, external
 references, obligation count, retained
 identities, profiles, evidence, and output are deterministically bounded.
 
+Configuration context follows Home Assistant scope and ordering. Root
+automation/script defaults retain the possible caller-supplied run-variable
+override; action-level variables are rendered sequentially in insertion order;
+literal disabled actions are unreachable; and parallel branches do not transfer
+locals laterally. Exact zone-trigger and repeat/loop provenance is retained.
+Event/payload values and ordinary variable metadata remain neutral when only
+formatted, but become bounded opacity if subsequently used as entity selectors.
+An unused data member named `entity_id` is not a causal dependency merely because
+of its key name.
+
 The immutable plan binds the exact target, desired state, state baseline,
 normalized dependency evidence and fingerprint, exact downstream automation
 resource identities, effect-relevant services, targets and selectors, action
@@ -100,6 +110,10 @@ neither. Exact dependencies add the relevant automation locks; bounded opacity
 adds every known potentially relevant automation lock. External-template
 opacity also binds a deterministic
 custom-template reload identity without adding a reload tool. Engineering
+configuration analysis treats raw `use_blueprint` content as bounded external
+opacity until the exact source has been resolved and analyzed; blueprint
+create, update, and removal therefore take the conservative helper-dependency
+guard when F3 has only the raw automation body. Engineering
 automation create/update operations derive exclusive dependency keys from both
 current and proposed obligation ledgers, including added, retained, removed,
 or materially changed dependencies or opacity. This blocks newly relevant automation

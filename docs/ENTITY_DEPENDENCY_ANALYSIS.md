@@ -64,6 +64,19 @@ content, parse errors, and exceeded limits produce explicit opacity or failure; 
 cannot disappear as zero evidence. Comments, raw blocks, ordinary message formatting,
 and proven scalar or mapping operations remain dependency-neutral.
 
+Surrounding configuration supplies bounded typed provenance rather than a flat bag
+of dotted strings. Root automation/script variables are evaluated in insertion
+order and retain the externally supplied run-variable alternative that Home
+Assistant preserves. Variables actions render each value in insertion order,
+publish it to the next value, honor `enabled`, and do not transfer bindings between
+parallel siblings. Exact configuration maps/lists, Jinja loop metadata, Home
+Assistant `repeat` variants, exact zone triggers, event/payload mappings, and
+reviewed date/time results keep their distinct provenance. Runtime payload values
+and run-variable overrides remain harmless when only formatted, but become bounded
+opacity when consumed as entity selectors. Aggregate context conversion, lexical
+scope, macro capture, recursion, value depth, member count, and scalar size are
+bounded explicitly; a breached bound is coverage failure.
+
 The reviewed semantic registry includes Home Assistant state helpers, translated-state
 helpers, `expand`, `closest`, `distance`, area/device/floor/integration/label entity-set
 producers, dynamic filter/test dispatch, and state-bearing trigger, wait, and `this`
@@ -73,6 +86,16 @@ A future or unknown helper becomes opaque until reviewed rather
 than being inferred harmless. Static template imports/includes/extends bind the
 external name and calling configuration identity but remain opaque because Beta 39
 does not retrieve custom-template content.
+
+An automation's raw `use_blueprint` mapping cannot prove that the blueprint body
+is helper-independent. The direct dependency provider discharges that bounded
+external-source obligation only after it reads, resolves, and analyzes the exact
+blueprint source. F3 configuration locking, which sees only current and proposed
+automation configuration, retains the conservative helper-dependency guard for
+blueprint create, update, or removal. This adds no blueprint write or reload
+authority. Discharge is evidence-bound to the raw path/configuration fingerprint,
+the resolved configuration fingerprint, and the complete resolved obligation
+ledger; a mismatched or missing ledger retains opacity.
 
 The public dependency graph remains a bounded compatibility projection: exact
 dependencies become findings, unresolved or opaque obligations become dynamic

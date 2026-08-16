@@ -35,6 +35,23 @@ collisions. Runtime strings returned by state helpers or trigger/event metadata
 remain harmless when used only for display, but retain provenance if later fed into
 an entity selector. Inventory, blueprint-source, event-selector, AST, value, and
 evidence limits terminate as explicit coverage failure instead of silent clipping.
+Raw `use_blueprint` configuration also retains a bounded external-source
+obligation until the provider reads and analyzes that exact blueprint. Local F3
+configuration projection cannot inspect the source body, so blueprint create,
+update, and removal use the conservative helper-dependency guard rather than
+claiming that missing raw references prove exclusion. Provider-side discharge
+is atomic and binds the raw path/configuration, resolved configuration, and
+complete resolved ledger; there is no Boolean or caller-asserted bypass.
+
+Configuration-provided values now follow their runtime scope. Root defaults retain
+Home Assistant's caller-supplied run-variable override alternative; variables
+actions render and publish values in insertion order; disabled actions are not
+analyzed as reachable; and parallel siblings cannot exchange branch-local
+bindings. Exact zone-trigger provenance, Jinja loop metadata, Home Assistant
+`repeat` values, event/payload mappings, and reviewed date/time results remain
+typed. Runtime context data stays low-friction when formatted for display and
+becomes conservative only when later consumed as an entity selector. These
+transfers share aggregate depth, member, scalar, scope, capture, and work bounds.
 
 ## Proportional risk and truthful actionability
 

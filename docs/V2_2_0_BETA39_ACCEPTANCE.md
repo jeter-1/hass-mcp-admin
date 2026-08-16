@@ -59,6 +59,17 @@ when later consumed as entity selectors. Static entity-bearing configuration rol
 bounded context where available. Comments, raw blocks, message formatting, and
 proven ordinary values must remain low-friction.
 
+Configuration context must follow Home Assistant execution semantics. Root
+automation/script variables retain possible caller-supplied run-variable
+overrides. A variables action renders its mapping in insertion order, makes each
+completed assignment visible to the next value, skips `enabled: false`, joins a
+dynamic `enabled` path, and cannot leak one parallel branch's bindings into a
+sibling. Mapping order is material dependency evidence. Exact zone triggers seed
+`trigger.zone`/`wait.trigger.zone`; Jinja loop and Home Assistant repeat values are
+path-scoped; event/payload mappings and date/time values remain neutral when only
+rendered and opaque when later used as entity selectors. Unused variable members
+named `entity_id` are data, not dependencies merely by spelling.
+
 Every supported Jinja AST node requires a reviewed transfer rule or a
 conservative fallback. Historical Beta 37 through Beta 39 alias, mapping,
 method, bracket, grouping, conditional, and finite-transport cases must never
@@ -108,6 +119,13 @@ take neither. Therefore:
 - relevant automation reloads conflict; external-template opacity also binds a
   deterministic custom-template reload identity when represented by the lock
   model;
+- raw `use_blueprint` configuration is a bounded external-source obligation
+  until the exact blueprint source is read, resolved, and analyzed. F3
+  configuration projection has no source body and therefore takes the
+  conservative helper-dependency key for blueprint create, update, and removal.
+  Provider-side discharge must bind the raw configuration/path fingerprint,
+  resolved configuration fingerprint, and complete resolved obligation ledger;
+  no caller assertion may suppress the raw obligation;
 - unrelated automation work remains concurrent.
 
 The approval fingerprint binds the semantic-registry identity, exact and
