@@ -7,8 +7,14 @@ import time
 import unittest
 
 from ha_mcp_engineering.dependency.extraction import (
+    MAX_CONTEXT_ENTITY_IDS,
+    MAX_CONTEXT_SCALAR_CHARS,
+    MAX_CONTEXT_VALUE_DEPTH,
+    MAX_CONTEXT_VARIABLES,
     MAX_CONFIGURATION_NODES,
     MAX_EVENT_SELECTOR_VALUES,
+    _bounded_context_value,
+    _context_with_variables,
     extract_document_with_obligations,
 )
 from ha_mcp_engineering.dependency.models import (
@@ -19,8 +25,11 @@ from ha_mcp_engineering.dependency.models import (
 from ha_mcp_engineering.dependency.obligation_ledger import (
     MAX_TEMPLATE_BINDINGS,
     MAX_TEMPLATE_CANDIDATES,
+    MAX_TEMPLATE_MACRO_CAPTURES,
     MAX_TEMPLATE_OBLIGATIONS,
+    MAX_TEMPLATE_SCOPES,
     MAX_TEMPLATE_SOURCE_CHARS,
+    TemplateContextEvidence,
     analyze_template_obligations,
 )
 from ha_mcp_engineering.f3_configuration.locks import (
@@ -103,6 +112,22 @@ def _binding_overflow_template() -> str:
     return "".join(statements)
 
 
+def _macro_capture_overflow_template() -> str:
+    return "".join(
+        "{% macro f_"
+        + f"{index:03d}"
+        + "(entity) %}{{ entity }}{% endmacro %}"
+        for index in range(MAX_TEMPLATE_MACRO_CAPTURES + 1)
+    )
+
+
+def _scope_overflow_template() -> str:
+    return "".join(
+        "{% if enabled %}ready{% endif %}"
+        for _ in range(MAX_TEMPLATE_SCOPES)
+    )
+
+
 def _profile(configuration: dict) -> AutomationActionRiskProfile:
     projected = automation_action_consequence_profile(configuration)
     return AutomationActionRiskProfile(
@@ -130,6 +155,109 @@ def _profile(configuration: dict) -> AutomationActionRiskProfile:
 
 
 class ObligationLedgerResourceBoundTests(unittest.TestCase):
+    def test_configuration_context_values_share_one_bounded_budget(self):
+        budget = [5]
+        context = TemplateContextEvidence()
+        context, first_limit = _context_with_variables(
+            context,
+            {"first": {"value": 1}},
+            path="$.action[0]",
+            context_value_budget=budget,
+            join_existing=False,
+        )
+        context, second_limit = _context_with_variables(
+            context,
+            {"second": {"left": 2, "right": 3}},
+            path="$.action[1]",
+            context_value_budget=budget,
+            join_existing=False,
+        )
+        _context, third_limit = _context_with_variables(
+            context,
+            {"third": 4},
+            path="$.action[2]",
+            context_value_budget=budget,
+            join_existing=False,
+        )
+        self.assertFalse(first_limit)
+        self.assertFalse(second_limit)
+        self.assertTrue(third_limit)
+        self.assertLess(budget[0], 0)
+
+        first, first_limit = _bounded_context_value(
+            {"beta": [2, 3], "alpha": 1}
+        )
+        reordered, reordered_limit = _bounded_context_value(
+            {"alpha": 1, "beta": [2, 3]}
+        )
+        self.assertFalse(first_limit)
+        self.assertFalse(reordered_limit)
+        self.assertEqual(first.fingerprint, reordered.fingerprint)
+
+    def test_configuration_context_value_bounds_are_explicit(self):
+        nested: object = "value"
+        for _ in range(MAX_CONTEXT_VALUE_DEPTH + 1):
+            nested = {"child": nested}
+        values = (
+            nested,
+            {
+                f"key_{index:03d}": index
+                for index in range(MAX_CONTEXT_VARIABLES + 1)
+            },
+            list(range(MAX_CONTEXT_ENTITY_IDS + 1)),
+            "x" * (MAX_CONTEXT_SCALAR_CHARS + 1),
+        )
+        for value in values:
+            with self.subTest(value_type=type(value).__name__):
+                evidence, limit_exceeded = _bounded_context_value(value)
+                self.assertTrue(limit_exceeded)
+                self.assertFalse(evidence.complete)
+
+    def test_recursive_macros_and_macro_scope_limits_fail_safely(self):
+        recursive = (
+            "{% macro f(entity) %}{{ f(entity) }}{% endmacro %}"
+            "{{ f('" + TARGET + "') }}"
+        )
+        mutual = (
+            "{% macro f(entity) %}{{ g(entity) }}{% endmacro %}"
+            "{% macro g(entity) %}{{ f(entity) }}{% endmacro %}"
+            "{{ f('" + TARGET + "') }}"
+        )
+        for template in (recursive, mutual):
+            with self.subTest(template=template):
+                result = _analyze(template)
+                self.assertFalse(result.coverage_failed)
+                self.assertTrue(
+                    any(
+                        item.outcome == "bounded_semantic_opaque"
+                        and item.reason_code
+                        == "local_macro_body_unavailable_or_recursive"
+                        and item.lock_projection == "conservative"
+                        for item in result.obligations
+                    ),
+                    result.obligations,
+                )
+
+        for template, reason in (
+            (
+                _macro_capture_overflow_template(),
+                "template_macro_capture_limit_exceeded",
+            ),
+            (_scope_overflow_template(), "template_scope_limit_exceeded"),
+        ):
+            with self.subTest(reason=reason):
+                result = _analyze(template)
+                self.assertTrue(result.coverage_failed)
+                self.assertTrue(
+                    any(
+                        item.reason_code == reason
+                        and item.outcome == "coverage_failure"
+                        and item.lock_projection == "coverage_failure"
+                        for item in result.obligations
+                    ),
+                    result.obligations,
+                )
+
     def test_structural_event_scan_and_selector_lists_are_bounded(self):
         duplicate_exact = {
             "trigger": [
@@ -439,6 +567,104 @@ class ObligationLedgerResourceBoundTests(unittest.TestCase):
 class ObligationResourceGovernanceAndLockTests(
     unittest.IsolatedAsyncioTestCase
 ):
+    async def test_macro_opacity_and_capture_failure_keep_governance_and_locks_aligned(self):
+        cases = (
+            (
+                "{% macro f(entity) %}{{ f(entity) }}{% endmacro %}"
+                "{{ f('" + TARGET + "') }}",
+                True,
+                "bounded_opaque",
+            ),
+            (
+                _macro_capture_overflow_template(),
+                False,
+                "coverage_failure",
+            ),
+        )
+        for index, (template, eligible, precision) in enumerate(cases):
+            with self.subTest(index=index):
+                configuration = valid_config("automation")
+                configuration["condition"] = [
+                    {"condition": "template", "value_template": template}
+                ]
+                configuration["action"] = [
+                    {
+                        "service": "cover.open_cover",
+                        "target": {
+                            "entity_id": "cover.synthetic_resource_fixture"
+                        },
+                    }
+                ]
+                findings, dynamic, obligations = (
+                    extract_document_with_obligations(
+                        source_type="automation",
+                        source_id="porch_light",
+                        source_entity_id="automation.porch_light",
+                        source_name="Beta 39 resource fixture",
+                        source_state="on",
+                        config=configuration,
+                    )
+                )
+                snapshot = DependencyIndexSnapshot(
+                    fingerprint="a" * 64,
+                    generation=39,
+                    built_at_monotonic=time.monotonic(),
+                    built_at="2026-08-15T12:00:00+00:00",
+                    findings=tuple(findings),
+                    dynamic_references=tuple(dynamic),
+                    target_metadata={},
+                    coverage=(
+                        SourceCoverageItem(
+                            "automation",
+                            "direct_ha_api",
+                            "automation_config",
+                            "complete",
+                        ),
+                        SourceCoverageItem(
+                            "blueprint",
+                            "direct_ha_api",
+                            "blueprint_source",
+                            "complete",
+                        ),
+                    ),
+                    automation_action_profiles=(_profile(configuration),),
+                    obligations=tuple(obligations),
+                )
+                binding = build_helper_dependency_risk_binding(
+                    snapshot,
+                    entity_id=TARGET,
+                    index_metadata={
+                        "freshness": "current",
+                        "evidence_stale": False,
+                        "invalidated": False,
+                    },
+                )
+                risk = helper_dependency_risk_assessment(
+                    {"binding": binding, "provenance": {"generation": 39}}
+                )
+                self.assertEqual(precision, binding["semantic_precision"])
+                self.assertEqual(eligible, binding["execution_eligible"])
+                self.assertEqual(eligible, risk.apply_allowed)
+
+                base = valid_config("automation")
+                gateway = SyntheticConfigurationGateway()
+                proposal = proposal_for(
+                    "automation",
+                    "update",
+                    current_config=base,
+                    proposed_config=configuration,
+                )
+                gateway.states[("automation", proposal.target_id)] = base
+                prepared = await adapter_for(
+                    "automation", "update", gateway
+                ).prepare(proposal)
+                locks = {
+                    item.key for item in operation_lock_requests(prepared)
+                }
+                self.assertIn(
+                    unconstrained_helper_dependency_lock_key(), locks
+                )
+
     async def test_coverage_failure_is_nonactionable_and_conservatively_locked(self):
         template = _binding_overflow_template()
         configuration = valid_config("automation")

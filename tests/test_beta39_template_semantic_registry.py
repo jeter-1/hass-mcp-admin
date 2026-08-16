@@ -124,7 +124,7 @@ class TemplateSemanticRegistryTests(unittest.TestCase):
         declaration = ROOT / "scripts" / "template_semantic_registry_source.json"
         self.assertNotEqual(declaration.resolve(), SEMANTIC_REGISTRY_FILE.resolve())
         self.assertEqual(
-            "e0976d69feaac262dcc3090787a152f34265644dfe19ab7018c9c78d9d4be2bc",
+            "dbe59676e34f83a232ef5d893f686d6315717ffba14975ff25d60c74d1705708",
             hashlib.sha256(declaration.read_bytes()).hexdigest(),
         )
         self.assertIn(

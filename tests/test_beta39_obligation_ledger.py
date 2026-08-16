@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+from pathlib import Path
+import sys
 import unittest
 
-from ha_mcp_engineering.dependency.models import OBLIGATION_OUTCOMES
-from ha_mcp_engineering.dependency.obligation_ledger import (
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
+
+from ha_mcp_engineering.dependency.models import (  # noqa: E402
+    OBLIGATION_OUTCOMES,
+)
+from ha_mcp_engineering.dependency.obligation_ledger import (  # noqa: E402
     MAX_TEMPLATE_CANDIDATES,
     MAX_TEMPLATE_OBLIGATIONS,
     MAX_TEMPLATE_SOURCE_CHARS,
@@ -138,6 +146,200 @@ class WholeTemplateObligationLedgerTests(unittest.TestCase):
         for label, template in cases.items():
             with self.subTest(label=label):
                 self._assert_exact_target(template)
+
+    def test_if_elif_else_branches_union_without_order_loss(self):
+        branch_values = (
+            (TARGET, "sensor.second", "sensor.last"),
+            ("sensor.first", TARGET, "sensor.last"),
+            ("sensor.first", "sensor.second", TARGET),
+            ("sensor.last", TARGET, "sensor.first"),
+        )
+        for first, second, final in branch_values:
+            with self.subTest(
+                first=first,
+                second=second,
+                final=final,
+            ):
+                template = (
+                    "{% set selected='sensor.base' %}"
+                    "{% if mode == 'first' %}{% set selected='"
+                    + first
+                    + "' %}{% elif mode == 'second' %}"
+                    "{% set selected='"
+                    + second
+                    + "' %}{% else %}{% set selected='"
+                    + final
+                    + "' %}{% endif %}"
+                    "{{ states(selected) }}"
+                )
+                self._assert_exact_target(template)
+
+        unrelated = self._outcomes(
+            "{% set selected='sensor.base' %}"
+            "{% if mode == 'first' %}{% set selected='sensor.first' %}"
+            "{% elif mode == 'second' %}{% set selected='sensor.second' %}"
+            "{% else %}{% set selected='sensor.last' %}{% endif %}"
+            "{{ states(selected) }}"
+        )
+        self.assertFalse(
+            any(TARGET in item.exact_entity_ids for item in unrelated),
+            unrelated,
+        )
+        self.assertFalse(
+            any(item.outcome == "bounded_semantic_opaque" for item in unrelated),
+            unrelated,
+        )
+
+    def test_macro_definition_identity_survives_aliases_and_branches(self):
+        cases = (
+            (
+                "{% macro f(e) %}{{ states(e) }}{% endmacro %}"
+                "{% set old=f %}"
+                "{% macro f(e) %}ready{% endmacro %}"
+                "{{ old('" + TARGET + "') }}"
+            ),
+            (
+                "{% macro f(e) %}ready{% endmacro %}"
+                "{% set neutral=f %}"
+                "{% macro f(e) %}{{ states(e) }}{% endmacro %}"
+                "{{ f('" + TARGET + "') }}{{ neutral('sensor.a') }}"
+            ),
+            (
+                "{% if enabled %}"
+                "{% macro f(e) %}{{ states(e) }}{% endmacro %}"
+                "{% else %}{% macro f(e) %}ready{% endmacro %}{% endif %}"
+                "{{ f('" + TARGET + "') }}"
+            ),
+            (
+                "{% with marker='x' %}"
+                "{% macro f(e) %}{{ states(e) }}{% endmacro %}"
+                "{{ f('" + TARGET + "') }}{% endwith %}"
+            ),
+            (
+                "{% for marker in ['x'] %}"
+                "{% macro f(e) %}{{ states(e) }}{% endmacro %}"
+                "{{ f('" + TARGET + "') }}{% endfor %}"
+            ),
+        )
+        for template in cases:
+            with self.subTest(template=template):
+                self._assert_exact_target(template)
+
+        neutral = self._outcomes(
+            "{% macro f(e) %}ready{% endmacro %}{{ f('sensor.a') }}"
+        )
+        self.assertTrue(neutral)
+        self.assertFalse(
+            any(item.outcome == "bounded_semantic_opaque" for item in neutral),
+            neutral,
+        )
+
+    def test_macro_calls_resolve_definition_frame_not_caller_shadows(self):
+        lexical_exact = (
+            "{% set lookup=is_state %}"
+            "{% macro f(e) %}{{ lookup(e, 'on') }}{% endmacro %}"
+            "{% with lookup=now %}{{ f('" + TARGET + "') }}{% endwith %}"
+        )
+        self._assert_exact_target(lexical_exact)
+
+        caller_only_selector = (
+            "{% set lookup=now %}"
+            "{% macro f(e) %}{{ lookup() }}{% endmacro %}"
+            "{% with lookup=is_state %}{{ f('" + TARGET + "') }}{% endwith %}"
+        )
+        obligations = self._outcomes(caller_only_selector)
+        self.assertFalse(
+            any(TARGET in item.exact_entity_ids for item in obligations),
+            obligations,
+        )
+
+        later_same_frame_rebind = (
+            "{% set lookup=now %}"
+            "{% macro f(e) %}{{ lookup(e, 'on') }}{% endmacro %}"
+            "{% set lookup=is_state %}{{ f('" + TARGET + "') }}"
+        )
+        self._assert_exact_target(later_same_frame_rebind)
+
+        lexical_default = (
+            "{% set selected='" + TARGET + "' %}"
+            "{% macro f(e=selected) %}{{ states(e) }}{% endmacro %}"
+            "{% with selected='sensor.unrelated' %}{{ f() }}{% endwith %}"
+        )
+        self._assert_exact_target(lexical_default)
+
+        parameter_default = (
+            "{% set e='sensor.unrelated' %}"
+            "{% macro f(e, other=e) %}{{ states(other) }}{% endmacro %}"
+            "{{ f('" + TARGET + "') }}"
+        )
+        self._assert_exact_target(parameter_default)
+
+        special_bindings = (
+            (
+                "{% set varargs=['sensor.unrelated'] %}"
+                "{% macro f() %}{{ states(varargs[0]) }}{% endmacro %}"
+                "{{ f('" + TARGET + "') }}"
+            ),
+            (
+                "{% set kwargs={'entity':'sensor.unrelated'} %}"
+                "{% macro f() %}{{ states(kwargs.entity) }}{% endmacro %}"
+                "{{ f(entity='" + TARGET + "') }}"
+            ),
+        )
+        for template in special_bindings:
+            with self.subTest(template=template):
+                self._assert_exact_target(template)
+
+        for nested_call in (
+            "{% with marker='x' %}{{ f('" + TARGET + "') }}{% endwith %}",
+            "{% for marker in ['x'] %}{{ f('" + TARGET + "') }}{% endfor %}",
+        ):
+            with self.subTest(nested_call=nested_call):
+                self._assert_exact_target(
+                    "{% set lookup=now %}{% if enabled %}"
+                    "{% set lookup=is_state %}"
+                    "{% macro f(e) %}{{ lookup(e, 'on') }}{% endmacro %}"
+                    + nested_call
+                    + "{% endif %}"
+                )
+
+        path_default = (
+            "{% set selected='sensor.unrelated' %}{% if enabled %}"
+            "{% set selected='" + TARGET + "' %}"
+            "{% macro f(e=selected) %}{{ states(e) }}{% endmacro %}"
+            "{% with marker='x' %}{{ f() }}{% endwith %}{% endif %}"
+        )
+        self._assert_exact_target(path_default)
+
+        later_definition_path_rebind = (
+            "{% set lookup=now %}{% if enabled %}"
+            "{% macro f(e) %}{{ lookup(e, 'on') }}{% endmacro %}"
+            "{% set lookup=is_state %}"
+            "{% with marker='x' %}{{ f('" + TARGET + "') }}{% endwith %}"
+            "{% endif %}"
+        )
+        self._assert_exact_target(later_definition_path_rebind)
+
+        later_path_default_rebind = (
+            "{% set selected='sensor.unrelated' %}{% if enabled %}"
+            "{% macro f(e=selected) %}{{ states(e) }}{% endmacro %}"
+            "{% set selected='" + TARGET + "' %}"
+            "{% with marker='x' %}{{ f() }}{% endwith %}{% endif %}"
+        )
+        self._assert_exact_target(later_path_default_rebind)
+
+        later_path_rebind = (
+            "{% set lookup=now %}{% if enabled %}"
+            "{% set lookup=is_state %}"
+            "{% macro f(e) %}{{ lookup() }}{% endmacro %}{% endif %}"
+            "{% set lookup=now %}"
+            "{% with marker='x' %}{{ f('" + TARGET + "') }}{% endwith %}"
+        )
+        later_obligations = self._outcomes(later_path_rebind)
+        self.assertFalse(
+            any(TARGET in item.exact_entity_ids for item in later_obligations),
+            later_obligations,
+        )
 
     def test_state_vocabulary_and_computed_dispatch_retain_dependency(self):
         cases = (
@@ -507,6 +709,111 @@ class WholeTemplateObligationLedgerTests(unittest.TestCase):
         ):
             with self.subTest(template=template):
                 self._assert_opaque(template)
+
+    def test_typed_event_and_datetime_values_are_neutral_until_selection(self):
+        ordinary = (
+            "{{ trigger.event.origin.name }}",
+            "{{ trigger.event.context.id }}",
+            "{{ trigger.event.time_fired.isoformat() }}",
+            "{{ now().year }}",
+            "{{ now().strftime('%Y-%m-%d') }}",
+            "{{ utcnow().date().isoformat() }}",
+            "{{ today_at('07:30').hour }}",
+        )
+        for template in ordinary:
+            with self.subTest(template=template):
+                obligations = self._outcomes(template)
+                self.assertTrue(obligations)
+                self.assertTrue(
+                    all(
+                        item.outcome == "proven_dependency_neutral"
+                        and item.lock_projection == "none"
+                        for item in obligations
+                    ),
+                    obligations,
+                )
+
+        for template in (
+            "{{ states(trigger.event.origin.name) }}",
+            "{{ states(trigger.event.context.id) }}",
+            "{{ states(trigger.event.time_fired.isoformat()) }}",
+            "{{ states(now().strftime('%Y')) }}",
+            "{{ now().future_method() }}",
+            "{{ (now() if enabled else unknown_value).hour }}",
+            "{{ (trigger.event if enabled else unknown_value).event_type }}",
+        ):
+            with self.subTest(template=template):
+                self._assert_opaque(template)
+
+    def test_context_data_mapping_reads_are_neutral_until_selection(self):
+        ordinary = (
+            "{{ trigger.event.data.get('message') }}",
+            "{{ trigger.event.data[dynamic_key] }}",
+            "{{ trigger.event.data.items() | list }}",
+            "{{ trigger.event.data.keys() | list }}",
+            "{{ trigger.event.data.values() | list }}",
+        )
+        for template in ordinary:
+            with self.subTest(template=template):
+                obligations = self._outcomes(template)
+                self.assertTrue(obligations)
+                self.assertTrue(
+                    all(
+                        item.outcome == "proven_dependency_neutral"
+                        and item.lock_projection == "none"
+                        for item in obligations
+                    ),
+                    obligations,
+                )
+
+        for template in (
+            "{{ states(trigger.event.data.get('entity')) }}",
+            "{{ states(trigger.event.data[dynamic_key]) }}",
+            "{{ trigger.event.data.values() | map('states') | list }}",
+        ):
+            with self.subTest(template=template):
+                self._assert_opaque(template)
+
+        exact_default = self._outcomes(
+            "{{ trigger.event.data.get('missing', is_state)(\""
+            + TARGET
+            + "\", 'on') }}"
+        )
+        self.assertTrue(
+            any(TARGET in item.exact_entity_ids for item in exact_default),
+            exact_default,
+        )
+
+    def test_jinja_loop_metadata_preserves_item_provenance(self):
+        ordinary = self._outcomes(
+            "{% for item in ['a', 'b'] %}"
+            "{{ loop.index }}:{{ loop.first }}:{{ loop.last }}"
+            "{% endfor %}"
+        )
+        self.assertTrue(ordinary)
+        self.assertTrue(
+            all(item.outcome == "proven_dependency_neutral" for item in ordinary),
+            ordinary,
+        )
+
+        self._assert_exact_target(
+            "{% for item in ['sensor.a', '" + TARGET + "'] %}"
+            "{{ states(loop.nextitem) }}{% endfor %}"
+        )
+        self._assert_exact_target(
+            "{% for item in ['sensor.a'] %}"
+            "{{ states(loop.cycle('sensor.a', '" + TARGET + "')) }}"
+            "{% endfor %}"
+        )
+        self._assert_opaque(
+            "{% for item in ['a'] %}{{ states(loop.index) }}{% endfor %}"
+        )
+        self._assert_opaque(
+            "{% for item in ['a'] %}"
+            "{{ (loop if enabled else unknown_value).index }}"
+            "{% endfor %}"
+        )
+        self._assert_opaque("{{ loop.index }}")
 
     def test_constructor_keyword_values_preserve_scalar_provenance(self):
         for constructor in ("dict", "namespace"):
@@ -982,7 +1289,6 @@ class WholeTemplateObligationLedgerTests(unittest.TestCase):
         for template in (
             "{{ trigger }}",
             "{{ trigger.to_state.state }}",
-            "{{ trigger.event.data.entity_id }}",
             "{{ wait.trigger.to_state.state }}",
             "{{ wait.trigger }}",
             "{{ states }}",
@@ -991,6 +1297,21 @@ class WholeTemplateObligationLedgerTests(unittest.TestCase):
         ):
             with self.subTest(template=template):
                 self._assert_opaque(template)
+
+        displayed_event_value = self._outcomes(
+            "{{ trigger.event.data.entity_id }}"
+        )
+        self.assertTrue(displayed_event_value)
+        self.assertTrue(
+            all(
+                item.outcome == "proven_dependency_neutral"
+                for item in displayed_event_value
+            ),
+            displayed_event_value,
+        )
+        self._assert_opaque(
+            "{{ states(trigger.event.data.entity_id) }}"
+        )
 
     def test_entity_bearing_configuration_output_requires_provenance(self):
         exact = self._outcomes(

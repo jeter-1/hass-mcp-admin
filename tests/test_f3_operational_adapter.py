@@ -977,6 +977,11 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
                 ),
             }
         ]
+        unresolved_blueprint = configuration_valid_config("automation")
+        unresolved_blueprint["use_blueprint"] = {
+            "path": "synthetic/hardcoded_helper.yaml",
+            "input": {},
+        }
 
         async def configuration_locks(action, current, proposed):
             gateway = SyntheticConfigurationGateway()
@@ -1005,6 +1010,18 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
                 base,
                 bounded_relevant,
                 "bounded_dynamic_adds_exact_dependency",
+            ),
+            (
+                "create",
+                None,
+                unresolved_blueprint,
+                "blueprint_source_may_introduce_dependency",
+            ),
+            (
+                "update",
+                unresolved_blueprint,
+                base,
+                "blueprint_source_may_remove_dependency",
             ),
         )
         timing = LockTiming(60, 10, 0)

@@ -556,6 +556,83 @@ class ObligationGovernanceTests(unittest.TestCase):
                 self.assertEqual("none", observed["physical_consequence"])
                 self.assertEqual("low", risk.level.value)
 
+    def test_branch_and_macro_dependencies_retain_consequential_effect(self):
+        templates = (
+            (
+                "{% set selected='sensor.base' %}"
+                "{% if mode == 'first' %}{% set selected='sensor.first' %}"
+                "{% elif mode == 'target' %}{% set selected='"
+                + TARGET
+                + "' %}{% else %}{% set selected='sensor.last' %}"
+                "{% endif %}{{ states(selected) }}"
+            ),
+            (
+                "{% macro f(e) %}{{ states(e) }}{% endmacro %}"
+                "{% set old=f %}{% macro f(e) %}ready{% endmacro %}"
+                "{{ old('" + TARGET + "') }}"
+            ),
+            (
+                "{% set lookup=now %}{% if enabled %}"
+                "{% macro f(e) %}{{ lookup(e, 'on') }}{% endmacro %}"
+                "{% set lookup=is_state %}{% with marker='x' %}"
+                "{{ f('" + TARGET + "') }}{% endwith %}{% endif %}"
+            ),
+            (
+                "{% set kwargs={'entity':'sensor.unrelated'} %}"
+                "{% macro f() %}{{ states(kwargs.entity) }}{% endmacro %}"
+                "{{ f(entity='" + TARGET + "') }}"
+            ),
+        )
+        for index, template in enumerate(templates):
+            with self.subTest(index=index):
+                source_id = f"branch_macro_cover_{index}"
+                _findings, _dynamic, obligations = (
+                    extract_document_with_obligations(
+                        source_type="automation",
+                        source_id=source_id,
+                        source_entity_id=f"automation.{source_id}",
+                        source_name=None,
+                        source_state="on",
+                        config={
+                            "condition": [
+                                {
+                                    "condition": "template",
+                                    "value_template": template,
+                                }
+                            ],
+                            "action": [
+                                {
+                                    "service": "cover.open_cover",
+                                    "target": {
+                                        "entity_id": "cover.synthetic_garage"
+                                    },
+                                }
+                            ],
+                        },
+                    )
+                )
+                observed = bind(
+                    snapshot(
+                        tuple(obligations),
+                        profiles=(profile(source_id, "cover.open_cover"),),
+                    )
+                )
+                risk = helper_dependency_risk_assessment(
+                    {
+                        "binding": observed,
+                        "provenance": {"generation": 39},
+                    }
+                )
+                self.assertTrue(observed["execution_eligible"])
+                self.assertEqual(
+                    [f"automation.{source_id}"],
+                    observed["relevant_downstream_object_ids"],
+                )
+                self.assertEqual(
+                    "safety_critical", observed["physical_consequence"]
+                )
+                self.assertEqual("high", risk.level.value)
+
     def test_namespace_and_mapping_key_transport_retain_consequential_dependency(self):
         templates = (
             "{{ states(namespace(get='" + TARGET + "').get or 'sensor.a') }}",
@@ -666,6 +743,280 @@ class ObligationGovernanceTests(unittest.TestCase):
                     observed["physical_consequence"],
                 )
                 self.assertEqual("high", risk.level.value)
+                self.assertTrue(risk.apply_allowed)
+
+    def test_configuration_and_repeat_context_keep_proportional_consequence(self):
+        cases = (
+            (
+                "configuration_variable",
+                {
+                    "variables": {
+                        "summary": {"entity": TARGET, "text": "ready"}
+                    },
+                    "condition": [
+                        {
+                            "condition": "template",
+                            "value_template": "{{ states(summary.entity) }}",
+                        }
+                    ],
+                },
+                "high",
+                True,
+            ),
+            (
+                "repeat_item",
+                {
+                    "action": [
+                        {
+                            "repeat": {
+                                "for_each": [TARGET],
+                                "sequence": [
+                                    {
+                                        "condition": "template",
+                                        "value_template": (
+                                            "{{ states(repeat.item) }}"
+                                        ),
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                },
+                "high",
+                True,
+            ),
+            (
+                "repeat_item_user_override",
+                {
+                    "action": [
+                        {
+                            "repeat": {
+                                "for_each": ["sensor.original"],
+                                "sequence": [
+                                    {
+                                        "variables": {
+                                            "repeat": {"item": TARGET}
+                                        }
+                                    },
+                                    {
+                                        "condition": "template",
+                                        "value_template": (
+                                            "{{ states(repeat.item) }}"
+                                        ),
+                                    },
+                                ],
+                            }
+                        }
+                    ]
+                },
+                "high",
+                True,
+            ),
+            (
+                "dynamic_variable",
+                {
+                    "variables": {"selected": "{{ unknown_entity }}"},
+                    "condition": [
+                        {
+                            "condition": "template",
+                            "value_template": "{{ states(selected) }}",
+                        }
+                    ],
+                },
+                "high",
+                True,
+            ),
+            (
+                "disabled_variable_rebind",
+                {
+                    "variables": {"selected": TARGET},
+                    "action": [
+                        {
+                            "enabled": False,
+                            "variables": {"selected": "sensor.rebound"},
+                        },
+                        {
+                            "condition": "template",
+                            "value_template": "{{ states(selected) }}",
+                        },
+                    ],
+                },
+                "high",
+                True,
+            ),
+            (
+                "dynamic_variable_rebind",
+                {
+                    "variables": {"selected": TARGET},
+                    "action": [
+                        {
+                            "enabled": "{{ dynamic_enablement }}",
+                            "variables": {"selected": "sensor.rebound"},
+                        },
+                        {
+                            "condition": "template",
+                            "value_template": "{{ states(selected) }}",
+                        },
+                    ],
+                },
+                "high",
+                True,
+            ),
+            (
+                "ordered_variables_action",
+                {
+                    "action": [
+                        {
+                            "variables": {
+                                "selected": TARGET,
+                                "observed": "{{ states(selected) }}",
+                            }
+                        }
+                    ]
+                },
+                "high",
+                True,
+            ),
+            (
+                "variable_entity_key_not_consumed",
+                {
+                    "action": [
+                        {
+                            "variables": {
+                                "summary": {
+                                    "entity_id": TARGET,
+                                    "message": "ready",
+                                }
+                            }
+                        },
+                        {
+                            "service": "notify.notify",
+                            "data": {"message": "{{ summary.message }}"},
+                        },
+                    ]
+                },
+                "low",
+                False,
+            ),
+            (
+                "parallel_variable_isolation",
+                {
+                    "variables": {"selected": TARGET},
+                    "action": [
+                        {
+                            "parallel": [
+                                {
+                                    "variables": {
+                                        "selected": "sensor.branch_local"
+                                    }
+                                },
+                                {
+                                    "condition": "template",
+                                    "value_template": (
+                                        "{{ states(selected) }}"
+                                    ),
+                                },
+                            ]
+                        }
+                    ],
+                },
+                "high",
+                True,
+            ),
+            (
+                "root_variable_runtime_override",
+                {
+                    "variables": {"selected": "sensor.default"},
+                    "condition": [
+                        {
+                            "condition": "template",
+                            "value_template": "{{ states(selected) }}",
+                        }
+                    ],
+                },
+                "high",
+                True,
+            ),
+            (
+                "disabled_action_wrapper",
+                {
+                    "action": [
+                        {
+                            "enabled": False,
+                            "sequence": [
+                                {
+                                    "variables": {
+                                        "observed": (
+                                            "{{ states('" + TARGET + "') }}"
+                                        )
+                                    }
+                                }
+                            ],
+                        }
+                    ]
+                },
+                "low",
+                False,
+            ),
+            (
+                "ordinary_variable",
+                {
+                    "variables": {
+                        "summary": {"text": "ready", "count": 2}
+                    },
+                    "condition": [
+                        {
+                            "condition": "template",
+                            "value_template": "{{ summary.text }}",
+                        }
+                    ],
+                },
+                "low",
+                False,
+            ),
+        )
+        for source_id, configuration, expected_level, expected_relevant in cases:
+            with self.subTest(source_id=source_id):
+                configuration = {
+                    **configuration,
+                    "action": [
+                        *configuration.get("action", []),
+                        {
+                            "service": "cover.open_cover",
+                            "target": {
+                                "entity_id": "cover.synthetic_garage"
+                            },
+                        },
+                    ],
+                }
+                _findings, _dynamic, obligations = (
+                    extract_document_with_obligations(
+                        source_type="automation",
+                        source_id=source_id,
+                        source_entity_id=f"automation.{source_id}",
+                        source_name=None,
+                        source_state="on",
+                        config=configuration,
+                    )
+                )
+                observed = bind(
+                    snapshot(
+                        tuple(obligations),
+                        profiles=(profile(source_id, "cover.open_cover"),),
+                    )
+                )
+                risk = helper_dependency_risk_assessment(
+                    {
+                        "binding": observed,
+                        "provenance": {"generation": 39},
+                    }
+                )
+                self.assertEqual(expected_level, risk.level.value)
+                self.assertEqual(
+                    expected_relevant,
+                    f"automation.{source_id}"
+                    in observed["relevant_downstream_object_ids"],
+                )
                 self.assertTrue(risk.apply_allowed)
 
     def test_dynamic_trigger_metadata_selector_is_consequentially_opaque(self):
