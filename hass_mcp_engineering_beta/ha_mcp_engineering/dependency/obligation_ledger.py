@@ -32,6 +32,11 @@ MAX_TEMPLATE_DEPTH = 64
 MAX_TEMPLATE_OBLIGATIONS = 256
 MAX_TEMPLATE_CANDIDATES = 128
 MAX_TEMPLATE_BINDINGS = 256
+MAX_TEMPLATE_SCOPES = 512
+# Keep the aggregate capture budget below the independent parsed-macro and
+# binding ceilings so the closure-retention bound is observable and tested,
+# rather than being an unreachable duplicate limit.
+MAX_TEMPLATE_MACRO_CAPTURES = 128
 MAX_TEMPLATE_EXTERNAL_REFERENCES = 32
 MAX_TEMPLATE_ABSTRACT_VALUE_UNITS = 8_192
 MAX_TEMPLATE_VALUE_DEPTH = 8
@@ -98,10 +103,71 @@ _VALUE_RETURNING_STATE_HELPERS = frozenset(
     {"states", "state_attr", "state_translated", "state_attr_translated"}
 )
 _DYNAMIC_CONTEXT_SCALAR_ATTRIBUTES = frozenset(
-    {"alias", "description", "event_type", "id", "platform"}
+    {
+        "alias",
+        "description",
+        "device_id",
+        "encoding",
+        "event_type",
+        "id",
+        "idx",
+        "offset",
+        "payload",
+        "platform",
+        "qos",
+        "sentence",
+        "tag_id",
+        "topic",
+        "webhook_id",
+    }
 )
 _WAIT_DYNAMIC_SCALAR_ATTRIBUTES = frozenset({"completed", "remaining"})
 _NEUTRAL_CONTEXT_ATTRIBUTES = frozenset({"idx"})
+_RUNTIME_SCALAR_ATTRIBUTES = {
+    "datetime": frozenset(
+        {
+            "year",
+            "month",
+            "day",
+            "hour",
+            "minute",
+            "second",
+            "microsecond",
+            "fold",
+        }
+    ),
+    "date": frozenset({"year", "month", "day"}),
+    "time": frozenset(
+        {"hour", "minute", "second", "microsecond", "fold"}
+    ),
+}
+_RUNTIME_SCALAR_METHODS = {
+    "datetime": frozenset(
+        {
+            "strftime",
+            "isoformat",
+            "timestamp",
+            "weekday",
+            "isoweekday",
+            "isocalendar",
+        }
+    ),
+    "date": frozenset(
+        {"strftime", "isoformat", "weekday", "isoweekday", "isocalendar"}
+    ),
+    "time": frozenset({"strftime", "isoformat"}),
+}
+_RUNTIME_TRANSFORM_METHODS = {
+    "datetime": {
+        "date": "date",
+        "time": "time",
+        "timetz": "time",
+        "astimezone": "datetime",
+        "replace": "datetime",
+    },
+    "date": {"replace": "date"},
+    "time": {"replace": "time"},
+}
 
 
 @dataclass
@@ -120,8 +186,29 @@ class TemplateContextEvidence:
     variable_entity_ids: dict[str, tuple[str, ...]] = field(
         default_factory=dict
     )
+    variable_values: dict[
+        str, tuple["TemplateContextValueEvidence", ...]
+    ] = field(default_factory=dict)
+    repeat_values: dict[
+        str, tuple["TemplateContextValueEvidence", ...]
+    ] = field(default_factory=dict)
+    repeat_values_join_variable: bool = False
     incomplete_variable_names: tuple[str, ...] = ()
     provenance: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class TemplateContextValueEvidence:
+    """One bounded, parse-only configuration value supplied to a template."""
+
+    kind: str
+    literal_string: str | None = None
+    literal_number: float | None = None
+    literal_boolean: bool | None = None
+    fields: tuple[tuple[str, "TemplateContextValueEvidence"], ...] = ()
+    items: tuple["TemplateContextValueEvidence", ...] = ()
+    complete: bool = True
+    fingerprint: str = ""
 
 
 @dataclass
@@ -154,12 +241,20 @@ class _Value:
     # branch state or exposing the identity in persisted evidence.
     namespace_ids: set[int] = field(default_factory=set)
     context_paths: set[str] = field(default_factory=set)
+    # Reviewed runtime receiver types.  Attribute/method neutrality is valid
+    # only when every possible receiver kind has the same reviewed contract.
+    runtime_kinds: set[str] = field(default_factory=set)
     ordinary: bool = False
     unknown: bool = False
     state_collection: bool = False
     state_object: bool = False
     state_attribute_container: bool = False
     projection_uncertain: bool = False
+    # A finite container may have a fully known shape while one of its
+    # members has unresolved semantic provenance.  Keep that distinction so
+    # a fixed member projection remains precise, but consuming the entire
+    # container as an entity selector cannot discard the unresolved member.
+    contained_semantic_uncertainty: bool = False
     # A runtime scalar whose value is unknown but whose production alone is
     # not an entity-selection obligation.  The taint survives reviewed scalar
     # transformations and becomes opaque only if later consumed by a state or
@@ -186,17 +281,63 @@ class _Value:
             container_kinds=set(self.container_kinds),
             namespace_ids=set(self.namespace_ids),
             context_paths=set(self.context_paths),
+            runtime_kinds=set(self.runtime_kinds),
             ordinary=self.ordinary,
             unknown=self.unknown,
             state_collection=self.state_collection,
             state_object=self.state_object,
             state_attribute_container=self.state_attribute_container,
             projection_uncertain=self.projection_uncertain,
+            contained_semantic_uncertainty=(
+                self.contained_semantic_uncertainty
+            ),
             dynamic_scalar=self.dynamic_scalar,
             external=self.external,
             complete=self.complete,
             limit_exceeded=self.limit_exceeded,
         )
+
+
+@dataclass(eq=False)
+class _LexicalFrame:
+    """One retained Jinja lexical frame with joined abstract bindings."""
+
+    identity: int
+    parent: "_LexicalFrame | None"
+    bindings: dict[str, _Value] = field(default_factory=dict)
+    revision: int = 0
+
+
+@dataclass(eq=False)
+class _MacroCapture:
+    """Bounded lexical path captured by one local macro instantiation."""
+
+    frame: _LexicalFrame
+    frame_revision: int
+    path_scope: "_Scope"
+
+
+class _Scope(dict[str, _Value]):
+    """One analysis path over a retained lexical frame.
+
+    An ``if`` forks paths within the same Jinja frame, while ``for``, ``with``
+    and macro invocation create lexical child frames.  Keeping that distinction
+    prevents caller-local shadows from replacing a macro's captured bindings
+    and still lets later assignments in the captured frame remain visible.
+    """
+
+    def __init__(
+        self,
+        values: dict[str, _Value] | None = None,
+        *,
+        frame: _LexicalFrame,
+        path_fork: bool = False,
+        parent_scope: "_Scope | None" = None,
+    ) -> None:
+        super().__init__(values or {})
+        self.frame = frame
+        self.path_fork = path_fork
+        self.parent_scope = parent_scope
 
 
 class _AnalysisLimit(RuntimeError):
@@ -261,6 +402,7 @@ def _values_equivalent(
             "container_kinds",
             "namespace_ids",
             "context_paths",
+            "runtime_kinds",
             "ordinary",
             "unknown",
             "state_collection",
@@ -270,6 +412,7 @@ def _values_equivalent(
             "complete",
             "limit_exceeded",
             "projection_uncertain",
+            "contained_semantic_uncertainty",
             "dynamic_scalar",
         )
     )
@@ -350,6 +493,9 @@ def _merge_values(
         projection_uncertain=any(
             value.projection_uncertain for value in candidates
         ),
+        contained_semantic_uncertainty=any(
+            value.contained_semantic_uncertainty for value in candidates
+        ),
         dynamic_scalar=any(value.dynamic_scalar for value in candidates),
         external=any(value.external for value in candidates),
         complete=all(value.complete for value in candidates),
@@ -372,6 +518,7 @@ def _merge_values(
         result.container_kinds.update(value.container_kinds)
         result.namespace_ids.update(value.namespace_ids)
         result.context_paths.update(value.context_paths)
+        result.runtime_kinds.update(value.runtime_kinds)
         for item in value.items:
             _budget[0] -= 1
             if _budget[0] < 0:
@@ -442,6 +589,7 @@ def _merge_values(
         or len(result.fields) > MAX_TEMPLATE_CANDIDATES
         or len(result.method_receivers) > MAX_TEMPLATE_CANDIDATES
         or len(result.context_paths) > MAX_TEMPLATE_CANDIDATES
+        or len(result.runtime_kinds) > MAX_TEMPLATE_CANDIDATES
     ):
         result.entity_ids = set(
             sorted(result.entity_ids)[:MAX_TEMPLATE_CANDIDATES]
@@ -475,6 +623,9 @@ def _merge_values(
         )
         result.context_paths = set(
             sorted(result.context_paths)[:MAX_TEMPLATE_CANDIDATES]
+        )
+        result.runtime_kinds = set(
+            sorted(result.runtime_kinds)[:MAX_TEMPLATE_CANDIDATES]
         )
         result.complete = False
         result.limit_exceeded = True
@@ -517,7 +668,12 @@ class TemplateObligationAnalyzer:
         self._ast_nodes = 0
         self._external_count = 0
         self._macros: dict[str, nodes.Macro] = {}
+        self._macro_ids_by_node: dict[int, str] = {}
+        self._macro_captures: dict[str, list[_MacroCapture]] = {}
         self._active_macros: set[str] = set()
+        self._frame_counter = 0
+        self._frames: list[_LexicalFrame] = []
+        self._retained_scopes: list[_Scope] = []
         self._visited_nodes: set[int] = set()
         self._abstract_value_units = 0
         self._abstract_value_sizes: dict[int, int] = {}
@@ -563,6 +719,7 @@ class TemplateObligationAnalyzer:
             self._ast_nodes = 1 + sum(1 for _ in tree.find_all(nodes.Node))
             if self._ast_nodes > MAX_TEMPLATE_AST_NODES:
                 raise _AnalysisLimit("template_ast_node_limit_exceeded")
+            self._index_macro_definitions(tree)
             self._visited_nodes.add(id(tree))
             scope = self._initial_scope()
             self._analyze_statements(tree.body, scope, depth=0)
@@ -583,21 +740,220 @@ class TemplateObligationAnalyzer:
             )
         return self._finalize()
 
-    def _initial_scope(self) -> dict[str, _Value]:
-        scope: dict[str, _Value] = {}
+    def _initial_scope(self) -> _Scope:
+        values: dict[str, _Value] = {}
         incomplete = set(self.context.incomplete_variable_names)
+        for name, alternatives in sorted(
+            self.context.variable_values.items()
+        ):
+            converted = [
+                self._context_value(item) for item in alternatives
+            ]
+            value = self._merge(converted, node=None)
+            if len(converted) > 1 and not all(
+                _values_equivalent(converted[0], item)
+                for item in converted[1:]
+            ):
+                value.projection_uncertain = True
+            values[name] = value
         for name, entity_ids in sorted(
             self.context.variable_entity_ids.items()
         ):
-            scope[name] = _Value(
+            if name in self.context.variable_values:
+                continue
+            entity_value = _Value(
                 entity_ids=set(entity_ids),
                 literal_strings=set(entity_ids),
                 unknown=name in incomplete,
                 complete=name not in incomplete,
             )
-        for name in sorted(incomplete.difference(scope)):
-            scope[name] = _unknown_value()
+            values[name] = (
+                self._merge((values[name], entity_value), node=None)
+                if name in values
+                else entity_value
+            )
+        for name in sorted(incomplete.difference(values)):
+            values[name] = _unknown_value()
+        if self.context.repeat_values:
+            repeat_fields: dict[str, _Value] = {}
+            repeat_incomplete = False
+            for name, alternatives in sorted(
+                self.context.repeat_values.items()
+            ):
+                converted = [self._context_value(item) for item in alternatives]
+                repeat_fields[name] = self._merge(converted, node=None)
+                repeat_incomplete = bool(
+                    repeat_incomplete
+                    or any(item.kind == "opaque" for item in alternatives)
+                )
+            repeat_value = _Value(
+                fields=repeat_fields,
+                runtime_kinds={"ha_repeat"},
+                ordinary=all(item.ordinary for item in repeat_fields.values()),
+                unknown=repeat_incomplete,
+                complete=not repeat_incomplete,
+            )
+            if self.context.repeat_values_join_variable and "repeat" in values:
+                variable_repeat = values["repeat"]
+                repeat_value = self._merge(
+                    (variable_repeat, repeat_value),
+                    node=None,
+                )
+                if not _values_equivalent(variable_repeat, repeat_value):
+                    repeat_value.projection_uncertain = True
+            values["repeat"] = repeat_value
+        frame = self._new_frame(parent=None, bindings=values)
+        scope = self._retain_scope(
+            _Scope(
+                values,
+                frame=frame,
+                path_fork=False,
+                parent_scope=None,
+            )
+        )
+        self._check_binding_limit(scope)
         return scope
+
+    def _context_value(
+        self,
+        evidence: TemplateContextValueEvidence,
+        *,
+        depth: int = 0,
+    ) -> _Value:
+        if depth > MAX_TEMPLATE_VALUE_DEPTH:
+            raise _AnalysisLimit("configuration_context_value_limit_exceeded")
+        if evidence.kind == "string":
+            value = _ordinary_value(
+                strings=(evidence.literal_string or "",)
+            )
+            if evidence.literal_string and self.valid_entity_id(
+                evidence.literal_string
+            ):
+                value.entity_ids.add(evidence.literal_string)
+            return value
+        if evidence.kind == "number":
+            return _Value(
+                literal_numbers={float(evidence.literal_number or 0.0)},
+                ordinary=True,
+                complete=evidence.complete,
+            )
+        if evidence.kind in {"boolean", "null"}:
+            return _ordinary_value()
+        if evidence.kind == "dynamic_scalar":
+            return _dynamic_scalar_value()
+        if evidence.kind == "mapping":
+            fields = {
+                name: self._context_value(item, depth=depth + 1)
+                for name, item in evidence.fields
+            }
+            return _Value(
+                fields=fields,
+                container_kinds={"mapping"},
+                ordinary=all(value.ordinary for value in fields.values()),
+                unknown=not evidence.complete,
+                complete=evidence.complete,
+                contained_semantic_uncertainty=any(
+                    value.unknown
+                    or not value.complete
+                    or value.contained_semantic_uncertainty
+                    for value in fields.values()
+                ),
+            )
+        if evidence.kind == "sequence":
+            items = [
+                self._context_value(item, depth=depth + 1)
+                for item in evidence.items
+            ]
+            merged = self._merge(items, node=None)
+            merged.items = [item.copy() for item in items]
+            merged.container_kinds = {"sequence"}
+            # Child uncertainty remains on the selected child or on a dynamic
+            # aggregate projection; it must not poison a proven fixed index.
+            merged.unknown = not evidence.complete
+            merged.complete = evidence.complete
+            merged.projection_uncertain = False
+            merged.contained_semantic_uncertainty = any(
+                item.unknown
+                or not item.complete
+                or item.contained_semantic_uncertainty
+                for item in items
+            )
+            return merged
+        return _unknown_value()
+
+    def _new_frame(
+        self,
+        *,
+        parent: _LexicalFrame | None,
+        bindings: dict[str, _Value] | None = None,
+    ) -> _LexicalFrame:
+        if len(self._frames) >= MAX_TEMPLATE_SCOPES:
+            raise _AnalysisLimit("template_scope_limit_exceeded")
+        self._frame_counter += 1
+        frame = _LexicalFrame(
+            identity=self._frame_counter,
+            parent=parent,
+            bindings={
+                name: value.copy()
+                for name, value in (bindings or {}).items()
+            },
+        )
+        self._frames.append(frame)
+        return frame
+
+    def _retain_scope(self, scope: _Scope) -> _Scope:
+        if len(self._retained_scopes) >= MAX_TEMPLATE_SCOPES:
+            raise _AnalysisLimit("template_scope_limit_exceeded")
+        self._retained_scopes.append(scope)
+        return scope
+
+    def _child_scope(self, parent: _Scope) -> _Scope:
+        frame = self._new_frame(parent=parent.frame)
+        return self._retain_scope(
+            _Scope(
+                dict(parent),
+                frame=frame,
+                path_fork=False,
+                parent_scope=parent,
+            )
+        )
+
+    def _path_scope(self, parent: _Scope) -> _Scope:
+        return self._retain_scope(
+            _Scope(
+                dict(parent),
+                frame=parent.frame,
+                path_fork=True,
+                parent_scope=parent,
+            )
+        )
+
+    def _store_binding(
+        self,
+        scope: _Scope,
+        name: str,
+        value: _Value,
+    ) -> None:
+        stored = value.copy()
+        dict.__setitem__(scope, name, stored)
+        if not scope.path_fork:
+            scope.frame.bindings[name] = stored.copy()
+            scope.frame.revision += 1
+        self._check_binding_limit(scope)
+
+    def _frame_environment(self, frame: _LexicalFrame) -> dict[str, _Value]:
+        lineage: list[_LexicalFrame] = []
+        current: _LexicalFrame | None = frame
+        while current is not None:
+            if len(lineage) >= MAX_TEMPLATE_SCOPES:
+                raise _AnalysisLimit("template_scope_limit_exceeded")
+            lineage.append(current)
+            current = current.parent
+        environment: dict[str, _Value] = {}
+        for item in reversed(lineage):
+            for name, value in item.bindings.items():
+                environment[name] = value.copy()
+        return environment
 
     def _tick(self, depth: int) -> None:
         self._work_units += 1
@@ -643,6 +999,7 @@ class TemplateObligationAnalyzer:
             result.possible_domains.update(source.possible_domains)
             result.callables.update(source.callables)
             result.context_paths.update(source.context_paths)
+            result.runtime_kinds.update(source.runtime_kinds)
             result.state_collection = bool(
                 result.state_collection or source.state_collection
             )
@@ -668,7 +1025,7 @@ class TemplateObligationAnalyzer:
     def _analyze_statements(
         self,
         statements: Iterable[nodes.Stmt],
-        scope: dict[str, _Value],
+        scope: _Scope,
         *,
         depth: int,
     ) -> None:
@@ -676,7 +1033,7 @@ class TemplateObligationAnalyzer:
             self._analyze_statement(statement, scope, depth=depth + 1)
 
     def _analyze_statement(
-        self, node: nodes.Stmt, scope: dict[str, _Value], *, depth: int
+        self, node: nodes.Stmt, scope: _Scope, *, depth: int
     ) -> None:
         self._tick(depth)
         self._visited_nodes.add(id(node))
@@ -712,7 +1069,11 @@ class TemplateObligationAnalyzer:
             self._bind(node.target, value, scope)
             return
         if isinstance(node, nodes.AssignBlock):
-            self._analyze_statements(node.body, dict(scope), depth=depth + 1)
+            self._analyze_statements(
+                node.body,
+                self._child_scope(scope),
+                depth=depth + 1,
+            )
             filter_node = getattr(node, "filter", None)
             if isinstance(filter_node, nodes.Expr):
                 self._eval(filter_node, scope, depth=depth + 1)
@@ -730,25 +1091,122 @@ class TemplateObligationAnalyzer:
                     kind="state_collection_iteration",
                     reason="state_collection_iterated",
                 )
-            child_scope = dict(scope)
-            self._bind(node.target, self._iteration_value(iterable), child_scope)
+            child_scope = self._child_scope(scope)
+            iteration_value = self._iteration_value(iterable)
+            self._bind(node.target, iteration_value, child_scope)
+            loop_fields = {
+                name: _dynamic_scalar_value()
+                for name in (
+                    "index",
+                    "index0",
+                    "revindex",
+                    "revindex0",
+                    "first",
+                    "last",
+                    "length",
+                    "depth",
+                    "depth0",
+                )
+            }
+            loop_fields["previtem"] = iteration_value.copy()
+            loop_fields["nextitem"] = iteration_value.copy()
+            self._store_binding(
+                child_scope,
+                "loop",
+                _Value(
+                    fields=loop_fields,
+                    runtime_kinds={"jinja_loop"},
+                    complete=bool(
+                        iterable.complete and not iterable.limit_exceeded
+                    ),
+                    unknown=bool(
+                        iterable.unknown or iterable.limit_exceeded
+                    ),
+                ),
+            )
             if node.test is not None:
                 self._eval(node.test, child_scope, depth=depth + 1)
             self._analyze_statements(node.body, child_scope, depth=depth + 1)
-            self._analyze_statements(node.else_, dict(scope), depth=depth + 1)
+            self._analyze_statements(
+                node.else_,
+                self._child_scope(scope),
+                depth=depth + 1,
+            )
             return
         if isinstance(node, nodes.If):
-            self._eval(node.test, scope, depth=depth + 1)
-            body_scope = dict(scope)
-            else_scope = dict(scope)
+            incoming_scope = scope
+            branch_scopes: list[dict[str, _Value]] = []
+
+            self._eval(node.test, incoming_scope, depth=depth + 1)
+            body_scope = self._path_scope(incoming_scope)
             self._analyze_statements(node.body, body_scope, depth=depth + 1)
-            self._analyze_statements(node.elif_, else_scope, depth=depth + 1)
-            self._analyze_statements(node.else_, else_scope, depth=depth + 1)
-            self._merge_branch_scopes(scope, body_scope, else_scope)
+            branch_scopes.append(body_scope)
+
+            for elif_node in node.elif_:
+                self._visited_nodes.add(id(elif_node))
+                self._eval(
+                    elif_node.test,
+                    incoming_scope,
+                    depth=depth + 1,
+                )
+                elif_scope = self._path_scope(incoming_scope)
+                self._analyze_statements(
+                    elif_node.body,
+                    elif_scope,
+                    depth=depth + 1,
+                )
+                branch_scopes.append(elif_scope)
+
+            else_scope = self._path_scope(incoming_scope)
+            self._analyze_statements(
+                node.else_,
+                else_scope,
+                depth=depth + 1,
+            )
+            branch_scopes.append(else_scope)
+            self._merge_branch_scopes(scope, *branch_scopes)
             return
         if isinstance(node, nodes.Macro):
-            self._macros[node.name] = node
-            scope[node.name] = _callable_value(f"local_macro:{node.name}")
+            macro_id = self._macro_ids_by_node.get(id(node))
+            if macro_id is None:
+                self._opaque(node, "local_macro_definition_identity_missing")
+                self._store_binding(scope, node.name, _unknown_value())
+            else:
+                captures = self._macro_captures.setdefault(
+                    macro_id,
+                    [],
+                )
+                capture = _MacroCapture(
+                    frame=scope.frame,
+                    frame_revision=scope.frame.revision,
+                    path_scope=scope,
+                )
+                duplicate = any(
+                    item.frame is capture.frame
+                    and set(item.path_scope) == set(capture.path_scope)
+                    and all(
+                        _values_equivalent(
+                            item.path_scope[name],
+                            capture.path_scope[name],
+                        )
+                        for name in item.path_scope
+                    )
+                    for item in captures
+                )
+                if not duplicate:
+                    if sum(
+                        len(item)
+                        for item in self._macro_captures.values()
+                    ) >= MAX_TEMPLATE_MACRO_CAPTURES:
+                        raise _AnalysisLimit(
+                            "template_macro_capture_limit_exceeded"
+                        )
+                    captures.append(capture)
+                self._store_binding(
+                    scope,
+                    node.name,
+                    _callable_value(f"local_macro:{macro_id}"),
+                )
             # Macro bodies/defaults are dormant until invocation. Mark the
             # subtree as covered by that reviewed rule; invocation analyzes
             # the body and any selected defaults with the live call scope.
@@ -757,10 +1215,14 @@ class TemplateObligationAnalyzer:
             return
         if isinstance(node, nodes.CallBlock):
             self._eval(node.call, scope, depth=depth + 1)
-            self._analyze_statements(node.body, dict(scope), depth=depth + 1)
+            self._analyze_statements(
+                node.body,
+                self._child_scope(scope),
+                depth=depth + 1,
+            )
             return
         if isinstance(node, nodes.With):
-            child_scope = dict(scope)
+            child_scope = self._child_scope(scope)
             for target, value_node in zip(node.targets, node.values):
                 self._bind(
                     target,
@@ -784,20 +1246,32 @@ class TemplateObligationAnalyzer:
                 node=node,
                 lock="conservative",
             )
-            self._analyze_statements(node.body, dict(scope), depth=depth + 1)
+            self._analyze_statements(
+                node.body,
+                self._child_scope(scope),
+                depth=depth + 1,
+            )
             return
         if isinstance(node, (nodes.Block, nodes.Scope, nodes.OverlayScope)):
             body = getattr(node, "body", ())
             context = getattr(node, "context", None)
             if isinstance(context, nodes.Expr):
                 self._eval(context, scope, depth=depth + 1)
-            self._analyze_statements(body, dict(scope), depth=depth + 1)
+            self._analyze_statements(
+                body,
+                self._child_scope(scope),
+                depth=depth + 1,
+            )
             return
         if isinstance(node, nodes.ScopedEvalContextModifier):
             for option in node.options:
                 self._visited_nodes.add(id(option))
                 self._eval(option.value, scope, depth=depth + 1)
-            self._analyze_statements(node.body, dict(scope), depth=depth + 1)
+            self._analyze_statements(
+                node.body,
+                self._child_scope(scope),
+                depth=depth + 1,
+            )
             return
         if isinstance(node, nodes.EvalContextModifier):
             for option in node.options:
@@ -809,7 +1283,7 @@ class TemplateObligationAnalyzer:
         self._unknown_node(node, scope, depth=depth)
 
     def _eval(
-        self, node: nodes.Node | None, scope: dict[str, _Value], *, depth: int
+        self, node: nodes.Node | None, scope: _Scope, *, depth: int
     ) -> _Value:
         self._tick(depth)
         if node is None:
@@ -1185,7 +1659,7 @@ class TemplateObligationAnalyzer:
         return _unknown_value()
 
     def _call(
-        self, node: nodes.Call, scope: dict[str, _Value], *, depth: int
+        self, node: nodes.Call, scope: _Scope, *, depth: int
     ) -> _Value:
         function = self._eval(node.node, scope, depth=depth + 1)
         arguments = [
@@ -1246,6 +1720,41 @@ class TemplateObligationAnalyzer:
                         keyword_values,
                         scope=scope,
                         depth=depth,
+                        node=node,
+                    )
+                )
+            elif callable_name.startswith("runtime_method:"):
+                _prefix, runtime_kind, method = callable_name.split(":", 2)
+                receiver = function.method_receivers.get(callable_name)
+                results.append(
+                    self._call_runtime_method(
+                        runtime_kind,
+                        method,
+                        receiver or _unknown_value(),
+                        arguments,
+                        keyword_values,
+                        node=node,
+                    )
+                )
+            elif callable_name.startswith("context_mapping_method:"):
+                method = callable_name.split(":", 1)[1]
+                receiver = function.method_receivers.get(callable_name)
+                results.append(
+                    self._call_context_mapping_method(
+                        method,
+                        receiver or _unknown_value(),
+                        arguments,
+                        keyword_values,
+                        node=node,
+                    )
+                )
+            elif callable_name.startswith("loop_method:"):
+                method = callable_name.split(":", 1)[1]
+                results.append(
+                    self._call_loop_method(
+                        method,
+                        arguments,
+                        keyword_values,
                         node=node,
                     )
                 )
@@ -1312,7 +1821,7 @@ class TemplateObligationAnalyzer:
         keyword_values: dict[str, _Value],
         *,
         node: nodes.Node,
-        scope: dict[str, _Value],
+        scope: _Scope,
         depth: int,
     ) -> _Value:
         category = semantic_category("globals", name)
@@ -1454,6 +1963,14 @@ class TemplateObligationAnalyzer:
                     keyword_values,
                     node=node,
                 )
+            if name in {"now", "utcnow", "today_at"}:
+                return _Value(
+                    runtime_kinds={"datetime"},
+                    ordinary=True,
+                    unknown=True,
+                    dynamic_scalar=True,
+                    complete=False,
+                )
             return _ordinary_value()
         if category == "provenance_preserving":
             self._neutral(node, f"canonical_{name}_operand_provenance_preserved")
@@ -1463,6 +1980,120 @@ class TemplateObligationAnalyzer:
             )
         self._opaque(node, f"unknown_global_{name}")
         return _unknown_value()
+
+    def _call_runtime_method(
+        self,
+        runtime_kind: str,
+        method: str,
+        receiver: _Value,
+        arguments: list[_Value],
+        keyword_values: dict[str, _Value],
+        *,
+        node: nodes.Node,
+    ) -> _Value:
+        if runtime_kind not in _RUNTIME_SCALAR_ATTRIBUTES:
+            self._opaque(node, "unknown_runtime_method_receiver")
+            return _unknown_value()
+        if method in _RUNTIME_SCALAR_METHODS[runtime_kind]:
+            self._neutral(
+                node,
+                f"{runtime_kind}_{method}_dependency_neutral",
+            )
+            return _dynamic_scalar_value()
+        result_kind = _RUNTIME_TRANSFORM_METHODS[runtime_kind].get(method)
+        if result_kind is not None:
+            self._neutral(
+                node,
+                f"{runtime_kind}_{method}_dependency_neutral",
+            )
+            return _Value(
+                runtime_kinds={result_kind},
+                ordinary=True,
+                unknown=True,
+                dynamic_scalar=True,
+                complete=False,
+            )
+        self._opaque(node, "unreviewed_runtime_method")
+        return _unknown_value()
+
+    def _call_loop_method(
+        self,
+        method: str,
+        arguments: list[_Value],
+        keyword_values: dict[str, _Value],
+        *,
+        node: nodes.Node,
+    ) -> _Value:
+        values = [*arguments, *keyword_values.values()]
+        if method == "cycle":
+            if not values:
+                self._opaque(node, "loop_cycle_without_candidates")
+                return _unknown_value()
+            return self._merge(values, node=node)
+        if method == "changed":
+            for value in values:
+                if value.state_collection or value.state_object:
+                    self._consume_entity_value(
+                        value,
+                        node=node,
+                        kind="loop_changed_operand",
+                        reason="loop_changed_consumes_state_value",
+                    )
+            self._neutral(node, "loop_changed_dependency_neutral")
+            return _dynamic_scalar_value()
+        self._opaque(node, "unknown_loop_method")
+        return _unknown_value()
+
+    def _call_context_mapping_method(
+        self,
+        method: str,
+        receiver: _Value,
+        arguments: list[_Value],
+        keyword_values: dict[str, _Value],
+        *,
+        node: nodes.Node,
+    ) -> _Value:
+        """Preserve opaque runtime-data provenance through read-only methods."""
+
+        if (
+            receiver.runtime_kinds != {"context_data"}
+            or receiver.projection_uncertain
+            or receiver.limit_exceeded
+            or receiver.external
+            or receiver.callables
+            or receiver.state_collection
+            or receiver.state_object
+        ):
+            self._opaque(node, "mixed_context_mapping_method_receiver")
+            return _unknown_value()
+        if keyword_values or (
+            method == "get" and not 1 <= len(arguments) <= 2
+        ) or (method != "get" and arguments):
+            self._opaque(node, "context_mapping_method_arguments_opaque")
+            return self._merge(
+                (*arguments, *keyword_values.values(), _unknown_value()),
+                node=node,
+            )
+
+        self._neutral(node, f"context_mapping_{method}_provenance_preserved")
+        runtime_value = _dynamic_scalar_value()
+        runtime_value.context_paths = set(receiver.context_paths)
+        if method == "get":
+            if len(arguments) == 2:
+                return self._merge(
+                    (runtime_value, arguments[1]),
+                    node=node,
+                )
+            return runtime_value
+        return _Value(
+            items=[runtime_value],
+            container_kinds={"sequence"},
+            context_paths=set(receiver.context_paths),
+            ordinary=True,
+            unknown=True,
+            dynamic_scalar=True,
+            complete=False,
+        )
 
     def _construct_field_container(
         self,
@@ -1692,43 +2323,140 @@ class TemplateObligationAnalyzer:
 
     def _call_local_macro(
         self,
-        name: str,
+        macro_id: str,
         arguments: list[_Value],
         keyword_values: dict[str, _Value],
         *,
-        scope: dict[str, _Value],
+        scope: _Scope,
         depth: int,
         node: nodes.Node,
     ) -> _Value:
-        macro = self._macros.get(name)
-        if macro is None or name in self._active_macros:
+        macro = self._macros.get(macro_id)
+        captures = self._macro_captures.get(macro_id, [])
+        if (
+            macro is None
+            or not captures
+            or macro_id in self._active_macros
+        ):
             self._opaque(node, "local_macro_body_unavailable_or_recursive")
             return _unknown_value()
-        self._active_macros.add(name)
+        self._active_macros.add(macro_id)
         try:
-            child_scope = dict(scope)
-            default_offset = len(macro.args) - len(macro.defaults)
-            for index, target in enumerate(macro.args):
-                if index < len(arguments):
-                    value = arguments[index]
-                elif target.name in keyword_values:
-                    value = keyword_values[target.name]
-                elif index >= default_offset:
-                    value = self._eval(
-                        macro.defaults[index - default_offset],
-                        scope,
-                        depth=depth + 1,
-                    )
+            for capture in captures:
+                captured_frame = capture.frame
+                # Calls made in the same soft frame observe the current path;
+                # calls from a lexical child resolve through the definition
+                # frame and cannot be replaced by caller-local shadows.
+                ancestor: _Scope | None = scope
+                while (
+                    ancestor is not None
+                    and ancestor.frame is not captured_frame
+                ):
+                    ancestor = ancestor.parent_scope
+                if ancestor is not None:
+                    lexical_values = dict(ancestor)
+                elif captured_frame.revision > capture.frame_revision:
+                    lexical_values = self._frame_environment(captured_frame)
                 else:
-                    value = _unknown_value()
-                self._bind(target, value, child_scope)
-            self._analyze_statements(macro.body, child_scope, depth=depth + 1)
+                    lexical_values = {
+                        name: value.copy()
+                        for name, value in capture.path_scope.items()
+                    }
+                lexical_scope = self._retain_scope(
+                    _Scope(
+                        lexical_values,
+                        frame=captured_frame,
+                        path_fork=True,
+                        parent_scope=capture.path_scope,
+                    )
+                )
+                invocation_frame = self._new_frame(
+                    parent=captured_frame,
+                )
+                child_scope = self._retain_scope(
+                    _Scope(
+                        lexical_values,
+                        frame=invocation_frame,
+                        path_fork=False,
+                        parent_scope=lexical_scope,
+                    )
+                )
+                if len(arguments) > len(macro.args) + MAX_TEMPLATE_CANDIDATES:
+                    raise _AnalysisLimit(
+                        "template_macro_argument_limit_exceeded"
+                    )
+                extra_arguments = arguments[len(macro.args) :]
+                varargs_value = self._merge(extra_arguments, node=node)
+                varargs_value.items = [
+                    item.copy() for item in extra_arguments
+                ]
+                varargs_value.container_kinds = {"sequence"}
+                varargs_value.unknown = False
+                varargs_value.complete = True
+                self._store_binding(
+                    child_scope,
+                    "varargs",
+                    varargs_value,
+                )
+                formal_names = {item.name for item in macro.args}
+                extra_keywords = {
+                    name: value
+                    for name, value in keyword_values.items()
+                    if name not in formal_names
+                }
+                if len(extra_keywords) > MAX_TEMPLATE_CANDIDATES:
+                    raise _AnalysisLimit(
+                        "template_macro_argument_limit_exceeded"
+                    )
+                self._store_binding(
+                    child_scope,
+                    "kwargs",
+                    _Value(
+                        fields={
+                            name: value.copy()
+                            for name, value in sorted(extra_keywords.items())
+                        },
+                        container_kinds={"mapping"},
+                        ordinary=all(
+                            value.ordinary
+                            for value in extra_keywords.values()
+                        ),
+                        complete=True,
+                    ),
+                )
+                # Jinja reserves ``caller`` for call blocks.  Never inherit a
+                # same-named lexical value into a macro invocation.
+                self._store_binding(
+                    child_scope,
+                    "caller",
+                    _unknown_value(),
+                )
+                default_offset = len(macro.args) - len(macro.defaults)
+                for index, target in enumerate(macro.args):
+                    if index < len(arguments):
+                        value = arguments[index]
+                    elif target.name in keyword_values:
+                        value = keyword_values[target.name]
+                    elif index >= default_offset:
+                        value = self._eval(
+                            macro.defaults[index - default_offset],
+                            child_scope,
+                            depth=depth + 1,
+                        )
+                    else:
+                        value = _unknown_value()
+                    self._bind(target, value, child_scope)
+                self._analyze_statements(
+                    macro.body,
+                    child_scope,
+                    depth=depth + 1,
+                )
         finally:
-            self._active_macros.discard(name)
+            self._active_macros.discard(macro_id)
         return _unknown_value()
 
     def _filter(
-        self, node: nodes.Filter, scope: dict[str, _Value], *, depth: int
+        self, node: nodes.Filter, scope: _Scope, *, depth: int
     ) -> _Value:
         operand = self._eval(node.node, scope, depth=depth + 1)
         arguments = [
@@ -2212,7 +2940,7 @@ class TemplateObligationAnalyzer:
         return project_path(operand)
 
     def _test(
-        self, node: nodes.Test, scope: dict[str, _Value], *, depth: int
+        self, node: nodes.Test, scope: _Scope, *, depth: int
     ) -> _Value:
         operand = self._eval(node.node, scope, depth=depth + 1)
         for item in node.args:
@@ -2260,11 +2988,97 @@ class TemplateObligationAnalyzer:
         attribute: str,
         *,
         node: nodes.Node,
-        scope: dict[str, _Value],
+        scope: _Scope,
         depth: int,
     ) -> _Value:
         if base.namespace_ids:
             base = self._resolve_namespace_history(base, node=node)
+        typed_receiver_complete = bool(
+            not base.projection_uncertain
+            and not base.limit_exceeded
+            and not base.external
+            and not base.callables
+            and not base.state_collection
+            and not base.state_object
+        )
+        if base.runtime_kinds.intersection(
+            {"ha_event", "event_origin", "ha_context", "context_data"}
+        ):
+            if not typed_receiver_complete:
+                self._opaque(node, "mixed_runtime_context_receiver")
+                return _unknown_value()
+            if (
+                base.runtime_kinds == {"context_data"}
+                and attribute in _MAPPING_METHODS
+            ):
+                callable_name = f"context_mapping_method:{attribute}"
+                value = _callable_value(callable_name)
+                value.method_receivers[callable_name] = base.copy()
+                return value
+            paths = {
+                f"{path}.{attribute}" for path in base.context_paths
+            }
+            return self._runtime_context_attribute(
+                base,
+                attribute,
+                paths=paths,
+                node=node,
+            )
+        if base.runtime_kinds in ({"jinja_loop"}, {"ha_repeat"}):
+            if not typed_receiver_complete:
+                self._opaque(node, "mixed_iteration_context_receiver")
+                return _unknown_value()
+            if attribute in base.fields:
+                return self._project_value(base, base.fields[attribute])
+            if (
+                base.runtime_kinds == {"jinja_loop"}
+                and attribute in {"cycle", "changed"}
+            ):
+                callable_name = f"loop_method:{attribute}"
+                value = _callable_value(callable_name)
+                value.method_receivers[callable_name] = base.copy()
+                return value
+            self._opaque(node, "unknown_iteration_context_attribute")
+            return _unknown_value()
+        if base.runtime_kinds:
+            runtime_only = bool(
+                not base.entity_ids
+                and not base.literal_strings
+                and not base.literal_numbers
+                and not base.callables
+                and not base.fields
+                and not base.items
+                and not base.container_kinds
+                and not base.state_collection
+                and not base.state_object
+                and not base.external
+                and not base.projection_uncertain
+                and not base.limit_exceeded
+            )
+            if runtime_only and all(
+                attribute in _RUNTIME_SCALAR_ATTRIBUTES.get(kind, ())
+                for kind in base.runtime_kinds
+            ):
+                self._neutral(
+                    node,
+                    f"runtime_{attribute}_dependency_neutral",
+                )
+                return _dynamic_scalar_value()
+            if runtime_only and all(
+                attribute in _RUNTIME_SCALAR_METHODS.get(kind, ())
+                or attribute in _RUNTIME_TRANSFORM_METHODS.get(kind, {})
+                for kind in base.runtime_kinds
+            ):
+                result = _Value(complete=True)
+                for kind in sorted(base.runtime_kinds):
+                    callable_name = (
+                        f"runtime_method:{kind}:{attribute}"
+                    )
+                    result.callables.add(callable_name)
+                    result.method_receivers[callable_name] = base.copy()
+                return result
+            self._opaque(node, "unknown_runtime_attribute_receiver")
+            return _unknown_value()
         if base.state_object:
             self._consume_entity_value(
                 base,
@@ -2404,7 +3218,7 @@ class TemplateObligationAnalyzer:
         key: _Value,
         *,
         node: nodes.Node,
-        scope: dict[str, _Value],
+        scope: _Scope,
         depth: int,
     ) -> _Value:
         if base.namespace_ids:
@@ -2580,6 +3394,29 @@ class TemplateObligationAnalyzer:
                 base,
                 self._merge(options, node=node),
             )
+        if base.runtime_kinds == {"context_data"}:
+            if (
+                base.projection_uncertain
+                or base.limit_exceeded
+                or base.external
+                or base.callables
+                or base.state_collection
+                or base.state_object
+            ):
+                self._opaque(node, "mixed_context_data_item_receiver")
+                return _unknown_value()
+            # A dynamic key still reads only the bounded runtime context
+            # mapping.  Rendering the resulting scalar is dependency-neutral;
+            # its taint becomes opaque if a later state/entity selector
+            # consumes it.
+            self._neutral(
+                node, "context_data_dynamic_item_provenance_preserved"
+            )
+            value = _dynamic_scalar_value()
+            value.context_paths = {
+                f"{path}.*" for path in base.context_paths
+            }
+            return value
         if base.context_paths:
             if key.complete and len(key.literal_strings) == 1:
                 return self._context_attribute(
@@ -2602,17 +3439,39 @@ class TemplateObligationAnalyzer:
         paths = {
             f"{path}.{attribute}" for path in base.context_paths
         }
-        if any(path.endswith(".event.data") for path in paths):
-            self._opaque(node, "event_context_data_opaque")
-            return _Value(context_paths=paths, unknown=True, complete=False)
+        if base.runtime_kinds:
+            return self._runtime_context_attribute(
+                base,
+                attribute,
+                paths=paths,
+                node=node,
+            )
         if paths in ({"trigger.event"}, {"wait.trigger.event"}):
-            return _Value(context_paths=paths, complete=True)
-        if all(
-            path.endswith(".time_fired") or path.endswith(".context")
+            return _Value(
+                context_paths=paths,
+                runtime_kinds={"ha_event"},
+                complete=True,
+            )
+        if attribute in {
+            "payload_json",
+            "json",
+            "data",
+            "query",
+            "slots",
+            "details",
+        } and all(
+            path.startswith(("trigger.", "wait.trigger."))
             for path in paths
         ):
-            self._neutral(node, "event_context_metadata_dependency_neutral")
-            return _ordinary_value()
+            self._neutral(node, "context_data_value_provenance_preserved")
+            return _Value(
+                context_paths=paths,
+                runtime_kinds={"context_data"},
+                ordinary=True,
+                unknown=True,
+                dynamic_scalar=True,
+                complete=False,
+            )
         if paths == {"wait.trigger"}:
             ids = set(self.context.wait_trigger_entity_ids)
             return _Value(
@@ -2705,6 +3564,70 @@ class TemplateObligationAnalyzer:
         self._opaque(node, "unknown_context_attribute")
         return _Value(context_paths=paths, unknown=True, complete=False)
 
+    def _runtime_context_attribute(
+        self,
+        base: _Value,
+        attribute: str,
+        *,
+        paths: set[str],
+        node: nodes.Node,
+    ) -> _Value:
+        kinds = set(base.runtime_kinds)
+        if kinds == {"ha_event"}:
+            if attribute in {"event_type", "time_fired_timestamp"}:
+                self._neutral(node, "event_metadata_dependency_neutral")
+                value = _dynamic_scalar_value()
+                value.context_paths = paths
+                return value
+            typed = {
+                "origin": "event_origin",
+                "time_fired": "datetime",
+                "context": "ha_context",
+                "data": "context_data",
+            }.get(attribute)
+            if typed is not None:
+                self._neutral(node, "event_metadata_provenance_preserved")
+                return _Value(
+                    context_paths=paths,
+                    runtime_kinds={typed},
+                    ordinary=True,
+                    unknown=typed == "context_data",
+                    dynamic_scalar=typed == "context_data",
+                    complete=typed != "context_data",
+                )
+        elif kinds == {"event_origin"} and attribute in {
+            "name",
+            "value",
+            "idx",
+        }:
+            self._neutral(node, "event_origin_dependency_neutral")
+            value = _dynamic_scalar_value()
+            value.context_paths = paths
+            return value
+        elif kinds == {"ha_context"} and attribute in {
+            "id",
+            "parent_id",
+            "user_id",
+        }:
+            self._neutral(node, "event_context_identity_dependency_neutral")
+            value = _dynamic_scalar_value()
+            value.context_paths = paths
+            return value
+        elif kinds == {"context_data"}:
+            # Arbitrary event/payload members are harmless when rendered, but
+            # the dynamic scalar taint becomes opaque at any entity selector.
+            self._neutral(node, "context_data_member_provenance_preserved")
+            value = _dynamic_scalar_value()
+            value.context_paths = paths
+            return value
+        self._opaque(node, "unknown_runtime_context_attribute")
+        return _Value(
+            context_paths=paths,
+            runtime_kinds=kinds,
+            unknown=True,
+            complete=False,
+        )
+
     def _consume_entity_value(
         self,
         value: _Value,
@@ -2754,7 +3677,11 @@ class TemplateObligationAnalyzer:
                 context=tuple(sorted(value.context_paths)),
                 lock="exact",
             )
-            if value.complete and not value.unknown:
+            if (
+                value.complete
+                and not value.unknown
+                and not value.contained_semantic_uncertainty
+            ):
                 return
         if value.possible_domains and value.domain_evidence_complete:
             self._emit(
@@ -2786,7 +3713,7 @@ class TemplateObligationAnalyzer:
         )
 
     def _external_template_boundary(
-        self, node: nodes.Stmt, scope: dict[str, _Value]
+        self, node: nodes.Stmt, scope: _Scope
     ) -> None:
         self._external_count += 1
         if self._external_count > MAX_TEMPLATE_EXTERNAL_REFERENCES:
@@ -2815,19 +3742,27 @@ class TemplateObligationAnalyzer:
             lock="conservative",
         )
         if isinstance(node, nodes.Import):
-            scope[node.target] = _unknown_value(external=True)
+            self._store_binding(
+                scope,
+                node.target,
+                _unknown_value(external=True),
+            )
         elif isinstance(node, nodes.FromImport):
             for item in node.names:
                 target = item[1] if isinstance(item, tuple) else item
-                scope[str(target)] = _unknown_value(external=True)
+                self._store_binding(
+                    scope,
+                    str(target),
+                    _unknown_value(external=True),
+                )
         self._check_binding_limit(scope)
 
     def _bind(
-        self, target: nodes.Node, value: _Value, scope: dict[str, _Value]
+        self, target: nodes.Node, value: _Value, scope: _Scope
     ) -> None:
         self._visited_nodes.add(id(target))
         if isinstance(target, nodes.Name):
-            scope[target.name] = value.copy()
+            self._store_binding(scope, target.name, value)
         elif isinstance(target, (nodes.Tuple, nodes.List)):
             if value.state_collection or value.state_object:
                 self._consume_entity_value(
@@ -2862,7 +3797,7 @@ class TemplateObligationAnalyzer:
                     "template_value_container_limit_exceeded"
                 )
             prior.fields[target.attr] = value.copy()
-            scope[target.name] = prior
+            self._store_binding(scope, target.name, prior)
             self._record_namespace_mutation(prior, node=target)
         else:
             self._emit(
@@ -2933,15 +3868,18 @@ class TemplateObligationAnalyzer:
 
     def _merge_branch_scopes(
         self,
-        target: dict[str, _Value],
-        first: dict[str, _Value],
-        second: dict[str, _Value],
+        target: _Scope,
+        *branches: _Scope,
     ) -> None:
-        for name in sorted(set(first).union(second)):
+        names = set(target).union(*(set(branch) for branch in branches))
+        for name in sorted(names):
             values = [
-                item
-                for item in (first.get(name), second.get(name))
-                if item is not None
+                (
+                    branch[name]
+                    if name in branch
+                    else _unknown_value()
+                )
+                for branch in branches
             ]
             if values:
                 merged = self._merge(values, node=None)
@@ -2950,8 +3888,19 @@ class TemplateObligationAnalyzer:
                     for value in values[1:]
                 ):
                     merged.projection_uncertain = True
-                target[name] = merged
+                self._store_binding(target, name, merged)
         self._check_binding_limit(target)
+
+    def _index_macro_definitions(self, tree: nodes.Template) -> None:
+        """Assign deterministic identities to every parsed local macro."""
+
+        macros = list(tree.find_all(nodes.Macro))
+        if len(macros) > MAX_TEMPLATE_BINDINGS:
+            raise _AnalysisLimit("template_macro_limit_exceeded")
+        for index, macro in enumerate(macros):
+            macro_id = f"{index}:{int(macro.lineno or 0)}:{macro.name}"
+            self._macro_ids_by_node[id(macro)] = macro_id
+            self._macros[macro_id] = macro
 
     def _check_binding_limit(self, scope: dict[str, _Value]) -> None:
         if len(scope) > MAX_TEMPLATE_BINDINGS:
@@ -2985,6 +3934,7 @@ class TemplateObligationAnalyzer:
                 + len(current.items)
                 + len(current.method_receivers)
                 + len(current.context_paths)
+                + len(current.runtime_kinds)
             )
             prior = self._abstract_value_sizes.get(identity, 0)
             if size > prior:
@@ -3030,7 +3980,7 @@ class TemplateObligationAnalyzer:
     def _unknown_node(
         self,
         node: nodes.Node,
-        scope: dict[str, _Value],
+        scope: _Scope,
         *,
         depth: int,
     ) -> None:
@@ -3123,6 +4073,8 @@ class TemplateObligationAnalyzer:
         limit: bool = False,
         lock: str = "none",
     ) -> None:
+        if outcome == "coverage_failure" or limit:
+            lock = "coverage_failure"
         overflow = bool(
             len(set(exact)) > MAX_TEMPLATE_CANDIDATES
             or (
@@ -3310,6 +4262,7 @@ __all__ = [
     "MAX_TEMPLATE_SOURCE_CHARS",
     "MAX_TEMPLATE_WORK_UNITS",
     "TemplateContextEvidence",
+    "TemplateContextValueEvidence",
     "TemplateLedgerResult",
     "TemplateObligationAnalyzer",
     "analyze_template_obligations",

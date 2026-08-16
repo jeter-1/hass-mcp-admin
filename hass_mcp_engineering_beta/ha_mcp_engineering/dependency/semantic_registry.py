@@ -16,7 +16,7 @@ SEMANTIC_REGISTRY_FILE = Path(__file__).with_name(
 )
 SEMANTIC_REGISTRY_MODEL = "home-assistant-template-semantic-registry-v1"
 EXPECTED_SEMANTIC_REGISTRY_SHA256 = (
-    "e0976d69feaac262dcc3090787a152f34265644dfe19ab7018c9c78d9d4be2bc"
+    "cdce02d44330bfe94aa510c3279f0bc16572063ae44c5900b295496779e7040b"
 )
 SEMANTIC_REGISTRY_CATEGORIES = frozenset(
     {
@@ -113,7 +113,13 @@ def _validate_registry(value: dict[str, Any], raw: bytes) -> None:
     }:
         raise RuntimeError("template semantic registry parser environment mismatch")
     semantics = value.get("semantics", {})
-    for surface in ("globals", "filters", "tests", "attributes"):
+    for surface in (
+        "globals",
+        "filters",
+        "tests",
+        "attributes",
+        "runtime_receivers",
+    ):
         entries = semantics.get(surface)
         if not isinstance(entries, dict) or not entries:
             raise RuntimeError("template semantic registry surface is missing")

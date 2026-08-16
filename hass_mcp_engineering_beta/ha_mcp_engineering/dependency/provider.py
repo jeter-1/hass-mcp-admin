@@ -23,6 +23,7 @@ from ..providers import (
     ProviderResult,
 )
 from .extraction import (
+    discharge_resolved_blueprint_source_obligation,
     extract_document_with_obligations,
     make_coverage_failure_obligation,
     resolve_blueprint_roles,
@@ -323,6 +324,16 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                     )
                 )
                 continue
+            blueprint = config.get("use_blueprint")
+            parsed_blueprint = None
+            blueprint_read_failure = None
+            if isinstance(blueprint, dict):
+                path = blueprint.get("path")
+                parsed_blueprint, blueprint_read_failure = (
+                    _read_blueprint_with_status(path)
+                    if isinstance(path, str)
+                    else (None, "blueprint_source_unavailable")
+                )
             extracted, unresolved, extracted_obligations = (
                 extract_document_with_obligations(
                     source_type="automation",
@@ -334,19 +345,9 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                     secret=self.secret,
                 )
             )
-            findings.extend(extracted)
-            dynamic.extend(unresolved)
-            obligations.extend(extracted_obligations)
-            blueprint = config.get("use_blueprint")
             action_config = config
             if isinstance(blueprint, dict):
-                path = blueprint.get("path")
-                parsed, blueprint_read_failure = (
-                    _read_blueprint_with_status(path)
-                    if isinstance(path, str)
-                    else (None, "blueprint_source_unavailable")
-                )
-                if parsed is None:
+                if parsed_blueprint is None:
                     blueprint_failures += 1
                     obligations.append(
                         make_coverage_failure_obligation(
@@ -373,7 +374,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                     }
                 else:
                     resolved_blueprint, blueprint_resolution_complete = (
-                        _resolve_blueprint_inputs(parsed, config)
+                        _resolve_blueprint_inputs(parsed_blueprint, config)
                     )
                     if not blueprint_resolution_complete:
                         blueprint_failures += 1
@@ -397,26 +398,55 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                         )
                     findings.extend(
                         resolve_blueprint_roles(
-                            extracted, parsed, source_id=internal_id
+                            extracted,
+                            parsed_blueprint,
+                            source_id=internal_id,
                         )
                     )
-                    (
-                        blueprint_findings,
-                        blueprint_dynamic,
-                        blueprint_obligations,
-                    ) = extract_document_with_obligations(
-                        source_type="blueprint",
-                        source_id=internal_id,
-                        source_entity_id=source_entity_id,
-                        source_name=attrs.get("friendly_name"),
-                        source_state=state.get("state"),
-                        config=resolved_blueprint,
-                        secret=self.secret,
-                    )
+                    if blueprint_resolution_complete:
+                        (
+                            extracted_obligations,
+                            blueprint_findings,
+                            blueprint_dynamic,
+                            blueprint_obligations,
+                            discharged_dynamic_ids,
+                        ) = discharge_resolved_blueprint_source_obligation(
+                            automation_config=config,
+                            resolved_blueprint_config=resolved_blueprint,
+                            raw_obligations=extracted_obligations,
+                            source_id=internal_id,
+                            source_entity_id=source_entity_id,
+                            source_name=attrs.get("friendly_name"),
+                            source_state=state.get("state"),
+                            secret=self.secret,
+                        )
+                        unresolved = [
+                            item
+                            for item in unresolved
+                            if item.evidence_id
+                            not in discharged_dynamic_ids
+                        ]
+                    else:
+                        (
+                            blueprint_findings,
+                            blueprint_dynamic,
+                            blueprint_obligations,
+                        ) = extract_document_with_obligations(
+                            source_type="blueprint",
+                            source_id=internal_id,
+                            source_entity_id=source_entity_id,
+                            source_name=attrs.get("friendly_name"),
+                            source_state=state.get("state"),
+                            config=resolved_blueprint,
+                            secret=self.secret,
+                        )
                     findings.extend(blueprint_findings)
                     dynamic.extend(blueprint_dynamic)
                     obligations.extend(blueprint_obligations)
                     action_config = resolved_blueprint
+            findings.extend(extracted)
+            dynamic.extend(unresolved)
+            obligations.extend(extracted_obligations)
             consequence = automation_action_consequence_profile(
                 action_config
             )

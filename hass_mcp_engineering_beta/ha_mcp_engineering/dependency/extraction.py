@@ -24,6 +24,7 @@ from .models import (
 )
 from .obligation_ledger import (
     TemplateContextEvidence,
+    TemplateContextValueEvidence,
     analyze_template_obligations,
 )
 from .semantic_registry import (
@@ -83,10 +84,41 @@ ENTITY_OUTPUT_KEYS = frozenset(
 )
 MAX_CONTEXT_ENTITY_IDS = 128
 MAX_CONTEXT_VARIABLES = 128
+MAX_CONTEXT_VALUE_DEPTH = 8
+MAX_CONTEXT_SCALAR_CHARS = 1_024
 MAX_DOCUMENT_OBLIGATIONS = 2_000
 MAX_CONFIGURATION_NODES = 10_000
 MAX_CONFIGURATION_DEPTH = 64
 MAX_EVENT_SELECTOR_VALUES = 128
+ACTION_SEQUENCE_KEYS = frozenset(
+    {"action", "actions", "sequence", "then", "else", "default"}
+)
+ACTION_POSITION_KEYS = ACTION_SEQUENCE_KEYS.union({"parallel"})
+
+
+def _blueprint_source_obligation_fingerprint(
+    *,
+    configuration_fingerprint: str,
+    blueprint_path: Any,
+    source_id: str,
+) -> str:
+    material = {
+        "configuration_fingerprint": configuration_fingerprint,
+        "path_sha256": (
+            hashlib.sha256(str(blueprint_path).encode("utf-8")).hexdigest()
+            if blueprint_path is not None
+            else None
+        ),
+        "path_valid": isinstance(blueprint_path, str),
+        "source_id": source_id,
+    }
+    return hashlib.sha256(
+        json.dumps(
+            material,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def valid_entity_id(value: str) -> bool:
@@ -208,6 +240,7 @@ def extract_document_obligation_evidence(
         config,
         source_entity_id=source_entity_id,
     )
+    context_value_budget = [MAX_CONFIGURATION_NODES]
     registry = semantic_registry_identity()
     safe_source_name = _bounded(source_name, secret=secret)
     safe_source_entity_id = _bounded(source_entity_id, 128, secret)
@@ -234,6 +267,63 @@ def extract_document_obligation_evidence(
                 ),
                 configuration_fingerprint=configuration_fingerprint,
                 limit_exceeded=True,
+            )
+        )
+
+    # A raw automation using a blueprint does not contain the blueprint's
+    # causal trigger/condition/action body.  F3 configuration locking analyzes
+    # proposed configuration locally, so absence of helper references in the
+    # raw ``use_blueprint`` mapping cannot prove target exclusion.  Retain one
+    # bounded external-source obligation.  A separate evidence-bound discharge
+    # can replace it only after the exact resolved blueprint configuration has
+    # itself produced a complete obligation ledger.  This makes create,
+    # update, and removal serialize through the conservative helper-dependency
+    # guard without adding blueprint write or reload authority.
+    if (
+        source_type == "automation"
+        and isinstance(config, dict)
+        and "use_blueprint" in config
+    ):
+        safe_blueprint_path = _bounded(blueprint_path, 256, secret)
+        blueprint_fingerprint = _blueprint_source_obligation_fingerprint(
+            configuration_fingerprint=configuration_fingerprint,
+            blueprint_path=blueprint_path,
+            source_id=source_id,
+        )
+        obligations.append(
+            DependencyObligation(
+                evidence_id=evidence_id(
+                    source_type,
+                    source_id,
+                    "$.use_blueprint.path",
+                    "blueprint_source_unavailable_to_local_analysis",
+                    blueprint_fingerprint,
+                ),
+                source_type=source_type,
+                source_id=source_id,
+                source_entity_id=safe_source_entity_id,
+                source_name=safe_source_name,
+                source_state=safe_source_state,
+                config_path="$.use_blueprint.path",
+                relation="blueprint_resolved_role",
+                outcome="bounded_semantic_opaque",
+                obligation_kind="external_blueprint_source",
+                reason_code=(
+                    "blueprint_source_unavailable_to_local_analysis"
+                ),
+                semantic_category="external_opaque",
+                semantic_registry_version=SEMANTIC_REGISTRY_MODEL,
+                semantic_registry_fingerprint=str(registry["sha256"]),
+                expression_fingerprint=blueprint_fingerprint,
+                configuration_fingerprint=configuration_fingerprint,
+                literal_selectors=(
+                    (safe_blueprint_path,) if safe_blueprint_path else ()
+                ),
+                context_provenance=(
+                    f"automation:{source_id}",
+                    "configuration_path:$.use_blueprint.path",
+                ),
+                lock_projection="conservative",
             )
         )
 
@@ -703,6 +793,9 @@ def extract_document_obligation_evidence(
         relation: str,
         parent_key: str = "",
         depth: int = 0,
+        template_context: TemplateContextEvidence = context,
+        structured_entity_roles: bool = True,
+        entity_output_roles: bool = True,
     ) -> None:
         nonlocal document_limit_exceeded
         nonlocal configuration_walk_nodes
@@ -782,14 +875,62 @@ def extract_document_obligation_evidence(
                             "scene_entity",
                             f"$.entities.{entity}",
                         )
+            mapping_context = template_context
+            root_variables_processed = False
+            root_variables = value.get("variables") if path == "$" else None
+            if isinstance(root_variables, dict):
+                root_variables_processed = True
+                if len(root_variables) > MAX_CONTEXT_VARIABLES:
+                    document_limit_exceeded = True
+                    document_limit_reason = (
+                        "configuration_context_evidence_limit_exceeded"
+                    )
+                    return
+                for raw_name, raw_value in root_variables.items():
+                    name = str(raw_name)
+                    variable_path = f"{path}.variables.{name}"
+                    walk(
+                        raw_value,
+                        variable_path,
+                        relation,
+                        name,
+                        depth + 2,
+                        mapping_context,
+                        False,
+                        False,
+                    )
+                    mapping_context, variable_limit = (
+                        _context_with_variables(
+                            mapping_context,
+                            {name: raw_value},
+                            path=path,
+                            context_value_budget=context_value_budget,
+                            # Home Assistant preserves run variables supplied
+                            # by automation.trigger/script callers instead of
+                            # overwriting them with root configuration defaults.
+                            join_existing=True,
+                        )
+                    )
+                    if variable_limit:
+                        document_limit_exceeded = True
+                        document_limit_reason = (
+                            "configuration_context_evidence_limit_exceeded"
+                        )
+                        return
             for key, item in value.items():
                 if document_limit_exceeded:
                     break
+                if (
+                    path == "$"
+                    and key == "variables"
+                    and root_variables_processed
+                ):
+                    continue
                 child_path = f"{path}.{key}"
                 child_relation = _relation_for(
                     path, key, relation, source_type
                 )
-                if key in ENTITY_BEARING_KEYS:
+                if structured_entity_roles and key in ENTITY_BEARING_KEYS:
                     entity_values, entity_values_truncated = (
                         _bounded_literal_entities_deep(item)
                     )
@@ -839,19 +980,171 @@ def extract_document_obligation_evidence(
                                 child_path,
                                 blueprint_input=key,
                             )
-                walk(item, child_path, child_relation, key, depth + 1)
+                child_context = mapping_context
+                if path.endswith(".repeat") and key in {
+                    "sequence",
+                    "while",
+                    "until",
+                }:
+                    child_context, repeat_limit = _repeat_template_context(
+                        template_context,
+                        value,
+                        context_value_budget=context_value_budget,
+                    )
+                    if repeat_limit:
+                        document_limit_exceeded = True
+                        document_limit_reason = (
+                            "configuration_context_evidence_limit_exceeded"
+                        )
+                walk(
+                    item,
+                    child_path,
+                    child_relation,
+                    key,
+                    depth + 1,
+                    child_context,
+                    structured_entity_roles,
+                    entity_output_roles,
+                )
             return
         if isinstance(value, list):
+            sequence_context = template_context
             for index, item in enumerate(value):
                 if document_limit_exceeded:
                     break
+                item_path = f"{path}[{index}]"
+                if (
+                    parent_key in ACTION_POSITION_KEYS
+                    and isinstance(item, dict)
+                    and item.get("enabled", True) is False
+                ):
+                    # Home Assistant skips the complete action step, including
+                    # sequence/parallel descendants, when enabled is the
+                    # literal false value.
+                    continue
+                if (
+                    parent_key in ACTION_POSITION_KEYS
+                    and _is_direct_variables_action(item)
+                ):
+                    enabled = item.get("enabled", True)
+                    if isinstance(enabled, str) and _is_template(
+                        enabled, "enabled"
+                    ):
+                        walk(
+                            enabled,
+                            f"{item_path}.enabled",
+                            relation,
+                            "enabled",
+                            depth + 2,
+                            sequence_context,
+                            False,
+                            False,
+                        )
+                    if enabled is False:
+                        continue
+                    if len(item["variables"]) > MAX_CONTEXT_VARIABLES:
+                        document_limit_exceeded = True
+                        document_limit_reason = (
+                            "configuration_context_evidence_limit_exceeded"
+                        )
+                        break
+
+                    # Home Assistant renders a variables action in mapping
+                    # insertion order and makes each completed assignment
+                    # visible to the next one.  Analyze the value with that
+                    # execution-path context before transferring its bounded
+                    # value.  A dynamic ``enabled`` property joins the
+                    # skipped and executed paths rather than overwriting the
+                    # pre-action binding.
+                    pre_action_context = sequence_context
+                    variable_context = pre_action_context
+                    conditional_transfer = enabled is not True
+                    for raw_name, raw_value in item["variables"].items():
+                        name = str(raw_name)
+                        variable_path = (
+                            f"{item_path}.variables.{name}"
+                        )
+                        walk(
+                            raw_value,
+                            variable_path,
+                            relation,
+                            name,
+                            depth + 2,
+                            variable_context,
+                            False,
+                            False,
+                        )
+                        variable_context, variable_limit = (
+                            _context_with_variables(
+                                variable_context,
+                                {name: raw_value},
+                                path=item_path,
+                                context_value_budget=context_value_budget,
+                                join_existing=False,
+                            )
+                        )
+                        if variable_limit:
+                            document_limit_exceeded = True
+                            document_limit_reason = (
+                                "configuration_context_evidence_limit_exceeded"
+                            )
+                            break
+                    # Parallel branches share the incoming context but never
+                    # transfer bindings laterally into a sibling branch.
+                    # Their possible post-branch values are joined only by
+                    # the enclosing parallel action when execution continues.
+                    if parent_key != "parallel":
+                        sequence_context = (
+                            _join_template_contexts(
+                                pre_action_context, variable_context
+                            )
+                            if conditional_transfer
+                            else variable_context
+                        )
+                    continue
                 walk(
                     item,
-                    f"{path}[{index}]",
+                    item_path,
                     relation,
                     parent_key,
                     depth + 1,
+                    sequence_context,
+                    structured_entity_roles,
+                    entity_output_roles,
                 )
+                if parent_key in ACTION_SEQUENCE_KEYS:
+                    variable_actions, variable_scan_limit = (
+                        _nested_variable_actions(item, path=item_path)
+                    )
+                    if variable_scan_limit:
+                        document_limit_exceeded = True
+                        document_limit_reason = (
+                            "configuration_context_evidence_limit_exceeded"
+                        )
+                        break
+                    for (
+                        variable_path,
+                        variables,
+                        conditional_transfer,
+                    ) in variable_actions:
+                        sequence_context, variable_limit = (
+                            _context_with_variables(
+                                sequence_context,
+                                variables,
+                                path=variable_path,
+                                context_value_budget=context_value_budget,
+                                join_existing=bool(
+                                    variable_path != item_path
+                                    or conditional_transfer
+                                ),
+                            )
+                        )
+                        if variable_limit:
+                            document_limit_exceeded = True
+                            document_limit_reason = (
+                                "configuration_context_evidence_limit_exceeded"
+                            )
+                            break
             return
         if not isinstance(value, str) or not _is_template(value, parent_key):
             return
@@ -866,8 +1159,10 @@ def extract_document_obligation_evidence(
             source_state=safe_source_state,
             configuration_fingerprint=configuration_fingerprint,
             entity_id_validator=valid_entity_id,
-            context=context,
-            entity_output_role=parent_key in ENTITY_OUTPUT_KEYS,
+            context=template_context,
+            entity_output_role=bool(
+                entity_output_roles and parent_key in ENTITY_OUTPUT_KEYS
+            ),
         )
         remaining = MAX_DOCUMENT_OBLIGATIONS - 1 - len(obligations)
         if len(result.obligations) > remaining:
@@ -944,6 +1239,168 @@ def extract_document_obligation_evidence(
 # Canonical shared safety API used by provider, governance, and F3.  Keep the
 # longer name as a descriptive compatibility alias for focused callers.
 extract_document_with_obligations = extract_document_obligation_evidence
+
+
+def discharge_resolved_blueprint_source_obligation(
+    *,
+    automation_config: dict[str, Any],
+    resolved_blueprint_config: dict[str, Any],
+    raw_obligations: Iterable[DependencyObligation],
+    source_id: str,
+    source_entity_id: str | None = None,
+    source_name: str | None = None,
+    source_state: str | None = None,
+    secret: str = "",
+) -> tuple[
+    list[DependencyObligation],
+    list[DependencyFinding],
+    list[DynamicReference],
+    list[DependencyObligation],
+    frozenset[str],
+]:
+    """Evidence-bind one raw blueprint boundary to its analyzed source ledger.
+
+    This is deliberately not a caller assertion.  The raw automation and
+    resolved blueprint configurations are fingerprinted again, the exact raw
+    external-source obligation must match, and every resolved terminal must
+    belong to the same source/configuration and be free of coverage failure.
+    Any mismatch keeps the raw opacity and its conservative lock projection.
+    """
+
+    raw = list(raw_obligations)
+    (
+        resolved_findings,
+        resolved_dynamic,
+        resolved,
+    ) = extract_document_obligation_evidence(
+        source_type="blueprint",
+        source_id=source_id,
+        source_entity_id=source_entity_id,
+        source_name=source_name,
+        source_state=source_state,
+        config=resolved_blueprint_config,
+        secret=secret,
+    )
+    automation_fingerprint, automation_limit = (
+        _dependency_configuration_fingerprint(automation_config)
+    )
+    resolved_fingerprint, resolved_limit = (
+        _dependency_configuration_fingerprint(resolved_blueprint_config)
+    )
+    blueprint = (
+        automation_config.get("use_blueprint")
+        if isinstance(automation_config, dict)
+        else None
+    )
+    blueprint_path = (
+        blueprint.get("path") if isinstance(blueprint, dict) else None
+    )
+    expected_expression_fingerprint = (
+        _blueprint_source_obligation_fingerprint(
+            configuration_fingerprint=automation_fingerprint,
+            blueprint_path=blueprint_path,
+            source_id=source_id,
+        )
+    )
+    candidates = [
+        item
+        for item in raw
+        if item.source_type == "automation"
+        and item.source_id == source_id
+        and item.obligation_kind == "external_blueprint_source"
+        and item.reason_code
+        == "blueprint_source_unavailable_to_local_analysis"
+    ]
+    resolved_is_bound = bool(
+        not automation_limit
+        and not resolved_limit
+        and isinstance(blueprint_path, str)
+        and len(candidates) == 1
+        and candidates[0].configuration_fingerprint
+        == automation_fingerprint
+        and candidates[0].expression_fingerprint
+        == expected_expression_fingerprint
+        and candidates[0].literal_selectors
+        == (_bounded(blueprint_path, 256, secret),)
+        and resolved
+        and all(
+            item.source_type == "blueprint"
+            and item.source_id == source_id
+            and item.configuration_fingerprint == resolved_fingerprint
+            and item.semantic_registry_version
+            == candidates[0].semantic_registry_version
+            and item.semantic_registry_fingerprint
+            == candidates[0].semantic_registry_fingerprint
+            and item.outcome != "coverage_failure"
+            and not item.limit_exceeded
+            for item in resolved
+        )
+    )
+    if not resolved_is_bound:
+        return (
+            raw,
+            resolved_findings,
+            resolved_dynamic,
+            resolved,
+            frozenset(),
+        )
+
+    candidate = candidates[0]
+    resolved_ledger_fingerprint = hashlib.sha256(
+        json.dumps(
+            sorted(obligation_fingerprint(item) for item in resolved),
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    discharge_fingerprint = hashlib.sha256(
+        json.dumps(
+            {
+                "raw_obligation": obligation_fingerprint(candidate),
+                "resolved_configuration": resolved_fingerprint,
+                "resolved_ledger": resolved_ledger_fingerprint,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    discharged = replace(
+        candidate,
+        outcome="proven_dependency_neutral",
+        reason_code="blueprint_source_analyzed_by_obligation_ledger",
+        semantic_category="external_source_discharge",
+        expression_fingerprint=discharge_fingerprint,
+        context_provenance=tuple(
+            sorted(
+                set(candidate.context_provenance).union(
+                    {
+                        "blueprint_source:resolved",
+                        (
+                            "resolved_blueprint_configuration:"
+                            + resolved_fingerprint
+                        ),
+                        (
+                            "resolved_blueprint_ledger:"
+                            + resolved_ledger_fingerprint
+                        ),
+                    }
+                )
+            )
+        ),
+        lock_projection="none",
+    )
+    adjusted = [
+        discharged if item.evidence_id == candidate.evidence_id else item
+        for item in raw
+    ]
+    return (
+        adjusted,
+        resolved_findings,
+        resolved_dynamic,
+        resolved,
+        frozenset(
+            {evidence_id(candidate.evidence_id, "compatibility")}
+        ),
+    )
 
 
 def _project_obligations(
@@ -1060,6 +1517,29 @@ def _dependency_configuration_fingerprint(
                     "coverage_limit": True,
                     "container_size": len(value),
                 }
+            if key == "variables":
+                # Home Assistant renders a variables mapping in insertion
+                # order.  Preserve that order inside the otherwise canonical
+                # configuration fingerprint so reordering material dataflow
+                # invalidates an earlier approval.
+                ordered_variables: list[list[Any]] = []
+                for item_key, item in value.items():
+                    if work_units >= MAX_CONFIGURATION_NODES:
+                        limit_exceeded = True
+                        ordered_variables.append(
+                            [
+                                "__coverage_limit__",
+                                {"container_size": len(value)},
+                            ]
+                        )
+                        break
+                    ordered_variables.append(
+                        [
+                            str(item_key),
+                            normalize(item, str(item_key), depth + 1),
+                        ]
+                    )
+                return {"__ordered_variables__": ordered_variables}
             normalized: dict[str, Any] = {}
             for item_key, item in sorted(
                 value.items(), key=lambda pair: str(pair[0])
@@ -1122,15 +1602,140 @@ def _dependency_configuration_fingerprint(
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest(), limit_exceeded
 
 
+def _bounded_context_value(
+    value: Any,
+    *,
+    depth: int = 0,
+    budget: list[int] | None = None,
+) -> tuple[TemplateContextValueEvidence, bool]:
+    """Convert one configuration value into bounded parse-only evidence."""
+
+    if budget is None:
+        budget = [MAX_CONFIGURATION_NODES]
+    budget[0] -= 1
+    if budget[0] < 0 or depth > MAX_CONTEXT_VALUE_DEPTH:
+        marker = "configuration_context_value_limit_exceeded"
+        return (
+            TemplateContextValueEvidence(
+                kind="opaque",
+                complete=False,
+                fingerprint=hashlib.sha256(marker.encode()).hexdigest(),
+            ),
+            True,
+        )
+
+    def finish(
+        kind: str,
+        *,
+        literal_string: str | None = None,
+        literal_number: float | None = None,
+        literal_boolean: bool | None = None,
+        fields: tuple[
+            tuple[str, TemplateContextValueEvidence], ...
+        ] = (),
+        items: tuple[TemplateContextValueEvidence, ...] = (),
+        complete: bool = True,
+    ) -> TemplateContextValueEvidence:
+        material = {
+            "kind": kind,
+            "literal_string_sha256": (
+                hashlib.sha256(literal_string.encode("utf-8")).hexdigest()
+                if literal_string is not None
+                else None
+            ),
+            "literal_number": literal_number,
+            "literal_boolean": literal_boolean,
+            "fields": [(name, item.fingerprint) for name, item in fields],
+            "items": [item.fingerprint for item in items],
+            "complete": complete,
+        }
+        return TemplateContextValueEvidence(
+            kind=kind,
+            literal_string=literal_string,
+            literal_number=literal_number,
+            literal_boolean=literal_boolean,
+            fields=fields,
+            items=items,
+            complete=complete,
+            fingerprint=hashlib.sha256(
+                json.dumps(
+                    material,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest(),
+        )
+
+    if isinstance(value, str):
+        if _contains_template_value(value):
+            return finish("dynamic_scalar", complete=False), False
+        if len(value) > MAX_CONTEXT_SCALAR_CHARS:
+            return finish("opaque", complete=False), True
+        return finish("string", literal_string=value), False
+    if isinstance(value, bool):
+        return finish("boolean", literal_boolean=value), False
+    if value is None:
+        return finish("null"), False
+    if isinstance(value, (int, float)):
+        return finish("number", literal_number=float(value)), False
+    if isinstance(value, dict):
+        if len(value) > MAX_CONTEXT_VARIABLES:
+            return finish("opaque", complete=False), True
+        fields: list[tuple[str, TemplateContextValueEvidence]] = []
+        limit_exceeded = False
+        for key, item in sorted(value.items(), key=lambda pair: str(pair[0])):
+            if not isinstance(key, str) or len(key) > MAX_CONTEXT_SCALAR_CHARS:
+                return finish("opaque", complete=False), True
+            child, child_limit = _bounded_context_value(
+                item,
+                depth=depth + 1,
+                budget=budget,
+            )
+            fields.append((key, child))
+            limit_exceeded = bool(limit_exceeded or child_limit)
+        return (
+            finish(
+                "mapping",
+                fields=tuple(fields),
+                # Shape completeness is independent from member semantics.
+                # An opaque member must not poison a proven ordinary sibling.
+                complete=not limit_exceeded,
+            ),
+            limit_exceeded,
+        )
+    if isinstance(value, (list, tuple)):
+        if len(value) > MAX_CONTEXT_ENTITY_IDS:
+            return finish("opaque", complete=False), True
+        items: list[TemplateContextValueEvidence] = []
+        limit_exceeded = False
+        for item in value:
+            child, child_limit = _bounded_context_value(
+                item,
+                depth=depth + 1,
+                budget=budget,
+            )
+            items.append(child)
+            limit_exceeded = bool(limit_exceeded or child_limit)
+        return (
+            finish(
+                "sequence",
+                items=tuple(items),
+                complete=not limit_exceeded,
+            ),
+            limit_exceeded,
+        )
+    return finish("opaque", complete=False), False
+
+
 def _template_context_evidence(
     config: dict[str, Any],
     *,
     source_entity_id: str | None,
 ) -> tuple[TemplateContextEvidence, bool]:
     trigger_ids: set[str] = set()
+    trigger_zone_ids: set[str] = set()
     wait_trigger_ids: set[str] = set()
-    variable_candidates: dict[str, set[str]] = {}
-    incomplete_variable_names: set[str] = set()
+    wait_trigger_zone_ids: set[str] = set()
     provenance: set[str] = set()
     limit_exceeded = False
     work_units = 0
@@ -1149,6 +1754,7 @@ def _template_context_evidence(
     def collect_trigger_entities(
         value: Any, output: set[str], depth: int = 0
     ) -> None:
+        nonlocal limit_exceeded
         if not tick(depth):
             return
         if isinstance(value, dict):
@@ -1171,12 +1777,47 @@ def _template_context_evidence(
                     break
                 collect_trigger_entities(item, output, depth + 1)
 
+    def collect_zone_trigger_entities(
+        value: Any, output: set[str], depth: int = 0
+    ) -> None:
+        """Collect exact zone objects only from reviewed zone triggers."""
+
+        nonlocal limit_exceeded
+        if not tick(depth):
+            return
+        if isinstance(value, list):
+            for item in value:
+                if work_units >= MAX_CONFIGURATION_NODES:
+                    break
+                collect_zone_trigger_entities(item, output, depth + 1)
+            return
+        if not isinstance(value, dict):
+            return
+        trigger_kind = value.get("platform", value.get("trigger"))
+        if trigger_kind == "zone":
+            zones, zones_truncated = _bounded_literal_entities_deep(
+                value.get("zone")
+            )
+            if zones_truncated:
+                limit_exceeded = True
+            output.update(
+                entity_id
+                for entity_id in zones
+                if entity_id.startswith("zone.")
+            )
+
     for key in ("trigger", "triggers"):
         if key in config:
             before = len(trigger_ids)
             collect_trigger_entities(config[key], trigger_ids, 0)
+            before_zone = len(trigger_zone_ids)
+            collect_zone_trigger_entities(
+                config[key], trigger_zone_ids, 0
+            )
             if len(trigger_ids) > before:
                 provenance.add(f"automation.{key}.entity_id")
+            if len(trigger_zone_ids) > before_zone:
+                provenance.add(f"automation.{key}.zone")
 
     def collect_wait_triggers(value: Any, depth: int = 0) -> None:
         if not tick(depth):
@@ -1192,6 +1833,12 @@ def _template_context_evidence(
                     )
                     if len(wait_trigger_ids) > before:
                         provenance.add("automation.wait_for_trigger.entity_id")
+                    before_zone = len(wait_trigger_zone_ids)
+                    collect_zone_trigger_entities(
+                        item, wait_trigger_zone_ids, depth + 1
+                    )
+                    if len(wait_trigger_zone_ids) > before_zone:
+                        provenance.add("automation.wait_for_trigger.zone")
                 collect_wait_triggers(item, depth + 1)
         elif isinstance(value, list):
             for item in value:
@@ -1201,81 +1848,28 @@ def _template_context_evidence(
 
     collect_wait_triggers(config)
 
-    def collect_variables(
-        value: Any, path: str, depth: int = 0
-    ) -> None:
-        nonlocal limit_exceeded
-        if not tick(depth):
-            return
-        if isinstance(value, dict):
-            variables = value.get("variables")
-            if isinstance(variables, dict):
-                if len(variables) > MAX_CONTEXT_VARIABLES:
-                    # Do not sort or traverse an unbounded variable mapping.
-                    # The whole configuration is explicitly non-actionable
-                    # through the resulting context coverage failure.
-                    limit_exceeded = True
-                    variables = {}
-                for name, candidate_value in sorted(variables.items()):
-                    name = str(name)
-                    if (
-                        name not in variable_candidates
-                        and len(variable_candidates)
-                        >= MAX_CONTEXT_VARIABLES
-                    ):
-                        limit_exceeded = True
-                        continue
-                    (
-                        bounded_candidates,
-                        candidates_truncated,
-                    ) = _bounded_literal_entities_deep(
-                        candidate_value
-                    )
-                    candidates = set(bounded_candidates)
-                    if candidates_truncated:
-                        limit_exceeded = True
-                        incomplete_variable_names.add(name)
-                    if candidates and not _entity_candidate_value_complete(
-                        candidate_value
-                    ):
-                        incomplete_variable_names.add(name)
-                    if (
-                        not candidates
-                        and _contains_template_value(candidate_value)
-                    ):
-                        incomplete_variable_names.add(name)
-                    if not candidates:
-                        if name in incomplete_variable_names:
-                            provenance.add(f"{path}.variables.{name}")
-                        continue
-                    combined = variable_candidates.setdefault(name, set())
-                    combined.update(candidates)
-                    provenance.add(f"{path}.variables.{name}")
-                    if len(combined) > MAX_CONTEXT_ENTITY_IDS:
-                        limit_exceeded = True
-                        variable_candidates[name] = set(
-                            sorted(combined)[:MAX_CONTEXT_ENTITY_IDS]
-                        )
-            for key, item in value.items():
-                if work_units >= MAX_CONFIGURATION_NODES:
-                    break
-                collect_variables(item, f"{path}.{key}", depth + 1)
-        elif isinstance(value, list):
-            for index, item in enumerate(value):
-                if work_units >= MAX_CONFIGURATION_NODES:
-                    break
-                collect_variables(
-                    item, f"{path}[{index}]", depth + 1
-                )
-
-    collect_variables(config, "$automation")
+    # Root configuration variables are rendered in mapping insertion order
+    # and become visible one assignment at a time.  The document walker owns
+    # that path-sequential transfer.  Pre-seeding the context here would let a
+    # later binding influence an earlier template and could falsely prove a
+    # target exclusion.
     if len(trigger_ids) > MAX_CONTEXT_ENTITY_IDS:
+        limit_exceeded = True
+    if len(trigger_zone_ids) > MAX_CONTEXT_ENTITY_IDS:
         limit_exceeded = True
     if len(wait_trigger_ids) > MAX_CONTEXT_ENTITY_IDS:
         limit_exceeded = True
+    if len(wait_trigger_zone_ids) > MAX_CONTEXT_ENTITY_IDS:
+        limit_exceeded = True
     trigger_ids = set(sorted(trigger_ids)[:MAX_CONTEXT_ENTITY_IDS])
+    trigger_zone_ids = set(
+        sorted(trigger_zone_ids)[:MAX_CONTEXT_ENTITY_IDS]
+    )
     wait_trigger_ids = set(
         sorted(wait_trigger_ids)[:MAX_CONTEXT_ENTITY_IDS]
+    )
+    wait_trigger_zone_ids = set(
+        sorted(wait_trigger_zone_ids)[:MAX_CONTEXT_ENTITY_IDS]
     )
     safe_this = (
         source_entity_id
@@ -1288,19 +1882,357 @@ def _template_context_evidence(
     return (
         TemplateContextEvidence(
             trigger_entity_ids=tuple(sorted(trigger_ids)),
+            trigger_zone_entity_ids=tuple(sorted(trigger_zone_ids)),
             wait_trigger_entity_ids=tuple(sorted(wait_trigger_ids)),
-            this_entity_id=safe_this,
-            variable_entity_ids={
-                name: tuple(sorted(candidates))
-                for name, candidates in sorted(variable_candidates.items())
-            },
-            incomplete_variable_names=tuple(
-                sorted(incomplete_variable_names)
+            wait_trigger_zone_entity_ids=tuple(
+                sorted(wait_trigger_zone_ids)
             ),
+            this_entity_id=safe_this,
             provenance=tuple(sorted(provenance)),
         ),
         limit_exceeded,
     )
+
+
+def _repeat_template_context(
+    base: TemplateContextEvidence,
+    repeat_config: Any,
+    *,
+    context_value_budget: list[int],
+) -> tuple[TemplateContextEvidence, bool]:
+    """Add the exact bounded Home Assistant repeat context for its sequence."""
+
+    if not isinstance(repeat_config, dict):
+        return base, False
+
+    def runtime_scalar(name: str) -> TemplateContextValueEvidence:
+        return TemplateContextValueEvidence(
+            kind="dynamic_scalar",
+            complete=True,
+            fingerprint=hashlib.sha256(
+                f"ha_repeat_runtime_scalar:{name}".encode("utf-8")
+            ).hexdigest(),
+        )
+
+    fields: dict[str, tuple[TemplateContextValueEvidence, ...]] = {}
+    if "count" in repeat_config or "for_each" in repeat_config:
+        for name in ("index", "first", "last"):
+            fields[name] = (runtime_scalar(name),)
+    elif "while" in repeat_config or "until" in repeat_config:
+        fields["index"] = (runtime_scalar("index"),)
+
+    limit_exceeded = False
+    if "for_each" in repeat_config:
+        item, item_limit = _bounded_context_value(
+            repeat_config.get("for_each"),
+            budget=context_value_budget,
+        )
+        limit_exceeded = item_limit
+        if item.kind == "sequence":
+            fields["item"] = item.items
+        else:
+            fields["item"] = (item,)
+
+    # Home Assistant establishes its special ``repeat`` local on entry to the
+    # sequence. It shadows an outer variable with that name. A later variables
+    # action may overwrite it; `_context_with_variables` models that subsequent
+    # transfer path explicitly.
+    variable_values = dict(base.variable_values)
+    variable_values.pop("repeat", None)
+    variable_entity_ids = dict(base.variable_entity_ids)
+    variable_entity_ids.pop("repeat", None)
+    incomplete = set(base.incomplete_variable_names)
+    incomplete.discard("repeat")
+    return (
+        replace(
+            base,
+            variable_values=variable_values,
+            variable_entity_ids=variable_entity_ids,
+            incomplete_variable_names=tuple(sorted(incomplete)),
+            repeat_values=fields,
+            repeat_values_join_variable=False,
+        ),
+        limit_exceeded,
+    )
+
+
+def _context_with_variables(
+    base: TemplateContextEvidence,
+    variables: Any,
+    *,
+    path: str,
+    context_value_budget: list[int],
+    join_existing: bool,
+) -> tuple[TemplateContextEvidence, bool]:
+    """Join one bounded variables action into subsequent template context."""
+
+    if not isinstance(variables, dict):
+        return base, False
+    if len(variables) > MAX_CONTEXT_VARIABLES:
+        return base, True
+
+    values = {
+        name: {item.fingerprint: item for item in alternatives}
+        for name, alternatives in base.variable_values.items()
+    }
+    candidates = {
+        name: set(entity_ids)
+        for name, entity_ids in base.variable_entity_ids.items()
+    }
+    incomplete = set(base.incomplete_variable_names)
+    provenance = set(base.provenance)
+    repeat_values = dict(base.repeat_values)
+    repeat_values_join_variable = base.repeat_values_join_variable
+    limit_exceeded = False
+
+    for raw_name, raw_value in sorted(
+        variables.items(), key=lambda pair: str(pair[0])
+    ):
+        name = str(raw_name)
+        if len(name) > MAX_CONTEXT_SCALAR_CHARS:
+            limit_exceeded = True
+            continue
+        evidence, evidence_limit = _bounded_context_value(
+            raw_value,
+            budget=context_value_budget,
+        )
+        limit_exceeded = bool(limit_exceeded or evidence_limit)
+        if not join_existing:
+            values[name] = {}
+            candidates.pop(name, None)
+            incomplete.discard(name)
+        elif (
+            name not in values
+            and name not in candidates
+            and name not in incomplete
+        ):
+            # A joined transfer always has a path on which this assignment did
+            # not occur.  For root automation/script variables that path is
+            # also the externally supplied run-variable override, which Home
+            # Assistant deliberately preserves instead of overwriting.  Keep
+            # the alternative as a tainted scalar: ordinary rendering remains
+            # neutral, while later entity selection becomes opaque.
+            unbound_fingerprint = hashlib.sha256(
+                f"joined_runtime_variable:{name}".encode("utf-8")
+            ).hexdigest()
+            values[name] = {
+                unbound_fingerprint: TemplateContextValueEvidence(
+                    kind="dynamic_scalar",
+                    complete=False,
+                    fingerprint=unbound_fingerprint,
+                )
+            }
+            incomplete.add(name)
+        if name == "repeat" and repeat_values:
+            if join_existing:
+                repeat_values_join_variable = True
+            else:
+                repeat_values = {}
+                repeat_values_join_variable = False
+        alternatives = values.setdefault(name, {})
+        if (
+            evidence.fingerprint not in alternatives
+            and len(alternatives) >= MAX_CONTEXT_ENTITY_IDS
+        ):
+            limit_exceeded = True
+            incomplete.add(name)
+        else:
+            alternatives[evidence.fingerprint] = evidence
+        if evidence.kind in {"dynamic_scalar", "opaque"}:
+            incomplete.add(name)
+        exact, exact_limit = _bounded_literal_entities_deep(raw_value)
+        limit_exceeded = bool(limit_exceeded or exact_limit)
+        if exact:
+            target = candidates.setdefault(name, set())
+            target.update(exact)
+            if len(target) > MAX_CONTEXT_ENTITY_IDS:
+                limit_exceeded = True
+                candidates[name] = set(
+                    sorted(target)[:MAX_CONTEXT_ENTITY_IDS]
+                )
+        provenance.add(f"{path}.variables.{name}")
+
+    return (
+        replace(
+            base,
+            variable_values={
+                name: tuple(
+                    item
+                    for _fingerprint, item in sorted(alternatives.items())
+                )
+                for name, alternatives in sorted(values.items())
+            },
+            variable_entity_ids={
+                name: tuple(sorted(entity_ids))
+                for name, entity_ids in sorted(candidates.items())
+            },
+            incomplete_variable_names=tuple(sorted(incomplete)),
+            provenance=tuple(sorted(provenance)),
+            repeat_values=repeat_values,
+            repeat_values_join_variable=repeat_values_join_variable,
+        ),
+        limit_exceeded,
+    )
+
+
+def _is_direct_variables_action(value: Any) -> bool:
+    """Return whether *value* is one exact Home Assistant variables action."""
+
+    if not isinstance(value, dict):
+        return False
+    action_keys = set(value).difference(
+        {"alias", "enabled", "continue_on_error"}
+    )
+    return action_keys == {"variables"} and isinstance(
+        value.get("variables"), dict
+    )
+
+
+def _join_template_contexts(
+    skipped: TemplateContextEvidence,
+    executed: TemplateContextEvidence,
+) -> TemplateContextEvidence:
+    """Join skipped/executed action paths without mixing intra-action state."""
+
+    values: dict[str, dict[str, TemplateContextValueEvidence]] = {}
+    incomplete = set(skipped.incomplete_variable_names).union(
+        executed.incomplete_variable_names
+    )
+    names = set(skipped.variable_values).union(executed.variable_values)
+    for name in sorted(names):
+        alternatives: dict[str, TemplateContextValueEvidence] = {}
+        for context in (skipped, executed):
+            for item in context.variable_values.get(name, ()):
+                alternatives[item.fingerprint] = item
+        if (
+            name not in skipped.variable_values
+            or name not in executed.variable_values
+        ):
+            marker = hashlib.sha256(
+                f"joined_runtime_variable:{name}".encode("utf-8")
+            ).hexdigest()
+            alternatives[marker] = TemplateContextValueEvidence(
+                kind="dynamic_scalar",
+                complete=False,
+                fingerprint=marker,
+            )
+            incomplete.add(name)
+        values[name] = alternatives
+
+    candidates: dict[str, set[str]] = {}
+    for context in (skipped, executed):
+        for name, entity_ids in context.variable_entity_ids.items():
+            candidates.setdefault(name, set()).update(entity_ids)
+
+    repeat_values: dict[
+        str, dict[str, TemplateContextValueEvidence]
+    ] = {}
+    for context in (skipped, executed):
+        for name, alternatives in context.repeat_values.items():
+            target = repeat_values.setdefault(name, {})
+            for item in alternatives:
+                target[item.fingerprint] = item
+    repeat_special_present = bool(repeat_values)
+    repeat_variable_present = "repeat" in values
+
+    return replace(
+        skipped,
+        variable_values={
+            name: tuple(
+                item
+                for _fingerprint, item in sorted(alternatives.items())
+            )
+            for name, alternatives in sorted(values.items())
+        },
+        variable_entity_ids={
+            name: tuple(sorted(entity_ids))
+            for name, entity_ids in sorted(candidates.items())
+        },
+        incomplete_variable_names=tuple(sorted(incomplete)),
+        provenance=tuple(
+            sorted(set(skipped.provenance).union(executed.provenance))
+        ),
+        repeat_values={
+            name: tuple(
+                item
+                for _fingerprint, item in sorted(alternatives.items())
+            )
+            for name, alternatives in sorted(repeat_values.items())
+        },
+        repeat_values_join_variable=bool(
+            skipped.repeat_values_join_variable
+            or executed.repeat_values_join_variable
+            or (repeat_special_present and repeat_variable_present)
+        ),
+    )
+
+
+def _nested_variable_actions(
+    value: Any,
+    *,
+    path: str,
+    depth: int = 0,
+    budget: list[int] | None = None,
+    action_position: bool = True,
+) -> tuple[list[tuple[str, dict[str, Any], bool]], bool]:
+    """Collect bounded branch-local variable actions for post-branch joins."""
+
+    if budget is None:
+        budget = [MAX_CONFIGURATION_NODES]
+    budget[0] -= 1
+    if budget[0] < 0 or depth > MAX_CONFIGURATION_DEPTH:
+        return [], True
+    found: list[tuple[str, dict[str, Any], bool]] = []
+    limit_exceeded = False
+    if isinstance(value, dict):
+        # A variables action may include ordinary action metadata, but a
+        # service-data mapping merely named "variables" is not a binding.
+        if action_position and _is_direct_variables_action(value):
+            enabled = value.get("enabled", True)
+            if enabled is not False:
+                found.append(
+                    (
+                        path,
+                        value["variables"],
+                        enabled is not True,
+                    )
+                )
+        # Descend only through Home Assistant action containers. Arbitrary
+        # service data, targets, event payloads, and notification content may
+        # legitimately contain a key named ``variables`` but do not establish
+        # template bindings for later actions.
+        for key in sorted(
+            set(value).intersection(
+                ACTION_SEQUENCE_KEYS.union({"choose", "repeat", "parallel"})
+            )
+        ):
+            item = value[key]
+            child_action_position = (
+                key in ACTION_SEQUENCE_KEYS or key == "parallel"
+            )
+            child, child_limit = _nested_variable_actions(
+                item,
+                path=f"{path}.{key}",
+                depth=depth + 1,
+                budget=budget,
+                action_position=child_action_position,
+            )
+            found.extend(child)
+            limit_exceeded = bool(limit_exceeded or child_limit)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            child, child_limit = _nested_variable_actions(
+                item,
+                path=f"{path}[{index}]",
+                depth=depth + 1,
+                budget=budget,
+                action_position=action_position,
+            )
+            found.extend(child)
+            limit_exceeded = bool(limit_exceeded or child_limit)
+    if len(found) > MAX_CONTEXT_VARIABLES:
+        return found[:MAX_CONTEXT_VARIABLES], True
+    return found, limit_exceeded
 
 
 def extract_document(

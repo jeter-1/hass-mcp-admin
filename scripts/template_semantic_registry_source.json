@@ -18,6 +18,8 @@
           "homeassistant/components/script/__init__.py": "2653d81328218308c30f134a3beecfc3a721ee67",
           "homeassistant/components/template/trigger.py": "0ca943d3c3f72643675b742b35c80f7d4315d23b",
           "homeassistant/components/zone/trigger.py": "f9fa1f9aea8bc8b823f0371d679ad1f800229b55",
+          "homeassistant/core.py": "a93939a5fc02c4152b5d83f889c2e99a04572d9f",
+          "homeassistant/helpers/script.py": "2653d81328218308c30f134a3beecfc3a721ee67",
           "homeassistant/helpers/template/__init__.py": "51c9e1c741124fc5e9baad87ffe1362dc36d6828",
           "homeassistant/helpers/template/extensions/areas.py": "226be1a464c2cbf9e32c50372a12a879237a80e9",
           "homeassistant/helpers/template/extensions/config_entries.py": "4c68a2900c0799ac092fbfe23aac243999004a8a",
@@ -42,6 +44,8 @@
           "homeassistant/components/script/__init__.py": "1da929f2291fc8eacbe7819135df129592724230",
           "homeassistant/components/template/trigger.py": "0ca943d3c3f72643675b742b35c80f7d4315d23b",
           "homeassistant/components/zone/trigger.py": "c23a3bb6f3c96b44e75b297efd58ee681a735fd3",
+          "homeassistant/core.py": "5bc5f94c85e308fe72b3f6d2a2c679c38a17dbe6",
+          "homeassistant/helpers/script.py": "1da929f2291fc8eacbe7819135df129592724230",
           "homeassistant/helpers/template/__init__.py": "23ff8af3f3666b16687ccb29207c3c264080bbfc",
           "homeassistant/helpers/template/extensions/areas.py": "226be1a464c2cbf9e32c50372a12a879237a80e9",
           "homeassistant/helpers/template/extensions/config_entries.py": "4c68a2900c0799ac092fbfe23aac243999004a8a",
@@ -66,6 +70,8 @@
           "homeassistant/components/script/__init__.py": "1da929f2291fc8eacbe7819135df129592724230",
           "homeassistant/components/template/trigger.py": "0ca943d3c3f72643675b742b35c80f7d4315d23b",
           "homeassistant/components/zone/trigger.py": "c23a3bb6f3c96b44e75b297efd58ee681a735fd3",
+          "homeassistant/core.py": "5bc5f94c85e308fe72b3f6d2a2c679c38a17dbe6",
+          "homeassistant/helpers/script.py": "1da929f2291fc8eacbe7819135df129592724230",
           "homeassistant/helpers/template/__init__.py": "23ff8af3f3666b16687ccb29207c3c264080bbfc",
           "homeassistant/helpers/template/extensions/areas.py": "226be1a464c2cbf9e32c50372a12a879237a80e9",
           "homeassistant/helpers/template/extensions/config_entries.py": "4c68a2900c0799ac092fbfe23aac243999004a8a",
@@ -93,6 +99,7 @@
       "src/jinja2/filters.py": "2bcba4fbd3c660edb1166fcad6ef6fc9a4f6a1e5",
       "src/jinja2/nodes.py": "2f93b90ec21e2302cc7149504f73b8d9cab472d9",
       "src/jinja2/parser.py": "f4117754aaf94ae525d183fb3c36fae1dc8afd62",
+      "src/jinja2/runtime.py": "09119e2ae550e7001a64be0c7150837fb39af26d",
       "src/jinja2/sandbox.py": "9c9dae22f1c2c19f976edeb6478bcf53c6207cb1",
       "src/jinja2/tests.py": "1a59e37032d51db5e8f75914334e6650f26ce4e9"
     },
@@ -235,6 +242,17 @@
       "true": "dependency_neutral",
       "undefined": "dependency_neutral",
       "upper": "dependency_neutral"
+    },
+    "runtime_receivers": {
+      "context_data": "provenance_preserving",
+      "date": "dependency_neutral",
+      "datetime": "dependency_neutral",
+      "event_origin": "dependency_neutral",
+      "ha_context": "dependency_neutral",
+      "ha_event": "provenance_preserving",
+      "ha_repeat": "provenance_preserving",
+      "jinja_loop": "provenance_preserving",
+      "time": "dependency_neutral"
     }
   },
   "source_provenance": {
@@ -244,6 +262,8 @@
       "homeassistant/components/script/__init__.py",
       "homeassistant/components/template/trigger.py",
       "homeassistant/components/zone/trigger.py",
+      "homeassistant/core.py",
+      "homeassistant/helpers/script.py",
       "homeassistant/helpers/trigger.py",
       "homeassistant/helpers/template/__init__.py",
       "homeassistant/helpers/template/extensions/areas.py",
