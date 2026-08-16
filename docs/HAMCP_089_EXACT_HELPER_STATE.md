@@ -1,7 +1,7 @@
 # HAMCP-089 exact helper-state action
 
-Status: Beta 37 source increment; deployment and live acceptance are not part
-of this change.
+Status: Beta 39 corrective source increment staged; deployment and live
+acceptance are not part of this change.
 
 ## Responsibility and scope
 
@@ -32,8 +32,9 @@ the desired state, planning returns a verified no-change result, creates no
 plan, and performs no dispatch.
 
 Otherwise planning reads the shared dependency index and projects bounded,
-target-specific downstream automation/action-consequence evidence. Complete
-evidence creates a low-risk `standard_admin` contract-v3 operational plan only
+target-specific downstream automation/action-consequence evidence from the
+whole-template obligation ledger. Exact or proven evidence creates a low-risk
+`standard_admin` contract-v3 operational plan only
 when every relevant action is mechanically proven benign, such as a bounded
 ordinary static notification containing only a message and optional title, or
 has no effect action. A closed reviewed subset of bounded, nonphysical
@@ -44,23 +45,27 @@ notification-channel mutation, other kiosk controls, dynamic content, and
 unreviewed notification extensions are unknown/incomplete rather than
 harmless. Direct physical actions elevate the existing governance policy
 proportionally. Generic broad targets, scene or script activation, custom
-action domains, relevant dynamic references, and other effects that cannot be
-resolved are classified as unknown/incomplete; they are never described as
-harmless. Incomplete, stale, failed, unsupported, or truncated target-relevant
-evidence cannot claim conclusive low risk and is not dispatch-eligible.
+action domains and other unknown effects are never described as harmless.
 
-Completeness is target-specific only when the source evidence proves
-unrelatedness. A readable static reference to another helper or an unresolved
-template mechanically constrained to a non-`input_boolean` domain remains a
-diagnostic without disabling this helper. An unconstrained dynamic reference,
-a missing action profile, or any unreadable automation configuration remains
-plausibly relevant and non-conclusive because its relationship cannot be
-proved. Only the complete canonical expression `'<domain>.' ~ <simple_name>`
-may establish a dynamic non-helper domain; conditionals, boolean operators,
-filters, parentheses, and other compound forms remain unconstrained. Dynamic
-reference overflow is deterministically bounded, counted, fingerprinted, and
-non-conclusive. Collection, retained identities and profiles, dynamic evidence, and
-output are bounded.
+Bounded semantic opacity is distinct from missing coverage. An opaque source
+may remain reviewable only when its automation identity, downstream effect
+profile, conservative lock scope, and final-preflight refresh are all bounded.
+Benign opaque downstream effects may remain low/standard while consequential
+or unknown effects remain elevated/high and visibly acknowledged. Failed,
+stale, unsupported, identity-losing, unbounded, or truncated coverage is not
+dispatch-eligible or approval-actionable.
+
+Target relevance is projected from one of five explicit obligation terminals:
+exact dependency, proven target exclusion, proven dependency-neutral result,
+bounded semantic opacity, or coverage failure. A readable exact reference to
+another helper or a finite candidate set/domain that excludes this exact helper
+does not disable it. An unknown Jinja node or callable, imported template,
+unconstrained entity selector, or state-bearing context without exact
+provenance remains explicitly opaque. A missing action profile or unreadable
+automation configuration is a coverage failure, not an empty graph. AST work,
+depth, bindings, abstract-value/container growth, candidates, external
+references, obligation count, retained
+identities, profiles, evidence, and output are deterministically bounded.
 
 The immutable plan binds the exact target, desired state, state baseline,
 normalized dependency evidence and fingerprint, exact downstream automation
@@ -86,12 +91,18 @@ The action holds the same canonical
 `helper:input_boolean.<object_id>` resource used by helper configuration and a
 shared `reload:input_boolean` dependency. It also holds each approval-bound
 `automation:<internal_id>` resource and shared `reload:automation` dependency.
-The helper action additionally holds shared exact
-`helper_dependency:input_boolean.<object_id>` and unconstrained-template
-dependency keys. Engineering automation create/update operations derive
-exclusive dependency keys from both current and proposed content, including
-added, retained, or removed helper references; unconstrained dynamic content
-uses the conservative template key. This blocks newly relevant automation
+Every helper execution holds the exact
+`helper_dependency:input_boolean.<object_id>` key and the shared conservative
+introduction guard. Automation configuration work derives exclusive dependency
+keys from its current and proposed content: exact references take the exact
+key, bounded opacity takes the conservative key, and proven exclusions take
+neither. Exact dependencies add the relevant automation locks; bounded opacity
+adds every known potentially relevant automation lock. External-template
+opacity also binds a deterministic
+custom-template reload identity without adding a reload tool. Engineering
+automation create/update operations derive exclusive dependency keys from both
+current and proposed obligation ledgers, including added, retained, removed,
+or materially changed dependencies or opacity. This blocks newly relevant automation
 changes across preflight, dispatch, readback, and verification while keeping
 statically proven unrelated automation updates concurrent. The final dependency
 refresh occurs only after the complete lock set is held.

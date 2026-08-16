@@ -44,14 +44,41 @@ entity-bearing context plus a canonical literal ID. Aliases, descriptions,
 notification/log prose, service names, device/area IDs, and unrelated strings are
 not scanned for dotted tokens.
 
-Beta 18 uses a bounded function-aware tokenizer for Jinja. Literal references through
-`states()`, `states.domain.object`, `states['domain.object']`, `is_state()`,
-`is_state_attr()`, `state_attr()`, and `expand()` are detected outside comments and
-quoted prose. Dynamic helper or `states[...]` arguments produce bounded target-free
-unresolved evidence. Decimals, versions, IP addresses, URLs, hostnames, object/member
-access, and arbitrary dotted labels do not create graph edges. Blueprint input values
-remain visible under the established supported input context. No template is executed,
-and no full automation or blueprint source is returned.
+Beta 39 uses a bounded, whole-template obligation ledger for Jinja evidence. The
+runtime pins Jinja 3.1.6, the exact version shared by the supported Home Assistant
+2026.7.2, 2026.8.0, and 2026.8.1 lanes, and uses Home Assistant's reviewed `do` and
+`loopcontrols` parse extensions. Templates are parsed only: no loader is installed,
+no template is compiled or rendered, and no Home Assistant helper is invoked.
+
+Every dependency-sensitive AST construct creates a terminal obligation before
+precision analysis tries to resolve it. The terminal is an exact dependency, a
+target-specific exclusion, a proven dependency-neutral result, bounded semantic
+opacity, or coverage failure. Whole-template binding state covers assignments,
+loops, conditionals, local macros, collections, subscriptions, attributes, filters,
+tests, and later invocation. Mapping, sequence, and namespace receiver semantics are
+kept distinct; bounded constructor and mapping-iteration projections preserve the
+keys and values that Jinja can later consume. Runtime scalar values remain tainted
+when transported into an entity selector while render-only formatting remains
+dependency-neutral. Unknown syntax, callables, receivers, external-template
+content, parse errors, and exceeded limits produce explicit opacity or failure; they
+cannot disappear as zero evidence. Comments, raw blocks, ordinary message formatting,
+and proven scalar or mapping operations remain dependency-neutral.
+
+The reviewed semantic registry includes Home Assistant state helpers, translated-state
+helpers, `expand`, `closest`, `distance`, area/device/floor/integration/label entity-set
+producers, dynamic filter/test dispatch, and state-bearing trigger, wait, and `this`
+context. Its immutable Home Assistant/Jinja source provenance is maintained in
+an independently reviewed declaration and deterministically generated offline.
+A future or unknown helper becomes opaque until reviewed rather
+than being inferred harmless. Static template imports/includes/extends bind the
+external name and calling configuration identity but remain opaque because Beta 39
+does not retrieve custom-template content.
+
+The public dependency graph remains a bounded compatibility projection: exact
+dependencies become findings, unresolved or opaque obligations become dynamic
+evidence, and neutral/excluded terminals do not create false graph edges. Full
+template or automation bodies are never retained. Blueprint input values remain
+visible under the established supported input context.
 
 Every detail level honors `limit` from 1 through 100. Pagination reports
 `requested_limit`, `effective_limit`, `maximum_limit`, clamping state/reason, returned
@@ -89,10 +116,14 @@ look like duplicate current findings.
 
 ## Known limitations and connector impact
 
-Dynamic entity construction cannot always be resolved. Device triggers may not map to
-one entity. Runtime automation action-to-trigger causality is not inferred. Dashboard,
+Dynamic entity construction cannot always be resolved. Bounded semantic opacity is
+reported separately from missing inventory coverage; it is never described as exact.
+Device triggers may not map to one entity. General or multi-hop runtime automation
+action-to-trigger causality is not inferred. The exact helper provider's bounded
+`state_changed` and `call_service` event-trigger contracts are modeled so those direct
+downstream effects cannot disappear. Imported custom-template source is not retrieved. Dashboard,
 static YAML/package, script, scene, group, template-source, and custom-integration
-coverage remains unavailable.
+coverage remains unavailable unless a later reviewed provider supplies it.
 
 The historical Beta 18 manifest contained 36 tools. Beta 18 changed no tool schema, so
 connector recreation is not normally required. Refresh only the beta connector if it
@@ -113,7 +144,11 @@ until hard expiry. Hard-expired or configuration-invalidated evidence is not
 returned as authoritative. The new generation is published atomically and
 makes generation-bound cursors stale.
 
-Automation configuration reads use bounded concurrency of eight. Beta/RC
+Automation inventory, configuration bodies, blueprint source bytes, event selectors,
+template sources, AST work, abstract values, retained identities, and public evidence
+all have deterministic limits. Exceeding a limit creates explicit coverage failure;
+it does not silently clip authoritative helper-risk evidence. Automation configuration
+reads use bounded concurrency of eight. Beta/RC
 prewarming defaults on with a 45-second startup delay, first performs a safe
 `/config` connectivity probe, and uses the same single-flight build path. It
 does not block startup or non-index tools and retries failures no faster than

@@ -26,6 +26,9 @@ from ha_mcp_engineering.governance.helper_state import (  # noqa: E402
     HelperStateGatewayError,
     helper_state_provider_evidence,
 )
+from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
+    HELPER_DEPENDENCY_RISK_MODEL,
+)
 from ha_mcp_engineering.governance.models import (  # noqa: E402
     ApprovalState,
     PlanStatus,
@@ -45,6 +48,7 @@ from ha_mcp_engineering.request_context import (  # noqa: E402
     end_request,
 )
 from ha_mcp_engineering.errors import (  # noqa: E402
+    ErrorCode,
     GovernanceError,
     HomeAssistantApiError,
 )
@@ -159,6 +163,7 @@ class FakeDependencyRiskReader:
         self.automation_ids: list[str] = []
         self.consequence = "none"
         self.complete = True
+        self.opaque = False
         self.effect_revision = "v1"
 
     async def __call__(self, entity_id: str, *, refresh: bool = True):
@@ -217,10 +222,18 @@ class FakeDependencyRiskReader:
             )
         ]
         material = {
-            "model": "helper-dependency-risk-v2",
+            "model": HELPER_DEPENDENCY_RISK_MODEL,
             "entity_id": entity_id,
             "completeness": "complete" if self.complete else "partial",
-            "evidence_complete": self.complete,
+            "evidence_complete": self.complete and not self.opaque,
+            "coverage_complete": self.complete,
+            "semantic_precision": (
+                "bounded_opaque"
+                if self.complete and self.opaque
+                else "exact"
+                if self.complete
+                else "coverage_failure"
+            ),
             "execution_eligible": self.complete,
             "physical_consequence": self.consequence,
             "relevant_downstream_object_ids": list(self.automation_ids),
@@ -234,6 +247,14 @@ class FakeDependencyRiskReader:
             "target_relevant_dynamic_reference_count": 0,
             "target_relevant_dynamic_reference_fingerprints": [],
             "unresolved_dynamic_reference_count": 0,
+            "opaque_obligation_count": 1 if self.opaque else 0,
+            "coverage_failure_count": 0 if self.complete else 1,
+            "dependency_lock_projection": {
+                "exact_helper_dependency": True,
+                "conservative_helper_dependency": True,
+                "automation_resource_ids": resource_ids,
+                "custom_template_reload": False,
+            },
             "truncated": False,
         }
         binding = {
@@ -403,6 +424,45 @@ class ExactHelperStateRuntimeTests(unittest.IsolatedAsyncioTestCase):
             ["plan_approval", "elevated_risk_acknowledgement"],
         )
 
+    async def test_bounded_opacity_is_actionable_and_visible_to_approver(self):
+        self.dependency.automation_ids = ["automation.benign_notify"]
+        self.dependency.opaque = True
+
+        created = await self.service.create_helper_state_plan(
+            entity_id=self.helper.entity_id,
+            desired_state="on",
+        )
+        plan = created["plan"]
+        self.assertTrue(plan["approval_actionable"])
+        self.assertEqual(plan["risk"]["level"], "low")
+        pending = self.service.approve(
+            plan["plan_id"], plan["plan_hash"]
+        )
+        review, _csrf = await self.service.issue_external_csrf(
+            plan["plan_id"], pending["challenge_id"]
+        )
+
+        self.assertEqual(
+            review["operational_review"]["provider_arguments"],
+            {
+                "entity_id": self.helper.entity_id,
+                "desired_state": "on",
+                "service": "input_boolean.turn_on",
+            },
+        )
+        self.assertEqual(
+            review["helper_dependency_review"]["semantic_precision"],
+            "bounded_opaque",
+        )
+        self.assertEqual(
+            review["helper_dependency_review"]["opaque_obligation_count"],
+            1,
+        )
+        self.assertTrue(
+            review["helper_dependency_review"]["execution_eligible"]
+        )
+        self.assertEqual(self.helper.dispatch_count, 0)
+
     async def test_incomplete_dependency_evidence_is_reviewable_but_not_low(self):
         self.dependency.complete = False
 
@@ -420,6 +480,15 @@ class ExactHelperStateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             plan["policy_decision"]["physical_consequence"], "indirect"
         )
+        self.assertFalse(plan["approval_actionable"])
+        self.assertIsNone(plan["next_required_operation"])
+        with self.assertRaises(GovernanceError) as caught:
+            self.service.approve(plan["plan_id"], plan["plan_hash"])
+        self.assertEqual(
+            caught.exception.code,
+            ErrorCode.OPERATIONAL_VALIDATION_FAILED,
+        )
+        self.assertEqual(self.helper.dispatch_count, 0)
 
     async def test_dependency_fingerprint_change_rejects_before_dispatch(self):
         plan = await self.create_and_grant()
