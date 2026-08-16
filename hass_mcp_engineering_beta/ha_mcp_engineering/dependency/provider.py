@@ -23,7 +23,8 @@ from ..providers import (
     ProviderResult,
 )
 from .extraction import (
-    extract_document,
+    extract_document_with_obligations,
+    make_coverage_failure_obligation,
     resolve_blueprint_roles,
     valid_entity_id,
 )
@@ -31,15 +32,37 @@ from .models import (
     AutomationReadFailure,
     AutomationActionRiskProfile,
     DependencyScanResult,
+    OBLIGATION_LEDGER_MODEL,
     SOURCE_TYPES,
     SourceCoverageItem,
 )
+
+
+MAX_AUTOMATION_SOURCES = 1_000
 
 
 MAX_LABEL_REGISTRY_ENTRIES = 1_000
 MAX_LABEL_MEMBERSHIP = 128
 MAX_LITERAL_LABEL_SELECTORS = 256
 MAX_ENTITY_LABELS = 64
+MAX_BLUEPRINT_RESOLUTION_NODES = 10_000
+MAX_BLUEPRINT_RESOLUTION_DEPTH = 64
+MAX_BLUEPRINT_SOURCE_BYTES = 1_048_576
+
+
+def _bounded_provider_identity(
+    value: Any,
+    *,
+    secret: str,
+    limit: int = 160,
+) -> str | None:
+    if value is None:
+        return None
+    raw = str(value)
+    safe = redact_data(raw, secret=secret, max_string=limit)
+    if isinstance(safe, str) and safe == raw and len(raw) <= limit:
+        return safe
+    return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 class DependencySourceProvider(EngineeringEvidenceProvider):
@@ -107,6 +130,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         scan_started = time.perf_counter()
         findings = []
         dynamic = []
+        obligations = []
         automation_action_profiles: list[
             AutomationActionRiskProfile
         ] = []
@@ -203,7 +227,47 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 }
             )
 
-        automations = [state for state in states if str(state.get("entity_id", "")).startswith("automation.")]
+        automations = sorted(
+            (
+                state
+                for state in states
+                if str(state.get("entity_id", "")).startswith(
+                    "automation."
+                )
+            ),
+            key=lambda state: str(state.get("entity_id", "")),
+        )
+        automation_inventory_overflow = automations[
+            MAX_AUTOMATION_SOURCES:
+        ]
+        automations = automations[:MAX_AUTOMATION_SOURCES]
+        automation_inventory_overflow_count = len(
+            automation_inventory_overflow
+        )
+        if automation_inventory_overflow_count:
+            overflow_identities = sorted(
+                str(state.get("entity_id", ""))[:128]
+                for state in automation_inventory_overflow
+            )
+            overflow_fingerprint = hashlib.sha256(
+                json.dumps(
+                    overflow_identities,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            obligations.append(
+                make_coverage_failure_obligation(
+                    source_type="automation",
+                    source_id="dependency_provider",
+                    source_entity_id=None,
+                    config_path="$",
+                    relation="other_structured_reference",
+                    reason_code="automation_inventory_limit_exceeded",
+                    configuration_fingerprint=overflow_fingerprint,
+                    limit_exceeded=True,
+                )
+            )
         async def fetch_automation(state):
             attrs = state.get("attributes") if isinstance(state.get("attributes"), dict) else {}
             internal_id = attrs.get("id")
@@ -228,60 +292,138 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         parse_started = time.perf_counter()
         for state, config, failure in results:
             attrs = state.get("attributes") if isinstance(state.get("attributes"), dict) else {}
-            internal_id = str(attrs.get("id") or state.get("entity_id"))
+            internal_id = _bounded_provider_identity(
+                attrs.get("id") or state.get("entity_id"),
+                secret=self.secret,
+            )
+            source_entity_id = _bounded_provider_identity(
+                state.get("entity_id"),
+                secret=self.secret,
+            )
             if failure or config is None:
                 failed += 1
+                failure_reason = str(
+                    failure or "automation_config_unreadable"
+                )
                 automation_read_failures.append(
                     AutomationReadFailure(
                         source_id=internal_id,
-                        source_entity_id=(
-                            str(state.get("entity_id"))
-                            if state.get("entity_id")
-                            else None
-                        ),
-                        reason_code=str(
-                            failure or "automation_config_unreadable"
-                        ),
+                        source_entity_id=source_entity_id,
+                        reason_code=failure_reason,
+                    )
+                )
+                obligations.append(
+                    make_coverage_failure_obligation(
+                        source_type="automation",
+                        source_id=internal_id,
+                        source_entity_id=source_entity_id,
+                        config_path="$",
+                        relation="other_structured_reference",
+                        reason_code=failure_reason,
                     )
                 )
                 continue
-            extracted, unresolved = extract_document(
-                source_type="automation",
-                source_id=internal_id,
-                source_entity_id=state.get("entity_id"),
-                source_name=attrs.get("friendly_name"),
-                source_state=state.get("state"),
-                config=config,
-                secret=self.secret,
+            extracted, unresolved, extracted_obligations = (
+                extract_document_with_obligations(
+                    source_type="automation",
+                    source_id=internal_id,
+                    source_entity_id=source_entity_id,
+                    source_name=attrs.get("friendly_name"),
+                    source_state=state.get("state"),
+                    config=config,
+                    secret=self.secret,
+                )
             )
             findings.extend(extracted)
             dynamic.extend(unresolved)
+            obligations.extend(extracted_obligations)
             blueprint = config.get("use_blueprint")
             action_config = config
             if isinstance(blueprint, dict):
                 path = blueprint.get("path")
-                parsed = _read_blueprint(path) if isinstance(path, str) else None
+                parsed, blueprint_read_failure = (
+                    _read_blueprint_with_status(path)
+                    if isinstance(path, str)
+                    else (None, "blueprint_source_unavailable")
+                )
                 if parsed is None:
                     blueprint_failures += 1
+                    obligations.append(
+                        make_coverage_failure_obligation(
+                            source_type="blueprint",
+                            source_id=internal_id,
+                            source_entity_id=source_entity_id,
+                            config_path="$.use_blueprint.path",
+                            relation="blueprint_resolved_role",
+                            reason_code=(
+                                blueprint_read_failure
+                                or "blueprint_source_unavailable"
+                            ),
+                            configuration_fingerprint=(
+                                extracted_obligations[0].configuration_fingerprint
+                                if extracted_obligations
+                                else None
+                            ),
+                        )
+                    )
                     action_config = {
                         "action": [
                             {"service": "{{ unresolved_blueprint_action }}"}
                         ]
                     }
                 else:
-                    findings.extend(resolve_blueprint_roles(extracted, parsed, source_id=internal_id))
-                    action_config = parsed
+                    resolved_blueprint, blueprint_resolution_complete = (
+                        _resolve_blueprint_inputs(parsed, config)
+                    )
+                    if not blueprint_resolution_complete:
+                        blueprint_failures += 1
+                        obligations.append(
+                            make_coverage_failure_obligation(
+                                source_type="blueprint",
+                                source_id=internal_id,
+                                source_entity_id=source_entity_id,
+                                config_path="$.use_blueprint.input",
+                                relation="blueprint_resolved_role",
+                                reason_code=(
+                                    "blueprint_input_resolution_limit_exceeded"
+                                ),
+                                configuration_fingerprint=(
+                                    extracted_obligations[0].configuration_fingerprint
+                                    if extracted_obligations
+                                    else None
+                                ),
+                                limit_exceeded=True,
+                            )
+                        )
+                    findings.extend(
+                        resolve_blueprint_roles(
+                            extracted, parsed, source_id=internal_id
+                        )
+                    )
+                    (
+                        blueprint_findings,
+                        blueprint_dynamic,
+                        blueprint_obligations,
+                    ) = extract_document_with_obligations(
+                        source_type="blueprint",
+                        source_id=internal_id,
+                        source_entity_id=source_entity_id,
+                        source_name=attrs.get("friendly_name"),
+                        source_state=state.get("state"),
+                        config=resolved_blueprint,
+                        secret=self.secret,
+                    )
+                    findings.extend(blueprint_findings)
+                    dynamic.extend(blueprint_dynamic)
+                    obligations.extend(blueprint_obligations)
+                    action_config = resolved_blueprint
             consequence = automation_action_consequence_profile(
                 action_config
             )
             automation_action_profiles.append(
                 AutomationActionRiskProfile(
                     source_id=internal_id,
-                    source_entity_id=(
-                        str(state.get("entity_id"))
-                        if state.get("entity_id")
-                        else None
-                    ),
+                    source_entity_id=source_entity_id,
                     risk_level=str(consequence["risk_level"]),
                     physical_consequence=str(
                         consequence["physical_consequence"]
@@ -386,22 +528,89 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             )
             registry_warning.extend(label_warning)
 
-        automation_status = "complete" if failed == 0 else ("partial" if results else "unavailable")
+        automation_coverage_failure_sources = {
+            item.source_id
+            for item in obligations
+            if item.source_type == "automation"
+            and item.outcome == "coverage_failure"
+        }
+        automation_failed_items = max(
+            failed + automation_inventory_overflow_count,
+            len(automation_coverage_failure_sources),
+        )
+        automation_status = (
+            "complete"
+            if automation_failed_items == 0
+            else "partial"
+            if results
+            else "unavailable"
+        )
+        automation_warnings: list[str] = []
+        if failed:
+            automation_warnings.append(
+                f"{failed} automation configuration(s) could not be read."
+            )
+        if automation_inventory_overflow_count:
+            automation_warnings.append(
+                f"{automation_inventory_overflow_count} automation source(s) exceeded the bounded provider inventory."
+            )
+        bounded_failures = max(
+            0,
+            len(automation_coverage_failure_sources)
+            - failed
+            - (1 if automation_inventory_overflow_count else 0),
+        )
+        if bounded_failures:
+            automation_warnings.append(
+                f"{bounded_failures} automation configuration(s) exceeded dependency-analysis coverage bounds."
+            )
         coverage.append(
             SourceCoverageItem(
                 "automation", self.provider_id, ProviderCapability.AUTOMATION_CONFIG.value,
-                automation_status, sum(item.source_type == "automation" for item in findings), failed,
-                [f"{failed} automation configuration(s) could not be read."] if failed else [],
+                automation_status, sum(item.source_type == "automation" for item in findings), automation_failed_items,
+                automation_warnings,
                 (time.perf_counter() - auto_started) * 1000,
+                obligation_ledger_completeness=automation_status,
+                obligation_ledger_failed_item_count=(
+                    automation_failed_items
+                ),
             )
         )
-        blueprint_status = "complete" if blueprint_failures == 0 else "partial"
+        blueprint_coverage_failure_sources = {
+            item.source_id
+            for item in obligations
+            if item.source_type == "blueprint"
+            and item.outcome == "coverage_failure"
+        }
+        blueprint_failed_items = max(
+            blueprint_failures,
+            len(blueprint_coverage_failure_sources),
+        )
+        blueprint_status = (
+            "complete" if blueprint_failed_items == 0 else "partial"
+        )
+        blueprint_warnings: list[str] = []
+        if blueprint_failures:
+            blueprint_warnings.append(
+                f"{blueprint_failures} blueprint source(s) could not be resolved; input findings were retained."
+            )
+        bounded_blueprint_failures = max(
+            0, blueprint_failed_items - blueprint_failures
+        )
+        if bounded_blueprint_failures:
+            blueprint_warnings.append(
+                f"{bounded_blueprint_failures} blueprint source(s) exceeded dependency-analysis coverage bounds."
+            )
         coverage.append(
             SourceCoverageItem(
                 "blueprint", self.provider_id, ProviderCapability.BLUEPRINT_SOURCE.value,
-                blueprint_status, sum(item.relation.startswith("blueprint") for item in findings), blueprint_failures,
-                [f"{blueprint_failures} blueprint source(s) could not be resolved; input findings were retained."] if blueprint_failures else [],
+                blueprint_status, sum(item.relation.startswith("blueprint") for item in findings), blueprint_failed_items,
+                blueprint_warnings,
                 (time.perf_counter() - auto_started) * 1000,
+                obligation_ledger_completeness=blueprint_status,
+                obligation_ledger_failed_item_count=(
+                    blueprint_failed_items
+                ),
             )
         )
         for source_type in SOURCE_TYPES:
@@ -434,6 +643,11 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                     key: round(value, 3) for key, value in sorted(request_time_ms.items())
                 },
                 "automation_count": len(automations),
+                "dependency_obligation_count": len(obligations),
+                "dependency_coverage_failure_count": sum(
+                    item.outcome == "coverage_failure"
+                    for item in obligations
+                ),
                 "inventory_calls_duplicated": False,
                 "state_inventory_reused": True,
                 "entity_registry_snapshot_reused": True,
@@ -465,16 +679,20 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 label_membership_truncated
             ),
             label_registry_complete=label_registry_complete,
+            obligations=obligations,
+            obligation_ledger_model=OBLIGATION_LEDGER_MODEL,
         )
 
 
-def _read_blueprint(path: str | None) -> dict[str, Any] | None:
+def _read_blueprint_with_status(
+    path: str | None,
+) -> tuple[dict[str, Any] | None, str | None]:
     if not path or not path.endswith((".yaml", ".yml")):
-        return None
+        return None, "blueprint_source_unavailable"
     try:
         import yaml
     except ImportError:
-        return None
+        return None, "blueprint_parser_unavailable"
     for base in ("/homeassistant/blueprints", "/config/blueprints"):
         root = Path(base, "automation").resolve()
         candidate = Path(root, path).resolve()
@@ -486,11 +704,89 @@ def _read_blueprint(path: str | None) -> dict[str, Any] | None:
             BlueprintLoader.add_constructor(
                 "!input", lambda loader, node: {"__blueprint_input__": loader.construct_scalar(node)}
             )
-            value = yaml.load(candidate.read_text(encoding="utf-8"), Loader=BlueprintLoader)
-            return value if isinstance(value, dict) else None
+            with candidate.open("rb") as handle:
+                payload = handle.read(MAX_BLUEPRINT_SOURCE_BYTES + 1)
+            if len(payload) > MAX_BLUEPRINT_SOURCE_BYTES:
+                return None, "blueprint_source_limit_exceeded"
+            value = yaml.load(
+                payload.decode("utf-8"), Loader=BlueprintLoader
+            )
+            return (
+                (value, None)
+                if isinstance(value, dict)
+                else (None, "blueprint_source_invalid")
+            )
         except Exception:
-            return None
-    return None
+            return None, "blueprint_source_unavailable"
+    return None, "blueprint_source_unavailable"
+
+
+def _read_blueprint(path: str | None) -> dict[str, Any] | None:
+    """Compatibility wrapper for other read-only Engineering providers."""
+
+    value, _reason = _read_blueprint_with_status(path)
+    return value
+
+
+def _resolve_blueprint_inputs(
+    blueprint_config: dict[str, Any],
+    automation_config: dict[str, Any],
+) -> tuple[dict[str, Any], bool]:
+    """Resolve bounded ``!input`` markers without executing templates."""
+
+    use_blueprint = automation_config.get("use_blueprint")
+    supplied = (
+        use_blueprint.get("input", {})
+        if isinstance(use_blueprint, dict)
+        else {}
+    )
+    supplied = supplied if isinstance(supplied, dict) else {}
+    blueprint_metadata = blueprint_config.get("blueprint")
+    input_definitions = (
+        blueprint_metadata.get("input", {})
+        if isinstance(blueprint_metadata, dict)
+        else {}
+    )
+    input_definitions = (
+        input_definitions if isinstance(input_definitions, dict) else {}
+    )
+    work_units = 0
+    complete = True
+
+    def resolve(value: Any, depth: int) -> Any:
+        nonlocal work_units, complete
+        work_units += 1
+        if (
+            work_units > MAX_BLUEPRINT_RESOLUTION_NODES
+            or depth > MAX_BLUEPRINT_RESOLUTION_DEPTH
+        ):
+            complete = False
+            return {"__blueprint_input__": "resolution_limit"}
+        if isinstance(value, dict):
+            if set(value) == {"__blueprint_input__"}:
+                name = value.get("__blueprint_input__")
+                if isinstance(name, str) and name in supplied:
+                    return resolve(supplied[name], depth + 1)
+                definition = input_definitions.get(name)
+                if isinstance(definition, dict) and "default" in definition:
+                    return resolve(definition["default"], depth + 1)
+                return {"__blueprint_input__": str(name)[:128]}
+            return {
+                str(key): resolve(item, depth + 1)
+                for key, item in value.items()
+                if complete
+            }
+        if isinstance(value, list):
+            return [resolve(item, depth + 1) for item in value if complete]
+        if isinstance(value, tuple):
+            return [resolve(item, depth + 1) for item in value if complete]
+        return value
+
+    resolved = resolve(blueprint_config, 0)
+    return (
+        resolved if isinstance(resolved, dict) else {},
+        bool(complete and isinstance(resolved, dict)),
+    )
 
 
 def _build_label_membership_evidence(

@@ -10,6 +10,62 @@ from typing import Any
 
 SOURCE_TYPES = ("automation", "blueprint", "script", "scene", "group", "template", "dashboard")
 COMPLETENESS_VALUES = {"complete", "partial", "unavailable", "unsupported", "not_requested"}
+OBLIGATION_OUTCOMES = frozenset(
+    {
+        "exact_dependency",
+        "proven_target_exclusion",
+        "proven_dependency_neutral",
+        "bounded_semantic_opaque",
+        "coverage_failure",
+    }
+)
+OBLIGATION_LEDGER_MODEL = "whole-template-obligation-ledger-v1"
+
+
+@dataclass(frozen=True)
+class DependencyObligation:
+    """One terminal whole-template dependency-analysis obligation.
+
+    The index stores target-independent terminals.  An exact finite candidate
+    set is projected as ``exact_dependency`` for a matching helper and as
+    ``proven_target_exclusion`` for a non-member by the helper-risk service.
+    Raw template bodies are never persisted.
+    """
+
+    evidence_id: str
+    source_type: str
+    source_id: str
+    config_path: str
+    relation: str
+    outcome: str
+    obligation_kind: str
+    reason_code: str
+    semantic_category: str
+    semantic_registry_version: str
+    semantic_registry_fingerprint: str
+    expression_fingerprint: str
+    configuration_fingerprint: str
+    exact_entity_ids: tuple[str, ...] = ()
+    possible_entity_domains: tuple[str, ...] | None = None
+    literal_selectors: tuple[str, ...] = ()
+    source_entity_id: str | None = None
+    source_name: str | None = None
+    source_state: str | None = None
+    external_template_name: str | None = None
+    context_provenance: tuple[str, ...] = ()
+    limit_exceeded: bool = False
+    lock_projection: str = "none"
+
+    def __post_init__(self) -> None:
+        if self.outcome not in OBLIGATION_OUTCOMES:
+            raise ValueError("dependency obligation outcome is invalid")
+        if self.lock_projection not in {
+            "none",
+            "exact",
+            "conservative",
+            "coverage_failure",
+        }:
+            raise ValueError("dependency obligation lock projection is invalid")
 
 
 @dataclass(frozen=True)
@@ -106,6 +162,13 @@ class SourceCoverageItem:
     policy: str | None = None
     index_build_duration_ms: float | None = None
     cached_provenance: bool = False
+    # The legacy finding/dynamic-reference projections remain public
+    # compatibility evidence and may be truncated independently of the
+    # authoritative obligation ledger.  Keep the two coverage contracts
+    # explicit so helper governance never mistakes compatibility-payload
+    # truncation for lost ledger evidence (or the reverse).
+    obligation_ledger_completeness: str | None = None
+    obligation_ledger_failed_item_count: int = 0
 
     def public(self) -> dict[str, Any]:
         return {
@@ -125,6 +188,12 @@ class SourceCoverageItem:
             "cached_provenance": self.cached_provenance,
             "fallback_occurred": self.fallback_occurred,
             "policy": self.policy,
+            "obligation_ledger_completeness": (
+                self.obligation_ledger_completeness
+            ),
+            "obligation_ledger_failed_item_count": max(
+                0, int(self.obligation_ledger_failed_item_count)
+            ),
         }
 
 
@@ -149,6 +218,8 @@ class DependencyScanResult:
     )
     label_membership_truncated: tuple[str, ...] = ()
     label_registry_complete: bool = False
+    obligations: list[DependencyObligation] = field(default_factory=list)
+    obligation_ledger_model: str | None = None
 
 
 @dataclass
@@ -175,6 +246,53 @@ class DependencyIndexSnapshot:
     )
     label_membership_truncated: tuple[str, ...] = ()
     label_registry_complete: bool = False
+    obligations: tuple[DependencyObligation, ...] = ()
+    obligation_overflow_count: int = 0
+    obligation_overflow_fingerprint: str | None = None
+    obligation_ledger_model: str | None = None
+
+
+def obligation_material(item: DependencyObligation) -> dict[str, Any]:
+    """Return bounded deterministic obligation material."""
+
+    return {
+        "evidence_id": item.evidence_id,
+        "source_type": item.source_type,
+        "source_id": item.source_id,
+        "source_entity_id": item.source_entity_id,
+        "source_name": item.source_name,
+        "source_state": item.source_state,
+        "config_path": item.config_path,
+        "relation": item.relation,
+        "outcome": item.outcome,
+        "obligation_kind": item.obligation_kind,
+        "reason_code": item.reason_code,
+        "semantic_category": item.semantic_category,
+        "semantic_registry_version": item.semantic_registry_version,
+        "semantic_registry_fingerprint": (
+            item.semantic_registry_fingerprint
+        ),
+        "expression_fingerprint": item.expression_fingerprint,
+        "configuration_fingerprint": item.configuration_fingerprint,
+        "exact_entity_ids": list(item.exact_entity_ids),
+        "possible_entity_domains": (
+            list(item.possible_entity_domains)
+            if item.possible_entity_domains is not None
+            else None
+        ),
+        "literal_selectors": list(item.literal_selectors),
+        "external_template_name": item.external_template_name,
+        "context_provenance": list(item.context_provenance),
+        "limit_exceeded": item.limit_exceeded,
+        "lock_projection": item.lock_projection,
+    }
+
+
+def obligation_fingerprint(item: DependencyObligation) -> str:
+    encoded = json.dumps(
+        obligation_material(item), sort_keys=True, separators=(",", ":")
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def evidence_id(*parts: Any) -> str:
@@ -244,6 +362,12 @@ def snapshot_fingerprint(
     label_membership_fingerprints: dict[str, str] | None = None,
     label_membership_truncated: tuple[str, ...] = (),
     label_registry_complete: bool = False,
+    obligations: list[DependencyObligation] | tuple[
+        DependencyObligation, ...
+    ] = (),
+    obligation_overflow_count: int = 0,
+    obligation_overflow_fingerprint: str | None = None,
+    obligation_ledger_model: str | None = None,
 ) -> str:
     payload = {
         "generation": generation,
@@ -251,7 +375,16 @@ def snapshot_fingerprint(
             (item.evidence_id, item.target_entity_id, item.relation, item.config_path)
             for item in findings
         ],
-        "coverage": [(item.source_type, item.completeness, item.failed_item_count) for item in coverage],
+        "coverage": [
+            (
+                item.source_type,
+                item.completeness,
+                item.failed_item_count,
+                item.obligation_ledger_completeness,
+                item.obligation_ledger_failed_item_count,
+            )
+            for item in coverage
+        ],
         "automation_action_profiles": [
             (
                 item.source_id,
@@ -281,6 +414,14 @@ def snapshot_fingerprint(
             ),
             "truncated": sorted(label_membership_truncated),
         },
+        "obligations": sorted(
+            obligation_fingerprint(item) for item in obligations
+        ),
+        "obligation_overflow": {
+            "count": max(0, int(obligation_overflow_count)),
+            "fingerprint": obligation_overflow_fingerprint,
+        },
+        "obligation_ledger_model": obligation_ledger_model,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()

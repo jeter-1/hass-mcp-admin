@@ -12,11 +12,14 @@ from typing import Any
 
 from ..observability import METRICS
 from .models import (
+    DependencyObligation,
     DependencyIndexSnapshot,
     DynamicReference,
     dynamic_reference_fingerprint,
+    obligation_fingerprint,
     snapshot_fingerprint,
 )
+from .extraction import make_coverage_failure_obligation
 from .provider import DependencySourceProvider
 
 
@@ -25,6 +28,7 @@ DEFAULT_HARD_TTL_SECONDS = 3600.0
 MAX_AUTOMATION_ACTION_PROFILES = 1_000
 MAX_AUTOMATION_READ_FAILURES = 1_000
 MAX_DYNAMIC_REFERENCES = 1_000
+MAX_DEPENDENCY_OBLIGATIONS = 10_000
 
 
 def _dynamic_reference_sort_key(
@@ -47,6 +51,32 @@ def _dynamic_reference_overflow_fingerprint(
         return None
     encoded = json.dumps(
         [dynamic_reference_fingerprint(item) for item in items],
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _obligation_sort_key(
+    item: DependencyObligation,
+) -> tuple[str, str, str, str, str, str]:
+    return (
+        item.source_type,
+        item.source_entity_id or "",
+        item.source_id,
+        item.config_path,
+        item.evidence_id,
+        obligation_fingerprint(item),
+    )
+
+
+def _obligation_overflow_fingerprint(
+    items: list[DependencyObligation],
+) -> str | None:
+    if not items:
+        return None
+    encoded = json.dumps(
+        [obligation_fingerprint(item) for item in items],
         sort_keys=True,
         separators=(",", ":"),
     )
@@ -292,12 +322,49 @@ class DependencyIndex:
                     dynamic_reference_overflow
                 )
             )
+            ordered_obligations = sorted(
+                scan.obligations,
+                key=_obligation_sort_key,
+            )
+            obligation_overflow: list[DependencyObligation] = []
+            if len(ordered_obligations) > MAX_DEPENDENCY_OBLIGATIONS:
+                # Reserve one retained terminal that explicitly prevents an
+                # overflow from looking like complete absence.
+                obligation_overflow = ordered_obligations[
+                    MAX_DEPENDENCY_OBLIGATIONS - 1:
+                ]
+                obligations = ordered_obligations[
+                    :MAX_DEPENDENCY_OBLIGATIONS - 1
+                ]
+            else:
+                obligations = ordered_obligations
+            obligations_truncated = bool(obligation_overflow)
+            obligation_overflow_count = len(obligation_overflow)
+            obligation_overflow_fingerprint = (
+                _obligation_overflow_fingerprint(obligation_overflow)
+            )
+            if obligations_truncated:
+                obligations.append(
+                    make_coverage_failure_obligation(
+                        source_type="automation",
+                        source_id="dependency_index",
+                        source_entity_id=None,
+                        config_path="$",
+                        relation="other_structured_reference",
+                        reason_code="dependency_obligation_index_overflow",
+                        configuration_fingerprint=(
+                            obligation_overflow_fingerprint
+                        ),
+                        limit_exceeded=True,
+                    )
+                )
             coverage = list(scan.coverage)
             if (
                 findings_truncated
                 or profiles_truncated
                 or read_failures_truncated
                 or dynamic_references_truncated
+                or obligations_truncated
             ):
                 METRICS.record_dependency_truncation()
                 coverage = [
@@ -341,6 +408,12 @@ class DependencyIndex:
                 label_registry_complete=(
                     scan.label_registry_complete
                 ),
+                obligations=obligations,
+                obligation_overflow_count=obligation_overflow_count,
+                obligation_overflow_fingerprint=(
+                    obligation_overflow_fingerprint
+                ),
+                obligation_ledger_model=scan.obligation_ledger_model,
             )
             build_duration_ms = (time.perf_counter() - build_started) * 1000
             replacement = DependencyIndexSnapshot(
@@ -372,6 +445,14 @@ class DependencyIndex:
                 label_registry_complete=bool(
                     scan.label_registry_complete
                 ),
+                obligations=tuple(obligations),
+                obligation_overflow_count=(
+                    obligation_overflow_count
+                ),
+                obligation_overflow_fingerprint=(
+                    obligation_overflow_fingerprint
+                ),
+                obligation_ledger_model=scan.obligation_ledger_model,
             )
             # Publish the complete replacement atomically after every build step.
             self.snapshot = replacement

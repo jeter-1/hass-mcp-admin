@@ -397,8 +397,15 @@ def _single_plan_policy(
                 ),
             )
         complete = dependency.get("evidence_complete") is True
+        eligible = dependency.get("execution_eligible") is True
+        precision = str(
+            dependency.get(
+                "semantic_precision",
+                "exact" if complete else "coverage_failure",
+            )
+        )
         consequence = dependency.get("physical_consequence")
-        if complete and consequence == "none":
+        if eligible and consequence == "none":
             return (
                 OperationPolicyClassification(
                     ApprovalPolicyClass.STANDARD_ADMIN,
@@ -406,15 +413,16 @@ def _single_plan_policy(
                     PhysicalConsequence.NONE,
                     (
                         "exact_input_boolean_state_standard_policy",
-                        "helper_dependency_evidence_complete",
+                        (
+                            "helper_dependency_bounded_semantic_opacity"
+                            if precision == "bounded_opaque"
+                            else "helper_dependency_evidence_complete"
+                        ),
                         "no_consequential_dependency_detected",
                     ),
                 ),
             )
-        if complete and consequence in {
-            "direct",
-            "safety_critical",
-        }:
+        if eligible:
             return (
                 OperationPolicyClassification(
                     ApprovalPolicyClass.ELEVATED_ADMIN,
@@ -423,11 +431,21 @@ def _single_plan_policy(
                         PhysicalConsequence.SAFETY_CRITICAL
                         if consequence == "safety_critical"
                         else PhysicalConsequence.DIRECT
+                        if consequence == "direct"
+                        else PhysicalConsequence.INDIRECT
                     ),
                     (
-                        "consequential_helper_dependency_detected",
+                        (
+                            "consequential_helper_dependency_detected"
+                            if consequence in {"direct", "safety_critical"}
+                            else "unknown_helper_dependency_effect"
+                        ),
                         "exact_input_boolean_state_elevated_policy",
-                        "helper_dependency_evidence_complete",
+                        (
+                            "helper_dependency_bounded_semantic_opacity"
+                            if precision == "bounded_opaque"
+                            else "helper_dependency_evidence_complete"
+                        ),
                     ),
                 ),
             )
@@ -438,7 +456,7 @@ def _single_plan_policy(
                 PhysicalConsequence.INDIRECT,
                 (
                     "exact_input_boolean_state_elevated_policy",
-                    "helper_dependency_evidence_incomplete",
+                    "helper_dependency_coverage_failure",
                     "low_risk_not_established",
                 ),
             ),

@@ -127,6 +127,7 @@ from .helper_state import (
     validate_input_boolean_entity_id,
 )
 from .helper_dependency import (
+    HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
     HELPER_DEPENDENCY_RISK_MODEL,
     helper_dependency_risk_assessment,
     read_runtime_helper_dependency_risk,
@@ -2467,6 +2468,7 @@ class ChangeGovernanceService:
         value["next_required_operation"] = (
             "approve_change_plan"
             if approval_lifecycle == "approval_not_requested"
+            and self._approval_is_actionable(plan)
             and (
                 plan.policy_decision is None
                 or plan.policy_decision.policy_class
@@ -2583,6 +2585,9 @@ class ChangeGovernanceService:
     def _approval_is_actionable(self, plan: ChangePlan) -> bool:
         """Project actionability without upgrading legacy authority records."""
 
+        if not self._helper_dependency_plan_is_actionable(plan):
+            return False
+
         decision = plan.policy_decision
         if decision is None:
             return bool(
@@ -2614,6 +2619,28 @@ class ChangeGovernanceService:
                 "approval_pending_external",
                 "pending_elevated_risk_acknowledgement",
             }
+        )
+
+    @staticmethod
+    def _helper_dependency_plan_is_actionable(plan: ChangePlan) -> bool:
+        """Require current bounded evidence before a helper challenge exists."""
+
+        if plan.operation != ChangeOperation.SET_INPUT_BOOLEAN_STATE:
+            return True
+        operational = plan.operational
+        baseline = (
+            operational.baseline
+            if operational is not None
+            and isinstance(operational.baseline, dict)
+            else {}
+        )
+        binding = baseline.get("dependency_risk")
+        return bool(
+            isinstance(binding, dict)
+            and binding.get("model")
+            in HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS
+            and binding.get("execution_eligible") is True
+            and plan.risk.apply_allowed
         )
 
     def _summary(self, plan: ChangePlan) -> dict[str, Any]:
@@ -3135,7 +3162,7 @@ class ChangeGovernanceService:
             preconditions=[
                 "The exact entity remains available as an input_boolean.",
                 "The planned state fingerprint remains current, or the desired state is already observed.",
-                "The normalized dependency-risk evidence remains complete and unchanged.",
+                "The normalized dependency-risk evidence remains execution-eligible and unchanged.",
                 "One unexpired external administrator approval is bound to this plan hash.",
             ],
             verification_contract={
@@ -3205,6 +3232,15 @@ class ChangeGovernanceService:
                 "entity_state_readable": True,
                 "dependency_evidence_complete": (
                     dependency_binding.get("evidence_complete") is True
+                ),
+                "dependency_coverage_complete": (
+                    dependency_binding.get("coverage_complete") is True
+                ),
+                "dependency_semantic_precision": (
+                    dependency_binding.get("semantic_precision")
+                ),
+                "dependency_execution_eligible": (
+                    dependency_binding.get("execution_eligible") is True
                 ),
                 "dependency_evidence_completeness": (
                     dependency_binding.get("completeness")
@@ -4581,6 +4617,20 @@ class ChangeGovernanceService:
                 error_code=ErrorCode.PROHIBITED_CHANGE.value,
             )
             raise GovernanceError(ErrorCode.PROHIBITED_CHANGE)
+        if not self._helper_dependency_plan_is_actionable(plan):
+            self._record(
+                plan,
+                "helper_dependency_approval_rejected",
+                "rejected",
+                error_code=ErrorCode.OPERATIONAL_VALIDATION_FAILED.value,
+            )
+            raise GovernanceError(
+                ErrorCode.OPERATIONAL_VALIDATION_FAILED,
+                details={
+                    "resource_id": plan.plan_id,
+                    "reason": "helper_dependency_evidence_not_executable",
+                },
+            )
         if plan.approval.authority_version != APPROVAL_AUTHORITY_VERSION:
             raise GovernanceError(
                 ErrorCode.APPROVAL_AUTHORITY_MISMATCH,
@@ -5031,9 +5081,64 @@ class ChangeGovernanceService:
                         "action": "restart",
                     }
                     if plan.operation == ChangeOperation.RESTART_ADDON
+                    else {
+                        "entity_id": plan.target_id,
+                        "desired_state": operational.requested_name,
+                        "service": (
+                            "input_boolean.turn_on"
+                            if operational.requested_name == "on"
+                            else "input_boolean.turn_off"
+                        ),
+                    }
+                    if plan.operation
+                    == ChangeOperation.SET_INPUT_BOOLEAN_STATE
                     else {"confirm": True}
                 ),
             }
+            if plan.operation is ChangeOperation.SET_INPUT_BOOLEAN_STATE:
+                dependency = operational.baseline.get("dependency_risk")
+                if not isinstance(dependency, dict):
+                    raise GovernanceError(
+                        ErrorCode.INTERNAL_INVARIANT_VIOLATION
+                    )
+                summary["helper_dependency_review"] = {
+                    "coverage_complete": dependency.get(
+                        "coverage_complete"
+                    ),
+                    "semantic_precision": dependency.get(
+                        "semantic_precision"
+                    ),
+                    "execution_eligible": dependency.get(
+                        "execution_eligible"
+                    ),
+                    "physical_consequence": dependency.get(
+                        "physical_consequence"
+                    ),
+                    "opaque_obligation_count": dependency.get(
+                        "opaque_obligation_count", 0
+                    ),
+                    "coverage_failure_count": dependency.get(
+                        "coverage_failure_count", 0
+                    ),
+                    "coverage_failure_reason_codes": dependency.get(
+                        "coverage_failure_reason_codes", []
+                    ),
+                    "relevant_downstream_object_ids": dependency.get(
+                        "relevant_downstream_object_ids", []
+                    ),
+                    "downstream_profiles": dependency.get(
+                        "downstream_profiles", []
+                    ),
+                    "obligation_evidence": dependency.get(
+                        "obligation_evidence", []
+                    ),
+                    "dependency_lock_projection": dependency.get(
+                        "dependency_lock_projection"
+                    ),
+                    "evidence_fingerprint": dependency.get(
+                        "evidence_fingerprint"
+                    ),
+                }
             if plan.operation is ChangeOperation.UPDATE_DASHBOARD:
                 proposal = plan.proposed_config.get("dashboard_update")
                 summary["dashboard_review"] = (
@@ -10318,7 +10423,7 @@ class ChangeGovernanceService:
                             if isinstance(dependency_risk, dict)
                             else None
                         )
-                        != HELPER_DEPENDENCY_RISK_MODEL,
+                        not in HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
                         not isinstance(
                             (
                                 dependency_risk.get(
