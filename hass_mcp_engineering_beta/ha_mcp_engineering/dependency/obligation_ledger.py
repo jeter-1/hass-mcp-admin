@@ -1436,15 +1436,6 @@ class TemplateObligationAnalyzer:
                             kind=f"global_{name}_iterable_argument",
                             reason=f"{name}_iterates_state_value",
                         )
-                    elif argument.unknown or not argument.complete:
-                        self._emit(
-                            outcome="bounded_semantic_opaque",
-                            kind=f"global_{name}_iterable_argument",
-                            reason=f"{name}_iterable_argument_opaque",
-                            category="attribute_item_access",
-                            node=node,
-                            lock="conservative",
-                        )
                 if len(keyword_values) > MAX_TEMPLATE_CANDIDATES:
                     self._emit(
                         outcome="coverage_failure",
@@ -1497,12 +1488,18 @@ class TemplateObligationAnalyzer:
                 )
             elif (
                 source.container_kinds == {"sequence"}
-                and source.complete
-                and not source.unknown
+                and not source.projection_uncertain
+                and not source.limit_exceeded
+                and bool(
+                    source.items
+                    or (source.complete and not source.unknown)
+                )
             ):
                 for pair in source.items:
                     if (
                         pair.container_kinds != {"sequence"}
+                        or pair.projection_uncertain
+                        or pair.limit_exceeded
                         or len(pair.items) != 2
                         or len(pair.items[0].literal_strings) != 1
                         or not pair.items[0].complete

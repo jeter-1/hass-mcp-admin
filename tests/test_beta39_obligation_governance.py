@@ -501,6 +501,61 @@ class ObligationGovernanceTests(unittest.TestCase):
             selector["relevant_downstream_object_ids"],
         )
 
+    def test_constructor_scalar_transport_does_not_create_helper_consequence(self):
+        for index, template in enumerate(
+            (
+                "{% set d=dict(message=trigger.platform) %}{{ d.message }}",
+                "{% set d=dict({'message':trigger.platform}) %}{{ d.message }}",
+                "{% set d=dict([('message',trigger.platform)]) %}{{ d.message }}",
+                "{% set d=namespace([('message',trigger.platform)]) %}{{ d.message }}",
+            )
+        ):
+            with self.subTest(index=index):
+                source_id = f"constructor_scalar_{index}"
+                _findings, _dynamic, obligations = (
+                    extract_document_with_obligations(
+                        source_type="automation",
+                        source_id=source_id,
+                        source_entity_id=f"automation.{source_id}",
+                        source_name=None,
+                        source_state="on",
+                        config={
+                            "condition": [
+                                {
+                                    "condition": "template",
+                                    "value_template": template,
+                                }
+                            ],
+                            "action": [
+                                {
+                                    "service": "cover.open_cover",
+                                    "target": {
+                                        "entity_id": "cover.synthetic_garage"
+                                    },
+                                }
+                            ],
+                        },
+                    )
+                )
+                observed = bind(
+                    snapshot(
+                        tuple(obligations),
+                        profiles=(profile(source_id, "cover.open_cover"),),
+                    )
+                )
+                risk = helper_dependency_risk_assessment(
+                    {
+                        "binding": observed,
+                        "provenance": {"generation": 39},
+                    }
+                )
+                self.assertTrue(observed["evidence_complete"])
+                self.assertEqual(
+                    [], observed["relevant_downstream_object_ids"]
+                )
+                self.assertEqual("none", observed["physical_consequence"])
+                self.assertEqual("low", risk.level.value)
+
     def test_namespace_and_mapping_key_transport_retain_consequential_dependency(self):
         templates = (
             "{{ states(namespace(get='" + TARGET + "').get or 'sensor.a') }}",

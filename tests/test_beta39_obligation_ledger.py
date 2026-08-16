@@ -509,38 +509,41 @@ class WholeTemplateObligationLedgerTests(unittest.TestCase):
                 self._assert_opaque(template)
 
     def test_constructor_keyword_values_preserve_scalar_provenance(self):
-        for constructor, member in (
-            ("dict", "message"),
-            ("namespace", "message"),
-        ):
-            with self.subTest(constructor=constructor, use="display"):
-                template = (
-                    "{% set value="
-                    + constructor
-                    + "(message=trigger.platform) %}"
-                    "{{ value."
-                    + member
-                    + " }}"
-                )
-                obligations = self._outcomes(template)
-                self.assertTrue(obligations)
-                self.assertTrue(
-                    all(
-                        item.outcome == "proven_dependency_neutral"
-                        for item in obligations
-                    ),
-                    obligations,
-                )
+        for constructor in ("dict", "namespace"):
+            forms = (
+                constructor + "(message=trigger.platform)",
+                constructor + "({'message':trigger.platform})",
+                constructor + "([('message',trigger.platform)])",
+            )
+            for form in forms:
+                with self.subTest(
+                    constructor=constructor,
+                    form=form,
+                    use="display",
+                ):
+                    template = (
+                        "{% set value=" + form + " %}{{ value.message }}"
+                    )
+                    obligations = self._outcomes(template)
+                    self.assertTrue(obligations)
+                    self.assertTrue(
+                        all(
+                            item.outcome == "proven_dependency_neutral"
+                            for item in obligations
+                        ),
+                        obligations,
+                    )
 
-            with self.subTest(constructor=constructor, use="selector"):
-                self._assert_opaque(
-                    "{% set value="
-                    + constructor
-                    + "(message=trigger.platform) %}"
-                    "{{ states(value."
-                    + member
-                    + ") }}"
-                )
+                with self.subTest(
+                    constructor=constructor,
+                    form=form,
+                    use="selector",
+                ):
+                    self._assert_opaque(
+                        "{% set value="
+                        + form
+                        + " %}{{ states(value.message) }}"
+                    )
 
     def test_namespace_branch_assignment_is_order_independent(self):
         branches = (

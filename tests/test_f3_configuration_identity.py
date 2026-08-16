@@ -570,18 +570,22 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn(unconstrained_helper_dependency_lock_key(), keys)
 
-    async def test_constructor_keyword_display_values_lock_only_when_selected(self):
+    async def test_constructor_display_values_lock_only_when_selected(self):
         base = valid_config("automation")
         dynamic_key = unconstrained_helper_dependency_lock_key()
-        for index, (constructor, member) in enumerate(
-            (("dict", "message"), ("namespace", "message"))
-        ):
+        forms = (
+            "dict(message=trigger.platform)",
+            "dict({'message':trigger.platform})",
+            "dict([('message',trigger.platform)])",
+            "namespace([('message',trigger.platform)])",
+        )
+        for index, form in enumerate(forms):
             for selected in (False, True):
                 with self.subTest(
-                    constructor=constructor,
+                    form=form,
                     selected=selected,
                 ):
-                    expression = "value." + member
+                    expression = "value.message"
                     if selected:
                         expression = "states(" + expression + ")"
                     proposed = valid_config("automation")
@@ -590,8 +594,8 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
                             "condition": "template",
                             "value_template": (
                                 "{% set value="
-                                + constructor
-                                + "(message=trigger.platform) %}"
+                                + form
+                                + " %}"
                                 "{{ "
                                 + expression
                                 + " }}"
