@@ -487,6 +487,8 @@ class WholeTemplateObligationLedgerTests(unittest.TestCase):
             "{{ trigger.id }}",
             "{{ trigger.event.event_type }}",
             "{{ wait.trigger.id }}",
+            "{{ wait.completed }}",
+            "{{ wait.remaining }}",
         ):
             with self.subTest(template=template):
                 obligations = self._outcomes(template)
@@ -498,6 +500,13 @@ class WholeTemplateObligationLedgerTests(unittest.TestCase):
                     ),
                     obligations,
                 )
+
+        for template in (
+            "{{ states(wait.completed or 'sensor.a') }}",
+            "{{ states(wait.remaining or 'sensor.a') }}",
+        ):
+            with self.subTest(template=template):
+                self._assert_opaque(template)
 
     def test_constructor_keyword_values_preserve_scalar_provenance(self):
         for constructor, member in (

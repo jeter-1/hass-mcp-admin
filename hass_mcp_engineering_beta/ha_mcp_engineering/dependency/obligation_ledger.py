@@ -100,6 +100,7 @@ _VALUE_RETURNING_STATE_HELPERS = frozenset(
 _DYNAMIC_CONTEXT_SCALAR_ATTRIBUTES = frozenset(
     {"alias", "description", "event_type", "id", "platform"}
 )
+_WAIT_DYNAMIC_SCALAR_ATTRIBUTES = frozenset({"completed", "remaining"})
 _NEUTRAL_CONTEXT_ATTRIBUTES = frozenset({"idx"})
 
 
@@ -2690,7 +2691,13 @@ class TemplateObligationAnalyzer:
                 return value
             self._opaque(node, "trigger_context_entity_opaque")
             return _Value(context_paths=paths, unknown=True, complete=False)
-        if attribute in _DYNAMIC_CONTEXT_SCALAR_ATTRIBUTES:
+        if (
+            attribute in _DYNAMIC_CONTEXT_SCALAR_ATTRIBUTES
+            or (
+                attribute in _WAIT_DYNAMIC_SCALAR_ATTRIBUTES
+                and paths == {f"wait.{attribute}"}
+            )
+        ):
             self._neutral(node, "trigger_context_scalar_dependency_neutral")
             value = _dynamic_scalar_value()
             value.context_paths = paths

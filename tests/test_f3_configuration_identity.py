@@ -613,6 +613,43 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
                     }
                     self.assertEqual(dynamic_key in keys, selected)
 
+    async def test_wait_scalar_metadata_locks_only_when_selected(self):
+        base = valid_config("automation")
+        dynamic_key = unconstrained_helper_dependency_lock_key()
+        for index, expression in enumerate(
+            (
+                "wait.completed",
+                "wait.remaining is not none",
+                "states(wait.completed)",
+                "states(wait.remaining)",
+            )
+        ):
+            with self.subTest(expression=expression):
+                proposed = valid_config("automation")
+                proposed["action"] = [
+                    {
+                        "wait_template": (
+                            "{{ is_state('sensor.ready', 'on') }}"
+                        ),
+                        "timeout": 30,
+                    },
+                    {
+                        "condition": "template",
+                        "value_template": "{{ " + expression + " }}",
+                    },
+                ]
+                prepared = await self._prepared(
+                    "automation",
+                    "update",
+                    operation_id=f"wait_scalar_{index}",
+                    current_config=base,
+                    proposed_config=proposed,
+                )
+                keys = {
+                    item.key for item in operation_lock_requests(prepared)
+                }
+                self.assertEqual(dynamic_key in keys, index >= 2)
+
     async def test_iteration_and_reordering_cannot_erase_helper_locks(self):
         helper = "input_boolean.synthetic_exact"
         base = valid_config("automation")

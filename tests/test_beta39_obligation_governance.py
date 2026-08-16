@@ -424,6 +424,83 @@ class ObligationGovernanceTests(unittest.TestCase):
         self.assertEqual("high", risk.level.value)
         self.assertTrue(risk.apply_allowed)
 
+    def test_wait_scalar_metadata_does_not_create_helper_consequence(self):
+        config = {
+            "action": [
+                {
+                    "wait_template": "{{ is_state('sensor.ready', 'on') }}",
+                    "timeout": 30,
+                },
+                {
+                    "condition": "template",
+                    "value_template": (
+                        "{{ wait.completed and wait.remaining is not none }}"
+                    ),
+                },
+                {
+                    "service": "cover.open_cover",
+                    "target": {"entity_id": "cover.synthetic_garage"},
+                },
+            ]
+        }
+        _findings, _dynamic, obligations = (
+            extract_document_with_obligations(
+                source_type="automation",
+                source_id="wait_scalar_cover",
+                source_entity_id="automation.wait_scalar_cover",
+                source_name=None,
+                source_state="on",
+                config=config,
+            )
+        )
+        observed = bind(
+            snapshot(
+                tuple(obligations),
+                profiles=(profile("wait_scalar_cover", "cover.open_cover"),),
+            )
+        )
+        risk = helper_dependency_risk_assessment(
+            {"binding": observed, "provenance": {"generation": 39}}
+        )
+
+        self.assertTrue(observed["evidence_complete"])
+        self.assertEqual([], observed["relevant_downstream_object_ids"])
+        self.assertEqual("none", observed["physical_consequence"])
+        self.assertEqual("low", risk.level.value)
+
+        selector_config = {
+            **config,
+            "condition": [
+                {
+                    "condition": "template",
+                    "value_template": "{{ states(wait.completed) }}",
+                }
+            ],
+        }
+        _findings, _dynamic, selector_obligations = (
+            extract_document_with_obligations(
+                source_type="automation",
+                source_id="wait_scalar_selector",
+                source_entity_id="automation.wait_scalar_selector",
+                source_name=None,
+                source_state="on",
+                config=selector_config,
+            )
+        )
+        selector = bind(
+            snapshot(
+                tuple(selector_obligations),
+                profiles=(
+                    profile("wait_scalar_selector", "cover.open_cover"),
+                ),
+            )
+        )
+        self.assertEqual("bounded_opaque", selector["semantic_precision"])
+        self.assertEqual(
+            ["automation.wait_scalar_selector"],
+            selector["relevant_downstream_object_ids"],
+        )
+
     def test_namespace_and_mapping_key_transport_retain_consequential_dependency(self):
         templates = (
             "{{ states(namespace(get='" + TARGET + "').get or 'sensor.a') }}",
