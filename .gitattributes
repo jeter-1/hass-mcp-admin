@@ -1,0 +1,7 @@
+# Byte-exact artifacts.  These files are digest-pinned in source and verified
+# with sha256 over their raw bytes, so end-of-line translation on checkout
+# makes the runtime fail closed on the checked-out working tree.  Keep their
+# bytes identical on every platform.
+hass_mcp_engineering_beta/ha_mcp_engineering/dependency/template_semantic_registry.json -text
+scripts/template_semantic_registry_source.json -text
+docs/evidence/home-assistant-template-source-blobs.json -text

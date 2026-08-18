@@ -16,7 +16,7 @@ SEMANTIC_REGISTRY_FILE = Path(__file__).with_name(
 )
 SEMANTIC_REGISTRY_MODEL = "home-assistant-template-semantic-registry-v1"
 EXPECTED_SEMANTIC_REGISTRY_SHA256 = (
-    "cdce02d44330bfe94aa510c3279f0bc16572063ae44c5900b295496779e7040b"
+    "faf4ce7933ea5fcc358f46c69432dcdae237b7ab6073f29137f86574aea9f092"
 )
 SEMANTIC_REGISTRY_CATEGORIES = frozenset(
     {
@@ -71,6 +71,83 @@ _REQUIRED_ENTITY_SET_GLOBALS = frozenset(
 _SHA1 = re.compile(r"^[0-9a-f]{40}$")
 
 
+def _git_blob_sha1(data: bytes) -> str:
+    header = b"blob " + str(len(data)).encode("ascii") + bytes(1)
+    return hashlib.sha1(header + data).hexdigest()
+
+
+def _verify_pinned_jinja_provenance(jinja: dict[str, Any]) -> None:
+    """Recompute declared Jinja blobs from the installed pinned package.
+
+    The registry claims exact parser semantics.  Recomputing the git blob
+    SHA-1 of the installed modules makes that claim verifiable at runtime
+    against the artifact the analyzer actually imports, instead of trusting a
+    declared value to describe itself.
+    """
+
+    import jinja2
+
+    package = Path(jinja2.__file__).resolve().parent
+    for path, blob in sorted(jinja.get("source_blobs", {}).items()):
+        if not path.startswith("src/jinja2/"):
+            raise RuntimeError(
+                "template semantic registry Jinja source path is invalid"
+            )
+        module = package / path.split("/")[-1]
+        if not module.is_file() or _git_blob_sha1(module.read_bytes()) != blob:
+            raise RuntimeError(
+                "template semantic registry Jinja source blob mismatch"
+            )
+
+
+def _verify_derived_vocabulary(semantics: dict[str, Any]) -> None:
+    """Re-derive the standard vocabulary from the installed pinned package.
+
+    Jinja binds several names to one implementation, so a hand-kept name list
+    silently loses aliases such as ``d`` for ``default``.  Deriving the names
+    here keeps the shipped registry and the imported parser in agreement, and
+    fails closed when they diverge.
+    """
+
+    from jinja2.defaults import DEFAULT_FILTERS, DEFAULT_TESTS
+
+    for table, declaration_key, extra_key, surface in (
+        (
+            DEFAULT_FILTERS,
+            "jinja_filter_functions",
+            "home_assistant_filters",
+            "filters",
+        ),
+        (
+            DEFAULT_TESTS,
+            "jinja_test_functions",
+            "home_assistant_tests",
+            "tests",
+        ),
+    ):
+        declaration = semantics.get(declaration_key, {})
+        extra = semantics.get(extra_key, {})
+        expected = {
+            name: declaration.get(
+                getattr(function, "__name__", repr(function))
+            )
+            for name, function in table.items()
+        }
+        if any(category is None for category in expected.values()):
+            raise RuntimeError(
+                "template semantic registry standard vocabulary is incomplete"
+            )
+        if set(expected).intersection(extra):
+            raise RuntimeError(
+                "template semantic registry redeclares standard vocabulary"
+            )
+        expected.update(extra)
+        if semantics.get(surface) != dict(sorted(expected.items())):
+            raise RuntimeError(
+                "template semantic registry vocabulary is not derived"
+            )
+
+
 def _validate_registry(value: dict[str, Any], raw: bytes) -> None:
     if hashlib.sha256(raw).hexdigest() != EXPECTED_SEMANTIC_REGISTRY_SHA256:
         raise RuntimeError("template semantic registry digest mismatch")
@@ -104,6 +181,13 @@ def _validate_registry(value: dict[str, Any], raw: bytes) -> None:
             for path, blob in blobs.items()
         ):
             raise RuntimeError("template semantic registry source provenance is invalid")
+        # One blob is exactly one content, so two paths sharing a blob at one
+        # tag is a copied attribution rather than real provenance.
+        if len(set(blobs.values())) != len(blobs):
+            raise RuntimeError(
+                "template semantic registry source provenance is duplicated"
+            )
+    _verify_pinned_jinja_provenance(jinja)
     environment = value.get("home_assistant", {}).get("parser_environment", {})
     if environment != {
         "base": "jinja2.sandbox.ImmutableSandboxedEnvironment",
@@ -119,6 +203,10 @@ def _validate_registry(value: dict[str, Any], raw: bytes) -> None:
         "tests",
         "attributes",
         "runtime_receivers",
+        "jinja_filter_functions",
+        "jinja_test_functions",
+        "home_assistant_filters",
+        "home_assistant_tests",
     ):
         entries = semantics.get(surface)
         if not isinstance(entries, dict) or not entries:
@@ -135,6 +223,7 @@ def _validate_registry(value: dict[str, Any], raw: bytes) -> None:
         for name in _REQUIRED_ENTITY_SET_GLOBALS
     ):
         raise RuntimeError("template semantic registry entity-set vocabulary is incomplete")
+    _verify_derived_vocabulary(semantics)
     canonical = (
         json.dumps(value, ensure_ascii=True, indent=2, sort_keys=True) + "\n"
     ).encode("utf-8")

@@ -123,12 +123,14 @@ class TemplateSemanticRegistryTests(unittest.TestCase):
         script = ROOT / "scripts" / "generate_template_semantic_registry.py"
         declaration = ROOT / "scripts" / "template_semantic_registry_source.json"
         self.assertNotEqual(declaration.resolve(), SEMANTIC_REGISTRY_FILE.resolve())
-        self.assertEqual(
-            "dbe59676e34f83a232ef5d893f686d6315717ffba14975ff25d60c74d1705708",
-            hashlib.sha256(declaration.read_bytes()).hexdigest(),
-        )
         self.assertIn(
             "template_semantic_registry_source.json",
+            script.read_text(encoding="utf-8"),
+        )
+        # B39-136-R3a: generation must verify provenance against independent
+        # evidence, so the declaration's own digest is never the authority.
+        self.assertNotIn(
+            hashlib.sha256(declaration.read_bytes()).hexdigest(),
             script.read_text(encoding="utf-8"),
         )
         with tempfile.TemporaryDirectory() as temporary:
