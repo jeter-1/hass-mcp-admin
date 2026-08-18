@@ -166,9 +166,18 @@ class FakeDependencyRiskReader:
         self.opaque = False
         self.effect_revision = "v1"
 
-    async def __call__(self, entity_id: str, *, refresh: bool = True):
+    async def __call__(
+        self,
+        entity_id: str,
+        *,
+        refresh: bool = True,
+        fenced: bool = False,
+    ):
         if entity_id != self.entity_id or refresh is not True:
             raise AssertionError("dependency risk was not refreshed exactly")
+        # B39-136-R2: the post-lock preflight read is fenced so a scan that
+        # began before the lock cannot satisfy it.
+        self.fenced_reads = getattr(self, "fenced_reads", 0) + int(fenced)
         resource_ids = [
             automation_id.removeprefix("automation.")
             for automation_id in self.automation_ids
