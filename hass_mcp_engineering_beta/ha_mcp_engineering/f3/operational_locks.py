@@ -12,8 +12,7 @@ from ..f3_configuration.locks import (
     unconstrained_helper_dependency_lock_key,
 )
 from ..governance.helper_dependency import (
-    HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
-    HELPER_DEPENDENCY_RISK_MODEL,
+    HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
     MAX_RELEVANT_AUTOMATIONS,
 )
 from .models import validate_lock_key
@@ -33,10 +32,12 @@ def _bound_downstream_automation_resources(
     baseline = operation.baseline
     binding = baseline.get("dependency_risk")
     if not isinstance(binding, dict) or (
-        binding.get("model")
-        not in HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS
+        binding.get("model") not in HELPER_DEPENDENCY_RISK_EXECUTION_MODELS
     ):
-        raise ValueError("helper dependency lock evidence is invalid")
+        # Lock projection is execution authority.  A superseded binding is
+        # readable and recoverable, but it cannot decide which resources this
+        # dispatch must hold, so it fails closed and requires a replan.
+        raise ValueError("helper dependency lock evidence is not executable")
     values = binding.get("downstream_automation_resource_ids")
     if (
         not isinstance(values, list)
@@ -49,11 +50,7 @@ def _bound_downstream_automation_resources(
         resource_lock_key("automation", value)
     projection = binding.get("dependency_lock_projection")
     if not isinstance(projection, dict):
-        # Legacy synthetic fixtures predate the shared ledger.  Production
-        # helper plans use the current model and must bind the projection.
-        if binding.get("model") == HELPER_DEPENDENCY_RISK_MODEL:
-            raise ValueError("helper dependency lock projection is invalid")
-        return tuple(values)
+        raise ValueError("helper dependency lock projection is invalid")
     if (
         projection.get("exact_helper_dependency") is not True
         or projection.get("conservative_helper_dependency") is not True
@@ -68,11 +65,13 @@ def _requires_custom_template_reload_lock(
     operation: PreparedOperationalOperation,
 ) -> bool:
     binding = operation.baseline.get("dependency_risk")
-    if not isinstance(binding, dict):
-        raise ValueError("helper dependency lock evidence is invalid")
+    if not isinstance(binding, dict) or (
+        binding.get("model") not in HELPER_DEPENDENCY_RISK_EXECUTION_MODELS
+    ):
+        raise ValueError("helper dependency lock evidence is not executable")
     projection = binding.get("dependency_lock_projection")
     if not isinstance(projection, dict):
-        return False
+        raise ValueError("helper dependency lock projection is invalid")
     return projection.get("custom_template_reload") is True
 
 

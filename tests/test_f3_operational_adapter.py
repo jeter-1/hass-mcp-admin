@@ -1073,13 +1073,20 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(missing.eligible)
         self.assertEqual(missing.outcome, "lock_conflict")
         self.assertNotIn("helper_dependency_read", context.trace)
+        self.assertNotIn("helper_dependency_fenced_read", context.trace)
 
         exact = await context.adapter.preflight(
             prepared, acquired_locks=locks
         )
 
         self.assertTrue(exact.eligible)
-        self.assertEqual(context.trace[-1], "helper_dependency_read")
+        # B39-136-R2: the read that decides execution eligibility happens
+        # after the complete lock set is held and is fenced, so evidence read
+        # before the lock cannot satisfy it.
+        self.assertEqual(
+            context.trace[-1], "helper_dependency_fenced_read"
+        )
+        self.assertNotIn("helper_dependency_read", context.trace)
 
     async def test_unrelated_reload_domains_and_addons_remain_compatible(self):
         reload_keys = []

@@ -38,6 +38,9 @@ from ha_mcp_engineering.f3.operational_models import (
     stable_hash,
 )
 from ha_mcp_engineering.f3.persistence import DurableExecutionRepository
+from ha_mcp_engineering.governance.helper_dependency import (
+    HELPER_DEPENDENCY_RISK_MODEL,
+)
 from ha_mcp_engineering.governance.models import (
     ApprovalActionKind,
     ApprovalActionRecord,
@@ -197,7 +200,17 @@ def baseline_for(
     version: str = "8.0.0",
     target_class: str = "other_addon",
     dependency_automation_ids: tuple[str, ...] = (),
+    dependency_risk_model: str | None = None,
+    dependency_lock_projection: bool = True,
 ) -> dict[str, Any]:
+    """Build one prepared operational baseline.
+
+    ``dependency_risk_model`` defaults to the current helper dependency risk
+    model.  Passing the superseded ``helper-dependency-risk-v2`` builds a
+    compatibility record on purpose, which negative tests use to prove that a
+    readable-but-superseded binding carries no execution authority.
+    """
+
     if operation == SET_INPUT_BOOLEAN_STATE:
         downstream_profiles = [
             {
@@ -227,11 +240,21 @@ def baseline_for(
             for resource_id in dependency_automation_ids
         ]
         material = {
-            "model": "helper-dependency-risk-v2",
+            "model": (
+                dependency_risk_model
+                if dependency_risk_model is not None
+                else HELPER_DEPENDENCY_RISK_MODEL
+            ),
             "entity_id": target_id,
             "completeness": "complete",
             "evidence_complete": True,
+            "coverage_complete": True,
+            "semantic_precision": "exact",
             "execution_eligible": True,
+            "opaque_obligation_count": 0,
+            "coverage_failure_count": 0,
+            "coverage_failure_reason_codes": [],
+            "obligation_evidence": [],
             "physical_consequence": "none",
             "relevant_downstream_object_ids": [
                 f"automation.{resource_id}"
@@ -247,6 +270,13 @@ def baseline_for(
             "unresolved_dynamic_reference_count": 0,
             "truncated": False,
         }
+        if dependency_lock_projection:
+            material["dependency_lock_projection"] = {
+                "exact_helper_dependency": True,
+                "conservative_helper_dependency": True,
+                "automation_resource_ids": list(dependency_automation_ids),
+                "custom_template_reload": False,
+            }
         return {
             "entity_id": target_id,
             "state": "off",
@@ -383,6 +413,8 @@ def make_plan(
     version: str = "8.0.0",
     target_class: str = "other_addon",
     dependency_automation_ids: tuple[str, ...] = (),
+    dependency_risk_model: str | None = None,
+    dependency_lock_projection: bool = True,
 ) -> ChangePlan:
     target_id = target_id or {
         CREATE_FULL_BACKUP: "local_full_backup",
@@ -404,6 +436,8 @@ def make_plan(
         version=version,
         target_class=target_class,
         dependency_automation_ids=dependency_automation_ids,
+        dependency_risk_model=dependency_risk_model,
+        dependency_lock_projection=dependency_lock_projection,
     )
     provider = provider_evidence(operation, version=version)
     elevated = operation in {RESTART_ADDON, RESTART_HOME_ASSISTANT}
@@ -918,13 +952,26 @@ def make_context(
     version: str = "8.0.0",
     target_class: str = "other_addon",
     dependency_automation_ids: tuple[str, ...] = (),
+    dependency_drift_on_fenced_read: bool = False,
+    dependency_risk_model: str | None = None,
+    dependency_lock_projection: bool = True,
 ) -> FixtureContext:
+    """Build one deterministic operational fixture context.
+
+    ``dependency_drift_on_fenced_read`` makes the fenced post-lock read
+    observe different dependency evidence from the planned binding, which is
+    what a configuration change committed between planning and the lock looks
+    like to the final preflight.
+    """
+
     plan = make_plan(
         operation,
         target_id=target_id,
         version=version,
         target_class=target_class,
         dependency_automation_ids=dependency_automation_ids,
+        dependency_risk_model=dependency_risk_model,
+        dependency_lock_projection=dependency_lock_projection,
     )
     trace: list[str] = []
     backup = FakeBackupGateway(
@@ -954,20 +1001,29 @@ def make_context(
     )
 
     async def helper_dependency_risk_reader(
-        entity_id: str, *, refresh: bool = True
+        entity_id: str, *, refresh: bool = True, fenced: bool = False
     ):
         if entity_id != "input_boolean.synthetic_exact" or refresh is not True:
             raise AssertionError("synthetic helper dependency read changed")
-        trace.append("helper_dependency_read")
+        # B39-136-R2: the post-lock preflight read must be fenced so a scan
+        # that began before the lock cannot satisfy it.
+        trace.append(
+            "helper_dependency_fenced_read"
+            if fenced
+            else "helper_dependency_read"
+        )
+        observed_automations = dependency_automation_ids
+        if fenced and dependency_drift_on_fenced_read:
+            observed_automations = dependency_automation_ids + (
+                "drifted_automation",
+            )
         return {
             "binding": deepcopy(
                 baseline_for(
                     SET_INPUT_BOOLEAN_STATE,
                     target_id=entity_id,
                     version=version,
-                    dependency_automation_ids=(
-                        dependency_automation_ids
-                    ),
+                    dependency_automation_ids=observed_automations,
                 )["dependency_risk"]
             ),
             "provenance": {
