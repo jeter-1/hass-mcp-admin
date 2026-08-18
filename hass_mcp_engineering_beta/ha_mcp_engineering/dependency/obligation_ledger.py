@@ -91,11 +91,36 @@ _DYNAMIC_DISPATCH_FILTERS = frozenset(
     {"map", "select", "reject", "selectattr", "rejectattr"}
 )
 _REORDERING_OR_RESHAPING_FILTERS = frozenset(
-    {"batch", "reverse", "slice", "sort", "unique"}
+    {
+        "batch",
+        "dictsort",
+        "max",
+        "min",
+        "random",
+        "reverse",
+        "slice",
+        "sort",
+        "unique",
+    }
 )
 _MAPPING_ITERATION_FILTERS = frozenset(
-    {"batch", "first", "last", "list", "reverse", "slice", "sort", "unique"}
+    {
+        "batch",
+        "first",
+        "last",
+        "list",
+        "max",
+        "min",
+        "random",
+        "reverse",
+        "slice",
+        "sort",
+        "unique",
+    }
 )
+# Iterating a mapping yields its keys, but these filters yield (key, value)
+# pairs.  ``dictsort`` additionally reorders them.
+_MAPPING_PAIR_FILTERS = frozenset({"dictsort", "items"})
 _STATE_CONTEXT_ATTRIBUTES = frozenset(
     {"entity_id", "from_state", "to_state", "zone"}
 )
@@ -260,6 +285,11 @@ class _Value:
     # transformations and becomes opaque only if later consumed by a state or
     # entity selector.
     dynamic_scalar: bool = False
+    # Jinja mappings and sequences are ordered.  Merging branches that could
+    # produce different orders yields a candidate union whose position order
+    # is not determined.  Positional selection (``first``, ``last``, integer
+    # subscript) must not invent an order over such a union.
+    order_uncertain: bool = False
     external: bool = False
     complete: bool = True
     limit_exceeded: bool = False
@@ -292,6 +322,7 @@ class _Value:
                 self.contained_semantic_uncertainty
             ),
             dynamic_scalar=self.dynamic_scalar,
+            order_uncertain=self.order_uncertain,
             external=self.external,
             complete=self.complete,
             limit_exceeded=self.limit_exceeded,
@@ -414,6 +445,7 @@ def _values_equivalent(
             "projection_uncertain",
             "contained_semantic_uncertainty",
             "dynamic_scalar",
+            "order_uncertain",
         )
     )
     if not scalar_equal:
@@ -453,6 +485,52 @@ def _values_equivalent(
             for left_item, right_item in zip(left.items, right.items)
         )
     )
+
+
+def _identical_item_sequences(sequences: list[list["_Value"]]) -> bool:
+    """Return whether every contributing branch describes one same sequence."""
+
+    if len(sequences) < 2:
+        return True
+    first = sequences[0]
+    for other in sequences[1:]:
+        if len(other) != len(first):
+            return False
+        if not all(
+            _values_equivalent(left, right)
+            for left, right in zip(first, other)
+        ):
+            return False
+    return True
+
+
+def _consistent_key_order(
+    candidates: list["_Value"], merged_order: tuple[str, ...]
+) -> bool:
+    """Return whether every branch agrees with one merged mapping order.
+
+    Jinja mapping iteration follows insertion order.  When alternative
+    branches insert shared keys in different orders there is no single true
+    order for the union, so the merged value must be treated as order
+    uncertain rather than being assigned an arbitrary one.
+    """
+
+    contributors = [value for value in candidates if value.fields]
+    if len(contributors) < 2:
+        return True
+    positions = {key: index for index, key in enumerate(merged_order)}
+    for value in contributors:
+        previous = -1
+        for key in value.fields:
+            index = positions.get(key)
+            if index is None:
+                # The key was dropped by a merge bound; the bound already
+                # marks the value incomplete and order uncertain.
+                return False
+            if index < previous:
+                return False
+            previous = index
+    return True
 
 
 def _merge_values(
@@ -497,6 +575,9 @@ def _merge_values(
             value.contained_semantic_uncertainty for value in candidates
         ),
         dynamic_scalar=any(value.dynamic_scalar for value in candidates),
+        order_uncertain=any(
+            value.order_uncertain for value in candidates
+        ),
         external=any(value.external for value in candidates),
         complete=all(value.complete for value in candidates),
         domain_evidence_complete=all(
@@ -509,6 +590,15 @@ def _merge_values(
     )
     field_groups: dict[str, list[_Value]] = {}
     receiver_groups: dict[str, list[_Value]] = {}
+    # Jinja preserves mapping insertion order and sequence position order.
+    # A merge is a union over alternative branches, so a position stays
+    # determined only when every contributing branch describes the same
+    # sequence and every branch agrees on the order of its shared keys.
+    item_sequences = [value.items for value in candidates if value.items]
+    identical_items = _identical_item_sequences(item_sequences)
+    if not identical_items:
+        result.order_uncertain = True
+    retained_item_sequence = False
     for value in candidates:
         result.entity_ids.update(value.entity_ids)
         result.literal_strings.update(value.literal_strings)
@@ -519,15 +609,17 @@ def _merge_values(
         result.namespace_ids.update(value.namespace_ids)
         result.context_paths.update(value.context_paths)
         result.runtime_kinds.update(value.runtime_kinds)
-        for item in value.items:
-            _budget[0] -= 1
-            if _budget[0] < 0:
-                merge_overflow = True
-                break
-            if len(result.items) < MAX_TEMPLATE_CANDIDATES:
-                result.items.append(item.copy())
-            else:
-                merge_overflow = True
+        if value.items and not (identical_items and retained_item_sequence):
+            retained_item_sequence = True
+            for item in value.items:
+                _budget[0] -= 1
+                if _budget[0] < 0:
+                    merge_overflow = True
+                    break
+                if len(result.items) < MAX_TEMPLATE_CANDIDATES:
+                    result.items.append(item.copy())
+                else:
+                    merge_overflow = True
         for key, item in value.fields.items():
             _budget[0] -= 1
             if _budget[0] < 0:
@@ -554,13 +646,16 @@ def _merge_values(
                 group.append(item)
             else:
                 merge_overflow = True
+    # ``field_groups`` was populated in candidate order, so its own insertion
+    # order is the first-seen order of every merged key.  Canonical sorting
+    # belongs to fingerprint serialization, never to the value model.
     result.fields = {
         key: _merge_values(
             group,
             _depth=_depth + 1,
             _budget=_budget,
         )
-        for key, group in sorted(field_groups.items())
+        for key, group in field_groups.items()
     }
     result.method_receivers = {
         key: _merge_values(
@@ -568,8 +663,12 @@ def _merge_values(
             _depth=_depth + 1,
             _budget=_budget,
         )
-        for key, group in sorted(receiver_groups.items())
+        for key, group in receiver_groups.items()
     }
+    if not result.order_uncertain and not _consistent_key_order(
+        candidates, tuple(result.fields)
+    ):
+        result.order_uncertain = True
     if any(
         value.limit_exceeded
         for value in (*result.fields.values(), *result.method_receivers.values())
@@ -614,10 +713,10 @@ def _merge_values(
         )
         result.items = result.items[:MAX_TEMPLATE_CANDIDATES]
         result.fields = dict(
-            list(sorted(result.fields.items()))[:MAX_TEMPLATE_CANDIDATES]
+            list(result.fields.items())[:MAX_TEMPLATE_CANDIDATES]
         )
         result.method_receivers = dict(
-            list(sorted(result.method_receivers.items()))[
+            list(result.method_receivers.items())[
                 :MAX_TEMPLATE_CANDIDATES
             ]
         )
@@ -630,6 +729,7 @@ def _merge_values(
         result.complete = False
         result.limit_exceeded = True
         result.unknown = True
+        result.order_uncertain = True
     return result
 
 
@@ -1353,6 +1453,10 @@ class TemplateObligationAnalyzer:
             # transports. Preserve child provenance in items while keeping
             # attribute/item dispatch aware that this value is a sequence.
             merged.container_kinds = {"sequence"}
+            # The literal itself fixes the position order.  A member's own
+            # internal order uncertainty stays inside that member and must
+            # not be projected onto the enclosing sequence.
+            merged.order_uncertain = False
             if len(values) > MAX_TEMPLATE_CANDIDATES:
                 merged.complete = False
                 merged.unknown = True
@@ -1622,7 +1726,17 @@ class TemplateObligationAnalyzer:
                 and value.complete
                 and not value.unknown
             ):
-                return _ordinary_value()
+                # Retain the signed literal so that ordinary negative
+                # subscripts such as ``sequence[-1]`` stay exact instead of
+                # collapsing to a candidate union.
+                sign = -1.0 if isinstance(node, nodes.Neg) else 1.0
+                return _Value(
+                    literal_numbers={
+                        sign * number for number in value.literal_numbers
+                    },
+                    ordinary=True,
+                    complete=True,
+                )
             return _dynamic_scalar_value()
         if isinstance(
             node,
@@ -2283,13 +2397,14 @@ class TemplateObligationAnalyzer:
                 literal_strings=set(receiver.fields),
                 items=[
                     _ordinary_value(strings=(key,))
-                    for key in sorted(receiver.fields)
+                    for key in receiver.fields
                 ],
                 container_kinds={"sequence"},
                 ordinary=True,
                 unknown=receiver.unknown,
                 complete=receiver.complete,
                 limit_exceeded=receiver.limit_exceeded,
+                order_uncertain=receiver.order_uncertain,
             ))
         if method == "values":
             return self._project_value(receiver, _Value(
@@ -2299,6 +2414,7 @@ class TemplateObligationAnalyzer:
                 unknown=receiver.unknown,
                 complete=receiver.complete,
                 limit_exceeded=receiver.limit_exceeded,
+                order_uncertain=receiver.order_uncertain,
             ))
         if method == "items":
             pairs = [
@@ -2308,7 +2424,7 @@ class TemplateObligationAnalyzer:
                     ordinary=value.ordinary,
                     complete=value.complete,
                 )
-                for key, value in sorted(receiver.fields.items())
+                for key, value in receiver.fields.items()
             ]
             return self._project_value(receiver, _Value(
                 items=pairs,
@@ -2317,6 +2433,7 @@ class TemplateObligationAnalyzer:
                 unknown=receiver.unknown,
                 complete=receiver.complete,
                 limit_exceeded=receiver.limit_exceeded,
+                order_uncertain=receiver.order_uncertain,
             ))
         self._opaque(node, "unknown_mapping_method")
         return _unknown_value()
@@ -2511,13 +2628,18 @@ class TemplateObligationAnalyzer:
                 node.name, operand, arguments, keywords, node=node
             )
         if node.name == "attr":
-            if arguments and len(arguments[0].literal_strings) == 1:
+            if (
+                arguments
+                and arguments[0].complete
+                and len(arguments[0].literal_strings) == 1
+            ):
                 return self._get_attribute(
                     operand,
                     next(iter(arguments[0].literal_strings)),
                     node=node,
                     scope=scope,
                     depth=depth,
+                    attribute_only=True,
                 )
             self._opaque(node, "dynamic_attr_filter")
             return _unknown_value()
@@ -2543,6 +2665,19 @@ class TemplateObligationAnalyzer:
             return _dynamic_scalar_value()
         if category == "provenance_preserving":
             if (
+                node.name in _MAPPING_PAIR_FILTERS
+                and operand.container_kinds == {"mapping"}
+            ):
+                projected = self._call_mapping_method(
+                    "items", operand, [], {}, node=node
+                )
+                if node.name == "dictsort":
+                    projected.projection_uncertain = True
+                    projected.order_uncertain = True
+                    projected.unknown = True
+                    projected.complete = False
+                return projected
+            if (
                 node.name in _MAPPING_ITERATION_FILTERS
                 and "mapping" in operand.container_kinds
             ):
@@ -2550,15 +2685,16 @@ class TemplateObligationAnalyzer:
                     operand,
                     node=node,
                 )
-                if node.name == "first" and mapping_items.items:
+                if node.name in {"first", "last"} and mapping_items.items:
+                    if not self._positional_order_is_exact(mapping_items):
+                        return self._sequence_candidate_union(
+                            mapping_items, node=node
+                        )
                     return self._project_value(
                         mapping_items,
-                        mapping_items.items[0],
-                    )
-                if node.name == "last" and mapping_items.items:
-                    return self._project_value(
-                        mapping_items,
-                        mapping_items.items[-1],
+                        mapping_items.items[
+                            0 if node.name == "first" else -1
+                        ],
                     )
                 if node.name == "list":
                     return mapping_items
@@ -2566,10 +2702,15 @@ class TemplateObligationAnalyzer:
                 mapping_items.unknown = True
                 mapping_items.complete = False
                 return mapping_items
-            if node.name == "first" and operand.items:
-                return self._project_value(operand, operand.items[0])
-            if node.name == "last" and operand.items:
-                return self._project_value(operand, operand.items[-1])
+            if node.name in {"first", "last"} and operand.items:
+                if not self._positional_order_is_exact(operand):
+                    return self._sequence_candidate_union(
+                        operand, node=node
+                    )
+                return self._project_value(
+                    operand,
+                    operand.items[0 if node.name == "first" else -1],
+                )
             result = self._merge(
                 (operand, *arguments, *keywords.values()),
                 node=node,
@@ -2599,6 +2740,30 @@ class TemplateObligationAnalyzer:
             return _unknown_value()
         self._opaque(node, f"unknown_filter_{node.name}")
         return _unknown_value()
+
+    @staticmethod
+    def _positional_order_is_exact(value: _Value) -> bool:
+        """Return whether one sequence position is exactly determined.
+
+        Positional selection is sound only over a sequence whose order the
+        analyzer actually knows.  A merged branch union, a reordering or
+        reshaping filter result, and a truncated container all describe a
+        candidate set rather than an ordered sequence.
+        """
+
+        return not value.order_uncertain and not value.projection_uncertain
+
+    def _sequence_candidate_union(
+        self, value: _Value, *, node: nodes.Node
+    ) -> _Value:
+        """Return every possible member when no position is determined."""
+
+        projected = self._merge(value.items, node=node)
+        projected.projection_uncertain = True
+        projected.order_uncertain = True
+        projected.unknown = True
+        projected.complete = False
+        return self._project_value(value, projected)
 
     def _mapping_iteration_value(
         self,
@@ -2641,6 +2806,7 @@ class TemplateObligationAnalyzer:
             ),
             projection_uncertain=value.projection_uncertain,
             limit_exceeded=value.limit_exceeded,
+            order_uncertain=value.order_uncertain,
         )
         return self._project_value(value, result)
 
@@ -2990,7 +3156,15 @@ class TemplateObligationAnalyzer:
         node: nodes.Node,
         scope: _Scope,
         depth: int,
+        attribute_only: bool = False,
     ) -> _Value:
+        """Model Jinja attribute lookup for one bounded abstract receiver.
+
+        ``attribute_only`` models the ``attr`` filter, which is real attribute
+        access and never falls back to item lookup.  Dot access keeps the
+        Jinja getattr contract of attribute first, then item.
+        """
+
         if base.namespace_ids:
             base = self._resolve_namespace_history(base, node=node)
         typed_receiver_complete = bool(
@@ -3189,18 +3363,35 @@ class TemplateObligationAnalyzer:
             # Mapping dot lookup is attribute-first, so a method name shadows
             # an item. Namespace fields are real attributes and take their
             # stored value even when their name collides with a dict method.
-            if attribute in base.fields and (
-                attribute not in _MAPPING_METHODS
-                or namespace_possible
-                or not mapping_possible
+            # ``attr`` performs no item lookup at all, so a mapping entry is
+            # reachable only when the receiver can be a Namespace.
+            item_lookup_reachable = not attribute_only or namespace_possible
+            if (
+                attribute in base.fields
+                and item_lookup_reachable
+                and (
+                    attribute not in _MAPPING_METHODS
+                    or namespace_possible
+                    or not mapping_possible
+                )
             ):
                 alternatives.append(base.fields[attribute])
+                if attribute_only and mapping_possible:
+                    # The receiver kind is not decided.  Under the mapping
+                    # reading ``attr`` yields undefined, which carries no
+                    # dependency provenance; keep both alternatives.
+                    alternatives.append(_ordinary_value())
             if alternatives:
                 selected = self._merge(alternatives, node=node)
                 if len(alternatives) > 1:
                     selected.projection_uncertain = True
                 return self._project_value(base, selected)
             if base.container_kinds == {"namespace"} and base.complete:
+                return _ordinary_value()
+            if attribute_only and base.container_kinds == {"mapping"}:
+                # Exactly modelled: real Jinja returns undefined, which can
+                # never select an entity.  This is evidence, not opacity.
+                self._neutral(node, "attr_filter_mapping_attribute_undefined")
                 return _ordinary_value()
         if base.ordinary and (
             not base.unknown or base.dynamic_scalar
@@ -3229,6 +3420,7 @@ class TemplateObligationAnalyzer:
                 result.items = [item.copy() for item in base.items]
                 result.container_kinds = {"sequence"}
                 result.projection_uncertain = True
+                result.order_uncertain = True
                 result.unknown = True
                 result.complete = False
                 return self._project_value(base, result)
@@ -3347,17 +3539,18 @@ class TemplateObligationAnalyzer:
             return _dynamic_scalar_value()
         if base.state_attribute_container:
             return _dynamic_scalar_value()
-        if base.items and len(key.literal_numbers) == 1 and key.complete:
+        if (
+            base.items
+            and len(key.literal_numbers) == 1
+            and key.complete
+            and self._positional_order_is_exact(base)
+        ):
             index = int(next(iter(key.literal_numbers)))
             if -len(base.items) <= index < len(base.items):
                 return self._project_value(base, base.items[index])
             return self._project_value(base, _unknown_value())
         if base.items:
-            projected = self._merge(base.items, node=node)
-            projected.projection_uncertain = True
-            projected.unknown = True
-            projected.complete = False
-            return self._project_value(base, projected)
+            return self._sequence_candidate_union(base, node=node)
         if base.container_kinds.intersection({"mapping", "namespace"}):
             selected = [
                 base.fields[item]
