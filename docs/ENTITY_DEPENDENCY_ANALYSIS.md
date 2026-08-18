@@ -77,13 +77,35 @@ opacity when consumed as entity selectors. Aggregate context conversion, lexical
 scope, macro capture, recursion, value depth, member count, and scalar size are
 bounded explicitly; a breached bound is coverage failure.
 
-The reviewed semantic registry includes Home Assistant state helpers, translated-state
-helpers, `expand`, `closest`, `distance`, area/device/floor/integration/label entity-set
-producers, dynamic filter/test dispatch, and state-bearing trigger, wait, and `this`
-context. Its immutable Home Assistant/Jinja source provenance is maintained in
-an independently reviewed declaration and deterministically generated offline.
-A future or unknown helper becomes opaque until reviewed rather
-than being inferred harmless. Static template imports/includes/extends bind the
+The reviewed semantic registry derives the complete standard Jinja 3.1.6 filter
+and test vocabulary from the pinned package itself, so every name Jinja binds -
+including the `d`/`default`, `e`/`escape`, `count`/`length`, and comparison-test
+aliases - carries the reviewed category of the implementation it resolves to.
+On top of that it declares Home Assistant state helpers, translated-state
+helpers, `expand`, `closest`, `distance`, area/device/floor/integration/label
+entity-set producers, dynamic filter/test dispatch, and state-bearing trigger,
+wait, and `this` context. A future or unknown helper becomes opaque until
+reviewed rather than being inferred harmless; Home Assistant's own template
+extensions beyond the reviewed set, such as `as_timestamp`, are in that opaque
+category today.
+
+Source provenance is maintained in an independently reviewed declaration and
+generated deterministically offline. Generation verifies each referenced source
+against an independent witness rather than against the declaration itself:
+Jinja path/blob pairs are recomputed as git blob SHA-1 values from the
+installed pinned distribution, and Home Assistant path/blob pairs are checked
+against immutable captured official-source evidence. A wrong blob, a copied
+attribution, or a path that does not exist at a supported tag fails generation.
+
+The registry's semantics are reviewed against Home Assistant 2026.7.2,
+2026.8.0, and 2026.8.1. They are not bound to the version reported by the
+connected instance: nothing reads the connected version, and it does not
+participate in dependency evidence or its fingerprint.
+
+The `attr` filter is modelled as real attribute access with no mapping-item
+fallback, matching `jinja2.filters.do_attr`. On a mapping receiver it yields
+undefined, which carries no dependency provenance, instead of reading the item
+of the same name. Static template imports/includes/extends bind the
 external name and calling configuration identity but remain opaque because Beta 39
 does not retrieve custom-template content.
 

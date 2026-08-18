@@ -19,7 +19,12 @@ decisions.
    fallback may be reachable.
 4. Confirm Jinja is parsed, never rendered. The checked-in semantic registry
    must bind Jinja 3.1.6 and the exact Home Assistant 2026.7.2, 2026.8.0, and
-   2026.8.1 source contracts. Offline regeneration must be byte-identical.
+   2026.8.1 source contracts. Offline regeneration must be byte-identical, and
+   generation must fail when a declared path/blob pair contradicts the
+   captured official-source evidence or the installed pinned `Jinja2`
+   distribution. The registry's semantics are reviewed against those releases;
+   they are not bound to the connected instance's version, and nothing in this
+   release reads the connected version.
 5. Require focused obligation, target-projection, risk, actionability, drift,
    and F3 lock tests plus Full and Evidence gates. Require compilation,
    dependency consistency, strict vulnerability audit, YAML, PowerShell,
@@ -134,6 +139,62 @@ context provenance, potential automation set, action services/targets/data,
 coverage and bounds, and lock projection. Final preflight repeats analysis
 after locks are held. Any material change fails before dispatch and requires a
 new plan and approval; display-only metadata must not cause false drift.
+
+## Merge gate: opacity measurement
+
+This measurement is a deliverable, not an optional diagnostic. The six
+corrections can all be implemented perfectly and still leave the capability
+unusable; this is the only number that distinguishes those outcomes before
+deployment.
+
+The analyzer was run offline over a sanitized snapshot of the operator's real
+`automations.yaml`, taken from the private configuration repository. No live
+Home Assistant or deployed MCP endpoint was contacted. Only aggregate counts
+and reason codes are recorded here; no automation body, entity id, friendly
+name, or selector value is reproduced.
+
+| Measure | Corrected head | Reviewed head `2a7efb9` |
+| --- | --- | --- |
+| Automations analyzed | 89 | 89 |
+| Automations unreadable | 0 | 0 |
+| Classified exact | 67 (75.28%) | 63 (70.79%) |
+| Classified opaque or conservative | 22 (24.72%) | 26 (29.21%) |
+| Coverage failures | 0 | 0 |
+| Obligations emitted | 2100 | 2101 |
+| Exact-lock obligations | 1136 | 1136 |
+| Conservative-lock obligations | 94 | 106 |
+
+Distinct causes of opacity at the corrected head, by frequency:
+
+| Reason code | Automations affected | Obligations |
+| --- | --- | --- |
+| `unknown_callable_binding` | 16 | 42 |
+| `state_value_consumed_by_filter_target_opaque` | 2 | 10 |
+| `unknown_attribute_receiver` | 6 | 7 |
+| `states_entity_access_target_opaque` | 3 | 7 |
+| `label_entities_entity_set_membership_unavailable` | 2 | 6 |
+| `states_item_entity_access_target_opaque` | 1 | 4 |
+| `blueprint_source_unavailable_to_local_analysis` | 3 | 3 |
+| `state_collection_iterated_target_opaque` | 2 | 3 |
+| `membership_iterates_state_value_target_opaque` | 2 | 3 |
+| `state_object_last_changed_access_target_opaque` | 1 | 2 |
+| `entity_name_registry_lookup_opaque` | 2 | 2 |
+| `state_object_attributes_access_target_opaque` | 1 | 2 |
+| `state_attr_entity_access_target_opaque` | 1 | 2 |
+| `is_state_entity_access_target_opaque` | 1 | 1 |
+
+Reading of the result. About three quarters of the operator's automations
+classify exactly, so an ordinary helper flip shows one approval rather than an
+elevated one. Correcting the standard Jinja vocabulary (B39-136-R6) removed
+`unknown_filter_round` and `unknown_filter_max` entirely and moved four
+automations from conservative to exact.
+
+The dominant residual cause is `unknown_callable_binding`, and its content is
+almost entirely Home Assistant's own template extensions rather than standard
+Jinja - `as_timestamp` accounts for the large majority, with
+`timedelta.total_seconds` behind it. Extending the reviewed vocabulary to
+Home Assistant's documented template functions is the obvious next lever, and
+it is a separate design decision rather than another correction round.
 
 ## Preserved operational acceptance
 

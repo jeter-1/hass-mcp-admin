@@ -21,9 +21,21 @@ macros, collections, attributes/items, filters/tests, and later invocation.
 Imports, includes, extends, and unavailable imported macros remain explicit
 bounded external opacity; Beta 39 does not retrieve custom-template source.
 
-The reviewed semantic-registry declaration is independent of the runtime output,
-binds immutable Home Assistant and Jinja provenance, and generates the checked-in
-registry reproducibly offline. It covers state helpers,
+The reviewed semantic-registry declaration is independent of the runtime output
+and generates the checked-in registry reproducibly offline. Generation verifies
+provenance against independent witnesses rather than against its own declared
+tuples: Jinja path/blob pairs are recomputed as git blob SHA-1 values from the
+installed pinned `Jinja2` distribution, and Home Assistant path/blob pairs are
+checked against the immutable captured evidence in
+`docs/evidence/home-assistant-template-source-blobs.json`. A wrong blob, a
+copied attribution, or a path that does not exist at a supported tag fails
+generation.
+
+The standard Jinja filter and test vocabulary is derived from the pinned
+package rather than hand-listed, so every name Jinja binds - including the
+`d`/`default`, `e`/`escape`, `count`/`length`, and comparison-test aliases - is
+classified by construction. Beyond the standard vocabulary it covers state
+helpers,
 translated state helpers, entity-set producers, dynamic filter/test dispatch,
 ordinary methods with proven receiver provenance, and state-bearing trigger,
 wait, and automation context. Unknown future vocabulary remains opaque rather
@@ -80,8 +92,44 @@ reload lock identity without adding any custom-template write capability.
 
 Approval binds semantic-registry identity, obligation outcomes, source and
 context provenance, possible automation effects, coverage/bounds, and lock
-projection. Final preflight reanalyzes after locks are held. A material change
-requires a fresh plan and approval.
+projection. Final preflight reanalyzes after locks are held, behind a
+source-read fence: the refresh is satisfied only by a scan whose source read
+began after the lock was taken, so a build that was already running before the
+lock cannot decide execution eligibility, and an invalidation raised during a
+build is not cleared by that build. A material change requires a fresh plan and
+approval.
+
+Selector evidence is bounded per value and in aggregate before an obligation
+exists. An oversized or secret-bearing value is replaced by a deterministic
+digest that preserves drift detection, and losing target-specific detail
+reclassifies the obligation as bounded semantic opacity with a conservative
+lock rather than truncating it silently.
+
+Compatibility with a superseded helper dependency-risk model is readability,
+not execution authority. A plan carrying superseded evidence stays readable and
+keeps readback-first recovery, but it is non-actionable, projects no locks, and
+reports `next_required_operation: create_change_plan`; regaining execution
+authority requires a replan.
+
+## Known limitations
+
+The registry declares an exact CI image digest per supported Home Assistant
+release, but generation does not verify image digests offline; that field is
+recorded as declared-but-unverified in `source_provenance`.
+
+The semantics in the registry are reviewed against specific Home Assistant
+releases. They are **not** bound to the version of the connected Home Assistant
+instance: nothing reads `GET /api/config` and selects the matching reviewed
+entry, and the connected version does not participate in dependency evidence or
+its fingerprint. Read the registry as "reviewed against 2026.7.2, 2026.8.0, and
+2026.8.1", not as "verified against the instance you are about to change".
+Runtime version admission is tracked separately and is not part of this
+release.
+
+Home Assistant's own template extensions beyond the reviewed vocabulary - most
+notably `as_timestamp` - remain unknown and therefore conservative. See the
+opacity measurement in the Beta 39 acceptance document for the observed
+distribution.
 
 ## Preserved boundaries
 
