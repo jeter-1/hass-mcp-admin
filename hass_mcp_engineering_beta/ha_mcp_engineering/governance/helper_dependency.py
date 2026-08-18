@@ -18,8 +18,18 @@ from .normalize import stable_hash
 
 
 HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v3"
+# Compatibility: persisted bindings from these models stay readable, remain
+# projectable for review, and keep readback-first recovery available.  Being
+# readable is not authority to execute.
 HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS = frozenset(
     {"helper-dependency-risk-v2", HELPER_DEPENDENCY_RISK_MODEL}
+)
+# Execution authority: only current-model evidence may authorize approval,
+# lock projection, or dispatch.  An older compatible model describes a
+# superseded dependency question and requires an explicit replan; it must
+# never be presented as directly executable.
+HELPER_DEPENDENCY_RISK_EXECUTION_MODELS = frozenset(
+    {HELPER_DEPENDENCY_RISK_MODEL}
 )
 MAX_RELEVANT_AUTOMATIONS = 50
 MAX_RELEVANT_OBLIGATIONS = 256
@@ -1265,11 +1275,28 @@ class HelperDependencyRiskService:
         self.index = index
 
     async def assess(
-        self, entity_id: str, *, refresh: bool = True
+        self,
+        entity_id: str,
+        *,
+        refresh: bool = True,
+        fenced: bool = False,
     ) -> dict[str, Any]:
+        """Read target-specific risk, optionally behind a governed fence.
+
+        ``fenced`` is used by the post-lock preflight, which runs only after
+        the complete lock set is held.  It opens a source-read fence and
+        accepts only evidence from a scan that started after it, so a build
+        that began before the lock cannot satisfy the final check.
+        """
+
+        fence: int | None = None
         try:
+            if fenced:
+                fence = self.index.open_source_fence(
+                    "governed_helper_preflight"
+                )
             snapshot, rebuilt, lookup_duration_ms = await self.index.get(
-                refresh=refresh
+                refresh=refresh, min_source_epoch=fence
             )
             metadata = self.index.evidence_metadata(snapshot)
         except Exception as exc:
@@ -1301,6 +1328,8 @@ class HelperDependencyRiskService:
                     "evidence_age_seconds"
                 ),
                 "refreshed": rebuilt,
+                "source_epoch": snapshot.source_epoch,
+                "fenced": fence is not None,
                 "lookup_duration_ms": round(lookup_duration_ms, 3),
                 "fallback": "none",
                 "fallback_occurred": False,
@@ -1309,7 +1338,7 @@ class HelperDependencyRiskService:
 
 
 async def read_runtime_helper_dependency_risk(
-    entity_id: str, *, refresh: bool = True
+    entity_id: str, *, refresh: bool = True, fenced: bool = False
 ) -> dict[str, Any]:
     from ..dependency import DEPENDENCY_ANALYSIS
 
@@ -1327,7 +1356,7 @@ async def read_runtime_helper_dependency_risk(
             },
         }
     return await HelperDependencyRiskService(index).assess(
-        entity_id, refresh=refresh
+        entity_id, refresh=refresh, fenced=fenced
     )
 
 
@@ -1427,6 +1456,7 @@ def helper_dependency_risk_assessment(
 __all__ = [
     "HELPER_DEPENDENCY_RISK_MODEL",
     "HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS",
+    "HELPER_DEPENDENCY_RISK_EXECUTION_MODELS",
     "HelperDependencyRiskService",
     "build_helper_dependency_risk_binding",
     "helper_dependency_risk_assessment",

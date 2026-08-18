@@ -777,8 +777,12 @@ class InputBooleanStateOperationStrategy(OperationalStrategy):
         if not isinstance(state_baseline, dict):
             return False, "invalid_provider_response", ("entity_state",), fresh
         try:
+            # The complete lock set is already held here, so this refresh is
+            # fenced: only a scan whose source read began after the fence may
+            # satisfy it.  A build started before the lock describes the
+            # pre-lock world and must not decide execution eligibility.
             dependency = await self.dependency_risk_reader(
-                prepared.target.target_id, refresh=True
+                prepared.target.target_id, refresh=True, fenced=True
             )
         except Exception:
             dependency = None

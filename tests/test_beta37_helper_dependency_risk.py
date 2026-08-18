@@ -1054,8 +1054,9 @@ class HelperDependencyRiskTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_dependency_source_failure_is_bounded_and_conservative(self):
         class FailingIndex:
-            async def get(self, *, refresh):
+            async def get(self, *, refresh, min_source_epoch=None):
                 self.refresh = refresh
+                self.min_source_epoch = min_source_epoch
                 raise RuntimeError("untrusted provider response")
 
         index = FailingIndex()
@@ -1065,6 +1066,8 @@ class HelperDependencyRiskTests(unittest.IsolatedAsyncioTestCase):
         risk = helper_dependency_risk_assessment(observed)
 
         self.assertTrue(index.refresh)
+        # Planning reads are not fenced; only the post-lock preflight is.
+        self.assertIsNone(index.min_source_epoch)
         self.assertEqual(observed["binding"]["completeness"], "failed")
         self.assertEqual(observed["binding"]["physical_consequence"], "unknown")
         self.assertEqual(risk.level.value, "high")
