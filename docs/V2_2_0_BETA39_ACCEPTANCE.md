@@ -230,24 +230,26 @@ was kept locally and is not committed.
 
 ### Per-helper rows
 
-| helper | policy_class | risk_delta | physical_consequence | evidence_complete | execution_eligible | semantic_precision | relevant | proven | opaque-only | primary reason | lock class |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `helper_01` | elevated_admin | high | indirect | no | no | coverage_failure | 43 | 21 | 22 | `action_profile_truncated` | `exact_helper_dependency`, `conservative_dependency` |
-| `helper_02` | elevated_admin | high | indirect | no | no | coverage_failure | 25 | 3 | 22 | `action_profile_truncated` | `exact_helper_dependency`, `conservative_dependency` |
-| `helper_03` | elevated_admin | high | indirect | no | no | coverage_failure | 28 | 6 | 22 | `action_profile_truncated` | `exact_helper_dependency`, `conservative_dependency` |
-| `helper_04` | elevated_admin | high | indirect | no | no | coverage_failure | 30 | 8 | 22 | `action_profile_truncated` | `exact_helper_dependency`, `conservative_dependency` |
-| `helper_05` | elevated_admin | high | indirect | no | no | coverage_failure | 33 | 15 | 18 | `action_profile_truncated` | `exact_helper_dependency`, `conservative_dependency` |
-| `helper_06` | elevated_admin | high | indirect | no | no | coverage_failure | 22 | 1 | 21 | `action_profile_truncated` | `exact_helper_dependency`, `conservative_dependency` |
-| `helper_07` | elevated_admin | high | indirect | no | no | coverage_failure | 24 | 2 | 22 | `action_profile_truncated` | `exact_helper_dependency`, `conservative_dependency` |
-| `helper_08` | elevated_admin | high | indirect | no | no | coverage_failure | 23 | 2 | 21 | `action_profile_truncated` | `exact_helper_dependency`, `conservative_dependency` |
-| `helper_09` | elevated_admin | high | indirect | no | no | coverage_failure | 23 | 5 | 18 | `action_profile_truncated` | `exact_helper_dependency`, `conservative_dependency` |
-| `helper_10` | elevated_admin | high | indirect | no | no | coverage_failure | 22 | 2 | 20 | `action_profile_truncated` | `exact_helper_dependency`, `conservative_dependency` |
-| `helper_11` | elevated_admin | high | indirect | no | no | coverage_failure | 23 | 1 | 22 | `action_profile_truncated` | `exact_helper_dependency`, `conservative_dependency` |
-| `helper_12` | elevated_admin | high | indirect | no | no | coverage_failure | 22 | 1 | 21 | `action_profile_truncated` | `exact_helper_dependency`, `conservative_dependency` |
-| `helper_13` | elevated_admin | high | indirect | no | no | coverage_failure | 26 | 4 | 22 | `action_profile_truncated` | `exact_helper_dependency`, `conservative_dependency` |
-| `helper_14` | elevated_admin | high | indirect | no | no | coverage_failure | 23 | 1 | 22 | `action_profile_truncated` | `exact_helper_dependency`, `conservative_dependency` |
-| `helper_15` | elevated_admin | high | indirect | no | no | coverage_failure | 22 | 0 | 22 | `action_profile_truncated` | `exact_helper_dependency`, `conservative_dependency` |
-| `helper_16` | elevated_admin | high | indirect | no | no | coverage_failure | 22 | 0 | 22 | `action_profile_truncated` | `exact_helper_dependency`, `conservative_dependency` |
+Measured after the effect-projection bound correction described below.
+
+| helper | policy_class | physical_consequence | execution_eligible | semantic_precision | relevant | proven | opaque-only | primary reason |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `helper_01` | elevated_admin | indirect | no | coverage_failure | 43 | 21 | 22 | `action_profile_truncated` |
+| `helper_02` | elevated_admin | safety_critical | yes | bounded_opaque | 25 | 3 | 22 | `consequential_helper_dependency_detected` |
+| `helper_03` | elevated_admin | indirect | no | coverage_failure | 28 | 6 | 22 | `action_profile_truncated` |
+| `helper_04` | elevated_admin | safety_critical | yes | bounded_opaque | 30 | 8 | 22 | `consequential_helper_dependency_detected` |
+| `helper_05` | elevated_admin | indirect | no | coverage_failure | 33 | 15 | 18 | `action_profile_truncated` |
+| `helper_06` | elevated_admin | safety_critical | yes | bounded_opaque | 22 | 1 | 21 | `consequential_helper_dependency_detected` |
+| `helper_07` | elevated_admin | safety_critical | yes | bounded_opaque | 24 | 2 | 22 | `consequential_helper_dependency_detected` |
+| `helper_08` | elevated_admin | safety_critical | yes | bounded_opaque | 23 | 2 | 21 | `consequential_helper_dependency_detected` |
+| `helper_09` | elevated_admin | safety_critical | yes | bounded_opaque | 23 | 5 | 18 | `consequential_helper_dependency_detected` |
+| `helper_10` | elevated_admin | safety_critical | yes | bounded_opaque | 22 | 2 | 20 | `consequential_helper_dependency_detected` |
+| `helper_11` | elevated_admin | safety_critical | yes | bounded_opaque | 23 | 1 | 22 | `consequential_helper_dependency_detected` |
+| `helper_12` | elevated_admin | safety_critical | yes | bounded_opaque | 22 | 1 | 21 | `consequential_helper_dependency_detected` |
+| `helper_13` | elevated_admin | safety_critical | yes | bounded_opaque | 26 | 4 | 22 | `consequential_helper_dependency_detected` |
+| `helper_14` | elevated_admin | safety_critical | yes | bounded_opaque | 23 | 1 | 22 | `consequential_helper_dependency_detected` |
+| `helper_15` | elevated_admin | safety_critical | yes | bounded_opaque | 22 | 0 | 22 | `consequential_helper_dependency_detected` |
+| `helper_16` | elevated_admin | safety_critical | yes | bounded_opaque | 22 | 0 | 22 | `consequential_helper_dependency_detected` |
 
 "relevant" is the count of automations the binding treats as potential
 dependents. "proven" is the subset reached through an exact dependency on that
@@ -256,90 +258,80 @@ opacity, with no proven relationship to that helper.
 
 ### Aggregate
 
-| Outcome | Count | Share |
+| Outcome | As first measured | After the bound correction |
 | --- | --- | --- |
-| Total `input_boolean` helpers analyzed | 16 | 100% |
-| STANDARD_ADMIN | 0 | 0.00% |
-| ELEVATED_ADMIN | 16 | 100.00% |
-| PROHIBITED | 0 | 0.00% |
-| Approval-actionable plans | 0 | 0.00% |
+| Total `input_boolean` helpers analyzed | 16 | 16 |
+| STANDARD_ADMIN | 0 (0.00%) | 0 (0.00%) |
+| ELEVATED_ADMIN | 16 (100.00%) | 16 (100.00%) |
+| PROHIBITED | 0 | 0 |
+| Execution-eligible (approvable at all) | **0 (0.00%)** | **13 (81.25%)** |
+| Coverage failure | 16 | 3 |
 
-Every helper is additionally **non-actionable**: `execution_eligible` is false,
-so `_helper_dependency_plan_is_actionable` returns false and no approval
-challenge can be created. Verified by calling the production predicate directly
-for all 16. Elevated is therefore the classification, not the outcome - the
-outcome is that no helper flip can be approved at all.
+### Two stacked causes, with different responses
 
-Reason codes for the non-standard outcomes, all 16 helpers identically:
+The first measurement found every helper non-actionable. Tracing it separated
+two independent causes.
 
-| Reason code | Helpers |
-| --- | --- |
-| `exact_input_boolean_state_elevated_policy` | 16 |
-| `helper_dependency_coverage_failure` | 16 |
-| `low_risk_not_established` | 16 |
-| `action_profile_truncated` (coverage failure cause) | 16 |
+**Cause 1 - a display bound applied to structural evidence.** The effect
+projection retained service-call targets and data under
+`_HELPER_PROFILE_LIMIT`, the limit for display lists such as action domains and
+services. One notification payload can exceed 31 flattened leaves on its own,
+so five of the operator's 89 automations were clipped, and a clipped projection
+raises `action_profile_truncated` - a coverage failure, not mere elevation.
+Through the coupling described below, two of those five reached every helper.
+Corrected by giving structural evidence its own bound
+(`_HELPER_EFFECT_PROJECTION_VALUE_LIMIT`), which restores 13 of 16 helpers to
+approvable. Exactly one automation still clips, on the genuine 512-node
+structure budget, and it reaches the remaining 3.
 
-### Pushed off standard solely by an unrelated opaque automation
+**Cause 2 - opacity is global rather than helper-scoped.** Unchanged by the
+correction and still open. An automation opaque for any reason becomes a
+potential dependent of every helper, so each helper remains coupled to 18-22
+automations with no proven relationship to it.
 
-This is the figure the measurement exists to produce, reported at both layers
-the model applies.
-
-| Attribution | Helpers |
+| Attribution (after the bound correction) | Helpers |
 | --- | --- |
 | Would be STANDARD_ADMIN if obligations with no proven relationship were absent | **2 of 16** |
-| Would be execution-eligible (approvable at all) if those obligations were absent | **12 of 16** |
-| Coverage failure caused **only** by opaque-only automations | **12 of 16** |
-| Coverage failure with at least one genuinely proven cause | 4 of 16 |
-| Helpers with zero proven relationships that are still non-actionable | 2 of 16 |
 | `physical_consequence: safety_critical` inherited only from opaque-only automations | **13 of 16** |
 | `physical_consequence: safety_critical` from a proven dependency | 3 of 16 |
-
-Every helper is coupled to 18-22 opaque-only automations. That number tracks the
-22 opaque automations in the measurement above: an automation that is opaque for
-any reason becomes a potential dependent of **every** helper, because
-`_obligation_targets_helper` projects an opaque obligation to
-`bounded_semantic_opaque` for every target it cannot exclude.
-
-Two consequences follow. First, the binding's `physical_consequence` is
-`safety_critical` for all 16 helpers, while only 3 have a proven
-safety-critical dependency. Second, and decisively, 5 of the 89 automations
-carry a clipped effect projection; through the same coupling, 2 of them reach
-every helper and raise `action_profile_truncated`, which is a coverage failure
-rather than mere elevation. For 12 of 16 helpers that coverage failure has no
-proven cause at all.
+| Remaining coverage failures, from the genuine structure bound | 3 of 16 |
 
 ### Reading of the result
 
-This is the third case in the merge-gate criteria: **most helpers land
-non-standard because unrelated opaque automations are treated as potential
-dependents.** Reporting and stopping is the required response; no correction was
-attempted.
+The merge-gate criteria asked whether helpers land non-standard because
+unrelated opaque automations are treated as potential dependents. They do, and
+the answer separates into the two causes above.
 
-The result is stronger than the criterion anticipated. The expectation was that
-over-coupling might push helpers from standard to elevated. What it actually
-does is push every helper into coverage failure, which is not approvable at all.
-On this configuration the capability cannot operate on any of the operator's 16
-helpers.
+The bound correction removes the sharpest edge: helper flips are approvable
+again for 13 of 16 helpers, where previously none were. That was a mis-scoped
+constant rather than a design flaw, and it is fixed.
 
-Two qualifications, both stated so the finding is not read as larger than it is.
-Even with helper-scoped opacity, most helpers would remain ELEVATED_ADMIN: 11 of
-16 have a proven dependency whose effect projection is `unknown`, and 3 have a
-proven safety-critical dependency. That part is correct behavior and reflects
-the operator's helpers genuinely gating physical actions - 66 of 89 automations
-project `unknown` and 12 project `safety_critical`. The change that helper
-scoping would make is not mainly standard-versus-elevated; it is
-approvable-versus-not-approvable, for 12 of 16 helpers.
+What remains is the design question, and it is unchanged. No helper reaches
+STANDARD_ADMIN. Every helper's binding still reads `safety_critical`, while only
+3 have a proven safety-critical dependency; for the other 13 that severity is
+inherited from automations with no proven relationship to them. Two helpers with
+zero proven relationships would be STANDARD_ADMIN under helper-scoped opacity.
 
-Second, 3 automations use blueprints whose source the offline harness cannot
-resolve, so they are opaque here where the live provider would resolve them.
-They are not the cause of the coverage failure: none of the 5 automations with
-clipped effect projections uses a blueprint, and the effect projection is
-computed from configuration alone, so it is identical live.
+Two qualifications, so the remaining finding is not read as larger than it is.
+Most helpers would stay ELEVATED_ADMIN even under helper-scoped opacity, because
+their proven dependents project `unknown` or `safety_critical` effects - 66 of
+89 automations project `unknown` and 12 project `safety_critical`. That reflects
+the operator's helpers genuinely gating physical actions and is correct
+behavior. And the 3 automations whose blueprints the offline harness cannot
+resolve are not a cause here: the automation that still clips uses no blueprint,
+and the effect projection is computed from configuration alone, so it is
+identical live.
 
-The design question this raises - whether bounded opacity should be
-helper-scoped rather than global, and whether a clipped effect projection on one
-unrelated automation should be able to make every helper non-actionable - is
-outside the scope of the correction round and is left for that conversation.
+Whether bounded opacity should be helper-scoped rather than global remains a
+design decision outside the correction round. A separate investigation
+established that Home Assistant's WebSocket `render_template` command returns a
+native `listeners` payload at all three supported versions, which would reduce
+the automations coupled to every helper from 22 to an estimated 2. That native
+answer is authoritative for the path a template actually takes, but it is
+collected at access time and is therefore path-dependent: a branch not taken
+contributes nothing, and the helper being flipped is frequently the branch
+selector. It narrows conservative cases; it does not replace branch
+enumeration for approval evidence.
 
 ## Preserved operational acceptance
 

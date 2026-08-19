@@ -105,11 +105,25 @@ _HELPER_GENERIC_EFFECT_SERVICES = frozenset(
     }
 )
 _HELPER_TRANSITIVE_ACTION_FAMILIES = frozenset({"event", "scene"})
+# Bounds the *display* value lists (action domains, services, reason codes)
+# projected for one automation.  It is not a structural traversal budget.
 _HELPER_PROFILE_LIMIT = 32
 _HELPER_PROFILE_VALUE_BYTES = 256
 _HELPER_EFFECT_PROJECTION_MODEL = "automation-action-effect-v2"
 _HELPER_EFFECT_STRUCTURE_NODE_LIMIT = 512
 _HELPER_EFFECT_STRUCTURE_DEPTH_LIMIT = 16
+# Bounds the effect projection's structural evidence: how many service-call
+# data leaves may be flattened, and how many target/data values are retained.
+# These are a subset of the action structure, so the bound stays below the
+# structure node budget and leaves that budget as the one that catches a
+# pathologically large automation.  It is deliberately distinct from
+# _HELPER_PROFILE_LIMIT, which bounds display lists: reusing the display bound
+# for structural evidence clipped ordinary automations - one notification
+# payload can exceed 31 leaves on its own - and a clipped projection makes
+# every helper that could reach that automation non-actionable.  Each value is
+# independently size-bounded by _HELPER_PROFILE_VALUE_BYTES, so this bounds
+# count, not payload size.
+_HELPER_EFFECT_PROJECTION_VALUE_LIMIT = 256
 _HELPER_EFFECT_DISPLAY_ONLY_FIELDS = frozenset({"alias", "description"})
 _HELPER_EFFECT_SAFE_DATA_FIELDS = frozenset(
     {
@@ -641,11 +655,13 @@ def _bounded_effect_projection_values(
             value = "oversized_sha256:" + hashlib.sha256(encoded).hexdigest()
         normalized.add(value)
     ordered = sorted(normalized)
-    if len(ordered) > _HELPER_PROFILE_LIMIT:
+    if len(ordered) > _HELPER_EFFECT_PROJECTION_VALUE_LIMIT:
         clipped = True
-        overflow = _effect_value_hash(ordered[_HELPER_PROFILE_LIMIT - 1 :])
+        overflow = _effect_value_hash(
+            ordered[_HELPER_EFFECT_PROJECTION_VALUE_LIMIT - 1 :]
+        )
         ordered = [
-            *ordered[: _HELPER_PROFILE_LIMIT - 1],
+            *ordered[: _HELPER_EFFECT_PROJECTION_VALUE_LIMIT - 1],
             "overflow_sha256:" + overflow,
         ]
     return ordered, clipped
@@ -799,7 +815,7 @@ def _automation_effect_projection(
     targets: list[str] = []
     data: list[str] = []
     data_state = {
-        "remaining": _HELPER_PROFILE_LIMIT - 1,
+        "remaining": _HELPER_EFFECT_PROJECTION_VALUE_LIMIT,
         "overflow": hashlib.sha256(),
         "clipped": False,
     }
