@@ -37,6 +37,15 @@ from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
 TARGET = "input_boolean.obligation_canary"
 
 
+
+from ha_mcp_engineering.dependency.semantic_registry import (  # noqa: E402
+    supported_home_assistant_versions,
+)
+
+# B39-136-R3b: fakes describe a supported instance so the version
+# admission gate is not the subject of these tests.
+SUPPORTED_HA_VERSION = supported_home_assistant_versions()[-1]
+
 def _extract(config, *, source_id="obligation"):
     return extract_document_obligation_evidence(
         source_type="automation",
@@ -1416,6 +1425,8 @@ class WholeConfigurationObligationTests(unittest.TestCase):
 class ProviderObligationTests(unittest.IsolatedAsyncioTestCase):
     class Rest:
         async def request(self, method, path):
+            if path == "/config":
+                return {"version": SUPPORTED_HA_VERSION}
             if path == "/states":
                 return [
                     {
@@ -1473,6 +1484,8 @@ class ProviderObligationTests(unittest.IsolatedAsyncioTestCase):
     async def test_resolved_blueprint_source_replaces_local_opacity_with_exact_evidence(self):
         class BlueprintRest:
             async def request(self, method, path):
+                if path == "/config":
+                    return {"version": SUPPORTED_HA_VERSION}
                 if path == "/states":
                     return [
                         {
@@ -1645,6 +1658,8 @@ class IndexObligationTests(unittest.IsolatedAsyncioTestCase):
             coverage=_coverage(),
             obligations=obligations,
             obligation_ledger_model=OBLIGATION_LEDGER_MODEL,
+            home_assistant_version=SUPPORTED_HA_VERSION,
+            home_assistant_version_status="observed",
         )
 
         with patch(

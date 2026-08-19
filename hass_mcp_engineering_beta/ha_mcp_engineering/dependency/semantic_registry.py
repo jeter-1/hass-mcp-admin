@@ -255,6 +255,26 @@ def semantic_category(surface: str, name: str) -> str:
     return value if isinstance(value, str) else "unknown"
 
 
+def supported_home_assistant_versions() -> tuple[str, ...]:
+    """Return the release tags the reviewed template semantics cover.
+
+    The registry is the sole source of truth for what is supported; no other
+    module may carry its own list of version strings.  ``_validate_registry``
+    already proves this list matches the reviewed provenance tuples.
+    """
+
+    supported = (
+        semantic_registry().get("home_assistant", {}).get(
+            "supported_versions", []
+        )
+    )
+    return tuple(
+        str(item["tag"])
+        for item in supported
+        if isinstance(item, dict) and isinstance(item.get("tag"), str)
+    )
+
+
 def semantic_registry_identity() -> dict[str, str]:
     return {
         "model": SEMANTIC_REGISTRY_MODEL,
@@ -269,6 +289,7 @@ __all__ = [
     "SEMANTIC_REGISTRY_CATEGORIES",
     "EXPECTED_SEMANTIC_REGISTRY_SHA256",
     "SUPPORTED_HOME_ASSISTANT_TEMPLATE_SOURCES",
+    "supported_home_assistant_versions",
     "semantic_category",
     "semantic_registry",
     "semantic_registry_identity",

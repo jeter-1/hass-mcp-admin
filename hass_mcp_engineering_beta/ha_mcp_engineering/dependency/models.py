@@ -375,6 +375,12 @@ class DependencyScanResult:
     label_registry_complete: bool = False
     obligations: list[DependencyObligation] = field(default_factory=list)
     obligation_ledger_model: str | None = None
+    # The running Home Assistant version observed during this scan, and how
+    # that observation went.  The reviewed template semantics are only valid
+    # for supported releases, so evidence must carry the version it was
+    # produced against rather than leaving it unbound.
+    home_assistant_version: str | None = None
+    home_assistant_version_status: str = "unavailable"
 
 
 @dataclass
@@ -405,6 +411,8 @@ class DependencyIndexSnapshot:
     obligation_overflow_count: int = 0
     obligation_overflow_fingerprint: str | None = None
     obligation_ledger_model: str | None = None
+    home_assistant_version: str | None = None
+    home_assistant_version_status: str = "unavailable"
     # The source-read epoch in force when this snapshot's provider scan began.
     # A governed post-lock refresh is satisfied only by a snapshot whose read
     # began at or after the fence it opened.  It is deliberately excluded from
@@ -530,6 +538,8 @@ def snapshot_fingerprint(
     obligation_overflow_count: int = 0,
     obligation_overflow_fingerprint: str | None = None,
     obligation_ledger_model: str | None = None,
+    home_assistant_version: str | None = None,
+    home_assistant_version_status: str = "unavailable",
 ) -> str:
     payload = {
         "generation": generation,
@@ -584,6 +594,10 @@ def snapshot_fingerprint(
             "fingerprint": obligation_overflow_fingerprint,
         },
         "obligation_ledger_model": obligation_ledger_model,
+        # The reviewed semantics are version-scoped, so evidence produced
+        # against a different running release is different evidence.
+        "home_assistant_version": home_assistant_version,
+        "home_assistant_version_status": home_assistant_version_status,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()

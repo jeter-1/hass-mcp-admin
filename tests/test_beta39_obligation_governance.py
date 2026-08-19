@@ -68,6 +68,15 @@ LIVE_FINITE_SENSOR_TEMPLATES = (
 )
 
 
+
+from ha_mcp_engineering.dependency.semantic_registry import (  # noqa: E402
+    supported_home_assistant_versions,
+)
+
+# B39-136-R3b: fixtures describe a supported instance unless a test is
+# specifically about the version admission gate.
+SUPPORTED_HA_VERSION = supported_home_assistant_versions()[-1]
+
 def obligation(
     outcome: str,
     *,
@@ -159,6 +168,8 @@ def snapshot(
         fingerprint="a" * 64,
         generation=39,
         built_at_monotonic=time.monotonic(),
+        home_assistant_version=SUPPORTED_HA_VERSION,
+        home_assistant_version_status="observed",
         built_at="2026-08-15T12:00:00+00:00",
         findings=(),
         dynamic_references=(),

@@ -99,6 +99,30 @@ lock cannot decide execution eligibility, and an invalidation raised during a
 build is not cleared by that build. A material change requires a fresh plan and
 approval.
 
+The reviewed semantics are now bound to the connected instance. Each
+dependency scan reads the running Home Assistant version from `GET /config`
+and admits it against the registry's supported release tags - 2026.7.2,
+2026.8.0, and 2026.8.1. Only an exact match keeps obligation-ledger evidence
+execution-authoritative. An unsupported release, an unreachable instance, a
+malformed configuration response, and a missing or empty version field each
+fail closed as a coverage failure with its own distinguishable reason code,
+so the plan is not approvable and no dispatch can occur. The observed version
+and the gate's decision are bound into dependency evidence, into its
+fingerprint, and into the approval provenance trail.
+
+The version is read as part of the dependency scan rather than on every
+eligibility check, so its freshness is exactly the snapshot's freshness and is
+governed by the same source-read fence as the rest of the evidence: a fenced
+post-lock refresh cannot be satisfied by a scan that observed an older
+version. It is not a per-request read. A version change between scans is
+observed at the next scan, and because the version participates in the
+snapshot fingerprint, evidence produced against a different release cannot be
+mistaken for evidence produced against this one.
+
+The gate admits or refuses; it does not select per-version semantics. The
+registry still asserts one shared reviewed `semantics` block across all three
+supported releases.
+
 Selector evidence is bounded per value and in aggregate before an obligation
 exists. An oversized or secret-bearing value is replaced by a deterministic
 digest that preserves drift detection, and losing target-specific detail
@@ -117,14 +141,11 @@ The registry declares an exact CI image digest per supported Home Assistant
 release, but generation does not verify image digests offline; that field is
 recorded as declared-but-unverified in `source_provenance`.
 
-The semantics in the registry are reviewed against specific Home Assistant
-releases. They are **not** bound to the version of the connected Home Assistant
-instance: nothing reads `GET /api/config` and selects the matching reviewed
-entry, and the connected version does not participate in dependency evidence or
-its fingerprint. Read the registry as "reviewed against 2026.7.2, 2026.8.0, and
-2026.8.1", not as "verified against the instance you are about to change".
-Runtime version admission is tracked separately and is not part of this
-release.
+Version admission is scan-scoped, not per-request. The running version is read
+once per dependency scan, so a Home Assistant upgrade is admitted or refused
+from the next scan rather than the instant it happens. The source-read fence
+bounds that window for anything that reaches dispatch, because the governed
+post-lock refresh requires a scan that began after the lock.
 
 Home Assistant's own template extensions beyond the reviewed vocabulary - most
 notably `as_timestamp` - remain unknown and therefore conservative. See the

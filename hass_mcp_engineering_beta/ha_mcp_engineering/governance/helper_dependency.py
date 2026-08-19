@@ -14,6 +14,9 @@ from ..dependency.models import (
     obligation_fingerprint,
 )
 from .models import ChangeRiskAssessment, RiskLevel
+from ..dependency.semantic_registry import (
+    supported_home_assistant_versions,
+)
 from .normalize import stable_hash
 
 
@@ -621,6 +624,10 @@ def _build_obligation_binding(
         and index_metadata.get("invalidated") is not True
     )
     coverage_reasons: set[str] = set()
+    # B39-136-R3b: the reviewed semantics only bind to a supported release.
+    admission = home_assistant_version_admission(snapshot)
+    if not admission["admitted"]:
+        coverage_reasons.add(str(admission["reason_code"]))
     if snapshot.obligation_ledger_model not in {
         None,
         OBLIGATION_LEDGER_MODEL,
@@ -847,6 +854,7 @@ def _build_obligation_binding(
             external_template_opacity_count
         ),
         "dependency_lock_projection": lock_projection,
+        **_version_admission_material(admission),
         "truncated": bool(
             overflow_count or len(relevant_pairs) > MAX_RELEVANT_OBLIGATIONS
         ),
@@ -902,6 +910,70 @@ def _build_obligation_binding(
             if item.source_type in {"automation", "blueprint"}
         ],
         "evidence_fingerprint": stable_hash(material),
+    }
+
+
+# B39-136-R3b: reason codes for the runtime version admission gate.  Three
+# situations are distinguishable because they call for different operator
+# action: upgrade/downgrade Home Assistant, restore connectivity, or
+# investigate a malformed response.
+VERSION_UNSUPPORTED_REASON = "home_assistant_version_unsupported"
+VERSION_UNAVAILABLE_REASON = "home_assistant_version_unavailable"
+VERSION_UNREADABLE_REASON = "home_assistant_version_unreadable"
+
+
+def home_assistant_version_admission(
+    snapshot: DependencyIndexSnapshot,
+) -> dict[str, Any]:
+    """Admit or refuse the reviewed semantics for the connected release.
+
+    The reviewed template semantics are asserted valid for a fixed set of
+    Home Assistant releases.  Evidence produced against any other release -
+    or against an instance whose version could not be read - is not
+    execution-authoritative, so this gate fails closed on every negative
+    case.  It is an additional necessary condition layered on the R2 source
+    fence and the R5 compatibility/execution split, never a replacement for
+    either.
+    """
+
+    supported = supported_home_assistant_versions()
+    observed = getattr(snapshot, "home_assistant_version", None)
+    status = str(
+        getattr(snapshot, "home_assistant_version_status", "unavailable")
+    )
+    if status == "observed":
+        if isinstance(observed, str) and observed:
+            admitted = observed in supported
+            reason = None if admitted else VERSION_UNSUPPORTED_REASON
+        else:
+            # Claimed observed but carries no version: the field is the
+            # problem, not connectivity.
+            admitted, reason = False, VERSION_UNREADABLE_REASON
+    elif status == "unreadable":
+        admitted, reason = False, VERSION_UNREADABLE_REASON
+    else:
+        admitted, reason = False, VERSION_UNAVAILABLE_REASON
+    return {
+        "admitted": admitted,
+        "observed_version": observed if status == "observed" else None,
+        "observation_status": status,
+        "supported_versions": list(supported),
+        "reason_code": reason,
+    }
+
+
+def _version_admission_material(admission: dict[str, Any]) -> dict[str, Any]:
+    """Return the admission facts bound into evidence and its fingerprint."""
+
+    return {
+        "home_assistant_version_admitted": bool(admission["admitted"]),
+        "home_assistant_version_observed": admission["observed_version"],
+        "home_assistant_version_observation_status": (
+            admission["observation_status"]
+        ),
+        "home_assistant_supported_versions": list(
+            admission["supported_versions"]
+        ),
     }
 
 
@@ -1126,8 +1198,13 @@ def build_helper_dependency_risk_binding(
         downstream_profiles.append(projected)
 
     truncated = truncated or unreadable_automations_clipped
+    # B39-136-R3b: the legacy projection is reached for pre-ledger snapshots
+    # and still claims the current model, so it takes the same admission gate.
+    # No binding path may escape it.
+    legacy_admission = home_assistant_version_admission(snapshot)
     evidence_complete = bool(
-        fresh
+        legacy_admission["admitted"]
+        and fresh
         and not relevant_dynamic
         and not missing_profile
         and not profile_incomplete
@@ -1229,7 +1306,16 @@ def build_helper_dependency_risk_binding(
         "opaque_obligation_count": 0,
         "coverage_failure_count": 0 if evidence_complete else 1,
         "coverage_failure_reason_codes": (
-            [] if evidence_complete else ["legacy_evidence_incomplete"]
+            []
+            if evidence_complete
+            else sorted(
+                {"legacy_evidence_incomplete"}
+                | (
+                    set()
+                    if legacy_admission["admitted"]
+                    else {str(legacy_admission["reason_code"])}
+                )
+            )
         ),
         "obligation_evidence": [],
         "obligation_overflow_count": 0,
@@ -1243,6 +1329,7 @@ def build_helper_dependency_risk_binding(
             "automation_resource_ids": resource_ids,
             "custom_template_reload": False,
         },
+        **_version_admission_material(legacy_admission),
         "truncated": truncated,
     }
     return {
@@ -1330,6 +1417,18 @@ class HelperDependencyRiskService:
                 "refreshed": rebuilt,
                 "source_epoch": snapshot.source_epoch,
                 "fenced": fence is not None,
+                # B39-136-R3b: the gate's decision travels with the same
+                # provenance R2 and R5 already populate, so a refusal is
+                # visible rather than an internal silence.
+                "home_assistant_version": binding.get(
+                    "home_assistant_version_observed"
+                ),
+                "home_assistant_version_status": binding.get(
+                    "home_assistant_version_observation_status"
+                ),
+                "home_assistant_version_admitted": binding.get(
+                    "home_assistant_version_admitted"
+                ),
                 "lookup_duration_ms": round(lookup_duration_ms, 3),
                 "fallback": "none",
                 "fallback_occurred": False,
@@ -1409,12 +1508,52 @@ def helper_dependency_risk_assessment(
         )
     else:
         level = RiskLevel.HIGH
-        reasons = [
-            "Dependency evidence coverage failed, so execution scope cannot be bounded.",
-        ]
-        warnings = [
-            "Fresh bounded dependency coverage is required before approval or dispatch.",
-        ]
+        codes = set(binding.get("coverage_failure_reason_codes") or [])
+        observed_version = binding.get("home_assistant_version_observed")
+        supported_versions = (
+            binding.get("home_assistant_supported_versions") or []
+        )
+        supported_text = ", ".join(str(item) for item in supported_versions)
+        if VERSION_UNSUPPORTED_REASON in codes:
+            # State both sides plainly: the operator needs to know which
+            # release is running and which the semantics were reviewed for.
+            reasons = [
+                "Home Assistant "
+                f"{observed_version} is running, and the reviewed template "
+                f"semantics cover only {supported_text}."
+            ]
+            warnings = [
+                "Dependency evidence is not execution-authoritative on an "
+                "unsupported Home Assistant release. No change was attempted.",
+            ]
+        elif VERSION_UNREADABLE_REASON in codes:
+            reasons = [
+                "The Home Assistant version could not be determined from the "
+                "configuration response, so the reviewed template semantics "
+                "cannot be bound to the connected instance.",
+            ]
+            warnings = [
+                "No change was attempted. Reviewed releases are "
+                f"{supported_text}.",
+            ]
+        elif VERSION_UNAVAILABLE_REASON in codes:
+            reasons = [
+                "The connected Home Assistant version could not be read, so "
+                "the reviewed template semantics cannot be bound to the "
+                "instance.",
+            ]
+            warnings = [
+                "No change was attempted. Restore Home Assistant "
+                f"connectivity and retry. Reviewed releases are "
+                f"{supported_text}.",
+            ]
+        else:
+            reasons = [
+                "Dependency evidence coverage failed, so execution scope cannot be bounded.",
+            ]
+            warnings = [
+                "Fresh bounded dependency coverage is required before approval or dispatch.",
+            ]
     risk_evidence = [
         {
             "field": "operation",
@@ -1443,6 +1582,25 @@ def helper_dependency_risk_assessment(
                 provenance.get("fingerprint", "unknown")
             ),
         },
+        {
+            "field": "home_assistant_version",
+            "trigger": "reviewed_semantics_version_admission",
+            "observed_version": str(
+                binding.get("home_assistant_version_observed")
+            ),
+            "observation_status": str(
+                binding.get("home_assistant_version_observation_status")
+            ),
+            "admitted": bool(
+                binding.get("home_assistant_version_admitted")
+            ),
+            "supported_versions": [
+                str(item)
+                for item in (
+                    binding.get("home_assistant_supported_versions") or []
+                )
+            ],
+        },
     ]
     return ChangeRiskAssessment(
         level=level,
@@ -1457,6 +1615,10 @@ __all__ = [
     "HELPER_DEPENDENCY_RISK_MODEL",
     "HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS",
     "HELPER_DEPENDENCY_RISK_EXECUTION_MODELS",
+    "VERSION_UNAVAILABLE_REASON",
+    "VERSION_UNREADABLE_REASON",
+    "VERSION_UNSUPPORTED_REASON",
+    "home_assistant_version_admission",
     "HelperDependencyRiskService",
     "build_helper_dependency_risk_binding",
     "helper_dependency_risk_assessment",

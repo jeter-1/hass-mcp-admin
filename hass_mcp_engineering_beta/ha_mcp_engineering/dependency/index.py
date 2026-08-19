@@ -505,6 +505,10 @@ class DependencyIndex:
                     obligation_overflow_fingerprint
                 ),
                 obligation_ledger_model=scan.obligation_ledger_model,
+                home_assistant_version=scan.home_assistant_version,
+                home_assistant_version_status=(
+                    scan.home_assistant_version_status
+                ),
             )
             build_duration_ms = (time.perf_counter() - build_started) * 1000
             replacement = DependencyIndexSnapshot(
@@ -544,6 +548,10 @@ class DependencyIndex:
                     obligation_overflow_fingerprint
                 ),
                 obligation_ledger_model=scan.obligation_ledger_model,
+                home_assistant_version=scan.home_assistant_version,
+                home_assistant_version_status=(
+                    scan.home_assistant_version_status
+                ),
                 source_epoch=source_epoch,
             )
             # Publish the complete replacement atomically after every build step.

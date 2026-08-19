@@ -167,6 +167,32 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 if queued:
                     semaphore.release()
 
+        # B39-136-R3b: the reviewed template semantics are only valid for a
+        # supported Home Assistant release, so the running version is read as
+        # part of this scan.  Binding it to the scan means the R2 source-read
+        # fence already governs its freshness: a fenced post-lock refresh
+        # cannot be satisfied by a scan that observed an older version.
+        home_assistant_version: str | None = None
+        home_assistant_version_status = "unavailable"
+        try:
+            config = await request(
+                "home_assistant_config",
+                lambda: self.rest_client.request("GET", "/config"),
+            )
+            if not isinstance(config, dict):
+                home_assistant_version_status = "unreadable"
+            else:
+                observed = config.get("version")
+                if isinstance(observed, str) and observed.strip():
+                    home_assistant_version = observed.strip()[:64]
+                    home_assistant_version_status = "observed"
+                else:
+                    home_assistant_version_status = "unreadable"
+        except Exception:
+            # Connectivity failure, timeout, or transport error.  Fails closed
+            # downstream; it is never treated as an admitted version.
+            home_assistant_version_status = "unavailable"
+
         state_started = time.perf_counter()
         try:
             states = await request("states_inventory", lambda: self.rest_client.request("GET", "/states"))
@@ -699,6 +725,8 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 "scan_wall_time_ms": round((time.perf_counter() - scan_started) * 1000, 3),
                 "build_wall_clock_ms": round((time.perf_counter() - scan_started) * 1000, 3),
             },
+            home_assistant_version=home_assistant_version,
+            home_assistant_version_status=home_assistant_version_status,
             automation_action_profiles=automation_action_profiles,
             automation_read_failures=automation_read_failures,
             label_memberships=label_memberships,
