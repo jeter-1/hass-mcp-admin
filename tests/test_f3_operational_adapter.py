@@ -977,6 +977,11 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
                 ),
             }
         ]
+        unresolved_blueprint = configuration_valid_config("automation")
+        unresolved_blueprint["use_blueprint"] = {
+            "path": "synthetic/hardcoded_helper.yaml",
+            "input": {},
+        }
 
         async def configuration_locks(action, current, proposed):
             gateway = SyntheticConfigurationGateway()
@@ -1005,6 +1010,18 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
                 base,
                 bounded_relevant,
                 "bounded_dynamic_adds_exact_dependency",
+            ),
+            (
+                "create",
+                None,
+                unresolved_blueprint,
+                "blueprint_source_may_introduce_dependency",
+            ),
+            (
+                "update",
+                unresolved_blueprint,
+                base,
+                "blueprint_source_may_remove_dependency",
             ),
         )
         timing = LockTiming(60, 10, 0)
@@ -1056,13 +1073,20 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(missing.eligible)
         self.assertEqual(missing.outcome, "lock_conflict")
         self.assertNotIn("helper_dependency_read", context.trace)
+        self.assertNotIn("helper_dependency_fenced_read", context.trace)
 
         exact = await context.adapter.preflight(
             prepared, acquired_locks=locks
         )
 
         self.assertTrue(exact.eligible)
-        self.assertEqual(context.trace[-1], "helper_dependency_read")
+        # B39-136-R2: the read that decides execution eligibility happens
+        # after the complete lock set is held and is fenced, so evidence read
+        # before the lock cannot satisfy it.
+        self.assertEqual(
+            context.trace[-1], "helper_dependency_fenced_read"
+        )
+        self.assertNotIn("helper_dependency_read", context.trace)
 
     async def test_unrelated_reload_domains_and_addons_remain_compatible(self):
         reload_keys = []

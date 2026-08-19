@@ -7,9 +7,220 @@ import hashlib
 import json
 from typing import Any
 
+from ..sanitization import sanitize_untrusted_data
+
 
 SOURCE_TYPES = ("automation", "blueprint", "script", "scene", "group", "template", "dashboard")
 COMPLETENESS_VALUES = {"complete", "partial", "unavailable", "unsupported", "not_requested"}
+OBLIGATION_OUTCOMES = frozenset(
+    {
+        "exact_dependency",
+        "proven_target_exclusion",
+        "proven_dependency_neutral",
+        "bounded_semantic_opaque",
+        "coverage_failure",
+    }
+)
+OBLIGATION_LEDGER_MODEL = "whole-template-obligation-ledger-v1"
+# Selector evidence is derived from configuration and template literals, so a
+# single value can be arbitrarily long and can carry secret-bearing material.
+# Every obligation is bounded per value and in aggregate before it exists, and
+# an oversized or sanitized value is replaced by a deterministic digest so
+# drift is still detectable without persisting the original bytes.
+MAX_OBLIGATION_VALUE_BYTES = 128
+MAX_OBLIGATION_EXACT_AGGREGATE_BYTES = 8_192
+MAX_OBLIGATION_SELECTOR_AGGREGATE_BYTES = 2_048
+MAX_OBLIGATION_DOMAIN_AGGREGATE_BYTES = 1_024
+MAX_OBLIGATION_CONTEXT_AGGREGATE_BYTES = 1_024
+MAX_OBLIGATION_TEXT_BYTES = 256
+
+
+def _evidence_digest(value: str) -> str:
+    """Return a deterministic stand-in that preserves drift detection."""
+
+    encoded = value.encode("utf-8", errors="replace")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()[:32]
+
+
+def _bounded_evidence_values(
+    values: tuple[str, ...] | list[str],
+    *,
+    aggregate_bytes: int,
+) -> tuple[tuple[str, ...], bool]:
+    """Bound and sanitize one evidence value list.
+
+    Returns the retained values and whether target-specific detail was lost,
+    either because a value was oversized, because sanitization replaced
+    secret-bearing material, or because the aggregate bound dropped values.
+    """
+
+    retained: list[str] = []
+    total = 0
+    detail_lost = False
+    dropped: list[str] = []
+    for index, value in enumerate(values):
+        original = value if isinstance(value, str) else str(value)
+        safe = sanitize_untrusted_data(original).value
+        if not isinstance(safe, str) or safe != original:
+            safe = _evidence_digest(original)
+            detail_lost = True
+        if len(safe.encode("utf-8")) > MAX_OBLIGATION_VALUE_BYTES:
+            safe = _evidence_digest(original)
+            detail_lost = True
+        encoded = len(safe.encode("utf-8"))
+        if total + encoded > aggregate_bytes:
+            dropped = [
+                item if isinstance(item, str) else str(item)
+                for item in list(values)[index:]
+            ]
+            detail_lost = True
+            break
+        total += encoded
+        retained.append(safe)
+    if dropped:
+        # One terminal digest keeps the dropped set observable for drift
+        # detection instead of letting truncation look like absence.
+        retained.append("omitted:" + _evidence_digest("".join(dropped)))
+    return tuple(retained), detail_lost
+
+
+def _bounded_evidence_text(value: str | None) -> tuple[str | None, bool]:
+    """Bound and sanitize one optional evidence string."""
+
+    if value is None:
+        return None, False
+    original = value if isinstance(value, str) else str(value)
+    safe = sanitize_untrusted_data(original).value
+    if not isinstance(safe, str) or safe != original:
+        return _evidence_digest(original), True
+    if len(safe.encode("utf-8")) > MAX_OBLIGATION_TEXT_BYTES:
+        return _evidence_digest(original), True
+    return safe, False
+
+
+@dataclass(frozen=True)
+class DependencyObligation:
+    """One terminal whole-template dependency-analysis obligation.
+
+    The index stores target-independent terminals.  An exact finite candidate
+    set is projected as ``exact_dependency`` for a matching helper and as
+    ``proven_target_exclusion`` for a non-member by the helper-risk service.
+    Raw template bodies are never persisted.
+    """
+
+    evidence_id: str
+    source_type: str
+    source_id: str
+    config_path: str
+    relation: str
+    outcome: str
+    obligation_kind: str
+    reason_code: str
+    semantic_category: str
+    semantic_registry_version: str
+    semantic_registry_fingerprint: str
+    expression_fingerprint: str
+    configuration_fingerprint: str
+    exact_entity_ids: tuple[str, ...] = ()
+    possible_entity_domains: tuple[str, ...] | None = None
+    literal_selectors: tuple[str, ...] = ()
+    source_entity_id: str | None = None
+    source_name: str | None = None
+    source_state: str | None = None
+    external_template_name: str | None = None
+    context_provenance: tuple[str, ...] = ()
+    limit_exceeded: bool = False
+    lock_projection: str = "none"
+    # Set when bounding or sanitization replaced or dropped evidence, so a
+    # reader can distinguish "no such value" from "value not retained".
+    evidence_bounded: bool = False
+
+    def __post_init__(self) -> None:
+        if self.outcome not in OBLIGATION_OUTCOMES:
+            raise ValueError("dependency obligation outcome is invalid")
+        if self.lock_projection not in {
+            "none",
+            "exact",
+            "conservative",
+            "coverage_failure",
+        }:
+            raise ValueError("dependency obligation lock projection is invalid")
+        self._bind_bounded_evidence()
+
+    def _bind_bounded_evidence(self) -> None:
+        """Bound and sanitize evidence, classifying conservatively on loss.
+
+        Bounding happens here so that no obligation can exist with unbounded
+        or secret-bearing selector evidence, whichever module created it.
+        Losing target-specific detail removes the basis for an exact or
+        proven-exclusion claim, so the obligation is reclassified rather than
+        silently truncated.
+        """
+
+        exact, exact_lost = _bounded_evidence_values(
+            self.exact_entity_ids,
+            aggregate_bytes=MAX_OBLIGATION_EXACT_AGGREGATE_BYTES,
+        )
+        selectors, selector_lost = _bounded_evidence_values(
+            self.literal_selectors,
+            aggregate_bytes=MAX_OBLIGATION_SELECTOR_AGGREGATE_BYTES,
+        )
+        context, context_lost = _bounded_evidence_values(
+            self.context_provenance,
+            aggregate_bytes=MAX_OBLIGATION_CONTEXT_AGGREGATE_BYTES,
+        )
+        if self.possible_entity_domains is None:
+            domains: tuple[str, ...] | None = None
+            domain_lost = False
+        else:
+            domains, domain_lost = _bounded_evidence_values(
+                self.possible_entity_domains,
+                aggregate_bytes=MAX_OBLIGATION_DOMAIN_AGGREGATE_BYTES,
+            )
+        external, external_lost = _bounded_evidence_text(
+            self.external_template_name
+        )
+        source_name, name_lost = _bounded_evidence_text(self.source_name)
+        source_state, state_lost = _bounded_evidence_text(self.source_state)
+        object.__setattr__(self, "exact_entity_ids", exact)
+        object.__setattr__(self, "literal_selectors", selectors)
+        object.__setattr__(self, "context_provenance", context)
+        object.__setattr__(self, "possible_entity_domains", domains)
+        object.__setattr__(self, "external_template_name", external)
+        object.__setattr__(self, "source_name", source_name)
+        object.__setattr__(self, "source_state", source_state)
+        bounded = any(
+            (
+                exact_lost,
+                selector_lost,
+                context_lost,
+                domain_lost,
+                external_lost,
+                name_lost,
+                state_lost,
+            )
+        )
+        if not bounded:
+            return
+        object.__setattr__(self, "evidence_bounded", True)
+        # Target-specific detail is what an exact terminal or a proven
+        # exclusion rests on.  Without it the obligation is opaque, and it
+        # must take a conservative lock rather than an exact one.
+        target_detail_lost = bool(
+            exact_lost or selector_lost or domain_lost
+        )
+        if target_detail_lost:
+            object.__setattr__(self, "limit_exceeded", True)
+            if self.outcome in {
+                "exact_dependency",
+                "proven_target_exclusion",
+                "proven_dependency_neutral",
+            }:
+                object.__setattr__(
+                    self, "outcome", "bounded_semantic_opaque"
+                )
+            if self.lock_projection in {"none", "exact"}:
+                object.__setattr__(self, "lock_projection", "conservative")
 
 
 @dataclass(frozen=True)
@@ -106,6 +317,13 @@ class SourceCoverageItem:
     policy: str | None = None
     index_build_duration_ms: float | None = None
     cached_provenance: bool = False
+    # The legacy finding/dynamic-reference projections remain public
+    # compatibility evidence and may be truncated independently of the
+    # authoritative obligation ledger.  Keep the two coverage contracts
+    # explicit so helper governance never mistakes compatibility-payload
+    # truncation for lost ledger evidence (or the reverse).
+    obligation_ledger_completeness: str | None = None
+    obligation_ledger_failed_item_count: int = 0
 
     def public(self) -> dict[str, Any]:
         return {
@@ -125,6 +343,12 @@ class SourceCoverageItem:
             "cached_provenance": self.cached_provenance,
             "fallback_occurred": self.fallback_occurred,
             "policy": self.policy,
+            "obligation_ledger_completeness": (
+                self.obligation_ledger_completeness
+            ),
+            "obligation_ledger_failed_item_count": max(
+                0, int(self.obligation_ledger_failed_item_count)
+            ),
         }
 
 
@@ -149,6 +373,14 @@ class DependencyScanResult:
     )
     label_membership_truncated: tuple[str, ...] = ()
     label_registry_complete: bool = False
+    obligations: list[DependencyObligation] = field(default_factory=list)
+    obligation_ledger_model: str | None = None
+    # The running Home Assistant version observed during this scan, and how
+    # that observation went.  The reviewed template semantics are only valid
+    # for supported releases, so evidence must carry the version it was
+    # produced against rather than leaving it unbound.
+    home_assistant_version: str | None = None
+    home_assistant_version_status: str = "unavailable"
 
 
 @dataclass
@@ -175,6 +407,62 @@ class DependencyIndexSnapshot:
     )
     label_membership_truncated: tuple[str, ...] = ()
     label_registry_complete: bool = False
+    obligations: tuple[DependencyObligation, ...] = ()
+    obligation_overflow_count: int = 0
+    obligation_overflow_fingerprint: str | None = None
+    obligation_ledger_model: str | None = None
+    home_assistant_version: str | None = None
+    home_assistant_version_status: str = "unavailable"
+    # The source-read epoch in force when this snapshot's provider scan began.
+    # A governed post-lock refresh is satisfied only by a snapshot whose read
+    # began at or after the fence it opened.  It is deliberately excluded from
+    # the snapshot fingerprint: it describes when evidence was read, not what
+    # the evidence says, and approval binding must not churn on fences.
+    source_epoch: int = 0
+
+
+def obligation_material(item: DependencyObligation) -> dict[str, Any]:
+    """Return bounded deterministic obligation material."""
+
+    return {
+        "evidence_id": item.evidence_id,
+        "source_type": item.source_type,
+        "source_id": item.source_id,
+        "source_entity_id": item.source_entity_id,
+        "source_name": item.source_name,
+        "source_state": item.source_state,
+        "config_path": item.config_path,
+        "relation": item.relation,
+        "outcome": item.outcome,
+        "obligation_kind": item.obligation_kind,
+        "reason_code": item.reason_code,
+        "semantic_category": item.semantic_category,
+        "semantic_registry_version": item.semantic_registry_version,
+        "semantic_registry_fingerprint": (
+            item.semantic_registry_fingerprint
+        ),
+        "expression_fingerprint": item.expression_fingerprint,
+        "configuration_fingerprint": item.configuration_fingerprint,
+        "exact_entity_ids": list(item.exact_entity_ids),
+        "possible_entity_domains": (
+            list(item.possible_entity_domains)
+            if item.possible_entity_domains is not None
+            else None
+        ),
+        "literal_selectors": list(item.literal_selectors),
+        "external_template_name": item.external_template_name,
+        "context_provenance": list(item.context_provenance),
+        "limit_exceeded": item.limit_exceeded,
+        "lock_projection": item.lock_projection,
+        "evidence_bounded": item.evidence_bounded,
+    }
+
+
+def obligation_fingerprint(item: DependencyObligation) -> str:
+    encoded = json.dumps(
+        obligation_material(item), sort_keys=True, separators=(",", ":")
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def evidence_id(*parts: Any) -> str:
@@ -244,6 +532,14 @@ def snapshot_fingerprint(
     label_membership_fingerprints: dict[str, str] | None = None,
     label_membership_truncated: tuple[str, ...] = (),
     label_registry_complete: bool = False,
+    obligations: list[DependencyObligation] | tuple[
+        DependencyObligation, ...
+    ] = (),
+    obligation_overflow_count: int = 0,
+    obligation_overflow_fingerprint: str | None = None,
+    obligation_ledger_model: str | None = None,
+    home_assistant_version: str | None = None,
+    home_assistant_version_status: str = "unavailable",
 ) -> str:
     payload = {
         "generation": generation,
@@ -251,7 +547,16 @@ def snapshot_fingerprint(
             (item.evidence_id, item.target_entity_id, item.relation, item.config_path)
             for item in findings
         ],
-        "coverage": [(item.source_type, item.completeness, item.failed_item_count) for item in coverage],
+        "coverage": [
+            (
+                item.source_type,
+                item.completeness,
+                item.failed_item_count,
+                item.obligation_ledger_completeness,
+                item.obligation_ledger_failed_item_count,
+            )
+            for item in coverage
+        ],
         "automation_action_profiles": [
             (
                 item.source_id,
@@ -281,6 +586,18 @@ def snapshot_fingerprint(
             ),
             "truncated": sorted(label_membership_truncated),
         },
+        "obligations": sorted(
+            obligation_fingerprint(item) for item in obligations
+        ),
+        "obligation_overflow": {
+            "count": max(0, int(obligation_overflow_count)),
+            "fingerprint": obligation_overflow_fingerprint,
+        },
+        "obligation_ledger_model": obligation_ledger_model,
+        # The reviewed semantics are version-scoped, so evidence produced
+        # against a different running release is different evidence.
+        "home_assistant_version": home_assistant_version,
+        "home_assistant_version_status": home_assistant_version_status,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()

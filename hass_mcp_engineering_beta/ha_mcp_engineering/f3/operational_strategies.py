@@ -777,8 +777,12 @@ class InputBooleanStateOperationStrategy(OperationalStrategy):
         if not isinstance(state_baseline, dict):
             return False, "invalid_provider_response", ("entity_state",), fresh
         try:
+            # The complete lock set is already held here, so this refresh is
+            # fenced: only a scan whose source read began after the fence may
+            # satisfy it.  A build started before the lock describes the
+            # pre-lock world and must not decide execution eligibility.
             dependency = await self.dependency_risk_reader(
-                prepared.target.target_id, refresh=True
+                prepared.target.target_id, refresh=True, fenced=True
             )
         except Exception:
             dependency = None
@@ -805,11 +809,11 @@ class InputBooleanStateOperationStrategy(OperationalStrategy):
             return False, "already_desired", (), combined
         planned = prepared.baseline
         planned_dependency = planned.get("dependency_risk")
-        if binding.get("evidence_complete") is not True:
+        if binding.get("execution_eligible") is not True:
             return (
                 False,
-                "dependency_evidence_incomplete",
-                ("dependency_risk_completeness",),
+                "dependency_coverage_failure",
+                ("dependency_risk_execution_eligibility",),
                 combined,
             )
         if (

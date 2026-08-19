@@ -49,6 +49,15 @@ from ha_mcp_engineering.governance.storage import (  # noqa: E402
 TARGET = "input_boolean.mcp_f2_standard_admin_test_flag"
 
 
+
+from ha_mcp_engineering.dependency.semantic_registry import (  # noqa: E402
+    supported_home_assistant_versions,
+)
+
+# B39-136-R3b: fixtures describe a supported instance unless a test is
+# specifically about the version admission gate.
+SUPPORTED_HA_VERSION = supported_home_assistant_versions()[-1]
+
 def _profile(source_id: str, service: str = "notify.notify"):
     value = automation_action_consequence_profile(
         {
@@ -103,6 +112,8 @@ def _snapshot(
         fingerprint="a" * 64,
         generation=38,
         built_at_monotonic=time.monotonic(),
+        home_assistant_version=SUPPORTED_HA_VERSION,
+        home_assistant_version_status="observed",
         built_at="2026-08-14T12:00:00+00:00",
         findings=tuple(findings),
         dynamic_references=tuple(dynamic),

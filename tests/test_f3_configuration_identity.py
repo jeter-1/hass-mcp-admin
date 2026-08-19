@@ -464,6 +464,33 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
+    async def test_unresolved_blueprint_source_uses_conservative_dependency_lock(self):
+        base = valid_config("automation")
+        blueprint = valid_config("automation")
+        blueprint["use_blueprint"] = {
+            "path": "synthetic/hardcoded_helper.yaml",
+            "input": {},
+        }
+        dynamic_key = unconstrained_helper_dependency_lock_key()
+        cases = (
+            ("create", None, blueprint),
+            ("update", base, blueprint),
+            ("update", blueprint, base),
+        )
+        for index, (action, current, proposed) in enumerate(cases):
+            with self.subTest(action=action, index=index):
+                prepared = await self._prepared(
+                    "automation",
+                    action,
+                    operation_id=f"blueprint_dependency_{index}",
+                    current_config=current,
+                    proposed_config=proposed,
+                )
+                keys = {
+                    item.key for item in operation_lock_requests(prepared)
+                }
+                self.assertIn(dynamic_key, keys)
+
     async def test_unconstrained_dynamic_dependency_uses_conservative_lock_only(self):
         base = valid_config("automation")
         unconstrained = valid_config("automation")
@@ -505,6 +532,624 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
                 for item in operation_lock_requests(constrained_prepared)
             },
         )
+
+    async def test_action_templates_and_variables_are_causal_dependency_locks(self):
+        helper = "input_boolean.synthetic_exact"
+        exact_key = helper_dependency_lock_key(helper)
+        base = valid_config("automation")
+        configurations = []
+
+        action_data = valid_config("automation")
+        action_data["action"] = [
+            {
+                "service": "cover.set_cover_position",
+                "target": {"entity_id": "cover.synthetic_garage"},
+                "data": {
+                    "position": (
+                        "{{ 100 if is_state('"
+                        + helper
+                        + "', 'on') else 0 }}"
+                    )
+                },
+            }
+        ]
+        configurations.append(action_data)
+
+        variables = valid_config("automation")
+        variables["variables"] = {
+            "helper_state": "{{ states('" + helper + "') }}"
+        }
+        configurations.append(variables)
+
+        for index, proposed in enumerate(configurations):
+            with self.subTest(index=index):
+                prepared = await self._prepared(
+                    "automation",
+                    "update",
+                    operation_id=f"action_template_{index}",
+                    current_config=base,
+                    proposed_config=proposed,
+                )
+                keys = {
+                    item.key for item in operation_lock_requests(prepared)
+                }
+                self.assertIn(exact_key, keys)
+
+    async def test_configuration_and_repeat_context_choose_exact_or_conservative_locks(self):
+        helper = "input_boolean.beta39_context_lock"
+        exact_key = helper_dependency_lock_key(helper)
+        conservative_key = unconstrained_helper_dependency_lock_key()
+        base = valid_config("automation")
+        cases = (
+            (
+                "configuration_variable",
+                {
+                    "variables": {
+                        "summary": {"entity": helper, "text": "ready"}
+                    },
+                    "condition": [
+                        {
+                            "condition": "template",
+                            "value_template": "{{ states(summary.entity) }}",
+                        }
+                    ],
+                },
+                exact_key,
+            ),
+            (
+                "repeat_item",
+                {
+                    "action": [
+                        {
+                            "repeat": {
+                                "for_each": [helper],
+                                "sequence": [
+                                    {
+                                        "condition": "template",
+                                        "value_template": (
+                                            "{{ states(repeat.item) }}"
+                                        ),
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                },
+                exact_key,
+            ),
+            (
+                "repeat_item_user_override",
+                {
+                    "action": [
+                        {
+                            "repeat": {
+                                "for_each": ["sensor.original"],
+                                "sequence": [
+                                    {
+                                        "variables": {
+                                            "repeat": {"item": helper}
+                                        }
+                                    },
+                                    {
+                                        "condition": "template",
+                                        "value_template": (
+                                            "{{ states(repeat.item) }}"
+                                        ),
+                                    },
+                                ],
+                            }
+                        }
+                    ]
+                },
+                exact_key,
+            ),
+            (
+                "dynamic_variable",
+                {
+                    "variables": {"selected": "{{ unknown_entity }}"},
+                    "condition": [
+                        {
+                            "condition": "template",
+                            "value_template": "{{ states(selected) }}",
+                        }
+                    ],
+                },
+                conservative_key,
+            ),
+            (
+                "disabled_variable_rebind",
+                {
+                    "variables": {"selected": helper},
+                    "action": [
+                        {
+                            "enabled": False,
+                            "variables": {"selected": "sensor.rebound"},
+                        },
+                        {
+                            "condition": "template",
+                            "value_template": "{{ states(selected) }}",
+                        },
+                    ],
+                },
+                exact_key,
+            ),
+            (
+                "dynamic_variable_rebind",
+                {
+                    "variables": {"selected": helper},
+                    "action": [
+                        {
+                            "enabled": "{{ dynamic_enablement }}",
+                            "variables": {"selected": "sensor.rebound"},
+                        },
+                        {
+                            "condition": "template",
+                            "value_template": "{{ states(selected) }}",
+                        },
+                    ],
+                },
+                exact_key,
+            ),
+            (
+                "ordered_variables_action",
+                {
+                    "action": [
+                        {
+                            "variables": {
+                                "a_selected": helper,
+                                "b_observed": "{{ states(a_selected) }}",
+                            }
+                        }
+                    ]
+                },
+                exact_key,
+            ),
+            (
+                "variable_entity_key_not_consumed",
+                {
+                    "action": [
+                        {
+                            "variables": {
+                                "summary": {
+                                    "entity_id": helper,
+                                    "message": "ready",
+                                }
+                            }
+                        },
+                        {
+                            "service": "notify.notify",
+                            "data": {"message": "{{ summary.message }}"},
+                        },
+                    ]
+                },
+                None,
+            ),
+            (
+                "root_variable_runtime_override",
+                {
+                    "variables": {"selected": "sensor.default"},
+                    "condition": [
+                        {
+                            "condition": "template",
+                            "value_template": "{{ states(selected) }}",
+                        }
+                    ],
+                },
+                conservative_key,
+            ),
+            (
+                "exact_zone_trigger_context",
+                {
+                    "trigger": [
+                        {
+                            "platform": "zone",
+                            "entity_id": "person.synthetic",
+                            "zone": "zone.home",
+                            "event": "enter",
+                        }
+                    ],
+                    "condition": [
+                        {
+                            "condition": "template",
+                            "value_template": "{{ trigger.zone.state }}",
+                        }
+                    ],
+                },
+                None,
+            ),
+            (
+                "disabled_action_wrapper",
+                {
+                    "action": [
+                        {
+                            "enabled": False,
+                            "sequence": [
+                                {
+                                    "variables": {
+                                        "observed": (
+                                            "{{ states('" + helper + "') }}"
+                                        )
+                                    }
+                                }
+                            ],
+                        },
+                        {
+                            "service": "notify.notify",
+                            "data": {"message": "ready"},
+                        },
+                    ]
+                },
+                None,
+            ),
+            (
+                "ordinary_variable",
+                {
+                    "variables": {
+                        "summary": {"text": "ready", "count": 2}
+                    },
+                    "condition": [
+                        {
+                            "condition": "template",
+                            "value_template": "{{ summary.text }}",
+                        }
+                    ],
+                },
+                None,
+            ),
+        )
+        for index, (name, additions, expected_key) in enumerate(cases):
+            with self.subTest(name=name):
+                proposed = valid_config("automation")
+                proposed.update(additions)
+                prepared = await self._prepared(
+                    "automation",
+                    "update",
+                    operation_id=f"context_lock_{index}",
+                    current_config=base,
+                    proposed_config=proposed,
+                )
+                keys = {
+                    item.key for item in operation_lock_requests(prepared)
+                }
+                if expected_key is None:
+                    self.assertNotIn(exact_key, keys)
+                    self.assertNotIn(conservative_key, keys)
+                else:
+                    self.assertIn(expected_key, keys)
+
+    async def test_dynamic_dispatch_domain_hint_remains_conservatively_locked(self):
+        base = valid_config("automation")
+        proposed = valid_config("automation")
+        proposed["condition"] = [
+            {
+                "condition": "template",
+                "value_template": (
+                    "{{ states.sensor | select(test_name) | list }}"
+                ),
+            }
+        ]
+        prepared = await self._prepared(
+            "automation",
+            "update",
+            operation_id="dynamic_dispatch_domain_hint",
+            current_config=base,
+            proposed_config=proposed,
+        )
+        keys = {item.key for item in operation_lock_requests(prepared)}
+
+        self.assertIn(unconstrained_helper_dependency_lock_key(), keys)
+
+    async def test_constructor_display_values_lock_only_when_selected(self):
+        base = valid_config("automation")
+        dynamic_key = unconstrained_helper_dependency_lock_key()
+        forms = (
+            "dict(message=trigger.platform)",
+            "dict({'message':trigger.platform})",
+            "dict([('message',trigger.platform)])",
+            "namespace([('message',trigger.platform)])",
+        )
+        for index, form in enumerate(forms):
+            for selected in (False, True):
+                with self.subTest(
+                    form=form,
+                    selected=selected,
+                ):
+                    expression = "value.message"
+                    if selected:
+                        expression = "states(" + expression + ")"
+                    proposed = valid_config("automation")
+                    proposed["condition"] = [
+                        {
+                            "condition": "template",
+                            "value_template": (
+                                "{% set value="
+                                + form
+                                + " %}"
+                                "{{ "
+                                + expression
+                                + " }}"
+                            ),
+                        }
+                    ]
+                    prepared = await self._prepared(
+                        "automation",
+                        "update",
+                        operation_id=(
+                            f"constructor_keyword_{index}_{selected}"
+                        ),
+                        current_config=base,
+                        proposed_config=proposed,
+                    )
+                    keys = {
+                        item.key
+                        for item in operation_lock_requests(prepared)
+                    }
+                    self.assertEqual(dynamic_key in keys, selected)
+
+    async def test_wait_scalar_metadata_locks_only_when_selected(self):
+        base = valid_config("automation")
+        dynamic_key = unconstrained_helper_dependency_lock_key()
+        for index, expression in enumerate(
+            (
+                "wait.completed",
+                "wait.remaining is not none",
+                "states(wait.completed)",
+                "states(wait.remaining)",
+            )
+        ):
+            with self.subTest(expression=expression):
+                proposed = valid_config("automation")
+                proposed["action"] = [
+                    {
+                        "wait_template": (
+                            "{{ is_state('sensor.ready', 'on') }}"
+                        ),
+                        "timeout": 30,
+                    },
+                    {
+                        "condition": "template",
+                        "value_template": "{{ " + expression + " }}",
+                    },
+                ]
+                prepared = await self._prepared(
+                    "automation",
+                    "update",
+                    operation_id=f"wait_scalar_{index}",
+                    current_config=base,
+                    proposed_config=proposed,
+                )
+                keys = {
+                    item.key for item in operation_lock_requests(prepared)
+                }
+                self.assertEqual(dynamic_key in keys, index >= 2)
+
+    async def test_elif_and_saved_macro_aliases_take_exact_helper_lock(self):
+        helper = "input_boolean.beta39_ledger"
+        exact_key = helper_dependency_lock_key(helper)
+        base = valid_config("automation")
+        templates = (
+            (
+                "{% set selected='sensor.base' %}"
+                "{% if mode == 'first' %}{% set selected='sensor.first' %}"
+                "{% elif mode == 'target' %}{% set selected='"
+                + helper
+                + "' %}{% else %}{% set selected='sensor.last' %}"
+                "{% endif %}{{ states(selected) }}"
+            ),
+            (
+                "{% macro f(e) %}{{ states(e) }}{% endmacro %}"
+                "{% set old=f %}{% macro f(e) %}ready{% endmacro %}"
+                "{{ old('" + helper + "') }}"
+            ),
+            (
+                "{% set lookup=now %}{% if enabled %}"
+                "{% macro f(e) %}{{ lookup(e, 'on') }}{% endmacro %}"
+                "{% set lookup=is_state %}{% with marker='x' %}"
+                "{{ f('" + helper + "') }}{% endwith %}{% endif %}"
+            ),
+            (
+                "{% set varargs=['sensor.unrelated'] %}"
+                "{% macro f() %}{{ states(varargs[0]) }}{% endmacro %}"
+                "{{ f('" + helper + "') }}"
+            ),
+        )
+        for index, template in enumerate(templates):
+            with self.subTest(index=index):
+                proposed = valid_config("automation")
+                proposed["condition"] = [
+                    {
+                        "condition": "template",
+                        "value_template": template,
+                    }
+                ]
+                prepared = await self._prepared(
+                    "automation",
+                    "update",
+                    operation_id=f"branch_macro_lock_{index}",
+                    current_config=base,
+                    proposed_config=proposed,
+                )
+                keys = {
+                    item.key for item in operation_lock_requests(prepared)
+                }
+                self.assertIn(exact_key, keys)
+
+    async def test_iteration_and_reordering_cannot_erase_helper_locks(self):
+        helper = "input_boolean.synthetic_exact"
+        base = valid_config("automation")
+        templates = (
+            (
+                "{% set values={'a':'sensor.a','z':'"
+                + helper
+                + "'} %}{% for key,value in values.items() %}"
+                "{{ states(value) }}{% endfor %}"
+            ),
+            (
+                "{% for pair in [('a','sensor.a'),('z','"
+                + helper
+                + "')] %}{{ states(pair[1]) }}{% endfor %}"
+            ),
+            (
+                "{{ states(['sensor.a','"
+                + helper
+                + "'] | reverse | first) }}"
+            ),
+            (
+                "{{ states(['sensor.a','"
+                + helper
+                + "'] | batch(2) | first | last) }}"
+            ),
+        )
+        for index, template in enumerate(templates):
+            with self.subTest(index=index):
+                proposed = valid_config("automation")
+                proposed["condition"] = [
+                    {
+                        "condition": "template",
+                        "value_template": template,
+                    }
+                ]
+                prepared = await self._prepared(
+                    "automation",
+                    "update",
+                    operation_id=f"transport_lock_{index}",
+                    current_config=base,
+                    proposed_config=proposed,
+                )
+                keys = {
+                    item.key for item in operation_lock_requests(prepared)
+                }
+                self.assertTrue(
+                    helper_dependency_lock_key(helper) in keys
+                    or unconstrained_helper_dependency_lock_key() in keys,
+                    keys,
+                )
+
+    async def test_state_changed_event_triggers_take_exact_or_conservative_locks(self):
+        helper = "input_boolean.synthetic_exact"
+        base = valid_config("automation")
+        cases = (
+            (
+                {
+                    "trigger": [
+                        {
+                            "platform": "event",
+                            "event_type": "state_changed",
+                            "event_data": {"entity_id": helper},
+                        }
+                    ]
+                },
+                helper_dependency_lock_key(helper),
+            ),
+            (
+                {
+                    "trigger": [
+                        {
+                            "platform": "event",
+                            "event_type": "state_changed",
+                        }
+                    ]
+                },
+                unconstrained_helper_dependency_lock_key(),
+            ),
+            (
+                {
+                    "action": [
+                        {
+                            "wait_for_trigger": [
+                                {
+                                    "trigger": "event",
+                                    "event_type": "state_changed",
+                                }
+                            ]
+                        }
+                    ]
+                },
+                unconstrained_helper_dependency_lock_key(),
+            ),
+        )
+        for index, (addition, expected) in enumerate(cases):
+            with self.subTest(index=index):
+                proposed = valid_config("automation")
+                proposed.update(addition)
+                prepared = await self._prepared(
+                    "automation",
+                    "update",
+                    operation_id=f"state_changed_lock_{index}",
+                    current_config=base,
+                    proposed_config=proposed,
+                )
+                keys = {
+                    item.key for item in operation_lock_requests(prepared)
+                }
+                self.assertIn(expected, keys)
+
+    async def test_call_service_event_triggers_take_exact_or_conservative_locks(self):
+        helper = "input_boolean.synthetic_exact"
+        base = valid_config("automation")
+        cases = (
+            (
+                {
+                    "trigger": [
+                        {
+                            "platform": "event",
+                            "event_type": "call_service",
+                            "event_data": {
+                                "domain": "input_boolean",
+                                "service": "turn_on",
+                                "service_data": {"entity_id": helper},
+                            },
+                        }
+                    ]
+                },
+                helper_dependency_lock_key(helper),
+                True,
+            ),
+            (
+                {
+                    "trigger": [
+                        {
+                            "platform": "event",
+                            "event_type": "call_service",
+                            "event_data": {
+                                "domain": "input_boolean",
+                                "service": "turn_off",
+                            },
+                        }
+                    ]
+                },
+                unconstrained_helper_dependency_lock_key(),
+                True,
+            ),
+            (
+                {
+                    "trigger": [
+                        {
+                            "platform": "event",
+                            "event_type": "call_service",
+                            "event_data": {"domain": "light"},
+                        }
+                    ]
+                },
+                unconstrained_helper_dependency_lock_key(),
+                False,
+            ),
+        )
+        for index, (addition, key, expected) in enumerate(cases):
+            with self.subTest(index=index):
+                proposed = valid_config("automation")
+                proposed.update(addition)
+                prepared = await self._prepared(
+                    "automation",
+                    "update",
+                    operation_id=f"call_service_lock_{index}",
+                    current_config=base,
+                    proposed_config=proposed,
+                )
+                keys = {
+                    item.key for item in operation_lock_requests(prepared)
+                }
+                self.assertEqual(key in keys, expected)
 
     async def test_filter_test_and_domain_collection_dependency_locks(self):
         helper = "input_boolean.synthetic_exact"
@@ -614,7 +1259,7 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
             (
                 f'{{{{ [{{"entity_id": "{helper}"}}] '
                 '| selectattr("entity_id", "has_value") | list }}',
-                True,
+                False,
             ),
             (f'{{{{ ["{helper}"] | map( }}}}', True),
         )
@@ -640,15 +1285,26 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(
                     dynamic_key in locks, expects_dynamic_lock
                 )
+                if 'selectattr("entity_id", "has_value")' in template:
+                    self.assertIn(exact_key, locks)
 
         ambiguous_expressions = (
-            "'sensor.' ~ room if use_sensor else helper_entity",
-            "'sensor.' ~ room and helper_entity",
-            "'sensor.' ~ room or helper_entity",
-            "('sensor.' ~ room)",
-            "'sensor.' ~ room | lower",
+            (
+                "'sensor.' ~ room if use_sensor else helper_entity",
+                True,
+            ),
+            ("'sensor.' ~ room and helper_entity", True),
+            ("'sensor.' ~ room or helper_entity", True),
+            # Grouping does not change the exact sensor-domain exclusion
+            # established by the whole-template AST analyzer.
+            ("('sensor.' ~ room)", False),
+            # Jinja parses this as a sensor prefix concatenated with the
+            # transformed suffix, so the input_boolean target is excluded.
+            ("'sensor.' ~ room | lower", False),
         )
-        for index, expression in enumerate(ambiguous_expressions):
+        for index, (expression, expects_dynamic_lock) in enumerate(
+            ambiguous_expressions
+        ):
             with self.subTest(expression=expression):
                 ambiguous = valid_config("automation")
                 ambiguous["condition"] = [
@@ -666,13 +1322,203 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
                     current_config=base,
                     proposed_config=ambiguous,
                 )
-                self.assertIn(
-                    dynamic_key,
-                    {
+                self.assertEqual(
+                    dynamic_key
+                    in {
                         item.key
                         for item in operation_lock_requests(prepared)
                     },
+                    expects_dynamic_lock,
                 )
+
+    async def test_attribute_and_scalar_provenance_choose_exact_or_conservative_locks(self):
+        helper = "input_boolean.synthetic_exact"
+        exact_key = helper_dependency_lock_key(helper)
+        dynamic_key = unconstrained_helper_dependency_lock_key()
+        base = valid_config("automation")
+        cases = (
+            (
+                "{{ ['sensor.a'] | map(attribute='entity_id', default='"
+                + helper
+                + "') | map('states') | list }}",
+                True,
+                False,
+            ),
+            (
+                "{{ [{'foo': {'bar': '"
+                + helper
+                + "'}}] | map(attribute='foo.bar', default='sensor.a') | map('states') | list }}",
+                True,
+                False,
+            ),
+            (
+                "{{ ['sensor.a'] | map(attribute='entity_id', default=target) | map('states') | list }}",
+                False,
+                True,
+            ),
+            (
+                "{{ states(state_attr('sensor.selector','target') or 'sensor.a') }}",
+                False,
+                True,
+            ),
+            (
+                "{{ states(('INPUT_BOOLEAN.SYNTHETIC_EXACT' | lower) or 'sensor.a') }}",
+                False,
+                True,
+            ),
+            (
+                "{{ [{'entity_id':'sensor.a'}, 'ready'] | map(attribute='entity_id', default='sensor.b') | map('states') | list }}",
+                False,
+                False,
+            ),
+            (
+                "{{ states(namespace(get='"
+                + helper
+                + "').get or 'sensor.a') }}",
+                True,
+                False,
+            ),
+            (
+                "{{ states(({'"
+                + helper
+                + "':'ready'} | list | first) or 'sensor.a') }}",
+                True,
+                False,
+            ),
+            (
+                "{% set selected=dict((('x','"
+                + helper
+                + "'),)) %}"
+                "{{ states(selected.get('x') or 'sensor.a') }}",
+                True,
+                False,
+            ),
+            (
+                "{% set selected=namespace({'x':'"
+                + helper
+                + "'}) %}"
+                "{{ states(selected.x or 'sensor.a') }}",
+                True,
+                False,
+            ),
+            (
+                "{{ states(trigger.id or 'sensor.a') }}",
+                False,
+                True,
+            ),
+            (
+                "{{ states(trigger.event.event_type or 'sensor.a') }}",
+                False,
+                True,
+            ),
+            (
+                "{% set selected=namespace(x='sensor.a') %}"
+                "{% if enabled %}{% set selected.x='"
+                + helper
+                + "' %}{% else %}{% set selected.x='sensor.b' %}{% endif %}"
+                "{{ states(selected.x or 'sensor.c') }}",
+                True,
+                True,
+            ),
+            (
+                "{% set selected=namespace(x='sensor.a') %}"
+                "{% macro mutate(value) %}{% set value.x='"
+                + helper
+                + "' %}{% endmacro %}{{ mutate(selected) }}"
+                "{{ states(selected.x or 'sensor.c') }}",
+                True,
+                True,
+            ),
+            (
+                "{{ states(((['"
+                + helper
+                + "'] + ['sensor.a']) | first) or 'sensor.b') }}",
+                True,
+                False,
+            ),
+            (
+                "{{ states(({'x':'sensor.a'} "
+                "| map(attribute='x', default='"
+                + helper
+                + "') | first) or 'sensor.b') }}",
+                True,
+                False,
+            ),
+            (
+                "{{ states(['sensor.a','"
+                + helper
+                + "'] | select('equalto','"
+                + helper
+                + "') | first) }}",
+                True,
+                True,
+            ),
+            (
+                "{{ states([{'id':'sensor.a','ok':false},"
+                "{'id':'"
+                + helper
+                + "','ok':true}] | selectattr('ok') "
+                "| map(attribute='id') | first) }}",
+                True,
+                True,
+            ),
+            (
+                "{{ states(('%s.%s' | format('input_boolean',"
+                "'synthetic_exact')) or 'sensor.a') }}",
+                False,
+                True,
+            ),
+            (
+                "{{ states((['"
+                + helper
+                + "','sensor.a'][:1] | first) or 'sensor.b') }}",
+                True,
+                True,
+            ),
+        )
+        for index, (template, exact, conservative) in enumerate(cases):
+            with self.subTest(template=template):
+                proposed = valid_config("automation")
+                proposed["condition"] = [
+                    {
+                        "condition": "template",
+                        "value_template": template,
+                    }
+                ]
+                prepared = await self._prepared(
+                    "automation",
+                    "update",
+                    operation_id=f"attribute_scalar_{index}",
+                    current_config=base,
+                    proposed_config=proposed,
+                )
+                keys = {
+                    item.key for item in operation_lock_requests(prepared)
+                }
+                self.assertEqual(exact_key in keys, exact)
+                self.assertEqual(dynamic_key in keys, conservative)
+
+        overflow = valid_config("automation")
+        overflow["trigger"] = [
+            {
+                "platform": "event",
+                "event_type": ["state_changed"] * 129,
+                "event_data": {"entity_id": helper},
+            }
+        ]
+        prepared = await self._prepared(
+            "automation",
+            "update",
+            operation_id="event_selector_overflow",
+            current_config=base,
+            proposed_config=overflow,
+        )
+        self.assertIn(
+            dynamic_key,
+            {
+                item.key for item in operation_lock_requests(prepared)
+            },
+        )
 
     async def test_nested_collection_dependency_locks_are_exact_or_conservative(self):
         helper = "input_boolean.synthetic_exact"

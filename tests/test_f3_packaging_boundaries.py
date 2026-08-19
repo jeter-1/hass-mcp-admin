@@ -26,6 +26,8 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "f3_contracts/operation_adapter.py",
     "tests/f3_synthetic_adapter.py",
     "tests/test_beta34_automation_verification.py",
+    "tests/test_beta39_execution_authority.py",
+    "tests/test_beta39_obligation_governance.py",
     "tests/test_f3_adapter_core.py",
     "tests/test_f3_contract.py",
     "tests/test_f3_dashboard_executor_conformance.py",

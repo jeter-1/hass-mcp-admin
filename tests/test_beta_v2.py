@@ -489,6 +489,7 @@ class AddonIsolationTests(unittest.TestCase):
                 "PyYAML==6.0.2",
                 "cryptography==50.0.0",
                 "jsonschema==4.25.1",
+                "Jinja2==3.1.6",
             ],
         )
         self.assertTrue(all("==" in requirement for requirement in beta))

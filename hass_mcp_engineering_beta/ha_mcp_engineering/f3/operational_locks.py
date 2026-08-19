@@ -12,7 +12,7 @@ from ..f3_configuration.locks import (
     unconstrained_helper_dependency_lock_key,
 )
 from ..governance.helper_dependency import (
-    HELPER_DEPENDENCY_RISK_MODEL,
+    HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
     MAX_RELEVANT_AUTOMATIONS,
 )
 from .models import validate_lock_key
@@ -32,9 +32,12 @@ def _bound_downstream_automation_resources(
     baseline = operation.baseline
     binding = baseline.get("dependency_risk")
     if not isinstance(binding, dict) or (
-        binding.get("model") != HELPER_DEPENDENCY_RISK_MODEL
+        binding.get("model") not in HELPER_DEPENDENCY_RISK_EXECUTION_MODELS
     ):
-        raise ValueError("helper dependency lock evidence is invalid")
+        # Lock projection is execution authority.  A superseded binding is
+        # readable and recoverable, but it cannot decide which resources this
+        # dispatch must hold, so it fails closed and requires a replan.
+        raise ValueError("helper dependency lock evidence is not executable")
     values = binding.get("downstream_automation_resource_ids")
     if (
         not isinstance(values, list)
@@ -45,7 +48,31 @@ def _bound_downstream_automation_resources(
         raise ValueError("helper dependency lock resources are invalid")
     for value in values:
         resource_lock_key("automation", value)
+    projection = binding.get("dependency_lock_projection")
+    if not isinstance(projection, dict):
+        raise ValueError("helper dependency lock projection is invalid")
+    if (
+        projection.get("exact_helper_dependency") is not True
+        or projection.get("conservative_helper_dependency") is not True
+        or projection.get("automation_resource_ids") != values
+        or not isinstance(projection.get("custom_template_reload"), bool)
+    ):
+        raise ValueError("helper dependency lock projection is invalid")
     return tuple(values)
+
+
+def _requires_custom_template_reload_lock(
+    operation: PreparedOperationalOperation,
+) -> bool:
+    binding = operation.baseline.get("dependency_risk")
+    if not isinstance(binding, dict) or (
+        binding.get("model") not in HELPER_DEPENDENCY_RISK_EXECUTION_MODELS
+    ):
+        raise ValueError("helper dependency lock evidence is not executable")
+    projection = binding.get("dependency_lock_projection")
+    if not isinstance(projection, dict):
+        raise ValueError("helper dependency lock projection is invalid")
+    return projection.get("custom_template_reload") is True
 
 
 def normalize_operational_lock_requests(
@@ -212,6 +239,17 @@ class OperationalLockSetCalculator:
                 )
                 for resource_id in downstream_automations
             )
+            if _requires_custom_template_reload_lock(operation):
+                requests.append(
+                    LockRequest(
+                        key="reload:custom_templates",
+                        scopes=(LockScope.RESOURCE,),
+                        mode=LockMode.SHARED,
+                        reason_codes=(
+                            "bound_external_template_dependency",
+                        ),
+                    )
+                )
         elif operation.operation != RESTART_HOME_ASSISTANT:
             raise ValueError("unknown operational lock model")
         return normalize_operational_lock_requests(requests)

@@ -35,6 +35,15 @@ from ha_mcp_engineering.governance.risk import (  # noqa: E402
 ENTITY_ID = "input_boolean.beta37_exact_action"
 
 
+
+from ha_mcp_engineering.dependency.semantic_registry import (  # noqa: E402
+    supported_home_assistant_versions,
+)
+
+# B39-136-R3b: fixtures describe a supported instance unless a test is
+# specifically about the version admission gate.
+SUPPORTED_HA_VERSION = supported_home_assistant_versions()[-1]
+
 def action_profile(source: str, config: dict) -> AutomationActionRiskProfile:
     value = automation_action_consequence_profile(config)
     return AutomationActionRiskProfile(
@@ -92,6 +101,8 @@ def snapshot(
         fingerprint="a" * 64,
         generation=7,
         built_at_monotonic=time.monotonic(),
+        home_assistant_version=SUPPORTED_HA_VERSION,
+        home_assistant_version_status="observed",
         built_at="2026-08-13T12:00:00+00:00",
         findings=findings,
         dynamic_references=tuple(dynamic),
@@ -1054,8 +1065,9 @@ class HelperDependencyRiskTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_dependency_source_failure_is_bounded_and_conservative(self):
         class FailingIndex:
-            async def get(self, *, refresh):
+            async def get(self, *, refresh, min_source_epoch=None):
                 self.refresh = refresh
+                self.min_source_epoch = min_source_epoch
                 raise RuntimeError("untrusted provider response")
 
         index = FailingIndex()
@@ -1065,6 +1077,8 @@ class HelperDependencyRiskTests(unittest.IsolatedAsyncioTestCase):
         risk = helper_dependency_risk_assessment(observed)
 
         self.assertTrue(index.refresh)
+        # Planning reads are not fenced; only the post-lock preflight is.
+        self.assertIsNone(index.min_source_epoch)
         self.assertEqual(observed["binding"]["completeness"], "failed")
         self.assertEqual(observed["binding"]["physical_consequence"], "unknown")
         self.assertEqual(risk.level.value, "high")

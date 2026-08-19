@@ -7,15 +7,35 @@ from typing import Any
 
 from ..dependency.index import DependencyIndex
 from ..dependency.models import (
+    DependencyObligation,
     DependencyIndexSnapshot,
+    OBLIGATION_LEDGER_MODEL,
     dynamic_reference_fingerprint,
+    obligation_fingerprint,
 )
 from .models import ChangeRiskAssessment, RiskLevel
+from ..dependency.semantic_registry import (
+    supported_home_assistant_versions,
+)
 from .normalize import stable_hash
 
 
-HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v2"
+HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v3"
+# Compatibility: persisted bindings from these models stay readable, remain
+# projectable for review, and keep readback-first recovery available.  Being
+# readable is not authority to execute.
+HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS = frozenset(
+    {"helper-dependency-risk-v2", HELPER_DEPENDENCY_RISK_MODEL}
+)
+# Execution authority: only current-model evidence may authorize approval,
+# lock projection, or dispatch.  An older compatible model describes a
+# superseded dependency question and requires an explicit replan; it must
+# never be presented as directly executable.
+HELPER_DEPENDENCY_RISK_EXECUTION_MODELS = frozenset(
+    {HELPER_DEPENDENCY_RISK_MODEL}
+)
 MAX_RELEVANT_AUTOMATIONS = 50
+MAX_RELEVANT_OBLIGATIONS = 256
 MAX_RELEVANT_DYNAMIC_REFERENCES = 32
 MAX_DYNAMIC_REFERENCES_EVALUATED = 64
 MAX_RESOLVED_CANDIDATES_PER_EXPRESSION = 128
@@ -303,6 +323,8 @@ def _failed_binding(entity_id: str, completeness: str) -> dict[str, Any]:
         "entity_id": entity_id,
         "completeness": completeness,
         "evidence_complete": False,
+        "coverage_complete": False,
+        "semantic_precision": "coverage_failure",
         "execution_eligible": False,
         "physical_consequence": "unknown",
         "relevant_downstream_object_ids": [],
@@ -322,12 +344,636 @@ def _failed_binding(entity_id: str, completeness: str) -> dict[str, Any]:
         "dynamic_evaluation_overflow_count": 0,
         "dynamic_evaluation_overflow_fingerprint": None,
         "dynamic_resolution_reason_codes": [],
+        "opaque_obligation_count": 0,
+        "coverage_failure_count": 1,
+        "obligation_evidence": [],
+        "obligation_overflow_count": 0,
+        "obligation_overflow_fingerprint": None,
+        "dependency_lock_projection": {
+            "exact_helper_dependency": True,
+            "conservative_helper_dependency": True,
+            "automation_resource_ids": [],
+            "custom_template_reload": False,
+        },
         "truncated": completeness == "truncated",
     }
     return {
         **material,
         "unrelated_dynamic_reference_count": 0,
         "evidence_fingerprint": stable_hash(material),
+    }
+
+
+def _obligation_targets_helper(
+    item: DependencyObligation, entity_id: str
+) -> str:
+    """Project one target-independent terminal to one exact helper.
+
+    The obligation ledger is authoritative for semantic coverage.  Candidate
+    domains may prove an exact target exclusion, but an opaque obligation may
+    never become neutral merely because no exact candidate happened to survive
+    precision analysis.
+    """
+
+    if (
+        item.obligation_kind == "structured_entity_reference"
+        and item.relation in _NON_CAUSAL_RELATIONS
+    ):
+        # A literal action target/data value describes the downstream effect;
+        # it is not evidence that changing the helper can reach the action.
+        # Template reads in those same configuration paths remain causal and
+        # must continue through the ledger below.
+        return "proven_dependency_neutral"
+    if entity_id in item.exact_entity_ids:
+        return "exact_dependency"
+    if item.outcome == "coverage_failure" or item.limit_exceeded:
+        return "coverage_failure"
+    if item.outcome == "proven_dependency_neutral":
+        return "proven_dependency_neutral"
+    if item.outcome == "proven_target_exclusion":
+        return "proven_target_exclusion"
+    domains = item.possible_entity_domains
+    if (
+        item.outcome == "exact_dependency"
+        and domains is not None
+        and domains
+        and "input_boolean" not in domains
+        and not item.literal_selectors
+    ):
+        return "proven_target_exclusion"
+    if item.outcome == "exact_dependency" and item.exact_entity_ids:
+        return "proven_target_exclusion"
+    if item.outcome == "exact_dependency":
+        # A proven domain that contains the target domain bounds the potential
+        # automation set but cannot prove membership for one exact helper.
+        # This is semantic opacity, not missing inventory coverage.
+        if domains and "input_boolean" in domains:
+            return "bounded_semantic_opaque"
+        # An alleged exact terminal without a candidate or domain proof is not
+        # exact evidence and cannot be made reviewable safely.
+        return "coverage_failure"
+    return "bounded_semantic_opaque"
+
+
+def _project_obligation(
+    item: DependencyObligation, *, target_outcome: str
+) -> dict[str, Any]:
+    projected = {
+        "evidence_id": item.evidence_id,
+        "source_object_id": _safe_automation_identity(
+            item.source_id, item.source_entity_id
+        ),
+        "configuration_path": str(item.config_path)[:256],
+        "relation": item.relation,
+        "ledger_outcome": item.outcome,
+        "target_outcome": target_outcome,
+        "obligation_kind": item.obligation_kind,
+        "reason_code": item.reason_code,
+        "semantic_category": item.semantic_category,
+        "semantic_registry_version": item.semantic_registry_version,
+        "semantic_registry_fingerprint": (
+            item.semantic_registry_fingerprint
+        ),
+        "expression_fingerprint": item.expression_fingerprint,
+        "configuration_fingerprint": item.configuration_fingerprint,
+        "candidate_entity_ids": list(item.exact_entity_ids),
+        "possible_entity_domains": (
+            list(item.possible_entity_domains)
+            if item.possible_entity_domains is not None
+            else None
+        ),
+        "literal_selectors": list(item.literal_selectors),
+        "external_template_name": item.external_template_name,
+        "context_provenance": list(item.context_provenance),
+        "limit_exceeded": item.limit_exceeded,
+        "lock_projection": item.lock_projection,
+    }
+    # Helper approvals bind semantic/configuration identity, not display labels
+    # or the automation's enabled state.  The index-level ledger fingerprint
+    # may include that diagnostic metadata, but irrelevant presentation changes
+    # must not invalidate an otherwise identical helper approval.
+    projected["obligation_fingerprint"] = stable_hash(projected)
+    projected["target_projection_fingerprint"] = stable_hash(
+        projected
+    )
+    return projected
+
+
+def _non_relevant_obligation_material(
+    projected: dict[str, Any],
+) -> dict[str, Any]:
+    """Return target-exclusion semantics without unrelated config bytes.
+
+    A complete automation configuration fingerprint is material for an exact
+    or opaque dependency because its downstream effect is approval-bound.  It
+    is deliberately not material for an obligation already proven irrelevant
+    to the exact helper: changing an unrelated notification message must not
+    stale that helper approval.  If the edit introduces the helper, the new
+    target outcome moves into the relevant projection and changes the binding.
+    """
+
+    return {
+        key: value
+        for key, value in projected.items()
+        if key
+        not in {
+            "configuration_fingerprint",
+            "evidence_id",
+            "obligation_fingerprint",
+            "target_projection_fingerprint",
+        }
+    }
+
+
+def _project_downstream_profile(
+    *,
+    source_id: str,
+    relationships: set[str],
+    profile: Any,
+) -> tuple[dict[str, Any], str | None]:
+    resource_id = _safe_automation_resource_identity(
+        source_id,
+        profile.source_entity_id if profile is not None else None,
+    )
+    identity = _safe_automation_identity(
+        source_id,
+        profile.source_entity_id if profile is not None else None,
+    )
+    if profile is None:
+        return (
+            {
+                "automation_id": identity,
+                "automation_resource_id": resource_id,
+                "relationships": sorted(relationships),
+                "physical_consequence": "unknown",
+                "complete": False,
+                "truncated": False,
+                "action_domains": [],
+                "services": [],
+                "reason_codes": ["action_profile_unavailable"],
+                "effect_projection_model": "unavailable",
+                "effect_targets": [],
+                "effect_data": [],
+                "effect_structure_fingerprint": stable_hash(
+                    {"source_id": source_id, "structure": "unavailable"}
+                ),
+                "effect_projection_fingerprint": stable_hash(
+                    {"source_id": source_id, "effect": "unavailable"}
+                ),
+                "effect_projection_clipped": False,
+                "profile_fingerprint": stable_hash(
+                    {"source_id": source_id, "missing": True}
+                ),
+            },
+            "action_profile_unavailable",
+        )
+    projected = {
+        "automation_id": identity,
+        "automation_resource_id": resource_id,
+        "relationships": sorted(relationships),
+        "physical_consequence": profile.physical_consequence,
+        "complete": profile.complete,
+        "truncated": profile.truncated,
+        "action_domains": list(profile.action_domains),
+        "services": list(profile.services),
+        "reason_codes": list(profile.reason_codes),
+        "effect_projection_model": profile.effect_projection_model,
+        "effect_targets": list(profile.effect_targets),
+        "effect_data": list(profile.effect_data),
+        "effect_structure_fingerprint": (
+            profile.effect_structure_fingerprint
+        ),
+        "effect_projection_fingerprint": (
+            profile.effect_projection_fingerprint
+        ),
+        "effect_projection_clipped": profile.effect_projection_clipped,
+        "profile_fingerprint": profile.evidence_fingerprint,
+    }
+    if resource_id is None:
+        return projected, "automation_lock_identity_unavailable"
+    if profile.truncated or profile.effect_projection_clipped:
+        return projected, "action_profile_truncated"
+    return projected, None
+
+
+def _build_obligation_binding(
+    snapshot: DependencyIndexSnapshot,
+    *,
+    entity_id: str,
+    index_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    """Build the target-specific governance contract from one shared ledger."""
+
+    automation_obligations = sorted(
+        (
+            item
+            for item in snapshot.obligations
+            if item.source_type in {"automation", "blueprint"}
+        ),
+        key=lambda item: obligation_fingerprint(item),
+    )
+    projected_pairs = [
+        (
+            _project_obligation(
+                item,
+                target_outcome=_obligation_targets_helper(item, entity_id),
+            ),
+            item,
+        )
+        for item in automation_obligations
+    ]
+    projected_pairs.sort(
+        key=lambda pair: (
+            pair[0]["target_projection_fingerprint"],
+            pair[1].source_id,
+            pair[1].config_path,
+        )
+    )
+    projected = [item for item, _ in projected_pairs]
+    relevant_pairs = [
+        (item, obligation)
+        for item, obligation in projected_pairs
+        if item["target_outcome"]
+        not in {"proven_target_exclusion", "proven_dependency_neutral"}
+    ]
+    non_relevant_pairs = [
+        (item, obligation)
+        for item, obligation in projected_pairs
+        if item["target_outcome"]
+        in {"proven_target_exclusion", "proven_dependency_neutral"}
+    ]
+    overflow_count = max(
+        0, int(getattr(snapshot, "obligation_overflow_count", 0) or 0)
+    )
+    overflow_fingerprint = getattr(
+        snapshot, "obligation_overflow_fingerprint", None
+    )
+    if overflow_count and not isinstance(overflow_fingerprint, str):
+        overflow_fingerprint = stable_hash(
+            {"count": overflow_count, "fingerprint": "unavailable"}
+        )
+
+    coverage_items = {
+        item.source_type: item for item in snapshot.coverage
+    }
+    automation_coverage = coverage_items.get("automation")
+    blueprint_coverage = coverage_items.get("blueprint")
+    fresh = bool(
+        index_metadata.get("freshness") == "current"
+        and index_metadata.get("evidence_stale") is not True
+        and index_metadata.get("invalidated") is not True
+    )
+    coverage_reasons: set[str] = set()
+    # B39-136-R3b: the reviewed semantics only bind to a supported release.
+    admission = home_assistant_version_admission(snapshot)
+    if not admission["admitted"]:
+        coverage_reasons.add(str(admission["reason_code"]))
+    if snapshot.obligation_ledger_model not in {
+        None,
+        OBLIGATION_LEDGER_MODEL,
+    }:
+        coverage_reasons.add("obligation_ledger_model_unsupported")
+    if not fresh:
+        coverage_reasons.add("dependency_index_not_fresh")
+    authoritative_automation_completeness = (
+        automation_coverage.obligation_ledger_completeness
+        if automation_coverage is not None
+        and snapshot.obligation_ledger_model == OBLIGATION_LEDGER_MODEL
+        and automation_coverage.obligation_ledger_completeness is not None
+        else automation_coverage.completeness
+        if automation_coverage is not None
+        else None
+    )
+    authoritative_automation_failures = (
+        automation_coverage.obligation_ledger_failed_item_count
+        if automation_coverage is not None
+        and snapshot.obligation_ledger_model == OBLIGATION_LEDGER_MODEL
+        and automation_coverage.obligation_ledger_completeness is not None
+        else automation_coverage.failed_item_count
+        if automation_coverage is not None
+        else 0
+    )
+    if (
+        automation_coverage is None
+        or authoritative_automation_completeness != "complete"
+        or authoritative_automation_failures
+    ):
+        coverage_reasons.add("automation_inventory_incomplete")
+    authoritative_blueprint_completeness = (
+        blueprint_coverage.obligation_ledger_completeness
+        if blueprint_coverage is not None
+        and snapshot.obligation_ledger_model == OBLIGATION_LEDGER_MODEL
+        and blueprint_coverage.obligation_ledger_completeness is not None
+        else blueprint_coverage.completeness
+        if blueprint_coverage is not None
+        else None
+    )
+    authoritative_blueprint_failures = (
+        blueprint_coverage.obligation_ledger_failed_item_count
+        if blueprint_coverage is not None
+        and snapshot.obligation_ledger_model == OBLIGATION_LEDGER_MODEL
+        and blueprint_coverage.obligation_ledger_completeness is not None
+        else blueprint_coverage.failed_item_count
+        if blueprint_coverage is not None
+        else 0
+    )
+    if (
+        blueprint_coverage is None
+        or authoritative_blueprint_completeness != "complete"
+        or authoritative_blueprint_failures
+    ):
+        coverage_reasons.add("blueprint_inventory_incomplete")
+    if snapshot.automation_read_failures:
+        coverage_reasons.add("automation_configuration_read_failure")
+    if overflow_count:
+        coverage_reasons.add("obligation_ledger_truncated")
+    if len(relevant_pairs) > MAX_RELEVANT_OBLIGATIONS:
+        coverage_reasons.add("obligation_projection_limit_exceeded")
+    if any(item["target_outcome"] == "coverage_failure" for item in projected):
+        coverage_reasons.add("obligation_coverage_failure")
+    if snapshot.obligation_ledger_model != OBLIGATION_LEDGER_MODEL and any(
+        "exceeded the bounded index payload" in warning
+        for item in snapshot.coverage
+        for warning in item.warnings
+    ):
+        coverage_reasons.add("dependency_index_payload_truncated")
+
+    relevant: dict[str, set[str]] = _causal_automation_sources(
+        snapshot, entity_id
+    )
+    exact_count = 0
+    opaque_count = 0
+    external_template_names: set[str] = set()
+    external_template_opacity_count = 0
+    for source_item, obligation in projected_pairs:
+        outcome = source_item["target_outcome"]
+        if outcome == "exact_dependency":
+            exact_count += 1
+            relevant.setdefault(obligation.source_id, set()).add(
+                obligation.relation or "template_exact_dependency"
+            )
+        elif outcome == "bounded_semantic_opaque":
+            opaque_count += 1
+            relevant.setdefault(obligation.source_id, set()).add(
+                "bounded_semantic_opaque"
+            )
+            if obligation.external_template_name:
+                external_template_names.add(
+                    obligation.external_template_name
+                )
+            if (
+                obligation.external_template_name
+                or obligation.obligation_kind.startswith(
+                    "external_template_"
+                )
+            ):
+                external_template_opacity_count += 1
+
+    if len(relevant) > MAX_RELEVANT_AUTOMATIONS:
+        coverage_reasons.add("relevant_automation_limit_exceeded")
+    profiles_by_source = {
+        item.source_id: item
+        for item in snapshot.automation_action_profiles
+    }
+    downstream_profiles: list[dict[str, Any]] = []
+    observed_consequence = "none"
+    for source_id in sorted(relevant)[:MAX_RELEVANT_AUTOMATIONS]:
+        profile, failure = _project_downstream_profile(
+            source_id=source_id,
+            relationships=relevant[source_id],
+            profile=profiles_by_source.get(source_id),
+        )
+        downstream_profiles.append(profile)
+        if failure:
+            coverage_reasons.add(failure)
+        consequence = str(profile["physical_consequence"])
+        if _CONSEQUENCE_RANK.get(consequence, 1) > _CONSEQUENCE_RANK.get(
+            observed_consequence, 0
+        ):
+            observed_consequence = consequence
+
+    # Bounded but incomplete effect semantics are transparent elevated evidence,
+    # not an inventory failure.  Missing, clipped, or unlockable profiles are
+    # coverage failures because their effect/lock scope cannot be bounded.
+    coverage_complete = not coverage_reasons
+    if coverage_complete and opaque_count:
+        semantic_precision = "bounded_opaque"
+    elif coverage_complete:
+        semantic_precision = "exact"
+    else:
+        semantic_precision = "coverage_failure"
+    execution_eligible = coverage_complete
+    evidence_complete = bool(coverage_complete and not opaque_count)
+    if not execution_eligible and observed_consequence == "none":
+        observed_consequence = "unknown"
+
+    resource_ids = sorted(
+        {
+            item["automation_resource_id"]
+            for item in downstream_profiles
+            if isinstance(item.get("automation_resource_id"), str)
+        },
+        key=lambda item: item.encode("utf-8"),
+    )
+    lock_projection = {
+        "exact_helper_dependency": True,
+        # Every helper execution holds this shared guard so an automation
+        # mutation that newly introduces opaque dependency semantics cannot
+        # race final preflight and dispatch.
+        "conservative_helper_dependency": True,
+        "automation_resource_ids": resource_ids,
+        "custom_template_reload": bool(external_template_opacity_count),
+    }
+    retained_obligations = [
+        item
+        for item, _ in relevant_pairs[:MAX_RELEVANT_OBLIGATIONS]
+    ]
+    non_relevant_fingerprints = sorted(
+        stable_hash(_non_relevant_obligation_material(item))
+        for item, _ in non_relevant_pairs
+    )
+    non_relevant_fingerprint = stable_hash(non_relevant_fingerprints)
+    downstream_profiles.sort(key=lambda item: item["automation_id"])
+    consequential_ids = [
+        item["automation_id"]
+        for item in downstream_profiles
+        if item["physical_consequence"] in {"direct", "safety_critical"}
+    ]
+    material = {
+        "model": HELPER_DEPENDENCY_RISK_MODEL,
+        "obligation_ledger_model": (
+            snapshot.obligation_ledger_model or OBLIGATION_LEDGER_MODEL
+        ),
+        "entity_id": entity_id,
+        "completeness": (
+            "complete" if coverage_complete else "failed"
+        ),
+        "coverage_complete": coverage_complete,
+        "semantic_precision": semantic_precision,
+        "evidence_complete": evidence_complete,
+        "execution_eligible": execution_eligible,
+        "physical_consequence": observed_consequence,
+        "relevant_downstream_object_ids": [
+            item["automation_id"] for item in downstream_profiles
+        ],
+        "downstream_automation_resource_ids": resource_ids,
+        "consequential_downstream_object_ids": consequential_ids,
+        "downstream_profiles": downstream_profiles,
+        "exact_dependency_obligation_count": exact_count,
+        "opaque_obligation_count": opaque_count,
+        "coverage_failure_count": len(coverage_reasons),
+        "coverage_failure_reason_codes": sorted(coverage_reasons),
+        "obligation_evidence": retained_obligations,
+        "retained_obligation_count": len(retained_obligations),
+        "non_relevant_obligation_count": len(non_relevant_pairs),
+        "proven_target_exclusion_obligation_count": sum(
+            item["target_outcome"] == "proven_target_exclusion"
+            for item, _ in non_relevant_pairs
+        ),
+        "proven_dependency_neutral_obligation_count": sum(
+            item["target_outcome"] == "proven_dependency_neutral"
+            for item, _ in non_relevant_pairs
+        ),
+        "non_relevant_obligation_fingerprint": (
+            non_relevant_fingerprint
+        ),
+        "non_relevant_obligations_compacted": bool(non_relevant_pairs),
+        "obligation_overflow_count": overflow_count,
+        "obligation_overflow_fingerprint": overflow_fingerprint,
+        "semantic_registry_versions": sorted(
+            {item.semantic_registry_version for item in automation_obligations}
+        ),
+        "semantic_registry_fingerprints": sorted(
+            {
+                item.semantic_registry_fingerprint
+                for item in automation_obligations
+            }
+        ),
+        "external_template_names": sorted(external_template_names),
+        "external_template_opacity_count": (
+            external_template_opacity_count
+        ),
+        "dependency_lock_projection": lock_projection,
+        **_version_admission_material(admission),
+        "truncated": bool(
+            overflow_count or len(relevant_pairs) > MAX_RELEVANT_OBLIGATIONS
+        ),
+    }
+    return {
+        **material,
+        # Retain additive legacy projections for existing clients and tests.
+        "target_relevant_dynamic_reference_count": opaque_count,
+        "target_relevant_dynamic_reference_fingerprints": [
+            item["target_projection_fingerprint"]
+            for item in retained_obligations
+            if item["target_outcome"] == "bounded_semantic_opaque"
+        ],
+        "resolved_dynamic_reference_evidence": [],
+        "resolved_target_dynamic_reference_count": exact_count,
+        "unresolved_dynamic_reference_count": opaque_count,
+        "unrelated_dynamic_reference_count": sum(
+            item["target_outcome"] == "proven_target_exclusion"
+            for item, _ in non_relevant_pairs
+        ),
+        "unreadable_automation_count": len(snapshot.automation_read_failures),
+        "unreadable_automation_ids": sorted(
+            {
+                _safe_automation_identity(item.source_id, item.source_entity_id)
+                for item in snapshot.automation_read_failures
+            }
+        ),
+        "unreadable_automation_fingerprint": stable_hash(
+            [
+                (item.source_id, item.source_entity_id, item.reason_code)
+                for item in snapshot.automation_read_failures
+            ]
+        ),
+        "dynamic_reference_overflow_count": 0,
+        "dynamic_reference_overflow_fingerprint": None,
+        "dynamic_evaluation_overflow_count": 0,
+        "dynamic_evaluation_overflow_fingerprint": None,
+        "dynamic_resolution_reason_codes": [],
+        "coverage_diagnostics": [
+            {
+                "source_type": item.source_type,
+                "completeness": item.completeness,
+                "failed_item_count": item.failed_item_count,
+                "warning_count": len(item.warnings),
+                "obligation_ledger_completeness": (
+                    item.obligation_ledger_completeness
+                ),
+                "obligation_ledger_failed_item_count": (
+                    item.obligation_ledger_failed_item_count
+                ),
+            }
+            for item in snapshot.coverage
+            if item.source_type in {"automation", "blueprint"}
+        ],
+        "evidence_fingerprint": stable_hash(material),
+    }
+
+
+# B39-136-R3b: reason codes for the runtime version admission gate.  Three
+# situations are distinguishable because they call for different operator
+# action: upgrade/downgrade Home Assistant, restore connectivity, or
+# investigate a malformed response.
+VERSION_UNSUPPORTED_REASON = "home_assistant_version_unsupported"
+VERSION_UNAVAILABLE_REASON = "home_assistant_version_unavailable"
+VERSION_UNREADABLE_REASON = "home_assistant_version_unreadable"
+
+
+def home_assistant_version_admission(
+    snapshot: DependencyIndexSnapshot,
+) -> dict[str, Any]:
+    """Admit or refuse the reviewed semantics for the connected release.
+
+    The reviewed template semantics are asserted valid for a fixed set of
+    Home Assistant releases.  Evidence produced against any other release -
+    or against an instance whose version could not be read - is not
+    execution-authoritative, so this gate fails closed on every negative
+    case.  It is an additional necessary condition layered on the R2 source
+    fence and the R5 compatibility/execution split, never a replacement for
+    either.
+    """
+
+    supported = supported_home_assistant_versions()
+    observed = getattr(snapshot, "home_assistant_version", None)
+    status = str(
+        getattr(snapshot, "home_assistant_version_status", "unavailable")
+    )
+    if status == "observed":
+        if isinstance(observed, str) and observed:
+            admitted = observed in supported
+            reason = None if admitted else VERSION_UNSUPPORTED_REASON
+        else:
+            # Claimed observed but carries no version: the field is the
+            # problem, not connectivity.
+            admitted, reason = False, VERSION_UNREADABLE_REASON
+    elif status == "unreadable":
+        admitted, reason = False, VERSION_UNREADABLE_REASON
+    else:
+        admitted, reason = False, VERSION_UNAVAILABLE_REASON
+    return {
+        "admitted": admitted,
+        "observed_version": observed if status == "observed" else None,
+        "observation_status": status,
+        "supported_versions": list(supported),
+        "reason_code": reason,
+    }
+
+
+def _version_admission_material(admission: dict[str, Any]) -> dict[str, Any]:
+    """Return the admission facts bound into evidence and its fingerprint."""
+
+    return {
+        "home_assistant_version_admitted": bool(admission["admitted"]),
+        "home_assistant_version_observed": admission["observed_version"],
+        "home_assistant_version_observation_status": (
+            admission["observation_status"]
+        ),
+        "home_assistant_supported_versions": list(
+            admission["supported_versions"]
+        ),
     }
 
 
@@ -338,6 +984,17 @@ def build_helper_dependency_risk_binding(
     index_metadata: dict[str, Any],
 ) -> dict[str, Any]:
     """Build one normalized, bounded, target-specific approval binding."""
+
+    if (
+        snapshot.obligation_ledger_model is not None
+        or snapshot.obligations
+        or getattr(snapshot, "obligation_overflow_count", 0)
+    ):
+        return _build_obligation_binding(
+            snapshot,
+            entity_id=entity_id,
+            index_metadata=index_metadata,
+        )
 
     sources = _causal_automation_sources(snapshot, entity_id)
     profiles_by_source = {
@@ -541,8 +1198,13 @@ def build_helper_dependency_risk_binding(
         downstream_profiles.append(projected)
 
     truncated = truncated or unreadable_automations_clipped
+    # B39-136-R3b: the legacy projection is reached for pre-ledger snapshots
+    # and still claims the current model, so it takes the same admission gate.
+    # No binding path may escape it.
+    legacy_admission = home_assistant_version_admission(snapshot)
     evidence_complete = bool(
-        fresh
+        legacy_admission["admitted"]
+        and fresh
         and not relevant_dynamic
         and not missing_profile
         and not profile_incomplete
@@ -586,6 +1248,10 @@ def build_helper_dependency_risk_binding(
         "entity_id": entity_id,
         "completeness": completeness,
         "evidence_complete": evidence_complete,
+        "coverage_complete": evidence_complete,
+        "semantic_precision": (
+            "exact" if evidence_complete else "coverage_failure"
+        ),
         "execution_eligible": evidence_complete,
         "physical_consequence": observed_consequence,
         "relevant_downstream_object_ids": relevant_ids,
@@ -637,6 +1303,33 @@ def build_helper_dependency_risk_binding(
             )
             else []
         ),
+        "opaque_obligation_count": 0,
+        "coverage_failure_count": 0 if evidence_complete else 1,
+        "coverage_failure_reason_codes": (
+            []
+            if evidence_complete
+            else sorted(
+                {"legacy_evidence_incomplete"}
+                | (
+                    set()
+                    if legacy_admission["admitted"]
+                    else {str(legacy_admission["reason_code"])}
+                )
+            )
+        ),
+        "obligation_evidence": [],
+        "obligation_overflow_count": 0,
+        "obligation_overflow_fingerprint": None,
+        "semantic_registry_versions": [],
+        "semantic_registry_fingerprints": [],
+        "external_template_names": [],
+        "dependency_lock_projection": {
+            "exact_helper_dependency": True,
+            "conservative_helper_dependency": True,
+            "automation_resource_ids": resource_ids,
+            "custom_template_reload": False,
+        },
+        **_version_admission_material(legacy_admission),
         "truncated": truncated,
     }
     return {
@@ -669,11 +1362,28 @@ class HelperDependencyRiskService:
         self.index = index
 
     async def assess(
-        self, entity_id: str, *, refresh: bool = True
+        self,
+        entity_id: str,
+        *,
+        refresh: bool = True,
+        fenced: bool = False,
     ) -> dict[str, Any]:
+        """Read target-specific risk, optionally behind a governed fence.
+
+        ``fenced`` is used by the post-lock preflight, which runs only after
+        the complete lock set is held.  It opens a source-read fence and
+        accepts only evidence from a scan that started after it, so a build
+        that began before the lock cannot satisfy the final check.
+        """
+
+        fence: int | None = None
         try:
+            if fenced:
+                fence = self.index.open_source_fence(
+                    "governed_helper_preflight"
+                )
             snapshot, rebuilt, lookup_duration_ms = await self.index.get(
-                refresh=refresh
+                refresh=refresh, min_source_epoch=fence
             )
             metadata = self.index.evidence_metadata(snapshot)
         except Exception as exc:
@@ -705,6 +1415,20 @@ class HelperDependencyRiskService:
                     "evidence_age_seconds"
                 ),
                 "refreshed": rebuilt,
+                "source_epoch": snapshot.source_epoch,
+                "fenced": fence is not None,
+                # B39-136-R3b: the gate's decision travels with the same
+                # provenance R2 and R5 already populate, so a refusal is
+                # visible rather than an internal silence.
+                "home_assistant_version": binding.get(
+                    "home_assistant_version_observed"
+                ),
+                "home_assistant_version_status": binding.get(
+                    "home_assistant_version_observation_status"
+                ),
+                "home_assistant_version_admitted": binding.get(
+                    "home_assistant_version_admitted"
+                ),
                 "lookup_duration_ms": round(lookup_duration_ms, 3),
                 "fallback": "none",
                 "fallback_occurred": False,
@@ -713,7 +1437,7 @@ class HelperDependencyRiskService:
 
 
 async def read_runtime_helper_dependency_risk(
-    entity_id: str, *, refresh: bool = True
+    entity_id: str, *, refresh: bool = True, fenced: bool = False
 ) -> dict[str, Any]:
     from ..dependency import DEPENDENCY_ANALYSIS
 
@@ -731,7 +1455,7 @@ async def read_runtime_helper_dependency_risk(
             },
         }
     return await HelperDependencyRiskService(index).assess(
-        entity_id, refresh=refresh
+        entity_id, refresh=refresh, fenced=fenced
     )
 
 
@@ -747,27 +1471,89 @@ def helper_dependency_risk_assessment(
             "completeness": "failed",
         }
     complete = binding.get("evidence_complete") is True
+    eligible = binding.get("execution_eligible") is True
+    precision = str(binding.get("semantic_precision", "exact"))
     consequence = binding.get("physical_consequence")
-    if complete and consequence == "none":
+    if eligible and consequence == "none":
         level = RiskLevel.LOW
         reasons = [
-            "Complete bounded dependency evidence found no consequential downstream automation path.",
+            (
+                "Bounded opaque dependency evidence found only proven-benign downstream effects."
+                if precision == "bounded_opaque"
+                else "Complete bounded dependency evidence found no consequential downstream automation path."
+            ),
         ]
-        warnings: list[str] = []
-    elif complete:
+        warnings: list[str] = (
+            [
+                "Semantic opacity remains approval-bound and requires conservative dependency locks."
+            ]
+            if precision == "bounded_opaque"
+            else []
+        )
+    elif eligible:
         level = RiskLevel.HIGH
         reasons = [
-            "Bounded dependency evidence found a materially consequential downstream automation path.",
+            (
+                "Bounded opaque dependency evidence includes consequential or unknown downstream effects."
+                if precision == "bounded_opaque"
+                else "Bounded dependency evidence found a materially consequential downstream automation path."
+            ),
         ]
-        warnings = []
+        warnings = (
+            [
+                "Semantic opacity is explicit and requires elevated acknowledgement plus conservative locks."
+            ]
+            if precision == "bounded_opaque"
+            else []
+        )
     else:
         level = RiskLevel.HIGH
-        reasons = [
-            "Dependency evidence is incomplete, so low risk cannot be concluded.",
-        ]
-        warnings = [
-            "Fresh complete dependency evidence is required before dispatch.",
-        ]
+        codes = set(binding.get("coverage_failure_reason_codes") or [])
+        observed_version = binding.get("home_assistant_version_observed")
+        supported_versions = (
+            binding.get("home_assistant_supported_versions") or []
+        )
+        supported_text = ", ".join(str(item) for item in supported_versions)
+        if VERSION_UNSUPPORTED_REASON in codes:
+            # State both sides plainly: the operator needs to know which
+            # release is running and which the semantics were reviewed for.
+            reasons = [
+                "Home Assistant "
+                f"{observed_version} is running, and the reviewed template "
+                f"semantics cover only {supported_text}."
+            ]
+            warnings = [
+                "Dependency evidence is not execution-authoritative on an "
+                "unsupported Home Assistant release. No change was attempted.",
+            ]
+        elif VERSION_UNREADABLE_REASON in codes:
+            reasons = [
+                "The Home Assistant version could not be determined from the "
+                "configuration response, so the reviewed template semantics "
+                "cannot be bound to the connected instance.",
+            ]
+            warnings = [
+                "No change was attempted. Reviewed releases are "
+                f"{supported_text}.",
+            ]
+        elif VERSION_UNAVAILABLE_REASON in codes:
+            reasons = [
+                "The connected Home Assistant version could not be read, so "
+                "the reviewed template semantics cannot be bound to the "
+                "instance.",
+            ]
+            warnings = [
+                "No change was attempted. Restore Home Assistant "
+                f"connectivity and retry. Reviewed releases are "
+                f"{supported_text}.",
+            ]
+        else:
+            reasons = [
+                "Dependency evidence coverage failed, so execution scope cannot be bounded.",
+            ]
+            warnings = [
+                "Fresh bounded dependency coverage is required before approval or dispatch.",
+            ]
     risk_evidence = [
         {
             "field": "operation",
@@ -777,6 +1563,16 @@ def helper_dependency_risk_assessment(
             "field": "dependency_index",
             "trigger": "helper_dependency_risk_evidence",
             "completeness": str(binding.get("completeness")),
+            "coverage_complete": bool(
+                binding.get("coverage_complete", complete)
+            ),
+            "semantic_precision": precision,
+            "opaque_obligation_count": int(
+                binding.get("opaque_obligation_count", 0) or 0
+            ),
+            "coverage_failure_count": int(
+                binding.get("coverage_failure_count", 0) or 0
+            ),
             "physical_consequence": str(consequence),
             "evidence_fingerprint": str(
                 binding.get("evidence_fingerprint")
@@ -786,11 +1582,30 @@ def helper_dependency_risk_assessment(
                 provenance.get("fingerprint", "unknown")
             ),
         },
+        {
+            "field": "home_assistant_version",
+            "trigger": "reviewed_semantics_version_admission",
+            "observed_version": str(
+                binding.get("home_assistant_version_observed")
+            ),
+            "observation_status": str(
+                binding.get("home_assistant_version_observation_status")
+            ),
+            "admitted": bool(
+                binding.get("home_assistant_version_admitted")
+            ),
+            "supported_versions": [
+                str(item)
+                for item in (
+                    binding.get("home_assistant_supported_versions") or []
+                )
+            ],
+        },
     ]
     return ChangeRiskAssessment(
         level=level,
         reasons=reasons,
-        apply_allowed=complete,
+        apply_allowed=eligible,
         evidence=risk_evidence,
         warnings=warnings,
     )
@@ -798,6 +1613,12 @@ def helper_dependency_risk_assessment(
 
 __all__ = [
     "HELPER_DEPENDENCY_RISK_MODEL",
+    "HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS",
+    "HELPER_DEPENDENCY_RISK_EXECUTION_MODELS",
+    "VERSION_UNAVAILABLE_REASON",
+    "VERSION_UNREADABLE_REASON",
+    "VERSION_UNSUPPORTED_REASON",
+    "home_assistant_version_admission",
     "HelperDependencyRiskService",
     "build_helper_dependency_risk_binding",
     "helper_dependency_risk_assessment",

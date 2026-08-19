@@ -12,11 +12,14 @@ from typing import Any
 
 from ..observability import METRICS
 from .models import (
+    DependencyObligation,
     DependencyIndexSnapshot,
     DynamicReference,
     dynamic_reference_fingerprint,
+    obligation_fingerprint,
     snapshot_fingerprint,
 )
+from .extraction import make_coverage_failure_obligation
 from .provider import DependencySourceProvider
 
 
@@ -25,6 +28,16 @@ DEFAULT_HARD_TTL_SECONDS = 3600.0
 MAX_AUTOMATION_ACTION_PROFILES = 1_000
 MAX_AUTOMATION_READ_FAILURES = 1_000
 MAX_DYNAMIC_REFERENCES = 1_000
+MAX_DEPENDENCY_OBLIGATIONS = 10_000
+# A fenced refresh normally needs one rebuild.  The bound keeps a pathological
+# invalidation storm from looping instead of failing closed.
+MAX_FENCED_BUILD_ATTEMPTS = 8
+
+
+class DependencyFenceError(RuntimeError):
+    """A governed post-lock refresh could not be satisfied after the fence."""
+
+    category = "dependency_fence_unsatisfied"
 
 
 def _dynamic_reference_sort_key(
@@ -47,6 +60,32 @@ def _dynamic_reference_overflow_fingerprint(
         return None
     encoded = json.dumps(
         [dynamic_reference_fingerprint(item) for item in items],
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _obligation_sort_key(
+    item: DependencyObligation,
+) -> tuple[str, str, str, str, str, str]:
+    return (
+        item.source_type,
+        item.source_entity_id or "",
+        item.source_id,
+        item.config_path,
+        item.evidence_id,
+        obligation_fingerprint(item),
+    )
+
+
+def _obligation_overflow_fingerprint(
+    items: list[DependencyObligation],
+) -> str | None:
+    if not items:
+        return None
+    encoded = json.dumps(
+        [obligation_fingerprint(item) for item in items],
         sort_keys=True,
         separators=(",", ":"),
     )
@@ -92,6 +131,19 @@ class DependencyIndex:
         self.generation = 0
         self.invalidated = False
         self._invalidation_reason = "process_restart"
+        # Monotonic source-read epoch.  Both configuration invalidation and a
+        # governed lock fence open a new epoch, so "read after this point" is
+        # expressible without depending on wall-clock time or on task identity.
+        self._source_epoch = 0
+        # Epoch opened by the most recent invalidation.  A build may clear the
+        # invalidated flag only when its own source read began at or after it,
+        # so an in-flight build cannot erase a later invalidation.
+        self._invalidation_epoch = 0
+        self._last_fence_reason: str | None = None
+        # Epoch at which the in-flight build's provider scan began.  ``None``
+        # means the build exists but has not read any source yet, so its read
+        # is still guaranteed to begin at or after the current epoch.
+        self._build_scan_epoch: int | None = None
         self._build_task: asyncio.Task[DependencyIndexSnapshot] | None = None
         self._build_mode: str | None = None
         self._build_started_at: str | None = None
@@ -163,6 +215,24 @@ class DependencyIndex:
             return None
         return max(0.0, time.monotonic() - value.built_at_monotonic)
 
+    def open_source_fence(self, reason: str = "governed_lock_fence") -> int:
+        """Open a new source-read epoch and return its fence token.
+
+        A governed caller opens the fence while it holds the complete lock
+        set.  Evidence produced by a scan that started before the fence
+        describes a pre-lock world and must not satisfy the post-lock
+        refresh, even when that scan is still running.
+        """
+
+        self._source_epoch += 1
+        self._last_fence_reason = reason
+        return self._source_epoch
+
+    def _build_can_satisfy(self, fence: int) -> bool:
+        """Return whether the in-flight build's read began after ``fence``."""
+
+        return self._build_scan_epoch is None or self._build_scan_epoch >= fence
+
     def _is_current(self, age: float | None) -> bool:
         return bool(
             self.snapshot
@@ -179,15 +249,28 @@ class DependencyIndex:
             and age < self.hard_ttl_seconds
         )
 
-    async def get(self, *, refresh: bool = False) -> tuple[DependencyIndexSnapshot, bool, float]:
+    async def get(
+        self,
+        *,
+        refresh: bool = False,
+        min_source_epoch: int | None = None,
+    ) -> tuple[DependencyIndexSnapshot, bool, float]:
         """Return current/stale-usable evidence or await one mandatory build.
 
         Soft-expired evidence is returned immediately while a manager-owned refresh
         runs. Awaiters are shielded so cancelling one caller cannot cancel the shared
         build.
+
+        ``min_source_epoch`` carries a fence token from
+        :meth:`open_source_fence`.  It forces a refresh and accepts only a
+        snapshot whose provider scan began at or after that fence, so a build
+        already in flight when the lock was taken can never satisfy the
+        governed post-lock refresh.
         """
 
         lookup_started = time.perf_counter()
+        if min_source_epoch is not None:
+            refresh = True
         age = self._age()
         if self._is_current(age) and not refresh:
             METRICS.record_dependency_cache_hit()
@@ -201,12 +284,43 @@ class DependencyIndex:
         reason = "explicit_refresh" if refresh else (
             "configuration_changed" if self.invalidated else "age_expired"
         )
-        task = self._ensure_build(
-            mode="foreground_refresh" if self.snapshot is not None else "initial",
-            reason=reason,
+        if min_source_epoch is not None:
+            reason = "fenced_refresh"
+        for _ in range(MAX_FENCED_BUILD_ATTEMPTS):
+            task = self._build_task
+            if (
+                min_source_epoch is not None
+                and task is not None
+                and not task.done()
+                and not self._build_can_satisfy(min_source_epoch)
+            ):
+                # This build read source before the fence.  Let it finish for
+                # every other awaiter, adopt nothing from it, then rebuild.
+                await asyncio.shield(
+                    asyncio.gather(task, return_exceptions=True)
+                )
+                continue
+            task = self._ensure_build(
+                mode=(
+                    "foreground_refresh"
+                    if self.snapshot is not None
+                    else "initial"
+                ),
+                reason=reason,
+            )
+            snapshot = await asyncio.shield(task)
+            if (
+                min_source_epoch is None
+                or snapshot.source_epoch >= min_source_epoch
+            ):
+                return (
+                    snapshot,
+                    True,
+                    (time.perf_counter() - lookup_started) * 1000,
+                )
+        raise DependencyFenceError(
+            "fenced dependency refresh did not observe a post-fence scan"
         )
-        snapshot = await asyncio.shield(task)
-        return snapshot, True, (time.perf_counter() - lookup_started) * 1000
 
     def _ensure_build(
         self,
@@ -222,6 +336,9 @@ class DependencyIndex:
         self._build_mode = mode
         if mode == "background_refresh":
             self._background_refresh_started_at = _utc_now()
+        # The new build has not read any source yet, so its read is guaranteed
+        # to begin at or after the epoch in force right now.
+        self._build_scan_epoch = None
         task = asyncio.create_task(self._build(mode), name="dependency-index-build")
         self._build_task = task
         task.add_done_callback(self._consume_background_result)
@@ -244,6 +361,10 @@ class DependencyIndex:
         self._last_build_failure_category = None
         METRICS.record_dependency_index_build()
         try:
+            # The epoch is captured immediately before the source read, so a
+            # fence opened after this point is provably not covered by it.
+            source_epoch = self._source_epoch
+            self._build_scan_epoch = source_epoch
             scan = await self.provider.scan()
             next_generation = self.generation + 1
             findings = sorted(scan.findings, key=lambda item: item.evidence_id)[: self.max_edges]
@@ -292,12 +413,49 @@ class DependencyIndex:
                     dynamic_reference_overflow
                 )
             )
+            ordered_obligations = sorted(
+                scan.obligations,
+                key=_obligation_sort_key,
+            )
+            obligation_overflow: list[DependencyObligation] = []
+            if len(ordered_obligations) > MAX_DEPENDENCY_OBLIGATIONS:
+                # Reserve one retained terminal that explicitly prevents an
+                # overflow from looking like complete absence.
+                obligation_overflow = ordered_obligations[
+                    MAX_DEPENDENCY_OBLIGATIONS - 1:
+                ]
+                obligations = ordered_obligations[
+                    :MAX_DEPENDENCY_OBLIGATIONS - 1
+                ]
+            else:
+                obligations = ordered_obligations
+            obligations_truncated = bool(obligation_overflow)
+            obligation_overflow_count = len(obligation_overflow)
+            obligation_overflow_fingerprint = (
+                _obligation_overflow_fingerprint(obligation_overflow)
+            )
+            if obligations_truncated:
+                obligations.append(
+                    make_coverage_failure_obligation(
+                        source_type="automation",
+                        source_id="dependency_index",
+                        source_entity_id=None,
+                        config_path="$",
+                        relation="other_structured_reference",
+                        reason_code="dependency_obligation_index_overflow",
+                        configuration_fingerprint=(
+                            obligation_overflow_fingerprint
+                        ),
+                        limit_exceeded=True,
+                    )
+                )
             coverage = list(scan.coverage)
             if (
                 findings_truncated
                 or profiles_truncated
                 or read_failures_truncated
                 or dynamic_references_truncated
+                or obligations_truncated
             ):
                 METRICS.record_dependency_truncation()
                 coverage = [
@@ -341,6 +499,16 @@ class DependencyIndex:
                 label_registry_complete=(
                     scan.label_registry_complete
                 ),
+                obligations=obligations,
+                obligation_overflow_count=obligation_overflow_count,
+                obligation_overflow_fingerprint=(
+                    obligation_overflow_fingerprint
+                ),
+                obligation_ledger_model=scan.obligation_ledger_model,
+                home_assistant_version=scan.home_assistant_version,
+                home_assistant_version_status=(
+                    scan.home_assistant_version_status
+                ),
             )
             build_duration_ms = (time.perf_counter() - build_started) * 1000
             replacement = DependencyIndexSnapshot(
@@ -372,12 +540,29 @@ class DependencyIndex:
                 label_registry_complete=bool(
                     scan.label_registry_complete
                 ),
+                obligations=tuple(obligations),
+                obligation_overflow_count=(
+                    obligation_overflow_count
+                ),
+                obligation_overflow_fingerprint=(
+                    obligation_overflow_fingerprint
+                ),
+                obligation_ledger_model=scan.obligation_ledger_model,
+                home_assistant_version=scan.home_assistant_version,
+                home_assistant_version_status=(
+                    scan.home_assistant_version_status
+                ),
+                source_epoch=source_epoch,
             )
             # Publish the complete replacement atomically after every build step.
             self.snapshot = replacement
             self.generation = next_generation
-            self.invalidated = False
-            self._invalidation_reason = "within_ttl"
+            # An invalidation raised after this build began reading describes
+            # configuration this build never saw, so completing must not clear
+            # it.  Only a read that began at or after the invalidation may.
+            if self._invalidation_epoch <= source_epoch:
+                self.invalidated = False
+                self._invalidation_reason = "within_ttl"
             self._build_completed_at = _utc_now()
             self._last_refresh_completed_at = self._build_completed_at
             self._last_refresh_failure_category = None
@@ -404,6 +589,7 @@ class DependencyIndex:
             if mode == "background_refresh":
                 self._last_refresh_completed_at = _utc_now()
             self._build_mode = None
+            self._build_scan_epoch = None
 
     async def shutdown(self) -> None:
         task = self._build_task
@@ -414,6 +600,8 @@ class DependencyIndex:
     def invalidate(self, reason: str = "configuration_changed") -> None:
         self.invalidated = True
         self._invalidation_reason = reason
+        self._source_epoch += 1
+        self._invalidation_epoch = self._source_epoch
         METRICS.record_dependency_invalidation()
 
     def active_identity(self) -> dict[str, object]:

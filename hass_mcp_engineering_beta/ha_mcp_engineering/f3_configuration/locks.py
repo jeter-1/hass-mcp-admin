@@ -7,7 +7,10 @@ from collections.abc import Iterable
 
 from ha_mcp_engineering.f3.contracts import LockMode, LockRequest, LockScope
 
-from ..dependency.extraction import extract_document, valid_entity_id
+from ..dependency.extraction import (
+    extract_document_with_obligations,
+    valid_entity_id,
+)
 from ..governance.normalize import stable_hash
 from .models import PreparedConfigurationOperation
 
@@ -73,7 +76,7 @@ def _automation_helper_dependency_locks(
     for index, config in enumerate(configurations):
         if config is None:
             continue
-        findings, dynamic = extract_document(
+        findings, dynamic, obligations = extract_document_with_obligations(
             source_type="automation",
             source_id=f"lock_projection_{index}",
             source_entity_id=None,
@@ -88,29 +91,49 @@ def _automation_helper_dependency_locks(
             if item.target_entity_id.startswith("input_boolean.")
             and item.relation not in _NON_CAUSAL_AUTOMATION_RELATIONS
         )
-        exact_helpers.update(
-            entity_id
-            for item in dynamic
-            for entity_id in item.possible_entity_ids
-            if entity_id.startswith("input_boolean.")
-        )
-        unconstrained = bool(
-            unconstrained
-            or any(
-                item.literal_label_selectors
-                or not item.candidate_resolution_complete
-                or item.candidate_resolution_limit_exceeded
-                or (
-                    not item.possible_entity_ids
-                    and (
-                        item.possible_entity_domains is None
-                        or "input_boolean"
-                        in item.possible_entity_domains
-                    )
-                )
-                for item in dynamic
+        for item in obligations:
+            if (
+                item.obligation_kind == "structured_entity_reference"
+                and item.relation in _NON_CAUSAL_AUTOMATION_RELATIONS
+            ):
+                # Literal service targets/action data describe the action and
+                # are not causal helper reads.  Template-derived obligations
+                # at the same paths can read a helper and must participate in
+                # exact or conservative dependency locking.
+                continue
+            exact_helpers.update(
+                entity_id
+                for entity_id in item.exact_entity_ids
+                if entity_id.startswith("input_boolean.")
             )
-        )
+            if item.outcome == "proven_dependency_neutral":
+                continue
+            if (
+                item.outcome == "proven_target_exclusion"
+                and not any(
+                    entity_id.startswith("input_boolean.")
+                    for entity_id in item.exact_entity_ids
+                )
+            ):
+                continue
+            domains = item.possible_entity_domains
+            could_select_helper = bool(
+                domains is None or "input_boolean" in domains
+            )
+            unconstrained = bool(
+                unconstrained
+                or item.outcome == "coverage_failure"
+                or item.limit_exceeded
+                # An opaque callable/filter/test may introduce an entity read
+                # beyond the visible operand domain.  Domain hints can narrow
+                # exact terminals, but cannot discharge semantic opacity.
+                or item.outcome == "bounded_semantic_opaque"
+                or (
+                    item.outcome == "exact_dependency"
+                    and not item.exact_entity_ids
+                    and could_select_helper
+                )
+            )
     requests = [
         LockRequest(
             key=helper_dependency_lock_key(entity_id),

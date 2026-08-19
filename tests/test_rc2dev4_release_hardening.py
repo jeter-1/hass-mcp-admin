@@ -187,10 +187,19 @@ class DependencyBakeAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         result = await provider.scan()
         elapsed = time.perf_counter() - started
         self.assertLess(elapsed, 2.0)  # Fixture regression threshold, not the Pi gate.
-        self.assertEqual(result.profile["request_count"], 5)
+        # B39-136-R3b added one bounded read: the running Home Assistant
+        # version, which the reviewed template semantics must be admitted
+        # against. This pinned breakdown exists to make exactly that kind of
+        # change visible.
+        self.assertEqual(result.profile["request_count"], 6)
         self.assertEqual(
             result.profile["request_count_by_operation"],
-            {"automation_config": 3, "entity_registry_inventory": 1, "states_inventory": 1},
+            {
+                "automation_config": 3,
+                "entity_registry_inventory": 1,
+                "home_assistant_config": 1,
+                "states_inventory": 1,
+            },
         )
         self.assertLessEqual(result.profile["observed_max_concurrency"], 2)
         self.assertFalse(result.profile["inventory_calls_duplicated"])

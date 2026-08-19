@@ -127,6 +127,8 @@ from .helper_state import (
     validate_input_boolean_entity_id,
 )
 from .helper_dependency import (
+    HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
+    HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
     HELPER_DEPENDENCY_RISK_MODEL,
     helper_dependency_risk_assessment,
     read_runtime_helper_dependency_risk,
@@ -2464,9 +2466,14 @@ class ChangeGovernanceService:
         value["authoritative_lifecycle_field"] = "approval_lifecycle"
         value["approval_actionable"] = self._approval_is_actionable(plan)
         value["approval_challenge_created"] = bool(plan.approval.challenge_id)
+        replan_required = self._helper_dependency_replan_required(plan)
+        value["helper_dependency_replan_required"] = replan_required
         value["next_required_operation"] = (
-            "approve_change_plan"
+            "create_change_plan"
+            if replan_required
+            else "approve_change_plan"
             if approval_lifecycle == "approval_not_requested"
+            and self._approval_is_actionable(plan)
             and (
                 plan.policy_decision is None
                 or plan.policy_decision.policy_class
@@ -2583,6 +2590,9 @@ class ChangeGovernanceService:
     def _approval_is_actionable(self, plan: ChangePlan) -> bool:
         """Project actionability without upgrading legacy authority records."""
 
+        if not self._helper_dependency_plan_is_actionable(plan):
+            return False
+
         decision = plan.policy_decision
         if decision is None:
             return bool(
@@ -2614,6 +2624,87 @@ class ChangeGovernanceService:
                 "approval_pending_external",
                 "pending_elevated_risk_acknowledgement",
             }
+        )
+
+    @staticmethod
+    def _operational_intent_is_durable(plan: ChangePlan) -> bool:
+        """Return whether an irreversible dispatch intent was already recorded.
+
+        Post-intent records keep readback-first recovery: the operation may
+        already have reached Home Assistant, so the record must stay
+        reconcilable and must never be redispatched.
+        """
+
+        operational = plan.operational
+        if operational is None:
+            return False
+        dispatch = (
+            operational.dispatch
+            if isinstance(operational.dispatch, dict)
+            else {}
+        )
+        attempts = dispatch.get("attempt_count")
+        return bool(
+            dispatch.get("dispatched") is True
+            or (
+                isinstance(attempts, int)
+                and not isinstance(attempts, bool)
+                and attempts >= 1
+            )
+            or getattr(operational.verification, "attempt_count", 0) > 0
+        )
+
+    @staticmethod
+    def _helper_dependency_binding(plan: ChangePlan) -> dict[str, Any] | None:
+        """Return the persisted helper dependency binding, if any."""
+
+        operational = plan.operational
+        baseline = (
+            operational.baseline
+            if operational is not None
+            and isinstance(operational.baseline, dict)
+            else {}
+        )
+        binding = baseline.get("dependency_risk")
+        return binding if isinstance(binding, dict) else None
+
+    @staticmethod
+    def _helper_dependency_plan_is_actionable(plan: ChangePlan) -> bool:
+        """Require current bounded evidence before a helper challenge exists."""
+
+        if plan.operation != ChangeOperation.SET_INPUT_BOOLEAN_STATE:
+            return True
+        binding = ChangeGovernanceService._helper_dependency_binding(plan)
+        return bool(
+            binding is not None
+            # Execution authority, not compatibility.  A binding from a
+            # superseded model stays readable and recoverable but can never
+            # authorize approval or dispatch.
+            and binding.get("model")
+            in HELPER_DEPENDENCY_RISK_EXECUTION_MODELS
+            and binding.get("execution_eligible") is True
+            and plan.risk.apply_allowed
+        )
+
+    @staticmethod
+    def _helper_dependency_replan_required(plan: ChangePlan) -> bool:
+        """Return whether only a replan can make this helper plan executable.
+
+        A binding written by a superseded but still-compatible model asks a
+        dependency question this build no longer answers the same way.  The
+        plan must be replanned rather than approved, applied, or presented as
+        directly executable.
+        """
+
+        if plan.operation != ChangeOperation.SET_INPUT_BOOLEAN_STATE:
+            return False
+        binding = ChangeGovernanceService._helper_dependency_binding(plan)
+        if binding is None:
+            return False
+        model = binding.get("model")
+        return bool(
+            model in HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS
+            and model not in HELPER_DEPENDENCY_RISK_EXECUTION_MODELS
         )
 
     def _summary(self, plan: ChangePlan) -> dict[str, Any]:
@@ -3135,7 +3226,7 @@ class ChangeGovernanceService:
             preconditions=[
                 "The exact entity remains available as an input_boolean.",
                 "The planned state fingerprint remains current, or the desired state is already observed.",
-                "The normalized dependency-risk evidence remains complete and unchanged.",
+                "The normalized dependency-risk evidence remains execution-eligible and unchanged.",
                 "One unexpired external administrator approval is bound to this plan hash.",
             ],
             verification_contract={
@@ -3205,6 +3296,15 @@ class ChangeGovernanceService:
                 "entity_state_readable": True,
                 "dependency_evidence_complete": (
                     dependency_binding.get("evidence_complete") is True
+                ),
+                "dependency_coverage_complete": (
+                    dependency_binding.get("coverage_complete") is True
+                ),
+                "dependency_semantic_precision": (
+                    dependency_binding.get("semantic_precision")
+                ),
+                "dependency_execution_eligible": (
+                    dependency_binding.get("execution_eligible") is True
                 ),
                 "dependency_evidence_completeness": (
                     dependency_binding.get("completeness")
@@ -4581,6 +4681,30 @@ class ChangeGovernanceService:
                 error_code=ErrorCode.PROHIBITED_CHANGE.value,
             )
             raise GovernanceError(ErrorCode.PROHIBITED_CHANGE)
+        if not self._helper_dependency_plan_is_actionable(plan):
+            replan_required = self._helper_dependency_replan_required(plan)
+            self._record(
+                plan,
+                (
+                    "helper_dependency_replan_required"
+                    if replan_required
+                    else "helper_dependency_approval_rejected"
+                ),
+                "rejected",
+                error_code=ErrorCode.OPERATIONAL_VALIDATION_FAILED.value,
+            )
+            raise GovernanceError(
+                ErrorCode.OPERATIONAL_VALIDATION_FAILED,
+                details={
+                    "resource_id": plan.plan_id,
+                    "reason": (
+                        "helper_dependency_evidence_superseded_replan_required"
+                        if replan_required
+                        else "helper_dependency_evidence_not_executable"
+                    ),
+                    "replan_required": replan_required,
+                },
+            )
         if plan.approval.authority_version != APPROVAL_AUTHORITY_VERSION:
             raise GovernanceError(
                 ErrorCode.APPROVAL_AUTHORITY_MISMATCH,
@@ -5031,9 +5155,64 @@ class ChangeGovernanceService:
                         "action": "restart",
                     }
                     if plan.operation == ChangeOperation.RESTART_ADDON
+                    else {
+                        "entity_id": plan.target_id,
+                        "desired_state": operational.requested_name,
+                        "service": (
+                            "input_boolean.turn_on"
+                            if operational.requested_name == "on"
+                            else "input_boolean.turn_off"
+                        ),
+                    }
+                    if plan.operation
+                    == ChangeOperation.SET_INPUT_BOOLEAN_STATE
                     else {"confirm": True}
                 ),
             }
+            if plan.operation is ChangeOperation.SET_INPUT_BOOLEAN_STATE:
+                dependency = operational.baseline.get("dependency_risk")
+                if not isinstance(dependency, dict):
+                    raise GovernanceError(
+                        ErrorCode.INTERNAL_INVARIANT_VIOLATION
+                    )
+                summary["helper_dependency_review"] = {
+                    "coverage_complete": dependency.get(
+                        "coverage_complete"
+                    ),
+                    "semantic_precision": dependency.get(
+                        "semantic_precision"
+                    ),
+                    "execution_eligible": dependency.get(
+                        "execution_eligible"
+                    ),
+                    "physical_consequence": dependency.get(
+                        "physical_consequence"
+                    ),
+                    "opaque_obligation_count": dependency.get(
+                        "opaque_obligation_count", 0
+                    ),
+                    "coverage_failure_count": dependency.get(
+                        "coverage_failure_count", 0
+                    ),
+                    "coverage_failure_reason_codes": dependency.get(
+                        "coverage_failure_reason_codes", []
+                    ),
+                    "relevant_downstream_object_ids": dependency.get(
+                        "relevant_downstream_object_ids", []
+                    ),
+                    "downstream_profiles": dependency.get(
+                        "downstream_profiles", []
+                    ),
+                    "obligation_evidence": dependency.get(
+                        "obligation_evidence", []
+                    ),
+                    "dependency_lock_projection": dependency.get(
+                        "dependency_lock_projection"
+                    ),
+                    "evidence_fingerprint": dependency.get(
+                        "evidence_fingerprint"
+                    ),
+                }
             if plan.operation is ChangeOperation.UPDATE_DASHBOARD:
                 proposal = plan.proposed_config.get("dashboard_update")
                 summary["dashboard_review"] = (
@@ -10313,12 +10492,16 @@ class ChangeGovernanceService:
                         baseline.get("entity_id") != plan.target_id,
                         baseline.get("state") not in {"on", "off"},
                         not isinstance(dependency_risk, dict),
+                        # Approval and apply are execution authority: only a
+                        # current-model binding qualifies.  A superseded but
+                        # compatible binding is rejected below with an
+                        # explicit replan outcome instead of a hash mismatch.
                         (
                             dependency_risk.get("model")
                             if isinstance(dependency_risk, dict)
                             else None
                         )
-                        != HELPER_DEPENDENCY_RISK_MODEL,
+                        not in HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
                         not isinstance(
                             (
                                 dependency_risk.get(
@@ -10359,6 +10542,24 @@ class ChangeGovernanceService:
             else:
                 invalid = True
             if invalid:
+                if self._helper_dependency_replan_required(plan):
+                    # The record stays readable and readback-first recovery
+                    # stays available; only new execution authority is
+                    # withheld, and it can be regained solely by replanning.
+                    raise GovernanceError(
+                        ErrorCode.OPERATIONAL_VALIDATION_FAILED,
+                        details={
+                            "resource_id": plan.plan_id,
+                            "reason": (
+                                "helper_dependency_evidence_superseded"
+                                "_replan_required"
+                            ),
+                            "replan_required": True,
+                            "durable_intent": (
+                                self._operational_intent_is_durable(plan)
+                            ),
+                        },
+                    )
                 raise GovernanceError(
                     ErrorCode.APPROVAL_HASH_MISMATCH,
                     details={
