@@ -37,6 +37,9 @@ INITIALIZATION_MODEL = "f3-sequence-initialization-v1"
 RECOVERY_CURSOR_MODEL = "f3-recovery-declaration-cursor-v1"
 RECOVERY_CURSOR_SCHEMA_VERSION = 1
 RECOVERY_CURSOR_FILE = ".recovery-declaration-cursor.json"
+ACTIVE_RECOVERY_CURSOR_MODEL = "f3-active-recovery-cursor-v1"
+ACTIVE_RECOVERY_CURSOR_SCHEMA_VERSION = 1
+ACTIVE_RECOVERY_CURSOR_FILE = ".active-recovery-cursor.json"
 RECOVERY_DECLARATION_PAGE_SIZE = 1_024
 
 
@@ -194,6 +197,9 @@ class ChildExecutionRepository(DurableExecutionRepository):
         self.projection_transaction_path = self.root / ".projection-transaction.lock"
         self.initialization_path = self.root / ".initialization.json"
         self.recovery_cursor_path = self.root / RECOVERY_CURSOR_FILE
+        self.active_recovery_cursor_path = (
+            self.root / ACTIVE_RECOVERY_CURSOR_FILE
+        )
         self.retention_days = retention_days
         self.metrics = metrics or ExecutorMetrics()
         self.event_sink = event_sink or null_event_sink
@@ -682,6 +688,96 @@ class ChildExecutionRepository(DurableExecutionRepository):
         with self._exclusive_transaction():
             return self._read_recovery_cursor_unlocked()
 
+    @staticmethod
+    def _validate_active_recovery_cursor(
+        value: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        if (
+            not isinstance(value, dict)
+            or set(value) != {
+                "model",
+                "schema_version",
+                "public_task_id",
+            }
+            or value["model"] != ACTIVE_RECOVERY_CURSOR_MODEL
+            or value["schema_version"]
+            != ACTIVE_RECOVERY_CURSOR_SCHEMA_VERSION
+        ):
+            raise ExecutionRecordCorrupt(
+                "F3 active recovery cursor is corrupt"
+            )
+        try:
+            validate_identifier(
+                value["public_task_id"], field_name="public_task_id"
+            )
+        except (TypeError, ValueError) as exc:
+            raise ExecutionRecordCorrupt(
+                "F3 active recovery cursor is corrupt"
+            ) from exc
+        return dict(value)
+
+    def _read_active_recovery_cursor_unlocked(
+        self,
+    ) -> dict[str, Any] | None:
+        try:
+            value = json.loads(
+                self.active_recovery_cursor_path.read_text(
+                    encoding="utf-8"
+                )
+            )
+        except FileNotFoundError:
+            return None
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ExecutionRecordCorrupt(
+                "F3 active recovery cursor is corrupt"
+            ) from exc
+        return self._validate_active_recovery_cursor(value)
+
+    def active_recovery_cursor(self) -> dict[str, Any] | None:
+        with self._exclusive_transaction():
+            return self._read_active_recovery_cursor_unlocked()
+
+    @staticmethod
+    def active_recovery_cursor_for_task(
+        public_task_id: str,
+    ) -> dict[str, Any]:
+        validate_identifier(public_task_id, field_name="public_task_id")
+        return {
+            "model": ACTIVE_RECOVERY_CURSOR_MODEL,
+            "schema_version": ACTIVE_RECOVERY_CURSOR_SCHEMA_VERSION,
+            "public_task_id": public_task_id,
+        }
+
+    @staticmethod
+    def recovery_cursor_for_declaration(
+        declaration: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Return non-authoritative scheduling evidence for one declaration."""
+
+        try:
+            validate_identifier(
+                declaration["public_task_id"], field_name="public_task_id"
+            )
+            validate_identifier(
+                declaration["child_id"], field_name="child_id"
+            )
+            ordinal = declaration["operation_ordinal"]
+            if type(ordinal) is not int or not 0 <= ordinal < 8:
+                raise ValueError
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ExecutionRecordCorrupt(
+                "F3 recovery declaration cursor source is corrupt"
+            ) from exc
+        return {
+            "model": RECOVERY_CURSOR_MODEL,
+            "schema_version": RECOVERY_CURSOR_SCHEMA_VERSION,
+            "public_task_id": declaration["public_task_id"],
+            "operation_ordinal": declaration["operation_ordinal"],
+            "child_id": declaration["child_id"],
+        }
+
     def recovery_declaration_page(
         self,
         *,
@@ -692,7 +788,8 @@ class ChildExecutionRepository(DurableExecutionRepository):
 
         Manifest path ordering is bounded by the reviewed 1,024-task
         namespace, and at most ``limit`` declarations are materialized. The
-        caller advances the returned cursor only after its sweep completes.
+        returned far-edge cursor is informational; the caller persists only
+        the last declaration it safely examined after its sweep completes.
         """
 
         if not 1 <= limit <= RECOVERY_DECLARATION_PAGE_SIZE:
@@ -739,13 +836,7 @@ class ChildExecutionRepository(DurableExecutionRepository):
                         continue
                     item = dict(declaration)
                     declarations.append(item)
-                    next_cursor = {
-                        "model": RECOVERY_CURSOR_MODEL,
-                        "schema_version": RECOVERY_CURSOR_SCHEMA_VERSION,
-                        "public_task_id": public_task_id,
-                        "operation_ordinal": item["operation_ordinal"],
-                        "child_id": item["child_id"],
-                    }
+                    next_cursor = self.recovery_cursor_for_declaration(item)
             if (
                 not declarations
                 and cursor is not None
@@ -768,17 +859,9 @@ class ChildExecutionRepository(DurableExecutionRepository):
                             break
                         item = dict(declaration)
                         declarations.append(item)
-                        next_cursor = {
-                            "model": RECOVERY_CURSOR_MODEL,
-                            "schema_version": (
-                                RECOVERY_CURSOR_SCHEMA_VERSION
-                            ),
-                            "public_task_id": public_task_id,
-                            "operation_ordinal": item[
-                                "operation_ordinal"
-                            ],
-                            "child_id": item["child_id"],
-                        }
+                        next_cursor = self.recovery_cursor_for_declaration(
+                            item
+                        )
             return {
                 "cursor": cursor,
                 "next_cursor": next_cursor,
@@ -803,6 +886,26 @@ class ChildExecutionRepository(DurableExecutionRepository):
                     "F3 recovery declaration cursor changed concurrently"
                 )
             self._atomic_write(self.recovery_cursor_path, validated_next)
+
+    def advance_active_recovery_cursor(
+        self,
+        *,
+        expected: dict[str, Any] | None,
+        next_cursor: dict[str, Any] | None,
+    ) -> None:
+        validated_expected = self._validate_active_recovery_cursor(expected)
+        validated_next = self._validate_active_recovery_cursor(next_cursor)
+        if validated_next is None or validated_next == validated_expected:
+            return
+        with self._exclusive_transaction():
+            current = self._read_active_recovery_cursor_unlocked()
+            if current != validated_expected:
+                raise ExecutionStorageError(
+                    "F3 active recovery cursor changed concurrently"
+                )
+            self._atomic_write(
+                self.active_recovery_cursor_path, validated_next
+            )
 
     def update_runtime(self, child_id: str, *, changes: dict[str, Any]) -> dict[str, Any]:
         allowed = {

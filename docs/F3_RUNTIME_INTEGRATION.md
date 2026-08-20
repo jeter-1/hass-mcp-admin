@@ -147,8 +147,11 @@ One coordinator owns F3 recovery and historical Beta 19 read-only
 reconciliation. It performs a strict startup sweep before listener creation,
 then one 30-second loop. Sweeps use cross-process child claims, deterministic
 task/ordinal order, batch 16, a five-second budget, persisted eligibility, and
-bounded 5-to-300 or 30-to-300 second exponential backoff. One public task
-receives at most one child transition per sweep.
+bounded 5-to-300 or 30-to-300 second exponential backoff. Active recovery
+selects at most one eligible child per nonterminal public task per sweep.
+Deadline-bearing post-intent children sort first by their immutable evidence
+deadline, followed by deterministic task/operation identity. Pre-intent work
+follows without receiving any new execution authority.
 
 ### Terminal-parent orphan reconciliation
 
@@ -163,13 +166,22 @@ revisited, their hold projections were never cleared, and
 `nonterminal_execution_count` never converged.
 
 Orphan work shares the coordinator's existing batch-16 and five-second budget.
-A durable declaration cursor pages at most 1,024 declarations, reads at most
-the repository's bounded 1,024 manifest paths, and stops at the shared
-deadline. The cursor advances only after the sweep and survives restart, so a
-repeatedly failing prefix cannot starve later pages. Generic recovery consumes
-the same page and does no full-namespace reload or second sort after the
-deadline. The sweep terminalizes one eligible child before releasing anything,
-which leaves no window for a concurrent dispatch to begin.
+Active recovery and historical orphan discovery are deliberately separate.
+Active candidates come from the bounded nonterminal task index and exact child
+records, not the historical cursor. A dedicated scheduling-only cursor makes
+an ineligible active prefix restart-fair but is never execution authority and
+is not advanced past discovered eligible work. A separate durable historical
+cursor pages at most 1,024 declarations, reads at most the repository's bounded
+1,024 manifest paths, and stops at the shared deadline. It advances only
+through declarations safely examined. A candidate skipped because the batch
+or time budget is exhausted remains immediately after the cursor for the next
+sweep instead of waiting for a namespace rotation. Both cursor writes use
+atomic compare-and-swap; a crash or conflict leaves work eligible. Historical
+scanning receives a reserved transition when history exists, while an unused
+reservation returns to active work. Generic recovery performs no
+full-namespace declaration load or second sort after the deadline. The sweep
+terminalizes one eligible orphan before releasing anything, which leaves no
+window for a concurrent dispatch to begin.
 It then releases only lock records whose exact task, plan, operation, attempt,
 owner, key, mode, and generation match that child's durable lock evidence.
 Both live/expired leases and selective conflict holds are covered. A later or
@@ -200,13 +212,16 @@ is projected as `cancelled_pre_dispatch` under such a parent. The public
 `f3_children` and schema-1 `verification_summary.children` views are derived
 from the same canonical projection, while legacy child identities remain
 unchanged. Reconciliation items and health remain recovering until exact lock,
-token, and audit settlement completes. The persisted child event cursor emits
-the bounded `execution_cancelled` audit evidence with a deterministic SHA-256
-event identity. The audit sink serializes append/rotation, checks that identity
-in its retained logs, and fsyncs the append before returning; retry after a
-crash between append and cursor persistence therefore advances the cursor
-without writing a duplicate. This is a bookkeeping and projection correction;
-it never dispatches a provider call.
+token, and audit settlement completes. Every event replayed from a persisted
+child record receives a deterministic SHA-256 identity, independent of event
+type or diagnostic classification. Its canonical preimage is model
+`f3-persisted-audit-event-v1`, exact child ID, persisted positive event
+`sequence`, and the exact validated persisted event. The audit sink preserves
+that identity through truncation, serializes append/rotation, checks the exact
+identity in retained logs, and fsyncs the append before returning. The durable
+audit cursor advances only after acknowledgement, so retry after a crash
+between append and cursor persistence does not write a duplicate. This is a
+bookkeeping and projection correction; it never dispatches a provider call.
 
 Before intent, exact authority re-enters public preflight, reacquires the
 complete set, repeats preflight, and commits intent before mutation. After

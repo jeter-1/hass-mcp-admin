@@ -8,6 +8,7 @@ from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timedelta
 import hashlib
+import json
 import time
 import uuid
 from typing import Any, Awaitable, Callable
@@ -27,6 +28,7 @@ from ..f3.models import (
     LockOwner,
     LockTiming,
     LockToken,
+    validate_identifier,
 )
 from ..f3.persistence import DuplicateExecutionActive, ExecutionStorageError
 from ..f3.operational_adapter import (
@@ -88,9 +90,43 @@ RECOVERY_SWEEP_TIME_BUDGET_SECONDS = 5.0
 ORPHAN_RECOVERY_SCAN_LIMIT = RECOVERY_DECLARATION_PAGE_SIZE
 ORPHAN_RECONCILIATION_REASON = "orphaned_terminal_parent_recovery"
 ORPHAN_RECONCILIATION_RESULT = "orphaned_pre_dispatch_child_reconciled"
+PERSISTED_AUDIT_EVENT_MODEL = "f3-persisted-audit-event-v1"
 _ACTIVE_F3_CHILD: ContextVar[str | None] = ContextVar(
     "f3_active_child", default=None
 )
+
+
+def _persisted_audit_event_id(
+    child_id: str, event: dict[str, Any]
+) -> str:
+    """Return the stable identity of one validated persisted F3 event."""
+
+    validate_identifier(child_id, field_name="child_id")
+    if (
+        not isinstance(event, dict)
+        or type(event.get("sequence")) is not int
+        or event["sequence"] < 1
+    ):
+        raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+    value = {
+        "model": PERSISTED_AUDIT_EVENT_MODEL,
+        "child_id": child_id,
+        "event_sequence": event["sequence"],
+        "event": event,
+    }
+    try:
+        canonical = json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise GovernanceError(
+            ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+        ) from exc
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def _approval_bundle_hash(plan: Any) -> str:
@@ -610,6 +646,7 @@ class F3RuntimeIntegration:
         self._sweep_failures = 0
         self._approval_consumption_failures = 0
         self._fallback_count = 0
+        self._recovery_monotonic = time.monotonic
 
     def _record_operation_evidence(self, **values: Any) -> None:
         child_id = _ACTIVE_F3_CHILD.get()
@@ -825,27 +862,14 @@ class F3RuntimeIntegration:
         completed = start
         for item in record.events[start:]:
             diagnostics = tuple(item.get("diagnostic_codes") or ())
-            audit_event_id = (
-                canonical_hash(
-                    {
-                        "model": "f3-persisted-audit-event-v1",
-                        "child_id": declaration["child_id"],
-                        "event_ordinal": completed,
-                        "event": item,
-                    }
-                )
-                if ORPHAN_RECONCILIATION_REASON in diagnostics
-                else None
+            audit_event_id = _persisted_audit_event_id(
+                declaration["child_id"], item
             )
             if not self._emit_f3_audit_event(
                 {
                     "event_type": item["event_type"],
                     "task_id": declaration["child_id"],
-                    **(
-                        {"audit_event_id": audit_event_id}
-                        if audit_event_id is not None
-                        else {}
-                    ),
+                    "audit_event_id": audit_event_id,
                     "phase": record.state,
                     **(
                         {"reason_code": diagnostics[0]}
@@ -2560,51 +2584,122 @@ class F3RuntimeIntegration:
             )
         )
 
-    def _orphan_reconciliation_candidates(
+    def _active_recovery_candidates(
         self,
-        declarations: tuple[dict[str, Any], ...],
         *,
         now: datetime,
         sweep_started: float,
-        transition_limit: int,
-        monotonic: Callable[[], float],
-    ) -> list[dict[str, Any]]:
-        lock_records = self.locks.records()
-        parents: dict[str, Any | None] = {}
-        candidates: list[dict[str, Any]] = []
-        candidate_parents: set[str] = set()
-        for scan_count, declaration in enumerate(declarations, start=1):
-            if scan_count > ORPHAN_RECOVERY_SCAN_LIMIT:
-                break
+        monotonic: Callable[[], float] | None = None,
+    ) -> dict[str, Any]:
+        """Select active work independently from historical declaration scan.
+
+        Public nonterminal navigation is bounded and non-authoritative. Every
+        selected task and child is reloaded from its durable authority before
+        it can become a candidate. A separate cursor is used only to make an
+        ineligible prefix restart-fair; it never authorizes execution and is
+        not advanced past discovered eligible work.
+        """
+
+        clock = monotonic or time.monotonic
+        expected_cursor = self.children.active_recovery_cursor()
+        task_ids = list(self.service.task_repository.nonterminal_task_ids())
+        if len(task_ids) > RECOVERY_DECLARATION_PAGE_SIZE:
+            task_ids = task_ids[:RECOVERY_DECLARATION_PAGE_SIZE]
+        if expected_cursor is not None and task_ids:
+            cursor_task = expected_cursor["public_task_id"]
+            if cursor_task in task_ids:
+                split = task_ids.index(cursor_task) + 1
+                task_ids = task_ids[split:] + task_ids[:split]
+
+        candidates: list[tuple[tuple[Any, ...], dict[str, Any], Any | None]] = []
+        tasks_examined = 0
+        manifests_read = 0
+        declarations_examined = 0
+        next_cursor = expected_cursor
+        for public_task_id in task_ids:
             if (
-                monotonic() - sweep_started
+                clock() - sweep_started
                 >= RECOVERY_SWEEP_TIME_BUDGET_SECONDS
             ):
                 break
-            public_task_id = declaration["public_task_id"]
-            if public_task_id not in parents:
-                parents[public_task_id] = self.service.task_repository.get(
-                    public_task_id
+            tasks_examined += 1
+            next_cursor = self.children.active_recovery_cursor_for_task(
+                public_task_id
+            )
+            public_task = self.service.task_repository.get(public_task_id)
+            if public_task is None:
+                raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+            if public_task.state in TERMINAL_TASK_STATES:
+                continue
+            task_declarations = self.children.declarations_for_task(
+                public_task_id
+            )
+            if not task_declarations:
+                # Legacy non-F3 tasks remain outside this scheduler.
+                continue
+            manifests_read += 1
+            records = {
+                item["operation_id"]: self.children.get(item["child_id"])
+                for item in task_declarations
+            }
+            candidate: tuple[dict[str, Any], Any | None] | None = None
+            for declaration in task_declarations:
+                declarations_examined += 1
+                record = records[declaration["operation_id"]]
+                if record is not None and record.terminal:
+                    if record.normalized_outcome == "succeeded_verified":
+                        continue
+                    candidate = (declaration, record)
+                    break
+                dependencies = set(
+                    declaration["operation_dependency_ids"]
                 )
-            record = self.children.get(declaration["child_id"])
+                if any(
+                    records.get(dependency) is None
+                    or records[dependency].normalized_outcome
+                    != "succeeded_verified"
+                    for dependency in dependencies
+                ):
+                    break
+                candidate = (declaration, record)
+                break
+            if candidate is None:
+                continue
+            declaration, record = candidate
             runtime = self.children.runtime(declaration["child_id"])
             if (
                 runtime["next_eligible_at"] is not None
                 and datetime.fromisoformat(runtime["next_eligible_at"]) > now
             ):
                 continue
-            if self._orphan_cleanup_pending(
-                parent=parents[public_task_id],
-                declaration=declaration,
-                record=record,
-                runtime=runtime,
-                lock_records=lock_records,
-            ) and public_task_id not in candidate_parents:
-                candidates.append(declaration)
-                candidate_parents.add(public_task_id)
-                if len(candidate_parents) >= transition_limit:
-                    break
-        return candidates
+            evidence_deadline = (
+                None
+                if record is None or record.dispatch_intent is None
+                else datetime.fromisoformat(
+                    record.dispatch_intent["evidence_deadline"]
+                )
+            )
+            priority = (
+                0 if evidence_deadline is not None else 1,
+                evidence_deadline or datetime.max.replace(tzinfo=now.tzinfo),
+                declaration["public_task_id"].encode("utf-8"),
+                declaration["operation_ordinal"],
+                declaration["child_id"].encode("utf-8"),
+            )
+            candidates.append((priority, declaration, record))
+
+        candidates.sort(key=lambda item: item[0])
+        return {
+            "candidates": tuple(
+                (declaration, record)
+                for _priority, declaration, record in candidates
+            ),
+            "expected_cursor": expected_cursor,
+            "next_cursor": next_cursor,
+            "tasks_examined": tasks_examined,
+            "manifest_reads": manifests_read,
+            "declarations_examined": declarations_examined,
+        }
 
     @staticmethod
     def _related_lock_records(
@@ -2822,29 +2917,58 @@ class F3RuntimeIntegration:
         now: datetime,
         sweep_started: float,
         transition_limit: int,
+        start_cursor: dict[str, Any] | None = None,
         monotonic: Callable[[], float] | None = None,
-    ) -> dict[str, int]:
-        """Run a fair, deterministic slice inside the shared sweep budget."""
+    ) -> dict[str, Any]:
+        """Run a fair historical slice without skipping pending authority."""
 
         clock = monotonic or time.monotonic
-        candidates = self._orphan_reconciliation_candidates(
-            declarations,
-            now=now,
-            sweep_started=sweep_started,
-            transition_limit=transition_limit,
-            monotonic=clock,
-        )
+        lock_records = self.locks.records()
+        parents: dict[str, Any | None] = {}
         processed = 0
         terminalized = 0
-        processed_public_tasks: set[str] = set()
-        for declaration in candidates:
-            if processed >= transition_limit:
+        examined = 0
+        next_cursor = start_cursor
+        for declaration in declarations:
+            if examined >= ORPHAN_RECOVERY_SCAN_LIMIT or (
+                clock() - sweep_started
+                >= RECOVERY_SWEEP_TIME_BUDGET_SECONDS
+            ):
                 break
-            if clock() - sweep_started >= RECOVERY_SWEEP_TIME_BUDGET_SECONDS:
-                break
-            if declaration["public_task_id"] in processed_public_tasks:
+            examined += 1
+            public_task_id = declaration["public_task_id"]
+            if public_task_id not in parents:
+                parents[public_task_id] = self.service.task_repository.get(
+                    public_task_id
+                )
+            record = self.children.get(declaration["child_id"])
+            runtime = self.children.runtime(declaration["child_id"])
+            cursor = self.children.recovery_cursor_for_declaration(
+                declaration
+            )
+            if (
+                runtime["next_eligible_at"] is not None
+                and datetime.fromisoformat(runtime["next_eligible_at"]) > now
+            ):
+                next_cursor = cursor
                 continue
-            processed_public_tasks.add(declaration["public_task_id"])
+            pending = self._orphan_cleanup_pending(
+                parent=parents[public_task_id],
+                declaration=declaration,
+                record=record,
+                runtime=runtime,
+                lock_records=lock_records,
+            )
+            if not pending:
+                next_cursor = cursor
+                continue
+            # Do not advance past work that could not receive this sweep's
+            # transition authority. It will be the first historical candidate
+            # on the next sweep, rather than waiting for a namespace rotation.
+            if (
+                processed >= transition_limit
+            ):
+                break
             processed += 1
             try:
                 _changed, child_terminalized = self._reconcile_orphaned_child(
@@ -2868,7 +2992,109 @@ class F3RuntimeIntegration:
                         ).isoformat(),
                     },
                 )
-        return {"processed": processed, "terminalized": terminalized}
+            next_cursor = cursor
+        return {
+            "processed": processed,
+            "terminalized": terminalized,
+            "examined": examined,
+            "next_cursor": next_cursor,
+        }
+
+    async def _recover_active_candidates(
+        self,
+        candidates: tuple[tuple[dict[str, Any], Any | None], ...],
+        *,
+        now: datetime,
+        sweep_started: float,
+        transition_limit: int,
+        monotonic: Callable[[], float] | None = None,
+    ) -> dict[str, Any]:
+        """Run deadline-ordered active work inside existing recovery authority."""
+
+        clock = monotonic or time.monotonic
+        processed = 0
+        transitions = 0
+        selected: list[str] = []
+        for declaration, _selected_record in candidates:
+            if transitions >= transition_limit or (
+                clock() - sweep_started
+                >= RECOVERY_SWEEP_TIME_BUDGET_SECONDS
+            ):
+                break
+            runtime = self.children.runtime(declaration["child_id"])
+            if (
+                runtime["next_eligible_at"] is not None
+                and datetime.fromisoformat(runtime["next_eligible_at"]) > now
+            ):
+                continue
+            transitions += 1
+            selected.append(declaration["child_id"])
+            try:
+                plan = self.service._load(declaration["plan_id"])
+                task = self.service._load_task(
+                    declaration["public_task_id"]
+                )
+                prepared, requests = await self._load_prepared(plan, task)
+                operation = prepared[declaration["operation_ordinal"]]
+                record = self.children.get(declaration["child_id"])
+                if record is None or not record.terminal:
+                    if record is None or record.dispatch_intent is None:
+                        task = self._enter_public_preflight(task)
+                    result = await self._execute_child(
+                        plan, task, declaration, operation, requests
+                    )
+                    if result.duplicate_execution:
+                        self._sweep_collisions += 1
+                self._project(plan, task)
+                processed += 1
+                latest = self.children.get(declaration["child_id"])
+                pending = latest is not None and not latest.terminal
+                backoff = (
+                    min(
+                        max(30, int(runtime["backoff_seconds"]) * 2),
+                        300,
+                    )
+                    if pending
+                    else 0
+                )
+                self.children.update_runtime(
+                    declaration["child_id"],
+                    changes={
+                        "last_reconciliation_at": now.isoformat(),
+                        "reconciliation_result": (
+                            "observation_pending"
+                            if pending
+                            else "transition_processed"
+                        ),
+                        "backoff_seconds": backoff,
+                        "next_eligible_at": (
+                            (now + timedelta(seconds=backoff)).isoformat()
+                            if pending
+                            else None
+                        ),
+                    },
+                )
+            except Exception:
+                self._sweep_failures += 1
+                backoff = min(
+                    max(5, int(runtime["backoff_seconds"]) * 2), 300
+                )
+                self.children.update_runtime(
+                    declaration["child_id"],
+                    changes={
+                        "last_reconciliation_at": now.isoformat(),
+                        "reconciliation_result": "bounded_retry",
+                        "backoff_seconds": backoff,
+                        "next_eligible_at": (
+                            now + timedelta(seconds=backoff)
+                        ).isoformat(),
+                    },
+                )
+        return {
+            "processed": processed,
+            "transitions": transitions,
+            "selected_child_ids": tuple(selected),
+        }
 
     async def recover_once(self, trigger: str) -> dict[str, int]:
         del trigger
@@ -2876,27 +3102,96 @@ class F3RuntimeIntegration:
         now = self.service.now()
         self._last_sweep_at = now.isoformat()
         self._next_sweep_at = (now + timedelta(seconds=RECOVERY_CADENCE_SECONDS)).isoformat()
-        sweep_started = time.monotonic()
+        clock = self._recovery_monotonic
+        sweep_started = clock()
         deadline_reached = lambda: (
-            time.monotonic() - sweep_started
+            clock() - sweep_started
             >= RECOVERY_SWEEP_TIME_BUDGET_SECONDS
         )
-        processed = 0
-        page = self.children.recovery_declaration_page(
-            limit=RECOVERY_DECLARATION_PAGE_SIZE,
-            should_stop=deadline_reached,
-        )
-        declarations = page["declarations"]
-        # Orphan reconciliation shares the same batch and wall-clock budget as
-        # ordinary recovery. Each exact child is terminalized before its
-        # fenced locks are released, and already-terminal children remain
-        # eligible until lock, token, and audit projections converge.
-        orphaned = self._reconcile_orphaned_children(
-            declarations=declarations,
+
+        # Active work is selected from authoritative nonterminal parent and
+        # child state, never from the historical declaration cursor. Durable
+        # post-intent evidence deadlines therefore sort ahead of pre-intent
+        # recovery and cannot be hidden behind settled history.
+        active_selection = self._active_recovery_candidates(
             now=now,
             sweep_started=sweep_started,
-            transition_limit=RECOVERY_BATCH_SIZE,
+            monotonic=clock,
         )
+        active_candidates = active_selection["candidates"]
+        navigation = self.service.task_repository.navigation_metrics()
+        has_terminal_history = (
+            navigation["record_count"]
+            > navigation["nonterminal_record_count"]
+        )
+        initial_active_limit = RECOVERY_BATCH_SIZE - int(
+            has_terminal_history
+        )
+        active = await self._recover_active_candidates(
+            active_candidates,
+            now=now,
+            sweep_started=sweep_started,
+            transition_limit=initial_active_limit,
+            monotonic=clock,
+        )
+
+        # The historical cursor is separate scheduling evidence for terminal
+        # orphan discovery. It advances only through declarations safely
+        # examined; an eligible orphan that lacks transition/time capacity is
+        # deliberately left immediately before the persisted cursor.
+        page = {
+            "cursor": self.children.recovery_cursor(),
+            "declarations": (),
+            "manifest_reads": 0,
+        }
+        orphaned: dict[str, Any] = {
+            "processed": 0,
+            "terminalized": 0,
+            "examined": 0,
+            "next_cursor": page["cursor"],
+        }
+        remaining = max(
+            0, RECOVERY_BATCH_SIZE - active["transitions"]
+        )
+        if remaining and not deadline_reached():
+            page = self.children.recovery_declaration_page(
+                limit=RECOVERY_DECLARATION_PAGE_SIZE,
+                should_stop=deadline_reached,
+            )
+            orphaned = self._reconcile_orphaned_children(
+                declarations=page["declarations"],
+                now=now,
+                sweep_started=sweep_started,
+                transition_limit=remaining,
+                start_cursor=page["cursor"],
+                monotonic=clock,
+            )
+
+        # If the reserved historical slot found no orphan, return it to active
+        # work without exceeding the same batch/time boundary.
+        selected_ids = set(active["selected_child_ids"])
+        active_tail = tuple(
+            item
+            for item in active_candidates
+            if item[0]["child_id"] not in selected_ids
+        )
+        tail_limit = max(
+            0,
+            RECOVERY_BATCH_SIZE
+            - active["transitions"]
+            - orphaned["processed"],
+        )
+        tail = {"processed": 0, "transitions": 0, "selected_child_ids": ()}
+        if active_tail and tail_limit and not deadline_reached():
+            tail = await self._recover_active_candidates(
+                active_tail,
+                now=now,
+                sweep_started=sweep_started,
+                transition_limit=tail_limit,
+                monotonic=clock,
+            )
+            selected_ids.update(tail["selected_child_ids"])
+
         stale_release_decisions = {}
         for lock_record in (
             () if deadline_reached() else self.locks.expired_records(now=now)
@@ -2926,108 +3221,28 @@ class F3RuntimeIntegration:
             self.locks.recover_expired(
                 stale_release_decisions, now=now
             )
-        candidates: list[tuple[dict[str, Any], Any | None]] = []
-        declarations_by_task: dict[str, list[dict[str, Any]]] = {}
-        for declaration in declarations:
-            declarations_by_task.setdefault(
-                declaration["public_task_id"], []
-            ).append(declaration)
-        for public_task_id, values in declarations_by_task.items():
-            if deadline_reached():
-                break
-            public_task = self.service.task_repository.get(public_task_id)
-            if public_task is None:
-                raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
-            if public_task.state in TERMINAL_TASK_STATES:
-                continue
-            task_declarations = tuple(values)
-            # One public task receives at most one transition per sweep.  Later
-            # configuration children never become eligible before every earlier
-            # dependency has verified successfully.
-            for declaration in task_declarations:
-                record = self.children.get(declaration["child_id"])
-                if record is not None and record.terminal:
-                    if record.normalized_outcome == "succeeded_verified":
-                        continue
-                    candidates.append((declaration, record))
-                    break
-                dependencies = set(declaration["operation_dependency_ids"])
-                dependency_records = {
-                    item["operation_id"]: self.children.get(item["child_id"])
-                    for item in task_declarations
-                    if item["operation_id"] in dependencies
-                }
-                if any(
-                    dependency_records.get(dependency) is None
-                    or dependency_records[dependency].normalized_outcome
-                    != "succeeded_verified"
-                    for dependency in dependencies
-                ):
-                    break
-                candidates.append((declaration, record))
-                break
-        remaining = max(0, RECOVERY_BATCH_SIZE - orphaned["processed"])
-        for declaration, record in candidates[:remaining]:
-            if time.monotonic() - sweep_started >= RECOVERY_SWEEP_TIME_BUDGET_SECONDS:
-                break
-            runtime = self.children.runtime(declaration["child_id"])
-            if runtime["next_eligible_at"] and datetime.fromisoformat(runtime["next_eligible_at"]) > now:
-                continue
-            try:
-                plan = self.service._load(declaration["plan_id"])
-                task = self.service._load_task(declaration["public_task_id"])
-                prepared, requests = await self._load_prepared(plan, task)
-                operation = prepared[declaration["operation_ordinal"]]
-                if record is None or not record.terminal:
-                    if record is None or record.dispatch_intent is None:
-                        task = self._enter_public_preflight(task)
-                    result = await self._execute_child(
-                        plan, task, declaration, operation, requests
-                    )
-                    if result.duplicate_execution:
-                        self._sweep_collisions += 1
-                self._project(plan, task)
-                processed += 1
-                latest = self.children.get(declaration["child_id"])
-                pending = latest is not None and not latest.terminal
-                backoff = (
-                    min(max(30, int(runtime["backoff_seconds"]) * 2), 300)
-                    if pending
-                    else 0
-                )
-                self.children.update_runtime(
-                    declaration["child_id"],
-                    changes={
-                        "last_reconciliation_at": now.isoformat(),
-                        "reconciliation_result": (
-                            "observation_pending"
-                            if pending
-                            else "transition_processed"
-                        ),
-                        "backoff_seconds": backoff,
-                        "next_eligible_at": (
-                            (now + timedelta(seconds=backoff)).isoformat()
-                            if pending
-                            else None
-                        ),
-                    },
-                )
-            except Exception:
-                self._sweep_failures += 1
-                backoff = min(max(5, int(runtime["backoff_seconds"]) * 2), 300)
-                self.children.update_runtime(
-                    declaration["child_id"],
-                    changes={
-                        "last_reconciliation_at": now.isoformat(),
-                        "reconciliation_result": "bounded_retry",
-                        "backoff_seconds": backoff,
-                        "next_eligible_at": (now + timedelta(seconds=backoff)).isoformat(),
-                    },
-                )
-        self.children.advance_recovery_cursor(
-            expected=page["cursor"],
-            next_cursor=page["next_cursor"],
+
+        if orphaned["next_cursor"] != page["cursor"]:
+            self.children.advance_recovery_cursor(
+                expected=page["cursor"],
+                next_cursor=orphaned["next_cursor"],
+            )
+        unprocessed_active = any(
+            declaration["child_id"] not in selected_ids
+            for declaration, _record in active_candidates
         )
+        if (
+            not unprocessed_active
+            and active_selection["next_cursor"]
+            != active_selection["expected_cursor"]
+        ):
+            self.children.advance_active_recovery_cursor(
+                expected=active_selection["expected_cursor"],
+                next_cursor=active_selection["next_cursor"],
+            )
+
+        processed = active["processed"] + tail["processed"]
+        active_transitions = active["transitions"] + tail["transitions"]
         self._ready = True
         return {
             "processed": processed,
@@ -3036,8 +3251,14 @@ class F3RuntimeIntegration:
                 orphaned["terminalized"]
             ),
             "orphaned_children_processed": orphaned["processed"],
-            "recovery_transitions": processed + orphaned["processed"],
-            "declarations_examined": len(declarations),
+            "recovery_transitions": active_transitions + orphaned["processed"],
+            "active_recovery_transitions": active_transitions,
+            "active_tasks_examined": active_selection["tasks_examined"],
+            "active_manifest_reads": active_selection["manifest_reads"],
+            "active_declarations_examined": active_selection[
+                "declarations_examined"
+            ],
+            "declarations_examined": orphaned["examined"],
             "manifest_reads": page["manifest_reads"],
         }
 

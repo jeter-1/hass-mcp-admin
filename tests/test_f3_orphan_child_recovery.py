@@ -19,7 +19,9 @@ deliberately excluded from this path.
 
 from __future__ import annotations
 
-from datetime import timedelta
+import copy
+from datetime import datetime, timedelta
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -35,11 +37,18 @@ from ha_mcp_engineering.f3.contracts import (  # noqa: E402
     LockRequest,
     LockScope,
 )
+from ha_mcp_engineering.errors import GovernanceError  # noqa: E402
+from ha_mcp_engineering.f3.persistence import (  # noqa: E402
+    ExecutionStorageError,
+)
 from ha_mcp_engineering.governance.task_models import (  # noqa: E402
     ExecutionTaskState,
+    new_execution_task,
 )
+from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from tests.test_dev14_configuration_plans import (  # noqa: E402
     ConfigurationPlanTestCase,
+    PROPOSED_AUTOMATION,
 )
 from tests.test_f3_runtime_integration import (  # noqa: E402
     _ExactFakeConfigurationGateway,
@@ -48,10 +57,14 @@ from tests.test_f3_runtime_integration import (  # noqa: E402
 from ha_mcp_engineering.f3.models import (  # noqa: E402
     ExecutionIdentity,
     ExecutorTiming,
+    LockHandle,
     LockOwner,
     LockTiming,
+    LockToken,
 )
 from ha_mcp_engineering.f3_runtime.repository import (  # noqa: E402
+    canonical_hash,
+    child_declaration,
     ExecutionRecordCorrupt,
     RECOVERY_DECLARATION_PAGE_SIZE,
 )
@@ -63,6 +76,7 @@ from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
     ORPHAN_RECOVERY_SCAN_LIMIT,
     ORPHAN_RECONCILIATION_RESULT,
     RECOVERY_BATCH_SIZE,
+    _persisted_audit_event_id,
 )
 
 
@@ -242,6 +256,35 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
             },
         )
 
+    def _release_fixture_locks(self, child_id):
+        record = self.runtime.children.get(child_id)
+        identity = record.execution_identity()
+        lock_records = [
+            item
+            for item in self.runtime.locks.records()
+            if item.task_id == child_id
+        ]
+        self.assertTrue(lock_records)
+        handle = LockHandle(
+            owner=LockOwner(
+                owner_id=identity.owner_id,
+                task_id=identity.task_id,
+                plan_id=identity.plan_id,
+                operation_id=record.operation,
+                attempt_id=identity.attempt_id,
+            ),
+            tokens=tuple(
+                LockToken(item.key, item.generation, item.mode)
+                for item in lock_records
+            ),
+            acquired_at=min(item.acquired_at for item in lock_records),
+            lease_expires_at=min(
+                item.lease_expires_at for item in lock_records
+            ),
+            timing=LockTiming(120, 20, 0, 0.05),
+        )
+        self.runtime.locks.release(handle)
+
     def _mutate_exact_lock(self, handle, **changes):
         """Inject one valid but authority-mismatched durable lock field."""
 
@@ -312,6 +355,196 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         self.service.f3_runtime = restarted
         self.runtime = restarted
         return restarted
+
+    async def _post_intent_active_child(
+        self, target_id="active_recovery_target"
+    ):
+        """Create one real, observation-only child with a 120-second deadline."""
+
+        proposed = copy.deepcopy(PROPOSED_AUTOMATION)
+        proposed["id"] = target_id
+        created = await self.service.create_configuration_plan(
+            title="Active recovery deadline fixture",
+            description="Exact post-intent scheduler acceptance fixture",
+            operations=[
+                {
+                    "operation_id": "update_active_recovery_automation",
+                    "resource_type": "automation",
+                    "action": "create",
+                    "target_id": target_id,
+                    "depends_on": [],
+                    "proposed_config": proposed,
+                }
+            ],
+        )
+        await self.approve(created)
+        def crash_after_intent(stage):
+            if stage == "after_durable_intent_persistence":
+                raise SystemExit("simulated process loss after durable intent")
+
+        self.runtime.children._fault_hook = crash_after_intent
+        try:
+            with self.assertRaises(SystemExit):
+                await self.service.apply(
+                    created["plan_id"], created["plan_hash"]
+                )
+        finally:
+            self.runtime.children._fault_hook = None
+        task = self.service.task_repository.get_for_plan(created["plan_id"])
+        declaration = self.runtime.children.declarations_for_task(
+            task.task_id
+        )[0]
+        record = self.runtime.children.get(declaration["child_id"])
+        identity = record.execution_identity()
+        self.runtime.children.mutate_claimed(
+            declaration["child_id"],
+            owner_id=identity.owner_id,
+            claim_generation=record.claim_generation,
+            mutator=lambda value: setattr(
+                value,
+                "claim_expires_at",
+                (self.service.now() - timedelta(seconds=1)).isoformat(),
+            ),
+        )
+        record = self.runtime.children.get(declaration["child_id"])
+        self.assertEqual(1, record.dispatch_count)
+        self.assertEqual(
+            self.service.now() + timedelta(seconds=120),
+            datetime.fromisoformat(
+                record.dispatch_intent["evidence_deadline"]
+            ),
+        )
+        return task, declaration
+
+    async def _preintent_active_child(self, target_id):
+        proposed = copy.deepcopy(PROPOSED_AUTOMATION)
+        proposed["id"] = target_id
+        created = await self.service.create_configuration_plan(
+            title=f"Active recovery fixture {target_id}",
+            description="Bounded active recovery scheduler fixture",
+            operations=[
+                {
+                    "operation_id": f"create_{target_id}",
+                    "resource_type": "automation",
+                    "action": "create",
+                    "target_id": target_id,
+                    "depends_on": [],
+                    "proposed_config": proposed,
+                }
+            ],
+        )
+        await self.approve(created)
+        plan = self.service._load(created["plan_id"])
+        task, _prepared, _requests = await self.runtime._initialize(
+            plan, created["plan_hash"]
+        )
+        task = self.runtime._enter_public_preflight(task)
+        declaration = self.runtime.children.declarations_for_task(
+            task.task_id
+        )[0]
+        return task, declaration
+
+    def _populate_terminal_history(
+        self, *, task_count: int, declarations_per_task: int = 8
+    ):
+        """Write valid settled F3 history through the real repositories."""
+
+        timestamp = self.service.now().isoformat()
+        created_ids = []
+        for task_index in range(task_count):
+            prefix = f"rr9-history-{task_index}"
+            task_id = hashlib.sha256(
+                f"{prefix}-task".encode()
+            ).hexdigest()[:32]
+            plan_id = hashlib.sha256(
+                f"{prefix}-plan".encode()
+            ).hexdigest()[:32]
+            plan_hash = hashlib.sha256(
+                f"{prefix}-plan-hash".encode()
+            ).hexdigest()
+            task = new_execution_task(
+                task_id=task_id,
+                plan_id=plan_id,
+                plan_hash=plan_hash,
+                operation="configuration_plan",
+                target={
+                    "target_type": "automation",
+                    "target_id": f"history_{task_index}",
+                },
+                timestamp=timestamp,
+                execution_request_id=f"history-request-{task_index}",
+                idempotency_key=hashlib.sha256(
+                    f"{prefix}-idempotency".encode()
+                ).hexdigest(),
+                approval_reference={},
+                legacy_projection={},
+            )
+            declarations = []
+            for ordinal in range(declarations_per_task):
+                operation_id = f"history_operation_{task_index}_{ordinal}"
+                declarations.append(
+                    child_declaration(
+                        public_task_id=task_id,
+                        plan_id=plan_id,
+                        plan_hash=plan_hash,
+                        plan_contract_version=2,
+                        operation_id=operation_id,
+                        ordinal=ordinal,
+                        dependency_ids=(),
+                        adapter_id="history_fixture_adapter",
+                        capability_id="update_automation_configuration",
+                        prepared_operation_hash=hashlib.sha256(
+                            f"{prefix}-prepared-{ordinal}".encode()
+                        ).hexdigest(),
+                        target_type="automation",
+                        target_id=f"history_{task_index}_{ordinal}",
+                        attempt_id=f"history-attempt-{task_index}-{ordinal}",
+                        request_id=f"history-request-{task_index}",
+                        idempotency_key=f"history-key-{task_index}-{ordinal}",
+                        complete_lock_request_hash=hashlib.sha256(
+                            f"{prefix}-locks".encode()
+                        ).hexdigest(),
+                        approval_bundle_hash=hashlib.sha256(
+                            f"{prefix}-approval".encode()
+                        ).hexdigest(),
+                        selective_hold_keys=(
+                            f"automation:history_{task_index}_{ordinal}",
+                        ),
+                    )
+                )
+            sequence_hash = canonical_hash(
+                {
+                    "model": "rr9-terminal-history-v1",
+                    "task_id": task_id,
+                    "children": [item["child_id"] for item in declarations],
+                }
+            )
+            self.runtime._mark_task_authority(
+                task,
+                sequence_hash,
+                [item["child_id"] for item in declarations],
+            )
+            task.append_event(
+                "preflight_failed",
+                timestamp,
+                new_state=ExecutionTaskState.FAILED_PRE_DISPATCH,
+                changes={
+                    "completed_at": timestamp,
+                    "terminal_outcome": "failed_pre_dispatch",
+                    "last_error": {
+                        "code": "bounded_terminal_history_fixture"
+                    },
+                },
+                request_id=f"history-request-{task_index}",
+            )
+            self.runtime.children.initialize_task_sequence(
+                task=task,
+                task_repository=self.service.task_repository,
+                declarations=declarations,
+                sequence_hash=sequence_hash,
+            )
+            created_ids.append(task_id)
+        return tuple(created_ids)
 
     async def test_orphaned_children_converge_in_one_sweep(self):
         task, declarations = await self._build_live_orphan()
@@ -752,6 +985,531 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
             self.runtime.children.runtime(child_id)["audited_event_count"],
         )
 
+    async def test_no_diagnostic_cancellation_audit_is_idempotent(self):
+        _task, declarations = await self._build_live_orphan()
+        declaration = declarations[0]
+        child_id = declaration["child_id"]
+        before = self.runtime.children.get(child_id)
+        self.runtime._audit_record_events(declaration, before)
+        self.audit_path.write_text("", encoding="utf-8")
+        self.assertTrue(
+            self.runtime.children.cancel(child_id, now=self.service.now())
+        )
+        original_write = self.service.audit.write
+
+        def append_then_crash(entry):
+            written = original_write(entry)
+            if entry.get("event") == "f3_execution_cancelled":
+                raise SystemExit("simulated process loss after audit append")
+            return written
+
+        with patch.object(
+            self.service.audit,
+            "write",
+            side_effect=append_then_crash,
+        ):
+            with self.assertRaises(SystemExit):
+                await self.runtime.recover_once("periodic")
+        first = [
+            item
+            for item in self._audit_entries()
+            if item.get("event") == "f3_execution_cancelled"
+        ]
+        self.assertEqual(1, len(first))
+        self.assertRegex(first[0]["audit_event_id"], r"^[0-9a-f]{64}$")
+
+        self._restart_runtime()
+        await self.runtime.recover_once("startup")
+        second = [
+            item
+            for item in self._audit_entries()
+            if item.get("event") == "f3_execution_cancelled"
+        ]
+        self.assertEqual(first, second)
+
+    async def test_executor_cancellation_without_diagnostic_has_stable_id(self):
+        _task, declarations = await self._build_live_orphan()
+        declaration = declarations[0]
+        child_id = declaration["child_id"]
+        record = self.runtime.children.get(child_id)
+        self.runtime._audit_record_events(declaration, record)
+        self.audit_path.write_text("", encoding="utf-8")
+
+        cancelled = await self.runtime._executor(120).cancel(child_id)
+        self.assertTrue(cancelled)
+        terminal = self.runtime.children.get(child_id)
+        self.assertTrue(self.runtime._audit_record_events(declaration, terminal))
+        first = [
+            item
+            for item in self._audit_entries()
+            if item.get("event") == "f3_execution_cancelled"
+        ]
+        self.assertEqual(1, len(first))
+        expected = _persisted_audit_event_id(
+            child_id,
+            next(
+                item
+                for item in terminal.events
+                if item["event_type"] == "execution_cancelled"
+            ),
+        )
+        self.assertEqual(expected, first[0]["audit_event_id"])
+
+        self._restart_runtime()
+        self.assertTrue(
+            self.runtime._audit_record_events(
+                declaration, self.runtime.children.get(child_id)
+            )
+        )
+        self.assertEqual(first, [
+            item
+            for item in self._audit_entries()
+            if item.get("event") == "f3_execution_cancelled"
+        ])
+
+    async def test_persisted_audit_identity_binds_child_sequence_and_content(self):
+        _task, declarations = await self._build_live_orphan()
+        declaration = declarations[0]
+        record = self.runtime.children.get(declaration["child_id"])
+        event = dict(record.events[0])
+        identity = _persisted_audit_event_id(
+            declaration["child_id"], event
+        )
+        self.assertEqual(
+            identity,
+            _persisted_audit_event_id(declaration["child_id"], event),
+        )
+        self._restart_runtime()
+        restarted_event = self.runtime.children.get(
+            declaration["child_id"]
+        ).events[0]
+        self.assertEqual(
+            identity,
+            _persisted_audit_event_id(
+                declaration["child_id"], restarted_event
+            ),
+        )
+        self.assertNotEqual(
+            identity,
+            _persisted_audit_event_id("different-child", event),
+        )
+        later = dict(event)
+        later["sequence"] = event["sequence"] + 1
+        self.assertNotEqual(
+            identity,
+            _persisted_audit_event_id(declaration["child_id"], later),
+        )
+        changed = dict(event)
+        changed["event_type"] = "execution_replayed"
+        self.assertNotEqual(
+            identity,
+            _persisted_audit_event_id(declaration["child_id"], changed),
+        )
+        invalid = dict(event)
+        invalid["unsupported"] = float("nan")
+        with self.assertRaises(GovernanceError):
+            _persisted_audit_event_id(declaration["child_id"], invalid)
+
+    async def test_non_cancellation_event_is_idempotent_across_append_crash(self):
+        _task, declarations = await self._build_live_orphan()
+        declaration = declarations[0]
+        child_id = declaration["child_id"]
+        record = self.runtime.children.get(child_id)
+        self.audit_path.write_text("", encoding="utf-8")
+        original_write = self.service.audit.write
+
+        def append_then_crash(entry):
+            written = original_write(entry)
+            if entry.get("event") == "f3_execution_started":
+                raise SystemExit("simulated persisted-event append crash")
+            return written
+
+        with patch.object(
+            self.service.audit, "write", side_effect=append_then_crash
+        ):
+            with self.assertRaises(SystemExit):
+                self.runtime._audit_record_events(declaration, record)
+        first = self._audit_entries()
+        self.assertEqual(1, len(first))
+        self.assertEqual("f3_execution_started", first[0]["event"])
+
+        self._restart_runtime()
+        self.assertTrue(
+            self.runtime._audit_record_events(
+                declaration, self.runtime.children.get(child_id)
+            )
+        )
+        matching = [
+            item
+            for item in self._audit_entries()
+            if item.get("audit_event_id") == first[0]["audit_event_id"]
+        ]
+        self.assertEqual(1, len(matching))
+
+    async def test_audit_failure_leaves_cursor_pending_then_retries_once(self):
+        _task, declarations = await self._build_live_orphan()
+        declaration = declarations[0]
+        child_id = declaration["child_id"]
+        record = self.runtime.children.get(child_id)
+        before = self.runtime.children.runtime(child_id)[
+            "audited_event_count"
+        ]
+        with patch.object(self.service.audit, "write", return_value=False):
+            self.assertFalse(
+                self.runtime._audit_record_events(declaration, record)
+            )
+        self.assertEqual(
+            before,
+            self.runtime.children.runtime(child_id)["audited_event_count"],
+        )
+        self.assertTrue(self.runtime._audit_record_events(declaration, record))
+        self.assertEqual(
+            len(record.events),
+            self.runtime.children.runtime(child_id)["audited_event_count"],
+        )
+        identities = [
+            item["audit_event_id"]
+            for item in self._audit_entries()
+            if "audit_event_id" in item
+        ]
+        self.assertEqual(len(identities), len(set(identities)))
+
+    def test_audit_truncation_preserves_id_and_invalid_id_does_not_dedup(self):
+        path = self.root / "bounded-audit.jsonl"
+        audit = AuditLogger(
+            str(path),
+            "synthetic-review-secret",
+            max_payload_chars=120,
+        )
+        identity = "a" * 64
+        self.assertTrue(
+            audit.write(
+                {
+                    "event": "f3_execution_started",
+                    "audit_event_id": identity,
+                    "bounded": "x" * 500,
+                }
+            )
+        )
+        truncated = json.loads(path.read_text(encoding="utf-8"))
+        self.assertTrue(truncated["payload_truncated"])
+        self.assertEqual(identity, truncated["audit_event_id"])
+
+        invalid = {"event": "f3_event", "audit_event_id": "not-valid"}
+        self.assertTrue(audit.write(invalid))
+        self.assertTrue(audit.write(invalid))
+        entries = [
+            json.loads(line)
+            for line in path.read_text(encoding="utf-8").splitlines()
+        ]
+        self.assertEqual(
+            2,
+            sum(item.get("audit_event_id") == "not-valid" for item in entries),
+        )
+
+    async def test_active_post_intent_child_is_not_hidden_behind_cursor(self):
+        await self._build_live_orphan()
+        _task, declaration = await self._post_intent_active_child()
+        child_id = declaration["child_id"]
+        deadline = self.runtime.children.get(child_id).dispatch_intent[
+            "evidence_deadline"
+        ]
+        current = self.runtime.children.recovery_cursor()
+        self.runtime.children.advance_recovery_cursor(
+            expected=current,
+            next_cursor={
+                "model": "f3-recovery-declaration-cursor-v1",
+                "schema_version": 1,
+                "public_task_id": declaration["public_task_id"],
+                "operation_ordinal": declaration["operation_ordinal"],
+                "child_id": child_id,
+            },
+        )
+        before_writes = sum(
+            item[0] == "write" for item in self.gateway.calls
+        )
+        self._restart_runtime()
+
+        result = await self.runtime.recover_once("startup")
+
+        record = self.runtime.children.get(child_id)
+        self.assertEqual(1, result["active_recovery_transitions"])
+        self.assertTrue(
+            record.terminal
+            or any(
+                item["event_type"] == "recovery_claimed"
+                for item in record.events
+            )
+        )
+        self.assertEqual(1, record.dispatch_count)
+        self.assertEqual(deadline, record.dispatch_intent["evidence_deadline"])
+        self.assertEqual(
+            before_writes,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+
+    async def test_dense_terminal_history_does_not_delay_active_readback(self):
+        _task, declaration = await self._post_intent_active_child(
+            "dense_history_active"
+        )
+        self._populate_terminal_history(task_count=130)
+        child_id = declaration["child_id"]
+        before_writes = sum(
+            item[0] == "write" for item in self.gateway.calls
+        )
+        self._restart_runtime()
+
+        result = await self.runtime.recover_once("startup")
+
+        self.assertEqual(1, result["active_recovery_transitions"])
+        self.assertLessEqual(
+            result["declarations_examined"],
+            RECOVERY_DECLARATION_PAGE_SIZE,
+        )
+        self.assertLessEqual(
+            result["manifest_reads"], RECOVERY_DECLARATION_PAGE_SIZE
+        )
+        self.assertTrue(
+            any(
+                item["event_type"] == "recovery_claimed"
+                for item in self.runtime.children.get(child_id).events
+            )
+        )
+        self.assertEqual(
+            before_writes,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+
+    async def test_seventeenth_active_task_remains_eligible_for_next_sweep(self):
+        declarations = []
+        for index in range(17):
+            _task, declaration = await self._preintent_active_child(
+                f"batch_active_{index:02d}"
+            )
+            declarations.append(declaration)
+
+        first = await self.runtime.recover_once("periodic")
+        first_writes = sum(
+            item[0] == "write" for item in self.gateway.calls
+        )
+        second = await self.runtime.recover_once("periodic")
+        second_writes = sum(
+            item[0] == "write" for item in self.gateway.calls
+        )
+
+        self.assertEqual(RECOVERY_BATCH_SIZE, first["recovery_transitions"])
+        self.assertEqual(16, first_writes)
+        self.assertEqual(1, second["recovery_transitions"])
+        self.assertEqual(17, second_writes)
+        self.assertTrue(
+            all(
+                self.runtime.children.get(item["child_id"]).terminal
+                for item in declarations
+            )
+        )
+
+    async def test_active_recovery_prioritizes_immutable_evidence_deadline(self):
+        base_now = self.service.now()
+        current = {"value": base_now}
+        self.service.now = lambda: current["value"]
+        _first_task, first = await self._post_intent_active_child(
+            "deadline_first"
+        )
+        self._release_fixture_locks(first["child_id"])
+        current["value"] = base_now + timedelta(seconds=30)
+        _second_task, second = await self._post_intent_active_child(
+            "deadline_second"
+        )
+        order = []
+        original_execute = self.runtime._execute_child
+
+        async def ordered_execute(plan, task, declaration, operation, requests):
+            order.append(declaration["child_id"])
+            return await original_execute(
+                plan, task, declaration, operation, requests
+            )
+
+        with patch.object(
+            self.runtime, "_execute_child", side_effect=ordered_execute
+        ):
+            await self.runtime.recover_once("periodic")
+
+        self.assertEqual(first["child_id"], order[0])
+        first_deadline = datetime.fromisoformat(
+            self.runtime.children.get(first["child_id"]).dispatch_intent[
+                "evidence_deadline"
+            ]
+        )
+        second_deadline = datetime.fromisoformat(
+            self.runtime.children.get(second["child_id"]).dispatch_intent[
+                "evidence_deadline"
+            ]
+        )
+        self.assertLess(first_deadline, second_deadline)
+        self.assertEqual(
+            0, sum(item[0] == "write" for item in self.gateway.calls)
+        )
+
+    async def test_equal_deadlines_use_deterministic_task_operation_order(self):
+        _first_task, first = await self._post_intent_active_child(
+            "equal_deadline_first"
+        )
+        self._release_fixture_locks(first["child_id"])
+        _second_task, second = await self._post_intent_active_child(
+            "equal_deadline_second"
+        )
+        selection = self.runtime._active_recovery_candidates(
+            now=self.service.now(),
+            sweep_started=0.0,
+            monotonic=lambda: 0.0,
+        )["candidates"]
+        selected = [item[0] for item in selection]
+        expected = sorted(
+            (first, second),
+            key=lambda item: (
+                item["public_task_id"].encode("utf-8"),
+                item["operation_ordinal"],
+                item["child_id"].encode("utf-8"),
+            ),
+        )
+        self.assertEqual(
+            [item["child_id"] for item in expected],
+            [item["child_id"] for item in selected],
+        )
+
+    async def test_time_budget_keeps_unprocessed_active_work_reachable(self):
+        declarations = [
+            (await self._preintent_active_child(f"timed_active_{index}"))[1]
+            for index in range(2)
+        ]
+        expired = {"value": False}
+        self.runtime._recovery_monotonic = (
+            lambda: 6.0 if expired["value"] else 0.0
+        )
+        original_execute = self.runtime._execute_child
+        order = []
+
+        async def expire_after_one(plan, task, declaration, operation, requests):
+            order.append(declaration["child_id"])
+            result = await original_execute(
+                plan, task, declaration, operation, requests
+            )
+            expired["value"] = True
+            return result
+
+        with patch.object(
+            self.runtime, "_execute_child", side_effect=expire_after_one
+        ):
+            first = await self.runtime.recover_once("periodic")
+            expired["value"] = False
+            second = await self.runtime.recover_once("periodic")
+
+        self.assertEqual(1, first["recovery_transitions"])
+        self.assertEqual(1, second["recovery_transitions"])
+        self.assertEqual(
+            {item["child_id"] for item in declarations}, set(order)
+        )
+
+    async def test_backoff_does_not_starve_later_active_work(self):
+        declarations = [
+            (await self._preintent_active_child(f"backoff_active_{index}"))[1]
+            for index in range(2)
+        ]
+        selection = self.runtime._active_recovery_candidates(
+            now=self.service.now(),
+            sweep_started=0.0,
+            monotonic=lambda: 0.0,
+        )["candidates"]
+        failing_id = selection[0][0]["child_id"]
+        later_id = selection[1][0]["child_id"]
+        original_execute = self.runtime._execute_child
+        failed = {"value": False}
+
+        async def fail_first(plan, task, declaration, operation, requests):
+            if declaration["child_id"] == failing_id and not failed["value"]:
+                failed["value"] = True
+                raise RuntimeError("bounded synthetic recovery failure")
+            return await original_execute(
+                plan, task, declaration, operation, requests
+            )
+
+        with patch.object(
+            self.runtime, "_execute_child", side_effect=fail_first
+        ):
+            first = await self.runtime.recover_once("periodic")
+        self.assertEqual(2, first["recovery_transitions"])
+        self.assertTrue(self.runtime.children.get(later_id).terminal)
+        retry_at = datetime.fromisoformat(
+            self.runtime.children.runtime(failing_id)["next_eligible_at"]
+        )
+        same_time = await self.runtime.recover_once("periodic")
+        self.assertEqual(0, same_time["active_recovery_transitions"])
+        self.service.now = lambda: retry_at
+
+        retried = await self.runtime.recover_once("periodic")
+
+        self.assertEqual(1, retried["active_recovery_transitions"])
+        self.assertTrue(self.runtime.children.get(failing_id).terminal)
+        self.assertEqual(
+            {item["child_id"] for item in declarations},
+            {failing_id, later_id},
+        )
+
+    async def test_crash_after_active_discovery_keeps_candidate_reachable(self):
+        _task, declaration = await self._preintent_active_child(
+            "active_discovery_crash"
+        )
+        before_cursor = self.runtime.children.active_recovery_cursor()
+        with patch.object(
+            self.runtime,
+            "_recover_active_candidates",
+            side_effect=SystemExit("simulated crash after discovery"),
+        ):
+            with self.assertRaises(SystemExit):
+                await self.runtime.recover_once("periodic")
+        self.assertEqual(
+            before_cursor, self.runtime.children.active_recovery_cursor()
+        )
+
+        self._restart_runtime()
+        result = await self.runtime.recover_once("startup")
+
+        self.assertEqual(1, result["active_recovery_transitions"])
+        self.assertTrue(
+            self.runtime.children.get(declaration["child_id"]).terminal
+        )
+        self.assertEqual(
+            1, sum(item[0] == "write" for item in self.gateway.calls)
+        )
+
+    async def test_crash_after_active_transition_does_not_redispatch(self):
+        _task, declaration = await self._preintent_active_child(
+            "active_cursor_crash"
+        )
+        def crash_before_cursor(**_kwargs):
+            raise SystemExit("simulated crash before active cursor commit")
+
+        with patch.object(
+            self.runtime.children,
+            "advance_active_recovery_cursor",
+            side_effect=crash_before_cursor,
+        ):
+            with self.assertRaises(SystemExit):
+                await self.runtime.recover_once("periodic")
+        self.assertEqual(
+            1, sum(item[0] == "write" for item in self.gateway.calls)
+        )
+
+        self._restart_runtime()
+        await self.runtime.recover_once("startup")
+
+        record = self.runtime.children.get(declaration["child_id"])
+        self.assertTrue(record.terminal)
+        self.assertEqual(1, record.dispatch_count)
+        self.assertEqual(
+            1, sum(item[0] == "write" for item in self.gateway.calls)
+        )
+
     async def test_later_fencing_generation_is_never_released(self):
         _task, declarations = await self._build_live_orphan()
         child_id = declarations[0]["child_id"]
@@ -971,6 +1729,7 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
             {
                 "child_id": f"child-{index:04d}",
                 "public_task_id": f"task-{index // 8:04d}",
+                "operation_ordinal": index % 8,
             }
             for index in range(8_192)
         )
@@ -1013,16 +1772,21 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
                 monotonic=lambda: 0.0,
             )
             second = self.runtime._reconcile_orphaned_children(
-                declarations=declarations[RECOVERY_BATCH_SIZE * 8 :],
+                declarations=declarations[RECOVERY_BATCH_SIZE:],
                 now=self.service.now(),
                 sweep_started=0.0,
                 transition_limit=RECOVERY_BATCH_SIZE,
+                start_cursor=first["next_cursor"],
                 monotonic=lambda: 0.0,
             )
 
         self.assertEqual(RECOVERY_BATCH_SIZE, first["processed"])
         self.assertEqual(RECOVERY_BATCH_SIZE, second["processed"])
         self.assertEqual(RECOVERY_BATCH_SIZE * 2, len(set(attempted)))
+        self.assertEqual(
+            declarations[RECOVERY_BATCH_SIZE - 1]["child_id"],
+            first["next_cursor"]["child_id"],
+        )
         self.assertLessEqual(
             cleanup_pending.call_count,
             ORPHAN_RECOVERY_SCAN_LIMIT * 2,
@@ -1070,7 +1834,8 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
                 transition_limit=RECOVERY_BATCH_SIZE,
                 monotonic=bounded_clock,
             )
-        self.assertLessEqual(timed["processed"], 1)
+        self.assertLessEqual(timed["processed"], 3)
+        self.assertLess(timed["processed"], RECOVERY_BATCH_SIZE)
         self.assertEqual(timed["processed"], len(timed_attempts))
 
     def test_repository_discovery_is_declaration_paged(self):
@@ -1235,6 +2000,33 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
 
         with self.assertRaises(ExecutionRecordCorrupt):
             self.runtime.children.recovery_cursor()
+
+    def test_corrupt_active_recovery_cursor_fails_closed(self):
+        self.runtime.children.active_recovery_cursor_path.write_text(
+            '{"model":"unknown"}', encoding="utf-8"
+        )
+
+        with self.assertRaises(ExecutionRecordCorrupt):
+            self.runtime.children.active_recovery_cursor()
+
+    def test_active_recovery_cursor_compare_and_swap_fails_closed(self):
+        first = self.runtime.children.active_recovery_cursor_for_task(
+            "active-cursor-first"
+        )
+        second = self.runtime.children.active_recovery_cursor_for_task(
+            "active-cursor-second"
+        )
+        self.runtime.children.advance_active_recovery_cursor(
+            expected=None, next_cursor=first
+        )
+
+        with self.assertRaises(ExecutionStorageError):
+            self.runtime.children.advance_active_recovery_cursor(
+                expected=None, next_cursor=second
+            )
+        self.assertEqual(
+            first, self.runtime.children.active_recovery_cursor()
+        )
 
     async def test_recovery_never_uses_full_namespace_discovery(self):
         await self._build_live_orphan()
