@@ -7,7 +7,7 @@
   },
   "capture_schema_version": 1,
   "manifest_version": 2,
-  "manifest_digest": "sha256:733cec7ddc1ab074d28c05d1d380822c4e27f67186b7a73182ae15abc2fe6674",
+  "manifest_digest": "sha256:b740edeafe05dab6108a8451a7e9cc11428b0a556b90ed39d7485e60392a4f43",
   "captured_at": "2026-08-19T12:00:00Z",
   "captured_by": "synthetic offline fixture maintainer",
   "session_id": "fixture-beta39-current-state-v2",
@@ -72,6 +72,7 @@
         "data.governance.execution_tasks.storage.write_failures": 0,
         "data.governance.execution_tasks.storage.event_write_failures": 0,
         "data.governance.execution_tasks.storage.materialization_failures": 0,
+        "data.governance.approval_authority_version": 3,
         "data.governance.execution_tasks.storage.navigation.nonterminal_record_count": 0,
         "data.governance.f3.status": "recovering",
         "data.governance.f3.execution_ready": true,
@@ -173,9 +174,9 @@
       "evidence": {
         "id": "synthetic-beta34-long-wait",
         "projection.wait_template_count": 1,
-        "projection.wait_template_action_index": 2,
-        "projection.wait_template_length": 240,
-        "projection.wait_template_semantic_digest": "sha256:2024a655652562696d44f4bb18bc33de6e4b86d447c5f5925db6da5fe9ef47f8"
+        "projection.wait_template_action_path": "/action/2",
+        "projection.wait_template_length": 276,
+        "projection.wait_template_semantic_digest": "sha256:a4640bd7bfb8ecc56cc805322192168901234d6492e86906f63104fb5f0d2286"
       },
       "absent_paths": []
     },
@@ -206,13 +207,66 @@
       "status": "captured",
       "evidence": {
         "data.task_id": "ab8d7cd12aad48aab8307ca819c794ca",
+        "data.task_schema_version": 1,
         "data.state": "succeeded_verified",
         "data.terminal_outcome": "succeeded_verified",
         "data.provider_attempt_count": 0,
         "data.dispatched_at": null,
         "data.f3_children.0.state": "created",
-        "data.f3_children.0.dispatch_count": 0,
-        "projection.active_selective_hold_count": 0
+        "data.f3_children.0.dispatch_count": 0
+      },
+      "absent_paths": []
+    },
+    "historical_beta31_map_update_task": {
+      "observation_id": "historical_beta31_map_update_task",
+      "tool": "get_execution_task",
+      "arguments": {"task_id": "31313131313131313131313131313131"},
+      "status": "captured",
+      "evidence": {
+        "data.task_id": "31313131313131313131313131313131",
+        "data.task_schema_version": 1,
+        "data.operation": "update_dashboard",
+        "data.target.target_type": "dashboard",
+        "data.target.target_id": "map",
+        "data.state": "succeeded_verified",
+        "data.terminal_outcome": "succeeded_verified",
+        "data.provider_attempt_count": 1,
+        "data.verification_summary.status": "succeeded_verified"
+      },
+      "absent_paths": []
+    },
+    "historical_beta31_map_cleanup_task": {
+      "observation_id": "historical_beta31_map_cleanup_task",
+      "tool": "get_execution_task",
+      "arguments": {"task_id": "32323232323232323232323232323232"},
+      "status": "captured",
+      "evidence": {
+        "data.task_id": "32323232323232323232323232323232",
+        "data.task_schema_version": 1,
+        "data.operation": "update_dashboard",
+        "data.target.target_type": "dashboard",
+        "data.target.target_id": "map",
+        "data.state": "succeeded_verified",
+        "data.terminal_outcome": "succeeded_verified",
+        "data.provider_attempt_count": 1,
+        "data.verification_summary.status": "succeeded_verified"
+      },
+      "absent_paths": []
+    },
+    "historical_long_template_execution_task": {
+      "observation_id": "historical_long_template_execution_task",
+      "tool": "get_execution_task",
+      "arguments": {"task_id": "34343434343434343434343434343434"},
+      "status": "captured",
+      "evidence": {
+        "data.task_id": "34343434343434343434343434343434",
+        "data.task_schema_version": 1,
+        "data.operation": "configuration_plan",
+        "data.target.target_type": "configuration_plan",
+        "data.state": "succeeded_verified",
+        "data.terminal_outcome": "succeeded_verified",
+        "data.provider_attempt_count": 1,
+        "data.verification_summary.status": "succeeded_verified"
       },
       "absent_paths": []
     },

@@ -1,0 +1,47 @@
+{
+  "contract_version": 1,
+  "source": "HAMCP-089 deficiency register item 22 and reviewed confirmed-regression-pass inventory",
+  "minimum_permanent_sentinels": [
+    "configuration-validation",
+    "dependency-index-complete-coverage",
+    "execution-task-schema-version",
+    "f3-ready-locks-and-recovery",
+    "governance-approval-authority-version",
+    "governance-historical-projection-health",
+    "governance-plan-storage-healthy",
+    "governance-task-storage-healthy",
+    "held-read-remains-held",
+    "held-read-top-level-not-found-taxonomy",
+    "helper-provider-attribution",
+    "home-assistant-connectivity",
+    "home-assistant-version-agreement",
+    "provider-routing-zero-fallback",
+    "runtime-build-provenance",
+    "runtime-server-version",
+    "runtime-tool-accounting",
+    "runtime-tool-accounting-agreement",
+    "upstream-dashboard-zero-fallback",
+    "upstream-ha-mcp-exact-admission",
+    "upstream-read-gateway-zero-fallback"
+  ],
+  "confirmed_regression_passes": [
+    "automation-long-wait-template-readable",
+    "dashboard-hyphenless-map-read",
+    "historical-beta31-map-cleanup-succeeded",
+    "historical-beta31-map-update-succeeded",
+    "historical-long-template-execution-succeeded",
+    "read-delegated-upstream",
+    "read-direct-home-assistant",
+    "read-engineering-native",
+    "stale-state-canary-held-pre-dispatch"
+  ],
+  "known_failures": {
+    "dependency-index-complete-coverage": 1,
+    "f3-ready-locks-and-recovery": 2,
+    "governance-historical-projection-health": 4,
+    "held-read-top-level-not-found-taxonomy": 19
+  },
+  "separately_authorized_canaries": [
+    "helper-no-change-path"
+  ]
+}

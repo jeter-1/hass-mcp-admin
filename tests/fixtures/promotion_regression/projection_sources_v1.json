@@ -1,0 +1,52 @@
+{
+  "fixture_version": 1,
+  "provenance": {
+    "kind": "synthetic_sanitized_source_shaped_fixture",
+    "not_a_live_response": true,
+    "purpose": "Independent deterministic derivation coverage without retaining automation or blueprint response bodies."
+  },
+  "cases": [
+    {
+      "observation": "native_dependency_read",
+      "source": {
+        "failed_obligations": [
+          {
+            "source_type": "blueprint",
+            "source_identity": "Blackshome/sensor-light.yaml",
+            "reason_code": "blueprint_source_limit_exceeded",
+            "count": 2
+          }
+        ],
+        "unique_dependency_source_count": 0
+      },
+      "expected": {
+        "projection.failed_obligation_count": 2,
+        "projection.failed_obligation_signature": "blueprint:Blackshome/sensor-light.yaml:blueprint_source_limit_exceeded:count=2",
+        "projection.failed_obligation_set_fingerprint": "sha256:3541e71bd2fa1f9642264f6631f97b52bd84b713b85e51f08401cd62fbdd44f2",
+        "projection.consequential_dependency_count": 0
+      }
+    },
+    {
+      "observation": "long_wait_template_automation_read",
+      "source": {
+        "id": "synthetic-beta34-long-wait",
+        "action": [
+          {
+            "action": "notify.synthetic",
+            "data": {"message": "Starting sanitized long-wait fixture"}
+          },
+          {"delay": "00:00:01"},
+          {
+            "wait_template": "{% set sample = states('sensor.synthetic_long_wait_source') %}\n{{ sample in ['ready', 'complete'] and\n   is_state('binary_sensor.synthetic_gate', 'on') and\n   (states('sensor.synthetic_counter') | int(0)) >= 1 }}\n{# sanitized source-shaped fixture; no live content retained #}"
+          }
+        ]
+      },
+      "expected": {
+        "projection.wait_template_count": 1,
+        "projection.wait_template_action_path": "/action/2",
+        "projection.wait_template_length": 276,
+        "projection.wait_template_semantic_digest": "sha256:a4640bd7bfb8ecc56cc805322192168901234d6492e86906f63104fb5f0d2286"
+      }
+    }
+  ]
+}

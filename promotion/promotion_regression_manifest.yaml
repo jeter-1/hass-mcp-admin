@@ -23,6 +23,47 @@ target:
     the recorded way and every bounded known-failure check matches. A different
     failure is a regression. No status is changed automatically.
 
+projection_contracts:
+  - id: dependency_evidence_projection_v1
+    version: 1
+    observation: native_dependency_read
+    algorithm: dependency_evidence_v1
+    maximum_source_bytes: 131072
+    output_paths:
+      - projection.failed_obligation_count
+      - projection.failed_obligation_signature
+      - projection.failed_obligation_set_fingerprint
+      - projection.consequential_dependency_count
+    procedure: >-
+      Supply a bounded source-shaped mapping with failed_obligations and
+      unique_dependency_source_count. Each failure contains source_type,
+      source_identity, reason_code, and count. The evaluator validates and
+      lexicographically sorts those tuples, joins normalized signatures with a
+      line-feed byte, sums counts, hashes the exact UTF-8 signature bytes with
+      SHA-256, and treats every unique dependency source as potentially
+      consequential. No automation or blueprint body is retained.
+
+  - id: wait_template_structure_projection_v1
+    version: 1
+    observation: long_wait_template_automation_read
+    algorithm: wait_template_structure_v1
+    maximum_source_bytes: 131072
+    output_paths:
+      - projection.wait_template_count
+      - projection.wait_template_action_path
+      - projection.wait_template_length
+      - projection.wait_template_semantic_digest
+    procedure: >-
+      Supply a bounded source-shaped automation mapping containing only the
+      returned id and material action structure. The evaluator recursively
+      visits mappings by sorted key and sequences by index, encodes locations
+      as RFC 6901 JSON Pointers, and selects the first pointer after canonical
+      ordering. It normalizes CRLF/CR to LF and Unicode to NFC without trimming
+      whitespace. Length is normalized UTF-8 bytes. The semantic digest is
+      SHA-256 over UTF-8 bytes for "wait_template_structure_v1", one NUL byte,
+      the JSON Pointer, one NUL byte, and the normalized template. Node, depth,
+      candidate, template, and aggregate source bounds fail closed.
+
 observations:
   - id: server_identity
     tool: server_info
@@ -118,7 +159,56 @@ observations:
     effect_class: read_only
     procedure: >-
       Read the exact recorded orphan task. Copy only parent/child lifecycle,
-      dispatch count, and bounded selective-hold count.
+      task schema, and dispatch count. Active lock state comes independently
+      from the bounded server-health observation.
+
+  - id: historical_beta31_map_update_task
+    tool: get_execution_task
+    arguments: {}
+    operator_arguments:
+      task_id: {type: string, pattern: "^[a-f0-9]{32}$"}
+    effect_class: read_only
+    target_binding: operator_local
+    target_note: >-
+      Resolve the exact accepted Beta 31 map-update task id from approved
+      historical acceptance evidence. If it cannot be resolved, leave this
+      observation not_captured; never substitute a different dashboard task.
+    procedure: >-
+      Read the exact historical task and copy only identity, task schema,
+      operation, target, terminal state, provider-attempt count, and bounded
+      verification status. Do not retain lifecycle events or plan authority.
+
+  - id: historical_beta31_map_cleanup_task
+    tool: get_execution_task
+    arguments: {}
+    operator_arguments:
+      task_id: {type: string, pattern: "^[a-f0-9]{32}$"}
+    effect_class: read_only
+    target_binding: operator_local
+    target_note: >-
+      Resolve the exact accepted Beta 31 map-cleanup task id from approved
+      historical acceptance evidence. If it cannot be resolved, leave this
+      observation not_captured; never substitute a different dashboard task.
+    procedure: >-
+      Read the exact historical cleanup task and copy only identity, task
+      schema, operation, target, terminal state, provider-attempt count, and
+      bounded verification status. Do not retain lifecycle events or authority.
+
+  - id: historical_long_template_execution_task
+    tool: get_execution_task
+    arguments: {}
+    operator_arguments:
+      task_id: {type: string, pattern: "^[a-f0-9]{32}$"}
+    effect_class: read_only
+    target_binding: operator_local
+    target_note: >-
+      Resolve the exact accepted long-wait-template configuration task id from
+      approved historical acceptance evidence. If unavailable, leave the
+      observation not_captured; never substitute another configuration task.
+    procedure: >-
+      Read the exact historical execution task and copy only identity, task
+      schema, operation, target type, terminal state, provider-attempt count,
+      and bounded verification status. Do not retain configuration or events.
 
   - id: execution_task_inventory
     tool: list_execution_tasks
@@ -318,6 +408,25 @@ sentinels:
       - {path: data.governance.execution_tasks.storage.event_write_failures, operator: equals, value: 0}
       - {path: data.governance.execution_tasks.storage.materialization_failures, operator: equals, value: 0}
 
+  - id: governance-approval-authority-version
+    title: Approval authority remains version 3
+    description: The deployed governance authority must retain the reviewed approval version.
+    register_section: minimum_permanent_sentinels
+    observation: server_health
+    expected_status: expected_pass
+    desired_checks:
+      - {path: data.governance.approval_authority_version, operator: equals, value: 3}
+
+  - id: execution-task-schema-version
+    title: Durable execution tasks remain schema version 1
+    description: An exact bound execution-task read must retain the reviewed persistence schema.
+    register_section: minimum_permanent_sentinels
+    observation: f3_orphan_task
+    expected_status: expected_pass
+    desired_checks:
+      - {path: data.task_id, operator: equals, value: ab8d7cd12aad48aab8307ca819c794ca}
+      - {path: data.task_schema_version, operator: equals, value: 1}
+
   - id: f3-ready-locks-and-recovery
     title: F3 lifecycle and orphan accounting agree
     description: The exact recorded parent and child must terminalize consistently with zero dispatch and no active locks.
@@ -353,7 +462,6 @@ sentinels:
       - {path: data.dispatched_at, operator: equals, value: null, source_observation: f3_orphan_task}
       - {path: data.f3_children.0.state, operator: one_of, values: [created, preflight, dispatching, observing, verifying], source_observation: f3_orphan_task}
       - {path: data.f3_children.0.dispatch_count, operator: equals, value: 0, source_observation: f3_orphan_task}
-      - {path: projection.active_selective_hold_count, operator: equals, value: 0, source_observation: f3_orphan_task}
       - {path: "data.tasks[task_id=ab8d7cd12aad48aab8307ca819c794ca].state", operator: equals_observation_path, source_observation: execution_task_inventory, observation: f3_orphan_task, reference_path: data.state}
 
   - id: governance-historical-projection-health
@@ -474,10 +582,60 @@ sentinels:
     expected_status: expected_pass
     desired_checks:
       - {path: id, operator: equals_invocation_argument, invocation_argument: automation_id}
-      - {path: projection.wait_template_count, operator: gte, value: 1}
-      - {path: projection.wait_template_action_index, operator: present}
-      - {path: projection.wait_template_length, operator: gte, value: 201}
-      - {path: projection.wait_template_semantic_digest, operator: equals, value: "sha256:2024a655652562696d44f4bb18bc33de6e4b86d447c5f5925db6da5fe9ef47f8"}
+      - {path: projection.wait_template_count, operator: equals, value: 1}
+      - {path: projection.wait_template_action_path, operator: equals, value: /action/2}
+      - {path: projection.wait_template_length, operator: equals, value: 276}
+      - {path: projection.wait_template_semantic_digest, operator: equals, value: "sha256:a4640bd7bfb8ecc56cc805322192168901234d6492e86906f63104fb5f0d2286"}
+
+  - id: historical-beta31-map-update-succeeded
+    title: Historical Beta 31 map update remains verified
+    description: The exact accepted map-update task must remain a verified terminal dashboard execution.
+    register_section: confirmed_regression_passes
+    observation: historical_beta31_map_update_task
+    expected_status: expected_pass
+    desired_checks:
+      - {path: data.task_id, operator: equals_invocation_argument, invocation_argument: task_id}
+      - {path: data.task_schema_version, operator: equals, value: 1}
+      - {path: data.operation, operator: equals, value: update_dashboard}
+      - {path: data.target.target_type, operator: equals, value: dashboard}
+      - {path: data.target.target_id, operator: equals, value: map}
+      - {path: data.state, operator: equals, value: succeeded_verified}
+      - {path: data.terminal_outcome, operator: equals, value: succeeded_verified}
+      - {path: data.provider_attempt_count, operator: equals, value: 1}
+      - {path: data.verification_summary.status, operator: equals, value: succeeded_verified}
+
+  - id: historical-beta31-map-cleanup-succeeded
+    title: Historical Beta 31 map cleanup remains verified
+    description: The exact accepted map-cleanup task must remain a verified terminal dashboard execution.
+    register_section: confirmed_regression_passes
+    observation: historical_beta31_map_cleanup_task
+    expected_status: expected_pass
+    desired_checks:
+      - {path: data.task_id, operator: equals_invocation_argument, invocation_argument: task_id}
+      - {path: data.task_schema_version, operator: equals, value: 1}
+      - {path: data.operation, operator: equals, value: update_dashboard}
+      - {path: data.target.target_type, operator: equals, value: dashboard}
+      - {path: data.target.target_id, operator: equals, value: map}
+      - {path: data.state, operator: equals, value: succeeded_verified}
+      - {path: data.terminal_outcome, operator: equals, value: succeeded_verified}
+      - {path: data.provider_attempt_count, operator: equals, value: 1}
+      - {path: data.verification_summary.status, operator: equals, value: succeeded_verified}
+
+  - id: historical-long-template-execution-succeeded
+    title: Historical long-template execution remains verified
+    description: The exact accepted long-template task must remain a verified terminal configuration execution.
+    register_section: confirmed_regression_passes
+    observation: historical_long_template_execution_task
+    expected_status: expected_pass
+    desired_checks:
+      - {path: data.task_id, operator: equals_invocation_argument, invocation_argument: task_id}
+      - {path: data.task_schema_version, operator: equals, value: 1}
+      - {path: data.operation, operator: equals, value: configuration_plan}
+      - {path: data.target.target_type, operator: equals, value: configuration_plan}
+      - {path: data.state, operator: equals, value: succeeded_verified}
+      - {path: data.terminal_outcome, operator: equals, value: succeeded_verified}
+      - {path: data.provider_attempt_count, operator: equals, value: 1}
+      - {path: data.verification_summary.status, operator: equals, value: succeeded_verified}
 
   - id: stale-state-canary-held-pre-dispatch
     title: Exact stale-state canary failed before dispatch
@@ -589,3 +747,36 @@ sentinels:
       - {path: details.canary_evidence.error_contract.structured_code, operator: equals, value: RESOURCE_NOT_FOUND}
       - {path: details.canary_evidence.reviewed_classification_after, operator: equals, value: held_for_canary}
       - {path: details.canary_evidence.fallback_occurred, operator: equals, value: false}
+
+separately_authorized_canaries:
+  - id: helper-no-change-path
+    tool: create_helper_state_plan
+    effect_class: governed_write
+    included_in_default_plan: false
+    separate_authorization_required: true
+    fixed_arguments:
+      entity_id: input_boolean.mcp_f2_standard_admin_test_flag
+      expiration_minutes: 10
+    operator_arguments:
+      desired_state: {type: string, enum: ["on", "off"]}
+    preconditions:
+      - Separately authorize this write-classified canary before invocation.
+      - Read the exact helper immediately before planning and bind desired_state to that observed state.
+      - Accept that a race may still create a governance plan; a preread does not make this call read-only.
+    desired_checks:
+      - {path: success, operator: equals, value: true}
+      - {path: data.status, operator: equals, value: no_change}
+      - {path: data.outcome, operator: equals, value: already_in_desired_state}
+      - {path: data.plan_created, operator: equals, value: false}
+      - {path: data.provider_dispatch_occurred, operator: equals, value: false}
+      - {path: data.verified, operator: equals, value: true}
+      - {path: data.target_id, operator: equals, value: input_boolean.mcp_f2_standard_admin_test_flag}
+      - {path: data.provider, operator: equals, value: direct_home_assistant_state}
+      - {path: data.fallback, operator: equals, value: none}
+      - {path: data.fallback_occurred, operator: equals, value: false}
+    procedure: >-
+      This declaration represents the accepted helper no-change contract but is
+      never rendered into the default plan or capture template and never affects
+      default completeness or classification. A separately authorized operator
+      may execute it only under the preconditions above and must review any plan
+      created by a state race through the ordinary governance lifecycle.

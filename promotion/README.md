@@ -13,7 +13,7 @@ a separate, manual authorization decision.
 
 | File | Purpose |
 | --- | --- |
-| `promotion_regression_manifest.yaml` | Exact target, read-only observations, desired contracts, and bounded known-failure signatures. |
+| `promotion_regression_manifest.yaml` | Exact target, read-only observations, versioned projection and optional-canary declarations, desired contracts, and bounded known-failure signatures. |
 | `manifest_schema.json` | Strict schemas for the manifest and operator capture. |
 | `../scripts/promotion_regression_check.py` | Offline validator, planner, template generator, and classifier. |
 | `../tests/test_promotion_regression_manifest.py` | Offline safety, fidelity, and classification tests. |
@@ -26,9 +26,12 @@ classifies them as read-only. In particular, it does not contain
 `create_helper_state_plan`. A state preread cannot make that proposal tool
 structurally read-only because the state can change before invocation.
 
-Any helper-state transition, no-change proposal, or other write-capable canary
-is outside this pack. It requires separate authorization and must not be added
-to default capture completeness or classification.
+The manifest records the helper no-change contract as a separately authorized
+canary so deficiency #22 remains complete, but that declaration is excluded
+from the default plan, capture template, completeness calculation, and
+classification. Any helper-state transition, no-change proposal, or other
+write-capable canary requires separate authorization. A preread cannot remove
+the race in which `create_helper_state_plan` creates a plan.
 
 The checker itself has no live transport, MCP client, credential access,
 subprocess invocation, or file-writing path. Tests verify both that property and
@@ -53,12 +56,13 @@ authorized operator or interactive agent with appropriate read-only access.
    python scripts/promotion_regression_check.py template > /path/outside/repo/capture.json
    ```
 
-3. Manually invoke each declared read-only tool against the exact target. Bind
-   every operator-local argument in the capture to the value actually invoked.
+3. Manually invoke each declared read-only tool against the exact target. For a
+   captured observation, bind every operator-local argument in the capture to
+   the value actually invoked. If an operator-local identity cannot be resolved,
+   leave the observation `not_captured`, omit that unresolved local argument,
+   and give a bounded reason. Fixed arguments remain mandatory in either state.
    Project only the allowlisted paths shown by `plan` into each observation's
-   flat `evidence` mapping. Record a known-absent field in `absent_paths`. If an
-   observation was not performed, retain `status: not_captured` and give a
-   bounded reason.
+   flat `evidence` mapping. Record a known-absent field in `absent_paths`.
 
 4. Evaluate offline:
 
@@ -77,8 +81,8 @@ provenance. The checker binds it to:
 - exact target release and build SHA;
 - a timezone-aware timestamp;
 - non-placeholder operator and session attribution;
-- exact observation IDs, tool names, fixed arguments, and resolved
-  operator-local arguments.
+- exact observation IDs, tool names, and fixed arguments;
+- every resolved operator-local argument for captured observations.
 
 A mismatched, malformed, placeholder, conflicting, oversized, or incorrectly
 targeted capture is rejected before classification.
@@ -103,6 +107,52 @@ Where material content need not remain readable, record the bounded digest
 specified by the observation procedure. A content change must still change the
 digest. Do not place secrets into a digest preimage retained in the capture.
 Missing required evidence is `NOT_CAPTURED`; it is never inferred as success.
+
+## Deterministic projection derivation
+
+Every non-native `projection.*` field used by a sentinel is covered by exactly
+one versioned `projection_contracts` entry in the manifest. The offline checker
+derives those fields from a minimized, sanitized, source-shaped JSON file:
+
+```bash
+python scripts/promotion_regression_check.py project \
+  --observation native_dependency_read \
+  --source /path/outside/repo/dependency-source.json
+
+python scripts/promotion_regression_check.py project \
+  --observation long_wait_template_automation_read \
+  --source /path/outside/repo/automation-source.json
+```
+
+The source file is temporary operator input, not capture evidence. Keep it
+outside the repository and discard it after checking the derived fields. The
+checker accepts at most 128 KiB, rejects credential-shaped values and sensitive
+field names, and outputs only the declared bounded projection.
+
+`dependency_evidence_v1` accepts only a bounded list of failure records with
+`source_type`, `source_identity`, `reason_code`, and positive `count`, plus the
+native `unique_dependency_source_count`. It validates each value, sorts the
+failure tuples lexicographically, serializes each as
+`source_type:source_identity:reason_code:count=N`, joins multiple records with a
+single LF byte, sums the counts, and hashes the exact UTF-8 signature with
+SHA-256. The unique dependency-source count becomes the conservative
+consequential-dependency count.
+
+`wait_template_structure_v1` recursively walks a sanitized automation mapping.
+Mapping keys are visited in lexical order and sequences in index order. The
+walk is bounded to 4,096 nodes, 24 levels, 100 `wait_template` candidates, and
+60,000 UTF-8 bytes per template. Each containing action is identified by an
+RFC 6901 JSON Pointer; pointers are sorted and the first is selected. The
+template is normalized from CRLF/CR to LF and Unicode NFC without trimming.
+Length is the normalized UTF-8 byte count. The digest preimage is the UTF-8
+algorithm name `wait_template_structure_v1`, NUL, pointer, NUL, and normalized
+template, hashed with SHA-256. Unsupported, malformed, sensitive, or oversized
+source input fails without emitting a projection.
+
+The sanitized source-shaped fixtures under
+`tests/fixtures/promotion_regression/` independently derive every current
+projection twice and require byte-identical results. They are synthetic and do
+not retain live automation or blueprint response bodies.
 
 ## Classification
 
@@ -147,8 +197,15 @@ Exit codes:
   attempts, a null dispatch timestamp, the exact stale-state reason, and no
   success or post-dispatch verification state.
 - The long-automation sentinel records only the selected automation ID and
-  bounded evidence that the expected action is a `wait_template`, including a
-  normalized semantic digest. It does not retain the automation body.
+  bounded evidence that exactly one expected action is a `wait_template`,
+  including its RFC 6901 action path, normalized byte length, and semantic
+  digest. It does not retain the automation body.
+- Approval authority version 3 is read from server health. Durable task schema
+  version 1 is independently bound to the exact orphan execution-task read.
+- The historical Beta 31 map update and cleanup and the historical long-template
+  execution use exact operator-local task identities from approved acceptance
+  evidence. If an identity cannot be resolved, the observation is
+  `NOT_CAPTURED`; a different task must never be substituted.
 - Home Assistant configuration validity comes from the reviewed read-only
   `check_config` capability, not Engineering process health.
 - Held-read status is an expected-pass contract independent of the currently

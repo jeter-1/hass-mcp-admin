@@ -14,6 +14,7 @@ import hashlib
 import json
 import re
 import sys
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -49,6 +50,11 @@ MAX_CAPTURE_BYTES = 256 * 1024
 MAX_OBSERVATION_BYTES = 24 * 1024
 MAX_VALUE_BYTES = 2 * 1024
 MAX_REPORT_BYTES = 96 * 1024
+MAX_PROJECTION_SOURCE_BYTES = 128 * 1024
+MAX_PROJECTION_NODES = 4096
+MAX_PROJECTION_DEPTH = 24
+MAX_PROJECTION_CANDIDATES = 100
+MAX_WAIT_TEMPLATE_BYTES = 60_000
 MAX_FAILED_CHECKS_RENDERED = 12
 
 _SELECTOR = re.compile(
@@ -209,6 +215,70 @@ def _reference_errors(manifest: dict[str, Any]) -> list[str]:
                     )
     for identifier in sorted(set(known) - referenced):
         errors.append(f"observations/{identifier}: no sentinel uses this observation.")
+
+    projection_contracts = manifest.get("projection_contracts") or []
+    contract_ids: set[str] = set()
+    contract_by_observation: dict[str, dict[str, Any]] = {}
+    for contract in projection_contracts:
+        identifier = contract.get("id")
+        observation = contract.get("observation")
+        if identifier in contract_ids:
+            errors.append(f"projection_contracts: duplicate id {identifier!r}.")
+        contract_ids.add(identifier)
+        if observation not in known:
+            errors.append(
+                f"projection_contracts/{identifier}: unknown observation {observation!r}."
+            )
+        if observation in contract_by_observation:
+            errors.append(
+                f"projection_contracts/{identifier}: observation {observation!r} "
+                "already has a projection contract."
+            )
+        contract_by_observation[observation] = contract
+
+    required_projection_paths: dict[str, set[str]] = {}
+    for sentinel in sentinels:
+        primary = sentinel.get("observation")
+        for check in _all_checks(sentinel):
+            if str(check.get("path") or "").startswith("projection."):
+                target = check.get("source_observation", primary)
+                required_projection_paths.setdefault(target, set()).add(check["path"])
+    for observation, paths in sorted(required_projection_paths.items()):
+        contract = contract_by_observation.get(observation)
+        if contract is None:
+            errors.append(
+                f"observations/{observation}: projected fields lack a derivation contract."
+            )
+            continue
+        declared = set(contract.get("output_paths") or [])
+        if declared != paths:
+            errors.append(
+                f"projection_contracts/{contract.get('id')}: output paths must exactly "
+                f"match used projection paths for {observation!r}."
+            )
+    for observation, contract in sorted(contract_by_observation.items()):
+        if observation not in required_projection_paths:
+            errors.append(
+                f"projection_contracts/{contract.get('id')}: no sentinel uses its outputs."
+            )
+
+    canary_ids: set[str] = set()
+    for canary in manifest.get("separately_authorized_canaries") or []:
+        identifier = canary.get("id")
+        if identifier in canary_ids:
+            errors.append(
+                f"separately_authorized_canaries: duplicate id {identifier!r}."
+            )
+        canary_ids.add(identifier)
+        if identifier in seen:
+            errors.append(
+                f"separately_authorized_canaries/{identifier}: must not also be a sentinel."
+            )
+        if canary.get("tool") in {item.get("tool") for item in observations}:
+            errors.append(
+                f"separately_authorized_canaries/{identifier}: write-classified tool "
+                "must not appear in default observations."
+            )
     return errors
 
 
@@ -310,6 +380,7 @@ def validate_capture(
     unknown = sorted(set(entries) - set(declarations))
     if unknown:
         errors.append("observations: undeclared observation ids: " + ", ".join(unknown))
+    captured_task_ids: dict[str, str] = {}
     for identifier, entry in entries.items():
         declaration = declarations.get(identifier)
         if declaration is None or not isinstance(entry, dict):
@@ -327,12 +398,16 @@ def validate_capture(
             continue
         fixed = declaration.get("arguments") or {}
         local = declaration.get("operator_arguments") or {}
-        expected_names = set(fixed) | set(local)
-        if set(arguments) != expected_names:
+        status = entry.get("status")
+        required_names = set(fixed) | (set(local) if status == "captured" else set())
+        allowed_names = set(fixed) | set(local)
+        if not required_names.issubset(arguments) or not set(arguments).issubset(
+            allowed_names
+        ):
             errors.append(
-                f"observations/{identifier}: invocation arguments must be exactly "
-                + ", ".join(sorted(expected_names))
-                + "."
+                f"observations/{identifier}: invocation arguments must contain "
+                + ", ".join(sorted(required_names))
+                + " and no undeclared arguments."
             )
         for name, expected in fixed.items():
             if name not in arguments or not strict_equal(arguments[name], expected):
@@ -350,8 +425,18 @@ def validate_capture(
                 errors.append(
                     f"observations/{identifier}/arguments/{name}: placeholder was not resolved."
                 )
-        if entry.get("status") != "captured":
+        if status != "captured":
             continue
+        if declaration.get("tool") == "get_execution_task":
+            task_id = arguments.get("task_id")
+            if isinstance(task_id, str):
+                previous = captured_task_ids.get(task_id)
+                if previous is not None:
+                    errors.append(
+                        f"observations/{identifier}/arguments/task_id: duplicates "
+                        f"captured task identity used by {previous!r}."
+                    )
+                captured_task_ids[task_id] = identifier
         evidence = entry.get("evidence") or {}
         absent = entry.get("absent_paths") or []
         unexpected_paths = sorted((set(evidence) | set(absent)) - allowed_paths[identifier])
@@ -367,6 +452,237 @@ def validate_capture(
                 + ", ".join(overlap)
             )
     return errors
+
+
+def _projection_contract(
+    manifest: dict[str, Any], observation_id: str
+) -> dict[str, Any]:
+    matches = [
+        item
+        for item in manifest.get("projection_contracts") or []
+        if item.get("observation") == observation_id
+    ]
+    if len(matches) != 1:
+        raise CheckerError(
+            f"Observation {observation_id!r} does not have exactly one projection contract."
+        )
+    return matches[0]
+
+
+def _bounded_projection_text(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise CheckerError(f"Projection source {label} must be a nonempty string.")
+    if len(value.encode("utf-8")) > MAX_VALUE_BYTES:
+        raise CheckerError(
+            f"Projection source {label} exceeds the {MAX_VALUE_BYTES}-byte value bound."
+        )
+    if _SENSITIVE_VALUE.search(value):
+        raise CheckerError(f"Projection source {label} resembles credential material.")
+    return value
+
+
+def _projection_source_errors(value: Any, path: str = "projection_source") -> list[str]:
+    errors: list[str] = []
+    stack: list[tuple[Any, str, int]] = [(value, path, 0)]
+    nodes = 0
+    while stack:
+        item, item_path, depth = stack.pop()
+        if depth > MAX_PROJECTION_DEPTH:
+            errors.append(
+                f"{item_path}: exceeds the {MAX_PROJECTION_DEPTH}-level depth bound."
+            )
+            break
+        nodes += 1
+        if nodes > MAX_PROJECTION_NODES:
+            errors.append(
+                f"{path}: exceeds the {MAX_PROJECTION_NODES}-node bound."
+            )
+            break
+        if isinstance(item, str):
+            maximum = (
+                MAX_WAIT_TEMPLATE_BYTES
+                if item_path.endswith(".wait_template")
+                else MAX_VALUE_BYTES
+            )
+            if len(item.encode("utf-8")) > maximum:
+                errors.append(
+                    f"{item_path}: string exceeds the {maximum}-byte bound."
+                )
+            if _SENSITIVE_VALUE.search(item):
+                errors.append(f"{item_path}: value resembles credential material.")
+        elif isinstance(item, dict):
+            for key in sorted(item, reverse=True):
+                if _SENSITIVE_KEY.search(str(key)):
+                    errors.append(
+                        f"{item_path}.{key}: sensitive field names are not allowed."
+                    )
+                stack.append((item[key], f"{item_path}.{key}", depth + 1))
+        elif isinstance(item, list):
+            for index in range(len(item) - 1, -1, -1):
+                stack.append((item[index], f"{item_path}.{index}", depth + 1))
+    return errors
+
+
+def _derive_dependency_projection(source: Any) -> dict[str, Any]:
+    if not isinstance(source, dict) or set(source) != {
+        "failed_obligations",
+        "unique_dependency_source_count",
+    }:
+        raise CheckerError(
+            "Dependency projection source must contain only failed_obligations "
+            "and unique_dependency_source_count."
+        )
+    obligations = source["failed_obligations"]
+    if not isinstance(obligations, list) or len(obligations) > MAX_PROJECTION_CANDIDATES:
+        raise CheckerError(
+            f"failed_obligations must be a list bounded to {MAX_PROJECTION_CANDIDATES} items."
+        )
+    normalized: list[tuple[str, str, str, int]] = []
+    for index, item in enumerate(obligations):
+        if not isinstance(item, dict) or set(item) != {
+            "source_type",
+            "source_identity",
+            "reason_code",
+            "count",
+        }:
+            raise CheckerError(f"failed_obligations[{index}] has an invalid shape.")
+        count = item["count"]
+        if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 10_000:
+            raise CheckerError(f"failed_obligations[{index}].count is outside bounds.")
+        normalized.append(
+            (
+                _bounded_projection_text(
+                    item["source_type"],
+                    f"failed_obligations[{index}].source_type",
+                ),
+                _bounded_projection_text(
+                    item["source_identity"],
+                    f"failed_obligations[{index}].source_identity",
+                ),
+                _bounded_projection_text(
+                    item["reason_code"],
+                    f"failed_obligations[{index}].reason_code",
+                ),
+                count,
+            )
+        )
+    unique_count = source["unique_dependency_source_count"]
+    if (
+        isinstance(unique_count, bool)
+        or not isinstance(unique_count, int)
+        or not 0 <= unique_count <= 100_000
+    ):
+        raise CheckerError("unique_dependency_source_count is outside bounds.")
+    signatures = [
+        f"{source_type}:{identity}:{reason}:count={count}"
+        for source_type, identity, reason, count in sorted(normalized)
+    ]
+    signature = "\n".join(signatures)
+    digest = hashlib.sha256(signature.encode("utf-8")).hexdigest()
+    return {
+        "projection.failed_obligation_count": sum(item[3] for item in normalized),
+        "projection.failed_obligation_signature": signature,
+        "projection.failed_obligation_set_fingerprint": "sha256:" + digest,
+        "projection.consequential_dependency_count": unique_count,
+    }
+
+
+def _json_pointer_escape(value: str) -> str:
+    return value.replace("~", "~0").replace("/", "~1")
+
+
+def _derive_wait_template_projection(source: Any) -> dict[str, Any]:
+    candidates: list[tuple[str, str]] = []
+    node_count = 0
+
+    def walk(value: Any, pointer: str, depth: int) -> None:
+        nonlocal node_count
+        if depth > MAX_PROJECTION_DEPTH:
+            raise CheckerError(
+                f"Projection source exceeds the {MAX_PROJECTION_DEPTH}-level depth bound."
+            )
+        node_count += 1
+        if node_count > MAX_PROJECTION_NODES:
+            raise CheckerError(
+                f"Projection source exceeds the {MAX_PROJECTION_NODES}-node bound."
+            )
+        if isinstance(value, dict):
+            wait_template = value.get("wait_template")
+            if wait_template is not None:
+                if not isinstance(wait_template, str):
+                    raise CheckerError("wait_template must be a string.")
+                normalized = unicodedata.normalize(
+                    "NFC", wait_template.replace("\r\n", "\n").replace("\r", "\n")
+                )
+                if len(normalized.encode("utf-8")) > MAX_WAIT_TEMPLATE_BYTES:
+                    raise CheckerError(
+                        f"wait_template exceeds the {MAX_WAIT_TEMPLATE_BYTES}-byte bound."
+                    )
+                if _SENSITIVE_VALUE.search(normalized):
+                    raise CheckerError("wait_template resembles credential material.")
+                candidates.append((pointer or "/", normalized))
+                if len(candidates) > MAX_PROJECTION_CANDIDATES:
+                    raise CheckerError(
+                        f"Projection source exceeds the {MAX_PROJECTION_CANDIDATES}-candidate bound."
+                    )
+            for key in sorted(value):
+                walk(
+                    value[key],
+                    pointer + "/" + _json_pointer_escape(str(key)),
+                    depth + 1,
+                )
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                walk(item, pointer + f"/{index}", depth + 1)
+        elif value is not None and not isinstance(value, (str, int, float, bool)):
+            raise CheckerError("Projection source contains an unsupported value type.")
+
+    walk(source, "", 0)
+    if not candidates:
+        raise CheckerError("Projection source does not contain a wait_template action.")
+    candidates.sort(key=lambda item: item[0])
+    pointer, template = candidates[0]
+    preimage = (
+        b"wait_template_structure_v1\0"
+        + pointer.encode("utf-8")
+        + b"\0"
+        + template.encode("utf-8")
+    )
+    return {
+        "projection.wait_template_count": len(candidates),
+        "projection.wait_template_action_path": pointer,
+        "projection.wait_template_length": len(template.encode("utf-8")),
+        "projection.wait_template_semantic_digest": "sha256:"
+        + hashlib.sha256(preimage).hexdigest(),
+    }
+
+
+def derive_projection(
+    manifest: dict[str, Any], observation_id: str, source: Any
+) -> dict[str, Any]:
+    contract = _projection_contract(manifest, observation_id)
+    maximum = min(
+        int(contract["maximum_source_bytes"]), MAX_PROJECTION_SOURCE_BYTES
+    )
+    if _encoded_size(source) > maximum:
+        raise CheckerError(
+            f"Projection source exceeds the {maximum}-byte contract bound."
+        )
+    source_errors = _projection_source_errors(source)
+    if source_errors:
+        raise CheckerError("Projection source is invalid: " + source_errors[0])
+    algorithm = contract["algorithm"]
+    if algorithm == "dependency_evidence_v1":
+        projection = _derive_dependency_projection(source)
+    elif algorithm == "wait_template_structure_v1":
+        projection = _derive_wait_template_projection(source)
+    else:  # validated manifests cannot reach this branch
+        raise CheckerError(f"Unsupported projection algorithm {algorithm!r}.")
+    if set(projection) != set(contract["output_paths"]):
+        raise CheckerError(
+            f"Projection algorithm {algorithm!r} did not produce its exact declared outputs."
+        )
+    return projection
 
 
 @dataclass(frozen=True)
@@ -811,6 +1127,9 @@ def render_plan(manifest: dict[str, Any]) -> str:
             if check.get("operator") == "equals_observation_path":
                 users.setdefault(check["observation"], []).append(sentinel["id"])
     paths = _required_paths(manifest)
+    projection_contracts = {
+        item["observation"]: item for item in manifest.get("projection_contracts") or []
+    }
     target = manifest.get("target") or {}
     lines = [
         "Promotion regression observations (manual, separately authorized, read-only)",
@@ -833,26 +1152,26 @@ def render_plan(manifest: dict[str, Any]) -> str:
             )
         lines.append("     effect class      : read_only")
         lines.append("     procedure         : " + _one_line(observation["procedure"]))
+        projection_contract = projection_contracts.get(observation["id"])
+        if projection_contract is not None:
+            lines.append(
+                "     projection        : "
+                f"{projection_contract['algorithm']} (contract v{projection_contract['version']})"
+            )
+            lines.append(
+                "     derive offline    : python scripts/promotion_regression_check.py "
+                f"project --observation {observation['id']} --source /path/outside/repo/source.json"
+            )
         lines.append("     capture paths     :")
         lines.extend(f"       - {path}" for path in sorted(paths[observation["id"]]))
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _placeholder_for(schema: dict[str, Any], name: str) -> Any:
-    if "const" in schema:
-        return schema["const"]
-    if schema.get("type") == "integer":
-        return schema.get("minimum", 0)
-    return f"REPLACE-WITH-{name.upper()}"
-
-
 def render_template(manifest: dict[str, Any]) -> str:
     observations: dict[str, Any] = {}
     for observation in manifest["observations"]:
         arguments = dict(observation.get("arguments") or {})
-        for name, argument_schema in (observation.get("operator_arguments") or {}).items():
-            arguments[name] = _placeholder_for(argument_schema, name)
         observations[observation["id"]] = {
             "observation_id": observation["id"],
             "tool": observation["tool"],
@@ -890,6 +1209,9 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("validate")
     commands.add_parser("plan")
     commands.add_parser("template")
+    project_parser = commands.add_parser("project")
+    project_parser.add_argument("--observation", required=True)
+    project_parser.add_argument("--source", type=Path, required=True)
     evaluate_parser = commands.add_parser("evaluate")
     evaluate_parser.add_argument("--capture", type=Path, required=True)
     evaluate_parser.add_argument("--format", choices=("text", "json"), default="text")
@@ -916,6 +1238,22 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_OK
         if arguments.command == "template":
             print(render_template(manifest))
+            return EXIT_OK
+        if arguments.command == "project":
+            contract = _projection_contract(manifest, arguments.observation)
+            maximum = min(
+                int(contract["maximum_source_bytes"]), MAX_PROJECTION_SOURCE_BYTES
+            )
+            source = load_json(
+                arguments.source, "projection source", maximum_bytes=maximum
+            )
+            print(
+                json.dumps(
+                    derive_projection(manifest, arguments.observation, source),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
             return EXIT_OK
         capture = load_json(arguments.capture, "capture", maximum_bytes=MAX_CAPTURE_BYTES)
         if not isinstance(capture, dict):

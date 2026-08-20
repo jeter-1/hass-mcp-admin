@@ -20,6 +20,12 @@ README_PATH = ROOT / "promotion" / "README.md"
 FIXTURE_PATH = (
     ROOT / "tests" / "fixtures" / "promotion_regression" / "capture_beta39_current_state.json"
 )
+CONTRACT_PATH = (
+    ROOT / "tests" / "fixtures" / "promotion_regression" / "deficiency22_contract_v1.json"
+)
+PROJECTION_FIXTURE_PATH = (
+    ROOT / "tests" / "fixtures" / "promotion_regression" / "projection_sources_v1.json"
+)
 CAPABILITIES_PATH = (
     ROOT
     / "hass_mcp_engineering_beta"
@@ -32,43 +38,6 @@ UPSTREAM_POLICY_PATH = (
     / "ha_mcp_engineering"
     / "upstream_tool_policy_8_2_0.json"
 )
-
-EXPECTED_SENTINELS = frozenset(
-    {
-        "runtime-server-version",
-        "runtime-build-provenance",
-        "runtime-tool-accounting",
-        "runtime-tool-accounting-agreement",
-        "home-assistant-connectivity",
-        "home-assistant-version-agreement",
-        "upstream-ha-mcp-exact-admission",
-        "upstream-read-gateway-zero-fallback",
-        "upstream-dashboard-zero-fallback",
-        "provider-routing-zero-fallback",
-        "governance-plan-storage-healthy",
-        "governance-task-storage-healthy",
-        "f3-ready-locks-and-recovery",
-        "governance-historical-projection-health",
-        "helper-provider-attribution",
-        "configuration-validation",
-        "read-direct-home-assistant",
-        "read-engineering-native",
-        "read-delegated-upstream",
-        "dashboard-hyphenless-map-read",
-        "automation-long-wait-template-readable",
-        "stale-state-canary-held-pre-dispatch",
-        "dependency-index-complete-coverage",
-        "held-read-remains-held",
-        "held-read-top-level-not-found-taxonomy",
-    }
-)
-KNOWN_FAILURES = {
-    "f3-ready-locks-and-recovery": 2,
-    "governance-historical-projection-health": 4,
-    "dependency-index-complete-coverage": 1,
-    "held-read-top-level-not-found-taxonomy": 19,
-}
-
 
 def _load_checker():
     specification = importlib.util.spec_from_file_location(
@@ -94,6 +63,14 @@ def load_schema() -> dict:
 
 def load_fixture() -> dict:
     return CHECKER.load_json(FIXTURE_PATH, "fixture")
+
+
+def load_contract() -> dict:
+    return CHECKER.load_json(CONTRACT_PATH, "deficiency 22 contract")
+
+
+def load_projection_fixture() -> dict:
+    return CHECKER.load_json(PROJECTION_FIXTURE_PATH, "projection fixture")
 
 
 def evaluate(capture: dict):
@@ -137,14 +114,30 @@ class ManifestStructureTests(unittest.TestCase):
         })
 
     def test_required_sentinels_and_only_bounded_known_failures(self):
+        contract = load_contract()
         sentinels = {item["id"]: item for item in load_manifest()["sentinels"]}
-        self.assertEqual(set(sentinels), EXPECTED_SENTINELS)
+        expected_by_section = {
+            section: set(contract[section])
+            for section in (
+                "minimum_permanent_sentinels",
+                "confirmed_regression_passes",
+            )
+        }
+        actual_by_section = {
+            section: {
+                item["id"]
+                for item in sentinels.values()
+                if item["register_section"] == section
+            }
+            for section in expected_by_section
+        }
+        self.assertEqual(actual_by_section, expected_by_section)
         actual = {
             identifier: item["deficiency"]["register_item"]
             for identifier, item in sentinels.items()
             if item["expected_status"] == "expected_fail"
         }
-        self.assertEqual(actual, KNOWN_FAILURES)
+        self.assertEqual(actual, contract["known_failures"])
         self.assertNotIn(3, actual.values())
         self.assertEqual(
             sentinels["f3-ready-locks-and-recovery"]["deficiency"][
@@ -184,6 +177,21 @@ class ManifestStructureTests(unittest.TestCase):
 
         tools = {item["tool"] for item in load_manifest()["observations"]}
         self.assertNotIn("create_helper_state_plan", tools)
+        canaries = {
+            item["id"]: item
+            for item in load_manifest()["separately_authorized_canaries"]
+        }
+        self.assertEqual(
+            set(canaries), set(load_contract()["separately_authorized_canaries"])
+        )
+        helper = canaries["helper-no-change-path"]
+        self.assertEqual(helper["tool"], "create_helper_state_plan")
+        self.assertIs(helper["included_in_default_plan"], False)
+        self.assertIs(helper["separate_authorization_required"], True)
+        self.assertNotIn("create_helper_state_plan", CHECKER.render_plan(load_manifest()))
+        self.assertNotIn(
+            "create_helper_state_plan", CHECKER.render_template(load_manifest())
+        )
 
     def test_manifest_uses_real_fidelity_contracts(self):
         manifest = load_manifest()
@@ -201,7 +209,7 @@ class ManifestStructureTests(unittest.TestCase):
             {
                 "path": "projection.wait_template_semantic_digest",
                 "operator": "equals",
-                "value": "sha256:2024a655652562696d44f4bb18bc33de6e4b86d447c5f5925db6da5fe9ef47f8",
+                "value": "sha256:a4640bd7bfb8ecc56cc805322192168901234d6492e86906f63104fb5f0d2286",
             },
             wait_checks,
         )
@@ -257,7 +265,7 @@ class ClassificationTests(unittest.TestCase):
                 CHECKER.NOT_CAPTURED: 0,
                 CHECKER.UNEXPECTED_PASS: 0,
                 CHECKER.KNOWN_FAILING: 4,
-                CHECKER.CONFIRMED: 21,
+                CHECKER.CONFIRMED: 26,
             },
         )
         self.assertEqual(
@@ -265,7 +273,7 @@ class ClassificationTests(unittest.TestCase):
                 item.sentinel_id
                 for item in report.by_outcome(CHECKER.KNOWN_FAILING)
             },
-            set(KNOWN_FAILURES),
+            set(load_contract()["known_failures"]),
         )
 
     def test_materially_worse_known_failure_is_a_regression(self):
@@ -338,6 +346,112 @@ class ClassificationTests(unittest.TestCase):
             CHECKER.REGRESSION,
         )
 
+    def test_new_permanent_contracts_regress_independently(self):
+        mutations = (
+            (
+                "governance-approval-authority-version",
+                "server_health",
+                "data.governance.approval_authority_version",
+                2,
+            ),
+            (
+                "execution-task-schema-version",
+                "f3_orphan_task",
+                "data.task_schema_version",
+                2,
+            ),
+            (
+                "historical-beta31-map-update-succeeded",
+                "historical_beta31_map_update_task",
+                "data.state",
+                "failed_pre_dispatch",
+            ),
+            (
+                "historical-beta31-map-cleanup-succeeded",
+                "historical_beta31_map_cleanup_task",
+                "data.state",
+                "failed_pre_dispatch",
+            ),
+            (
+                "historical-long-template-execution-succeeded",
+                "historical_long_template_execution_task",
+                "data.state",
+                "failed_pre_dispatch",
+            ),
+        )
+        for sentinel_id, observation_id, path, value in mutations:
+            with self.subTest(sentinel=sentinel_id):
+                capture = load_fixture()
+                observation(capture, observation_id)["evidence"][path] = value
+                self.assertEqual(
+                    result_for(evaluate(capture), sentinel_id).outcome,
+                    CHECKER.REGRESSION,
+                )
+
+    def test_missing_historical_execution_evidence_is_not_captured(self):
+        cases = (
+            (
+                "historical_beta31_map_update_task",
+                "historical-beta31-map-update-succeeded",
+            ),
+            (
+                "historical_beta31_map_cleanup_task",
+                "historical-beta31-map-cleanup-succeeded",
+            ),
+            (
+                "historical_long_template_execution_task",
+                "historical-long-template-execution-succeeded",
+            ),
+        )
+        for observation_id, sentinel_id in cases:
+            with self.subTest(sentinel=sentinel_id):
+                capture = load_fixture()
+                mark_not_captured(capture, observation_id)
+                observation(capture, observation_id)["arguments"].pop("task_id")
+                report = evaluate(capture)
+                self.assertEqual(
+                    result_for(report, sentinel_id).outcome,
+                    CHECKER.NOT_CAPTURED,
+                )
+                self.assertEqual(CHECKER.exit_code(report), CHECKER.EXIT_INCOMPLETE)
+
+    def test_missing_new_permanent_fields_are_not_captured(self):
+        cases = (
+            (
+                "server_health",
+                "data.governance.approval_authority_version",
+                "governance-approval-authority-version",
+            ),
+            (
+                "f3_orphan_task",
+                "data.task_schema_version",
+                "execution-task-schema-version",
+            ),
+            (
+                "historical_beta31_map_update_task",
+                "data.state",
+                "historical-beta31-map-update-succeeded",
+            ),
+            (
+                "historical_beta31_map_cleanup_task",
+                "data.state",
+                "historical-beta31-map-cleanup-succeeded",
+            ),
+            (
+                "historical_long_template_execution_task",
+                "data.state",
+                "historical-long-template-execution-succeeded",
+            ),
+        )
+        for observation_id, path, sentinel_id in cases:
+            with self.subTest(sentinel=sentinel_id):
+                capture = load_fixture()
+                observation(capture, observation_id)["evidence"].pop(path)
+                self.assertEqual(
+                    result_for(evaluate(capture), sentinel_id).outcome,
+                    CHECKER.NOT_CAPTURED,
+                )
+
 
 class CaptureIdentityTests(unittest.TestCase):
     def assertCaptureInvalid(self, capture: dict, fragment: str) -> None:  # noqa: N802
@@ -375,7 +489,7 @@ class CaptureIdentityTests(unittest.TestCase):
         capture = load_fixture()
         entry = observation(capture, "stale_state_canary_task")
         entry["arguments"].pop("task_id")
-        self.assertCaptureInvalid(capture, "invocation arguments must be exactly")
+        self.assertCaptureInvalid(capture, "invocation arguments must contain")
 
         capture = load_fixture()
         observation(capture, "stale_state_canary_task")["arguments"]["task_id"] = "bad"
@@ -388,6 +502,37 @@ class CaptureIdentityTests(unittest.TestCase):
         self.assertEqual(
             result_for(evaluate(capture), "stale-state-canary-held-pre-dispatch").outcome,
             CHECKER.REGRESSION,
+        )
+
+    def test_unresolved_operator_local_argument_can_remain_not_captured(self):
+        capture = load_fixture()
+        mark_not_captured(capture, "long_wait_template_automation_read")
+        observation(capture, "long_wait_template_automation_read")["arguments"].pop(
+            "automation_id"
+        )
+        report = evaluate(capture)
+        self.assertEqual(
+            result_for(report, "automation-long-wait-template-readable").outcome,
+            CHECKER.NOT_CAPTURED,
+        )
+        self.assertEqual(CHECKER.exit_code(report), CHECKER.EXIT_INCOMPLETE)
+
+        capture = load_fixture()
+        observation(capture, "long_wait_template_automation_read")["arguments"].pop(
+            "automation_id"
+        )
+        self.assertCaptureInvalid(capture, "invocation arguments must contain")
+
+        template = json.loads(CHECKER.render_template(load_manifest()))
+        self.assertEqual(
+            template["observations"]["long_wait_template_automation_read"][
+                "arguments"
+            ],
+            {},
+        )
+        self.assertEqual(
+            template["observations"]["server_identity"]["arguments"],
+            {"check_ha": True},
         )
 
     def test_unknown_conflicting_and_duplicate_observation_evidence_is_rejected(self):
@@ -409,6 +554,15 @@ class CaptureIdentityTests(unittest.TestCase):
             with self.assertRaises(CHECKER.CheckerError) as raised:
                 CHECKER.load_json(path, "capture")
         self.assertIn("duplicate key", str(raised.exception))
+
+        capture = load_fixture()
+        duplicate = observation(capture, "historical_beta31_map_update_task")[
+            "arguments"
+        ]["task_id"]
+        entry = observation(capture, "historical_beta31_map_cleanup_task")
+        entry["arguments"]["task_id"] = duplicate
+        entry["evidence"]["data.task_id"] = duplicate
+        self.assertCaptureInvalid(capture, "duplicates captured task identity")
 
 
 class SentinelFidelityTests(unittest.TestCase):
@@ -499,6 +653,88 @@ class SentinelFidelityTests(unittest.TestCase):
 
 
 class BoundsAndDeterminismTests(unittest.TestCase):
+    def test_projection_derivation_matches_sanitized_source_fixtures(self):
+        manifest = load_manifest()
+        for case in load_projection_fixture()["cases"]:
+            with self.subTest(observation=case["observation"]):
+                first = CHECKER.derive_projection(
+                    manifest, case["observation"], copy.deepcopy(case["source"])
+                )
+                second = CHECKER.derive_projection(
+                    manifest, case["observation"], copy.deepcopy(case["source"])
+                )
+                self.assertEqual(first, case["expected"])
+                self.assertEqual(first, second)
+                self.assertEqual(
+                    json.dumps(first, sort_keys=True, separators=(",", ":")),
+                    json.dumps(second, sort_keys=True, separators=(",", ":")),
+                )
+
+    def test_material_projection_sources_change_the_projection(self):
+        manifest = load_manifest()
+        cases = {
+            item["observation"]: item
+            for item in load_projection_fixture()["cases"]
+        }
+        dependency = cases["native_dependency_read"]
+        changed_dependency = copy.deepcopy(dependency["source"])
+        changed_dependency["failed_obligations"][0]["source_identity"] = (
+            "Blackshome/changed-sensor-light.yaml"
+        )
+        self.assertNotEqual(
+            CHECKER.derive_projection(
+                manifest, dependency["observation"], changed_dependency
+            ),
+            dependency["expected"],
+        )
+
+        wait = cases["long_wait_template_automation_read"]
+        changed_wait = copy.deepcopy(wait["source"])
+        changed_wait["action"][2]["wait_template"] += "\n"
+        changed_projection = CHECKER.derive_projection(
+            manifest, wait["observation"], changed_wait
+        )
+        self.assertNotEqual(
+            changed_projection["projection.wait_template_semantic_digest"],
+            wait["expected"]["projection.wait_template_semantic_digest"],
+        )
+        moved_wait = copy.deepcopy(wait["source"])
+        moved_wait["action"].insert(0, {"delay": "00:00:02"})
+        moved_projection = CHECKER.derive_projection(
+            manifest, wait["observation"], moved_wait
+        )
+        self.assertEqual(
+            moved_projection["projection.wait_template_action_path"], "/action/3"
+        )
+        self.assertNotEqual(
+            moved_projection["projection.wait_template_semantic_digest"],
+            wait["expected"]["projection.wait_template_semantic_digest"],
+        )
+
+    def test_projection_sources_are_bounded_and_sanitized(self):
+        manifest = load_manifest()
+        source = {
+            "failed_obligations": [
+                {
+                    "source_type": "blueprint",
+                    "source_identity": "x" * (CHECKER.MAX_VALUE_BYTES + 1),
+                    "reason_code": "failure",
+                    "count": 1,
+                }
+            ],
+            "unique_dependency_source_count": 0,
+        }
+        with self.assertRaises(CHECKER.CheckerError) as raised:
+            CHECKER.derive_projection(manifest, "native_dependency_read", source)
+        self.assertIn("string exceeds", str(raised.exception))
+
+        source["failed_obligations"][0]["source_identity"] = (
+            "Bearer abcdefghijklmnopqrstuvwxyz"
+        )
+        with self.assertRaises(CHECKER.CheckerError) as raised:
+            CHECKER.derive_projection(manifest, "native_dependency_read", source)
+        self.assertIn("credential material", str(raised.exception))
+
     def test_oversized_and_sensitive_capture_content_is_rejected(self):
         capture = load_fixture()
         observation(capture, "home_assistant_configuration_validation")["evidence"][
@@ -547,6 +783,7 @@ class BoundsAndDeterminismTests(unittest.TestCase):
             CHECKER.canonical_manifest_digest(load_manifest()),
         )
         self.assertEqual(CHECKER.render_template(manifest), CHECKER.render_template(manifest))
+        self.assertEqual(CHECKER.render_plan(manifest), CHECKER.render_plan(manifest))
         fixture = load_fixture()
         first = json.dumps(fixture, sort_keys=True, separators=(",", ":"))
         second = json.dumps(load_fixture(), sort_keys=True, separators=(",", ":"))

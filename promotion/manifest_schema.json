@@ -4,7 +4,10 @@
   "title": "HA MCP Engineering promotion regression manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["manifest_version", "target", "observations", "sentinels"],
+  "required": [
+    "manifest_version", "target", "projection_contracts", "observations",
+    "sentinels", "separately_authorized_canaries"
+  ],
   "properties": {
     "manifest_version": {"const": 2},
     "target": {
@@ -26,14 +29,76 @@
       "maxItems": 40,
       "items": {"$ref": "#/$defs/observation"}
     },
+    "projection_contracts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {"$ref": "#/$defs/projection_contract"}
+    },
     "sentinels": {
       "type": "array",
       "minItems": 1,
       "maxItems": 80,
       "items": {"$ref": "#/$defs/sentinel"}
+    },
+    "separately_authorized_canaries": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {"$ref": "#/$defs/separately_authorized_canary"}
     }
   },
   "$defs": {
+    "projection_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "version", "observation", "algorithm", "maximum_source_bytes",
+        "output_paths", "procedure"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$", "maxLength": 100},
+        "version": {"const": 1},
+        "observation": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$"},
+        "algorithm": {"enum": ["dependency_evidence_v1", "wait_template_structure_v1"]},
+        "maximum_source_bytes": {"type": "integer", "minimum": 1024, "maximum": 262144},
+        "output_paths": {
+          "type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^projection\\.[a-z0-9_]+$", "maxLength": 160}
+        },
+        "procedure": {"type": "string", "minLength": 40, "maxLength": 3000}
+      }
+    },
+    "separately_authorized_canary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "tool", "effect_class", "included_in_default_plan",
+        "separate_authorization_required", "fixed_arguments", "operator_arguments",
+        "preconditions", "desired_checks", "procedure"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": 100},
+        "tool": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$", "maxLength": 128},
+        "effect_class": {"const": "governed_write"},
+        "included_in_default_plan": {"const": false},
+        "separate_authorization_required": {"const": true},
+        "fixed_arguments": {"type": "object", "maxProperties": 20},
+        "operator_arguments": {
+          "type": "object", "minProperties": 1, "maxProperties": 10,
+          "additionalProperties": {"type": "object"}
+        },
+        "preconditions": {
+          "type": "array", "minItems": 1, "maxItems": 20,
+          "items": {"type": "string", "minLength": 10, "maxLength": 500}
+        },
+        "desired_checks": {
+          "type": "array", "minItems": 1, "maxItems": 20,
+          "items": {"$ref": "#/$defs/check"}
+        },
+        "procedure": {"type": "string", "minLength": 40, "maxLength": 3000}
+      }
+    },
     "observation": {
       "type": "object",
       "additionalProperties": false,
