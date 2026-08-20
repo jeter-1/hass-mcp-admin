@@ -40,6 +40,10 @@ RECOVERY_CURSOR_FILE = ".recovery-declaration-cursor.json"
 ACTIVE_RECOVERY_CURSOR_MODEL = "f3-active-recovery-cursor-v1"
 ACTIVE_RECOVERY_CURSOR_SCHEMA_VERSION = 1
 ACTIVE_RECOVERY_CURSOR_FILE = ".active-recovery-cursor.json"
+ACTIVE_RECOVERY_CHECKPOINT_MODEL = "f3-active-recovery-checkpoint-v1"
+ACTIVE_RECOVERY_CHECKPOINT_SCHEMA_VERSION = 1
+ACTIVE_RECOVERY_CHECKPOINT_FILE = ".active-recovery-checkpoint.json"
+ACTIVE_RECOVERY_CHECKPOINT_LIMIT = 16
 RECOVERY_DECLARATION_PAGE_SIZE = 1_024
 
 
@@ -199,6 +203,9 @@ class ChildExecutionRepository(DurableExecutionRepository):
         self.recovery_cursor_path = self.root / RECOVERY_CURSOR_FILE
         self.active_recovery_cursor_path = (
             self.root / ACTIVE_RECOVERY_CURSOR_FILE
+        )
+        self.active_recovery_checkpoint_path = (
+            self.root / ACTIVE_RECOVERY_CHECKPOINT_FILE
         )
         self.retention_days = retention_days
         self.metrics = metrics or ExecutorMetrics()
@@ -740,6 +747,117 @@ class ChildExecutionRepository(DurableExecutionRepository):
             return self._read_active_recovery_cursor_unlocked()
 
     @staticmethod
+    def _validate_active_recovery_checkpoint(
+        value: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        if (
+            not isinstance(value, dict)
+            or set(value) != {"model", "schema_version", "candidates"}
+            or value["model"] != ACTIVE_RECOVERY_CHECKPOINT_MODEL
+            or value["schema_version"]
+            != ACTIVE_RECOVERY_CHECKPOINT_SCHEMA_VERSION
+            or not isinstance(value["candidates"], list)
+            or not 1
+            <= len(value["candidates"])
+            <= ACTIVE_RECOVERY_CHECKPOINT_LIMIT
+        ):
+            raise ExecutionRecordCorrupt(
+                "F3 active recovery checkpoint is corrupt"
+            )
+        candidates: list[dict[str, Any]] = []
+        child_ids: set[str] = set()
+        for item in value["candidates"]:
+            if not isinstance(item, dict) or set(item) != {
+                "public_task_id",
+                "child_id",
+                "operation_id",
+                "operation_ordinal",
+                "attempt_id",
+                "declaration_hash",
+            }:
+                raise ExecutionRecordCorrupt(
+                    "F3 active recovery checkpoint is corrupt"
+                )
+            try:
+                for name in (
+                    "public_task_id",
+                    "child_id",
+                    "operation_id",
+                    "attempt_id",
+                ):
+                    validate_identifier(item[name], field_name=name)
+                validate_sha256(
+                    item["declaration_hash"],
+                    field_name="declaration_hash",
+                )
+                ordinal = item["operation_ordinal"]
+                if type(ordinal) is not int or not 0 <= ordinal < 8:
+                    raise ValueError
+                if item["child_id"] in child_ids:
+                    raise ValueError
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ExecutionRecordCorrupt(
+                    "F3 active recovery checkpoint is corrupt"
+                ) from exc
+            child_ids.add(item["child_id"])
+            candidates.append(dict(item))
+        return {
+            "model": ACTIVE_RECOVERY_CHECKPOINT_MODEL,
+            "schema_version": ACTIVE_RECOVERY_CHECKPOINT_SCHEMA_VERSION,
+            "candidates": candidates,
+        }
+
+    def _read_active_recovery_checkpoint_unlocked(
+        self,
+    ) -> dict[str, Any] | None:
+        try:
+            value = json.loads(
+                self.active_recovery_checkpoint_path.read_text(
+                    encoding="utf-8"
+                )
+            )
+        except FileNotFoundError:
+            return None
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ExecutionRecordCorrupt(
+                "F3 active recovery checkpoint is corrupt"
+            ) from exc
+        return self._validate_active_recovery_checkpoint(value)
+
+    def active_recovery_checkpoint(self) -> dict[str, Any] | None:
+        """Return bounded, non-authoritative pending recovery navigation."""
+
+        with self._exclusive_transaction():
+            return self._read_active_recovery_checkpoint_unlocked()
+
+    @classmethod
+    def active_recovery_checkpoint_for_candidates(
+        cls, declarations: Iterable[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        candidates = [
+            {
+                "public_task_id": item["public_task_id"],
+                "child_id": item["child_id"],
+                "operation_id": item["operation_id"],
+                "operation_ordinal": item["operation_ordinal"],
+                "attempt_id": item["attempt_id"],
+                "declaration_hash": item["declaration_hash"],
+            }
+            for item in declarations
+        ]
+        if not candidates:
+            return None
+        return cls._validate_active_recovery_checkpoint(
+            {
+                "model": ACTIVE_RECOVERY_CHECKPOINT_MODEL,
+                "schema_version": ACTIVE_RECOVERY_CHECKPOINT_SCHEMA_VERSION,
+                "candidates": candidates,
+            }
+        )
+
+    @staticmethod
     def active_recovery_cursor_for_task(
         public_task_id: str,
     ) -> dict[str, Any]:
@@ -906,6 +1024,45 @@ class ChildExecutionRepository(DurableExecutionRepository):
             self._atomic_write(
                 self.active_recovery_cursor_path, validated_next
             )
+
+    def replace_active_recovery_checkpoint(
+        self,
+        *,
+        expected: dict[str, Any] | None,
+        next_checkpoint: dict[str, Any] | None,
+    ) -> None:
+        """CAS bounded pending navigation without granting recovery authority."""
+
+        validated_expected = self._validate_active_recovery_checkpoint(
+            expected
+        )
+        validated_next = self._validate_active_recovery_checkpoint(
+            next_checkpoint
+        )
+        if validated_next == validated_expected:
+            return
+        with self._exclusive_transaction():
+            current = self._read_active_recovery_checkpoint_unlocked()
+            if current != validated_expected:
+                raise ExecutionStorageError(
+                    "F3 active recovery checkpoint changed concurrently"
+                )
+            if validated_next is not None:
+                self._atomic_write(
+                    self.active_recovery_checkpoint_path, validated_next
+                )
+                return
+            try:
+                self.active_recovery_checkpoint_path.unlink(missing_ok=True)
+                directory_fd = os.open(self.root, os.O_RDONLY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+            except OSError as exc:
+                raise ExecutionStorageError(
+                    "atomic active recovery checkpoint removal failed"
+                ) from exc
 
     def update_runtime(self, child_id: str, *, changes: dict[str, Any]) -> dict[str, Any]:
         allowed = {

@@ -172,10 +172,33 @@ filtered to exact `f3_child_sequence` authority before applying the reviewed
 1,024-public-task bound. Unrelated legacy tasks therefore cannot consume the
 F3 result limit. This index and its dedicated cursor are scheduling evidence
 only: the coordinator reloads and validates the exact public task, manifest,
-declaration, child record, and runtime state before recovery. A missing or
-contradictory authority fails closed. The active cursor makes an ineligible
-prefix restart-fair and is not advanced past discovered eligible work; a
-removed or terminal cursor target safely restarts from the bounded F3 set.
+declaration, child record, runtime/backoff state, attempt, operation, dispatch
+intent, and dispatch count before recovery. A missing or contradictory
+authority fails closed. The active cursor makes an ineligible prefix
+restart-fair and advances past eligible work only after that work is processed
+or placed in the bounded durable checkpoint described below; a removed or
+terminal cursor target safely restarts from the bounded F3 set.
+
+Active discovery and recovery share the same five-second envelope. Discovery
+therefore persists up to the batch limit of 16 selected post-intent identities
+in `f3-active-recovery-checkpoint-v1` before attempting recovery. The
+checkpoint contains only public-task, child, operation, ordinal, attempt, and
+declaration-hash navigation evidence. It is not an authority index and cannot
+authorize execution. On the next sweep checkpointed post-intent work is
+reloaded and considered before any further namespace scan. Removed,
+terminalized, backed-off, replaced, or authority-mismatched entries are skipped
+according to current durable state and cannot block later work.
+
+If discovery reaches the deadline immediately after finding one eligible
+post-intent child, that child is attempted first on the next sweep. A checkpoint
+holding multiple eligible children retains immutable-deadline and deterministic
+task/operation/child ordering; batch overflow remains directly reachable on a
+later sweep. A crash before checkpoint persistence leaves the active cursor
+unchanged. A crash after persistence resumes from the checkpoint. A crash after
+a transition but before checkpoint or cursor cleanup revalidates the now-current
+record and cannot redispatch. Checkpoint replacement and both cursors use atomic
+compare-and-swap, so concurrency conflicts fail without losing authority or
+making skipped work unreachable.
 
 Deadline-bearing post-intent candidates receive all available batch and time
 capacity before historical cleanup can reserve a transition. If fewer than 16
@@ -220,6 +243,14 @@ Physical lock disposition completes before runtime token projections are
 cleared. A crash after cancellation, lock release, token cleanup, or audit
 delivery therefore converges on a later sweep without redispatch or releasing a
 different generation.
+
+The five-second value is a stopping boundary for starting further discovery or
+recovery work, not a claim that the operating system can interrupt one atomic
+fsync or that an already-authorized external observation can always be
+cancelled safely at exactly five seconds. Such an individual operation may
+finish after the boundary; the coordinator starts no subsequent transition in
+that sweep, preserves the remaining checkpoint, and resumes on a later sweep.
+This limitation does not extend immutable evidence deadlines.
 
 A child that never received an execution record has nothing to terminalize and
 is projected as `cancelled_pre_dispatch` under such a parent. The public

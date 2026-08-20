@@ -356,6 +356,19 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         self.runtime = restarted
         return restarted
 
+    def _store_active_checkpoint(self, *declarations):
+        expected = self.runtime.children.active_recovery_checkpoint()
+        checkpoint = (
+            self.runtime.children.active_recovery_checkpoint_for_candidates(
+                declarations
+            )
+        )
+        self.runtime.children.replace_active_recovery_checkpoint(
+            expected=expected,
+            next_checkpoint=checkpoint,
+        )
+        return checkpoint
+
     async def _post_intent_active_child(
         self, target_id="active_recovery_target"
     ):
@@ -1619,6 +1632,558 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
             {item["child_id"] for item in declarations}, set(order)
         )
 
+    async def test_post_intent_discovery_budget_exhaustion_checkpoints_progress(
+        self,
+    ):
+        _task, target = await self._post_intent_active_child(
+            "rr13_discovered_post_intent"
+        )
+        _task, backed_off = await self._preintent_active_child(
+            "rr13_newer_backed_off"
+        )
+        self.runtime.children.update_runtime(
+            backed_off["child_id"],
+            changes={
+                "backoff_seconds": 30,
+                "next_eligible_at": (
+                    self.service.now() + timedelta(seconds=30)
+                ).isoformat(),
+            },
+        )
+        before_writes = sum(
+            item[0] == "write" for item in self.gateway.calls
+        )
+        ticks = iter((0.0, 0.0, 0.0, 0.0, 6.0))
+        self.runtime._recovery_monotonic = lambda: next(ticks, 6.0)
+
+        first = await self.runtime.recover_once("periodic")
+
+        self.assertEqual(0, first["active_recovery_transitions"])
+        checkpoint_reader = getattr(
+            self.runtime.children, "active_recovery_checkpoint", None
+        )
+        checkpoint = (
+            None if checkpoint_reader is None else checkpoint_reader()
+        )
+        self.assertFalse(
+            self.runtime.children.get(target["child_id"]).terminal
+        )
+
+        ticks = iter((0.0, 0.0, 0.0, 0.0, 6.0))
+        self.runtime._recovery_monotonic = lambda: next(ticks, 6.0)
+        second = await self.runtime.recover_once("periodic")
+
+        record = self.runtime.children.get(target["child_id"])
+        self.assertEqual(1, second["active_recovery_transitions"])
+        self.assertEqual(
+            [target["child_id"]],
+            [item["child_id"] for item in checkpoint["candidates"]],
+        )
+        self.assertTrue(
+            record.terminal
+            or any(
+                item["event_type"] == "recovery_claimed"
+                for item in record.events
+            )
+        )
+        self.assertEqual(1, record.dispatch_count)
+        self.assertEqual(
+            before_writes,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+
+    async def test_budget_exhausted_before_discovery_retries_next_sweep(self):
+        _task, target = await self._post_intent_active_child(
+            "rr13_before_discovery_budget"
+        )
+        before_cursor = self.runtime.children.active_recovery_cursor()
+        ticks = iter((0.0, 0.0, 6.0))
+        self.runtime._recovery_monotonic = lambda: next(ticks, 6.0)
+
+        first = await self.runtime.recover_once("periodic")
+
+        self.assertEqual(0, first["active_tasks_examined"])
+        self.assertEqual(0, first["active_recovery_transitions"])
+        self.assertEqual(
+            before_cursor, self.runtime.children.active_recovery_cursor()
+        )
+        self.assertIsNone(
+            self.runtime.children.active_recovery_checkpoint()
+        )
+
+        self.runtime._recovery_monotonic = lambda: 0.0
+        second = await self.runtime.recover_once("periodic")
+
+        self.assertEqual(1, second["active_recovery_transitions"])
+        self.assertEqual(
+            1, self.runtime.children.get(target["child_id"]).dispatch_count
+        )
+        self.assertEqual(
+            0, sum(item[0] == "write" for item in self.gateway.calls)
+        )
+
+    async def test_discovered_checkpoint_survives_restart_before_recovery(self):
+        _task, target = await self._post_intent_active_child(
+            "rr13_restart_checkpoint"
+        )
+        before_writes = sum(
+            item[0] == "write" for item in self.gateway.calls
+        )
+        ticks = iter((0.0, 0.0, 0.0, 6.0))
+        self.runtime._recovery_monotonic = lambda: next(ticks, 6.0)
+
+        first = await self.runtime.recover_once("periodic")
+        checkpoint = self.runtime.children.active_recovery_checkpoint()
+        self.assertEqual(0, first["active_recovery_transitions"])
+        self.assertEqual(target["child_id"], checkpoint["candidates"][0]["child_id"])
+
+        self._restart_runtime()
+        self.runtime._recovery_monotonic = lambda: 0.0
+        self.assertEqual(
+            checkpoint, self.runtime.children.active_recovery_checkpoint()
+        )
+        second = await self.runtime.recover_once("startup")
+
+        record = self.runtime.children.get(target["child_id"])
+        self.assertEqual(1, second["active_recovery_transitions"])
+        self.assertEqual(1, record.dispatch_count)
+        self.assertIsNone(
+            self.runtime.children.active_recovery_checkpoint()
+        )
+        self.assertEqual(
+            before_writes,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+
+    async def test_checkpoint_crash_boundaries_remain_replay_safe(self):
+        _task, before_persist = await self._post_intent_active_child(
+            "rr13_crash_before_checkpoint"
+        )
+        original_replace = (
+            self.runtime.children.replace_active_recovery_checkpoint
+        )
+
+        def crash_before_checkpoint(*, expected, next_checkpoint):
+            if next_checkpoint is not None:
+                raise SystemExit("simulated crash before checkpoint")
+            return original_replace(
+                expected=expected, next_checkpoint=next_checkpoint
+            )
+
+        with patch.object(
+            self.runtime.children,
+            "replace_active_recovery_checkpoint",
+            side_effect=crash_before_checkpoint,
+        ):
+            with self.assertRaises(SystemExit):
+                await self.runtime.recover_once("periodic")
+        self.assertIsNone(
+            self.runtime.children.active_recovery_checkpoint()
+        )
+
+        self._restart_runtime()
+        recovered = await self.runtime.recover_once("startup")
+        self.assertEqual(1, recovered["active_recovery_transitions"])
+        self.assertEqual(
+            1,
+            self.runtime.children.get(before_persist["child_id"]).dispatch_count,
+        )
+
+    async def test_crash_after_checkpoint_persistence_resumes_without_dispatch(
+        self,
+    ):
+        _task, after_persist = await self._post_intent_active_child(
+            "rr13_crash_after_checkpoint"
+        )
+        original_replace = (
+            self.runtime.children.replace_active_recovery_checkpoint
+        )
+
+        def crash_after_checkpoint(*, expected, next_checkpoint):
+            result = original_replace(
+                expected=expected, next_checkpoint=next_checkpoint
+            )
+            if next_checkpoint is not None:
+                raise SystemExit("simulated crash after checkpoint")
+            return result
+
+        with patch.object(
+            self.runtime.children,
+            "replace_active_recovery_checkpoint",
+            side_effect=crash_after_checkpoint,
+        ):
+            with self.assertRaises(SystemExit):
+                await self.runtime.recover_once("periodic")
+        self.assertEqual(
+            after_persist["child_id"],
+            self.runtime.children.active_recovery_checkpoint()["candidates"][0][
+                "child_id"
+            ],
+        )
+
+        self._restart_runtime()
+        resumed = await self.runtime.recover_once("startup")
+        record = self.runtime.children.get(after_persist["child_id"])
+        self.assertEqual(1, resumed["active_recovery_transitions"])
+        self.assertEqual(1, record.dispatch_count)
+        self.assertEqual(
+            0, sum(item[0] == "write" for item in self.gateway.calls)
+        )
+
+    async def test_post_intent_transition_crash_before_cursor_is_replay_safe(self):
+        _task, target = await self._post_intent_active_child(
+            "rr13_transition_before_cursor"
+        )
+        before_writes = sum(
+            item[0] == "write" for item in self.gateway.calls
+        )
+
+        with patch.object(
+            self.runtime.children,
+            "advance_active_recovery_cursor",
+            side_effect=SystemExit("simulated crash before cursor advance"),
+        ):
+            with self.assertRaises(SystemExit):
+                await self.runtime.recover_once("periodic")
+
+        self._restart_runtime()
+        await self.runtime.recover_once("startup")
+        record = self.runtime.children.get(target["child_id"])
+        self.assertEqual(1, record.dispatch_count)
+        self.assertEqual(
+            before_writes,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+
+    async def test_checkpoint_compare_and_swap_conflict_loses_no_candidate(self):
+        _task, target = await self._post_intent_active_child(
+            "rr13_checkpoint_cas"
+        )
+        original_replace = (
+            self.runtime.children.replace_active_recovery_checkpoint
+        )
+        conflict = {"raised": False}
+
+        def conflict_once(*, expected, next_checkpoint):
+            if next_checkpoint is not None and not conflict["raised"]:
+                conflict["raised"] = True
+                raise ExecutionStorageError(
+                    "synthetic checkpoint compare-and-swap conflict"
+                )
+            return original_replace(
+                expected=expected, next_checkpoint=next_checkpoint
+            )
+
+        with patch.object(
+            self.runtime.children,
+            "replace_active_recovery_checkpoint",
+            side_effect=conflict_once,
+        ):
+            with self.assertRaises(ExecutionStorageError):
+                await self.runtime.recover_once("periodic")
+        self.assertIsNone(
+            self.runtime.children.active_recovery_checkpoint()
+        )
+
+        result = await self.runtime.recover_once("periodic")
+
+        self.assertEqual(1, result["active_recovery_transitions"])
+        self.assertEqual(
+            1, self.runtime.children.get(target["child_id"]).dispatch_count
+        )
+        self.assertEqual(
+            0, sum(item[0] == "write" for item in self.gateway.calls)
+        )
+
+    async def test_dense_ineligible_prefix_checkpoints_monotonic_progress(self):
+        _task, target = await self._post_intent_active_child(
+            "rr13_dense_prefix_target"
+        )
+        for index in range(5):
+            _task, backed_off = await self._preintent_active_child(
+                f"rr13_dense_prefix_{index}"
+            )
+            self.runtime.children.update_runtime(
+                backed_off["child_id"],
+                changes={
+                    "backoff_seconds": 30,
+                    "next_eligible_at": (
+                        self.service.now() + timedelta(seconds=30)
+                    ).isoformat(),
+                },
+            )
+        ticks = iter((*([0.0] * 8), 6.0))
+        self.runtime._recovery_monotonic = lambda: next(ticks, 6.0)
+
+        first = await self.runtime.recover_once("periodic")
+
+        self.assertEqual(0, first["active_recovery_transitions"])
+        self.assertEqual(6, first["active_tasks_examined"])
+        self.assertEqual(
+            target["child_id"],
+            self.runtime.children.active_recovery_checkpoint()["candidates"][0][
+                "child_id"
+            ],
+        )
+        self.assertIsNotNone(
+            self.runtime.children.active_recovery_cursor()
+        )
+
+        self.runtime._recovery_monotonic = lambda: 0.0
+        second = await self.runtime.recover_once("periodic")
+
+        self.assertEqual(1, second["active_recovery_transitions"])
+        self.assertEqual(
+            1, self.runtime.children.get(target["child_id"]).dispatch_count
+        )
+
+    async def test_checkpoint_scan_persists_progress_before_time_exhaustion(self):
+        _task, backed_off = await self._post_intent_active_child(
+            "rr13_checkpoint_backed_off"
+        )
+        self._release_fixture_locks(backed_off["child_id"])
+        _task, target = await self._post_intent_active_child(
+            "rr13_checkpoint_after_prefix"
+        )
+        self._store_active_checkpoint(backed_off, target)
+        self.runtime.children.update_runtime(
+            backed_off["child_id"],
+            changes={
+                "backoff_seconds": 30,
+                "next_eligible_at": (
+                    self.service.now() + timedelta(seconds=30)
+                ).isoformat(),
+            },
+        )
+        ticks = iter((0.0, 0.0, 6.0))
+        self.runtime._recovery_monotonic = lambda: next(ticks, 6.0)
+
+        first = await self.runtime.recover_once("periodic")
+
+        self.assertEqual(0, first["active_recovery_transitions"])
+        self.assertEqual(
+            [target["child_id"]],
+            [
+                item["child_id"]
+                for item in self.runtime.children.active_recovery_checkpoint()[
+                    "candidates"
+                ]
+            ],
+        )
+
+        self.runtime._recovery_monotonic = lambda: 0.0
+        second = await self.runtime.recover_once("periodic")
+
+        self.assertEqual(1, second["active_recovery_transitions"])
+        self.assertEqual(
+            1, self.runtime.children.get(target["child_id"]).dispatch_count
+        )
+        self.assertEqual(
+            0, sum(item[0] == "write" for item in self.gateway.calls)
+        )
+
+    async def test_checkpoint_boundary_preserves_post_intent_batch_order(self):
+        declarations = []
+        for index in range(17):
+            _task, declaration = await self._post_intent_active_child(
+                f"rr13_checkpoint_batch_{index:02d}"
+            )
+            declarations.append(declaration)
+            self._release_fixture_locks(declaration["child_id"])
+        expected = sorted(
+            declarations,
+            key=lambda item: (
+                datetime.fromisoformat(
+                    self.runtime.children.get(item["child_id"])
+                    .dispatch_intent["evidence_deadline"]
+                ),
+                item["public_task_id"].encode("utf-8"),
+                item["operation_ordinal"],
+                item["child_id"].encode("utf-8"),
+            ),
+        )
+        ticks = iter((*([0.0] * 19), 6.0))
+        self.runtime._recovery_monotonic = lambda: next(ticks, 6.0)
+
+        first = await self.runtime.recover_once("periodic")
+
+        checkpoint = self.runtime.children.active_recovery_checkpoint()
+        self.assertEqual(0, first["active_recovery_transitions"])
+        self.assertEqual(
+            [item["child_id"] for item in expected[:16]],
+            [item["child_id"] for item in checkpoint["candidates"]],
+        )
+
+        order = []
+        original_execute = self.runtime._execute_child
+
+        async def record_order(plan, task, declaration, operation, requests):
+            order.append(declaration["child_id"])
+            return await original_execute(
+                plan, task, declaration, operation, requests
+            )
+
+        self.runtime._recovery_monotonic = lambda: 0.0
+        with patch.object(
+            self.runtime, "_execute_child", side_effect=record_order
+        ):
+            second = await self.runtime.recover_once("periodic")
+            third = await self.runtime.recover_once("periodic")
+
+        self.assertEqual(16, second["active_recovery_transitions"])
+        self.assertEqual(1, third["active_recovery_transitions"])
+        self.assertEqual(
+            [item["child_id"] for item in expected], order
+        )
+        self.assertTrue(
+            all(
+                self.runtime.children.get(item["child_id"]).dispatch_count
+                == 1
+                for item in declarations
+            )
+        )
+        self.assertEqual(
+            0, sum(item[0] == "write" for item in self.gateway.calls)
+        )
+
+    async def test_checkpoint_reloads_changed_candidate_authority(self):
+        fixtures = {}
+        for name in (
+            "removed",
+            "terminal",
+            "authority",
+            "operation",
+            "attempt",
+            "backoff",
+            "dispatch_evidence",
+        ):
+            task, declaration = await self._post_intent_active_child(
+                f"rr13_changed_{name}"
+            )
+            fixtures[name] = (task, declaration)
+            self._release_fixture_locks(declaration["child_id"])
+
+        checkpoint = (
+            self.runtime.children.active_recovery_checkpoint_for_candidates(
+                item[1] for item in fixtures.values()
+            )
+        )
+        for item in checkpoint["candidates"]:
+            if item["child_id"] == fixtures["operation"][1]["child_id"]:
+                item["operation_id"] = "changed_operation"
+            if item["child_id"] == fixtures["attempt"][1]["child_id"]:
+                item["attempt_id"] = "changed-attempt"
+        self.runtime.children.replace_active_recovery_checkpoint(
+            expected=None, next_checkpoint=checkpoint
+        )
+
+        removed_task = fixtures["removed"][0]
+        self.service.task_repository._path(removed_task.task_id).unlink()
+        self.service.task_repository.rebuild_navigation_index()
+
+        terminal_id = fixtures["terminal"][1]["child_id"]
+        terminal_record = self.runtime.children.get(terminal_id)
+        terminal_identity = terminal_record.execution_identity()
+        self.runtime.children.record_verification(
+            terminal_id,
+            owner_id=terminal_identity.owner_id,
+            claim_generation=terminal_record.claim_generation,
+            outcome="manual_review_required",
+            terminal=True,
+            diagnostic_codes=("synthetic_terminal_before_resume",),
+            now=self.service.now(),
+        )
+
+        authority_task = fixtures["authority"][0]
+        changed_projection = {
+            **authority_task.legacy_projection,
+            "execution_authority": "legacy_execution",
+        }
+        authority_task.append_event(
+            "execution_authority_changed",
+            self.service.now().isoformat(),
+            changes={"legacy_projection": changed_projection},
+            request_id="synthetic-rr13-authority-change",
+        )
+        self.service.task_repository.save(authority_task)
+
+        retry_at = self.service.now() + timedelta(seconds=30)
+        self.runtime.children.update_runtime(
+            fixtures["backoff"][1]["child_id"],
+            changes={
+                "backoff_seconds": 30,
+                "next_eligible_at": retry_at.isoformat(),
+            },
+        )
+
+        dispatch_id = fixtures["dispatch_evidence"][1]["child_id"]
+        dispatch_record = self.runtime.children.get(dispatch_id)
+        dispatch_identity = dispatch_record.execution_identity()
+        changed_deadline = self.service.now() + timedelta(seconds=60)
+
+        def change_dispatch_evidence(record):
+            record.dispatch_intent["evidence_deadline"] = (
+                changed_deadline.isoformat()
+            )
+
+        self.runtime.children.mutate_claimed(
+            dispatch_id,
+            owner_id=dispatch_identity.owner_id,
+            claim_generation=dispatch_record.claim_generation,
+            mutator=change_dispatch_evidence,
+        )
+        order = []
+        expired = {"value": False}
+        original_execute = self.runtime._execute_child
+
+        async def expire_after_current_authority(
+            plan, task, declaration, operation, requests
+        ):
+            order.append(declaration["child_id"])
+            result = await original_execute(
+                plan, task, declaration, operation, requests
+            )
+            expired["value"] = True
+            return result
+
+        self.runtime._recovery_monotonic = (
+            lambda: 6.0 if expired["value"] else 0.0
+        )
+        with patch.object(
+            self.runtime,
+            "_execute_child",
+            side_effect=expire_after_current_authority,
+        ):
+            result = await self.runtime.recover_once("periodic")
+
+        self.assertEqual(1, result["active_recovery_transitions"])
+        self.assertEqual([dispatch_id], order)
+        self.assertEqual(
+            changed_deadline,
+            datetime.fromisoformat(
+                self.runtime.children.get(dispatch_id).dispatch_intent[
+                    "evidence_deadline"
+                ]
+            ),
+        )
+        self.assertIsNone(
+            self.runtime.children.active_recovery_checkpoint()
+        )
+        self.assertEqual(
+            0, sum(item[0] == "write" for item in self.gateway.calls)
+        )
+
+        self.service.now = lambda: retry_at
+        self.runtime._recovery_monotonic = lambda: 0.0
+        resumed = await self.runtime.recover_once("periodic")
+        self.assertGreaterEqual(resumed["active_recovery_transitions"], 1)
+        self.assertEqual(
+            1,
+            self.runtime.children.get(
+                fixtures["backoff"][1]["child_id"]
+            ).dispatch_count,
+        )
+
     async def test_backoff_does_not_starve_later_active_work(self):
         declarations = [
             (await self._preintent_active_child(f"backoff_active_{index}"))[1]
@@ -2218,6 +2783,14 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         with self.assertRaises(ExecutionRecordCorrupt):
             self.runtime.children.active_recovery_cursor()
 
+    def test_corrupt_active_recovery_checkpoint_fails_closed(self):
+        self.runtime.children.active_recovery_checkpoint_path.write_text(
+            '{"model":"unknown"}', encoding="utf-8"
+        )
+
+        with self.assertRaises(ExecutionRecordCorrupt):
+            self.runtime.children.active_recovery_checkpoint()
+
     def test_active_recovery_cursor_compare_and_swap_fails_closed(self):
         first = self.runtime.children.active_recovery_cursor_for_task(
             "active-cursor-first"
@@ -2235,6 +2808,45 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
             )
         self.assertEqual(
             first, self.runtime.children.active_recovery_cursor()
+        )
+
+    def test_active_recovery_checkpoint_compare_and_swap_fails_closed(self):
+        first = self.runtime.children.active_recovery_checkpoint_for_candidates(
+            (
+                child_declaration(
+                    public_task_id="a" * 32,
+                    plan_id="b" * 32,
+                    plan_hash="c" * 64,
+                    plan_contract_version=2,
+                    operation_id="checkpoint_first",
+                    ordinal=0,
+                    dependency_ids=(),
+                    adapter_id="checkpoint_adapter",
+                    capability_id="update_automation_configuration",
+                    prepared_operation_hash="d" * 64,
+                    target_type="automation",
+                    target_id="checkpoint_first",
+                    attempt_id="checkpoint-attempt-first",
+                    request_id="checkpoint-request-first",
+                    idempotency_key="checkpoint-key-first",
+                    complete_lock_request_hash="e" * 64,
+                    approval_bundle_hash="f" * 64,
+                    selective_hold_keys=("automation:checkpoint_first",),
+                ),
+            )
+        )
+        second = copy.deepcopy(first)
+        second["candidates"][0]["operation_id"] = "checkpoint_second"
+        self.runtime.children.replace_active_recovery_checkpoint(
+            expected=None, next_checkpoint=first
+        )
+
+        with self.assertRaises(ExecutionStorageError):
+            self.runtime.children.replace_active_recovery_checkpoint(
+                expected=None, next_checkpoint=second
+            )
+        self.assertEqual(
+            first, self.runtime.children.active_recovery_checkpoint()
         )
 
     async def test_recovery_never_uses_full_namespace_discovery(self):

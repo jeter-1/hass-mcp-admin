@@ -73,6 +73,7 @@ from ..governance.task_models import ExecutionTaskState, TERMINAL_TASK_STATES
 from ..governance.task_storage import ExecutionTaskStorageError
 from .registry import ClosedAdapterRegistry
 from .repository import (
+    ACTIVE_RECOVERY_CHECKPOINT_LIMIT,
     ChildExecutionRepository,
     MAX_F3_PUBLIC_TASKS,
     RECOVERY_DECLARATION_PAGE_SIZE,
@@ -86,7 +87,7 @@ F3_RUNTIME_MODEL = "f3-runtime-integration-v1"
 F3_EXECUTION_AUTHORITY = "f3_child_sequence"
 PRODUCTION_LOCK_TIMING = LockTiming(120, 20, 0, 0.05)
 RECOVERY_CADENCE_SECONDS = 30
-RECOVERY_BATCH_SIZE = 16
+RECOVERY_BATCH_SIZE = ACTIVE_RECOVERY_CHECKPOINT_LIMIT
 RECOVERY_SWEEP_TIME_BUDGET_SECONDS = 5.0
 ORPHAN_RECOVERY_SCAN_LIMIT = RECOVERY_DECLARATION_PAGE_SIZE
 ORPHAN_RECONCILIATION_REASON = "orphaned_terminal_parent_recovery"
@@ -2684,19 +2685,16 @@ class F3RuntimeIntegration:
                 and datetime.fromisoformat(runtime["next_eligible_at"]) > now
             ):
                 continue
-            evidence_deadline = (
-                None
-                if record is None or record.dispatch_intent is None
-                else datetime.fromisoformat(
-                    record.dispatch_intent["evidence_deadline"]
+            if (
+                record is not None
+                and record.dispatch_intent is not None
+                and record.dispatch_count != 1
+            ):
+                raise GovernanceError(
+                    ErrorCode.EXECUTION_TASK_STORAGE_ERROR
                 )
-            )
-            priority = (
-                0 if evidence_deadline is not None else 1,
-                evidence_deadline or datetime.max.replace(tzinfo=now.tzinfo),
-                declaration["public_task_id"].encode("utf-8"),
-                declaration["operation_ordinal"],
-                declaration["child_id"].encode("utf-8"),
+            priority = self._active_recovery_priority(
+                declaration, record, now=now
             )
             candidates.append((priority, declaration, record))
 
@@ -2711,6 +2709,157 @@ class F3RuntimeIntegration:
             "tasks_examined": tasks_examined,
             "manifest_reads": manifests_read,
             "declarations_examined": declarations_examined,
+        }
+
+    @staticmethod
+    def _active_recovery_priority(
+        declaration: dict[str, Any], record: Any | None, *, now: datetime
+    ) -> tuple[Any, ...]:
+        evidence_deadline = (
+            None
+            if record is None or record.dispatch_intent is None
+            else datetime.fromisoformat(
+                record.dispatch_intent["evidence_deadline"]
+            )
+        )
+        return (
+            0 if evidence_deadline is not None else 1,
+            evidence_deadline or datetime.max.replace(tzinfo=now.tzinfo),
+            declaration["public_task_id"].encode("utf-8"),
+            declaration["operation_ordinal"],
+            declaration["child_id"].encode("utf-8"),
+        )
+
+    def _reload_active_candidate(
+        self,
+        reference: dict[str, Any],
+        *,
+        now: datetime,
+        require_post_intent: bool,
+    ) -> tuple[dict[str, Any], Any | None] | None:
+        """Reload current authority for non-authoritative scheduling evidence."""
+
+        public_task = self.service.task_repository.get(
+            reference["public_task_id"]
+        )
+        if (
+            public_task is None
+            or public_task.state in TERMINAL_TASK_STATES
+            or public_task.legacy_projection.get("execution_authority")
+            != F3_EXECUTION_AUTHORITY
+        ):
+            return None
+        current = next(
+            (
+                item
+                for item in self.children.declarations_for_task(
+                    public_task.task_id
+                )
+                if item["child_id"] == reference["child_id"]
+            ),
+            None,
+        )
+        if current is None or any(
+            current[name] != reference[name]
+            for name in (
+                "public_task_id",
+                "child_id",
+                "operation_id",
+                "operation_ordinal",
+                "attempt_id",
+                "declaration_hash",
+            )
+        ):
+            return None
+        record = self.children.get(current["child_id"])
+        if record is not None and record.terminal:
+            return None
+        runtime = self.children.runtime(current["child_id"])
+        if (
+            runtime["next_eligible_at"] is not None
+            and datetime.fromisoformat(runtime["next_eligible_at"]) > now
+        ):
+            return None
+        if require_post_intent:
+            if record is None or record.dispatch_intent is None:
+                return None
+            if record.dispatch_count != 1:
+                raise GovernanceError(
+                    ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+                )
+        elif record is not None and record.dispatch_intent is not None:
+            return None
+        if record is not None:
+            identity = record.execution_identity()
+            if (
+                identity.task_id != current["child_id"]
+                or identity.plan_id != current["plan_id"]
+                or identity.attempt_id != current["attempt_id"]
+                or record.adapter_id != current["adapter_id"]
+                or record.operation
+                not in {
+                    current["operation_id"],
+                    current["capability_id"],
+                }
+                or record.prepared_operation_hash
+                != current["prepared_operation_hash"]
+                or record.target
+                != {
+                    "target_type": current["target_type"],
+                    "target_id": current["target_id"],
+                }
+            ):
+                raise GovernanceError(
+                    ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+                )
+        return current, record
+
+    def _checkpointed_post_intent_candidates(
+        self,
+        checkpoint: dict[str, Any] | None,
+        *,
+        now: datetime,
+        sweep_started: float,
+        monotonic: Callable[[], float] | None = None,
+    ) -> dict[str, Any]:
+        clock = monotonic or time.monotonic
+        candidates: list[
+            tuple[tuple[Any, ...], dict[str, Any], Any]
+        ] = []
+        references = tuple(
+            () if checkpoint is None else checkpoint["candidates"]
+        )
+        examined = 0
+        for reference in references:
+            if (
+                clock() - sweep_started
+                >= RECOVERY_SWEEP_TIME_BUDGET_SECONDS
+            ):
+                break
+            examined += 1
+            current = self._reload_active_candidate(
+                reference, now=now, require_post_intent=True
+            )
+            if current is None:
+                continue
+            declaration, record = current
+            candidates.append(
+                (
+                    self._active_recovery_priority(
+                        declaration, record, now=now
+                    ),
+                    declaration,
+                    record,
+                )
+            )
+        candidates.sort(key=lambda item: item[0])
+        return {
+            "candidates": tuple(
+                (declaration, record)
+                for _priority, declaration, record in candidates
+            ),
+            "unexamined": references[examined:],
+            "examined": examined,
         }
 
     @staticmethod
@@ -3019,26 +3168,32 @@ class F3RuntimeIntegration:
         now: datetime,
         sweep_started: float,
         transition_limit: int,
+        require_post_intent: bool,
         monotonic: Callable[[], float] | None = None,
     ) -> dict[str, Any]:
-        """Run deadline-ordered active work inside existing recovery authority."""
+        """Reload authority, then run active work inside recovery bounds."""
 
         clock = monotonic or time.monotonic
         processed = 0
         transitions = 0
         selected: list[str] = []
-        for declaration, _selected_record in candidates:
+        dismissed: list[str] = []
+        for reference, _selected_record in candidates:
             if transitions >= transition_limit or (
                 clock() - sweep_started
                 >= RECOVERY_SWEEP_TIME_BUDGET_SECONDS
             ):
                 break
-            runtime = self.children.runtime(declaration["child_id"])
-            if (
-                runtime["next_eligible_at"] is not None
-                and datetime.fromisoformat(runtime["next_eligible_at"]) > now
-            ):
+            current = self._reload_active_candidate(
+                reference,
+                now=now,
+                require_post_intent=require_post_intent,
+            )
+            if current is None:
+                dismissed.append(reference["child_id"])
                 continue
+            declaration, _current_record = current
+            runtime = self.children.runtime(declaration["child_id"])
             transitions += 1
             selected.append(declaration["child_id"])
             try:
@@ -3106,6 +3261,7 @@ class F3RuntimeIntegration:
             "processed": processed,
             "transitions": transitions,
             "selected_child_ids": tuple(selected),
+            "dismissed_child_ids": tuple(dismissed),
         }
 
     async def recover_once(self, trigger: str) -> dict[str, int]:
@@ -3121,15 +3277,73 @@ class F3RuntimeIntegration:
             >= RECOVERY_SWEEP_TIME_BUDGET_SECONDS
         )
 
-        # Active work is selected from authoritative nonterminal parent and
-        # child state, never from the historical declaration cursor. Durable
-        # post-intent evidence deadlines therefore sort ahead of pre-intent
-        # recovery and cannot be hidden behind settled history.
-        active_selection = self._active_recovery_candidates(
+        # A post-intent candidate durably checkpointed by a prior bounded
+        # discovery sweep receives the first recovery opportunity. The
+        # checkpoint is navigation evidence only: every authority surface is
+        # reloaded immediately before observation/verification.
+        checkpoint_expected = self.children.active_recovery_checkpoint()
+        checkpoint_selection = self._checkpointed_post_intent_candidates(
+            checkpoint_expected,
             now=now,
             sweep_started=sweep_started,
             monotonic=clock,
         )
+        checkpoint_candidates = checkpoint_selection["candidates"]
+        checkpoint_recovery = await self._recover_active_candidates(
+            checkpoint_candidates,
+            now=now,
+            sweep_started=sweep_started,
+            transition_limit=RECOVERY_BATCH_SIZE,
+            require_post_intent=True,
+            monotonic=clock,
+        )
+        checkpoint_handled_ids = {
+            *checkpoint_recovery["selected_child_ids"],
+            *checkpoint_recovery["dismissed_child_ids"],
+        }
+        checkpoint_remaining = (
+            *(
+                declaration
+                for declaration, _record in checkpoint_candidates
+                if declaration["child_id"] not in checkpoint_handled_ids
+            ),
+            *checkpoint_selection["unexamined"],
+        )
+        checkpoint_current = (
+            self.children.active_recovery_checkpoint_for_candidates(
+                checkpoint_remaining
+            )
+        )
+        if checkpoint_current != checkpoint_expected:
+            self.children.replace_active_recovery_checkpoint(
+                expected=checkpoint_expected,
+                next_checkpoint=checkpoint_current,
+            )
+
+        # Active work is selected from authoritative nonterminal parent and
+        # child state, never from the historical declaration cursor. Discovery
+        # runs only after pending post-intent work and stops at the shared
+        # deadline. Newly discovered post-intent work is checkpointed before
+        # recovery so a budget boundary or crash cannot cause perpetual rescan.
+        inactive_cursor = self.children.active_recovery_cursor()
+        active_selection: dict[str, Any] = {
+            "candidates": (),
+            "expected_cursor": inactive_cursor,
+            "next_cursor": inactive_cursor,
+            "tasks_examined": 0,
+            "manifest_reads": 0,
+            "declarations_examined": 0,
+        }
+        remaining_post_intent_capacity = max(
+            0,
+            RECOVERY_BATCH_SIZE - checkpoint_recovery["transitions"],
+        )
+        if remaining_post_intent_capacity and not deadline_reached():
+            active_selection = self._active_recovery_candidates(
+                now=now,
+                sweep_started=sweep_started,
+                monotonic=clock,
+            )
         active_candidates = active_selection["candidates"]
         post_intent_candidates = tuple(
             item
@@ -3148,17 +3362,78 @@ class F3RuntimeIntegration:
             > navigation["nonterminal_record_count"]
         )
 
+        fresh_post_intent_candidates = post_intent_candidates[
+            :remaining_post_intent_capacity
+        ]
+        fresh_checkpoint = (
+            self.children.active_recovery_checkpoint_for_candidates(
+                (
+                    *checkpoint_remaining,
+                    *(
+                        declaration
+                        for declaration, _record
+                        in fresh_post_intent_candidates
+                    ),
+                )
+            )
+        )
+        if fresh_checkpoint != checkpoint_current:
+            self.children.replace_active_recovery_checkpoint(
+                expected=checkpoint_current,
+                next_checkpoint=fresh_checkpoint,
+            )
+            checkpoint_current = fresh_checkpoint
+
         # Possibly dispatched work owns the complete available batch before
         # historical cleanup receives a reservation. Recovery remains
         # observation/verification-only because _execute_child enforces the
         # durable-intent no-redispatch boundary.
-        post_intent = await self._recover_active_candidates(
-            post_intent_candidates,
+        fresh_post_intent = await self._recover_active_candidates(
+            fresh_post_intent_candidates,
             now=now,
             sweep_started=sweep_started,
-            transition_limit=RECOVERY_BATCH_SIZE,
+            transition_limit=remaining_post_intent_capacity,
+            require_post_intent=True,
             monotonic=clock,
         )
+        fresh_handled_ids = {
+            *fresh_post_intent["selected_child_ids"],
+            *fresh_post_intent["dismissed_child_ids"],
+        }
+        fresh_remaining = tuple(
+            declaration
+            for declaration, _record in fresh_post_intent_candidates
+            if declaration["child_id"] not in fresh_handled_ids
+        )
+        next_checkpoint = (
+            self.children.active_recovery_checkpoint_for_candidates(
+                (*checkpoint_remaining, *fresh_remaining)
+            )
+        )
+        if next_checkpoint != checkpoint_current:
+            self.children.replace_active_recovery_checkpoint(
+                expected=checkpoint_current,
+                next_checkpoint=next_checkpoint,
+            )
+            checkpoint_current = next_checkpoint
+        post_intent = {
+            "processed": (
+                checkpoint_recovery["processed"]
+                + fresh_post_intent["processed"]
+            ),
+            "transitions": (
+                checkpoint_recovery["transitions"]
+                + fresh_post_intent["transitions"]
+            ),
+            "selected_child_ids": (
+                *checkpoint_recovery["selected_child_ids"],
+                *fresh_post_intent["selected_child_ids"],
+            ),
+            "dismissed_child_ids": (
+                *checkpoint_recovery["dismissed_child_ids"],
+                *fresh_post_intent["dismissed_child_ids"],
+            ),
+        }
 
         # The historical cursor is separate scheduling evidence for terminal
         # orphan discovery. It advances only through declarations safely
@@ -3214,6 +3489,7 @@ class F3RuntimeIntegration:
             "processed": 0,
             "transitions": 0,
             "selected_child_ids": (),
+            "dismissed_child_ids": (),
         }
         if (
             pre_intent_candidates
@@ -3225,6 +3501,7 @@ class F3RuntimeIntegration:
                 now=now,
                 sweep_started=sweep_started,
                 transition_limit=pre_intent_limit,
+                require_post_intent=False,
                 monotonic=clock,
             )
         selected_ids = {
@@ -3267,8 +3544,21 @@ class F3RuntimeIntegration:
                 expected=page["cursor"],
                 next_cursor=orphaned["next_cursor"],
             )
+        safely_navigated_ids = {
+            *selected_ids,
+            *post_intent["dismissed_child_ids"],
+            *pre_intent["dismissed_child_ids"],
+            *(
+                item["child_id"]
+                for item in (
+                    ()
+                    if checkpoint_current is None
+                    else checkpoint_current["candidates"]
+                )
+            ),
+        }
         unprocessed_active = any(
-            declaration["child_id"] not in selected_ids
+            declaration["child_id"] not in safely_navigated_ids
             for declaration, _record in active_candidates
         )
         if (
