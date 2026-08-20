@@ -1,37 +1,21 @@
 #!/usr/bin/env python3
-"""Classify a promotion regression capture against the versioned manifest.
+"""Offline evaluator for the versioned promotion regression manifest.
 
-This checker is deliberately incapable of contacting anything. It reads
-``promotion/promotion_regression_manifest.yaml`` and a capture file recorded by
-whoever holds live MCP access, then classifies every sentinel as CONFIRMED,
-REGRESSION, KNOWN_FAILING, UNEXPECTED_PASS, or NOT_CAPTURED.
-
-Keeping dispatch out of this process is the point: the register requires the
-promotion checks to be read-only against the live target, and a program with no
-transport cannot write by mistake. The manifest carries the exact call to make;
-a human or an interactive agent session makes it, records the raw responses, and
-this program does the arithmetic.
-
-Commands
-    validate   Structurally validate the manifest against its JSON schema.
-    plan       Print the ordered observations to perform, with their procedures.
-    template   Print an empty capture skeleton on stdout.
-    evaluate   Classify a capture file and print the outcome.
-
-Exit codes
-    0  every sentinel was captured and no REGRESSION was found
-    1  at least one REGRESSION: promotion must not proceed
-    2  no REGRESSION, but the run is incomplete (a sentinel was NOT_CAPTURED)
-    3  usage error, unreadable input, or an invalid manifest
+The program has no transport, subprocess, credential, or write path.  An
+authorized operator supplies a bounded projection of fields observed from the
+declared read-only calls.  This evaluator validates that attested capture,
+binds it to the exact manifest and target, and classifies each sentinel.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -46,29 +30,13 @@ KNOWN_FAILING = "KNOWN_FAILING"
 UNEXPECTED_PASS = "UNEXPECTED_PASS"
 NOT_CAPTURED = "NOT_CAPTURED"
 
-OUTCOME_ORDER = (
-    REGRESSION,
-    NOT_CAPTURED,
-    UNEXPECTED_PASS,
-    KNOWN_FAILING,
-    CONFIRMED,
-)
-
+OUTCOME_ORDER = (REGRESSION, NOT_CAPTURED, UNEXPECTED_PASS, KNOWN_FAILING, CONFIRMED)
 OUTCOME_HEADINGS = {
-    REGRESSION: "REGRESSION - previously accepted behavior broke. Blocks promotion.",
-    NOT_CAPTURED: (
-        "NOT_CAPTURED - the check was not performed. The run is incomplete; "
-        "this is not a regression."
-    ),
-    UNEXPECTED_PASS: (
-        "UNEXPECTED_PASS - a known-failing sentinel passed. A human must "
-        "confirm the fix and flip its status in the manifest."
-    ),
-    KNOWN_FAILING: (
-        "KNOWN_FAILING - a tracked open deficiency still fails. Informational; "
-        "not a promotion blocker by itself."
-    ),
-    CONFIRMED: "CONFIRMED - expected to pass, and it passed.",
+    REGRESSION: "REGRESSION - accepted behavior failed or a known failure changed.",
+    NOT_CAPTURED: "NOT_CAPTURED - required evidence is missing or inconclusive.",
+    UNEXPECTED_PASS: "UNEXPECTED_PASS - a recorded deficiency may now be fixed.",
+    KNOWN_FAILING: "KNOWN_FAILING - the exact recorded failure signature matched.",
+    CONFIRMED: "CONFIRMED - the desired contract passed.",
 }
 
 EXIT_OK = 0
@@ -76,34 +44,48 @@ EXIT_REGRESSION = 1
 EXIT_INCOMPLETE = 2
 EXIT_USAGE = 3
 
-_SELECTOR = re.compile(r"^(?P<field>[^\[\]]+)\[(?P<key>[^=\[\]]+)=(?P<value>[^\[\]]*)\]$")
+CAPTURE_SCHEMA_VERSION = 1
+MAX_CAPTURE_BYTES = 256 * 1024
+MAX_OBSERVATION_BYTES = 24 * 1024
+MAX_VALUE_BYTES = 2 * 1024
+MAX_REPORT_BYTES = 96 * 1024
+MAX_FAILED_CHECKS_RENDERED = 12
+
+_SELECTOR = re.compile(
+    r"^(?P<field>[^\[\]]+)\[(?P<key>[^=\[\]]+)=(?P<value>[^\[\]]*)\]$"
+)
+_PLACEHOLDER = re.compile(r"(?:replace|placeholder|todo|unknown)", re.IGNORECASE)
+_SENSITIVE_KEY = re.compile(
+    r"(?:^|[._-])(?:authorization|password|passwd|secret|token|api[_-]?key|cookie)(?:$|[._-])",
+    re.IGNORECASE,
+)
+_SENSITIVE_VALUE = re.compile(
+    r"(?:\bBearer\s+\S{12,}|\b(?:sk|ghp|gho|github_pat)_[A-Za-z0-9_-]{12,}|"
+    r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})"
+)
 
 
 class CheckerError(RuntimeError):
-    """A manifest, capture, or invocation problem that stops the run."""
+    """A manifest, capture, or invocation error that prevents a verdict."""
 
 
-# --------------------------------------------------------------------------
-# Loading
-# --------------------------------------------------------------------------
+def _jsonschema_module():
+    try:
+        import jsonschema
+    except ImportError as exc:  # pragma: no cover - environment problem
+        raise CheckerError("jsonschema is required to validate promotion evidence.") from exc
+    return jsonschema
 
 
 def load_manifest(path: Path) -> dict[str, Any]:
-    """Load the YAML manifest without executing anything inside it."""
-
     try:
         import yaml
     except ImportError as exc:  # pragma: no cover - environment problem
-        raise CheckerError(
-            "PyYAML is required to read the manifest. Install it with "
-            "'python -m pip install -r hass_mcp_engineering_beta/requirements.txt'."
-        ) from exc
+        raise CheckerError("PyYAML is required to read the promotion manifest.") from exc
     try:
-        text = path.read_text(encoding="utf-8")
+        value = yaml.safe_load(path.read_text(encoding="utf-8"))
     except OSError as exc:
         raise CheckerError(f"Cannot read manifest {path}: {exc}") from exc
-    try:
-        value = yaml.safe_load(text)
     except yaml.YAMLError as exc:
         raise CheckerError(f"Manifest {path} is not valid YAML: {exc}") from exc
     if not isinstance(value, dict):
@@ -111,28 +93,45 @@ def load_manifest(path: Path) -> dict[str, Any]:
     return value
 
 
-def load_json(path: Path, label: str) -> Any:
+def _reject_duplicate_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise CheckerError(f"JSON contains a duplicate key {key!r}.")
+        value[key] = item
+    return value
+
+
+def load_json(path: Path, label: str, *, maximum_bytes: int | None = None) -> Any:
     try:
-        text = path.read_text(encoding="utf-8")
+        raw = path.read_bytes()
     except OSError as exc:
         raise CheckerError(f"Cannot read {label} {path}: {exc}") from exc
+    if maximum_bytes is not None and len(raw) > maximum_bytes:
+        raise CheckerError(
+            f"{label.capitalize()} exceeds the {maximum_bytes}-byte input bound."
+        )
     try:
-        return json.loads(text)
+        return json.loads(raw.decode("utf-8"), object_pairs_hook=_reject_duplicate_pairs)
+    except UnicodeDecodeError as exc:
+        raise CheckerError(f"{label.capitalize()} {path} is not UTF-8.") from exc
     except ValueError as exc:
-        raise CheckerError(f"{label} {path} is not valid JSON: {exc}") from exc
+        raise CheckerError(f"{label.capitalize()} {path} is not valid JSON: {exc}") from exc
+
+
+def canonical_manifest_digest(manifest: dict[str, Any]) -> str:
+    encoded = json.dumps(
+        manifest,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
 def validate_manifest(manifest: dict[str, Any], schema: dict[str, Any]) -> list[str]:
-    """Return schema errors plus the cross-references the schema cannot express."""
-
-    try:
-        import jsonschema
-    except ImportError as exc:  # pragma: no cover - environment problem
-        raise CheckerError(
-            "jsonschema is required to validate the manifest. Install it with "
-            "'python -m pip install -r hass_mcp_engineering_beta/requirements.txt'."
-        ) from exc
-    validator = jsonschema.Draft202012Validator(schema)
+    validator = _jsonschema_module().Draft202012Validator(schema)
     errors = [
         f"{'/'.join(str(part) for part in error.path) or '<root>'}: {error.message}"
         for error in sorted(validator.iter_errors(manifest), key=lambda item: list(item.path))
@@ -141,49 +140,233 @@ def validate_manifest(manifest: dict[str, Any], schema: dict[str, Any]) -> list[
     return errors
 
 
+def _all_checks(sentinel: dict[str, Any]) -> list[dict[str, Any]]:
+    return list(sentinel.get("desired_checks") or []) + list(
+        sentinel.get("known_failure_checks") or []
+    )
+
+
 def _reference_errors(manifest: dict[str, Any]) -> list[str]:
     observations = manifest.get("observations")
     sentinels = manifest.get("sentinels")
     if not isinstance(observations, list) or not isinstance(sentinels, list):
         return []
-    known: set[str] = set()
     errors: list[str] = []
+    known: dict[str, dict[str, Any]] = {}
     for observation in observations:
         identifier = observation.get("id")
         if identifier in known:
             errors.append(f"observations: duplicate observation id {identifier!r}.")
-        known.add(identifier)
-    seen_sentinels: set[str] = set()
+        known[identifier] = observation
+        if observation.get("effect_class") != "read_only":
+            errors.append(
+                f"observations/{identifier}: default observations must be read_only."
+            )
+        overlap = set(observation.get("arguments") or {}) & set(
+            observation.get("operator_arguments") or {}
+        )
+        if overlap:
+            errors.append(
+                f"observations/{identifier}: fixed and operator arguments overlap: "
+                + ", ".join(sorted(overlap))
+            )
     referenced: set[str] = set()
+    seen: set[str] = set()
     for sentinel in sentinels:
         identifier = sentinel.get("id")
-        if identifier in seen_sentinels:
+        if identifier in seen:
             errors.append(f"sentinels: duplicate sentinel id {identifier!r}.")
-        seen_sentinels.add(identifier)
-        target = sentinel.get("observation")
-        referenced.add(target)
-        if target not in known:
-            errors.append(
-                f"sentinels/{identifier}: observation {target!r} is not declared."
-            )
-        for index, check in enumerate(sentinel.get("checks") or []):
-            reference = check.get("observation")
-            if reference is None:
-                continue
-            referenced.add(reference)
-            if reference not in known:
+        seen.add(identifier)
+        primary = sentinel.get("observation")
+        referenced.add(primary)
+        if primary not in known:
+            errors.append(f"sentinels/{identifier}: unknown observation {primary!r}.")
+        for index, check in enumerate(_all_checks(sentinel)):
+            target = check.get("source_observation", primary)
+            referenced.add(target)
+            if target not in known:
                 errors.append(
-                    f"sentinels/{identifier}/checks/{index}: observation "
-                    f"{reference!r} is not declared."
+                    f"sentinels/{identifier}/checks/{index}: unknown observation {target!r}."
                 )
-    for identifier in sorted(known - referenced):
+            reference = check.get("observation")
+            if reference is not None:
+                referenced.add(reference)
+                if reference not in known:
+                    errors.append(
+                        f"sentinels/{identifier}/checks/{index}: unknown reference "
+                        f"observation {reference!r}."
+                    )
+            if check.get("operator") == "equals_invocation_argument":
+                argument = check.get("invocation_argument")
+                declaration = known.get(target) or {}
+                declared = set(declaration.get("arguments") or {}) | set(
+                    declaration.get("operator_arguments") or {}
+                )
+                if argument not in declared:
+                    errors.append(
+                        f"sentinels/{identifier}/checks/{index}: invocation argument "
+                        f"{argument!r} is not declared by {target!r}."
+                    )
+    for identifier in sorted(set(known) - referenced):
         errors.append(f"observations/{identifier}: no sentinel uses this observation.")
     return errors
 
 
-# --------------------------------------------------------------------------
-# Path resolution
-# --------------------------------------------------------------------------
+def _required_paths(manifest: dict[str, Any]) -> dict[str, set[str]]:
+    paths = {item["id"]: set() for item in manifest["observations"]}
+    for sentinel in manifest["sentinels"]:
+        primary = sentinel["observation"]
+        for check in _all_checks(sentinel):
+            paths[check.get("source_observation", primary)].add(check["path"])
+            if check.get("operator") == "equals_observation_path":
+                paths[check["observation"]].add(check["reference_path"])
+    return paths
+
+
+def _schema_errors(instance: Any, schema: dict[str, Any]) -> list[str]:
+    validator = _jsonschema_module().Draft202012Validator(schema)
+    return [
+        f"{'/'.join(str(part) for part in error.path) or '<root>'}: {error.message}"
+        for error in sorted(validator.iter_errors(instance), key=lambda item: list(item.path))
+    ]
+
+
+def _encoded_size(value: Any) -> int:
+    try:
+        return len(
+            json.dumps(
+                value,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            ).encode("utf-8")
+        )
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise CheckerError("Capture contains a value that cannot be encoded safely.") from exc
+
+
+def _capture_value_errors(value: Any, path: str = "capture") -> list[str]:
+    errors: list[str] = []
+    if isinstance(value, str):
+        if len(value.encode("utf-8")) > MAX_VALUE_BYTES:
+            errors.append(f"{path}: string exceeds the {MAX_VALUE_BYTES}-byte bound.")
+        if _SENSITIVE_VALUE.search(value):
+            errors.append(f"{path}: value resembles credential material.")
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            if _SENSITIVE_KEY.search(str(key)):
+                errors.append(f"{path}.{key}: sensitive field names are not allowed.")
+            errors.extend(_capture_value_errors(item, f"{path}.{key}"))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            errors.extend(_capture_value_errors(item, f"{path}.{index}"))
+    return errors
+
+
+def _valid_timestamp(value: Any) -> bool:
+    if not isinstance(value, str) or _PLACEHOLDER.search(value):
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None
+
+
+def validate_capture(
+    manifest: dict[str, Any], capture: dict[str, Any], schema: dict[str, Any]
+) -> list[str]:
+    capture_schema = (schema.get("$defs") or {}).get("capture")
+    if not isinstance(capture_schema, dict):
+        raise CheckerError("The promotion schema does not declare $defs.capture.")
+    errors = _schema_errors(capture, capture_schema)
+    if _encoded_size(capture) > MAX_CAPTURE_BYTES:
+        errors.append(f"<root>: capture exceeds the {MAX_CAPTURE_BYTES}-byte bound.")
+    errors.extend(_capture_value_errors(capture))
+    if capture.get("capture_schema_version") != CAPTURE_SCHEMA_VERSION:
+        errors.append("capture_schema_version: unsupported capture schema version.")
+    if capture.get("manifest_version") != manifest.get("manifest_version"):
+        errors.append("manifest_version: capture does not match the manifest.")
+    if capture.get("manifest_digest") != canonical_manifest_digest(manifest):
+        errors.append("manifest_digest: capture is not bound to this exact manifest.")
+    target = capture.get("target") if isinstance(capture.get("target"), dict) else {}
+    manifest_target = manifest.get("target") or {}
+    for key in ("release", "build_sha"):
+        if target.get(key) != manifest_target.get(key):
+            errors.append(f"target/{key}: capture does not match the manifest target.")
+    if not _valid_timestamp(capture.get("captured_at")):
+        errors.append("captured_at: must be a non-placeholder timezone-aware timestamp.")
+    for key in ("captured_by", "session_id"):
+        value = capture.get(key)
+        if not isinstance(value, str) or not value.strip() or _PLACEHOLDER.search(value):
+            errors.append(f"{key}: must be a non-placeholder operator/session attribution.")
+
+    declarations = {item["id"]: item for item in manifest.get("observations") or []}
+    allowed_paths = _required_paths(manifest)
+    entries = capture.get("observations")
+    if not isinstance(entries, dict):
+        return errors
+    unknown = sorted(set(entries) - set(declarations))
+    if unknown:
+        errors.append("observations: undeclared observation ids: " + ", ".join(unknown))
+    for identifier, entry in entries.items():
+        declaration = declarations.get(identifier)
+        if declaration is None or not isinstance(entry, dict):
+            continue
+        if _encoded_size(entry) > MAX_OBSERVATION_BYTES:
+            errors.append(
+                f"observations/{identifier}: exceeds the {MAX_OBSERVATION_BYTES}-byte bound."
+            )
+        if entry.get("observation_id") != identifier:
+            errors.append(f"observations/{identifier}: observation_id mismatch.")
+        if entry.get("tool") != declaration.get("tool"):
+            errors.append(f"observations/{identifier}: tool does not match the manifest.")
+        arguments = entry.get("arguments")
+        if not isinstance(arguments, dict):
+            continue
+        fixed = declaration.get("arguments") or {}
+        local = declaration.get("operator_arguments") or {}
+        expected_names = set(fixed) | set(local)
+        if set(arguments) != expected_names:
+            errors.append(
+                f"observations/{identifier}: invocation arguments must be exactly "
+                + ", ".join(sorted(expected_names))
+                + "."
+            )
+        for name, expected in fixed.items():
+            if name not in arguments or not strict_equal(arguments[name], expected):
+                errors.append(
+                    f"observations/{identifier}/arguments/{name}: fixed argument mismatch."
+                )
+        for name, argument_schema in local.items():
+            if name not in arguments:
+                continue
+            for issue in _schema_errors(arguments[name], argument_schema):
+                errors.append(
+                    f"observations/{identifier}/arguments/{name}/{issue}"
+                )
+            if isinstance(arguments[name], str) and _PLACEHOLDER.search(arguments[name]):
+                errors.append(
+                    f"observations/{identifier}/arguments/{name}: placeholder was not resolved."
+                )
+        if entry.get("status") != "captured":
+            continue
+        evidence = entry.get("evidence") or {}
+        absent = entry.get("absent_paths") or []
+        unexpected_paths = sorted((set(evidence) | set(absent)) - allowed_paths[identifier])
+        if unexpected_paths:
+            errors.append(
+                f"observations/{identifier}: evidence paths are not allowlisted: "
+                + ", ".join(unexpected_paths)
+            )
+        overlap = sorted(set(evidence) & set(absent))
+        if overlap:
+            errors.append(
+                f"observations/{identifier}: paths cannot be both present and absent: "
+                + ", ".join(overlap)
+            )
+    return errors
 
 
 @dataclass(frozen=True)
@@ -194,8 +377,10 @@ class Resolution:
 
 
 def resolve_path(root: Any, path: str) -> Resolution:
-    """Resolve a dotted path with optional ``field[key=value]`` list selectors."""
+    """Resolve a direct projected key or a dotted raw-value path."""
 
+    if isinstance(root, dict) and path in root:
+        return Resolution(True, root[path])
     current = root
     walked: list[str] = []
     for segment in path.split("."):
@@ -209,53 +394,31 @@ def resolve_path(root: Any, path: str) -> Resolution:
             candidates = current[field_name]
             if not isinstance(candidates, list):
                 return Resolution(False, reason=f"{location} is not a list")
-            key = selector.group("key")
-            wanted = selector.group("value")
+            key, wanted = selector.group("key"), selector.group("value")
             matches = [
                 item
                 for item in candidates
                 if isinstance(item, dict) and str(item.get(key)) == wanted
             ]
-            if not matches:
-                return Resolution(False, reason=f"no list item matching {location}")
-            if len(matches) > 1:
-                return Resolution(
-                    False, reason=f"{len(matches)} list items match {location}"
-                )
+            if len(matches) != 1:
+                return Resolution(False, reason=f"{len(matches)} list items match {location}")
             current = matches[0]
-            continue
-        if isinstance(current, list):
+        elif isinstance(current, list):
             if not segment.lstrip("-").isdigit():
                 return Resolution(False, reason=f"{location} is not a list index")
             index = int(segment)
             if not -len(current) <= index < len(current):
                 return Resolution(False, reason=f"index out of range at {location}")
             current = current[index]
-            continue
-        if not isinstance(current, dict) or segment not in current:
+        elif isinstance(current, dict) and segment in current:
+            current = current[segment]
+        else:
             return Resolution(False, reason=f"no field at {location}")
-        current = current[segment]
     return Resolution(True, current)
 
 
-# --------------------------------------------------------------------------
-# Predicates
-# --------------------------------------------------------------------------
-
-
-def _is_bool(value: Any) -> bool:
-    return isinstance(value, bool)
-
-
 def strict_equal(left: Any, right: Any) -> bool:
-    """Compare without Python's bool/int equivalence.
-
-    ``0 == False`` and ``1 == True`` are true in Python, which would let a
-    counter of 1 satisfy a check expecting ``true``. Promotion evidence must not
-    be that forgiving.
-    """
-
-    if _is_bool(left) != _is_bool(right):
+    if isinstance(left, bool) != isinstance(right, bool):
         return False
     if isinstance(left, (int, float)) and isinstance(right, (int, float)):
         return left == right
@@ -263,147 +426,139 @@ def strict_equal(left: Any, right: Any) -> bool:
 
 
 def _numeric(value: Any) -> float | None:
-    if _is_bool(value) or not isinstance(value, (int, float)):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return float(value)
+
+
+def _safe_value(value: Any) -> str:
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        rendered = repr(value)
+        if len(rendered) <= 160:
+            return rendered
+    digest = hashlib.sha256(
+        json.dumps(value, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()[:16]
+    return f"<{type(value).__name__}:sha256:{digest}>"
+
+
+@dataclass(frozen=True)
+class CapturedObservation:
+    identifier: str
+    tool: str
+    arguments: dict[str, Any]
+    status: str
+    evidence: dict[str, Any]
+    absent_paths: frozenset[str]
+    reason: str = ""
 
 
 @dataclass(frozen=True)
 class CheckResult:
     passed: bool
+    conclusive: bool
     path: str
     operator: str
     detail: str
 
 
+def _resolve_capture(observation: CapturedObservation, path: str) -> tuple[Resolution, bool]:
+    resolved = resolve_path(observation.evidence, path)
+    if resolved.found:
+        return resolved, True
+    if path in observation.absent_paths:
+        return Resolution(False, reason="captured as absent"), True
+    return Resolution(False, reason="required projected field was not captured"), False
+
+
 def evaluate_check(
     check: dict[str, Any],
-    response: Any,
-    responses_by_observation: dict[str, Any],
+    observation: CapturedObservation,
+    observations: dict[str, CapturedObservation],
 ) -> CheckResult:
-    """Evaluate one manifest check against one recorded response."""
-
-    path = check["path"]
-    operator = check["operator"]
-    resolved = resolve_path(response, path)
-
+    path, operator = check["path"], check["operator"]
+    resolved, conclusive = _resolve_capture(observation, path)
+    if not conclusive:
+        return CheckResult(False, False, path, operator, resolved.reason)
     if operator == "absent":
         passed = not resolved.found or resolved.value is None
-        return CheckResult(
-            passed,
-            path,
-            operator,
-            "absent" if passed else f"present with {resolved.value!r}",
-        )
-
+        return CheckResult(passed, True, path, operator, "absent" if passed else "present")
     if not resolved.found:
-        return CheckResult(False, path, operator, f"unresolved ({resolved.reason})")
-
+        return CheckResult(False, True, path, operator, "captured field is absent")
     observed = resolved.value
-
     if operator == "present":
-        passed = observed is not None
-        return CheckResult(
-            passed, path, operator, "present" if passed else "resolved to null"
-        )
-
+        return CheckResult(observed is not None, True, path, operator, "present")
     if operator == "equals":
         expected = check["value"]
         passed = strict_equal(observed, expected)
         return CheckResult(
-            passed, path, operator, f"expected {expected!r}, observed {observed!r}"
+            passed,
+            True,
+            path,
+            operator,
+            f"expected {_safe_value(expected)}, observed {_safe_value(observed)}",
         )
-
     if operator == "not_equals":
         expected = check["value"]
         passed = not strict_equal(observed, expected)
-        return CheckResult(
-            passed, path, operator, f"must differ from {expected!r}, observed {observed!r}"
-        )
-
+        return CheckResult(passed, True, path, operator, "values differ" if passed else "values match")
     if operator == "one_of":
         allowed = check["values"]
         passed = any(strict_equal(observed, item) for item in allowed)
         return CheckResult(
-            passed, path, operator, f"expected one of {allowed!r}, observed {observed!r}"
-        )
-
-    if operator in {"gte", "lte", "gt", "lt"}:
-        left = _numeric(observed)
-        right = _numeric(check["value"])
-        if left is None or right is None:
-            return CheckResult(
-                False,
-                path,
-                operator,
-                f"needs two numbers, observed {observed!r} against {check['value']!r}",
-            )
-        comparison = {
-            "gte": left >= right,
-            "lte": left <= right,
-            "gt": left > right,
-            "lt": left < right,
-        }[operator]
-        return CheckResult(
-            comparison, path, operator, f"observed {observed!r} against {check['value']!r}"
-        )
-
-    if operator == "matches":
-        pattern = check["value"]
-        if not isinstance(observed, str) or not isinstance(pattern, str):
-            return CheckResult(
-                False, path, operator, f"needs a string, observed {observed!r}"
-            )
-        passed = re.fullmatch(pattern, observed) is not None
-        return CheckResult(
-            passed, path, operator, f"pattern {pattern!r} against {observed!r}"
-        )
-
-    if operator == "equals_observation_path":
-        reference_observation = check["observation"]
-        reference_path = check["reference_path"]
-        if reference_observation not in responses_by_observation:
-            return CheckResult(
-                False,
-                path,
-                operator,
-                f"reference observation {reference_observation!r} was not captured",
-            )
-        reference = resolve_path(
-            responses_by_observation[reference_observation], reference_path
-        )
-        if not reference.found:
-            return CheckResult(
-                False,
-                path,
-                operator,
-                f"reference {reference_observation}:{reference_path} unresolved "
-                f"({reference.reason})",
-            )
-        passed = strict_equal(observed, reference.value)
-        return CheckResult(
             passed,
+            True,
             path,
             operator,
-            f"observed {observed!r} against {reference_observation}:{reference_path} "
-            f"= {reference.value!r}",
+            f"expected one of {_safe_value(allowed)}, observed {_safe_value(observed)}",
         )
-
+    if operator in {"gte", "lte", "gt", "lt"}:
+        left, right = _numeric(observed), _numeric(check["value"])
+        if left is None or right is None:
+            return CheckResult(False, True, path, operator, "numeric comparison required")
+        passed = {"gte": left >= right, "lte": left <= right, "gt": left > right, "lt": left < right}[operator]
+        return CheckResult(passed, True, path, operator, f"observed {left} against {right}")
+    if operator == "matches":
+        pattern = check["value"]
+        passed = isinstance(observed, str) and isinstance(pattern, str) and re.fullmatch(pattern, observed) is not None
+        return CheckResult(passed, True, path, operator, "pattern matched" if passed else "pattern did not match")
+    if operator == "equals_observation_path":
+        other = observations.get(check["observation"])
+        if other is None or other.status != "captured":
+            return CheckResult(False, False, path, operator, "reference observation not captured")
+        reference, reference_conclusive = _resolve_capture(other, check["reference_path"])
+        if not reference_conclusive:
+            return CheckResult(False, False, path, operator, "reference field not captured")
+        if not reference.found:
+            return CheckResult(False, True, path, operator, "reference field is absent")
+        passed = strict_equal(observed, reference.value)
+        return CheckResult(passed, True, path, operator, "cross-observation values match" if passed else "cross-observation values differ")
+    if operator == "equals_invocation_argument":
+        argument = resolve_path(observation.arguments, check["invocation_argument"])
+        if not argument.found:
+            raise CheckerError(
+                f"Invocation argument {check['invocation_argument']!r} was not captured."
+            )
+        passed = strict_equal(observed, argument.value)
+        return CheckResult(passed, True, path, operator, "matches invocation" if passed else "does not match invocation")
     raise CheckerError(f"Unsupported operator {operator!r} on path {path!r}.")
 
 
-# --------------------------------------------------------------------------
-# Classification
-# --------------------------------------------------------------------------
-
-
-def classify(expected_status: str, observed_pass: bool) -> str:
-    """Map an expected status and an observed result onto a register outcome."""
-
+def classify(
+    expected_status: str,
+    desired_pass: bool,
+    known_failure_pass: bool | None = None,
+    *,
+    conclusive: bool = True,
+) -> str:
+    if not conclusive:
+        return NOT_CAPTURED
     if expected_status == "expected_pass":
-        return CONFIRMED if observed_pass else REGRESSION
+        return CONFIRMED if desired_pass else REGRESSION
     if expected_status == "expected_fail":
-        return UNEXPECTED_PASS if observed_pass else KNOWN_FAILING
+        if desired_pass:
+            return UNEXPECTED_PASS
+        return KNOWN_FAILING if known_failure_pass is True else REGRESSION
     raise CheckerError(f"Unsupported expected_status {expected_status!r}.")
 
 
@@ -414,13 +569,18 @@ class SentinelResult:
     outcome: str
     expected_status: str
     observation: str
-    checks: list[CheckResult] = field(default_factory=list)
+    desired_checks: list[CheckResult] = field(default_factory=list)
+    known_failure_checks: list[CheckResult] = field(default_factory=list)
     deficiency: dict[str, Any] | None = None
     note: str = ""
 
     @property
     def failed_checks(self) -> list[CheckResult]:
-        return [item for item in self.checks if not item.passed]
+        return [
+            item
+            for item in self.desired_checks + self.known_failure_checks
+            if not item.passed
+        ]
 
 
 @dataclass
@@ -428,7 +588,6 @@ class Report:
     manifest_target: dict[str, Any]
     capture_metadata: dict[str, Any]
     results: list[SentinelResult]
-    unknown_observations: list[str] = field(default_factory=list)
 
     def by_outcome(self, outcome: str) -> list[SentinelResult]:
         return [item for item in self.results if item.outcome == outcome]
@@ -438,66 +597,35 @@ class Report:
         return {outcome: len(self.by_outcome(outcome)) for outcome in OUTCOME_ORDER}
 
 
-def _decode_response(raw: Any) -> Any:
-    """Accept either a decoded object or the raw JSON string a tool returned."""
-
-    if isinstance(raw, str):
-        try:
-            return json.loads(raw)
-        except ValueError as exc:
-            raise CheckerError(
-                f"A recorded response is a string that is not valid JSON: {exc}"
-            ) from exc
-    return raw
-
-
-def collect_responses(
-    capture: dict[str, Any], known: set[str]
-) -> tuple[dict[str, Any], dict[str, str], list[str]]:
-    """Split a capture into recorded responses, skip reasons, and unknown ids."""
-
-    observations = capture.get("observations")
-    if not isinstance(observations, dict):
-        raise CheckerError("The capture file must contain an 'observations' mapping.")
-    responses: dict[str, Any] = {}
-    skipped: dict[str, str] = {}
-    unknown: list[str] = []
-    for identifier, entry in observations.items():
-        if identifier not in known:
-            unknown.append(identifier)
-            continue
-        if not isinstance(entry, dict):
-            raise CheckerError(
-                f"Capture entry {identifier!r} must be a mapping with a "
-                "'response' or a 'not_recorded_reason'."
-            )
-        if "response" in entry and entry["response"] is not None:
-            responses[identifier] = _decode_response(entry["response"])
-        else:
-            skipped[identifier] = str(
-                entry.get("not_recorded_reason") or "no reason recorded"
-            )
-    return responses, skipped, sorted(unknown)
+def _captured_observations(capture: dict[str, Any]) -> dict[str, CapturedObservation]:
+    values: dict[str, CapturedObservation] = {}
+    for identifier, entry in capture["observations"].items():
+        values[identifier] = CapturedObservation(
+            identifier=identifier,
+            tool=entry["tool"],
+            arguments=dict(entry["arguments"]),
+            status=entry["status"],
+            evidence=dict(entry.get("evidence") or {}),
+            absent_paths=frozenset(entry.get("absent_paths") or ()),
+            reason=str(entry.get("not_recorded_reason") or ""),
+        )
+    return values
 
 
-def evaluate(manifest: dict[str, Any], capture: dict[str, Any]) -> Report:
-    """Classify every sentinel in the manifest against one capture."""
-
-    observations = {item["id"]: item for item in manifest["observations"]}
-    responses, skipped, unknown = collect_responses(capture, set(observations))
-
+def evaluate(
+    manifest: dict[str, Any],
+    capture: dict[str, Any],
+    schema: dict[str, Any] | None = None,
+) -> Report:
+    schema = schema or load_json(DEFAULT_SCHEMA, "schema")
+    errors = validate_capture(manifest, capture, schema)
+    if errors:
+        raise CheckerError("Capture is invalid:\n  - " + "\n  - ".join(errors[:30]))
+    observations = _captured_observations(capture)
     results: list[SentinelResult] = []
     for sentinel in manifest["sentinels"]:
-        required = {sentinel["observation"]}
-        for check in sentinel["checks"]:
-            if check.get("observation"):
-                required.add(check["observation"])
-        missing = sorted(name for name in required if name not in responses)
-        if missing:
-            reasons = "; ".join(
-                f"{name}: {skipped.get(name, 'not present in the capture')}"
-                for name in missing
-            )
+        primary = observations.get(sentinel["observation"])
+        if primary is None or primary.status != "captured":
             results.append(
                 SentinelResult(
                     sentinel_id=sentinel["id"],
@@ -506,280 +634,281 @@ def evaluate(manifest: dict[str, Any], capture: dict[str, Any]) -> Report:
                     expected_status=sentinel["expected_status"],
                     observation=sentinel["observation"],
                     deficiency=sentinel.get("deficiency"),
-                    note=reasons,
+                    note=(primary.reason if primary else "observation entry is missing"),
                 )
             )
             continue
-        response = responses[sentinel["observation"]]
-        checks = [
-            evaluate_check(check, response, responses) for check in sentinel["checks"]
-        ]
-        observed_pass = all(item.passed for item in checks)
+
+        def run(check: dict[str, Any]) -> CheckResult:
+            source = observations.get(
+                check.get("source_observation", sentinel["observation"])
+            )
+            if source is None or source.status != "captured":
+                return CheckResult(
+                    False,
+                    False,
+                    check["path"],
+                    check["operator"],
+                    "required observation not captured",
+                )
+            return evaluate_check(check, source, observations)
+
+        desired = [run(check) for check in sentinel["desired_checks"]]
+        known = [run(check) for check in sentinel.get("known_failure_checks") or []]
+        desired_conclusive = all(item.conclusive for item in desired)
+        known_conclusive = all(item.conclusive for item in known)
+        desired_pass = all(item.passed for item in desired)
+        known_pass = all(item.passed for item in known) if known else None
+        # Once every desired check conclusively passes, the old failure
+        # signature is irrelevant: this is an unexpected pass that requires
+        # human confirmation.  Known-failure evidence is required only when an
+        # expected-fail sentinel still fails its desired contract.
+        conclusive = desired_conclusive and (
+            sentinel["expected_status"] != "expected_fail"
+            or desired_pass
+            or known_conclusive
+        )
         results.append(
             SentinelResult(
                 sentinel_id=sentinel["id"],
                 title=sentinel["title"],
-                outcome=classify(sentinel["expected_status"], observed_pass),
+                outcome=classify(
+                    sentinel["expected_status"],
+                    desired_pass,
+                    known_pass,
+                    conclusive=conclusive,
+                ),
                 expected_status=sentinel["expected_status"],
                 observation=sentinel["observation"],
-                checks=checks,
+                desired_checks=desired,
+                known_failure_checks=known,
                 deficiency=sentinel.get("deficiency"),
+                note=("required projected evidence is incomplete" if not conclusive else ""),
             )
         )
-
     return Report(
         manifest_target=dict(manifest.get("target") or {}),
         capture_metadata={
-            key: capture.get(key)
-            for key in ("capture_version", "captured_at", "captured_by", "target")
-            if capture.get(key) is not None
+            key: capture[key]
+            for key in (
+                "capture_schema_version",
+                "manifest_version",
+                "manifest_digest",
+                "captured_at",
+                "captured_by",
+                "session_id",
+                "target",
+            )
         },
         results=results,
-        unknown_observations=unknown,
     )
 
 
 def exit_code(report: Report) -> int:
-    counts = report.counts
-    if counts[REGRESSION]:
+    if report.counts[REGRESSION]:
         return EXIT_REGRESSION
-    if counts[NOT_CAPTURED]:
+    if report.counts[NOT_CAPTURED]:
         return EXIT_INCOMPLETE
     return EXIT_OK
 
 
-# --------------------------------------------------------------------------
-# Rendering
-# --------------------------------------------------------------------------
+def _one_line(value: Any) -> str:
+    return " ".join(str(value).split())[:320]
 
 
 def render_text(report: Report) -> str:
     target = report.manifest_target
-    labels = {key: f"capture {key}" for key in report.capture_metadata}
-    width = max([len("manifest target"), *(len(item) for item in labels.values())])
     lines = [
         "Promotion regression check",
-        f"  {'manifest target':<{width}} : {target.get('release', 'unknown')} "
-        f"({target.get('tag', 'no tag')})",
-        f"  {'manifest build':<{width}} : {target.get('build_sha', 'unknown')}",
+        f"  manifest target : {target.get('release', 'unknown')}",
+        f"  manifest build  : {target.get('build_sha', 'unknown')}",
+        f"  captured at     : {report.capture_metadata.get('captured_at', 'unknown')}",
+        f"  operator/session: {_one_line(report.capture_metadata.get('captured_by', ''))} / "
+        f"{_one_line(report.capture_metadata.get('session_id', ''))}",
+        "",
+        "Summary",
     ]
-    for key, value in sorted(report.capture_metadata.items()):
-        lines.append(f"  {labels[key]:<{width}} : {value}")
     counts = report.counts
-    lines.append("")
-    lines.append("Summary")
-    lines.append(f"  REGRESSION      {counts[REGRESSION]:>3}   promotion blocker")
-    lines.append(f"  NOT_CAPTURED    {counts[NOT_CAPTURED]:>3}   run incomplete")
-    lines.append(f"  UNEXPECTED_PASS {counts[UNEXPECTED_PASS]:>3}   needs a human status flip")
-    lines.append(f"  KNOWN_FAILING   {counts[KNOWN_FAILING]:>3}   tracked, informational")
-    lines.append(f"  CONFIRMED       {counts[CONFIRMED]:>3}")
-
-    if report.unknown_observations:
-        lines.append("")
-        lines.append(
-            "Capture contains observation ids the manifest does not declare: "
-            + ", ".join(report.unknown_observations)
-        )
-
+    for outcome in OUTCOME_ORDER:
+        lines.append(f"  {outcome:<15} {counts[outcome]:>3}")
     for outcome in OUTCOME_ORDER:
         entries = report.by_outcome(outcome)
         if not entries:
             continue
-        lines.append("")
-        lines.append(f"--- {OUTCOME_HEADINGS[outcome]}")
+        lines.extend(("", f"--- {OUTCOME_HEADINGS[outcome]}"))
         for entry in entries:
             lines.append(f"  [{entry.sentinel_id}] {entry.title}")
             if entry.deficiency:
-                register_item = entry.deficiency.get("register_item")
-                related = entry.deficiency.get("related_register_items") or []
-                related_text = (
-                    f" (also #{', #'.join(str(item) for item in related)})"
-                    if related
-                    else ""
-                )
                 lines.append(
-                    f"      deficiency #{register_item}{related_text}: "
+                    f"      deficiency #{entry.deficiency.get('register_item')}: "
                     f"{_one_line(entry.deficiency.get('summary', ''))}"
                 )
             if entry.note:
-                lines.append(f"      not captured: {entry.note}")
-            for check in entry.failed_checks:
-                lines.append(f"      failed {check.path} [{check.operator}]: {check.detail}")
+                lines.append(f"      {_one_line(entry.note)}")
+            for check in entry.failed_checks[:MAX_FAILED_CHECKS_RENDERED]:
+                lines.append(
+                    f"      failed {check.path} [{check.operator}]: {_one_line(check.detail)}"
+                )
     lines.append("")
     if counts[REGRESSION]:
-        lines.append(
-            "Result: REGRESSION present. Do not promote until each one is "
-            "explained or fixed."
-        )
+        lines.append("Result: regression present. Do not treat this capture as clean evidence.")
     elif counts[NOT_CAPTURED]:
-        lines.append(
-            "Result: no regression found, but the run is incomplete. Capture "
-            "the missing observations before treating this as a promotion gate."
-        )
+        lines.append("Result: no regression found, but required evidence is not captured.")
     else:
-        lines.append("Result: complete run, no regression.")
+        lines.append("Result: complete operator-attested capture; no regression detected.")
     if counts[UNEXPECTED_PASS]:
         lines.append(
-            "Note: an expected_fail sentinel passed. Confirm the underlying fix "
-            "live, then flip its expected_status in the manifest by hand."
+            "Unexpected passes require human confirmation and a reviewed manifest update; "
+            "the checker does not change status automatically."
         )
-    return "\n".join(lines)
-
-
-def _one_line(value: str) -> str:
-    return " ".join(str(value).split())
+    rendered = "\n".join(lines)
+    return rendered[:MAX_REPORT_BYTES]
 
 
 def render_json(report: Report) -> str:
-    return json.dumps(
-        {
-            "manifest_target": report.manifest_target,
-            "capture": report.capture_metadata,
-            "counts": report.counts,
-            "unknown_observations": report.unknown_observations,
-            "promotion_blocked": bool(report.counts[REGRESSION]),
-            "run_complete": not report.counts[NOT_CAPTURED],
-            "sentinels": [
-                {
-                    "id": entry.sentinel_id,
-                    "title": entry.title,
-                    "outcome": entry.outcome,
-                    "expected_status": entry.expected_status,
-                    "observation": entry.observation,
-                    "deficiency": entry.deficiency,
-                    "note": entry.note,
-                    "failed_checks": [
-                        {
-                            "path": check.path,
-                            "operator": check.operator,
-                            "detail": check.detail,
-                        }
-                        for check in entry.failed_checks
-                    ],
-                }
-                for entry in report.results
-            ],
+    value = {
+        "manifest_target": {
+            key: report.manifest_target.get(key) for key in ("release", "tag", "build_sha")
         },
-        indent=2,
-    )
+        "capture": report.capture_metadata,
+        "counts": report.counts,
+        "promotion_blocked": bool(report.counts[REGRESSION]),
+        "run_complete": not report.counts[NOT_CAPTURED],
+        "sentinels": [
+            {
+                "id": entry.sentinel_id,
+                "title": entry.title,
+                "outcome": entry.outcome,
+                "expected_status": entry.expected_status,
+                "observation": entry.observation,
+                "deficiency": entry.deficiency,
+                "note": entry.note,
+                "failed_checks": [
+                    {
+                        "path": check.path,
+                        "operator": check.operator,
+                        "detail": _one_line(check.detail),
+                    }
+                    for check in entry.failed_checks[:MAX_FAILED_CHECKS_RENDERED]
+                ],
+            }
+            for entry in report.results
+        ],
+    }
+    rendered = json.dumps(value, indent=2)
+    if len(rendered.encode("utf-8")) > MAX_REPORT_BYTES:
+        raise CheckerError("Bounded report size was exceeded.")
+    return rendered
 
 
 def render_plan(manifest: dict[str, Any]) -> str:
     users: dict[str, list[str]] = {}
     for sentinel in manifest["sentinels"]:
-        users.setdefault(sentinel["observation"], []).append(sentinel["id"])
+        for check in _all_checks(sentinel):
+            users.setdefault(
+                check.get("source_observation", sentinel["observation"]), []
+            ).append(sentinel["id"])
+            if check.get("operator") == "equals_observation_path":
+                users.setdefault(check["observation"], []).append(sentinel["id"])
+    paths = _required_paths(manifest)
     target = manifest.get("target") or {}
     lines = [
-        "Promotion regression observations to perform",
-        f"  target: {target.get('release', 'unknown')} ({target.get('tag', 'no tag')})",
+        "Promotion regression observations (manual, separately authorized, read-only)",
+        f"  target: {target.get('release')} @ {target.get('build_sha')}",
+        "  manifest digest: " + canonical_manifest_digest(manifest),
         "",
-        "Perform each call against the deployed server, then record the raw",
-        "response in a capture file under observations.<id>.response.",
+        "Record only the allowlisted projected fields. Do not retain complete raw responses.",
         "",
     ]
     for index, observation in enumerate(manifest["observations"], start=1):
-        lines.append(f"{index}. {observation['id']}  ->  {observation['tool']}")
-        arguments = observation.get("arguments") or {}
-        rendered = json.dumps(arguments, sort_keys=True) if arguments else "{}"
-        lines.append(f"     arguments    : {rendered}")
-        lines.append(f"     effect class : {observation['effect_class']}")
-        if observation.get("target_binding") == "operator_local":
-            lines.append(
-                f"     operator input: {_one_line(observation.get('target_note', ''))}"
-            )
-        if observation.get("precondition"):
-            lines.append(
-                f"     PRECONDITION : {_one_line(observation['precondition'])}"
-            )
-        lines.append(f"     procedure    : {_one_line(observation['procedure'])}")
+        lines.append(f"{index}. {observation['id']} -> {observation['tool']}")
         lines.append(
-            "     sentinels    : " + ", ".join(users.get(observation["id"], []))
+            "     fixed arguments   : "
+            + json.dumps(observation.get("arguments") or {}, sort_keys=True)
         )
+        if observation.get("operator_arguments"):
+            lines.append(
+                "     operator arguments: "
+                + ", ".join(sorted(observation["operator_arguments"]))
+            )
+        lines.append("     effect class      : read_only")
+        lines.append("     procedure         : " + _one_line(observation["procedure"]))
+        lines.append("     capture paths     :")
+        lines.extend(f"       - {path}" for path in sorted(paths[observation["id"]]))
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _placeholder_for(schema: dict[str, Any], name: str) -> Any:
+    if "const" in schema:
+        return schema["const"]
+    if schema.get("type") == "integer":
+        return schema.get("minimum", 0)
+    return f"REPLACE-WITH-{name.upper()}"
+
+
 def render_template(manifest: dict[str, Any]) -> str:
+    observations: dict[str, Any] = {}
+    for observation in manifest["observations"]:
+        arguments = dict(observation.get("arguments") or {})
+        for name, argument_schema in (observation.get("operator_arguments") or {}).items():
+            arguments[name] = _placeholder_for(argument_schema, name)
+        observations[observation["id"]] = {
+            "observation_id": observation["id"],
+            "tool": observation["tool"],
+            "arguments": arguments,
+            "status": "not_captured",
+            "not_recorded_reason": "REPLACE-WITH-REASON-OR-CAPTURED-EVIDENCE",
+        }
     return json.dumps(
         {
-            "capture_version": 1,
+            "capture_schema_version": CAPTURE_SCHEMA_VERSION,
+            "manifest_version": manifest["manifest_version"],
+            "manifest_digest": canonical_manifest_digest(manifest),
             "captured_at": "REPLACE-WITH-UTC-TIMESTAMP",
-            "captured_by": "REPLACE-WITH-OPERATOR-OR-SESSION",
+            "captured_by": "REPLACE-WITH-OPERATOR",
+            "session_id": "REPLACE-WITH-SESSION",
             "target": {
-                "release": (manifest.get("target") or {}).get("release"),
-                "build_sha": (manifest.get("target") or {}).get("build_sha"),
+                "release": manifest["target"]["release"],
+                "build_sha": manifest["target"]["build_sha"],
             },
-            "observations": {
-                observation["id"]: {
-                    "tool": observation["tool"],
-                    "response": None,
-                    "not_recorded_reason": "REPLACE-WITH-RESPONSE-OR-EXPLAIN",
-                }
-                for observation in manifest["observations"]
-            },
+            "observations": observations,
         },
         indent=2,
+        sort_keys=False,
     )
-
-
-# --------------------------------------------------------------------------
-# Command line
-# --------------------------------------------------------------------------
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="promotion_regression_check.py",
-        description=(
-            "Classify a promotion regression capture against the versioned "
-            "manifest. This program never contacts a live target."
-        ),
+        description="Validate and classify operator-supplied promotion evidence offline.",
     )
-    parser.add_argument(
-        "--manifest",
-        type=Path,
-        default=DEFAULT_MANIFEST,
-        help="Path to the manifest (default: promotion/promotion_regression_manifest.yaml).",
-    )
-    parser.add_argument(
-        "--schema",
-        type=Path,
-        default=DEFAULT_SCHEMA,
-        help="Path to the manifest JSON schema (default: promotion/manifest_schema.json).",
-    )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-    subparsers.add_parser("validate", help="Validate the manifest structure.")
-    subparsers.add_parser("plan", help="Print the observations to perform.")
-    subparsers.add_parser("template", help="Print an empty capture skeleton.")
-    evaluate_parser = subparsers.add_parser(
-        "evaluate", help="Classify a recorded capture."
-    )
-    evaluate_parser.add_argument(
-        "--capture", type=Path, required=True, help="Path to the capture JSON file."
-    )
-    evaluate_parser.add_argument(
-        "--format", choices=("text", "json"), default="text", help="Output format."
-    )
+    parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
+    parser.add_argument("--schema", type=Path, default=DEFAULT_SCHEMA)
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("validate")
+    commands.add_parser("plan")
+    commands.add_parser("template")
+    evaluate_parser = commands.add_parser("evaluate")
+    evaluate_parser.add_argument("--capture", type=Path, required=True)
+    evaluate_parser.add_argument("--format", choices=("text", "json"), default="text")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    arguments = parser.parse_args(argv)
+    arguments = build_parser().parse_args(argv)
     try:
         manifest = load_manifest(arguments.manifest)
         schema = load_json(arguments.schema, "schema")
         errors = validate_manifest(manifest, schema)
         if errors:
-            print(f"Manifest {arguments.manifest} is invalid:", file=sys.stderr)
-            for error in errors:
-                print(f"  - {error}", file=sys.stderr)
-            return EXIT_USAGE
+            raise CheckerError("Manifest is invalid:\n  - " + "\n  - ".join(errors[:40]))
         if arguments.command == "validate":
             print(
-                f"Manifest {arguments.manifest} is valid: "
-                f"{len(manifest['observations'])} observations, "
-                f"{len(manifest['sentinels'])} sentinels."
+                f"Manifest is valid: {len(manifest['observations'])} observations, "
+                f"{len(manifest['sentinels'])} sentinels, "
+                f"digest {canonical_manifest_digest(manifest)}."
             )
             return EXIT_OK
         if arguments.command == "plan":
@@ -788,10 +917,10 @@ def main(argv: list[str] | None = None) -> int:
         if arguments.command == "template":
             print(render_template(manifest))
             return EXIT_OK
-        capture = load_json(arguments.capture, "capture")
+        capture = load_json(arguments.capture, "capture", maximum_bytes=MAX_CAPTURE_BYTES)
         if not isinstance(capture, dict):
-            raise CheckerError("The capture file must contain a JSON object.")
-        report = evaluate(manifest, capture)
+            raise CheckerError("Capture must be a JSON object.")
+        report = evaluate(manifest, capture, schema)
         print(render_json(report) if arguments.format == "json" else render_text(report))
         return exit_code(report)
     except CheckerError as exc:
@@ -799,5 +928,5 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_USAGE
 
 
-if __name__ == "__main__":  # pragma: no cover - process entry point
+if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())

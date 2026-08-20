@@ -1,34 +1,12 @@
-# HA MCP Engineering promotion regression manifest.
+# Versioned, transport-free promotion regression sentinels.
 #
-# Purpose
-#   Every promotion of the Engineering beta must re-run the same fixed set of
-#   read-only checks against the deployed server. Before this file existed the
-#   checks lived only in conversation, so a regression in previously accepted
-#   behavior could pass unnoticed. Consolidated Deficiency Register (HAMCP-089)
-#   item #22 requires that this become a versioned repository artifact.
-#
-# How to use it
-#   See promotion/README.md. In short: an operator (or an interactive agent
-#   session that already holds live MCP access) performs each observation
-#   below, records the raw tool responses into a capture file, and runs
-#   scripts/promotion_regression_check.py evaluate. The checker never contacts
-#   the live target itself.
-#
-# Field paths
-#   Every `path` below is rooted at the recorded tool response. Engineering
-#   tools that use the structured envelope expose their payload under `data`;
-#   `get_automation_config` returns a bare JSON object with no envelope and its
-#   paths are therefore rooted at the object itself. Paths were derived from
-#   runtime source at v2.2.0-beta.39, not from remembered values.
-#
-# Statuses
-#   expected_pass  the behavior is accepted; a failure is a REGRESSION.
-#   expected_fail  a linked open deficiency currently breaks it; a failure is
-#                  KNOWN_FAILING and a pass is UNEXPECTED_PASS for a human to
-#                  review. Flipping a status is a human decision, never the
-#                  checker's.
+# An authorized operator performs only the read-only observations below and
+# records the allowlisted projections printed by:
+#   python scripts/promotion_regression_check.py plan
+# The checker makes no live calls. Captures are operator-attested evidence, not
+# cryptographic provenance. Missing evidence is never success.
 
-manifest_version: 1
+manifest_version: 2
 
 target:
   release: 2.2.0-beta.39
@@ -36,227 +14,203 @@ target:
   build_sha: bf4236cc99c9515325d7cba0fd8d2f909d3573cb
   evidence_captured_at: "2026-08-19"
   evidence_source: >-
-    Two manual live regression passes against the deployed 2.2.0-beta.39
-    server, consolidated into the HAMCP-089 deficiency register. The
-    expected_fail entries below carry the exact values observed in those
-    passes. Field paths were re-derived from v2.2.0-beta.39 runtime source
-    while writing this manifest; no live instance was contacted to produce
-    this file.
+    Bounded signatures derived from two manually reported Beta 39 live
+    regression passes and rechecked against the reviewed Beta 39 source
+    contracts. The committed fixture is synthetic and contains no production
+    response body or credential.
   notes: >-
-    The register itself is not committed to this repository. This manifest is
-    the first repo-committed record of its sentinel set, so each entry
-    restates the evidence it was built from rather than referring to an
-    external document.
+    Expected failures are informational only when every desired check fails in
+    the recorded way and every bounded known-failure check matches. A different
+    failure is a regression. No status is changed automatically.
 
 observations:
   - id: server_identity
     tool: server_info
-    arguments:
-      check_ha: true
+    arguments: {check_ha: true}
     effect_class: read_only
     procedure: >-
-      Call server_info with check_ha=true and record the complete JSON
-      response, including the success envelope.
+      Call server_info with check_ha=true. Copy only the allowlisted identity,
+      version, build, Home Assistant, and tool-accounting fields.
 
   - id: server_health
     tool: get_server_health
-    arguments:
-      check_ha: true
+    arguments: {check_ha: true}
     effect_class: read_only
     procedure: >-
-      Call get_server_health with check_ha=true and record the complete JSON
-      response. This single observation backs most sentinels below; do not
-      re-call it per sentinel.
+      Call get_server_health with check_ha=true. Copy only the allowlisted
+      health, provider, governance, storage, and fallback fields.
 
   - id: direct_entity_read
     tool: get_entity
-    arguments:
-      entity_id: input_boolean.mcp_f2_standard_admin_test_flag
+    arguments: {entity_id: input_boolean.mcp_f2_standard_admin_test_flag}
     effect_class: read_only
     procedure: >-
-      Call get_entity for the standard-admin test flag and record the complete
-      JSON response. This is the representative direct Home Assistant REST
-      read.
+      Read the exact disposable helper and copy only success, entity identity,
+      state, and resource classification. Do not retain attributes.
 
   - id: native_dependency_read
     tool: entity_dependency_analysis
     arguments:
       entity_id: input_boolean.mcp_f2_standard_admin_test_flag
-      detail_level: summary
-      source_types:
-        - automation
-        - blueprint
-      refresh_index: false
+      detail_level: evidence
+      include_indirect: true
+      max_depth: 3
+      source_types: [automation, blueprint]
+      limit: 100
+      cursor: ""
+      refresh_index: true
     effect_class: read_only
     procedure: >-
-      Call entity_dependency_analysis for the standard-admin test flag with
-      refresh_index=false and record the complete JSON response. This is both
-      the representative Engineering-native read and the dependency-coverage
-      evidence.
+      Force a fresh bounded dependency scan. Copy the allowlisted cache,
+      coverage, count, fallback, and bounded failed-obligation projection only.
+      The failed-obligation set fingerprint is the SHA-256 of the exact bounded
+      signature containing source type, blueprint path, reason code, and count;
+      never copy blueprint bodies.
 
   - id: delegated_overview_read
     tool: ha_get_overview
     arguments: {}
     effect_class: read_only
     procedure: >-
-      Call ha_get_overview with no arguments and record the complete JSON
-      response. This is the representative delegated read through the admitted
-      upstream read gateway.
+      Run the admitted upstream overview read and copy only success, provider,
+      classification, and fallback attribution.
 
   - id: dashboard_map_read
     tool: get_dashboard_config
-    arguments:
-      url_path: map
-      force_reload: true
+    arguments: {url_path: map, force_reload: true}
     effect_class: read_only
     procedure: >-
-      Call get_dashboard_config for the stock hyphenless `map` dashboard and
-      record the complete JSON response. The hyphenless canonical path is the
-      case that upstream dashboard validation historically rejected.
+      Read the stock map dashboard and copy only identity, returned-status,
+      provider, dispatch, and fallback fields. Do not retain dashboard content.
 
   - id: long_wait_template_automation_read
     tool: get_automation_config
     arguments: {}
+    operator_arguments:
+      automation_id: {type: string, minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9_.-]+$"}
     effect_class: read_only
     target_binding: operator_local
     target_note: >-
-      Supply the internal automation id of the instance's long wait_template
-      automation. Do not record that id, or any automation body, in this
-      repository; keep it in the operator-local capture file only.
+      Resolve the dedicated accepted long-wait-template canary automation id
+      before invocation and record that exact id in capture arguments.
     procedure: >-
-      Call get_automation_config for the operator's long wait_template
-      automation and record the complete response. This tool returns a bare
-      JSON object with no success envelope, so the paths below are rooted at
-      the automation configuration itself.
+      Read the exact canary automation. Project its returned id plus a bounded
+      structural summary: wait_template count, action index, template length,
+      and SHA-256 semantic digest. Do not retain the automation body.
 
   - id: stale_state_canary_task
     tool: get_execution_task
     arguments: {}
+    operator_arguments:
+      task_id: {type: string, pattern: "^[a-f0-9]{32}$"}
     effect_class: read_only
     target_binding: operator_local
     target_note: >-
-      Supply the task id of the recorded stale-state canary execution task.
-      Obtain it with list_execution_tasks(state="failed_pre_dispatch") if it is
-      not already known. Keep the id in the operator-local capture file only.
+      Resolve the exact accepted stale-helper-state canary task id and record it
+      in capture arguments. Do not substitute any other failed task.
     procedure: >-
-      Call get_execution_task for the stale-state canary task and record the
-      complete JSON response. The canary refusing to dispatch is the desired
-      behavior, not a defect.
+      Read the exact task and copy only task identity, operation, target,
+      terminal state, dispatch accounting, and bounded stale-state error fields.
+
+  - id: f3_orphan_task
+    tool: get_execution_task
+    arguments: {task_id: ab8d7cd12aad48aab8307ca819c794ca}
+    effect_class: read_only
+    procedure: >-
+      Read the exact recorded orphan task. Copy only parent/child lifecycle,
+      dispatch count, and bounded selective-hold count.
+
+  - id: execution_task_inventory
+    tool: list_execution_tasks
+    arguments: {state: "", terminal_outcome: "", plan_id: "", limit: 100}
+    effect_class: read_only
+    procedure: >-
+      List the bounded task inventory and project only the exact orphan task's
+      identity and parent state. Do not retain unrelated task records.
+
+  - id: historical_policy_snapshot_plan
+    tool: get_change_plan
+    arguments: {plan_id: 00dbf0dfbd7f4f3e84d01a30d18ffdde}
+    effect_class: read_only
+    procedure: >-
+      Read the exact historically failing plan and copy only success, top-level
+      error taxonomy, and bounded resource identity.
+
+  - id: historical_approval_sequence_plan
+    tool: get_change_plan
+    arguments: {plan_id: 72cd49adeeec492c91679ef2c78bc325}
+    effect_class: read_only
+    procedure: >-
+      Read the exact historically failing plan and copy only success, top-level
+      error taxonomy, and bounded resource identity.
+
+  - id: home_assistant_configuration_validation
+    tool: check_config
+    arguments: {}
+    effect_class: read_only
+    procedure: >-
+      Run Home Assistant's reviewed read-only full configuration check and copy
+      only the normalized result/errors plus direct-provider and fallback data.
 
   - id: held_read_canary_not_found
     tool: run_held_read_canary
     arguments:
       upstream_tool_name: ha_get_operation_status
-      arguments:
-        operation_id: hamcp-089-deliberately-nonexistent-operation
+      arguments: {operation_id: hamcp-089-deliberately-nonexistent-operation}
+    operator_arguments:
+      expected_compatibility_entry_id: {type: string, minLength: 1, maxLength: 160}
     effect_class: read_only
     target_binding: operator_local
     target_note: >-
-      Supply expected_compatibility_entry_id from the same run's
-      get_server_health response at
-      data.upstream_read_gateway.selected_compatibility_entry_id. The canary
-      refuses to run when the supplied entry id does not match the active one.
+      Copy the active selected compatibility entry id from this run's health
+      response into the exact invocation arguments.
     procedure: >-
-      Call run_held_read_canary for ha_get_operation_status with a deliberately
-      nonexistent operation id. This is evidence only; it never registers,
-      admits, or promotes the held tool. The call is expected to return a
-      failure envelope carrying canary evidence, so record the complete JSON
-      response including details.canary_evidence.
-
-  - id: helper_no_change_probe
-    tool: create_helper_state_plan
-    arguments:
-      entity_id: input_boolean.mcp_f2_standard_admin_test_flag
-      desired_state: "off"
-    effect_class: no_change_probe
-    precondition: >-
-      Read the current state of input_boolean.mcp_f2_standard_admin_test_flag
-      first (the direct_entity_read observation already does this) and confirm
-      it is already "off". Only then request desired_state "off". When current
-      and desired state match, the tool returns a verified no-change result and
-      creates no plan and no dispatch. If the flag is not "off", do not invoke
-      this observation; record it as not captured and note why.
-    procedure: >-
-      After confirming the precondition, call create_helper_state_plan with
-      desired_state "off" and record the complete JSON response.
+      Run the held read against the deliberately nonexistent operation. Copy
+      only the bounded contract, held-status, nested not-found, top-level
+      taxonomy, dispatch, promotion, and fallback evidence.
 
 sentinels:
   - id: runtime-server-version
     title: Advertised Engineering version is the promoted release
-    description: >-
-      server_info advertises the exact Engineering version under promotion. A
-      mismatch means the deployed image is not the artifact being accepted.
+    description: The deployed server identifies the exact promoted Engineering release and schema.
     register_section: minimum_permanent_sentinels
     observation: server_identity
     expected_status: expected_pass
-    checks:
-      - path: success
-        operator: equals
-        value: true
-      - path: data.server.version
-        operator: equals
-        value: 2.2.0-beta.39
-      - path: data.server.id
-        operator: equals
-        value: hass-mcp-engineering-beta
-      - path: data.server.schema_version
-        operator: equals
-        value: "1"
+    desired_checks:
+      - {path: success, operator: equals, value: true}
+      - {path: data.server.version, operator: equals, value: 2.2.0-beta.39}
+      - {path: data.server.id, operator: equals, value: hass-mcp-engineering-beta}
+      - {path: data.server.schema_version, operator: equals, value: "1"}
 
   - id: runtime-build-provenance
-    title: Build SHA matches the promoted commit and the image is not dirty
-    description: >-
-      The running image reports the exact Git object id of the promoted commit
-      and a clean build. An unknown or dirty build SHA means the deployed
-      artifact cannot be tied to reviewed source.
+    title: Runtime build matches the promoted commit
+    description: The running artifact reports the exact reviewed SHA and a clean build.
     register_section: minimum_permanent_sentinels
     observation: server_identity
     expected_status: expected_pass
-    checks:
-      - path: data.server.build_sha
-        operator: equals
-        value: bf4236cc99c9515325d7cba0fd8d2f909d3573cb
-        note: >-
-          Update this value in the same commit that promotes a new release. A
-          stale value here produces a REGRESSION, which is the intended
-          behavior for an unreviewed image.
-      - path: data.server.build_dirty
-        operator: equals
-        value: false
+    desired_checks:
+      - {path: data.server.build_sha, operator: equals, value: bf4236cc99c9515325d7cba0fd8d2f909d3573cb}
+      - {path: data.server.build_dirty, operator: equals, value: false}
 
   - id: runtime-tool-accounting
     title: Exact public tool accounting
-    description: >-
-      Public tool accounting stays at 25 canonical plus 26 Engineering-native
-      tools (51 registered) plus 25 dynamically exposed upstream reads, for 76
-      total. Any drift means tool reachability changed.
+    description: The promoted runtime retains 25 canonical, 26 Engineering-native, and 25 delegated tools.
     register_section: minimum_permanent_sentinels
     observation: server_identity
     expected_status: expected_pass
-    checks:
-      - path: data.tool_count
-        operator: equals
-        value: 76
-      - path: data.engineering_registered_tool_count
-        operator: equals
-        value: 51
-      - path: data.dynamic_upstream_tool_count
-        operator: equals
-        value: 25
-      - path: data.canonical_tool_count
-        operator: equals
-        value: 25
+    desired_checks:
+      - {path: data.tool_count, operator: equals, value: 76}
+      - {path: data.engineering_registered_tool_count, operator: equals, value: 51}
+      - {path: data.dynamic_upstream_tool_count, operator: equals, value: 25}
+      - {path: data.canonical_tool_count, operator: equals, value: 25}
 
   - id: runtime-tool-accounting-agreement
-    title: Health and identity surfaces report the same tool accounting
-    description: >-
-      get_server_health computes its tool counts independently of server_info.
-      The two surfaces must agree; divergence indicates a partially applied
-      registration change.
+    title: Health and identity agree on tool accounting
+    description: Independently projected health and identity totals must agree exactly.
     register_section: minimum_permanent_sentinels
     observation: server_health
     expected_status: expected_pass
-    checks:
+    desired_checks:
       - path: data.registered_tool_count
         operator: equals_observation_path
         observation: server_identity
@@ -271,36 +225,23 @@ sentinels:
         reference_path: data.dynamic_upstream_tool_count
 
   - id: home-assistant-connectivity
-    title: Home Assistant REST and WebSocket transports are connected
-    description: >-
-      Both read-only probes must report connected. The helper state provider
-      treats REST as state and readback evidence and WebSocket as dispatch
-      evidence, so a single degraded transport removes helper availability.
+    title: Required Home Assistant transports are connected
+    description: REST and WebSocket connectivity must both be present for the exact provider contract.
     register_section: minimum_permanent_sentinels
     observation: server_health
     expected_status: expected_pass
-    checks:
-      - path: data.home_assistant.status
-        operator: equals
-        value: connected
-      - path: data.home_assistant.rest_status
-        operator: equals
-        value: connected
-      - path: data.home_assistant.websocket_status
-        operator: equals
-        value: connected
+    desired_checks:
+      - {path: data.home_assistant.status, operator: equals, value: connected}
+      - {path: data.home_assistant.rest_status, operator: equals, value: connected}
+      - {path: data.home_assistant.websocket_status, operator: equals, value: connected}
 
   - id: home-assistant-version-agreement
-    title: Both connectivity surfaces observe the same Home Assistant version
-    description: >-
-      server_info and get_server_health probe Home Assistant independently.
-      Comparing the two observed versions detects a split or stale connection
-      without hardcoding a Home Assistant version that legitimately changes on
-      upgrade.
+    title: Home Assistant observations agree on version
+    description: The two independent read-only connectivity surfaces must report one version.
     register_section: minimum_permanent_sentinels
     observation: server_health
     expected_status: expected_pass
-    checks:
+    desired_checks:
       - path: data.home_assistant.version
         operator: equals_observation_path
         observation: server_identity
@@ -308,514 +249,343 @@ sentinels:
 
   - id: upstream-ha-mcp-exact-admission
     title: ha-mcp is admitted exactly
-    description: >-
-      The upstream read gateway must report exact compatibility and exact
-      admission. Anything else means delegated reads are running against an
-      unreviewed or reconciling upstream release.
+    description: The upstream read gateway must retain exact reviewed admission and count.
     register_section: minimum_permanent_sentinels
     observation: server_health
     expected_status: expected_pass
-    checks:
-      - path: data.upstream_read_gateway.compatibility_status
-        operator: equals
-        value: exact
-      - path: data.upstream_read_gateway.admission_status
-        operator: equals
-        value: admitted_exact
-      - path: data.upstream_read_gateway.dynamically_exposed_count
-        operator: equals
-        value: 25
+    desired_checks:
+      - {path: data.upstream_read_gateway.compatibility_status, operator: equals, value: exact}
+      - {path: data.upstream_read_gateway.admission_status, operator: equals, value: admitted_exact}
+      - {path: data.upstream_read_gateway.dynamically_exposed_count, operator: equals, value: 25}
 
   - id: upstream-read-gateway-zero-fallback
-    title: Read gateway has zero fallback and no write reachability
-    description: >-
-      The read gateway must never fall back to direct Home Assistant access or
-      expose a write. A nonzero fallback count is a provider-boundary
-      regression.
+    title: Read gateway has zero fallback and no writes
+    description: The admitted upstream read path must not add direct fallback or write reachability.
     register_section: minimum_permanent_sentinels
     observation: server_health
     expected_status: expected_pass
-    checks:
-      - path: data.upstream_read_gateway.fallback_count
-        operator: equals
-        value: 0
-      - path: data.upstream_read_gateway.direct_ha_fallback_allowed
-        operator: equals
-        value: false
-      - path: data.upstream_read_gateway.writes_allowed
-        operator: equals
-        value: false
+    desired_checks:
+      - {path: data.upstream_read_gateway.fallback_count, operator: equals, value: 0}
+      - {path: data.upstream_read_gateway.direct_ha_fallback_allowed, operator: equals, value: false}
+      - {path: data.upstream_read_gateway.writes_allowed, operator: equals, value: false}
 
   - id: upstream-dashboard-zero-fallback
-    title: Dashboard provider declares no fallback on either route
-    description: >-
-      The dashboard provider expresses zero fallback per route rather than as a
-      counter. Both the ordinary read route and the governed write route must
-      declare fallback "none", and the write route must not permit direct Home
-      Assistant fallback.
+    title: Dashboard routes declare zero fallback
+    description: Both dashboard routes keep explicit no-fallback and no direct-HA write fallback.
     register_section: minimum_permanent_sentinels
     observation: server_health
     expected_status: expected_pass
-    checks:
-      - path: data.upstream_dashboard.ordinary_dashboard_read_route.fallback
-        operator: equals
-        value: none
-      - path: data.upstream_dashboard.governed_dashboard_write_route.fallback
-        operator: equals
-        value: none
-      - path: data.upstream_dashboard.governed_dashboard_write_route.direct_home_assistant_fallback
-        operator: equals
-        value: false
-      - path: data.upstream_dashboard.writes_allowed
-        operator: equals
-        value: false
+    desired_checks:
+      - {path: data.upstream_dashboard.ordinary_dashboard_read_route.fallback, operator: equals, value: none}
+      - {path: data.upstream_dashboard.governed_dashboard_write_route.fallback, operator: equals, value: none}
+      - {path: data.upstream_dashboard.governed_dashboard_write_route.direct_home_assistant_fallback, operator: equals, value: false}
+      - {path: data.upstream_dashboard.writes_allowed, operator: equals, value: false}
 
   - id: provider-routing-zero-fallback
-    title: Process-wide routing counters show no fallback of any kind
-    description: >-
-      The routing metrics count every fallback attempt, success, and prohibited
-      attempt for the process lifetime. All three must remain zero and standard
-      ha-mcp delegation must remain unavailable.
+    title: Process routing reports no fallback
+    description: Process-wide provider metrics must show no attempted, successful, or prohibited fallback.
     register_section: minimum_permanent_sentinels
     observation: server_health
     expected_status: expected_pass
-    checks:
-      - path: data.provider_routing.fallback_attempts
-        operator: equals
-        value: 0
-      - path: data.provider_routing.fallback_successes
-        operator: equals
-        value: 0
-      - path: data.provider_routing.prohibited_fallback_attempts
-        operator: equals
-        value: 0
-      - path: data.provider_routing.standard_ha_mcp_delegation
-        operator: equals
-        value: unavailable
-      - path: data.provider_routing.direct_fallback_requires_explicit_policy
-        operator: equals
-        value: true
+    desired_checks:
+      - {path: data.provider_routing.fallback_attempts, operator: equals, value: 0}
+      - {path: data.provider_routing.fallback_successes, operator: equals, value: 0}
+      - {path: data.provider_routing.prohibited_fallback_attempts, operator: equals, value: 0}
+      - {path: data.provider_routing.standard_ha_mcp_delegation, operator: equals, value: unavailable}
+      - {path: data.provider_routing.direct_fallback_requires_explicit_policy, operator: equals, value: true}
 
   - id: governance-plan-storage-healthy
-    title: Governance plan storage is healthy with no corruption or write loss
-    description: >-
-      Change-plan persistence is the authority for approval state. Corruption
-      or write failures invalidate every governance conclusion drawn from it.
+    title: Governance plan storage is healthy
+    description: Approval authority storage must have no corruption or write loss.
     register_section: minimum_permanent_sentinels
     observation: server_health
     expected_status: expected_pass
-    checks:
-      - path: data.governance.storage_status
-        operator: equals
-        value: healthy
-      - path: data.governance.storage.corruption_count
-        operator: equals
-        value: 0
-      - path: data.governance.storage.write_failures
-        operator: equals
-        value: 0
+    desired_checks:
+      - {path: data.governance.storage_status, operator: equals, value: healthy}
+      - {path: data.governance.storage.corruption_count, operator: equals, value: 0}
+      - {path: data.governance.storage.write_failures, operator: equals, value: 0}
 
   - id: governance-task-storage-healthy
-    title: Execution-task storage is healthy with no corruption or write loss
-    description: >-
-      Execution-task persistence carries dispatch and verification authority.
-      Any corruption, write failure, event write failure, or materialization
-      failure means recorded execution history cannot be trusted.
+    title: Execution-task storage is healthy
+    description: Durable execution storage and materialization must report no failures.
     register_section: minimum_permanent_sentinels
     observation: server_health
     expected_status: expected_pass
-    checks:
-      - path: data.governance.execution_tasks.storage_status
-        operator: equals
-        value: healthy
-      - path: data.governance.execution_tasks.storage.corruption_count
-        operator: equals
-        value: 0
-      - path: data.governance.execution_tasks.storage.write_failures
-        operator: equals
-        value: 0
-      - path: data.governance.execution_tasks.storage.event_write_failures
-        operator: equals
-        value: 0
-      - path: data.governance.execution_tasks.storage.materialization_failures
-        operator: equals
-        value: 0
+    desired_checks:
+      - {path: data.governance.execution_tasks.storage_status, operator: equals, value: healthy}
+      - {path: data.governance.execution_tasks.storage.corruption_count, operator: equals, value: 0}
+      - {path: data.governance.execution_tasks.storage.write_failures, operator: equals, value: 0}
+      - {path: data.governance.execution_tasks.storage.event_write_failures, operator: equals, value: 0}
+      - {path: data.governance.execution_tasks.storage.materialization_failures, operator: equals, value: 0}
 
   - id: f3-ready-locks-and-recovery
-    title: F3 runtime is ready, holds no conflicts, and its execution accounting agrees
-    description: >-
-      The F3 runtime must report ready with no non-terminal child executions,
-      no conflict holds, and a non-terminal execution count that agrees with
-      the execution-task navigation index. It currently does not: an orphaned
-      child execution keeps the runtime in recovery and makes the two
-      accountings disagree.
+    title: F3 lifecycle and orphan accounting agree
+    description: The exact recorded parent and child must terminalize consistently with zero dispatch and no active locks.
     register_section: minimum_permanent_sentinels
     observation: server_health
     expected_status: expected_fail
     deficiency:
       register_item: 2
-      related_register_items: [3, 14]
-      summary: >-
-        F3 orphan-child execution keeps the runtime recovering and makes F3 and
-        execution-task accounting disagree. Register item #3
-        (approval-consumption lifecycle) is the same orphaned task seen through
-        a different lens and is deliberately not a second sentinel.
+      related_register_items: [14]
+      summary: The terminal parent retains one nonterminal F3 child while no task or lock authority is active.
       observed_evidence: >-
-        governance.f3.status "recovering",
-        governance.f3.nonterminal_execution_count 1, while the execution-task
-        navigation index reports nonterminal_record_count 0.
-    checks:
-      - path: data.governance.f3.status
-        operator: equals
-        value: ready
-      - path: data.governance.f3.nonterminal_execution_count
-        operator: equals
-        value: 0
-      - path: data.governance.f3.execution_ready
-        operator: equals
-        value: true
-      - path: data.governance.f3.active_conflict_hold_count
-        operator: equals
-        value: 0
-      - path: data.governance.f3.corrupt_record_count
-        operator: equals
-        value: 0
-      - path: data.governance.f3.fallback_count
-        operator: equals
-        value: 0
-      - path: data.governance.f3.nonterminal_execution_count
-        operator: equals_observation_path
-        observation: server_health
-        reference_path: data.governance.execution_tasks.storage.navigation.nonterminal_record_count
-        note: >-
-          The register records this path as
-          execution_tasks.navigation.nonterminal_record_count. The runtime
-          publishes the navigation index under the task storage health object,
-          so the exact path is
-          execution_tasks.storage.navigation.nonterminal_record_count.
+        Exact orphan task ab8d7cd12aad48aab8307ca819c794ca has a terminal
+        parent, one bounded nonterminal child, zero dispatch, and zero active
+        holds; F3 reports recovering/1 while task navigation reports 0.
+    desired_checks:
+      - {path: data.governance.f3.status, operator: equals, value: ready}
+      - {path: data.governance.f3.nonterminal_execution_count, operator: equals, value: 0}
+      - {path: data.governance.f3.execution_ready, operator: equals, value: true}
+      - {path: data.governance.f3.active_conflict_hold_count, operator: equals, value: 0}
+      - {path: data.governance.execution_tasks.storage.navigation.nonterminal_record_count, operator: equals, value: 0}
+      - {path: data.task_id, operator: equals, value: ab8d7cd12aad48aab8307ca819c794ca, source_observation: f3_orphan_task}
+      - {path: data.f3_children.0.state, operator: one_of, values: [succeeded_verified, failed_pre_dispatch, failed_post_dispatch, manual_review_required, cancelled_pre_dispatch], source_observation: f3_orphan_task}
+    known_failure_checks:
+      - {path: data.governance.f3.status, operator: equals, value: recovering}
+      - {path: data.governance.f3.nonterminal_execution_count, operator: equals, value: 1}
+      - {path: data.governance.f3.execution_ready, operator: equals, value: true}
+      - {path: data.governance.f3.active_conflict_hold_count, operator: equals, value: 0}
+      - {path: data.governance.execution_tasks.storage.navigation.nonterminal_record_count, operator: equals, value: 0}
+      - {path: data.task_id, operator: equals, value: ab8d7cd12aad48aab8307ca819c794ca, source_observation: f3_orphan_task}
+      - {path: data.state, operator: one_of, values: [succeeded_verified, failed_pre_dispatch, failed_post_dispatch, manual_review_required, cancelled_pre_dispatch], source_observation: f3_orphan_task}
+      - {path: data.terminal_outcome, operator: one_of, values: [succeeded_verified, failed_pre_dispatch, failed_post_dispatch, manual_review_required, cancelled_pre_dispatch], source_observation: f3_orphan_task}
+      - {path: data.provider_attempt_count, operator: equals, value: 0, source_observation: f3_orphan_task}
+      - {path: data.dispatched_at, operator: equals, value: null, source_observation: f3_orphan_task}
+      - {path: data.f3_children.0.state, operator: one_of, values: [created, preflight, dispatching, observing, verifying], source_observation: f3_orphan_task}
+      - {path: data.f3_children.0.dispatch_count, operator: equals, value: 0, source_observation: f3_orphan_task}
+      - {path: projection.active_selective_hold_count, operator: equals, value: 0, source_observation: f3_orphan_task}
+      - {path: "data.tasks[task_id=ab8d7cd12aad48aab8307ca819c794ca].state", operator: equals_observation_path, source_observation: execution_task_inventory, observation: f3_orphan_task, reference_path: data.state}
 
   - id: governance-historical-projection-health
-    title: Every persisted governance plan still projects
-    description: >-
-      Historical change plans must remain projectable under the current policy
-      model. Plans that fail projection are visible but non-actionable, which
-      means their approval history can no longer be evaluated.
+    title: Both recorded historical plans project
+    description: The two exact historical records must read successfully under current projection semantics.
     register_section: minimum_permanent_sentinels
     observation: server_health
     expected_status: expected_fail
     deficiency:
       register_item: 4
-      summary: >-
-        Two persisted governance plans fail historical policy projection.
+      summary: Two exact historical plans fail for different bounded governance reasons.
       observed_evidence: >-
-        governance.projection_failure_count 2, from plan
-        00dbf0dfbd7f4f3e84d01a30d18ffdde (policy_snapshot_mismatch) and plan
-        72cd49adeeec492c91679ef2c78bc325 (approval_sequence_failure).
-    checks:
-      - path: data.governance.projection_failure_count
-        operator: equals
-        value: 0
-      - path: data.governance.policy_snapshot_mismatches
-        operator: equals
-        value: 0
-      - path: data.governance.approval_sequence_failures
-        operator: equals
-        value: 0
+        Plan 00dbf0dfbd7f4f3e84d01a30d18ffdde reports
+        policy_snapshot_mismatch and plan 72cd49adeeec492c91679ef2c78bc325
+        reports approval_sequence_failure; aggregate count is exactly two.
+    desired_checks:
+      - {path: data.governance.projection_failure_count, operator: equals, value: 0}
+      - {path: data.governance.policy_snapshot_mismatches, operator: equals, value: 0}
+      - {path: data.governance.approval_sequence_failures, operator: equals, value: 0}
+      - {path: success, operator: equals, value: true, source_observation: historical_policy_snapshot_plan}
+      - {path: success, operator: equals, value: true, source_observation: historical_approval_sequence_plan}
+    known_failure_checks:
+      - {path: data.governance.projection_failure_count, operator: equals, value: 2}
+      - {path: data.governance.policy_snapshot_mismatches, operator: equals, value: 1}
+      - {path: data.governance.approval_sequence_failures, operator: equals, value: 1}
+      - {path: success, operator: equals, value: false, source_observation: historical_policy_snapshot_plan}
+      - {path: error_code, operator: equals, value: policy_snapshot_mismatch, source_observation: historical_policy_snapshot_plan}
+      - {path: details.resource_id, operator: equals, value: 00dbf0dfbd7f4f3e84d01a30d18ffdde, source_observation: historical_policy_snapshot_plan}
+      - {path: success, operator: equals, value: false, source_observation: historical_approval_sequence_plan}
+      - {path: error_code, operator: equals, value: approval_sequence_failure, source_observation: historical_approval_sequence_plan}
+      - {path: details.resource_id, operator: equals, value: 72cd49adeeec492c91679ef2c78bc325, source_observation: historical_approval_sequence_plan}
 
   - id: helper-provider-attribution
-    title: Helper state provider identity, contract, and transports
-    description: >-
-      The input_boolean operation must be served by the code-owned direct Home
-      Assistant state provider with its exact contract, both transports
-      connected, and no fallback. A different provider identity or contract
-      would mean helper operations are routed somewhere unreviewed.
+    title: Helper provider identity and zero fallback are exact
+    description: The native input_boolean provider keeps its reviewed contract, transports, and no-fallback state.
     register_section: minimum_permanent_sentinels
     observation: server_health
     expected_status: expected_pass
-    checks:
-      - path: data.governance.operational_administration.helper_state_provider.provider
-        operator: equals
-        value: direct_home_assistant_state
-      - path: data.governance.operational_administration.helper_state_provider.provider_contract
-        operator: equals
-        value: direct-ha-exact-input-boolean-v1
-      - path: data.governance.operational_administration.helper_state_provider.transport_health.rest
-        operator: equals
-        value: connected
-      - path: data.governance.operational_administration.helper_state_provider.transport_health.websocket
-        operator: equals
-        value: connected
-      - path: data.governance.operational_administration.helper_state_provider.operational_status
-        operator: equals
-        value: available
-      - path: data.governance.operational_administration.helper_state_provider.fallback
-        operator: equals
-        value: none
-      - path: data.governance.operational_administration.helper_state_provider.fallback_count
-        operator: equals
-        value: 0
-      - path: data.governance.operational_administration.operations.set_input_boolean_state.provider_contract_status
-        operator: equals
-        value: code_owned_exact
+    desired_checks:
+      - {path: data.governance.operational_administration.helper_state_provider.provider, operator: equals, value: direct_home_assistant_state}
+      - {path: data.governance.operational_administration.helper_state_provider.provider_contract, operator: equals, value: direct-ha-exact-input-boolean-v1}
+      - {path: data.governance.operational_administration.helper_state_provider.transport_health.rest, operator: equals, value: connected}
+      - {path: data.governance.operational_administration.helper_state_provider.transport_health.websocket, operator: equals, value: connected}
+      - {path: data.governance.operational_administration.helper_state_provider.operational_status, operator: equals, value: available}
+      - {path: data.governance.operational_administration.helper_state_provider.fallback, operator: equals, value: none}
+      - {path: data.governance.operational_administration.helper_state_provider.fallback_count, operator: equals, value: 0}
 
   - id: configuration-validation
-    title: Server configuration validates
-    description: >-
-      The runtime reports its configuration as valid. An invalid configuration
-      means the server started in a state its own validation rejects.
+    title: Home Assistant configuration validates
+    description: The reviewed check_config read must report Home Assistant configuration validity, not process health.
     register_section: minimum_permanent_sentinels
-    observation: server_health
+    observation: home_assistant_configuration_validation
     expected_status: expected_pass
-    checks:
-      - path: data.configuration.valid
-        operator: equals
-        value: true
+    desired_checks:
+      - {path: success, operator: equals, value: true}
+      - {path: data.result, operator: one_of, values: [valid, ok]}
+      - {path: data.errors, operator: equals, value: null}
+      - {path: metadata.routing.classification, operator: equals, value: direct_ha_required}
+      - {path: metadata.routing.provider, operator: equals, value: direct_ha_api}
+      - {path: metadata.routing.fallback_occurred, operator: equals, value: false}
 
   - id: read-direct-home-assistant
     title: Representative direct Home Assistant read succeeds
-    description: >-
-      A direct REST entity read returns the requested entity. This is the
-      approved direct read path and must keep working without any provider
-      fallback.
+    description: The exact helper read remains a bounded direct read with no attribute dump.
     register_section: confirmed_regression_passes
     observation: direct_entity_read
     expected_status: expected_pass
-    checks:
-      - path: success
-        operator: equals
-        value: true
-      - path: data.entity_id
-        operator: equals
-        value: input_boolean.mcp_f2_standard_admin_test_flag
-      - path: data.state
-        operator: one_of
-        values: ["on", "off"]
-      - path: metadata.resource_type
-        operator: equals
-        value: entity
+    desired_checks:
+      - {path: success, operator: equals, value: true}
+      - {path: data.entity_id, operator: equals, value: input_boolean.mcp_f2_standard_admin_test_flag}
+      - {path: data.state, operator: one_of, values: ["on", "off"]}
+      - {path: metadata.resource_type, operator: equals, value: entity}
 
   - id: read-engineering-native
-    title: Representative Engineering-native analysis read succeeds
-    description: >-
-      The native dependency analyzer returns a bounded result for the target
-      entity. This exercises the Engineering-owned analysis path rather than a
-      provider.
+    title: Representative Engineering-native analysis succeeds
+    description: Fresh native dependency evidence is returned for the exact target.
     register_section: confirmed_regression_passes
     observation: native_dependency_read
     expected_status: expected_pass
-    checks:
-      - path: success
-        operator: equals
-        value: true
-      - path: data.target.entity_id
-        operator: equals
-        value: input_boolean.mcp_f2_standard_admin_test_flag
-      - path: data.index.generation
-        operator: present
+    desired_checks:
+      - {path: success, operator: equals, value: true}
+      - {path: data.target.entity_id, operator: equals, value: input_boolean.mcp_f2_standard_admin_test_flag}
+      - {path: data.index.generation, operator: present}
+      - {path: data.index.refreshed, operator: equals, value: true}
+      - {path: data.index.cache_hit, operator: equals, value: false}
 
   - id: read-delegated-upstream
-    title: Representative delegated upstream read succeeds with no fallback
-    description: >-
-      A delegated read is served by the admitted upstream read gateway, is
-      classified as an automatic read, and records no fallback. Fallback here
-      would mean the gateway silently reached Home Assistant directly.
+    title: Representative delegated read succeeds without fallback
+    description: The admitted automatic read remains attributed to the upstream gateway with no fallback.
     register_section: confirmed_regression_passes
     observation: delegated_overview_read
     expected_status: expected_pass
-    checks:
-      - path: success
-        operator: equals
-        value: true
-      - path: metadata.provider
-        operator: equals
-        value: upstream_read_gateway
-      - path: metadata.classification
-        operator: equals
-        value: automatic_read
-      - path: metadata.fallback
-        operator: equals
-        value: none
-      - path: metadata.fallback_occurred
-        operator: equals
-        value: false
+    desired_checks:
+      - {path: success, operator: equals, value: true}
+      - {path: metadata.provider, operator: equals, value: upstream_read_gateway}
+      - {path: metadata.classification, operator: equals, value: automatic_read}
+      - {path: metadata.fallback, operator: equals, value: none}
+      - {path: metadata.fallback_occurred, operator: equals, value: false}
 
   - id: dashboard-hyphenless-map-read
     title: Hyphenless map dashboard remains readable
-    description: >-
-      The stock `map` dashboard has a hyphenless canonical url_path, the shape
-      upstream dashboard validation historically rejected. It must remain
-      readable through the dashboard provider.
+    description: The map dashboard read returns exact identity without retaining its body.
     register_section: confirmed_regression_passes
     observation: dashboard_map_read
     expected_status: expected_pass
-    checks:
-      - path: success
-        operator: equals
-        value: true
-      - path: data.url_path
-        operator: equals
-        value: map
-      - path: data.configuration_returned
-        operator: equals
-        value: true
-      - path: metadata.provider
-        operator: equals
-        value: upstream_dashboard
-      - path: metadata.upstream_dispatch_occurred
-        operator: equals
-        value: true
+    desired_checks:
+      - {path: success, operator: equals, value: true}
+      - {path: data.url_path, operator: equals, value: map}
+      - {path: data.configuration_returned, operator: equals, value: true}
+      - {path: metadata.provider, operator: equals, value: upstream_dashboard}
+      - {path: metadata.upstream_dispatch_occurred, operator: equals, value: true}
 
   - id: automation-long-wait-template-readable
-    title: Long wait_template automation remains readable and structurally valid
-    description: >-
-      The instance's long wait_template automation reads back with its
-      identifier and alias intact. This tool returns a bare JSON object, so
-      these paths are rooted at the automation configuration.
+    title: Accepted long wait_template structure remains present
+    description: The exact canary retains a bounded long wait_template structural signature.
     register_section: confirmed_regression_passes
     observation: long_wait_template_automation_read
     expected_status: expected_pass
-    checks:
-      - path: id
-        operator: present
-      - path: alias
-        operator: present
+    desired_checks:
+      - {path: id, operator: equals_invocation_argument, invocation_argument: automation_id}
+      - {path: projection.wait_template_count, operator: gte, value: 1}
+      - {path: projection.wait_template_action_index, operator: present}
+      - {path: projection.wait_template_length, operator: gte, value: 201}
+      - {path: projection.wait_template_semantic_digest, operator: equals, value: "sha256:2024a655652562696d44f4bb18bc33de6e4b86d447c5f5925db6da5fe9ef47f8"}
 
   - id: stale-state-canary-held-pre-dispatch
-    title: Stale-state canary stayed pre-dispatch with zero provider attempts
-    description: >-
-      The recorded stale-state canary must remain in failed_pre_dispatch with
-      no provider attempt and no dispatch timestamp. The canary refusing to
-      dispatch on a stale observed state is the desired behavior; a dispatch
-      would mean the staleness gate stopped holding.
+    title: Exact stale-state canary failed before dispatch
+    description: The intended helper task must fail only for stale observed state with no attempt or success path.
     register_section: confirmed_regression_passes
     observation: stale_state_canary_task
     expected_status: expected_pass
-    checks:
-      - path: success
-        operator: equals
-        value: true
-      - path: data.state
-        operator: equals
-        value: failed_pre_dispatch
-      - path: data.provider_attempt_count
-        operator: equals
-        value: 0
-      - path: data.dispatched_at
-        operator: equals
-        value: null
-
-  - id: helper-no-change-path
-    title: Helper no-change path creates no plan and no dispatch
-    description: >-
-      Requesting the state a helper already holds returns a verified no-change
-      result, creates no change plan, and dispatches nothing. This is the only
-      observation in this manifest that is not purely read-only, and it is safe
-      only once its precondition has been confirmed.
-    register_section: confirmed_regression_passes
-    observation: helper_no_change_probe
-    expected_status: expected_pass
-    checks:
-      - path: success
-        operator: equals
-        value: true
-      - path: data.status
-        operator: equals
-        value: no_change
-      - path: data.plan_created
-        operator: equals
-        value: false
-      - path: data.provider_dispatch_occurred
-        operator: equals
-        value: false
-      - path: data.verified
-        operator: equals
-        value: true
-      - path: data.fallback_occurred
-        operator: equals
-        value: false
+    desired_checks:
+      - {path: success, operator: equals, value: true}
+      - {path: data.task_id, operator: equals_invocation_argument, invocation_argument: task_id}
+      - {path: data.operation, operator: equals, value: set_input_boolean_state}
+      - {path: data.target.target_type, operator: equals, value: input_boolean}
+      - {path: data.target.target_id, operator: equals, value: input_boolean.mcp_f2_standard_admin_test_flag}
+      - {path: data.state, operator: equals, value: failed_pre_dispatch}
+      - {path: data.terminal_outcome, operator: equals, value: failed_pre_dispatch}
+      - {path: data.provider_attempt_count, operator: equals, value: 0}
+      - {path: data.dispatched_at, operator: equals, value: null}
+      - {path: data.last_error.error_code, operator: equals, value: stale_observed_state}
+      - {path: data.last_error.reason, operator: equals, value: helper_state_drift}
+      - {path: data.verification_summary.status, operator: absent}
 
   - id: dependency-index-complete-coverage
-    title: Dependency index reports complete coverage for the helper target
-    description: >-
-      A dependency scan of the standard-admin test flag must report complete
-      coverage with no failed blueprint obligations. It currently does not:
-      blueprint coverage comes back partial with failed obligations.
+    title: Fresh dependency evidence is complete for the helper
+    description: A forced fresh scan must prove complete automation and blueprint coverage with no failed obligations.
     register_section: minimum_permanent_sentinels
     observation: native_dependency_read
     expected_status: expected_fail
     deficiency:
       register_item: 1
-      summary: >-
-        Blueprint dependency coverage is incomplete for the helper target.
+      summary: Two bounded Blackshome sensor-light blueprint obligations exceed source analysis limits.
       observed_evidence: >-
-        Blueprint coverage "partial" with 2 failed blueprint obligations; both
-        contributing automations use the Blackshome/sensor-light.yaml
-        blueprint.
-    checks:
-      - path: data.overview.coverage_complete
-        operator: equals
-        value: true
-      - path: data.source_coverage[source_type=blueprint].completeness
-        operator: equals
-        value: complete
-      - path: data.source_coverage[source_type=blueprint].failed_item_count
-        operator: equals
-        value: 0
-      - path: data.source_coverage[source_type=blueprint].fallback_occurred
-        operator: equals
-        value: false
+        Fresh evidence has automation coverage complete, blueprint coverage
+        partial, two failed obligations, no fallback, and the exact normalized
+        Blackshome/sensor-light.yaml limit signature below.
+    desired_checks:
+      - {path: success, operator: equals, value: true}
+      - {path: data.index.refreshed, operator: equals, value: true}
+      - {path: data.index.cache_hit, operator: equals, value: false}
+      - {path: data.overview.coverage_complete, operator: equals, value: true}
+      - {path: "data.source_coverage[source_type=automation].completeness", operator: equals, value: complete}
+      - {path: "data.source_coverage[source_type=automation].failed_item_count", operator: equals, value: 0}
+      - {path: "data.source_coverage[source_type=blueprint].completeness", operator: equals, value: complete}
+      - {path: "data.source_coverage[source_type=blueprint].failed_item_count", operator: equals, value: 0}
+      - {path: "data.source_coverage[source_type=blueprint].obligation_ledger_failed_item_count", operator: equals, value: 0}
+      - {path: projection.consequential_dependency_count, operator: equals, value: 0}
+      - {path: "data.source_coverage[source_type=blueprint].fallback_occurred", operator: equals, value: false}
+    known_failure_checks:
+      - {path: success, operator: equals, value: true}
+      - {path: data.index.refreshed, operator: equals, value: true}
+      - {path: data.index.cache_hit, operator: equals, value: false}
+      - {path: data.overview.coverage_complete, operator: equals, value: false}
+      - {path: "data.source_coverage[source_type=automation].completeness", operator: equals, value: complete}
+      - {path: "data.source_coverage[source_type=automation].failed_item_count", operator: equals, value: 0}
+      - {path: "data.source_coverage[source_type=blueprint].completeness", operator: equals, value: partial}
+      - {path: "data.source_coverage[source_type=blueprint].failed_item_count", operator: equals, value: 2}
+      - {path: "data.source_coverage[source_type=blueprint].obligation_ledger_failed_item_count", operator: equals, value: 2}
+      - {path: projection.failed_obligation_count, operator: equals, value: 2}
+      - {path: projection.failed_obligation_signature, operator: equals, value: "blueprint:Blackshome/sensor-light.yaml:blueprint_source_limit_exceeded:count=2"}
+      - {path: projection.failed_obligation_set_fingerprint, operator: equals, value: "sha256:3541e71bd2fa1f9642264f6631f97b52bd84b713b85e51f08401cd62fbdd44f2"}
+      - {path: projection.consequential_dependency_count, operator: equals, value: 0}
+      - {path: "data.source_coverage[source_type=blueprint].fallback_occurred", operator: equals, value: false}
 
-  - id: held-read-contract-and-not-found-behavior
-    title: Held read matches its reviewed contracts and stays held on not-found
-    description: >-
-      A canary call to the single held-for-canary upstream read must match the
-      reviewed input schema, annotation, security, runtime, and output
-      contracts; must surface a structured RESOURCE_NOT_FOUND for a
-      deliberately nonexistent id; and must leave the tool held with no
-      promotion and no fallback.
+  - id: held-read-remains-held
+    title: Held read remains reviewed, held, and no-fallback
+    description: The evidence-only canary preserves held status while surfacing upstream structured not-found evidence.
     register_section: minimum_permanent_sentinels
     observation: held_read_canary_not_found
     expected_status: expected_pass
-    checks:
-      - path: success
-        operator: equals
-        value: false
-        note: >-
-          The not-found probe is expected to return a failure envelope. The
-          evidence being asserted lives in details.canary_evidence.
-      - path: details.canary_evidence.upstream_tool
-        operator: equals
-        value: ha_get_operation_status
-      - path: details.canary_evidence.input_schema_match
-        operator: equals
-        value: true
-      - path: details.canary_evidence.annotation_match
-        operator: equals
-        value: true
-      - path: details.canary_evidence.security_match
-        operator: equals
-        value: true
-      - path: details.canary_evidence.runtime_contract_match
-        operator: equals
-        value: true
-      - path: details.canary_evidence.output_contract_match
-        operator: equals
-        value: true
-      - path: details.canary_evidence.error_contract.structured_code
-        operator: equals
-        value: RESOURCE_NOT_FOUND
-      - path: details.canary_evidence.reviewed_classification_after
-        operator: equals
-        value: held_for_canary
-      - path: details.canary_evidence.promotion_performed
-        operator: equals
-        value: false
-      - path: details.canary_evidence.dispatch_occurred
-        operator: equals
-        value: true
-      - path: details.canary_evidence.fallback_occurred
-        operator: equals
-        value: false
-      - path: metadata.promotion_performed
-        operator: equals
-        value: false
+    desired_checks:
+      - {path: success, operator: equals, value: false}
+      - {path: details.canary_evidence.upstream_tool, operator: equals, value: ha_get_operation_status}
+      - {path: details.canary_evidence.expected_compatibility_entry_id, operator: equals_invocation_argument, invocation_argument: expected_compatibility_entry_id}
+      - {path: details.canary_evidence.input_schema_match, operator: equals, value: true}
+      - {path: details.canary_evidence.annotation_match, operator: equals, value: true}
+      - {path: details.canary_evidence.security_match, operator: equals, value: true}
+      - {path: details.canary_evidence.runtime_contract_match, operator: equals, value: true}
+      - {path: details.canary_evidence.output_contract_match, operator: equals, value: true}
+      - {path: details.canary_evidence.error_contract.structured_code, operator: equals, value: RESOURCE_NOT_FOUND}
+      - {path: details.canary_evidence.reviewed_classification_after, operator: equals, value: held_for_canary}
+      - {path: details.canary_evidence.promotion_performed, operator: equals, value: false}
+      - {path: details.canary_evidence.dispatch_occurred, operator: equals, value: true}
+      - {path: details.canary_evidence.fallback_occurred, operator: equals, value: false}
+      - {path: metadata.fallback, operator: equals, value: none}
+      - {path: metadata.fallback_occurred, operator: equals, value: false}
+      - {path: metadata.promotion_performed, operator: equals, value: false}
+
+  - id: held-read-top-level-not-found-taxonomy
+    title: Held read top-level taxonomy preserves RESOURCE_NOT_FOUND
+    description: The top-level error must classify the structured upstream not-found instead of collapsing it to provider_error.
+    register_section: minimum_permanent_sentinels
+    observation: held_read_canary_not_found
+    expected_status: expected_fail
+    deficiency:
+      register_item: 19
+      summary: Engineering misclassifies an upstream RESOURCE_NOT_FOUND as retryable provider_error/upstream_error.
+      observed_evidence: >-
+        The nested reviewed error is RESOURCE_NOT_FOUND, while top-level
+        error_code is provider_error, failure_category is upstream_error, and
+        retryable is true. Held status, dispatch evidence, and fallback remain correct.
+    desired_checks:
+      - {path: error_code, operator: equals, value: RESOURCE_NOT_FOUND}
+      - {path: details.failure_category, operator: equals, value: resource_not_found}
+      - {path: retryable, operator: equals, value: false}
+    known_failure_checks:
+      - {path: error, operator: equals, value: HeldReadCanaryError}
+      - {path: error_code, operator: equals, value: provider_error}
+      - {path: details.failure_category, operator: equals, value: upstream_error}
+      - {path: retryable, operator: equals, value: true}
+      - {path: details.canary_evidence.error_contract.structured_code, operator: equals, value: RESOURCE_NOT_FOUND}
+      - {path: details.canary_evidence.reviewed_classification_after, operator: equals, value: held_for_canary}
+      - {path: details.canary_evidence.fallback_occurred, operator: equals, value: false}

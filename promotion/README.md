@@ -1,188 +1,171 @@
 # Promotion regression manifest
 
-Consolidated Deficiency Register (HAMCP-089) item #22.
+This directory implements Consolidated Deficiency Register (HAMCP-089) item
+#22 as a versioned, reviewable set of promotion sentinels and a transport-free
+offline evaluator.
 
-Live regression testing has been performed twice against the deployed
-`2.2.0-beta.39` server, both times by hand, in conversation, with the results
-reported and then lost to scrollback. Nothing stopped a future beta from
-silently regressing a capability that a previous beta had already proven. This
-directory turns that ad-hoc process into a versioned artifact so every future
-promotion runs the same fixed checks.
+The pack evaluates evidence supplied and attested by an authorized operator. It
+does not call Home Assistant or MCP, authenticate to a live system, run a
+subprocess, modify a repository, or enforce promotion. Running the live reads is
+a separate, manual authorization decision.
 
-## What is here
+## Files
 
 | File | Purpose |
 | --- | --- |
-| `promotion_regression_manifest.yaml` | The sentinels. Data, not code: each entry's expected status is reviewable in a diff. |
-| `manifest_schema.json` | JSON Schema the manifest must satisfy. |
-| `../scripts/promotion_regression_check.py` | The checker. Classifies a recorded capture against the manifest. |
-| `../tests/test_promotion_regression_manifest.py` | Offline proof that the manifest is well formed and the classification logic is correct. |
-| `../tests/fixtures/promotion_regression/` | A synthetic capture built from the values the register recorded. Not a production record. |
+| `promotion_regression_manifest.yaml` | Exact target, read-only observations, desired contracts, and bounded known-failure signatures. |
+| `manifest_schema.json` | Strict schemas for the manifest and operator capture. |
+| `../scripts/promotion_regression_check.py` | Offline validator, planner, template generator, and classifier. |
+| `../tests/test_promotion_regression_manifest.py` | Offline safety, fidelity, and classification tests. |
+| `../tests/fixtures/promotion_regression/` | Synthetic, sanitized evidence; never a production capture. |
 
-## The checker does not talk to anything
+## Safety boundary
 
-The register requires the promotion checks to be read-only against the live
-target. Rather than promise that, the checker is built so it cannot be
-otherwise: it has no transport, no subprocess, and no file-writing code path at
-all. Its only inputs are the manifest and a capture file, and its only output is
-stdout. `tests/test_promotion_regression_manifest.py` asserts this structurally
-by scanning the checker's own syntax tree.
+The default plan contains only tools whose authoritative reviewed metadata
+classifies them as read-only. In particular, it does not contain
+`create_helper_state_plan`. A state preread cannot make that proposal tool
+structurally read-only because the state can change before invocation.
 
-The consequence is that a person, or an interactive agent session that already
-holds live MCP access, performs the calls — the same way the two prior
-regression passes were performed — and the checker does the arithmetic.
+Any helper-state transition, no-change proposal, or other write-capable canary
+is outside this pack. It requires separate authorization and must not be added
+to default capture completeness or classification.
 
-## Running it
+The checker itself has no live transport, MCP client, credential access,
+subprocess invocation, or file-writing path. Tests verify both that property and
+the default manifest's tools against the repository's native and exact upstream
+read classifications.
 
-Everything below is offline except step 2.
+## Manual workflow
 
-**1. See what to call.**
+The only live step below is step 3. It must be performed separately by an
+authorized operator or interactive agent with appropriate read-only access.
 
-```bash
-python scripts/promotion_regression_check.py plan
-```
+1. Validate the committed pack:
 
-This prints each observation in order with its tool, arguments, effect class,
-procedure, any operator-supplied input it needs, and the sentinels that depend
-on it. Ten observations back twenty-five sentinels; `get_server_health` alone
-backs thirteen, so do not re-call it per sentinel.
+   ```bash
+   python scripts/promotion_regression_check.py validate
+   ```
 
-**2. Perform the calls against the deployed server and record the responses.**
+2. Print the exact calls and allowlisted capture paths:
 
-Start from a skeleton:
+   ```bash
+   python scripts/promotion_regression_check.py plan
+   python scripts/promotion_regression_check.py template > /path/outside/repo/capture.json
+   ```
 
-```bash
-python scripts/promotion_regression_check.py template > /path/outside/repo/capture.json
-```
+3. Manually invoke each declared read-only tool against the exact target. Bind
+   every operator-local argument in the capture to the value actually invoked.
+   Project only the allowlisted paths shown by `plan` into each observation's
+   flat `evidence` mapping. Record a known-absent field in `absent_paths`. If an
+   observation was not performed, retain `status: not_captured` and give a
+   bounded reason.
 
-For each observation, put the tool's complete response under
-`observations.<id>.response`. Either a decoded object or the raw JSON string the
-tool returned is accepted. If an observation could not be performed, leave
-`response` null and replace `not_recorded_reason` with why — that produces an
-honest `NOT_CAPTURED`, not a silent pass.
+4. Evaluate offline:
 
-Three observations need an operator-supplied identifier the repository
-deliberately does not carry (a long `wait_template` automation id, the
-stale-state canary task id, and the active compatibility entry id). The
-manifest's `target_note` says where each comes from.
+   ```bash
+   python scripts/promotion_regression_check.py evaluate --capture /path/outside/repo/capture.json
+   ```
 
-**Keep the capture outside the repository.** It contains instance data —
-automation content, dashboard configuration, entity state. `promotion/captures/`
-is gitignored as a safety net if you would rather keep it nearby, but nothing in
-a capture belongs in a commit.
+   Add `--format json` for a bounded machine-readable report.
 
-**3. Classify.**
+Keep captures outside the repository. `promotion/captures/` is ignored only as
+a local safety net. A capture is operator-attested evidence, not cryptographic
+provenance. The checker binds it to:
 
-```bash
-python scripts/promotion_regression_check.py evaluate --capture /path/outside/repo/capture.json
-```
+- capture and manifest schema versions;
+- the deterministic manifest digest;
+- exact target release and build SHA;
+- a timezone-aware timestamp;
+- non-placeholder operator and session attribution;
+- exact observation IDs, tool names, fixed arguments, and resolved
+  operator-local arguments.
 
-Add `--format json` for machine-readable output.
+A mismatched, malformed, placeholder, conflicting, oversized, or incorrectly
+targeted capture is rejected before classification.
 
-## Classifications
+## Capture minimization and bounds
 
-| Outcome | Meaning | Blocks promotion? |
-| --- | --- | --- |
-| `CONFIRMED` | Expected to pass, and it passed. | No |
-| `REGRESSION` | Expected to pass, but it failed. Previously accepted behavior broke. | **Yes** |
-| `KNOWN_FAILING` | Expected to fail against a linked open deficiency, and it still fails. | No, but visible |
-| `UNEXPECTED_PASS` | Expected to fail, but it passed. A deficiency may be fixed. | No — needs a human |
-| `NOT_CAPTURED` | The check was not performed. The run is incomplete. | No, but the run is not a gate |
+Do not retain complete Home Assistant or MCP responses. Capture only the values
+used by manifest checks. In particular, do not dump complete automation,
+dashboard, entity-attribute, log, trace, or configuration bodies.
 
-`REGRESSION` and `KNOWN_FAILING` are counted and printed separately and are
-never merged. A run with three `KNOWN_FAILING` entries and no `REGRESSION` is a
-clean run against today's known state.
+The capture contract enforces:
 
-`NOT_CAPTURED` is not one of the register's four outcomes. It exists because the
-alternative is worse: an uncaptured check silently classified as either a pass or
-a regression would make an incomplete run look like a verdict.
+- a 256 KiB total input limit;
+- a 24 KiB limit per observation;
+- a 2 KiB limit per string value;
+- exact allowlisted evidence paths;
+- no duplicate JSON keys or undeclared observations;
+- no sensitive field names or recognizable credential values;
+- bounded diagnostics and a 96 KiB report limit.
+
+Where material content need not remain readable, record the bounded digest
+specified by the observation procedure. A content change must still change the
+digest. Do not place secrets into a digest preimage retained in the capture.
+Missing required evidence is `NOT_CAPTURED`; it is never inferred as success.
+
+## Classification
+
+Every sentinel declares desired passing checks. An `expected_fail` sentinel
+also declares an exact bounded signature for today's known deficiency.
+
+| Expected status | Desired checks | Known-failure checks | Outcome |
+| --- | --- | --- | --- |
+| `expected_pass` | pass | N/A | `CONFIRMED` |
+| `expected_pass` | fail | N/A | `REGRESSION` |
+| `expected_fail` | pass | any | `UNEXPECTED_PASS` |
+| `expected_fail` | fail | exact match | `KNOWN_FAILING` |
+| `expected_fail` | fail | different or worse | `REGRESSION` |
+| either | insufficient evidence | unknown | `NOT_CAPTURED` |
+
+`KNOWN_FAILING` means the exact recorded failure signature matched. It does not
+mean merely that something failed. A new, missing, or materially different
+failure is a `REGRESSION`.
+
+`UNEXPECTED_PASS` requires human confirmation and a reviewed manifest change.
+The checker never changes status automatically. Current nonblocking known
+failures are limited to the bounded signatures for deficiency #1, deficiency
+#2/#14, deficiency #4, and the separately represented top-level taxonomy part
+of deficiency #19. There is no separate deficiency #3 sentinel.
 
 Exit codes:
 
-| Code | Condition |
+| Code | Meaning |
 | --- | --- |
-| 0 | Complete run, no `REGRESSION` |
-| 1 | At least one `REGRESSION` — do not promote |
-| 2 | No `REGRESSION`, but the run is incomplete |
-| 3 | Usage error, unreadable input, or an invalid manifest |
+| 0 | Complete evidence and no regression. |
+| 1 | At least one regression. |
+| 2 | No regression found, but evidence is incomplete. |
+| 3 | Invalid manifest, capture, or invocation. |
 
-## Flipping an `expected_fail` to `expected_pass`
+## Sentinel fidelity notes
 
-The checker never changes a status. A beta is accepted when the full acceptance
-chain passes, not because one checker run looked clean, so this is a human
-decision by design.
+- Dependency evidence is forced fresh with `refresh_index: true`. The capture
+  records refresh/cache state, automation and blueprint completeness, bounded
+  failed-obligation identity, consequential-dependency count, and fallback.
+- The stale-state sentinel is tied to the exact operator-supplied task ID,
+  operation, and target. It requires `failed_pre_dispatch`, zero provider
+  attempts, a null dispatch timestamp, the exact stale-state reason, and no
+  success or post-dispatch verification state.
+- The long-automation sentinel records only the selected automation ID and
+  bounded evidence that the expected action is a `wait_template`, including a
+  normalized semantic digest. It does not retain the automation body.
+- Home Assistant configuration validity comes from the reviewed read-only
+  `check_config` capability, not Engineering process health.
+- Held-read status is an expected-pass contract independent of the currently
+  incorrect top-level error taxonomy. Nested upstream `RESOURCE_NOT_FOUND`
+  evidence does not claim the top-level taxonomy is already correct.
 
-When an `UNEXPECTED_PASS` appears:
+## Updating the pack
 
-1. Read the sentinel's `deficiency` block for the register item and the evidence
-   originally observed.
-2. Confirm the underlying fix is actually deployed and verified live — one
-   passing observation is not a fix.
-3. Edit that sentinel in `promotion_regression_manifest.yaml`: change
-   `expected_status: expected_fail` to `expected_status: expected_pass` and
-   delete its `deficiency` block. The schema requires a deficiency reference on
-   every `expected_fail` entry and forbids one on `expected_pass`, so a
-   half-finished flip fails validation.
-4. Run `python scripts/promotion_regression_check.py validate` and the offline
-   test module.
-5. Commit the one-line flip with the evidence in the commit message.
+For a new target, update the target release/build and observations in one
+reviewed change. Regenerate the template so the capture contains the new
+manifest digest. Repeated generation must be byte-identical.
 
-Going the other way — `expected_pass` to `expected_fail` — is how a newly
-accepted-as-broken behavior gets recorded, and it needs a register item and
-observed evidence for the same reason.
+Do not automatically flip an `expected_fail` after one unexpected pass. Confirm
+the deployed behavior, update the deficiency register, then review the desired
+and known-failure contracts together.
 
-## Updating for a new release
-
-`target.build_sha` and the `runtime-build-provenance` sentinel pin the exact
-promoted commit, and `runtime-server-version` pins the version. Update both in
-the same commit that promotes a new release. A stale value here produces a
-`REGRESSION`, which is the intended behavior for an image that cannot be tied to
-reviewed source.
-
-## Field paths
-
-Paths are rooted at the recorded response. Engineering tools using the
-structured envelope expose their payload under `data`; `get_automation_config`
-returns a bare JSON object and its paths are rooted at the object itself. A path
-may address a list element by index (`source_coverage.0`) or by selector
-(`source_coverage[source_type=blueprint]`); an ambiguous selector is refused
-rather than guessed.
-
-Every path in the manifest was derived from `2.2.0-beta.39` runtime source. Two
-of them differ from how the register phrased them, and the manifest notes the
-difference where it matters:
-
-- non-terminal execution accounting lives at
-  `governance.execution_tasks.storage.navigation.nonterminal_record_count`, not
-  `execution_tasks.navigation.nonterminal_record_count`;
-- the dashboard provider has no `fallback_count`. It declares zero fallback per
-  route, so `upstream-dashboard-zero-fallback` asserts
-  `ordinary_dashboard_read_route.fallback`,
-  `governed_dashboard_write_route.fallback`, and
-  `governed_dashboard_write_route.direct_home_assistant_fallback` instead.
-
-## The one observation that is not a pure read
-
-`helper_no_change_probe` calls `create_helper_state_plan`. When the requested
-state already matches the current state, the tool returns a verified no-change
-result and creates no plan and dispatches nothing — which is exactly the
-behavior being asserted. It is marked `effect_class: no_change_probe` rather than
-`read_only` and carries a `precondition`: read the helper's current state first
-and confirm it is already `off`. If it is not `off`, skip the observation and
-record the reason. Requesting a state the helper does not hold would create a
-change plan, which is a different operation with its own approval path.
-
-Write-capable canaries stay out of this manifest entirely; the register requires
-those to remain explicitly approved and separate.
-
-## Not wired into CI
-
-This deliberately stops at "runnable by a human or an agent session with live
-access". Reaching a home Home Assistant instance from GitHub Actions would need
-credential storage this project does not currently use, and that is a
-security-relevant decision deserving its own scoping rather than a silent
-addition here. **Recommended follow-up:** scope CI integration separately, as a
-decision about secret management first and a workflow second.
-
-A live run is the natural first real use of this manifest. It has not been
-performed as part of the commit that introduced it.
+This pack is not wired into GitHub Actions or mandatory promotion validation.
+Adding live credentials, CI enforcement, or an automated gate is a separate
+security and product decision. No live run is performed as part of source
+correction.

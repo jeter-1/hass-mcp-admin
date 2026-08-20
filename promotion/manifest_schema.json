@@ -2,44 +2,34 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/jeter-1/hass-mcp-admin/promotion/manifest_schema.json",
   "title": "HA MCP Engineering promotion regression manifest",
-  "description": "Structure of promotion/promotion_regression_manifest.yaml. Every sentinel names one observation, the fields to inspect, and whether the sentinel is currently expected to pass or to fail against an open deficiency.",
   "type": "object",
   "additionalProperties": false,
   "required": ["manifest_version", "target", "observations", "sentinels"],
   "properties": {
-    "manifest_version": {
-      "const": 1
-    },
+    "manifest_version": {"const": 2},
     "target": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "release",
-        "tag",
-        "build_sha",
-        "evidence_captured_at",
-        "evidence_source"
-      ],
+      "required": ["release", "tag", "build_sha", "evidence_captured_at", "evidence_source"],
       "properties": {
-        "release": {"type": "string", "minLength": 1},
-        "tag": {"type": "string", "minLength": 1},
+        "release": {"type": "string", "minLength": 1, "maxLength": 64},
+        "tag": {"type": "string", "minLength": 1, "maxLength": 80},
         "build_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-        "evidence_captured_at": {
-          "type": "string",
-          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
-        },
-        "evidence_source": {"type": "string", "minLength": 20},
-        "notes": {"type": "string"}
+        "evidence_captured_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+        "evidence_source": {"type": "string", "minLength": 20, "maxLength": 2000},
+        "notes": {"type": "string", "maxLength": 2000}
       }
     },
     "observations": {
       "type": "array",
       "minItems": 1,
+      "maxItems": 40,
       "items": {"$ref": "#/$defs/observation"}
     },
     "sentinels": {
       "type": "array",
       "minItems": 1,
+      "maxItems": 80,
       "items": {"$ref": "#/$defs/sentinel"}
     }
   },
@@ -47,38 +37,28 @@
     "observation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "tool", "effect_class", "procedure"],
+      "required": ["id", "tool", "arguments", "effect_class", "procedure"],
       "properties": {
-        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$"},
-        "tool": {"type": "string", "minLength": 1},
-        "arguments": {"type": "object"},
-        "effect_class": {
-          "description": "read_only means the call cannot change any state. no_change_probe means the call is only safe once its precondition has been read and confirmed.",
-          "enum": ["read_only", "no_change_probe"]
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$", "maxLength": 80},
+        "tool": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$", "maxLength": 128},
+        "arguments": {"type": "object", "maxProperties": 20},
+        "operator_arguments": {
+          "type": "object",
+          "maxProperties": 10,
+          "additionalProperties": {"type": "object"}
         },
-        "procedure": {"type": "string", "minLength": 20},
-        "target_binding": {
-          "description": "fixed means the arguments in this manifest are complete. operator_local means the operator supplies an instance-specific identifier that must not be committed.",
-          "enum": ["fixed", "operator_local"],
-          "default": "fixed"
-        },
-        "target_note": {"type": "string", "minLength": 20},
-        "precondition": {"type": "string", "minLength": 20}
+        "effect_class": {"const": "read_only"},
+        "procedure": {"type": "string", "minLength": 20, "maxLength": 2000},
+        "target_binding": {"enum": ["fixed", "operator_local"]},
+        "target_note": {"type": "string", "minLength": 20, "maxLength": 1200}
       },
       "allOf": [
-        {
-          "if": {
-            "properties": {"effect_class": {"const": "no_change_probe"}},
-            "required": ["effect_class"]
-          },
-          "then": {"required": ["precondition"]}
-        },
         {
           "if": {
             "properties": {"target_binding": {"const": "operator_local"}},
             "required": ["target_binding"]
           },
-          "then": {"required": ["target_note"]}
+          "then": {"required": ["operator_arguments", "target_note"]}
         }
       ]
     },
@@ -86,45 +66,35 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "id",
-        "title",
-        "description",
-        "register_section",
-        "observation",
-        "checks",
-        "expected_status"
+        "id", "title", "description", "register_section", "observation",
+        "expected_status", "desired_checks"
       ],
       "properties": {
-        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
-        "title": {"type": "string", "minLength": 1},
-        "description": {"type": "string", "minLength": 20},
-        "register_section": {
-          "enum": ["minimum_permanent_sentinels", "confirmed_regression_passes"]
-        },
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": 100},
+        "title": {"type": "string", "minLength": 1, "maxLength": 200},
+        "description": {"type": "string", "minLength": 20, "maxLength": 2000},
+        "register_section": {"enum": ["minimum_permanent_sentinels", "confirmed_regression_passes"]},
         "observation": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$"},
-        "checks": {
-          "type": "array",
-          "minItems": 1,
+        "expected_status": {"enum": ["expected_pass", "expected_fail"]},
+        "desired_checks": {
+          "type": "array", "minItems": 1, "maxItems": 40,
           "items": {"$ref": "#/$defs/check"}
         },
-        "expected_status": {"enum": ["expected_pass", "expected_fail"]},
+        "known_failure_checks": {
+          "type": "array", "minItems": 1, "maxItems": 40,
+          "items": {"$ref": "#/$defs/check"}
+        },
         "deficiency": {"$ref": "#/$defs/deficiency"}
       },
       "allOf": [
         {
-          "if": {
-            "properties": {"expected_status": {"const": "expected_fail"}},
-            "required": ["expected_status"]
-          },
-          "then": {"required": ["deficiency"]}
+          "if": {"properties": {"expected_status": {"const": "expected_fail"}}, "required": ["expected_status"]},
+          "then": {"required": ["deficiency", "known_failure_checks"]}
         },
         {
-          "if": {
-            "properties": {"expected_status": {"const": "expected_pass"}},
-            "required": ["expected_status"]
-          },
+          "if": {"properties": {"expected_status": {"const": "expected_pass"}}, "required": ["expected_status"]},
           "then": {
-            "not": {"required": ["deficiency"]}
+            "not": {"anyOf": [{"required": ["deficiency"]}, {"required": ["known_failure_checks"]}]}
           }
         }
       ]
@@ -136,11 +106,12 @@
       "properties": {
         "register_item": {"type": "integer", "minimum": 1},
         "related_register_items": {
-          "type": "array",
-          "items": {"type": "integer", "minimum": 1}
+          "type": "array", "maxItems": 8,
+          "items": {"type": "integer", "minimum": 1},
+          "uniqueItems": true
         },
-        "summary": {"type": "string", "minLength": 10},
-        "observed_evidence": {"type": "string", "minLength": 10}
+        "summary": {"type": "string", "minLength": 10, "maxLength": 1000},
+        "observed_evidence": {"type": "string", "minLength": 10, "maxLength": 1600}
       }
     },
     "check": {
@@ -148,55 +119,107 @@
       "additionalProperties": false,
       "required": ["path", "operator"],
       "properties": {
-        "path": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "minLength": 1, "maxLength": 240},
         "operator": {
           "enum": [
-            "equals",
-            "not_equals",
-            "one_of",
-            "gte",
-            "lte",
-            "gt",
-            "lt",
-            "present",
-            "absent",
-            "matches",
-            "equals_observation_path"
+            "equals", "not_equals", "one_of", "gte", "lte", "gt", "lt",
+            "present", "absent", "matches", "equals_observation_path",
+            "equals_invocation_argument"
           ]
         },
         "value": {},
-        "values": {"type": "array", "minItems": 1},
+        "values": {"type": "array", "minItems": 1, "maxItems": 30},
+        "source_observation": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$"},
         "observation": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$"},
-        "reference_path": {"type": "string", "minLength": 1},
-        "note": {"type": "string"}
+        "reference_path": {"type": "string", "minLength": 1, "maxLength": 240},
+        "invocation_argument": {"type": "string", "minLength": 1, "maxLength": 120},
+        "note": {"type": "string", "maxLength": 1000}
       },
       "allOf": [
         {
-          "if": {
-            "properties": {
-              "operator": {
-                "enum": ["equals", "not_equals", "gte", "lte", "gt", "lt", "matches"]
-              }
-            },
-            "required": ["operator"]
-          },
+          "if": {"properties": {"operator": {"enum": ["equals", "not_equals", "gte", "lte", "gt", "lt", "matches"]}}, "required": ["operator"]},
           "then": {"required": ["value"]}
         },
         {
-          "if": {
-            "properties": {"operator": {"const": "one_of"}},
-            "required": ["operator"]
-          },
+          "if": {"properties": {"operator": {"const": "one_of"}}, "required": ["operator"]},
           "then": {"required": ["values"]}
         },
         {
-          "if": {
-            "properties": {"operator": {"const": "equals_observation_path"}},
-            "required": ["operator"]
-          },
+          "if": {"properties": {"operator": {"const": "equals_observation_path"}}, "required": ["operator"]},
           "then": {"required": ["observation", "reference_path"]}
+        },
+        {
+          "if": {"properties": {"operator": {"const": "equals_invocation_argument"}}, "required": ["operator"]},
+          "then": {"required": ["invocation_argument"]}
         }
       ]
+    },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capture_schema_version", "manifest_version", "manifest_digest",
+        "captured_at", "captured_by", "session_id", "target", "observations"
+      ],
+      "properties": {
+        "_fixture_provenance": {"type": "object", "maxProperties": 12},
+        "capture_schema_version": {"const": 1},
+        "manifest_version": {"type": "integer", "minimum": 1},
+        "manifest_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "captured_at": {"type": "string", "minLength": 20, "maxLength": 40},
+        "captured_by": {"type": "string", "minLength": 1, "maxLength": 160},
+        "session_id": {"type": "string", "minLength": 1, "maxLength": 160},
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["release", "build_sha"],
+          "properties": {
+            "release": {"type": "string", "minLength": 1, "maxLength": 64},
+            "build_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+          }
+        },
+        "observations": {
+          "type": "object",
+          "maxProperties": 40,
+          "propertyNames": {"pattern": "^[a-z0-9][a-z0-9_]*$"},
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["observation_id", "tool", "arguments", "status"],
+            "properties": {
+              "observation_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$"},
+              "tool": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$", "maxLength": 128},
+              "arguments": {"type": "object", "maxProperties": 20},
+              "status": {"enum": ["captured", "not_captured"]},
+              "evidence": {
+                "type": "object", "maxProperties": 128,
+                "propertyNames": {"minLength": 1, "maxLength": 240}
+              },
+              "absent_paths": {
+                "type": "array", "maxItems": 128, "uniqueItems": true,
+                "items": {"type": "string", "minLength": 1, "maxLength": 240}
+              },
+              "not_recorded_reason": {"type": "string", "minLength": 3, "maxLength": 500}
+            },
+            "allOf": [
+              {
+                "if": {"properties": {"status": {"const": "captured"}}, "required": ["status"]},
+                "then": {
+                  "required": ["evidence", "absent_paths"],
+                  "not": {"required": ["not_recorded_reason"]}
+                }
+              },
+              {
+                "if": {"properties": {"status": {"const": "not_captured"}}, "required": ["status"]},
+                "then": {
+                  "required": ["not_recorded_reason"],
+                  "not": {"anyOf": [{"required": ["evidence"]}, {"required": ["absent_paths"]}]}
+                }
+              }
+            ]
+          }
+        }
+      }
     }
   }
 }
