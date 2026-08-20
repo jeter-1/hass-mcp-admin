@@ -64,6 +64,27 @@ projection_contracts:
       the JSON Pointer, one NUL byte, and the normalized template. Node, depth,
       candidate, template, and aggregate source bounds fail closed.
 
+  - id: f3_child_lifecycle_projection_v1
+    version: 1
+    observation: f3_orphan_task
+    algorithm: f3_child_lifecycle_v1
+    maximum_source_bytes: 24576
+    output_paths:
+      - projection.f3_child_count
+      - projection.f3_child_lifecycle_fingerprint
+      - projection.f3_all_zero_dispatch
+      - projection.f3_all_terminal
+      - projection.f3_all_cancelled_pre_dispatch
+    procedure: >-
+      Supply the bounded public get_execution_task response for the exact orphan
+      parent. The evaluator requires a complete one-to-eight child list and
+      projects each child by the deterministic parent task id, operation id,
+      and ordinal identity available in public evidence. It binds exact state,
+      normalized outcome, and dispatch count in versioned canonical JSON. It
+      rejects duplicate or non-contiguous ordinals, duplicate operations,
+      malformed states, missing fields, and overflow. It does not retain child
+      events, hold bodies, prepared hashes, configuration, or unrelated task data.
+
 observations:
   - id: server_identity
     tool: server_info
@@ -433,14 +454,17 @@ sentinels:
     register_section: minimum_permanent_sentinels
     observation: server_health
     expected_status: expected_fail
+    promotion_disposition: blocking
     deficiency:
       register_item: 2
       related_register_items: [14]
       summary: The terminal parent retains one nonterminal F3 child while no task or lock authority is active.
       observed_evidence: >-
-        Exact orphan task ab8d7cd12aad48aab8307ca819c794ca has a terminal
-        parent, one bounded nonterminal child, zero dispatch, and zero active
-        holds; F3 reports recovering/1 while task navigation reports 0.
+        Exact orphan task ab8d7cd12aad48aab8307ca819c794ca is
+        failed_pre_dispatch with no provider attempt or dispatch. Its
+        create_fp2_pending_helper child remains preflight and its
+        update_vanity_automation child remains not_started; F3 reports
+        recovering/1 while task navigation reports 0.
     desired_checks:
       - {path: data.governance.f3.status, operator: equals, value: ready}
       - {path: data.governance.f3.nonterminal_execution_count, operator: equals, value: 0}
@@ -453,7 +477,17 @@ sentinels:
       - {path: data.governance.f3.fallback_count, operator: equals, value: 0}
       - {path: data.governance.execution_tasks.storage.navigation.nonterminal_record_count, operator: equals, value: 0}
       - {path: data.task_id, operator: equals, value: ab8d7cd12aad48aab8307ca819c794ca, source_observation: f3_orphan_task}
-      - {path: data.f3_children.0.state, operator: one_of, values: [succeeded_verified, failed_pre_dispatch, failed_post_dispatch, manual_review_required, cancelled_pre_dispatch], source_observation: f3_orphan_task}
+      - {path: data.state, operator: equals, value: failed_pre_dispatch, source_observation: f3_orphan_task}
+      - {path: data.terminal_outcome, operator: equals, value: failed_pre_dispatch, source_observation: f3_orphan_task}
+      - {path: data.provider_attempt_count, operator: equals, value: 0, source_observation: f3_orphan_task}
+      - {path: data.dispatched_at, operator: equals, value: null, source_observation: f3_orphan_task}
+      - {path: data.last_error.error_code, operator: equals, value: pre_dispatch_authority_invalid, source_observation: f3_orphan_task}
+      - {path: projection.f3_child_count, operator: equals, value: 2, source_observation: f3_orphan_task}
+      - {path: projection.f3_child_lifecycle_fingerprint, operator: equals, value: "sha256:9252bbb6c217d008aa35977974e75c5b13a7e7149a36330ef904faaaf3f8462f", source_observation: f3_orphan_task}
+      - {path: projection.f3_all_zero_dispatch, operator: equals, value: true, source_observation: f3_orphan_task}
+      - {path: projection.f3_all_terminal, operator: equals, value: true, source_observation: f3_orphan_task}
+      - {path: projection.f3_all_cancelled_pre_dispatch, operator: equals, value: true, source_observation: f3_orphan_task}
+      - {path: "data.tasks[task_id=ab8d7cd12aad48aab8307ca819c794ca].state", operator: equals_observation_path, source_observation: execution_task_inventory, observation: f3_orphan_task, reference_path: data.state}
     known_failure_checks:
       - {path: data.governance.f3.status, operator: equals, value: recovering}
       - {path: data.governance.f3.nonterminal_execution_count, operator: equals, value: 1}
@@ -466,12 +500,16 @@ sentinels:
       - {path: data.governance.f3.fallback_count, operator: equals, value: 0}
       - {path: data.governance.execution_tasks.storage.navigation.nonterminal_record_count, operator: equals, value: 0}
       - {path: data.task_id, operator: equals, value: ab8d7cd12aad48aab8307ca819c794ca, source_observation: f3_orphan_task}
-      - {path: data.state, operator: one_of, values: [succeeded_verified, failed_pre_dispatch, failed_post_dispatch, manual_review_required, cancelled_pre_dispatch], source_observation: f3_orphan_task}
-      - {path: data.terminal_outcome, operator: one_of, values: [succeeded_verified, failed_pre_dispatch, failed_post_dispatch, manual_review_required, cancelled_pre_dispatch], source_observation: f3_orphan_task}
+      - {path: data.state, operator: equals, value: failed_pre_dispatch, source_observation: f3_orphan_task}
+      - {path: data.terminal_outcome, operator: equals, value: failed_pre_dispatch, source_observation: f3_orphan_task}
       - {path: data.provider_attempt_count, operator: equals, value: 0, source_observation: f3_orphan_task}
       - {path: data.dispatched_at, operator: equals, value: null, source_observation: f3_orphan_task}
-      - {path: data.f3_children.0.state, operator: one_of, values: [created, preflight, dispatching, observing, verifying], source_observation: f3_orphan_task}
-      - {path: data.f3_children.0.dispatch_count, operator: equals, value: 0, source_observation: f3_orphan_task}
+      - {path: data.last_error.error_code, operator: equals, value: pre_dispatch_authority_invalid, source_observation: f3_orphan_task}
+      - {path: projection.f3_child_count, operator: equals, value: 2, source_observation: f3_orphan_task}
+      - {path: projection.f3_child_lifecycle_fingerprint, operator: equals, value: "sha256:fbfe67c4b12d73a6f1a84c87ca41081a67bd1b5c64b87d54e8e21c6a9e9c1940", source_observation: f3_orphan_task}
+      - {path: projection.f3_all_zero_dispatch, operator: equals, value: true, source_observation: f3_orphan_task}
+      - {path: projection.f3_all_terminal, operator: equals, value: false, source_observation: f3_orphan_task}
+      - {path: projection.f3_all_cancelled_pre_dispatch, operator: equals, value: false, source_observation: f3_orphan_task}
       - {path: "data.tasks[task_id=ab8d7cd12aad48aab8307ca819c794ca].state", operator: equals_observation_path, source_observation: execution_task_inventory, observation: f3_orphan_task, reference_path: data.state}
 
   - id: governance-historical-projection-health
@@ -480,6 +518,7 @@ sentinels:
     register_section: minimum_permanent_sentinels
     observation: server_health
     expected_status: expected_fail
+    promotion_disposition: blocking
     deficiency:
       register_item: 4
       summary: Two exact historical plans fail for different bounded governance reasons.
@@ -673,6 +712,7 @@ sentinels:
     register_section: minimum_permanent_sentinels
     observation: native_dependency_read
     expected_status: expected_fail
+    promotion_disposition: blocking
     deficiency:
       register_item: 1
       summary: Two bounded Blackshome sensor-light blueprint obligations exceed source analysis limits.
@@ -689,11 +729,17 @@ sentinels:
       - {path: data.overview.coverage_complete, operator: equals, value: true}
       - {path: "data.source_coverage[source_type=automation].completeness", operator: equals, value: complete}
       - {path: "data.source_coverage[source_type=automation].failed_item_count", operator: equals, value: 0}
+      - {path: "data.source_coverage[source_type=automation].obligation_ledger_completeness", operator: equals, value: complete}
+      - {path: "data.source_coverage[source_type=automation].obligation_ledger_failed_item_count", operator: equals, value: 0}
+      - {path: "data.source_coverage[source_type=automation].fallback_occurred", operator: equals, value: false}
       - {path: "data.source_coverage[source_type=blueprint].completeness", operator: equals, value: complete}
       - {path: "data.source_coverage[source_type=blueprint].failed_item_count", operator: equals, value: 0}
+      - {path: "data.source_coverage[source_type=blueprint].obligation_ledger_completeness", operator: equals, value: complete}
       - {path: "data.source_coverage[source_type=blueprint].obligation_ledger_failed_item_count", operator: equals, value: 0}
       - {path: projection.observable_dependency_source_count, operator: equals, value: 0}
       - {path: "data.source_coverage[source_type=blueprint].fallback_occurred", operator: equals, value: false}
+      - {path: data.pagination.total, operator: equals, value: 0}
+      - {path: data.pagination.has_more, operator: equals, value: false}
     known_failure_checks:
       - {path: success, operator: equals, value: true}
       - {path: data.index.refreshed, operator: equals, value: true}
@@ -701,13 +747,19 @@ sentinels:
       - {path: data.overview.coverage_complete, operator: equals, value: false}
       - {path: "data.source_coverage[source_type=automation].completeness", operator: equals, value: complete}
       - {path: "data.source_coverage[source_type=automation].failed_item_count", operator: equals, value: 0}
+      - {path: "data.source_coverage[source_type=automation].obligation_ledger_completeness", operator: equals, value: complete}
+      - {path: "data.source_coverage[source_type=automation].obligation_ledger_failed_item_count", operator: equals, value: 0}
+      - {path: "data.source_coverage[source_type=automation].fallback_occurred", operator: equals, value: false}
       - {path: "data.source_coverage[source_type=blueprint].completeness", operator: equals, value: partial}
       - {path: "data.source_coverage[source_type=blueprint].failed_item_count", operator: equals, value: 2}
+      - {path: "data.source_coverage[source_type=blueprint].obligation_ledger_completeness", operator: equals, value: partial}
       - {path: "data.source_coverage[source_type=blueprint].obligation_ledger_failed_item_count", operator: equals, value: 2}
-      - {path: projection.observable_coverage_summary, operator: equals, value: "automation=complete/failed:0/ledger_failed:0/fallback:false; blueprint=partial/failed:2/ledger_failed:2/fallback:false"}
-      - {path: projection.observable_evidence_fingerprint, operator: equals, value: "sha256:7659028e3b7ff17daa65512be7fb165a56d1b601ad39578f8d91247b2062c57a"}
+      - {path: projection.observable_coverage_summary, operator: equals, value: "automation=complete/failed:0/ledger:complete/ledger_failed:0/fallback:false; blueprint=partial/failed:2/ledger:partial/ledger_failed:2/fallback:false"}
+      - {path: projection.observable_evidence_fingerprint, operator: equals, value: "sha256:fa6a5ce4a64139781e986457e699cb54f629d356e8d27cae26c7bc95d5ab3635"}
       - {path: projection.observable_dependency_source_count, operator: equals, value: 0}
       - {path: "data.source_coverage[source_type=blueprint].fallback_occurred", operator: equals, value: false}
+      - {path: data.pagination.total, operator: equals, value: 0}
+      - {path: data.pagination.has_more, operator: equals, value: false}
 
   - id: held-read-remains-held
     title: Held read remains reviewed, held, and no-fallback
@@ -739,6 +791,7 @@ sentinels:
     register_section: minimum_permanent_sentinels
     observation: held_read_canary_not_found
     expected_status: expected_fail
+    promotion_disposition: tracked_nonblocking
     deficiency:
       register_item: 19
       summary: Engineering misclassifies an upstream RESOURCE_NOT_FOUND as retryable provider_error/upstream_error.

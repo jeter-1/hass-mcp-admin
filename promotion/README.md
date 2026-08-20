@@ -124,6 +124,10 @@ python scripts/promotion_regression_check.py project \
 python scripts/promotion_regression_check.py project \
   --observation long_wait_template_automation_read \
   --source /path/outside/repo/automation-source.json
+
+python scripts/promotion_regression_check.py project \
+  --observation f3_orphan_task \
+  --source /path/outside/repo/execution-task-source.json
 ```
 
 The source file is temporary operator input, not capture evidence. Keep it
@@ -134,6 +138,10 @@ field names, and outputs only the declared bounded projection.
 `dependency_public_evidence_v2` consumes the actual public
 `entity_dependency_analysis` response. It reads only the public overview,
 automation/blueprint `source_coverage`, pagination, and refresh/cache fields.
+For both sources it separately binds legacy `completeness` and
+`failed_item_count` plus authoritative `obligation_ledger_completeness` and
+`obligation_ledger_failed_item_count`; missing or unsupported ledger evidence
+fails projection. Both fallback values are material.
 The response does not expose failed-blueprint identities or reason codes, so
 the pack does not invent them. The bounded human summary states only observable
 coverage and failure counts. The fingerprint preimage is a separate versioned
@@ -150,6 +158,17 @@ normalized UTF-8 byte count. The digest preimage is the UTF-8 algorithm name
 `wait_template_structure_v1`, NUL, pointer, NUL, and normalized template,
 hashed with SHA-256. A missing, moved, malformed, sensitive, or oversized target
 fails without emitting a projection.
+
+`f3_child_lifecycle_v1` consumes the bounded public `get_execution_task`
+response for the exact orphan parent. It requires the complete child list and
+uses parent task ID plus operation ID and ordinal as the deterministic child
+identity grounded by authorized historical evidence. State, normalized
+outcome, and dispatch count are fingerprinted using canonical structured JSON.
+The projection also reports child count, all-zero-dispatch, all-terminal, and
+all-cancelled-pre-dispatch aggregates. Duplicate operations or ordinals,
+non-contiguous ordinals, missing children, unsupported states, and overflow
+fail closed. Child events, lock bodies, prepared hashes, and task configuration
+are never retained.
 
 The sanitized source-shaped fixtures under
 `tests/fixtures/promotion_regression/` independently derive every current
@@ -175,10 +194,14 @@ mean merely that something failed. A new, missing, or materially different
 failure is a `REGRESSION`.
 
 `UNEXPECTED_PASS` requires human confirmation and a reviewed manifest change.
-The checker never changes status automatically. Current nonblocking known
-failures are limited to the bounded signatures for deficiency #1, deficiency
-#2/#14, deficiency #4, and the separately represented top-level taxonomy part
-of deficiency #19. There is no separate deficiency #3 sentinel.
+The checker never changes status automatically. Every `expected_fail` also
+declares a closed promotion disposition. Deficiency #1, deficiency #2/#14,
+and deficiency #4 are `blocking`; an exact match remains `KNOWN_FAILING` but
+makes this regression-manifest gate promotion-ineligible. The separately
+represented top-level taxonomy part of deficiency #19 is
+`tracked_nonblocking` and does not independently block an otherwise complete
+pack. A disposition does not change classification, and there is no separate
+deficiency #3 sentinel.
 
 Exit codes:
 
@@ -186,22 +209,27 @@ Exit codes:
 | --- | --- |
 | 0 | Complete accepted evidence; promotion eligible. |
 | 1 | At least one regression. |
-| 2 | Evidence incomplete or mandatory human review required. |
+| 2 | Evidence incomplete, mandatory human review required, or an exact blocking known failure remains. |
 | 3 | Invalid manifest, capture, or invocation. |
 
 JSON and text use the same decision contract. `regression_present` reports any
 regression, `evidence_complete` is false for `NOT_CAPTURED`, `review_required`
-is true for `UNEXPECTED_PASS`, and `promotion_eligible` is true only for a
-complete result containing exclusively `CONFIRMED` and exact
-`KNOWN_FAILING` outcomes. The compatibility fields `run_complete` and
+is true for `UNEXPECTED_PASS`, and `blocking_known_failure_present` plus
+`blocking_known_failure_count` report exact known promotion blockers.
+`promotion_eligible` is true only for complete evidence with no regression,
+review requirement, or blocking known failure. It represents this regression-
+manifest gate only; it does not bypass release-specific acceptance, deployment
+authorization, publication policy, or any other promotion gate. The
+compatibility fields `run_complete` and
 `promotion_blocked` are exact aliases of `evidence_complete` and the inverse of
 `promotion_eligible`; they cannot contradict eligibility.
 
 ## Sentinel fidelity notes
 
 - Dependency evidence is forced fresh with `refresh_index: true`. The capture
-  records refresh/cache state, automation and blueprint completeness, bounded
-  observable failure counts, observable dependency-source count, and fallback.
+  records refresh/cache state, automation and blueprint legacy and obligation-
+  ledger completeness, both failure counts, bounded observable dependency-
+  source count, pagination, and fallback.
   A zero source count proves there is no consequential source for this canary;
   exact failed-blueprint identities and per-source consequence classes are not
   public and are not claimed.
@@ -215,7 +243,14 @@ complete result containing exclusively `CONFIRMED` and exact
   digest. It does not retain the automation body.
 - Approval authority version 3 is read from server health. Durable task schema
   version 1 is independently bound to the exact orphan execution-task read.
-- F3 known-failure evidence allows only the documented orphan difference.
+- F3 known-failure evidence binds exact parent `failed_pre_dispatch`, terminal
+  outcome, zero attempts, null dispatch, causal error, exactly two children,
+  `create_fp2_pending_helper` at ordinal 0 in `preflight`, and
+  `update_vanity_automation` at ordinal 1 in `not_started`, each with zero
+  dispatch and no normalized terminal outcome. Desired recovery preserves the
+  parent failure and requires both children to become
+  `cancelled_pre_dispatch` with zero dispatch. Inventory and health must agree.
+  F3 known-failure evidence allows only this documented orphan difference.
   Normal locks, corruption, recovery coordinator, recovery failures, fallback,
   readiness, and conflict holds must remain at their desired values; any new
   failure is a regression even while the orphan persists.

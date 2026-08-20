@@ -60,7 +60,7 @@
         "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$", "maxLength": 100},
         "version": {"const": 1},
         "observation": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$"},
-        "algorithm": {"enum": ["dependency_public_evidence_v2", "wait_template_structure_v1"]},
+        "algorithm": {"enum": ["dependency_public_evidence_v2", "wait_template_structure_v1", "f3_child_lifecycle_v1"]},
         "maximum_source_bytes": {"type": "integer", "minimum": 1024, "maximum": 262144},
         "output_paths": {
           "type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true,
@@ -153,6 +153,7 @@
         "register_section": {"enum": ["minimum_permanent_sentinels", "confirmed_regression_passes"]},
         "observation": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$"},
         "expected_status": {"enum": ["expected_pass", "expected_fail"]},
+        "promotion_disposition": {"enum": ["blocking", "tracked_nonblocking"]},
         "desired_checks": {
           "type": "array", "minItems": 1, "maxItems": 40,
           "items": {"$ref": "#/$defs/check"}
@@ -166,12 +167,12 @@
       "allOf": [
         {
           "if": {"properties": {"expected_status": {"const": "expected_fail"}}, "required": ["expected_status"]},
-          "then": {"required": ["deficiency", "known_failure_checks"]}
+          "then": {"required": ["deficiency", "known_failure_checks", "promotion_disposition"]}
         },
         {
           "if": {"properties": {"expected_status": {"const": "expected_pass"}}, "required": ["expected_status"]},
           "then": {
-            "not": {"anyOf": [{"required": ["deficiency"]}, {"required": ["known_failure_checks"]}]}
+            "not": {"anyOf": [{"required": ["deficiency"]}, {"required": ["known_failure_checks"]}, {"required": ["promotion_disposition"]}]}
           }
         }
       ]

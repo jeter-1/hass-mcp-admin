@@ -57,6 +57,30 @@ MAX_PROJECTION_CANDIDATES = 100
 MAX_WAIT_TEMPLATE_BYTES = 60_000
 MAX_FAILED_CHECKS_RENDERED = 12
 
+BLOCKING = "blocking"
+TRACKED_NONBLOCKING = "tracked_nonblocking"
+
+_F3_TERMINAL_STATES = frozenset({
+    "succeeded_verified",
+    "failed_pre_dispatch",
+    "failed_post_dispatch",
+    "manual_review_required",
+    "cancelled_pre_dispatch",
+})
+_F3_CHILD_STATES = _F3_TERMINAL_STATES | frozenset({
+    "not_started",
+    "created",
+    "preflight",
+    "dispatching",
+    "observing",
+    "verifying",
+    "waiting_for_lock",
+    "compensating",
+    "partial_application",
+    "compensated",
+    "superseded",
+})
+
 _SELECTOR = re.compile(
     r"^(?P<field>[^\[\]]+)\[(?P<key>[^=\[\]]+)=(?P<value>[^\[\]]*)\]$"
 )
@@ -645,15 +669,23 @@ def _derive_dependency_projection(source: Any) -> dict[str, Any]:
         if source_type not in expected_sources:
             continue
         completeness = item.get("completeness")
+        ledger_completeness = item.get("obligation_ledger_completeness")
         fallback = item.get("fallback_occurred")
         if completeness not in {"complete", "partial", "unavailable", "unsupported"}:
             raise CheckerError("Dependency public completeness is missing or unsupported.")
+        if ledger_completeness not in {
+            "complete", "partial", "unavailable", "unsupported"
+        }:
+            raise CheckerError(
+                "Dependency public obligation-ledger completeness is missing or unsupported."
+            )
         if not isinstance(fallback, bool):
             raise CheckerError("Dependency public fallback evidence is missing.")
         normalized_coverage.append({
             "source_type": source_type,
             "completeness": completeness,
             "failed_item_count": integer(item, "failed_item_count"),
+            "obligation_ledger_completeness": ledger_completeness,
             "obligation_ledger_failed_item_count": integer(
                 item, "obligation_ledger_failed_item_count"
             ),
@@ -698,6 +730,7 @@ def _derive_dependency_projection(source: Any) -> dict[str, Any]:
     summary = "; ".join(
         f"{item['source_type']}={item['completeness']}/"
         f"failed:{item['failed_item_count']}/"
+        f"ledger:{item['obligation_ledger_completeness']}/"
         f"ledger_failed:{item['obligation_ledger_failed_item_count']}/"
         f"fallback:{str(item['fallback_occurred']).lower()}"
         for item in normalized_coverage
@@ -710,6 +743,88 @@ def _derive_dependency_projection(source: Any) -> dict[str, Any]:
             "dependency_public_evidence_v2", material
         ),
         "projection.observable_dependency_source_count": material["overview"]["unique_source_count"],
+    }
+
+
+def _derive_f3_child_projection(source: Any) -> dict[str, Any]:
+    """Project the exact bounded child lifecycle from get_execution_task."""
+    if not isinstance(source, dict):
+        raise CheckerError("F3 child projection requires a public task mapping.")
+    data = source.get("data")
+    if not isinstance(data, dict):
+        raise CheckerError("F3 child projection response is missing data.")
+    task_id = data.get("task_id")
+    children = data.get("f3_children")
+    if not isinstance(task_id, str) or re.fullmatch(r"[a-f0-9]{32}", task_id) is None:
+        raise CheckerError("F3 child projection task identity is missing or malformed.")
+    if not isinstance(children, list) or not 1 <= len(children) <= 8:
+        raise CheckerError("F3 child projection child list is missing or outside bounds.")
+
+    normalized: list[dict[str, Any]] = []
+    operations: set[str] = set()
+    ordinals: set[int] = set()
+    for child in children:
+        if not isinstance(child, dict):
+            raise CheckerError("F3 child projection contains a malformed child.")
+        operation_id = child.get("operation_id")
+        ordinal = child.get("ordinal")
+        state = child.get("state")
+        outcome = child.get("normalized_outcome")
+        dispatch_count = child.get("dispatch_count")
+        if (
+            not isinstance(operation_id, str)
+            or re.fullmatch(r"[A-Za-z0-9_-]{1,64}", operation_id) is None
+            or operation_id in operations
+        ):
+            raise CheckerError("F3 child operation identity is missing, malformed, or duplicated.")
+        if (
+            isinstance(ordinal, bool)
+            or not isinstance(ordinal, int)
+            or not 0 <= ordinal < 8
+            or ordinal in ordinals
+        ):
+            raise CheckerError("F3 child ordinal is missing, outside bounds, or duplicated.")
+        if state not in _F3_CHILD_STATES:
+            raise CheckerError("F3 child state is missing or unsupported.")
+        if outcome is not None and outcome not in _F3_TERMINAL_STATES:
+            raise CheckerError("F3 child normalized outcome is unsupported.")
+        if (
+            isinstance(dispatch_count, bool)
+            or not isinstance(dispatch_count, int)
+            or not 0 <= dispatch_count <= 1
+        ):
+            raise CheckerError("F3 child dispatch count is missing or outside bounds.")
+        operations.add(operation_id)
+        ordinals.add(ordinal)
+        normalized.append({
+            "identity": {
+                "public_task_id": task_id,
+                "operation_id": operation_id,
+                "ordinal": ordinal,
+            },
+            "state": state,
+            "normalized_outcome": outcome,
+            "dispatch_count": dispatch_count,
+        })
+    if ordinals != set(range(len(children))):
+        raise CheckerError("F3 child ordinals are not a complete bounded sequence.")
+    normalized.sort(key=lambda item: item["identity"]["ordinal"])
+    return {
+        "projection.f3_child_count": len(normalized),
+        "projection.f3_child_lifecycle_fingerprint": _canonical_fingerprint(
+            "f3_child_lifecycle_v1", normalized
+        ),
+        "projection.f3_all_zero_dispatch": all(
+            item["dispatch_count"] == 0 for item in normalized
+        ),
+        "projection.f3_all_terminal": all(
+            item["state"] in _F3_TERMINAL_STATES for item in normalized
+        ),
+        "projection.f3_all_cancelled_pre_dispatch": all(
+            item["state"] == "cancelled_pre_dispatch"
+            and item["normalized_outcome"] == "cancelled_pre_dispatch"
+            for item in normalized
+        ),
     }
 
 
@@ -778,6 +893,8 @@ def derive_projection(
     algorithm = contract["algorithm"]
     if algorithm == "dependency_public_evidence_v2":
         projection = _derive_dependency_projection(source)
+    elif algorithm == "f3_child_lifecycle_v1":
+        projection = _derive_f3_child_projection(source)
     elif algorithm == "wait_template_structure_v1":
         projection = _derive_wait_template_projection(
             source, str(contract.get("expected_action_pointer") or "")
@@ -994,6 +1111,7 @@ class SentinelResult:
     desired_checks: list[CheckResult] = field(default_factory=list)
     known_failure_checks: list[CheckResult] = field(default_factory=list)
     deficiency: dict[str, Any] | None = None
+    promotion_disposition: str | None = None
     note: str = ""
 
     @property
@@ -1031,11 +1149,29 @@ class Report:
         return bool(self.counts[UNEXPECTED_PASS])
 
     @property
+    def blocking_known_failures(self) -> list[SentinelResult]:
+        return [
+            item
+            for item in self.results
+            if item.outcome == KNOWN_FAILING
+            and item.promotion_disposition == BLOCKING
+        ]
+
+    @property
+    def blocking_known_failure_count(self) -> int:
+        return len(self.blocking_known_failures)
+
+    @property
+    def blocking_known_failure_present(self) -> bool:
+        return bool(self.blocking_known_failure_count)
+
+    @property
     def promotion_eligible(self) -> bool:
         return (
             self.evidence_complete
             and not self.regression_present
             and not self.review_required
+            and not self.blocking_known_failure_present
         )
 
 
@@ -1076,6 +1212,7 @@ def evaluate(
                     expected_status=sentinel["expected_status"],
                     observation=sentinel["observation"],
                     deficiency=sentinel.get("deficiency"),
+                    promotion_disposition=sentinel.get("promotion_disposition"),
                     note=(primary.reason if primary else "observation entry is missing"),
                 )
             )
@@ -1125,6 +1262,7 @@ def evaluate(
                 desired_checks=desired,
                 known_failure_checks=known,
                 deficiency=sentinel.get("deficiency"),
+                promotion_disposition=sentinel.get("promotion_disposition"),
                 note=("required projected evidence is incomplete" if not conclusive else ""),
             )
         )
@@ -1216,6 +1354,9 @@ def render_text(report: Report) -> str:
     counts = report.counts
     for outcome in OUTCOME_ORDER:
         lines.append(f"  {outcome:<15} {counts[outcome]:>3}")
+    lines.append(
+        f"  {'BLOCKING_KNOWN':<15} {report.blocking_known_failure_count:>3}"
+    )
     for outcome in OUTCOME_ORDER:
         entries = report.by_outcome(outcome)
         if not entries:
@@ -1227,6 +1368,10 @@ def render_text(report: Report) -> str:
                 lines.append(
                     f"      deficiency #{entry.deficiency.get('register_item')}: "
                     f"{_one_line(entry.deficiency.get('summary', ''))}"
+                )
+            if entry.promotion_disposition:
+                lines.append(
+                    f"      promotion disposition: {entry.promotion_disposition}"
                 )
             if entry.note:
                 lines.append(f"      {_one_line(entry.note)}")
@@ -1241,6 +1386,10 @@ def render_text(report: Report) -> str:
         lines.append("Result: required evidence is incomplete; promotion is not eligible.")
     elif report.review_required:
         lines.append("Result: human review is required; promotion is not eligible.")
+    elif report.blocking_known_failure_present:
+        lines.append(
+            "Result: exact known promotion blockers remain; promotion is not eligible."
+        )
     else:
         lines.append("Result: complete accepted operator-attested evidence; promotion eligible.")
     if counts[UNEXPECTED_PASS]:
@@ -1262,6 +1411,11 @@ def render_json(report: Report) -> str:
         "regression_present": report.regression_present,
         "evidence_complete": report.evidence_complete,
         "review_required": report.review_required,
+        "blocking_known_failure_present": report.blocking_known_failure_present,
+        "blocking_known_failure_count": report.blocking_known_failure_count,
+        "blocking_known_failure_ids": [
+            item.sentinel_id for item in report.blocking_known_failures
+        ],
         "promotion_eligible": report.promotion_eligible,
         "promotion_blocked": not report.promotion_eligible,
         "run_complete": report.evidence_complete,
@@ -1271,6 +1425,7 @@ def render_json(report: Report) -> str:
                 "title": entry.title,
                 "outcome": entry.outcome,
                 "expected_status": entry.expected_status,
+                "promotion_disposition": entry.promotion_disposition,
                 "observation": entry.observation,
                 "deficiency": entry.deficiency,
                 "note": entry.note,

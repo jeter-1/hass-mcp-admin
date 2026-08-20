@@ -78,6 +78,12 @@ AUTHORITATIVE_DEFICIENCY_22 = {
         "governance-historical-projection-health": 4,
         "held-read-top-level-not-found-taxonomy": 19,
     },
+    "promotion_dispositions": {
+        "dependency-index-complete-coverage": "blocking",
+        "f3-ready-locks-and-recovery": "blocking",
+        "governance-historical-projection-health": "blocking",
+        "held-read-top-level-not-found-taxonomy": "tracked_nonblocking",
+    },
     "separately_authorized_canaries": {
         "helper-no-change-path": "executable",
         "beta39-jinja-helper-dependency-semantics": "unavailable_pending_reviewed_protocol",
@@ -104,6 +110,18 @@ def load_contract() -> dict:
 
 def load_projection_fixture() -> dict:
     return CHECKER.load_json(PROJECTION_FIXTURE_PATH, "projection fixture")
+
+
+def projection_case(observation_id: str) -> dict:
+    return next(
+        item
+        for item in load_projection_fixture()["cases"]
+        if item["observation"] == observation_id
+    )
+
+
+def set_projection(capture: dict, observation_id: str, projection: dict) -> None:
+    observation(capture, observation_id)["evidence"].update(projection)
 
 
 def evaluate(capture: dict):
@@ -158,6 +176,10 @@ class ManifestStructureTests(unittest.TestCase):
         )
         self.assertEqual(contract["known_failures"], AUTHORITATIVE_DEFICIENCY_22["known_failures"])
         self.assertEqual(
+            contract["promotion_dispositions"],
+            AUTHORITATIVE_DEFICIENCY_22["promotion_dispositions"],
+        )
+        self.assertEqual(
             contract["separately_authorized_canaries"],
             AUTHORITATIVE_DEFICIENCY_22["separately_authorized_canaries"],
         )
@@ -188,6 +210,14 @@ class ManifestStructureTests(unittest.TestCase):
             if item["expected_status"] == "expected_fail"
         }
         self.assertEqual(actual, contract["known_failures"])
+        self.assertEqual(
+            {
+                identifier: item["promotion_disposition"]
+                for identifier, item in sentinels.items()
+                if item["expected_status"] == "expected_fail"
+            },
+            contract["promotion_dispositions"],
+        )
         self.assertNotIn(3, actual.values())
         self.assertEqual(
             sentinels["f3-ready-locks-and-recovery"]["deficiency"][
@@ -199,8 +229,43 @@ class ManifestStructureTests(unittest.TestCase):
             if item["expected_status"] == "expected_fail":
                 self.assertTrue(item["desired_checks"])
                 self.assertTrue(item["known_failure_checks"])
+                self.assertIn(
+                    item["promotion_disposition"],
+                    {CHECKER.BLOCKING, CHECKER.TRACKED_NONBLOCKING},
+                )
             else:
                 self.assertNotIn("known_failure_checks", item)
+                self.assertNotIn("promotion_disposition", item)
+
+    def test_promotion_disposition_schema_is_closed_and_conditional(self):
+        schema = load_schema()
+        manifest = load_manifest()
+        failing = next(
+            item for item in manifest["sentinels"]
+            if item["expected_status"] == "expected_fail"
+        )
+        passing = next(
+            item for item in manifest["sentinels"]
+            if item["expected_status"] == "expected_pass"
+        )
+
+        missing = copy.deepcopy(manifest)
+        next(
+            item for item in missing["sentinels"] if item["id"] == failing["id"]
+        ).pop("promotion_disposition")
+        self.assertTrue(CHECKER.validate_manifest(missing, schema))
+
+        invalid = copy.deepcopy(manifest)
+        next(
+            item for item in invalid["sentinels"] if item["id"] == failing["id"]
+        )["promotion_disposition"] = "informational"
+        self.assertTrue(CHECKER.validate_manifest(invalid, schema))
+
+        forbidden = copy.deepcopy(manifest)
+        next(
+            item for item in forbidden["sentinels"] if item["id"] == passing["id"]
+        )["promotion_disposition"] = "blocking"
+        self.assertTrue(CHECKER.validate_manifest(forbidden, schema))
 
     def test_default_manifest_contains_only_authoritatively_read_only_tools(self):
         tree = ast.parse(CAPABILITIES_PATH.read_text(encoding="utf-8"))
@@ -328,6 +393,8 @@ class ClassificationTests(unittest.TestCase):
         )
         self.assertFalse(report.evidence_complete)
         self.assertFalse(report.promotion_eligible)
+        self.assertTrue(report.blocking_known_failure_present)
+        self.assertEqual(report.blocking_known_failure_count, 3)
         self.assertEqual(
             {
                 item.sentinel_id
@@ -335,6 +402,49 @@ class ClassificationTests(unittest.TestCase):
             },
             set(load_contract()["known_failures"]),
         )
+
+    def test_known_failure_disposition_is_separate_from_classification(self):
+        blocking = CHECKER.SentinelResult(
+            sentinel_id="blocking-deficiency",
+            title="blocking",
+            outcome=CHECKER.KNOWN_FAILING,
+            expected_status="expected_fail",
+            observation="test",
+            promotion_disposition=CHECKER.BLOCKING,
+        )
+        report = CHECKER.Report(
+            manifest_target={},
+            capture_metadata={},
+            results=[
+                CHECKER.SentinelResult(
+                    sentinel_id="confirmed",
+                    title="confirmed",
+                    outcome=CHECKER.CONFIRMED,
+                    expected_status="expected_pass",
+                    observation="test",
+                ),
+                blocking,
+            ],
+        )
+        self.assertEqual(blocking.outcome, CHECKER.KNOWN_FAILING)
+        self.assertTrue(report.evidence_complete)
+        self.assertTrue(report.blocking_known_failure_present)
+        self.assertEqual(report.blocking_known_failure_count, 1)
+        self.assertFalse(report.regression_present)
+        self.assertFalse(report.promotion_eligible)
+        self.assertEqual(CHECKER.exit_code(report), CHECKER.EXIT_INCOMPLETE)
+        rendered = json.loads(CHECKER.render_json(report))
+        self.assertEqual(rendered["blocking_known_failure_ids"], ["blocking-deficiency"])
+        self.assertTrue(rendered["promotion_blocked"])
+        self.assertIn("known promotion blockers remain", CHECKER.render_text(report))
+
+        tracked = copy.deepcopy(blocking)
+        tracked.sentinel_id = "deficiency-19"
+        tracked.promotion_disposition = CHECKER.TRACKED_NONBLOCKING
+        report = CHECKER.Report({}, {}, [tracked])
+        self.assertFalse(report.blocking_known_failure_present)
+        self.assertTrue(report.promotion_eligible)
+        self.assertEqual(CHECKER.exit_code(report), CHECKER.EXIT_OK)
 
     def test_materially_worse_known_failure_is_a_regression(self):
         capture = load_fixture()
@@ -369,6 +479,9 @@ class ClassificationTests(unittest.TestCase):
         evidence["data.source_coverage[source_type=blueprint].completeness"] = "complete"
         evidence["data.source_coverage[source_type=blueprint].failed_item_count"] = 0
         evidence[
+            "data.source_coverage[source_type=blueprint].obligation_ledger_completeness"
+        ] = "complete"
+        evidence[
             "data.source_coverage[source_type=blueprint].obligation_ledger_failed_item_count"
         ] = 0
         report = evaluate(capture)
@@ -389,6 +502,9 @@ class ClassificationTests(unittest.TestCase):
         evidence["data.overview.coverage_complete"] = True
         evidence["data.source_coverage[source_type=blueprint].completeness"] = "complete"
         evidence["data.source_coverage[source_type=blueprint].failed_item_count"] = 0
+        evidence[
+            "data.source_coverage[source_type=blueprint].obligation_ledger_completeness"
+        ] = "complete"
         evidence[
             "data.source_coverage[source_type=blueprint].obligation_ledger_failed_item_count"
         ] = 0
@@ -729,6 +845,143 @@ class SentinelFidelityTests(unittest.TestCase):
                     CHECKER.REGRESSION,
                 )
 
+    def test_exact_f3_orphan_lifecycle_is_known_failing(self):
+        result = result_for(evaluate(load_fixture()), "f3-ready-locks-and-recovery")
+        self.assertEqual(result.outcome, CHECKER.KNOWN_FAILING)
+        self.assertEqual(result.promotion_disposition, CHECKER.BLOCKING)
+
+    def test_f3_parent_mutations_are_regressions(self):
+        cases = (
+            ("data.state", "succeeded_verified"),
+            ("data.terminal_outcome", "succeeded_verified"),
+            ("data.provider_attempt_count", 1),
+            ("data.dispatched_at", "2026-08-19T12:00:01Z"),
+            ("data.last_error.error_code", "different_failure"),
+        )
+        for path, value in cases:
+            with self.subTest(path=path):
+                capture = load_fixture()
+                observation(capture, "f3_orphan_task")["evidence"][path] = value
+                if path == "data.state":
+                    observation(capture, "execution_task_inventory")["evidence"][
+                        "data.tasks[task_id=ab8d7cd12aad48aab8307ca819c794ca].state"
+                    ] = value
+                self.assertEqual(
+                    result_for(evaluate(capture), "f3-ready-locks-and-recovery").outcome,
+                    CHECKER.REGRESSION,
+                )
+
+    def test_f3_child_identity_lifecycle_and_dispatch_mutations_regress(self):
+        case = projection_case("f3_orphan_task")
+        mutations = (
+            lambda children: children[0].__setitem__("operation_id", "different_operation"),
+            lambda children: (
+                children[0].__setitem__("ordinal", 1),
+                children[1].__setitem__("ordinal", 0),
+            ),
+            lambda children: children[0].__setitem__("state", "created"),
+            lambda children: children[0].__setitem__(
+                "normalized_outcome", "failed_pre_dispatch"
+            ),
+            lambda children: children[0].__setitem__("dispatch_count", 1),
+        )
+        for mutate in mutations:
+            with self.subTest(mutation=mutate):
+                source = copy.deepcopy(case["source"])
+                mutate(source["data"]["f3_children"])
+                capture = load_fixture()
+                set_projection(
+                    capture,
+                    "f3_orphan_task",
+                    CHECKER.derive_projection(load_manifest(), "f3_orphan_task", source),
+                )
+                self.assertEqual(
+                    result_for(evaluate(capture), "f3-ready-locks-and-recovery").outcome,
+                    CHECKER.REGRESSION,
+                )
+
+    def test_f3_child_count_and_complete_recovery_are_exact(self):
+        case = projection_case("f3_orphan_task")
+
+        removed = copy.deepcopy(case["source"])
+        removed["data"]["f3_children"].pop()
+        capture = load_fixture()
+        set_projection(
+            capture,
+            "f3_orphan_task",
+            CHECKER.derive_projection(load_manifest(), "f3_orphan_task", removed),
+        )
+        self.assertEqual(
+            result_for(evaluate(capture), "f3-ready-locks-and-recovery").outcome,
+            CHECKER.REGRESSION,
+        )
+
+        added = copy.deepcopy(case["source"])
+        added["data"]["f3_children"].append({
+            "operation_id": "unexpected_operation",
+            "ordinal": 2,
+            "state": "not_started",
+            "normalized_outcome": None,
+            "dispatch_count": 0,
+        })
+        capture = load_fixture()
+        set_projection(
+            capture,
+            "f3_orphan_task",
+            CHECKER.derive_projection(load_manifest(), "f3_orphan_task", added),
+        )
+        self.assertEqual(
+            result_for(evaluate(capture), "f3-ready-locks-and-recovery").outcome,
+            CHECKER.REGRESSION,
+        )
+
+        one_terminal = copy.deepcopy(case["source"])
+        one_terminal["data"]["f3_children"][0].update({
+            "state": "cancelled_pre_dispatch",
+            "normalized_outcome": "cancelled_pre_dispatch",
+        })
+        capture = load_fixture()
+        set_projection(
+            capture,
+            "f3_orphan_task",
+            CHECKER.derive_projection(load_manifest(), "f3_orphan_task", one_terminal),
+        )
+        self.assertEqual(
+            result_for(evaluate(capture), "f3-ready-locks-and-recovery").outcome,
+            CHECKER.REGRESSION,
+        )
+
+        recovered = copy.deepcopy(case["source"])
+        for child in recovered["data"]["f3_children"]:
+            child.update({
+                "state": "cancelled_pre_dispatch",
+                "normalized_outcome": "cancelled_pre_dispatch",
+            })
+        capture = load_fixture()
+        set_projection(
+            capture,
+            "f3_orphan_task",
+            CHECKER.derive_projection(load_manifest(), "f3_orphan_task", recovered),
+        )
+        health = observation(capture, "server_health")["evidence"]
+        health["data.governance.f3.status"] = "ready"
+        health["data.governance.f3.nonterminal_execution_count"] = 0
+        result = result_for(evaluate(capture), "f3-ready-locks-and-recovery")
+        self.assertEqual(result.outcome, CHECKER.UNEXPECTED_PASS)
+
+    def test_f3_projection_rejects_incomplete_or_malformed_child_lists(self):
+        case = projection_case("f3_orphan_task")
+        for mutate in (
+            lambda value: value["data"].pop("f3_children"),
+            lambda value: value["data"]["f3_children"][0].pop("dispatch_count"),
+            lambda value: value["data"]["f3_children"][0].__setitem__("state", "unknown"),
+            lambda value: value["data"]["f3_children"][1].__setitem__("ordinal", 0),
+        ):
+            source = copy.deepcopy(case["source"])
+            mutate(source)
+            with self.assertRaises(CHECKER.CheckerError):
+                CHECKER.derive_projection(load_manifest(), "f3_orphan_task", source)
+
 
 class BoundsAndDeterminismTests(unittest.TestCase):
     def test_projection_derivation_matches_sanitized_source_fixtures(self):
@@ -828,9 +1081,106 @@ class BoundsAndDeterminismTests(unittest.TestCase):
             ),
         )
 
+    def test_dependency_projection_binds_each_obligation_ledger_contract(self):
+        case = projection_case("native_dependency_read")
+        baseline = CHECKER.derive_projection(
+            load_manifest(), case["observation"], copy.deepcopy(case["source"])
+        )
+        for source_type in ("automation", "blueprint"):
+            with self.subTest(source_type=source_type):
+                changed = copy.deepcopy(case["source"])
+                coverage = next(
+                    item for item in changed["data"]["source_coverage"]
+                    if item["source_type"] == source_type
+                )
+                coverage["obligation_ledger_completeness"] = (
+                    "partial"
+                    if coverage["obligation_ledger_completeness"] == "complete"
+                    else "complete"
+                )
+                projected = CHECKER.derive_projection(
+                    load_manifest(), case["observation"], changed
+                )
+                self.assertNotEqual(
+                    projected["projection.observable_evidence_fingerprint"],
+                    baseline["projection.observable_evidence_fingerprint"],
+                )
+
+        for field in (
+            "obligation_ledger_completeness",
+            "obligation_ledger_failed_item_count",
+        ):
+            missing = copy.deepcopy(case["source"])
+            missing["data"]["source_coverage"][0].pop(field)
+            with self.assertRaises(CHECKER.CheckerError):
+                CHECKER.derive_projection(load_manifest(), case["observation"], missing)
+
+        unsupported = copy.deepcopy(case["source"])
+        unsupported["data"]["source_coverage"][0][
+            "obligation_ledger_completeness"
+        ] = "unknown"
+        with self.assertRaises(CHECKER.CheckerError):
+            CHECKER.derive_projection(load_manifest(), case["observation"], unsupported)
+
+    def test_legacy_and_ledger_failure_counts_are_independent(self):
+        cases = (
+            ("automation", "failed_item_count", 1),
+            ("automation", "obligation_ledger_failed_item_count", 1),
+            ("blueprint", "failed_item_count", 3),
+            ("blueprint", "obligation_ledger_failed_item_count", 3),
+        )
+        projection = projection_case("native_dependency_read")
+        for source_type, field, value in cases:
+            with self.subTest(source_type=source_type, field=field):
+                source = copy.deepcopy(projection["source"])
+                next(
+                    item for item in source["data"]["source_coverage"]
+                    if item["source_type"] == source_type
+                )[field] = value
+                capture = load_fixture()
+                path = f"data.source_coverage[source_type={source_type}].{field}"
+                observation(capture, "native_dependency_read")["evidence"][path] = value
+                set_projection(
+                    capture,
+                    "native_dependency_read",
+                    CHECKER.derive_projection(
+                        load_manifest(), "native_dependency_read", source
+                    ),
+                )
+                self.assertEqual(
+                    result_for(
+                        evaluate(capture), "dependency-index-complete-coverage"
+                    ).outcome,
+                    CHECKER.REGRESSION,
+                )
+
+    def test_partial_ledger_with_zero_failures_is_not_complete(self):
+        case = projection_case("native_dependency_read")
+        source = copy.deepcopy(case["source"])
+        automation = next(
+            item for item in source["data"]["source_coverage"]
+            if item["source_type"] == "automation"
+        )
+        automation["obligation_ledger_completeness"] = "partial"
+        automation["obligation_ledger_failed_item_count"] = 0
+        capture = load_fixture()
+        evidence = observation(capture, "native_dependency_read")["evidence"]
+        evidence[
+            "data.source_coverage[source_type=automation].obligation_ledger_completeness"
+        ] = "partial"
+        set_projection(
+            capture,
+            "native_dependency_read",
+            CHECKER.derive_projection(load_manifest(), "native_dependency_read", source),
+        )
+        self.assertEqual(
+            result_for(evaluate(capture), "dependency-index-complete-coverage").outcome,
+            CHECKER.REGRESSION,
+        )
+
     def test_wait_projection_uses_only_declared_action_pointer(self):
         manifest = load_manifest()
-        case = load_projection_fixture()["cases"][1]
+        case = projection_case("long_wait_template_automation_read")
         expected = case["expected"]
         source = copy.deepcopy(case["source"])
         source["variables"]["nested"] = {

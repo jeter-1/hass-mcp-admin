@@ -41,6 +41,12 @@
     "governance-historical-projection-health": 4,
     "held-read-top-level-not-found-taxonomy": 19
   },
+  "promotion_dispositions": {
+    "dependency-index-complete-coverage": "blocking",
+    "f3-ready-locks-and-recovery": "blocking",
+    "governance-historical-projection-health": "blocking",
+    "held-read-top-level-not-found-taxonomy": "tracked_nonblocking"
+  },
   "separately_authorized_canaries": {
     "helper-no-change-path": "executable",
     "beta39-jinja-helper-dependency-semantics": "unavailable_pending_reviewed_protocol"

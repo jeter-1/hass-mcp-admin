@@ -7,7 +7,7 @@
   },
   "capture_schema_version": 1,
   "manifest_version": 2,
-  "manifest_digest": "sha256:b36331def2e0e8a909c70b1831e17492468b1e6aadf8cb3793ffda0ea9616b66",
+  "manifest_digest": "sha256:1a44188bdc510de99cb5bee3993b635fee939024ecf03e3f691656c66b39e92e",
   "captured_at": "2026-08-19T12:00:00Z",
   "captured_by": "synthetic offline fixture maintainer",
   "session_id": "fixture-beta39-current-state-v2",
@@ -132,12 +132,18 @@
         "data.overview.coverage_complete": false,
         "data.source_coverage[source_type=automation].completeness": "complete",
         "data.source_coverage[source_type=automation].failed_item_count": 0,
+        "data.source_coverage[source_type=automation].obligation_ledger_completeness": "complete",
+        "data.source_coverage[source_type=automation].obligation_ledger_failed_item_count": 0,
+        "data.source_coverage[source_type=automation].fallback_occurred": false,
         "data.source_coverage[source_type=blueprint].completeness": "partial",
         "data.source_coverage[source_type=blueprint].failed_item_count": 2,
+        "data.source_coverage[source_type=blueprint].obligation_ledger_completeness": "partial",
         "data.source_coverage[source_type=blueprint].obligation_ledger_failed_item_count": 2,
         "data.source_coverage[source_type=blueprint].fallback_occurred": false,
-        "projection.observable_coverage_summary": "automation=complete/failed:0/ledger_failed:0/fallback:false; blueprint=partial/failed:2/ledger_failed:2/fallback:false",
-        "projection.observable_evidence_fingerprint": "sha256:7659028e3b7ff17daa65512be7fb165a56d1b601ad39578f8d91247b2062c57a",
+        "data.pagination.total": 0,
+        "data.pagination.has_more": false,
+        "projection.observable_coverage_summary": "automation=complete/failed:0/ledger:complete/ledger_failed:0/fallback:false; blueprint=partial/failed:2/ledger:partial/ledger_failed:2/fallback:false",
+        "projection.observable_evidence_fingerprint": "sha256:fa6a5ce4a64139781e986457e699cb54f629d356e8d27cae26c7bc95d5ab3635",
         "projection.observable_dependency_source_count": 0
       },
       "absent_paths": []
@@ -212,12 +218,16 @@
       "evidence": {
         "data.task_id": "ab8d7cd12aad48aab8307ca819c794ca",
         "data.task_schema_version": 1,
-        "data.state": "succeeded_verified",
-        "data.terminal_outcome": "succeeded_verified",
+        "data.state": "failed_pre_dispatch",
+        "data.terminal_outcome": "failed_pre_dispatch",
         "data.provider_attempt_count": 0,
         "data.dispatched_at": null,
-        "data.f3_children.0.state": "created",
-        "data.f3_children.0.dispatch_count": 0
+        "data.last_error.error_code": "pre_dispatch_authority_invalid",
+        "projection.f3_child_count": 2,
+        "projection.f3_child_lifecycle_fingerprint": "sha256:fbfe67c4b12d73a6f1a84c87ca41081a67bd1b5c64b87d54e8e21c6a9e9c1940",
+        "projection.f3_all_zero_dispatch": true,
+        "projection.f3_all_terminal": false,
+        "projection.f3_all_cancelled_pre_dispatch": false
       },
       "absent_paths": []
     },
@@ -280,7 +290,7 @@
       "arguments": {"state": "", "terminal_outcome": "", "plan_id": "", "limit": 100},
       "status": "captured",
       "evidence": {
-        "data.tasks[task_id=ab8d7cd12aad48aab8307ca819c794ca].state": "succeeded_verified"
+        "data.tasks[task_id=ab8d7cd12aad48aab8307ca819c794ca].state": "failed_pre_dispatch"
       },
       "absent_paths": []
     },
