@@ -150,6 +150,39 @@ task/ordinal order, batch 16, a five-second budget, persisted eligibility, and
 bounded 5-to-300 or 30-to-300 second exponential backoff. One public task
 receives at most one child transition per sweep.
 
+### Terminal-parent orphan reconciliation
+
+The sweep also enforces a named invariant:
+
+> **Terminal parent + proven zero dispatch => no child remains nonterminal.**
+
+A parent that reaches a terminal state before dispatch used to strand its
+children: the sweep skipped every child whose public task was already
+terminal, so children left in `preflight` or `not_started` were never
+revisited, their hold projections were never cleared, and
+`nonterminal_execution_count` never converged.
+
+Each sweep now terminalizes those children first, before the expired-lock
+pass, so their locks are released in the same sweep. Terminalize-then-release
+is also the order that leaves no window for a concurrent dispatch.
+
+"Proven zero dispatch" is durable, not inferred. The parent must carry no
+provider attempt and no dispatch timestamp, and each child must carry no
+durable dispatch intent. Because intent is committed *before* the provider is
+invoked, a record with no intent provably never dispatched; a crash after the
+intent leaves it set, and such a record is deliberately excluded and left for
+the post-intent readback path. The storage layer enforces this independently:
+cancellation refuses any record holding an intent and records
+`dispatch_intent_exists` rather than silently skipping.
+
+Terminalization uses `cancelled_pre_dispatch`, never a success outcome, and
+appends evidence rather than overwriting the original causal error. The pass
+is idempotent: an already-terminal child is a no-op with no new event. A child
+that never received an execution record has nothing to terminalize and is
+projected as `cancelled_pre_dispatch` under such a parent, so parent and child
+views agree. This is a bookkeeping and projection correction; it never
+dispatches a provider call.
+
 Before intent, exact authority re-enters public preflight, reacquires the
 complete set, repeats preflight, and commits intent before mutation. After
 intent, the executor transfers only expired fenced locks for observation and

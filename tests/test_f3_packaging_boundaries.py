@@ -51,6 +51,7 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "hass_mcp_engineering_beta/ha_mcp_engineering/f3/operational_strategies.py",
     "tests/f3_operational_fixtures.py",
     "tests/test_f3_operational_adapter.py",
+    "tests/test_f3_orphan_child_recovery.py",
     "tests/test_f3_operational_invariants.py",
     "tests/test_f3_operational_recovery.py",
     "tests/test_f3_packaging_boundaries.py",

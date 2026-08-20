@@ -2026,8 +2026,13 @@ class F3RuntimeIntegration:
                 "operation_id": declaration["operation_id"],
                 "ordinal": declaration["operation_ordinal"],
                 "prepared_operation_hash": declaration["prepared_operation_hash"],
-                "state": "not_started" if (record := self.children.get(declaration["child_id"])) is None else record.state,
-                "normalized_outcome": None if record is None else record.normalized_outcome,
+                "state": (
+                    projected := self._orphaned_child_state(
+                        task,
+                        record := self.children.get(declaration["child_id"]),
+                    )
+                )[0],
+                "normalized_outcome": projected[1],
                 "dispatch_count": 0 if record is None else record.dispatch_count,
                 "evidence_deadline": None if record is None or record.dispatch_intent is None else record.dispatch_intent["evidence_deadline"],
                 "selective_hold_keys": declaration["selective_hold_keys"],
@@ -2054,6 +2059,15 @@ class F3RuntimeIntegration:
             runtime = self.children.runtime(declaration["child_id"])
             if record is not None and record.terminal and not runtime["selective_hold_tokens"]:
                 continue
+            parent = self.service.task_repository.get(
+                declaration["public_task_id"]
+            )
+            if record is None and parent is not None:
+                # A child that never started, under a terminal parent that
+                # never dispatched, is not pending reconciliation work.
+                projected_state, _ = self._orphaned_child_state(parent, record)
+                if projected_state == "terminal":
+                    continue
             items.append(
                 {
                     "child_id": declaration["child_id"],
@@ -2063,8 +2077,14 @@ class F3RuntimeIntegration:
                     "ordinal": declaration["operation_ordinal"],
                     "target": f"{declaration['target_type']}:{declaration['target_id']}",
                     "prepared_hash": declaration["prepared_operation_hash"],
-                    "state": "not_started" if record is None else record.state,
-                    "normalized_outcome": None if record is None else record.normalized_outcome,
+                    "state": (
+                        projected := self._orphaned_child_state(
+                            parent, record
+                        )
+                        if parent is not None
+                        else ("not_started", None)
+                    )[0],
+                    "normalized_outcome": projected[1],
                     "intent_timestamp": None if record is None or record.dispatch_intent is None else record.dispatch_intent["committed_at"],
                     "evidence_deadline": None if record is None or record.dispatch_intent is None else record.dispatch_intent["evidence_deadline"],
                     "dispatch_count": 0 if record is None else record.dispatch_count,
@@ -2363,6 +2383,124 @@ class F3RuntimeIntegration:
             },
         }
 
+    @staticmethod
+    def _orphaned_child_state(
+        task: Any, record: Any
+    ) -> tuple[str, str | None]:
+        """Project a never-started child of a terminal, zero-dispatch parent.
+
+        A child with no execution record has literally never started, and
+        under a parent that reached a terminal state with no provider attempt
+        it never will.  Reporting ``not_started`` there implies pending work
+        that cannot exist, which is the parent/child contradiction this
+        deficiency describes.  This projects durable facts; it mutates
+        nothing.
+        """
+
+        if record is not None:
+            return record.state, record.normalized_outcome
+        if (
+            task.state in TERMINAL_TASK_STATES
+            and not task.provider_attempts
+            and not task.dispatched_at
+        ):
+            return "terminal", "cancelled_pre_dispatch"
+        return "not_started", None
+
+    def _terminalize_orphaned_children(self, *, now: datetime) -> int:
+        """Terminalize never-dispatched children of a terminal parent.
+
+        Deficiency #2. The recovery sweep skips every child whose public task
+        is already terminal, so a parent that failed before dispatch left its
+        children stranded in ``preflight``/``not_started`` forever: the sweep
+        never revisited them, their holds were never cleared, and
+        ``nonterminal_execution_count`` never converged.
+
+        The invariant restored here is:
+
+            terminal parent + proven zero dispatch => no child remains
+            nonterminal.
+
+        "Proven zero dispatch" is durable, not inferred. The executor commits
+        the dispatch intent *before* invoking a provider, so a record with no
+        intent provably never dispatched; a crash after the intent leaves it
+        set and is deliberately excluded. This is a bookkeeping correction and
+        never dispatches anything.
+        """
+
+        reconciled = 0
+        declarations = self.children.all_declarations()
+        for public_task_id in sorted(
+            {item["public_task_id"] for item in declarations}
+        ):
+            public_task = self.service.task_repository.get(public_task_id)
+            if public_task is None:
+                continue
+            if public_task.state not in TERMINAL_TASK_STATES:
+                continue
+            # Only the proven-zero-dispatch parent qualifies. A parent with any
+            # provider attempt, or any dispatch timestamp, is out of scope.
+            if public_task.provider_attempts or public_task.dispatched_at:
+                continue
+            for declaration in declarations:
+                if declaration["public_task_id"] != public_task_id:
+                    continue
+                child_id = declaration["child_id"]
+                record = self.children.get(child_id)
+                if record is None or record.terminal:
+                    # Already converged: idempotent no-op, no event, no error.
+                    continue
+                if record.dispatch_intent is not None:
+                    # Post-intent work is never re-classified as pre-dispatch.
+                    # The repository would refuse it anyway; skipping keeps the
+                    # no-blind-redispatch guarantee intact.
+                    continue
+                # Terminalize before releasing anything, so no concurrent
+                # dispatch can start in the window between the two.
+                if not self.children.cancel(child_id, now=now):
+                    continue
+                reconciled += 1
+                self._release_orphaned_child_holds(declaration, now=now)
+        return reconciled
+
+    def _release_orphaned_child_holds(
+        self, declaration: dict[str, Any], *, now: datetime
+    ) -> None:
+        """Clear hold projections left on a child that never dispatched.
+
+        Only stale projections are cleared. A hold token that still matches a
+        live lock record is an operator-gated conflict hold and is left alone,
+        so this never silently discharges a hold that still means something.
+        """
+
+        child_id = declaration["child_id"]
+        runtime = self.children.runtime(child_id)
+        tokens = list(runtime.get("selective_hold_tokens") or [])
+        if not tokens:
+            return
+        live = {
+            (item.key, item.generation) for item in self.locks.records()
+        }
+        retained = [
+            token
+            for token in tokens
+            if (token["key"], token["generation"]) in live
+        ]
+        if len(retained) == len(tokens):
+            return
+        self.children.update_runtime(
+            child_id,
+            changes={
+                "selective_hold_tokens": retained,
+                "last_reconciliation_at": now.isoformat(),
+                "reconciliation_result": (
+                    "orphaned_pre_dispatch_child_terminalized"
+                ),
+                "backoff_seconds": 0,
+                "next_eligible_at": None,
+            },
+        )
+
     async def recover_once(self, trigger: str) -> dict[str, int]:
         del trigger
         self._coordinator_initialized = True
@@ -2371,6 +2509,13 @@ class F3RuntimeIntegration:
         self._next_sweep_at = (now + timedelta(seconds=RECOVERY_CADENCE_SECONDS)).isoformat()
         sweep_started = time.monotonic()
         processed = 0
+        # Terminalize orphaned pre-dispatch children first, so the expired-lock
+        # pass below releases their locks in this same sweep rather than the
+        # next one.  Terminal-then-release is also the order that leaves no
+        # window for a concurrent dispatch.
+        orphaned_children_terminalized = self._terminalize_orphaned_children(
+            now=now
+        )
         stale_release_decisions = {}
         for lock_record in self.locks.expired_records(now=now):
             execution = self.children.get(lock_record.task_id)
@@ -2484,7 +2629,13 @@ class F3RuntimeIntegration:
                     },
                 )
         self._ready = True
-        return {"processed": processed, "eligible_limit": RECOVERY_BATCH_SIZE}
+        return {
+            "processed": processed,
+            "eligible_limit": RECOVERY_BATCH_SIZE,
+            "orphaned_children_terminalized": (
+                orphaned_children_terminalized
+            ),
+        }
 
     async def supervise(self) -> None:
         await self.recover_once("startup")
