@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/jeter-1/hass-mcp-admin/promotion/manifest_schema.json",
+  "title": "HA MCP Engineering promotion regression manifest",
+  "description": "Structure of promotion/promotion_regression_manifest.yaml. Every sentinel names one observation, the fields to inspect, and whether the sentinel is currently expected to pass or to fail against an open deficiency.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["manifest_version", "target", "observations", "sentinels"],
+  "properties": {
+    "manifest_version": {
+      "const": 1
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "release",
+        "tag",
+        "build_sha",
+        "evidence_captured_at",
+        "evidence_source"
+      ],
+      "properties": {
+        "release": {"type": "string", "minLength": 1},
+        "tag": {"type": "string", "minLength": 1},
+        "build_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "evidence_captured_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "evidence_source": {"type": "string", "minLength": 20},
+        "notes": {"type": "string"}
+      }
+    },
+    "observations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/observation"}
+    },
+    "sentinels": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/sentinel"}
+    }
+  },
+  "$defs": {
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "tool", "effect_class", "procedure"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$"},
+        "tool": {"type": "string", "minLength": 1},
+        "arguments": {"type": "object"},
+        "effect_class": {
+          "description": "read_only means the call cannot change any state. no_change_probe means the call is only safe once its precondition has been read and confirmed.",
+          "enum": ["read_only", "no_change_probe"]
+        },
+        "procedure": {"type": "string", "minLength": 20},
+        "target_binding": {
+          "description": "fixed means the arguments in this manifest are complete. operator_local means the operator supplies an instance-specific identifier that must not be committed.",
+          "enum": ["fixed", "operator_local"],
+          "default": "fixed"
+        },
+        "target_note": {"type": "string", "minLength": 20},
+        "precondition": {"type": "string", "minLength": 20}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"effect_class": {"const": "no_change_probe"}},
+            "required": ["effect_class"]
+          },
+          "then": {"required": ["precondition"]}
+        },
+        {
+          "if": {
+            "properties": {"target_binding": {"const": "operator_local"}},
+            "required": ["target_binding"]
+          },
+          "then": {"required": ["target_note"]}
+        }
+      ]
+    },
+    "sentinel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "description",
+        "register_section",
+        "observation",
+        "checks",
+        "expected_status"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+        "title": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 20},
+        "register_section": {
+          "enum": ["minimum_permanent_sentinels", "confirmed_regression_passes"]
+        },
+        "observation": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$"},
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/check"}
+        },
+        "expected_status": {"enum": ["expected_pass", "expected_fail"]},
+        "deficiency": {"$ref": "#/$defs/deficiency"}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"expected_status": {"const": "expected_fail"}},
+            "required": ["expected_status"]
+          },
+          "then": {"required": ["deficiency"]}
+        },
+        {
+          "if": {
+            "properties": {"expected_status": {"const": "expected_pass"}},
+            "required": ["expected_status"]
+          },
+          "then": {
+            "not": {"required": ["deficiency"]}
+          }
+        }
+      ]
+    },
+    "deficiency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["register_item", "summary", "observed_evidence"],
+      "properties": {
+        "register_item": {"type": "integer", "minimum": 1},
+        "related_register_items": {
+          "type": "array",
+          "items": {"type": "integer", "minimum": 1}
+        },
+        "summary": {"type": "string", "minLength": 10},
+        "observed_evidence": {"type": "string", "minLength": 10}
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "operator"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "operator": {
+          "enum": [
+            "equals",
+            "not_equals",
+            "one_of",
+            "gte",
+            "lte",
+            "gt",
+            "lt",
+            "present",
+            "absent",
+            "matches",
+            "equals_observation_path"
+          ]
+        },
+        "value": {},
+        "values": {"type": "array", "minItems": 1},
+        "observation": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$"},
+        "reference_path": {"type": "string", "minLength": 1},
+        "note": {"type": "string"}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "operator": {
+                "enum": ["equals", "not_equals", "gte", "lte", "gt", "lt", "matches"]
+              }
+            },
+            "required": ["operator"]
+          },
+          "then": {"required": ["value"]}
+        },
+        {
+          "if": {
+            "properties": {"operator": {"const": "one_of"}},
+            "required": ["operator"]
+          },
+          "then": {"required": ["values"]}
+        },
+        {
+          "if": {
+            "properties": {"operator": {"const": "equals_observation_path"}},
+            "required": ["operator"]
+          },
+          "then": {"required": ["observation", "reference_path"]}
+        }
+      ]
+    }
+  }
+}

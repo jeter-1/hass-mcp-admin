@@ -1,0 +1,536 @@
+{
+  "_provenance": {
+    "kind": "synthetic_offline_fixture",
+    "not_a_production_record": true,
+    "built_from": [
+      "The values recorded in the HAMCP-089 consolidated deficiency register from two manual live regression passes against the deployed 2.2.0-beta.39 server.",
+      "Response shapes derived from v2.2.0-beta.39 runtime source: ha_mcp_engineering/health.py, capabilities.py, governance/service.py, governance/task_storage.py, f3_runtime/runtime.py, dependency/service.py, providers/upstream_read_gateway.py, providers/upstream_dashboard.py."
+    ],
+    "not_built_from": "A live capture. No Home Assistant or deployed MCP endpoint was contacted to produce this file.",
+    "redaction": "Operator identifiers, automation bodies, dashboard content, entity inventories, and governance plan ids are omitted or replaced with unmistakably synthetic values. Fields no sentinel inspects carry placeholder values.",
+    "expected_classification": "22 CONFIRMED, 3 KNOWN_FAILING (register items #1, #2, #4), 0 REGRESSION, 0 NOT_CAPTURED."
+  },
+  "capture_version": 1,
+  "captured_at": "2026-08-19T00:00:00Z",
+  "captured_by": "offline fixture, not a live session",
+  "target": {
+    "release": "2.2.0-beta.39",
+    "build_sha": "bf4236cc99c9515325d7cba0fd8d2f909d3573cb"
+  },
+  "observations": {
+    "server_identity": {
+      "tool": "server_info",
+      "response": {
+        "operation": "server_info",
+        "summary": "Returned beta server identity and runtime metadata.",
+        "success": true,
+        "warnings": [],
+        "metadata": {},
+        "request_id": "fixture-request-server-identity",
+        "data": {
+          "server": {
+            "id": "hass-mcp-engineering-beta",
+            "name": "HA MCP Engineering Server Beta",
+            "version": "2.2.0-beta.39",
+            "schema_version": "1",
+            "build_sha": "bf4236cc99c9515325d7cba0fd8d2f909d3573cb",
+            "build_time": "2026-08-18T00:00:00Z",
+            "build_dirty": false
+          },
+          "runtime": {
+            "mode": "home_assistant_addon",
+            "home_assistant_url": "http://supervisor/core",
+            "home_assistant_connection": {
+              "checked": true,
+              "status": "connected",
+              "latency_ms": 9.4,
+              "ha_version": "2026.8.1",
+              "location_name": "synthetic-fixture-location",
+              "time_zone": "UTC"
+            }
+          },
+          "tool_count": 76,
+          "canonical_tool_count": 25,
+          "engineering_registered_tool_count": 51,
+          "dynamic_upstream_tool_count": 25,
+          "upstream_read_gateway": {
+            "generic_delegation_available": false,
+            "writes_allowed": false
+          }
+        }
+      }
+    },
+    "server_health": {
+      "tool": "get_server_health",
+      "response": {
+        "operation": "get_server_health",
+        "summary": "Returned safe beta operational health.",
+        "success": true,
+        "warnings": [],
+        "metadata": {},
+        "request_id": "fixture-request-server-health",
+        "data": {
+          "server": {
+            "id": "hass-mcp-engineering-beta",
+            "name": "HA MCP Engineering Server Beta",
+            "version": "2.2.0-beta.39"
+          },
+          "runtime": "home_assistant_addon",
+          "uptime_seconds": 51840.0,
+          "home_assistant": {
+            "checked": true,
+            "status": "connected",
+            "rest_status": "connected",
+            "version": "2026.8.1",
+            "websocket_status": "connected"
+          },
+          "registered_tool_count": 76,
+          "engineering_registered_tool_count": 51,
+          "dynamic_upstream_tool_count": 25,
+          "configuration": {
+            "valid": true
+          },
+          "provider_routing": {
+            "requests_by_provider": {},
+            "successful_requests_by_provider": {},
+            "failures_by_provider": {},
+            "partial_results": 0,
+            "fallback_attempts": 0,
+            "fallback_successes": 0,
+            "prohibited_fallback_attempts": 0,
+            "evidence_truncation_count": 0,
+            "standard_ha_mcp_delegation": "unavailable",
+            "direct_fallback_requires_explicit_policy": true,
+            "standard_ha_mcp_exact_mapping_count": 0
+          },
+          "upstream_read_gateway": {
+            "configured": true,
+            "initialized": true,
+            "compatibility_status": "exact",
+            "admission_status": "admitted_exact",
+            "selected_compatibility_entry_id": "synthetic-fixture-compatibility-entry",
+            "dynamically_exposed_count": 25,
+            "fallback_count": 0,
+            "direct_ha_fallback_allowed": false,
+            "writes_allowed": false,
+            "generic_delegation_available": false,
+            "last_failure_category": null
+          },
+          "upstream_dashboard": {
+            "configured": true,
+            "credential_present": true,
+            "reachable": true,
+            "operational_status": "available",
+            "capability_status": "reviewed",
+            "admission_status": "admitted_exact",
+            "writes_allowed": false,
+            "ordinary_dashboard_read_route": {
+              "route_class": "ordinary_read_provider",
+              "publicly_registered": true,
+              "writes_allowed": false,
+              "fallback": "none"
+            },
+            "governed_dashboard_write_route": {
+              "route_class": "f3_external_approval_only",
+              "publicly_registered": false,
+              "exactly_one_dispatch": true,
+              "blind_redispatch_allowed": false,
+              "direct_home_assistant_fallback": false,
+              "fallback": "none"
+            }
+          },
+          "governance": {
+            "enabled": true,
+            "storage_status": "healthy",
+            "storage_corruption_count": 0,
+            "storage": {
+              "configured": true,
+              "status": "healthy",
+              "total_plans": 14,
+              "corruption_count": 0,
+              "write_failures": 0,
+              "retention_days": 30
+            },
+            "total_plans": 14,
+            "approval_authority_version": 3,
+            "external_approval_enabled": true,
+            "projection_failure_count": 2,
+            "projection_failure_warning": "one_or_more_governance_plans_could_not_be_projected",
+            "policy_snapshot_mismatches": 1,
+            "approval_principal_mismatches": 0,
+            "approval_sequence_failures": 1,
+            "policy_class_accounting_valid": true,
+            "execution_tasks": {
+              "storage_status": "healthy",
+              "record_count": 9,
+              "event_count": 41,
+              "nonterminal_tasks": 0,
+              "failed_pre_dispatch": 1,
+              "failed_post_dispatch": 0,
+              "verified_successes": 6,
+              "storage": {
+                "configured": true,
+                "status": "healthy",
+                "namespace": "execution_tasks",
+                "record_count": 9,
+                "event_count": 41,
+                "corruption_count": 0,
+                "write_failures": 0,
+                "event_write_failures": 0,
+                "materialization_failures": 0,
+                "rehydration_attempts": 1,
+                "retention_days": 30,
+                "manual_review_count": 0,
+                "navigation": {
+                  "generation": 12,
+                  "record_count": 9,
+                  "nonterminal_record_count": 0,
+                  "index_rebuild_count": 1,
+                  "index_update_count": 9,
+                  "index_invalidation_count": 0,
+                  "legacy_task_count": 0,
+                  "legacy_active_task_count": 0
+                }
+              }
+            },
+            "f3": {
+              "f3_model": "f3-runtime-integration-v1",
+              "status": "recovering",
+              "execution_ready": true,
+              "adapter_registry_status": "ready",
+              "registered_adapter_count": 5,
+              "activated_capability_count": 5,
+              "execution_store_status": "healthy",
+              "recovery_coordinator_status": "ready",
+              "nonterminal_execution_count": 1,
+              "observing_count": 0,
+              "manual_review_count": 0,
+              "legacy_task_count": 0,
+              "legacy_active_task_count": 0,
+              "active_conflict_hold_count": 0,
+              "active_normal_lock_count": 0,
+              "corrupt_record_count": 0,
+              "approval_consumption_failure_count": 0,
+              "lock_conflict_count": 0,
+              "stale_lock_recovery_count": 0,
+              "fallback_count": 0,
+              "recovery_failures": 0
+            },
+            "operational_administration": {
+              "helper_state_provider": {
+                "provider": "direct_home_assistant_state",
+                "provider_contract": "direct-ha-exact-input-boolean-v1",
+                "configured": true,
+                "operational_status": "available",
+                "health": "healthy",
+                "fallback": "none",
+                "fallback_count": 0,
+                "fallback_policy": "none",
+                "last_failure_category": null,
+                "transport_health": {
+                  "rest": "connected",
+                  "websocket": "connected"
+                }
+              },
+              "operations": {
+                "set_input_boolean_state": {
+                  "provider_identity": "direct_home_assistant_state",
+                  "provider_availability": "available",
+                  "provider_contract": "direct-ha-exact-input-boolean-v1",
+                  "provider_contract_status": "code_owned_exact",
+                  "fallback": "none"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "direct_entity_read": {
+      "tool": "get_entity",
+      "response": {
+        "operation": "get_entity",
+        "summary": "Returned the requested Home Assistant entity state.",
+        "success": true,
+        "warnings": [],
+        "metadata": {
+          "resource_type": "entity",
+          "resource_id": "input_boolean.mcp_f2_standard_admin_test_flag"
+        },
+        "request_id": "fixture-request-direct-entity-read",
+        "data": {
+          "entity_id": "input_boolean.mcp_f2_standard_admin_test_flag",
+          "state": "off",
+          "attributes": {
+            "editable": true,
+            "friendly_name": "synthetic-fixture-helper"
+          },
+          "last_changed": "2026-08-18T00:00:00+00:00",
+          "last_updated": "2026-08-18T00:00:00+00:00"
+        }
+      }
+    },
+    "native_dependency_read": {
+      "tool": "entity_dependency_analysis",
+      "response": {
+        "operation": "entity_dependency_analysis",
+        "summary": "Returned bounded static configuration references.",
+        "success": true,
+        "warnings": [
+          "Blueprint obligations could not be fully resolved."
+        ],
+        "metadata": {},
+        "request_id": "fixture-request-native-dependency-read",
+        "data": {
+          "target": {
+            "entity_id": "input_boolean.mcp_f2_standard_admin_test_flag",
+            "entity_exists": true,
+            "registry_entry_exists": true,
+            "domain": "input_boolean"
+          },
+          "overview": {
+            "dependency_status": "referenced",
+            "direct_reference_count": 2,
+            "indirect_reference_count": 0,
+            "unique_source_count": 2,
+            "unresolved_dynamic_reference_count": 0,
+            "coverage_complete": false,
+            "possible_stale_reference": false
+          },
+          "assessment": {
+            "rename_or_removal_status": "review_required",
+            "reason": "bounded_blueprint_coverage_incomplete"
+          },
+          "findings": [],
+          "source_coverage": [
+            {
+              "source_type": "automation",
+              "provider": "engineering",
+              "provider_capability": "dependency_index",
+              "completeness": "complete",
+              "evidence_count": 2,
+              "failed_item_count": 0,
+              "warnings": [],
+              "duration_ms": 12.5,
+              "cached_provenance": true,
+              "fallback_occurred": false,
+              "obligation_ledger_completeness": "complete",
+              "obligation_ledger_failed_item_count": 0
+            },
+            {
+              "source_type": "blueprint",
+              "provider": "engineering",
+              "provider_capability": "dependency_index",
+              "completeness": "partial",
+              "evidence_count": 2,
+              "failed_item_count": 2,
+              "warnings": [
+                "blueprint_partial_item_failure"
+              ],
+              "duration_ms": 7.1,
+              "cached_provenance": true,
+              "fallback_occurred": false,
+              "obligation_ledger_completeness": "partial",
+              "obligation_ledger_failed_item_count": 2
+            }
+          ],
+          "pagination": {
+            "requested_limit": 50,
+            "effective_limit": 50,
+            "maximum_limit": 100,
+            "clamped": false,
+            "returned": 0,
+            "total": 2,
+            "has_more": false,
+            "next_cursor": null
+          },
+          "index": {
+            "fingerprint": "0f1e2d3c4b5a6978",
+            "generation": 7,
+            "built_at": "2026-08-18T00:00:00+00:00",
+            "cache_hit": true
+          }
+        }
+      }
+    },
+    "delegated_overview_read": {
+      "tool": "ha_get_overview",
+      "response": {
+        "operation": "ha_get_overview",
+        "summary": "Completed a reviewed pure-read operation through the upstream gateway.",
+        "success": true,
+        "warnings": [],
+        "metadata": {
+          "provider": "upstream_read_gateway",
+          "upstream_tool": "ha_get_overview",
+          "upstream_server": "ha-mcp",
+          "upstream_version": "8.2.0",
+          "classification": "automatic_read",
+          "schema_fingerprint": "synthetic-fixture-schema-fingerprint",
+          "untrusted_upstream_content": true,
+          "fallback": "none",
+          "fallback_occurred": false,
+          "completeness": "complete"
+        },
+        "request_id": "fixture-request-delegated-overview-read",
+        "data": {
+          "overview": "synthetic fixture payload; upstream content is omitted"
+        }
+      }
+    },
+    "dashboard_map_read": {
+      "tool": "get_dashboard_config",
+      "response": {
+        "operation": "get_dashboard_config",
+        "summary": "Returned exact read-only dashboard configuration evidence.",
+        "success": true,
+        "warnings": [],
+        "metadata": {
+          "provider": "upstream_dashboard",
+          "routing": "upstream_dashboard",
+          "classification": "upstream_dashboard",
+          "source_timestamp": "2026-08-19T00:00:00+00:00",
+          "upstream_server": {
+            "name": "ha-mcp",
+            "version": "8.2.0"
+          },
+          "mcp_protocol_version": "2025-03-26",
+          "admission_status": "admitted_exact",
+          "completeness": "complete",
+          "upstream_dispatch_occurred": true,
+          "content_is_untrusted_data": true
+        },
+        "request_id": "fixture-request-dashboard-map-read",
+        "data": {
+          "url_path": "map",
+          "configuration": {
+            "views": []
+          },
+          "config_hash": "synthetic-fixture-config-hash",
+          "engineering_config_hash": "synthetic-fixture-engineering-config-hash",
+          "estimated_serialized_size": 412,
+          "configuration_returned": true
+        }
+      }
+    },
+    "long_wait_template_automation_read": {
+      "tool": "get_automation_config",
+      "response": {
+        "id": "fixture-automation-0000000000000",
+        "alias": "synthetic fixture long wait_template automation",
+        "description": "Body omitted. Only structural readability is asserted.",
+        "mode": "single"
+      }
+    },
+    "stale_state_canary_task": {
+      "tool": "get_execution_task",
+      "response": {
+        "operation": "get_execution_task",
+        "summary": "Returned the requested execution task.",
+        "success": true,
+        "warnings": [],
+        "metadata": {},
+        "request_id": "fixture-request-stale-state-canary-task",
+        "data": {
+          "task_id": "fixture-task-0000000000000000",
+          "task_schema_version": 1,
+          "plan_id": "fixture-plan-0000000000000000",
+          "operation": "set_input_boolean_state",
+          "state": "failed_pre_dispatch",
+          "terminal_outcome": "failed_pre_dispatch",
+          "created_at": "2026-08-17T00:00:00+00:00",
+          "updated_at": "2026-08-17T00:00:00+00:00",
+          "started_at": "2026-08-17T00:00:00+00:00",
+          "dispatched_at": null,
+          "completed_at": "2026-08-17T00:00:00+00:00",
+          "provider_attempts": [],
+          "provider_attempt_count": 0,
+          "event_count": 4,
+          "last_error": {
+            "error_code": "stale_observed_state"
+          }
+        }
+      }
+    },
+    "held_read_canary_not_found": {
+      "tool": "run_held_read_canary",
+      "response": {
+        "operation": "run_held_read_canary",
+        "error": "HeldReadCanaryError",
+        "error_code": "provider_error",
+        "message": "The reviewed upstream read operation failed.",
+        "retryable": true,
+        "success": false,
+        "warnings": [],
+        "request_id": "fixture-request-held-read-canary",
+        "details": {
+          "failure_category": "upstream_error",
+          "canary_evidence": {
+            "upstream_tool": "ha_get_operation_status",
+            "expected_compatibility_entry_id": "synthetic-fixture-compatibility-entry",
+            "active_compatibility_entry_id": "synthetic-fixture-compatibility-entry",
+            "observed_upstream_server": "ha-mcp",
+            "observed_upstream_version": "8.2.0",
+            "observed_upstream_protocol": "2025-03-26",
+            "reviewed_classification_before": "held_for_canary",
+            "reviewed_classification_after": "held_for_canary",
+            "reviewed_input_schema_fingerprint": "0bece76ea9d76d887ec4b0caff6368cc52f749c42cd1e23706a3d475dee2a64a",
+            "observed_input_schema_fingerprint": "0bece76ea9d76d887ec4b0caff6368cc52f749c42cd1e23706a3d475dee2a64a",
+            "input_schema_match": true,
+            "annotation_match": true,
+            "security_match": true,
+            "annotation_security_match": true,
+            "runtime_contract_match": true,
+            "output_contract_match": true,
+            "error_contract": {
+              "is_error": true,
+              "structured_code": "RESOURCE_NOT_FOUND",
+              "shape_fingerprint": "synthetic-fixture-shape-fingerprint"
+            },
+            "dispatch_occurred": true,
+            "provider": "upstream_read_gateway",
+            "fallback": "none",
+            "fallback_occurred": false,
+            "outcome": "error",
+            "failure_category": "upstream_error",
+            "completeness": "failed",
+            "truncated": false,
+            "promotion_performed": false
+          }
+        },
+        "metadata": {
+          "provider": "upstream_read_gateway",
+          "fallback": "none",
+          "fallback_occurred": false,
+          "promotion_performed": false
+        }
+      }
+    },
+    "helper_no_change_probe": {
+      "tool": "create_helper_state_plan",
+      "response": {
+        "operation": "create_helper_state_plan",
+        "summary": "Returned a verified no-change helper result.",
+        "success": true,
+        "warnings": [],
+        "metadata": {},
+        "request_id": "fixture-request-helper-no-change-probe",
+        "data": {
+          "status": "no_change",
+          "outcome": "already_in_desired_state",
+          "plan_created": false,
+          "proposal_only": true,
+          "provider_dispatch_occurred": false,
+          "verified": true,
+          "target_type": "input_boolean",
+          "target_id": "input_boolean.mcp_f2_standard_admin_test_flag",
+          "desired_state": "off",
+          "observed_state_fingerprint": "synthetic-fixture-state-fingerprint",
+          "provider": "direct_home_assistant_state",
+          "fallback": "none",
+          "fallback_occurred": false
+        }
+      }
+    }
+  }
+}
