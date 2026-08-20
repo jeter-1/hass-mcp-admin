@@ -72,6 +72,7 @@ from ..governance.task_storage import ExecutionTaskStorageError
 from .registry import ClosedAdapterRegistry
 from .repository import (
     ChildExecutionRepository,
+    RECOVERY_DECLARATION_PAGE_SIZE,
     canonical_hash,
     child_declaration,
     deterministic_child_id,
@@ -84,7 +85,7 @@ PRODUCTION_LOCK_TIMING = LockTiming(120, 20, 0, 0.05)
 RECOVERY_CADENCE_SECONDS = 30
 RECOVERY_BATCH_SIZE = 16
 RECOVERY_SWEEP_TIME_BUDGET_SECONDS = 5.0
-ORPHAN_RECOVERY_SCAN_LIMIT = RECOVERY_BATCH_SIZE * 64
+ORPHAN_RECOVERY_SCAN_LIMIT = RECOVERY_DECLARATION_PAGE_SIZE
 ORPHAN_RECONCILIATION_REASON = "orphaned_terminal_parent_recovery"
 ORPHAN_RECONCILIATION_RESULT = "orphaned_pre_dispatch_child_reconciled"
 _ACTIVE_F3_CHILD: ContextVar[str | None] = ContextVar(
@@ -535,7 +536,6 @@ class F3RuntimeIntegration:
         )
         self._reconstruct_selective_holds()
         self._finish_pending_hold_releases()
-        self._orphan_recovery_after: str | None = None
         self.provider_identity_reader = provider_identity_reader
         config_gateway = _AuditedConfigurationGateway(
             ExistingConfigurationGatewayBridge(configuration_gateway),
@@ -776,6 +776,11 @@ class F3RuntimeIntegration:
         event_type = str(event.get("event_type", "f3_event"))[:64]
         safe = {
             "event": f"f3_{event_type}",
+            **(
+                {"audit_event_id": event["audit_event_id"]}
+                if isinstance(event.get("audit_event_id"), str)
+                else {}
+            ),
             "request_id": declaration["request_id"],
             "access": "write",
             "operation_class": "f3_execution_lifecycle",
@@ -820,10 +825,27 @@ class F3RuntimeIntegration:
         completed = start
         for item in record.events[start:]:
             diagnostics = tuple(item.get("diagnostic_codes") or ())
+            audit_event_id = (
+                canonical_hash(
+                    {
+                        "model": "f3-persisted-audit-event-v1",
+                        "child_id": declaration["child_id"],
+                        "event_ordinal": completed,
+                        "event": item,
+                    }
+                )
+                if ORPHAN_RECONCILIATION_REASON in diagnostics
+                else None
+            )
             if not self._emit_f3_audit_event(
                 {
                     "event_type": item["event_type"],
                     "task_id": declaration["child_id"],
+                    **(
+                        {"audit_event_id": audit_event_id}
+                        if audit_event_id is not None
+                        else {}
+                    ),
                     "phase": record.state,
                     **(
                         {"reason_code": diagnostics[0]}
@@ -2104,7 +2126,8 @@ class F3RuntimeIntegration:
 
     def reconciliation_items(self) -> list[dict[str, Any]]:
         items = []
-        lock_task_ids = {item.task_id for item in self.locks.records()}
+        lock_records = self.locks.records()
+        lock_task_ids = {item.task_id for item in lock_records}
         for declaration in sorted(
             (
                 item
@@ -2127,7 +2150,7 @@ class F3RuntimeIntegration:
                 declaration=declaration,
                 record=record,
                 runtime=runtime,
-                lock_task_ids=lock_task_ids,
+                lock_records=lock_records,
             )
             if (
                 record is not None
@@ -2513,7 +2536,7 @@ class F3RuntimeIntegration:
         declaration: dict[str, Any],
         record: Any | None,
         runtime: dict[str, Any],
-        lock_task_ids: set[str],
+        lock_records: tuple[Any, ...],
     ) -> bool:
         if (
             parent is None
@@ -2524,10 +2547,9 @@ class F3RuntimeIntegration:
             return False
         if not record.terminal:
             return True
-        if (
-            declaration["child_id"] in lock_task_ids
-            or runtime["selective_hold_tokens"]
-        ):
+        if self._related_lock_records(
+            declaration, record, lock_records
+        ) or runtime["selective_hold_tokens"]:
             return True
         return (
             record.normalized_outcome == "cancelled_pre_dispatch"
@@ -2547,22 +2569,11 @@ class F3RuntimeIntegration:
         transition_limit: int,
         monotonic: Callable[[], float],
     ) -> list[dict[str, Any]]:
-        lock_task_ids = {item.task_id for item in self.locks.records()}
+        lock_records = self.locks.records()
         parents: dict[str, Any | None] = {}
         candidates: list[dict[str, Any]] = []
-        ordered = sorted(declarations, key=lambda item: item["child_id"])
-        if self._orphan_recovery_after is not None and ordered:
-            split = next(
-                (
-                    index
-                    for index, item in enumerate(ordered)
-                    if item["child_id"] > self._orphan_recovery_after
-                ),
-                0,
-            )
-            ordered = ordered[split:] + ordered[:split]
         candidate_parents: set[str] = set()
-        for scan_count, declaration in enumerate(ordered, start=1):
+        for scan_count, declaration in enumerate(declarations, start=1):
             if scan_count > ORPHAN_RECOVERY_SCAN_LIMIT:
                 break
             if (
@@ -2570,7 +2581,6 @@ class F3RuntimeIntegration:
                 >= RECOVERY_SWEEP_TIME_BUDGET_SECONDS
             ):
                 break
-            self._orphan_recovery_after = declaration["child_id"]
             public_task_id = declaration["public_task_id"]
             if public_task_id not in parents:
                 parents[public_task_id] = self.service.task_repository.get(
@@ -2588,13 +2598,55 @@ class F3RuntimeIntegration:
                 declaration=declaration,
                 record=record,
                 runtime=runtime,
-                lock_task_ids=lock_task_ids,
+                lock_records=lock_records,
             ) and public_task_id not in candidate_parents:
                 candidates.append(declaration)
                 candidate_parents.add(public_task_id)
                 if len(candidate_parents) >= transition_limit:
                     break
         return candidates
+
+    @staticmethod
+    def _related_lock_records(
+        declaration: dict[str, Any],
+        record: Any,
+        lock_records: tuple[Any, ...] | list[Any],
+    ) -> list[Any]:
+        token_identities = {
+            (item["key"], item["generation"])
+            for item in record.lock_tokens
+        }
+        return [
+            item
+            for item in lock_records
+            if item.task_id == declaration["child_id"]
+            or (item.key, item.generation) in token_identities
+        ]
+
+    @staticmethod
+    def _lock_record_matches_execution_authority(
+        declaration: dict[str, Any], record: Any, lock_record: Any
+    ) -> bool:
+        identity = record.execution_identity()
+        token_matches = [
+            item
+            for item in record.lock_tokens
+            if item["key"] == lock_record.key
+            and item["generation"] == lock_record.generation
+            and item["mode"] == lock_record.mode
+            and item["owner_id"] == lock_record.owner_id
+        ]
+        return (
+            len(token_matches) == 1
+            and identity.task_id == declaration["child_id"]
+            and lock_record.task_id == declaration["child_id"]
+            and identity.plan_id == declaration["plan_id"]
+            and lock_record.plan_id == declaration["plan_id"]
+            and record.operation == declaration["operation_id"]
+            and lock_record.operation_id == declaration["operation_id"]
+            and identity.attempt_id == declaration["attempt_id"]
+            and lock_record.attempt_id == declaration["attempt_id"]
+        )
 
     @staticmethod
     def _exact_lock_owner(
@@ -2647,28 +2699,15 @@ class F3RuntimeIntegration:
         if record.dispatch_intent is not None:
             raise GovernanceError(ErrorCode.EXECUTION_TASK_INVALID_STATE)
         child_id = declaration["child_id"]
-        lock_records = [
-            item for item in self.locks.records() if item.task_id == child_id
-        ]
+        lock_records = self._related_lock_records(
+            declaration, record, self.locks.records()
+        )
         if not lock_records:
             return 0
-        expected_tokens = {
-            (
-                item["key"],
-                item["generation"],
-                item["mode"],
-                item["owner_id"],
-            )
-            for item in record.lock_tokens
-        }
         if any(
-            (
-                item.key,
-                item.generation,
-                item.mode,
-                item.owner_id,
+            not self._lock_record_matches_execution_authority(
+                declaration, record, item
             )
-            not in expected_tokens
             for item in lock_records
         ):
             # A different or later fenced generation is ambiguous authority.
@@ -2731,7 +2770,9 @@ class F3RuntimeIntegration:
             raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
 
         self._release_orphaned_child_locks(declaration, record)
-        if any(item.task_id == child_id for item in self.locks.records()):
+        if self._related_lock_records(
+            declaration, record, self.locks.records()
+        ):
             raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
 
         runtime = self.children.runtime(child_id)
@@ -2836,8 +2877,16 @@ class F3RuntimeIntegration:
         self._last_sweep_at = now.isoformat()
         self._next_sweep_at = (now + timedelta(seconds=RECOVERY_CADENCE_SECONDS)).isoformat()
         sweep_started = time.monotonic()
+        deadline_reached = lambda: (
+            time.monotonic() - sweep_started
+            >= RECOVERY_SWEEP_TIME_BUDGET_SECONDS
+        )
         processed = 0
-        declarations = self.children.all_declarations()
+        page = self.children.recovery_declaration_page(
+            limit=RECOVERY_DECLARATION_PAGE_SIZE,
+            should_stop=deadline_reached,
+        )
+        declarations = page["declarations"]
         # Orphan reconciliation shares the same batch and wall-clock budget as
         # ordinary recovery. Each exact child is terminalized before its
         # fenced locks are released, and already-terminal children remain
@@ -2849,12 +2898,23 @@ class F3RuntimeIntegration:
             transition_limit=RECOVERY_BATCH_SIZE,
         )
         stale_release_decisions = {}
-        for lock_record in self.locks.expired_records(now=now):
+        for lock_record in (
+            () if deadline_reached() else self.locks.expired_records(now=now)
+        ):
+            if deadline_reached():
+                break
+            try:
+                declaration = self.children.declaration(lock_record.task_id)
+            except Exception:
+                continue
             execution = self.children.get(lock_record.task_id)
             if (
                 execution is not None
                 and execution.terminal
                 and execution.dispatch_intent is None
+                and self._lock_record_matches_execution_authority(
+                    declaration, execution, lock_record
+                )
             ):
                 stale_release_decisions[
                     (lock_record.key, lock_record.generation)
@@ -2862,21 +2922,25 @@ class F3RuntimeIntegration:
                     StaleRecoveryAction.RELEASE,
                     "terminal_pre_dispatch_lock_release",
                 )
-        if stale_release_decisions:
+        if stale_release_decisions and not deadline_reached():
             self.locks.recover_expired(
                 stale_release_decisions, now=now
             )
         candidates: list[tuple[dict[str, Any], Any | None]] = []
-        for public_task_id in sorted({item["public_task_id"] for item in declarations}):
+        declarations_by_task: dict[str, list[dict[str, Any]]] = {}
+        for declaration in declarations:
+            declarations_by_task.setdefault(
+                declaration["public_task_id"], []
+            ).append(declaration)
+        for public_task_id, values in declarations_by_task.items():
+            if deadline_reached():
+                break
             public_task = self.service.task_repository.get(public_task_id)
             if public_task is None:
                 raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
             if public_task.state in TERMINAL_TASK_STATES:
                 continue
-            task_declarations = tuple(
-                item for item in declarations
-                if item["public_task_id"] == public_task_id
-            )
+            task_declarations = tuple(values)
             # One public task receives at most one transition per sweep.  Later
             # configuration children never become eligible before every earlier
             # dependency has verified successfully.
@@ -2960,6 +3024,10 @@ class F3RuntimeIntegration:
                         "next_eligible_at": (now + timedelta(seconds=backoff)).isoformat(),
                     },
                 )
+        self.children.advance_recovery_cursor(
+            expected=page["cursor"],
+            next_cursor=page["next_cursor"],
+        )
         self._ready = True
         return {
             "processed": processed,
@@ -2969,6 +3037,8 @@ class F3RuntimeIntegration:
             ),
             "orphaned_children_processed": orphaned["processed"],
             "recovery_transitions": processed + orphaned["processed"],
+            "declarations_examined": len(declarations),
+            "manifest_reads": page["manifest_reads"],
         }
 
     async def supervise(self) -> None:

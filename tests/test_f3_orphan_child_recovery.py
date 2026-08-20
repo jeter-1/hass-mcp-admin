@@ -51,6 +51,10 @@ from ha_mcp_engineering.f3.models import (  # noqa: E402
     LockOwner,
     LockTiming,
 )
+from ha_mcp_engineering.f3_runtime.repository import (  # noqa: E402
+    ExecutionRecordCorrupt,
+    RECOVERY_DECLARATION_PAGE_SIZE,
+)
 from ha_mcp_engineering.f3.contracts import (  # noqa: E402
     F3_ADAPTER_CONTRACT_MODEL,
 )
@@ -146,8 +150,8 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         identity = ExecutionIdentity(
             task_id=declaration["child_id"],
             plan_id=declaration["plan_id"],
-            attempt_id="attempt-orphan",
-            request_id="request-orphan",
+            attempt_id=declaration["attempt_id"],
+            request_id=declaration["request_id"],
             owner_id="owner-orphan",
         )
         timing = ExecutorTiming(
@@ -237,6 +241,34 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
                 ]
             },
         )
+
+    def _mutate_exact_lock(self, handle, **changes):
+        """Inject one valid but authority-mismatched durable lock field."""
+
+        token = handle.tokens[0]
+        expired_at = self.service.now() - timedelta(seconds=1)
+        acquired_at = expired_at - timedelta(seconds=120)
+
+        def mutate(state):
+            record = next(
+                item
+                for item in state["records"]
+                if item.key == token.key
+                and item.generation == token.generation
+            )
+            record.acquired_at = acquired_at.isoformat()
+            record.last_renewed_at = acquired_at.isoformat()
+            record.lease_expires_at = expired_at.isoformat()
+            for name, value in changes.items():
+                setattr(record, name, value)
+            if "generation" in changes:
+                state["next_generation"] = max(
+                    state["next_generation"],
+                    int(changes["generation"]) + 1,
+                )
+            return None, True
+
+        self.runtime.locks._transact(mutate)
 
     def _audit_entries(self):
         if not self.audit_path.exists():
@@ -677,6 +709,49 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
             ],
         )
 
+    async def test_crash_after_audit_append_before_cursor_is_idempotent(self):
+        _task, declarations = await self._build_live_orphan()
+        child_id = declarations[0]["child_id"]
+        before = self.runtime.children.get(child_id)
+        self.runtime._audit_record_events(declarations[0], before)
+        self.audit_path.write_text("", encoding="utf-8")
+        original_write = self.service.audit.write
+
+        def append_then_crash(entry):
+            written = original_write(entry)
+            if entry.get("event") == "f3_execution_cancelled":
+                raise SystemExit("simulated process loss after audit append")
+            return written
+
+        with patch.object(
+            self.service.audit,
+            "write",
+            side_effect=append_then_crash,
+        ):
+            with self.assertRaises(SystemExit):
+                await self.runtime.recover_once("periodic")
+        first = [
+            item
+            for item in self._audit_entries()
+            if item.get("event") == "f3_execution_cancelled"
+        ]
+        self.assertEqual(1, len(first))
+        self.assertRegex(first[0]["audit_event_id"], r"^[0-9a-f]{64}$")
+
+        self._restart_runtime()
+        await self.runtime.recover_once("startup")
+        second = [
+            item
+            for item in self._audit_entries()
+            if item.get("event") == "f3_execution_cancelled"
+        ]
+
+        self.assertEqual(first, second)
+        self.assertEqual(
+            len(self.runtime.children.get(child_id).events),
+            self.runtime.children.runtime(child_id)["audited_event_count"],
+        )
+
     async def test_later_fencing_generation_is_never_released(self):
         _task, declarations = await self._build_live_orphan()
         child_id = declarations[0]["child_id"]
@@ -715,6 +790,107 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
             self.runtime.children.runtime(child_id)[
                 "reconciliation_result"
             ],
+        )
+
+    async def test_expired_later_fencing_generation_is_never_released(self):
+        _task, declarations = await self._build_live_orphan()
+        child_id = declarations[0]["child_id"]
+        owner, handle = self._hold_child_lock(declarations[0])
+        self._set_runtime_tokens(child_id, handle)
+        self.runtime.locks.release(handle)
+        later_owner = LockOwner(
+            owner_id="later-owner",
+            task_id=child_id,
+            plan_id=owner.plan_id,
+            operation_id=owner.operation_id,
+            attempt_id="later-attempt",
+        )
+        later = self.runtime.locks.acquire_once(
+            (
+                LockRequest(
+                    key=handle.tokens[0].key,
+                    scopes=(LockScope.RESOURCE,),
+                    mode=LockMode.EXCLUSIVE,
+                    reason_codes=("later_generation",),
+                ),
+            ),
+            owner=later_owner,
+            timing=LockTiming(120, 20, 0, 0.05),
+            now=self.service.now() - timedelta(seconds=121),
+        )
+        before = len(self.gateway.calls)
+
+        await self.runtime.recover_once("periodic")
+
+        records = list(self.runtime.locks.records())
+        self.assertEqual(1, len(records))
+        self.assertEqual(later.tokens[0].generation, records[0].generation)
+        self.assertEqual("later-owner", records[0].owner_id)
+        self.assertEqual(before, len(self.gateway.calls))
+
+    async def _assert_expired_identity_mismatch_retained(
+        self, field_name, value
+    ):
+        _task, declarations = await self._build_live_orphan()
+        child_id = declarations[0]["child_id"]
+        _owner, handle = self._hold_child_lock(declarations[0])
+        self._set_runtime_tokens(child_id, handle)
+        resolved = value(handle) if callable(value) else value
+        self._mutate_exact_lock(handle, **{field_name: resolved})
+        before = len(self.gateway.calls)
+
+        await self.runtime.recover_once("periodic")
+
+        self.assertEqual(1, len(self.runtime.locks.records()))
+        self.assertEqual(before, len(self.gateway.calls))
+        runtime = self.runtime.children.runtime(child_id)
+        self.assertEqual("bounded_retry", runtime["reconciliation_result"])
+        self.assertTrue(
+            any(
+                item["child_id"] == child_id
+                for item in self.runtime.reconciliation_items()
+            )
+        )
+
+    async def test_expired_task_mismatch_is_retained(self):
+        await self._assert_expired_identity_mismatch_retained(
+            "task_id", "different-child"
+        )
+
+    async def test_expired_plan_mismatch_is_retained(self):
+        await self._assert_expired_identity_mismatch_retained(
+            "plan_id", "different-plan"
+        )
+
+    async def test_expired_operation_mismatch_is_retained(self):
+        await self._assert_expired_identity_mismatch_retained(
+            "operation_id", "different-operation"
+        )
+
+    async def test_expired_attempt_mismatch_is_retained(self):
+        await self._assert_expired_identity_mismatch_retained(
+            "attempt_id", "different-attempt"
+        )
+
+    async def test_expired_owner_mismatch_is_retained(self):
+        await self._assert_expired_identity_mismatch_retained(
+            "owner_id", "different-owner"
+        )
+
+    async def test_expired_key_mismatch_is_retained(self):
+        await self._assert_expired_identity_mismatch_retained(
+            "key", "automation:different"
+        )
+
+    async def test_expired_mode_mismatch_is_retained(self):
+        await self._assert_expired_identity_mismatch_retained(
+            "mode", "shared"
+        )
+
+    async def test_expired_generation_mismatch_is_retained(self):
+        await self._assert_expired_identity_mismatch_retained(
+            "generation",
+            lambda handle: handle.tokens[0].generation + 1,
         )
 
     async def test_public_parent_and_child_projections_agree_exactly(self):
@@ -837,7 +1013,7 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
                 monotonic=lambda: 0.0,
             )
             second = self.runtime._reconcile_orphaned_children(
-                declarations=declarations,
+                declarations=declarations[RECOVERY_BATCH_SIZE * 8 :],
                 now=self.service.now(),
                 sweep_started=0.0,
                 transition_limit=RECOVERY_BATCH_SIZE,
@@ -852,7 +1028,6 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
             ORPHAN_RECOVERY_SCAN_LIMIT * 2,
         )
 
-        self.runtime._orphan_recovery_after = None
         timed_attempts = []
         clock_calls = 0
 
@@ -897,6 +1072,199 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
             )
         self.assertLessEqual(timed["processed"], 1)
         self.assertEqual(timed["processed"], len(timed_attempts))
+
+    def test_repository_discovery_is_declaration_paged(self):
+        paths = tuple(
+            Path(f"/tmp/task-{index:04d}.manifest.json")
+            for index in range(1_024)
+        )
+
+        def manifest(public_task_id, *, locked=False):
+            self.assertTrue(locked)
+            return {
+                "declarations": [
+                    {
+                        "public_task_id": public_task_id,
+                        "operation_ordinal": ordinal,
+                        "child_id": f"{public_task_id}-child-{ordinal}",
+                    }
+                    for ordinal in range(8)
+                ]
+            }
+
+        with (
+            patch.object(
+                self.runtime.children,
+                "_bounded_paths",
+                return_value=paths,
+            ),
+            patch.object(
+                self.runtime.children,
+                "_read_recovery_cursor_unlocked",
+                return_value=None,
+            ),
+            patch.object(
+                self.runtime.children,
+                "manifest_for_task",
+                side_effect=manifest,
+            ) as read_manifest,
+        ):
+            page = self.runtime.children.recovery_declaration_page(
+                limit=RECOVERY_DECLARATION_PAGE_SIZE,
+                should_stop=lambda: False,
+            )
+
+        self.assertEqual(
+            RECOVERY_DECLARATION_PAGE_SIZE, len(page["declarations"])
+        )
+        self.assertEqual(128, page["manifest_reads"])
+        self.assertEqual(128, read_manifest.call_count)
+
+    def test_paged_repository_discovery_is_fair_across_restart(self):
+        paths = tuple(
+            Path(f"/tmp/task-{index:04d}.manifest.json")
+            for index in range(1_024)
+        )
+
+        def manifest(public_task_id, *, locked=False):
+            self.assertTrue(locked)
+            return {
+                "declarations": [
+                    {
+                        "public_task_id": public_task_id,
+                        "operation_ordinal": ordinal,
+                        "child_id": f"{public_task_id}-child-{ordinal}",
+                    }
+                    for ordinal in range(8)
+                ]
+            }
+
+        with (
+            patch.object(
+                self.runtime.children,
+                "_bounded_paths",
+                return_value=paths,
+            ),
+            patch.object(
+                self.runtime.children,
+                "manifest_for_task",
+                side_effect=manifest,
+            ),
+        ):
+            first = self.runtime.children.recovery_declaration_page()
+        self.runtime.children.advance_recovery_cursor(
+            expected=first["cursor"],
+            next_cursor=first["next_cursor"],
+        )
+
+        self._restart_runtime()
+        with (
+            patch.object(
+                self.runtime.children,
+                "_bounded_paths",
+                return_value=paths,
+            ),
+            patch.object(
+                self.runtime.children,
+                "manifest_for_task",
+                side_effect=manifest,
+            ),
+        ):
+            second = self.runtime.children.recovery_declaration_page()
+
+        first_ids = {
+            item["child_id"] for item in first["declarations"]
+        }
+        second_ids = {
+            item["child_id"] for item in second["declarations"]
+        }
+        self.assertEqual(RECOVERY_DECLARATION_PAGE_SIZE, len(first_ids))
+        self.assertEqual(RECOVERY_DECLARATION_PAGE_SIZE, len(second_ids))
+        self.assertTrue(first_ids.isdisjoint(second_ids))
+
+    def test_repository_discovery_stops_at_shared_deadline(self):
+        paths = tuple(
+            Path(f"/tmp/task-{index:04d}.manifest.json")
+            for index in range(1_024)
+        )
+        reads = 0
+
+        def manifest(public_task_id, *, locked=False):
+            nonlocal reads
+            self.assertTrue(locked)
+            reads += 1
+            return {
+                "declarations": [
+                    {
+                        "public_task_id": public_task_id,
+                        "operation_ordinal": ordinal,
+                        "child_id": f"{public_task_id}-child-{ordinal}",
+                    }
+                    for ordinal in range(8)
+                ]
+            }
+
+        with (
+            patch.object(
+                self.runtime.children,
+                "_bounded_paths",
+                return_value=paths,
+            ),
+            patch.object(
+                self.runtime.children,
+                "_read_recovery_cursor_unlocked",
+                return_value=None,
+            ),
+            patch.object(
+                self.runtime.children,
+                "manifest_for_task",
+                side_effect=manifest,
+            ),
+        ):
+            page = self.runtime.children.recovery_declaration_page(
+                should_stop=lambda: reads >= 5
+            )
+
+        self.assertEqual(5, page["manifest_reads"])
+        self.assertEqual(32, len(page["declarations"]))
+
+    def test_corrupt_recovery_cursor_fails_closed(self):
+        self.runtime.children.recovery_cursor_path.write_text(
+            '{"model":"unknown"}', encoding="utf-8"
+        )
+
+        with self.assertRaises(ExecutionRecordCorrupt):
+            self.runtime.children.recovery_cursor()
+
+    async def test_recovery_never_uses_full_namespace_discovery(self):
+        await self._build_live_orphan()
+
+        with patch.object(
+            self.runtime.children,
+            "all_declarations",
+            side_effect=AssertionError("unbounded discovery was used"),
+        ):
+            await self.runtime.recover_once("periodic")
+
+    async def test_paged_discovery_cursor_survives_restart(self):
+        await self._build_live_orphan()
+
+        first = await self.runtime.recover_once("periodic")
+        first_cursor = self.runtime.children.recovery_cursor()
+        self.assertIsNotNone(first_cursor)
+        self._restart_runtime()
+        second_cursor = self.runtime.children.recovery_cursor()
+
+        self.assertEqual(first_cursor, second_cursor)
+        second = await self.runtime.recover_once("startup")
+        self.assertLessEqual(
+            first["declarations_examined"],
+            RECOVERY_DECLARATION_PAGE_SIZE,
+        )
+        self.assertLessEqual(
+            second["declarations_examined"],
+            RECOVERY_DECLARATION_PAGE_SIZE,
+        )
 
 if __name__ == "__main__":
     unittest.main()

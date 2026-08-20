@@ -163,15 +163,19 @@ revisited, their hold projections were never cleared, and
 `nonterminal_execution_count` never converged.
 
 Orphan work shares the coordinator's existing batch-16 and five-second budget.
-A deterministic rotating cursor prevents one repeatedly failing prefix from
-starving later declarations. Candidate discovery also stops at the time budget
-or a bounded 1,024-declaration scan slice. The sweep terminalizes one eligible
-child before releasing anything, which leaves no window for a concurrent
-dispatch to begin.
+A durable declaration cursor pages at most 1,024 declarations, reads at most
+the repository's bounded 1,024 manifest paths, and stops at the shared
+deadline. The cursor advances only after the sweep and survives restart, so a
+repeatedly failing prefix cannot starve later pages. Generic recovery consumes
+the same page and does no full-namespace reload or second sort after the
+deadline. The sweep terminalizes one eligible child before releasing anything,
+which leaves no window for a concurrent dispatch to begin.
 It then releases only lock records whose exact task, plan, operation, attempt,
 owner, key, mode, and generation match that child's durable lock evidence.
 Both live/expired leases and selective conflict holds are covered. A later or
-ambiguous fencing generation fails closed and is never released.
+ambiguous fencing generation fails closed and is never released. The generic
+expired-lock pass applies the same complete authority match and therefore
+cannot bypass that refusal.
 
 "Proven zero dispatch" is durable, not inferred. The parent must carry no
 provider attempt and no dispatch timestamp, and each child must carry no
@@ -197,9 +201,12 @@ is projected as `cancelled_pre_dispatch` under such a parent. The public
 from the same canonical projection, while legacy child identities remain
 unchanged. Reconciliation items and health remain recovering until exact lock,
 token, and audit settlement completes. The persisted child event cursor emits
-the bounded `execution_cancelled` audit evidence once across repeated sweeps
-and restart. This is a bookkeeping and projection correction; it never
-dispatches a provider call.
+the bounded `execution_cancelled` audit evidence with a deterministic SHA-256
+event identity. The audit sink serializes append/rotation, checks that identity
+in its retained logs, and fsyncs the append before returning; retry after a
+crash between append and cursor persistence therefore advances the cursor
+without writing a duplicate. This is a bookkeeping and projection correction;
+it never dispatches a provider call.
 
 Before intent, exact authority re-enters public preflight, reacquires the
 complete set, repeats preflight, and commits intent before mutation. After

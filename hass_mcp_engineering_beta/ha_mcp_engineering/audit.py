@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+import fcntl
 import json
 import logging
 import os
+import re
 from typing import Any
 
 from .logging_config import get_logger, log_event, redact_data
@@ -16,6 +18,7 @@ AUDIT_MAX_BYTES = 5 * 1024 * 1024
 AUTH_FAILURE_EVENT = "auth_failure"
 AUTH_FAILURE_THROTTLED_EVENT = "auth_failure_throttled"
 RATE_LIMITED_EVENT = "rate_limited"
+AUDIT_EVENT_ID_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
 @dataclass
@@ -67,11 +70,41 @@ class AuditLogger:
         return {
             "event": safe.get("event", "audit_record"),
             "request_id": safe.get("request_id"),
+            **(
+                {"audit_event_id": safe["audit_event_id"]}
+                if "audit_event_id" in safe
+                else {}
+            ),
             "server_version": safe.get("server_version", SERVER_VERSION),
             "result_status": safe.get("result_status", "unknown"),
             "payload_truncated": True,
             "original_size": len(encoded),
         }
+
+    @staticmethod
+    def _idempotency_key(entry: dict[str, Any]) -> str | None:
+        value = entry.get("audit_event_id")
+        if isinstance(value, str) and AUDIT_EVENT_ID_PATTERN.fullmatch(value):
+            return value
+        return None
+
+    def _contains_idempotency_key(self, value: str) -> bool:
+        for candidate in (self.path, self.path + ".1"):
+            try:
+                with open(candidate, "r", encoding="utf-8") as handle:
+                    for line in handle:
+                        try:
+                            item = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if (
+                            isinstance(item, dict)
+                            and item.get("audit_event_id") == value
+                        ):
+                            return True
+            except FileNotFoundError:
+                continue
+        return False
 
     def write(self, entry: AuditRecord | dict[str, Any]) -> bool:
         if not self.enabled:
@@ -81,10 +114,29 @@ class AuditLogger:
         safe.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
         safe.setdefault("server_version", SERVER_VERSION)
         try:
-            if os.path.exists(self.path) and os.path.getsize(self.path) > AUDIT_MAX_BYTES:
-                os.replace(self.path, self.path + ".1")
-            with open(self.path, "a", encoding="utf-8") as handle:
-                handle.write(json.dumps(safe, default=str, sort_keys=True) + "\n")
+            with open(self.path + ".lock", "a+b") as lock_handle:
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+                try:
+                    identity = self._idempotency_key(safe)
+                    if identity is not None and self._contains_idempotency_key(
+                        identity
+                    ):
+                        self.last_error = None
+                        return True
+                    if (
+                        os.path.exists(self.path)
+                        and os.path.getsize(self.path) > AUDIT_MAX_BYTES
+                    ):
+                        os.replace(self.path, self.path + ".1")
+                    with open(self.path, "a", encoding="utf-8") as handle:
+                        handle.write(
+                            json.dumps(safe, default=str, sort_keys=True)
+                            + "\n"
+                        )
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                finally:
+                    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
             self.last_error = None
             return True
         except OSError as exc:

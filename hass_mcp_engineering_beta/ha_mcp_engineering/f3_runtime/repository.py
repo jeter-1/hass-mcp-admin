@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import threading
 import time
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from ..f3.models import (
     ExecutionRecord,
@@ -34,6 +34,10 @@ MAX_F3_PUBLIC_TASKS = 1_024
 MAX_F3_CHILD_EXECUTIONS = MAX_F3_PUBLIC_TASKS * 8
 CHILD_EXECUTION_NAMESPACE = "f3-child-execution-v1"
 INITIALIZATION_MODEL = "f3-sequence-initialization-v1"
+RECOVERY_CURSOR_MODEL = "f3-recovery-declaration-cursor-v1"
+RECOVERY_CURSOR_SCHEMA_VERSION = 1
+RECOVERY_CURSOR_FILE = ".recovery-declaration-cursor.json"
+RECOVERY_DECLARATION_PAGE_SIZE = 1_024
 
 
 def canonical_hash(value: Any) -> str:
@@ -189,6 +193,7 @@ class ChildExecutionRepository(DurableExecutionRepository):
         self.transaction_path = self.root / ".transaction.lock"
         self.projection_transaction_path = self.root / ".projection-transaction.lock"
         self.initialization_path = self.root / ".initialization.json"
+        self.recovery_cursor_path = self.root / RECOVERY_CURSOR_FILE
         self.retention_days = retention_days
         self.metrics = metrics or ExecutorMetrics()
         self.event_sink = event_sink or null_event_sink
@@ -624,6 +629,180 @@ class ChildExecutionRepository(DurableExecutionRepository):
                     ),
                 )
             )
+
+    @staticmethod
+    def _validate_recovery_cursor(
+        value: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        expected = {
+            "model",
+            "schema_version",
+            "public_task_id",
+            "operation_ordinal",
+            "child_id",
+        }
+        if (
+            not isinstance(value, dict)
+            or set(value) != expected
+            or value["model"] != RECOVERY_CURSOR_MODEL
+            or value["schema_version"] != RECOVERY_CURSOR_SCHEMA_VERSION
+            or type(value["operation_ordinal"]) is not int
+            or not 0 <= value["operation_ordinal"] < 8
+        ):
+            raise ExecutionRecordCorrupt(
+                "F3 recovery declaration cursor is corrupt"
+            )
+        try:
+            validate_identifier(
+                value["public_task_id"], field_name="public_task_id"
+            )
+            validate_identifier(value["child_id"], field_name="child_id")
+        except (TypeError, ValueError) as exc:
+            raise ExecutionRecordCorrupt(
+                "F3 recovery declaration cursor is corrupt"
+            ) from exc
+        return dict(value)
+
+    def _read_recovery_cursor_unlocked(self) -> dict[str, Any] | None:
+        try:
+            value = json.loads(
+                self.recovery_cursor_path.read_text(encoding="utf-8")
+            )
+        except FileNotFoundError:
+            return None
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ExecutionRecordCorrupt(
+                "F3 recovery declaration cursor is corrupt"
+            ) from exc
+        return self._validate_recovery_cursor(value)
+
+    def recovery_cursor(self) -> dict[str, Any] | None:
+        with self._exclusive_transaction():
+            return self._read_recovery_cursor_unlocked()
+
+    def recovery_declaration_page(
+        self,
+        *,
+        limit: int = RECOVERY_DECLARATION_PAGE_SIZE,
+        should_stop: Callable[[], bool] | None = None,
+    ) -> dict[str, Any]:
+        """Read a deterministic, restart-fair declaration page.
+
+        Manifest path ordering is bounded by the reviewed 1,024-task
+        namespace, and at most ``limit`` declarations are materialized. The
+        caller advances the returned cursor only after its sweep completes.
+        """
+
+        if not 1 <= limit <= RECOVERY_DECLARATION_PAGE_SIZE:
+            raise ValueError("recovery declaration page limit is invalid")
+        stop = should_stop or (lambda: False)
+        with self._exclusive_transaction():
+            cursor = self._read_recovery_cursor_unlocked()
+            paths = self._bounded_paths(
+                "*.manifest.json", MAX_F3_PUBLIC_TASKS
+            )
+            if cursor is not None and paths:
+                current = cursor["public_task_id"]
+                split = next(
+                    (
+                        index
+                        for index, path in enumerate(paths)
+                        if path.name.removesuffix(".manifest.json") >= current
+                    ),
+                    0,
+                )
+                paths = paths[split:] + paths[:split]
+            declarations: list[dict[str, Any]] = []
+            next_cursor = cursor
+            manifest_reads = 0
+            for path in paths:
+                if stop() or len(declarations) >= limit:
+                    break
+                public_task_id = path.name.removesuffix(".manifest.json")
+                manifest = self.manifest_for_task(
+                    public_task_id, locked=True
+                )
+                manifest_reads += 1
+                if manifest is None:
+                    continue
+                for declaration in manifest["declarations"]:
+                    if stop() or len(declarations) >= limit:
+                        break
+                    if (
+                        cursor is not None
+                        and public_task_id == cursor["public_task_id"]
+                        and declaration["operation_ordinal"]
+                        <= cursor["operation_ordinal"]
+                    ):
+                        continue
+                    item = dict(declaration)
+                    declarations.append(item)
+                    next_cursor = {
+                        "model": RECOVERY_CURSOR_MODEL,
+                        "schema_version": RECOVERY_CURSOR_SCHEMA_VERSION,
+                        "public_task_id": public_task_id,
+                        "operation_ordinal": item["operation_ordinal"],
+                        "child_id": item["child_id"],
+                    }
+            if (
+                not declarations
+                and cursor is not None
+                and paths
+                and not stop()
+            ):
+                # A one-manifest namespace can be positioned after its final
+                # child. Wrap once without the cursor skip so it remains
+                # eligible on the next bounded sweep.
+                public_task_id = paths[0].name.removesuffix(
+                    ".manifest.json"
+                )
+                manifest = self.manifest_for_task(
+                    public_task_id, locked=True
+                )
+                manifest_reads += 1
+                if manifest is not None:
+                    for declaration in manifest["declarations"]:
+                        if stop() or len(declarations) >= limit:
+                            break
+                        item = dict(declaration)
+                        declarations.append(item)
+                        next_cursor = {
+                            "model": RECOVERY_CURSOR_MODEL,
+                            "schema_version": (
+                                RECOVERY_CURSOR_SCHEMA_VERSION
+                            ),
+                            "public_task_id": public_task_id,
+                            "operation_ordinal": item[
+                                "operation_ordinal"
+                            ],
+                            "child_id": item["child_id"],
+                        }
+            return {
+                "cursor": cursor,
+                "next_cursor": next_cursor,
+                "declarations": tuple(declarations),
+                "manifest_reads": manifest_reads,
+            }
+
+    def advance_recovery_cursor(
+        self,
+        *,
+        expected: dict[str, Any] | None,
+        next_cursor: dict[str, Any] | None,
+    ) -> None:
+        validated_expected = self._validate_recovery_cursor(expected)
+        validated_next = self._validate_recovery_cursor(next_cursor)
+        if validated_next is None:
+            return
+        with self._exclusive_transaction():
+            current = self._read_recovery_cursor_unlocked()
+            if current != validated_expected:
+                raise ExecutionStorageError(
+                    "F3 recovery declaration cursor changed concurrently"
+                )
+            self._atomic_write(self.recovery_cursor_path, validated_next)
 
     def update_runtime(self, child_id: str, *, changes: dict[str, Any]) -> dict[str, Any]:
         allowed = {
