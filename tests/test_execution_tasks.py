@@ -69,8 +69,15 @@ def make_task(
     *,
     plan_id: str | None = None,
     operation: str = "controlled_reload",
+    execution_authority: str | None = None,
 ):
     plan_id = plan_id or uuid.uuid4().hex
+    legacy_projection = {
+        "plan_status": "approved",
+        "execution_outcome": "not_applied",
+    }
+    if execution_authority is not None:
+        legacy_projection["execution_authority"] = execution_authority
     return new_execution_task(
         task_id=uuid.uuid4().hex,
         plan_id=plan_id,
@@ -85,10 +92,7 @@ def make_task(
             "authority_version": 2,
             "bound_plan_hash": "a" * 64,
         },
-        legacy_projection={
-            "plan_status": "approved",
-            "execution_outcome": "not_applied",
-        },
+        legacy_projection=legacy_projection,
     )
 
 
@@ -321,6 +325,93 @@ class ExecutionTaskModelTests(unittest.TestCase):
 
 
 class ExecutionTaskStorageTests(unittest.TestCase):
+    def test_f3_nonterminal_navigation_filters_before_bounding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = ExecutionTaskRepository(directory)
+            legacy = make_task()
+            f3_task = make_task(
+                execution_authority="f3_child_sequence"
+            )
+            f3_task.idempotency_key = "c" * 64
+            f3_task.events[0].changes["idempotency_key"] = "c" * 64
+            repository.save(legacy)
+            repository.save(f3_task)
+
+            self.assertEqual(
+                {legacy.task_id, f3_task.task_id},
+                set(repository.nonterminal_task_ids()),
+            )
+            self.assertEqual(
+                (f3_task.task_id,),
+                repository.f3_nonterminal_task_ids(limit=1),
+            )
+            invalidations = repository.index_invalidation_count
+            repository._f3_nonterminal_keys.clear()
+            self.assertEqual(
+                (f3_task.task_id,),
+                repository.f3_nonterminal_task_ids(limit=1),
+            )
+            self.assertEqual(
+                invalidations + 1, repository.index_invalidation_count
+            )
+
+            promoted_projection = {
+                **legacy.legacy_projection,
+                "execution_authority": "f3_child_sequence",
+            }
+            legacy.append_event(
+                "f3_authority_assigned",
+                timestamp(1),
+                changes={"legacy_projection": promoted_projection},
+            )
+            repository.save(legacy)
+            self.assertEqual(
+                {legacy.task_id, f3_task.task_id},
+                set(repository.f3_nonterminal_task_ids(limit=2)),
+            )
+
+            rebuilt = ExecutionTaskRepository(directory)
+            self.assertEqual(
+                {legacy.task_id, f3_task.task_id},
+                set(rebuilt.f3_nonterminal_task_ids(limit=2)),
+            )
+            terminal = rebuilt.get(f3_task.task_id)
+            self.assertIsNotNone(terminal)
+            assert terminal is not None
+            terminal.append_event(
+                "task_cancelled_pre_dispatch",
+                timestamp(1),
+                new_state=ExecutionTaskState.CANCELLED_PRE_DISPATCH,
+                changes={
+                    "completed_at": timestamp(1),
+                    "terminal_outcome": "cancelled_pre_dispatch",
+                },
+            )
+            rebuilt.save(terminal)
+
+            self.assertEqual(
+                (legacy.task_id,), rebuilt.nonterminal_task_ids()
+            )
+            self.assertEqual(
+                (legacy.task_id,),
+                rebuilt.f3_nonterminal_task_ids(limit=1),
+            )
+
+    def test_f3_nonterminal_navigation_fails_closed_above_bound(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = ExecutionTaskRepository(directory)
+            first = make_task(execution_authority="f3_child_sequence")
+            second = make_task(execution_authority="f3_child_sequence")
+            second.idempotency_key = "c" * 64
+            second.events[0].changes["idempotency_key"] = "c" * 64
+            repository.save(first)
+            repository.save(second)
+
+            with self.assertRaisesRegex(
+                ExecutionTaskStorageError, "F3 nonterminal namespace"
+            ):
+                repository.f3_nonterminal_task_ids(limit=1)
+
     def test_namespace_isolated_from_legacy_plan_enumeration(self):
         with tempfile.TemporaryDirectory() as directory:
             repository = ExecutionTaskRepository(directory)

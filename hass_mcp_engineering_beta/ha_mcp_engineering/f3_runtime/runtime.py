@@ -74,6 +74,7 @@ from ..governance.task_storage import ExecutionTaskStorageError
 from .registry import ClosedAdapterRegistry
 from .repository import (
     ChildExecutionRepository,
+    MAX_F3_PUBLIC_TASKS,
     RECOVERY_DECLARATION_PAGE_SIZE,
     canonical_hash,
     child_declaration,
@@ -2593,18 +2594,21 @@ class F3RuntimeIntegration:
     ) -> dict[str, Any]:
         """Select active work independently from historical declaration scan.
 
-        Public nonterminal navigation is bounded and non-authoritative. Every
-        selected task and child is reloaded from its durable authority before
-        it can become a candidate. A separate cursor is used only to make an
-        ineligible prefix restart-fair; it never authorizes execution and is
-        not advanced past discovered eligible work.
+        Navigation is filtered to exact F3 authority before it is bounded and
+        remains non-authoritative. Every selected task and child is reloaded
+        from its durable authority before it can become a candidate. A
+        separate cursor is used only to make an ineligible prefix restart-fair;
+        it never authorizes execution and is not advanced past discovered
+        eligible work.
         """
 
         clock = monotonic or time.monotonic
         expected_cursor = self.children.active_recovery_cursor()
-        task_ids = list(self.service.task_repository.nonterminal_task_ids())
-        if len(task_ids) > RECOVERY_DECLARATION_PAGE_SIZE:
-            task_ids = task_ids[:RECOVERY_DECLARATION_PAGE_SIZE]
+        task_ids = list(
+            self.service.task_repository.f3_nonterminal_task_ids(
+                limit=MAX_F3_PUBLIC_TASKS
+            )
+        )
         if expected_cursor is not None and task_ids:
             cursor_task = expected_cursor["public_task_id"]
             if cursor_task in task_ids:
@@ -2631,12 +2635,20 @@ class F3RuntimeIntegration:
                 raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
             if public_task.state in TERMINAL_TASK_STATES:
                 continue
+            if (
+                public_task.legacy_projection.get("execution_authority")
+                != F3_EXECUTION_AUTHORITY
+            ):
+                raise GovernanceError(
+                    ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+                )
             task_declarations = self.children.declarations_for_task(
                 public_task_id
             )
             if not task_declarations:
-                # Legacy non-F3 tasks remain outside this scheduler.
-                continue
+                raise GovernanceError(
+                    ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+                )
             manifests_read += 1
             records = {
                 item["operation_id"]: self.children.get(item["child_id"])
@@ -3119,19 +3131,32 @@ class F3RuntimeIntegration:
             monotonic=clock,
         )
         active_candidates = active_selection["candidates"]
+        post_intent_candidates = tuple(
+            item
+            for item in active_candidates
+            if item[1] is not None
+            and item[1].dispatch_intent is not None
+        )
+        pre_intent_candidates = tuple(
+            item
+            for item in active_candidates
+            if item[1] is None or item[1].dispatch_intent is None
+        )
         navigation = self.service.task_repository.navigation_metrics()
         has_terminal_history = (
             navigation["record_count"]
             > navigation["nonterminal_record_count"]
         )
-        initial_active_limit = RECOVERY_BATCH_SIZE - int(
-            has_terminal_history
-        )
-        active = await self._recover_active_candidates(
-            active_candidates,
+
+        # Possibly dispatched work owns the complete available batch before
+        # historical cleanup receives a reservation. Recovery remains
+        # observation/verification-only because _execute_child enforces the
+        # durable-intent no-redispatch boundary.
+        post_intent = await self._recover_active_candidates(
+            post_intent_candidates,
             now=now,
             sweep_started=sweep_started,
-            transition_limit=initial_active_limit,
+            transition_limit=RECOVERY_BATCH_SIZE,
             monotonic=clock,
         )
 
@@ -3151,9 +3176,18 @@ class F3RuntimeIntegration:
             "next_cursor": page["cursor"],
         }
         remaining = max(
-            0, RECOVERY_BATCH_SIZE - active["transitions"]
+            0, RECOVERY_BATCH_SIZE - post_intent["transitions"]
         )
-        if remaining and not deadline_reached():
+        historical_limit = (
+            remaining
+            if not pre_intent_candidates
+            else min(1, remaining)
+        )
+        if (
+            has_terminal_history
+            and historical_limit
+            and not deadline_reached()
+        ):
             page = self.children.recovery_declaration_page(
                 limit=RECOVERY_DECLARATION_PAGE_SIZE,
                 should_stop=deadline_reached,
@@ -3162,35 +3196,41 @@ class F3RuntimeIntegration:
                 declarations=page["declarations"],
                 now=now,
                 sweep_started=sweep_started,
-                transition_limit=remaining,
+                transition_limit=historical_limit,
                 start_cursor=page["cursor"],
                 monotonic=clock,
             )
 
-        # If the reserved historical slot found no orphan, return it to active
-        # work without exceeding the same batch/time boundary.
-        selected_ids = set(active["selected_child_ids"])
-        active_tail = tuple(
-            item
-            for item in active_candidates
-            if item[0]["child_id"] not in selected_ids
-        )
-        tail_limit = max(
+        # Historical cleanup receives one bounded fairness slot ahead of
+        # lower-priority pre-intent work when both classes exist. Any unused
+        # slot returns to pre-intent recovery inside the same batch/time bound.
+        pre_intent_limit = max(
             0,
             RECOVERY_BATCH_SIZE
-            - active["transitions"]
+            - post_intent["transitions"]
             - orphaned["processed"],
         )
-        tail = {"processed": 0, "transitions": 0, "selected_child_ids": ()}
-        if active_tail and tail_limit and not deadline_reached():
-            tail = await self._recover_active_candidates(
-                active_tail,
+        pre_intent = {
+            "processed": 0,
+            "transitions": 0,
+            "selected_child_ids": (),
+        }
+        if (
+            pre_intent_candidates
+            and pre_intent_limit
+            and not deadline_reached()
+        ):
+            pre_intent = await self._recover_active_candidates(
+                pre_intent_candidates,
                 now=now,
                 sweep_started=sweep_started,
-                transition_limit=tail_limit,
+                transition_limit=pre_intent_limit,
                 monotonic=clock,
             )
-            selected_ids.update(tail["selected_child_ids"])
+        selected_ids = {
+            *post_intent["selected_child_ids"],
+            *pre_intent["selected_child_ids"],
+        }
 
         stale_release_decisions = {}
         for lock_record in (
@@ -3241,8 +3281,12 @@ class F3RuntimeIntegration:
                 next_cursor=active_selection["next_cursor"],
             )
 
-        processed = active["processed"] + tail["processed"]
-        active_transitions = active["transitions"] + tail["transitions"]
+        processed = (
+            post_intent["processed"] + pre_intent["processed"]
+        )
+        active_transitions = (
+            post_intent["transitions"] + pre_intent["transitions"]
+        )
         self._ready = True
         return {
             "processed": processed,

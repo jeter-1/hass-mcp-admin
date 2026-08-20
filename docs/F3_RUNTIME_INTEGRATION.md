@@ -167,19 +167,33 @@ revisited, their hold projections were never cleared, and
 
 Orphan work shares the coordinator's existing batch-16 and five-second budget.
 Active recovery and historical orphan discovery are deliberately separate.
-Active candidates come from the bounded nonterminal task index and exact child
-records, not the historical cursor. A dedicated scheduling-only cursor makes
-an ineligible active prefix restart-fair but is never execution authority and
-is not advanced past discovered eligible work. A separate durable historical
-cursor pages at most 1,024 declarations, reads at most the repository's bounded
-1,024 manifest paths, and stops at the shared deadline. It advances only
-through declarations safely examined. A candidate skipped because the batch
-or time budget is exhausted remains immediately after the cursor for the next
-sweep instead of waiting for a namespace rotation. Both cursor writes use
-atomic compare-and-swap; a crash or conflict leaves work eligible. Historical
-scanning receives a reserved transition when history exists, while an unused
-reservation returns to active work. Generic recovery performs no
-full-namespace declaration load or second sort after the deadline. The sweep
+Active discovery starts from an in-memory nonterminal navigation index already
+filtered to exact `f3_child_sequence` authority before applying the reviewed
+1,024-public-task bound. Unrelated legacy tasks therefore cannot consume the
+F3 result limit. This index and its dedicated cursor are scheduling evidence
+only: the coordinator reloads and validates the exact public task, manifest,
+declaration, child record, and runtime state before recovery. A missing or
+contradictory authority fails closed. The active cursor makes an ineligible
+prefix restart-fair and is not advanced past discovered eligible work; a
+removed or terminal cursor target safely restarts from the bounded F3 set.
+
+Deadline-bearing post-intent candidates receive all available batch and time
+capacity before historical cleanup can reserve a transition. If fewer than 16
+post-intent transitions are available, historical scanning may receive one
+fairness slot ahead of lower-priority pre-intent work; an unused slot returns
+to pre-intent recovery. When no pre-intent candidate competes, historical
+cleanup may use the remaining batch. Equal post-intent deadlines retain
+deterministic task/operation/child ordering. This priority does not alter or
+extend an immutable evidence deadline, and no recovery path may redispatch.
+
+A separate durable historical cursor pages at most 1,024 declarations, reads
+at most the repository's bounded 1,024 manifest paths, and stops at the shared
+deadline. It advances only through declarations safely examined. A candidate
+skipped because the batch or time budget is exhausted remains immediately
+after the cursor for the next sweep instead of waiting for a namespace
+rotation. Both cursor writes use atomic compare-and-swap; a crash or conflict
+leaves work eligible. Generic recovery performs no full-namespace declaration
+load or second sort after the deadline. The sweep
 terminalizes one eligible orphan before releasing anything, which leaves no
 window for a concurrent dispatch to begin.
 It then releases only lock records whose exact task, plan, operation, attempt,

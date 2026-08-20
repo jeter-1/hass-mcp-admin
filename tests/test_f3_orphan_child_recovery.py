@@ -546,6 +546,51 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
             created_ids.append(task_id)
         return tuple(created_ids)
 
+    def _populate_legacy_nonterminal_prefix(self, *, task_count: int):
+        """Populate a mixed-index prefix without creating F3 authority."""
+
+        timestamp = (self.service.now() + timedelta(days=1)).isoformat()
+        repository = self.service.task_repository
+        created_ids = []
+        for task_index in range(task_count):
+            prefix = f"rr11-legacy-{task_index}"
+            task = new_execution_task(
+                task_id=hashlib.sha256(
+                    f"{prefix}-task".encode()
+                ).hexdigest()[:32],
+                plan_id=hashlib.sha256(
+                    f"{prefix}-plan".encode()
+                ).hexdigest()[:32],
+                plan_hash=hashlib.sha256(
+                    f"{prefix}-plan-hash".encode()
+                ).hexdigest(),
+                operation="configuration_plan",
+                target={
+                    "target_type": "automation",
+                    "target_id": f"legacy_{task_index}",
+                },
+                timestamp=timestamp,
+                execution_request_id=f"legacy-request-{task_index}",
+                idempotency_key=hashlib.sha256(
+                    f"{prefix}-idempotency".encode()
+                ).hexdigest(),
+                approval_reference={},
+                legacy_projection={
+                    "execution_authority": "legacy_pre_f3"
+                },
+            )
+            repository._path(
+                task.task_id, plan_id=task.plan_id
+            ).write_text(
+                json.dumps(
+                    task.to_dict(), sort_keys=True, separators=(",", ":")
+                ),
+                encoding="utf-8",
+            )
+            created_ids.append(task.task_id)
+        repository.rebuild_navigation_index()
+        return tuple(created_ids)
+
     async def test_orphaned_children_converge_in_one_sweep(self):
         task, declarations = await self._build_live_orphan()
 
@@ -1246,6 +1291,170 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         self.assertEqual(
             before_writes,
             sum(item[0] == "write" for item in self.gateway.calls),
+        )
+
+    async def test_removed_active_cursor_target_does_not_hide_f3_work(self):
+        _task, declaration = await self._post_intent_active_child(
+            "removed_active_cursor_target"
+        )
+        missing_cursor = self.runtime.children.active_recovery_cursor_for_task(
+            hashlib.sha256(b"removed-active-cursor").hexdigest()[:32]
+        )
+        self.runtime.children.advance_active_recovery_cursor(
+            expected=None, next_cursor=missing_cursor
+        )
+        before_writes = sum(
+            item[0] == "write" for item in self.gateway.calls
+        )
+
+        result = await self.runtime.recover_once("periodic")
+
+        record = self.runtime.children.get(declaration["child_id"])
+        self.assertEqual(1, result["active_recovery_transitions"])
+        self.assertEqual(1, record.dispatch_count)
+        self.assertEqual(
+            before_writes,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+
+    async def test_mixed_nonterminal_prefix_cannot_hide_f3_authority(self):
+        task, declaration = await self._post_intent_active_child(
+            "rr11_filtered_authority"
+        )
+        self._populate_legacy_nonterminal_prefix(task_count=1_024)
+        repository = self.service.task_repository
+
+        self.assertNotIn(
+            task.task_id, repository.nonterminal_task_ids()[:1_024]
+        )
+        self.assertEqual(
+            (task.task_id,),
+            repository.f3_nonterminal_task_ids(limit=1_024),
+        )
+
+        # Rebuild exactly as a process restart would, then recover through the
+        # real authority-filtered navigation path.
+        self.service.task_repository = type(repository)(
+            repository.governance_root,
+            retention_days=repository.retention_days,
+        )
+        self._restart_runtime()
+        before_writes = sum(
+            item[0] == "write" for item in self.gateway.calls
+        )
+
+        result = await self.runtime.recover_once("startup")
+
+        record = self.runtime.children.get(declaration["child_id"])
+        self.assertEqual(1, result["active_recovery_transitions"])
+        self.assertEqual(1, result["active_tasks_examined"])
+        self.assertEqual(1, record.dispatch_count)
+        self.assertEqual(
+            before_writes,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+
+    async def test_post_intent_batch_precedes_historical_time_exhaustion(self):
+        declarations = []
+        for index in range(17):
+            _task, declaration = await self._post_intent_active_child(
+                f"rr12_post_intent_{index:02d}"
+            )
+            declarations.append(declaration)
+            self._release_fixture_locks(declaration["child_id"])
+        self._populate_terminal_history(task_count=1)
+        elapsed = {"value": False}
+        page_calls = {"count": 0}
+        original_page = self.runtime.children.recovery_declaration_page
+
+        def consume_historical_budget(**kwargs):
+            page_calls["count"] += 1
+            page = original_page(**kwargs)
+            elapsed["value"] = True
+            return page
+
+        self.runtime._recovery_monotonic = (
+            lambda: 6.0 if elapsed["value"] else 0.0
+        )
+        with patch.object(
+            self.runtime.children,
+            "recovery_declaration_page",
+            side_effect=consume_historical_budget,
+        ):
+            first = await self.runtime.recover_once("periodic")
+
+        self.assertEqual(16, first["active_recovery_transitions"])
+        self.assertEqual(16, first["recovery_transitions"])
+        self.assertEqual(0, page_calls["count"])
+        self.assertEqual(
+            0, sum(item[0] == "write" for item in self.gateway.calls)
+        )
+        self.assertTrue(
+            all(
+                self.runtime.children.get(item["child_id"]).dispatch_count
+                == 1
+                for item in declarations
+            )
+        )
+
+        elapsed["value"] = False
+        self.runtime._recovery_monotonic = lambda: 0.0
+        second = await self.runtime.recover_once("periodic")
+
+        self.assertEqual(1, second["active_recovery_transitions"])
+        self.assertGreater(second["manifest_reads"], 0)
+        self.assertEqual(
+            0, sum(item[0] == "write" for item in self.gateway.calls)
+        )
+
+    async def test_historical_fairness_follows_fifteen_post_intent_items(self):
+        post_intent = []
+        for index in range(15):
+            _task, declaration = await self._post_intent_active_child(
+                f"rr12_fair_post_{index:02d}"
+            )
+            post_intent.append(declaration)
+            self._release_fixture_locks(declaration["child_id"])
+        _task, pre_intent = await self._preintent_active_child(
+            "rr12_fair_pre_intent"
+        )
+        self._populate_terminal_history(task_count=1)
+        order = []
+        original_execute = self.runtime._execute_child
+        original_reconcile = self.runtime._reconcile_orphaned_children
+
+        async def record_active(
+            plan, task, declaration, operation, requests
+        ):
+            order.append(declaration["child_id"])
+            return await original_execute(
+                plan, task, declaration, operation, requests
+            )
+
+        def record_history(**kwargs):
+            order.append("historical_scan")
+            return original_reconcile(**kwargs)
+
+        with (
+            patch.object(
+                self.runtime, "_execute_child", side_effect=record_active
+            ),
+            patch.object(
+                self.runtime,
+                "_reconcile_orphaned_children",
+                side_effect=record_history,
+            ),
+        ):
+            result = await self.runtime.recover_once("periodic")
+
+        post_ids = {item["child_id"] for item in post_intent}
+        self.assertEqual(post_ids, set(order[:15]))
+        self.assertEqual("historical_scan", order[15])
+        self.assertEqual(pre_intent["child_id"], order[16])
+        self.assertEqual(16, result["active_recovery_transitions"])
+        self.assertEqual(
+            [("write", "create", "automation", "rr12_fair_pre_intent")],
+            [item for item in self.gateway.calls if item[0] == "write"],
         )
 
     async def test_dense_terminal_history_does_not_delay_active_readback(self):
