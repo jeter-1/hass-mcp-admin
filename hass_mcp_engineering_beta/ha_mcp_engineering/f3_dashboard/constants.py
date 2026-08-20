@@ -40,6 +40,12 @@ MAX_PATCH_BYTES = 16_384
 MAX_SEMANTIC_DIFF_BYTES = 16_384
 MAX_INDIVIDUAL_VALUE_BYTES = 8_192
 
+# The authenticated dashboard approval surface carries the complete declared
+# operation values, never the complete dashboard. The boundary matches the
+# already-reviewed per-operation configuration projection limit and remains
+# below the immutable dashboard artifact ceiling.
+MAX_DASHBOARD_APPROVAL_PROJECTION_BYTES = 131_072
+
 # The existing signed-registry reader accepts at most 256 KiB.  One immutable
 # dashboard artifact must remain below that already-tested repository storage
 # and CI handling envelope.
@@ -47,7 +53,9 @@ MAX_ARTIFACT_BYTES = 262_144
 
 MIN_PATCH_OPERATIONS = 1
 MAX_PATCH_OPERATIONS = 16
-MAX_SEMANTIC_LEAF_CHANGES = 16
+# Compiler complexity only. Human review completeness is enforced separately
+# by the dashboard approval projection and must never be inferred from this.
+MAX_SEMANTIC_LEAF_CHANGES = 256
 MAX_POINTER_CHARS = 1_024
 MAX_POINTER_DEPTH = 32
 MAX_JSON_DEPTH = 48

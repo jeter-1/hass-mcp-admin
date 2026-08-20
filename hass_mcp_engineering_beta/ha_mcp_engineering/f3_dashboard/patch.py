@@ -35,7 +35,7 @@ from .models import PatchCompilation, PatchEffect, PatchKind, PatchOperation
 
 
 _OPERATION_KEYS = frozenset({"operation_id", "operation", "path", "value"})
-_FUZZY_TOKENS = frozenset({"*", "**", "-", ".", ".."})
+_FUZZY_TOKENS = frozenset({"*", "**", ".", ".."})
 
 
 def _decode_token(token: str) -> str:
@@ -48,7 +48,12 @@ def _decode_token(token: str) -> str:
             index += 1
             continue
         if index + 1 >= len(token) or token[index + 1] not in {"0", "1"}:
-            raise PatchValidationError("Malformed RFC 6901 escape sequence")
+            raise PatchValidationError(
+                "Malformed RFC 6901 escape sequence",
+                reason="invalid_json_pointer",
+                constraint="pointer_escape",
+                stage="validation",
+            )
         decoded.append("~" if token[index + 1] == "0" else "/")
         index += 2
     return "".join(decoded)
@@ -58,20 +63,58 @@ def _encode_token(token: str) -> str:
     return token.replace("~", "~0").replace("/", "~1")
 
 
-def parse_pointer(path: str) -> tuple[str, ...]:
-    """Parse one canonical non-root JSON Pointer without selector extensions."""
+def parse_pointer(
+    path: str,
+    *,
+    operation: PatchKind | str | None = None,
+) -> tuple[str, ...]:
+    """Parse one canonical non-root pointer with exact RFC 6902 append scope."""
 
     if not isinstance(path, str) or not path or not path.startswith("/"):
-        raise PatchValidationError("Patch paths must be non-root RFC 6901 pointers")
+        raise PatchValidationError(
+            "Patch paths must be non-root RFC 6901 pointers",
+            reason="invalid_json_pointer",
+            constraint="pointer_syntax",
+            stage="validation",
+        )
     if len(path) > MAX_POINTER_CHARS:
-        raise PatchValidationError("Patch pointer exceeds the reviewed length bound")
+        raise PatchValidationError(
+            "Patch pointer exceeds the reviewed length bound",
+            reason="dashboard_patch_limit_exceeded",
+            constraint="pointer_chars",
+            observed=len(path),
+            limit=MAX_POINTER_CHARS,
+            stage="validation",
+        )
     encoded_tokens = path[1:].split("/")
     if len(encoded_tokens) > MAX_POINTER_DEPTH:
-        raise PatchValidationError("Patch pointer exceeds the reviewed depth bound")
+        raise PatchValidationError(
+            "Patch pointer exceeds the reviewed depth bound",
+            reason="dashboard_patch_limit_exceeded",
+            constraint="pointer_depth",
+            observed=len(encoded_tokens),
+            limit=MAX_POINTER_DEPTH,
+            stage="validation",
+        )
     tokens = tuple(_decode_token(token) for token in encoded_tokens)
     if any(not token for token in tokens):
-        raise PatchValidationError("Empty pointer tokens are prohibited")
-    for token in tokens:
+        raise PatchValidationError(
+            "Empty pointer tokens are prohibited",
+            reason="invalid_json_pointer",
+            constraint="pointer_token",
+            stage="validation",
+        )
+    append_allowed = operation in {PatchKind.ADD, PatchKind.ADD.value}
+    for index, token in enumerate(tokens):
+        if token == "-":
+            if append_allowed and index == len(tokens) - 1:
+                continue
+            raise PatchValidationError(
+                "The array append token is valid only as the final token of add",
+                reason="unsupported_array_token",
+                constraint="array_token",
+                stage="validation",
+            )
         if (
             token in _FUZZY_TOKENS
             or "*" in token
@@ -82,10 +125,20 @@ def parse_pointer(path: str) -> tuple[str, ...]:
             or "}" in token
             or token.startswith("$")
         ):
-            raise PatchValidationError("Wildcard, predicate, or fuzzy selectors are prohibited")
+            raise PatchValidationError(
+                "Wildcard, predicate, or fuzzy selectors are prohibited",
+                reason="invalid_json_pointer",
+                constraint="pointer_token",
+                stage="validation",
+            )
     canonical = "/" + "/".join(_encode_token(token) for token in tokens)
     if canonical != path:
-        raise PatchValidationError("Patch pointer is not in canonical form")
+        raise PatchValidationError(
+            "Patch pointer is not in canonical form",
+            reason="invalid_json_pointer",
+            constraint="pointer_canonical_form",
+            stage="validation",
+        )
     return tokens
 
 
@@ -104,7 +157,7 @@ def _canonical_operation(raw: Mapping[str, Any]) -> PatchOperation:
     except (TypeError, ValueError) as exc:
         raise PatchValidationError("Only add, replace, and remove are supported") from exc
     path = raw["path"]
-    tokens = parse_pointer(path)
+    tokens = parse_pointer(path, operation=operation)
     value_present = "value" in raw
     if operation is PatchKind.REMOVE and value_present:
         raise PatchValidationError("Remove operations must not include a value")
@@ -113,8 +166,16 @@ def _canonical_operation(raw: Mapping[str, Any]) -> PatchOperation:
     value = raw.get("value")
     if value_present:
         validate_json_value(value)
-        if serialized_size(value) > MAX_INDIVIDUAL_VALUE_BYTES:
-            raise PatchValidationError("Patch value exceeds the reviewed bound")
+        value_size = serialized_size(value)
+        if value_size > MAX_INDIVIDUAL_VALUE_BYTES:
+            raise PatchValidationError(
+                "Patch value exceeds the reviewed bound",
+                reason="patch_value_too_large",
+                constraint="individual_value_bytes",
+                observed=value_size,
+                limit=MAX_INDIVIDUAL_VALUE_BYTES,
+                stage="validation",
+            )
         value = clone_json(value)
     return PatchOperation(
         operation_id=operation_id,
@@ -140,15 +201,33 @@ def canonicalize_patch(
         raise PatchValidationError("Patch operation IDs must be unique")
     paths = [item.tokens for item in normalized]
     if len(paths) != len(set(paths)):
-        raise PatchValidationError("Duplicate canonical patch paths are prohibited")
+        raise PatchValidationError(
+            "Duplicate canonical patch paths are prohibited",
+            reason="duplicate_path",
+            constraint="canonical_patch_paths",
+            stage="validation",
+        )
     for index, left in enumerate(paths):
         for right in paths[index + 1 :]:
             shortest = min(len(left), len(right))
             if left[:shortest] == right[:shortest]:
-                raise PatchValidationError("Parent/child patch path conflicts are prohibited")
+                raise PatchValidationError(
+                    "Parent/child patch path conflicts are prohibited",
+                    reason="parent_child_conflict",
+                    constraint="canonical_patch_paths",
+                    stage="validation",
+                )
     projection = patch_projection(normalized)
-    if serialized_size(projection) > MAX_PATCH_BYTES:
-        raise PatchValidationError("Canonical patch exceeds the reviewed byte bound")
+    patch_size = serialized_size(projection)
+    if patch_size > MAX_PATCH_BYTES:
+        raise PatchValidationError(
+            "Canonical patch exceeds the reviewed byte bound",
+            reason="patch_total_too_large",
+            constraint="patch_bytes",
+            observed=patch_size,
+            limit=MAX_PATCH_BYTES,
+            stage="validation",
+        )
     return normalized
 
 
@@ -166,21 +245,45 @@ def patch_projection(operations: Iterable[PatchOperation]) -> list[dict[str, Any
     return projected
 
 
-def _list_index(token: str, *, length: int) -> int:
+def _list_index(token: str, *, length: int, allow_end: bool = False) -> int:
     if token.startswith("-"):
-        raise PatchCompilationError("Negative and append list indices are prohibited")
+        raise PatchCompilationError(
+            "Negative list indices are prohibited",
+            reason="invalid_array_index",
+            constraint="array_index",
+            stage="compilation",
+        )
     if not token.isdigit():
-        raise PatchCompilationError("List paths require canonical numeric indices")
+        raise PatchCompilationError(
+            "List paths require canonical numeric indices",
+            reason="invalid_array_index",
+            constraint="array_index",
+            stage="compilation",
+        )
     if len(token) > 1 and token.startswith("0"):
-        raise PatchCompilationError("Leading-zero list indices are prohibited")
+        raise PatchCompilationError(
+            "Leading-zero list indices are prohibited",
+            reason="invalid_array_index",
+            constraint="array_index_canonical_form",
+            stage="compilation",
+        )
     index = int(token)
-    if index >= length:
-        raise PatchCompilationError("List index is outside the existing collection")
+    if index > length or (index == length and not allow_end):
+        raise PatchCompilationError(
+            "List index is outside the allowed collection boundary",
+            reason="array_index_out_of_range",
+            constraint="array_index",
+            observed=index,
+            limit=length,
+            stage="compilation",
+        )
     return index
 
 
 def _resolve_parent(
-    document: dict[str, Any], tokens: tuple[str, ...]
+    document: dict[str, Any],
+    tokens: tuple[str, ...],
+    operation: PatchKind,
 ) -> tuple[Any, str | int]:
     current: Any = document
     for token in tokens[:-1]:
@@ -195,9 +298,29 @@ def _resolve_parent(
             raise PatchCompilationError("Patch parent is not a collection")
     final_token = tokens[-1]
     if isinstance(current, dict):
+        if final_token == "-":
+            raise PatchCompilationError(
+                "The append token requires a list parent",
+                reason="unsupported_array_token",
+                constraint="array_parent_type",
+                stage="compilation",
+            )
         return current, final_token
     if isinstance(current, list):
-        index = _list_index(final_token, length=len(current))
+        if final_token == "-":
+            if operation is not PatchKind.ADD:
+                raise PatchCompilationError(
+                    "The append token is supported only for add",
+                    reason="unsupported_array_token",
+                    constraint="array_token",
+                    stage="compilation",
+                )
+            return current, len(current)
+        index = _list_index(
+            final_token,
+            length=len(current),
+            allow_end=operation is PatchKind.ADD,
+        )
         return current, index
     raise PatchCompilationError("Patch target parent is not a collection")
 
@@ -264,18 +387,32 @@ def semantic_leaf_difference(
 def _apply_one(
     document: dict[str, Any], operation: PatchOperation
 ) -> PatchEffect:
-    parent, target = _resolve_parent(document, operation.tokens)
+    parent, target = _resolve_parent(
+        document, operation.tokens, operation.operation
+    )
     is_mapping = isinstance(parent, dict)
-    present = target in parent if is_mapping else True
-    previous = deepcopy(parent[target]) if present else None
     if operation.operation is PatchKind.ADD:
-        if not is_mapping:
-            raise PatchCompilationError("List insertion and append are prohibited")
-        if present:
-            raise PatchCompilationError("Add requires an absent mapping member")
         proposed = clone_json(operation.value)
-        leaf_count = _leaf_weight(proposed)
-        parent[target] = proposed
+        if is_mapping:
+            if target in parent:
+                raise PatchCompilationError(
+                    "Add requires an absent mapping member",
+                    reason="object_member_exists",
+                    constraint="object_add_target",
+                    stage="compilation",
+                )
+            parent[target] = proposed
+            leaf_count = _leaf_weight(proposed)
+        elif isinstance(parent, list) and isinstance(target, int):
+            parent.insert(target, proposed)
+            leaf_count = _leaf_weight(proposed) + 1
+        else:
+            raise PatchCompilationError(
+                "Array add requires a list parent",
+                reason="array_parent_type_mismatch",
+                constraint="array_parent_type",
+                stage="compilation",
+            )
         return PatchEffect(
             operation.operation_id,
             operation.operation,
@@ -287,6 +424,8 @@ def _apply_one(
             leaf_count,
         )
 
+    present = target in parent if is_mapping else True
+    previous = deepcopy(parent[target]) if present else None
     if not present:
         raise PatchCompilationError("Replace and remove require an existing target")
     if operation.operation is PatchKind.REPLACE:
@@ -338,14 +477,35 @@ def compile_dashboard_patch(
         raise PatchCompilationError("Patch compilation mutated its input")
     leaf_count = sum(effect.leaf_change_count for effect in effects)
     if leaf_count > MAX_SEMANTIC_LEAF_CHANGES:
-        raise PatchCompilationError("Patch exceeds the 16-leaf semantic review bound")
+        raise PatchCompilationError(
+            "Patch exceeds the semantic compiler complexity bound",
+            reason="dashboard_patch_limit_exceeded",
+            constraint="semantic_leaf_changes",
+            observed=leaf_count,
+            limit=MAX_SEMANTIC_LEAF_CHANGES,
+            stage="compilation",
+        )
     original_size = serialized_size(original, ensure_ascii=True)
     result_size = serialized_size(result, ensure_ascii=True)
     growth = result_size - original_size
     if result_size > MAX_RESULT_CONFIG_BYTES:
-        raise PatchCompilationError("Resulting dashboard exceeds the reviewed size bound")
+        raise PatchCompilationError(
+            "Resulting dashboard exceeds the reviewed size bound",
+            reason="resulting_dashboard_too_large",
+            constraint="resulting_dashboard_bytes",
+            observed=result_size,
+            limit=MAX_RESULT_CONFIG_BYTES,
+            stage="compilation",
+        )
     if growth > MAX_CONFIG_GROWTH_BYTES:
-        raise PatchCompilationError("Dashboard growth exceeds the reviewed bound")
+        raise PatchCompilationError(
+            "Dashboard growth exceeds the reviewed bound",
+            reason="result_growth_too_large",
+            constraint="result_growth_bytes",
+            observed=growth,
+            limit=MAX_CONFIG_GROWTH_BYTES,
+            stage="compilation",
+        )
 
     projection = patch_projection(normalized)
     patch_bytes = canonical_json_bytes(projection)

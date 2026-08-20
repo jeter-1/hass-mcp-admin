@@ -31,6 +31,10 @@ from ..request_context import (
     current_request_id,
 )
 from ..sanitization import sanitize_untrusted_data
+from ..f3_dashboard.approval_projection import (
+    build_dashboard_approval_projection,
+    validate_dashboard_approval_projection,
+)
 from ..f3_dashboard.artifact_store import DashboardArtifactStore
 from ..f3_dashboard.errors import DashboardFoundationError
 from ..f3_dashboard.planning import create_dashboard_update_plan as build_dashboard_update
@@ -3784,7 +3788,7 @@ class ChangeGovernanceService:
         except DashboardFoundationError as exc:
             raise GovernanceError(
                 ErrorCode.CONFIGURATION_VALIDATION_FAILED,
-                details={"reason": exc.code},
+                details=exc.diagnostic_details(),
             ) from None
         except GovernanceError:
             raise
@@ -3804,6 +3808,16 @@ class ChangeGovernanceService:
                 ErrorCode.CONFIGURATION_VALIDATION_FAILED,
                 details={"reason": "dashboard_contains_prohibited_sensitive_data"},
             )
+        try:
+            approval_projection = build_dashboard_approval_projection(
+                proposal.compilation,
+                known_secrets=self.sensitive_values,
+            )
+        except DashboardFoundationError as exc:
+            raise GovernanceError(
+                ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                details=exc.diagnostic_details(),
+            ) from None
         public_projection = public_proposal_projection(proposal)
         sanitation = sanitize_untrusted_data(
             public_projection,
@@ -3818,6 +3832,10 @@ class ChangeGovernanceService:
         public_projection = sanitation.value
         if not isinstance(public_projection, dict):
             raise GovernanceError(ErrorCode.INTERNAL_INVARIANT_VIOLATION)
+        # The complete declared values are persisted for the authenticated
+        # administrator review only. Contract-v3 public plan projections strip
+        # proposed_config, so MCP callers still receive only bounded summaries.
+        public_projection["approval_projection"] = approval_projection
         try:
             artifact = self.dashboard_artifacts.create(proposal)
         except DashboardFoundationError:
@@ -3875,6 +3893,9 @@ class ChangeGovernanceService:
             ),
             "semantic_diff_sha256": (
                 proposal.semantic_diff.semantic_diff_sha256
+            ),
+            "approval_projection_sha256": (
+                approval_projection["binding"]["projection_sha256"]
             ),
             "compatibility_entry": (
                 proposal.raw_evidence.compatibility_entry
@@ -3961,6 +3982,7 @@ class ChangeGovernanceService:
                 "storage_mode_confirmed": True,
                 "exact_provider_contract_admitted": True,
                 "operator_non_atomic_policy_accepted": True,
+                "approval_projection_complete": True,
             },
             dry_run_results={
                 "provider_dispatch_occurred": False,
@@ -3969,6 +3991,9 @@ class ChangeGovernanceService:
                     proposal.compilation.semantic_leaf_change_count
                 ),
                 "semantic_diff": public_projection.get("semantic_diff"),
+                "approval_projection_sha256": (
+                    approval_projection["binding"]["projection_sha256"]
+                ),
                 "non_atomic": True,
             },
             rollback=ChangeRollback(available=False, status="unavailable"),
@@ -4967,6 +4992,54 @@ class ChangeGovernanceService:
     ) -> bool:
         return self._configuration_projection_error(plan) is None
 
+    def _dashboard_projection_error(self, plan: ChangePlan) -> str | None:
+        """Validate the persisted complete dashboard approval authority."""
+
+        if (
+            plan.contract_version != OPERATIONAL_PLAN_CONTRACT_VERSION
+            or plan.operation is not ChangeOperation.UPDATE_DASHBOARD
+            or plan.operational is None
+        ):
+            return "approval_projection_plan_shape_malformed"
+        dashboard_review = plan.proposed_config.get("dashboard_update")
+        if not isinstance(dashboard_review, dict):
+            return "approval_projection_incomplete"
+        projection = dashboard_review.get("approval_projection")
+        patch_summary = dashboard_review.get("patch")
+        if not isinstance(patch_summary, dict):
+            return "approval_projection_binding_mismatch"
+        baseline = plan.operational.baseline
+        try:
+            operations = validate_dashboard_approval_projection(
+                projection,
+                known_secrets=self.sensitive_values,
+                expected_preread_sha256=baseline.get(
+                    "current_engineering_sha256"
+                ),
+                expected_patch_sha256=baseline.get(
+                    "canonical_patch_sha256"
+                ),
+                expected_resulting_sha256=baseline.get(
+                    "resulting_engineering_sha256"
+                ),
+            )
+        except DashboardFoundationError as exc:
+            return exc.reason
+        binding = projection["binding"]
+        if (
+            baseline.get("approval_projection_sha256")
+            != binding["projection_sha256"]
+            or patch_summary.get("operation_count") != len(operations)
+            or patch_summary.get("canonical_patch_sha256")
+            != binding["canonical_patch_sha256"]
+            or patch_summary.get("preread_sha256")
+            not in {None, binding["preread_sha256"]}
+            or patch_summary.get("resulting_sha256")
+            != binding["resulting_sha256"]
+        ):
+            return "approval_projection_binding_mismatch"
+        return None
+
     def _configuration_projection_error(
         self,
         plan: ChangePlan,
@@ -4975,6 +5048,11 @@ class ChangeGovernanceService:
     ) -> str | None:
         """Validate persisted review authority without HA or provider access."""
 
+        if (
+            plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION
+            and plan.operation is ChangeOperation.UPDATE_DASHBOARD
+        ):
+            return self._dashboard_projection_error(plan)
         if plan.contract_version != CONFIGURATION_PLAN_CONTRACT_VERSION:
             return None
         if (

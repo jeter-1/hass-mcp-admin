@@ -1,0 +1,111 @@
+{
+  "title": "Home",
+  "views": [
+    {
+      "title": "Home",
+      "path": "home",
+      "type": "sections",
+      "max_columns": 4,
+      "sections": [
+        {
+          "title": "Home Status",
+          "cards": [
+            {
+              "type": "heading",
+              "heading": "Home Status"
+            },
+            {
+              "type": "custom:mushroom-chips-card",
+              "chips": [
+                {
+                  "type": "template",
+                  "content": "Home",
+                  "entity": "input_select.home_mode",
+                  "icon": "mdi:home"
+                },
+                {
+                  "type": "template",
+                  "content": "Guest",
+                  "entity": "input_boolean.guest_mode",
+                  "icon": "mdi:account-multiple"
+                },
+                {
+                  "type": "template",
+                  "content": "Sleep",
+                  "entity": "input_boolean.sleep_mode",
+                  "icon": "mdi:sleep"
+                }
+              ]
+            },
+            {
+              "type": "entities",
+              "title": "Presence",
+              "entities": [
+                "person.resident_one",
+                "person.resident_two"
+              ]
+            }
+          ]
+        },
+        {
+          "title": "Climate",
+          "cards": [
+            {
+              "type": "heading",
+              "heading": "Climate"
+            },
+            {
+              "type": "custom:mushroom-chips-card",
+              "chips": [
+                {
+                  "type": "template",
+                  "content": "Mode",
+                  "entity": "climate.home"
+                },
+                {
+                  "type": "template",
+                  "content": "Season",
+                  "entity": "sensor.hvac_season"
+                },
+                {
+                  "type": "template",
+                  "content": "Handled",
+                  "entity": "binary_sensor.climate_handled"
+                },
+                {
+                  "type": "template",
+                  "content": "Prompted",
+                  "entity": "binary_sensor.climate_prompted"
+                }
+              ]
+            },
+            {
+              "type": "thermostat",
+              "entity": "climate.home"
+            }
+          ]
+        },
+        {
+          "title": "Lighting",
+          "cards": [
+            {
+              "type": "tile",
+              "entity": "light.living_room"
+            },
+            {
+              "type": "tile",
+              "entity": "light.kitchen"
+            }
+          ]
+        }
+      ],
+      "badges": [
+        "sensor.indoor_temperature",
+        "sensor.indoor_humidity"
+      ]
+    }
+  ],
+  "strategy": {
+    "preserve_unrelated": true
+  }
+}

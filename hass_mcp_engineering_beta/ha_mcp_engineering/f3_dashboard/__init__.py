@@ -6,6 +6,11 @@ contains no transport or mutating dispatch method.
 """
 
 from .artifact_store import DashboardArtifactStore
+from .approval_projection import (
+    APPROVAL_PROJECTION_MODEL,
+    build_dashboard_approval_projection,
+    validate_dashboard_approval_projection,
+)
 from .atomicity import assess_atomicity, simulate_non_atomic_interleaving
 from .constants import (
     ARTIFACT_SCHEMA,
@@ -29,6 +34,7 @@ from .verification import assess_dashboard_preflight, verify_dashboard_observati
 
 __all__ = [
     "ARTIFACT_SCHEMA",
+    "APPROVAL_PROJECTION_MODEL",
     "DashboardArtifactStore",
     "EXACT_CONTRACTS",
     "PATCH_MODEL",
@@ -42,6 +48,7 @@ __all__ = [
     "assess_atomicity",
     "assess_dashboard_preflight",
     "build_raw_dashboard_evidence",
+    "build_dashboard_approval_projection",
     "build_semantic_diff",
     "canonicalize_patch",
     "compile_dashboard_patch",
@@ -50,4 +57,5 @@ __all__ = [
     "parse_pointer",
     "simulate_non_atomic_interleaving",
     "verify_dashboard_observation",
+    "validate_dashboard_approval_projection",
 ]
