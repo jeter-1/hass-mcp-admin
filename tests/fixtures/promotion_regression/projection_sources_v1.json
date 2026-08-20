@@ -9,27 +9,52 @@
     {
       "observation": "native_dependency_read",
       "source": {
-        "failed_obligations": [
-          {
-            "source_type": "blueprint",
-            "source_identity": "Blackshome/sensor-light.yaml",
-            "reason_code": "blueprint_source_limit_exceeded",
-            "count": 2
-          }
-        ],
-        "unique_dependency_source_count": 0
+        "success": true,
+        "data": {
+          "overview": {
+            "coverage_complete": false,
+            "direct_reference_count": 0,
+            "indirect_reference_count": 0,
+            "unique_source_count": 0,
+            "unresolved_dynamic_reference_count": 0
+          },
+          "source_coverage": [
+            {
+              "source_type": "blueprint",
+              "completeness": "partial",
+              "failed_item_count": 2,
+              "obligation_ledger_failed_item_count": 2,
+              "fallback_occurred": false,
+              "duration_ms": 12.5
+            },
+            {
+              "source_type": "automation",
+              "completeness": "complete",
+              "failed_item_count": 0,
+              "obligation_ledger_failed_item_count": 0,
+              "fallback_occurred": false,
+              "duration_ms": 4.0
+            }
+          ],
+          "pagination": {"total": 0, "has_more": false},
+          "index": {"refreshed": true, "cache_hit": false, "generation": 8}
+        },
+        "warnings": ["bounded presentation detail is ignored"],
+        "metadata": {"detail_level": "evidence", "partial": true}
       },
       "expected": {
-        "projection.failed_obligation_count": 2,
-        "projection.failed_obligation_signature": "blueprint:Blackshome/sensor-light.yaml:blueprint_source_limit_exceeded:count=2",
-        "projection.failed_obligation_set_fingerprint": "sha256:3541e71bd2fa1f9642264f6631f97b52bd84b713b85e51f08401cd62fbdd44f2",
-        "projection.consequential_dependency_count": 0
+        "projection.observable_coverage_summary": "automation=complete/failed:0/ledger_failed:0/fallback:false; blueprint=partial/failed:2/ledger_failed:2/fallback:false",
+        "projection.observable_evidence_fingerprint": "sha256:7659028e3b7ff17daa65512be7fb165a56d1b601ad39578f8d91247b2062c57a",
+        "projection.observable_dependency_source_count": 0
       }
     },
     {
       "observation": "long_wait_template_automation_read",
       "source": {
         "id": "synthetic-beta34-long-wait",
+        "variables": {
+          "wait_template": "unrelated mapping must not be treated as an action"
+        },
         "action": [
           {
             "action": "notify.synthetic",

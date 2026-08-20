@@ -60,29 +60,37 @@
         "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$", "maxLength": 100},
         "version": {"const": 1},
         "observation": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$"},
-        "algorithm": {"enum": ["dependency_evidence_v1", "wait_template_structure_v1"]},
+        "algorithm": {"enum": ["dependency_public_evidence_v2", "wait_template_structure_v1"]},
         "maximum_source_bytes": {"type": "integer", "minimum": 1024, "maximum": 262144},
         "output_paths": {
           "type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true,
           "items": {"type": "string", "pattern": "^projection\\.[a-z0-9_]+$", "maxLength": 160}
         },
-        "procedure": {"type": "string", "minLength": 40, "maxLength": 3000}
-      }
+        "procedure": {"type": "string", "minLength": 40, "maxLength": 3000},
+        "expected_action_pointer": {"type": "string", "pattern": "^/action/(0|[1-9][0-9]*)$", "maxLength": 80}
+      },
+      "allOf": [
+        {"if": {"properties": {"algorithm": {"const": "wait_template_structure_v1"}}, "required": ["algorithm"]}, "then": {"required": ["expected_action_pointer"]}},
+        {"if": {"properties": {"algorithm": {"const": "dependency_public_evidence_v2"}}, "required": ["algorithm"]}, "then": {"not": {"required": ["expected_action_pointer"]}}}
+      ]
     },
     "separately_authorized_canary": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "id", "tool", "effect_class", "included_in_default_plan",
+        "id", "title", "tool", "effect_class", "included_in_default_plan",
         "separate_authorization_required", "fixed_arguments", "operator_arguments",
-        "preconditions", "desired_checks", "procedure"
+        "preconditions", "procedure", "required_for_promotion", "availability"
       ],
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": 100},
+        "title": {"type": "string", "minLength": 1, "maxLength": 200},
         "tool": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$", "maxLength": 128},
         "effect_class": {"const": "governed_write"},
         "included_in_default_plan": {"const": false},
         "separate_authorization_required": {"const": true},
+        "required_for_promotion": {"type": "boolean"},
+        "availability": {"enum": ["executable", "unavailable_pending_reviewed_protocol"]},
         "fixed_arguments": {"type": "object", "maxProperties": 20},
         "operator_arguments": {
           "type": "object", "minProperties": 1, "maxProperties": 10,
@@ -97,7 +105,11 @@
           "items": {"$ref": "#/$defs/check"}
         },
         "procedure": {"type": "string", "minLength": 40, "maxLength": 3000}
-      }
+      },
+      "allOf": [
+        {"if": {"properties": {"availability": {"const": "executable"}}, "required": ["availability"]}, "then": {"required": ["desired_checks"]}},
+        {"if": {"properties": {"availability": {"const": "unavailable_pending_reviewed_protocol"}}, "required": ["availability"]}, "then": {"not": {"required": ["desired_checks"]}}}
+      ]
     },
     "observation": {
       "type": "object",
@@ -224,7 +236,7 @@
       "additionalProperties": false,
       "required": [
         "capture_schema_version", "manifest_version", "manifest_digest",
-        "captured_at", "captured_by", "session_id", "target", "observations"
+        "captured_at", "captured_by", "session_id", "target", "observations", "canaries"
       ],
       "properties": {
         "_fixture_provenance": {"type": "object", "maxProperties": 12},
@@ -281,6 +293,29 @@
                   "not": {"anyOf": [{"required": ["evidence"]}, {"required": ["absent_paths"]}]}
                 }
               }
+            ]
+          }
+        },
+        "canaries": {
+          "type": "object",
+          "maxProperties": 20,
+          "propertyNames": {"pattern": "^[a-z0-9][a-z0-9-]*$"},
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["canary_id", "tool", "arguments", "status"],
+            "properties": {
+              "canary_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+              "tool": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$", "maxLength": 128},
+              "arguments": {"type": "object", "maxProperties": 20},
+              "status": {"enum": ["captured", "not_captured"]},
+              "evidence": {"type": "object", "maxProperties": 128},
+              "absent_paths": {"type": "array", "maxItems": 128, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 240}},
+              "not_recorded_reason": {"type": "string", "minLength": 3, "maxLength": 500}
+            },
+            "allOf": [
+              {"if": {"properties": {"status": {"const": "captured"}}, "required": ["status"]}, "then": {"required": ["evidence", "absent_paths"], "not": {"required": ["not_recorded_reason"]}}},
+              {"if": {"properties": {"status": {"const": "not_captured"}}, "required": ["status"]}, "then": {"required": ["not_recorded_reason"], "not": {"anyOf": [{"required": ["evidence"]}, {"required": ["absent_paths"]}]}}}
             ]
           }
         }

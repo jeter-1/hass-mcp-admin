@@ -7,7 +7,7 @@
   },
   "capture_schema_version": 1,
   "manifest_version": 2,
-  "manifest_digest": "sha256:b740edeafe05dab6108a8451a7e9cc11428b0a556b90ed39d7485e60392a4f43",
+  "manifest_digest": "sha256:b36331def2e0e8a909c70b1831e17492468b1e6aadf8cb3793ffda0ea9616b66",
   "captured_at": "2026-08-19T12:00:00Z",
   "captured_by": "synthetic offline fixture maintainer",
   "session_id": "fixture-beta39-current-state-v2",
@@ -78,6 +78,11 @@
         "data.governance.f3.execution_ready": true,
         "data.governance.f3.nonterminal_execution_count": 1,
         "data.governance.f3.active_conflict_hold_count": 0,
+        "data.governance.f3.active_normal_lock_count": 0,
+        "data.governance.f3.corrupt_record_count": 0,
+        "data.governance.f3.recovery_coordinator_status": "ready",
+        "data.governance.f3.recovery_failures": 0,
+        "data.governance.f3.fallback_count": 0,
         "data.governance.projection_failure_count": 2,
         "data.governance.policy_snapshot_mismatches": 1,
         "data.governance.approval_sequence_failures": 1,
@@ -131,10 +136,9 @@
         "data.source_coverage[source_type=blueprint].failed_item_count": 2,
         "data.source_coverage[source_type=blueprint].obligation_ledger_failed_item_count": 2,
         "data.source_coverage[source_type=blueprint].fallback_occurred": false,
-        "projection.failed_obligation_count": 2,
-        "projection.failed_obligation_signature": "blueprint:Blackshome/sensor-light.yaml:blueprint_source_limit_exceeded:count=2",
-        "projection.failed_obligation_set_fingerprint": "sha256:3541e71bd2fa1f9642264f6631f97b52bd84b713b85e51f08401cd62fbdd44f2",
-        "projection.consequential_dependency_count": 0
+        "projection.observable_coverage_summary": "automation=complete/failed:0/ledger_failed:0/fallback:false; blueprint=partial/failed:2/ledger_failed:2/fallback:false",
+        "projection.observable_evidence_fingerprint": "sha256:7659028e3b7ff17daa65512be7fb165a56d1b601ad39578f8d91247b2062c57a",
+        "projection.observable_dependency_source_count": 0
       },
       "absent_paths": []
     },
@@ -351,6 +355,38 @@
         "metadata.promotion_performed": false
       },
       "absent_paths": []
+    }
+  },
+  "canaries": {
+    "helper-no-change-path": {
+      "canary_id": "helper-no-change-path",
+      "tool": "create_helper_state_plan",
+      "arguments": {
+        "entity_id": "input_boolean.mcp_f2_standard_admin_test_flag",
+        "expiration_minutes": 10,
+        "desired_state": "off"
+      },
+      "status": "captured",
+      "evidence": {
+        "success": true,
+        "data.status": "no_change",
+        "data.outcome": "already_in_desired_state",
+        "data.plan_created": false,
+        "data.provider_dispatch_occurred": false,
+        "data.verified": true,
+        "data.target_id": "input_boolean.mcp_f2_standard_admin_test_flag",
+        "data.provider": "direct_home_assistant_state",
+        "data.fallback": "none",
+        "data.fallback_occurred": false
+      },
+      "absent_paths": []
+    },
+    "beta39-jinja-helper-dependency-semantics": {
+      "canary_id": "beta39-jinja-helper-dependency-semantics",
+      "tool": "create_helper_state_plan",
+      "arguments": {"expiration_minutes": 10},
+      "status": "not_captured",
+      "not_recorded_reason": "No reviewed mechanically obtainable live canary protocol exists in PR #138 scope"
     }
   }
 }

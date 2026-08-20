@@ -136,6 +136,18 @@ def canonical_manifest_digest(manifest: dict[str, Any]) -> str:
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
+def _canonical_fingerprint(model: str, value: Any) -> str:
+    """Hash typed structured evidence without delimiter ambiguity."""
+    encoded = json.dumps(
+        {"model": model, "value": value},
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
 def validate_manifest(manifest: dict[str, Any], schema: dict[str, Any]) -> list[str]:
     validator = _jsonschema_module().Draft202012Validator(schema)
     errors = [
@@ -291,6 +303,13 @@ def _required_paths(manifest: dict[str, Any]) -> dict[str, set[str]]:
             if check.get("operator") == "equals_observation_path":
                 paths[check["observation"]].add(check["reference_path"])
     return paths
+
+
+def _required_canary_paths(manifest: dict[str, Any]) -> dict[str, set[str]]:
+    return {
+        item["id"]: {check["path"] for check in item.get("desired_checks") or []}
+        for item in manifest.get("separately_authorized_canaries") or []
+    }
 
 
 def _schema_errors(instance: Any, schema: dict[str, Any]) -> list[str]:
@@ -451,6 +470,80 @@ def validate_capture(
                 f"observations/{identifier}: paths cannot be both present and absent: "
                 + ", ".join(overlap)
             )
+
+    canary_declarations = {
+        item["id"]: item
+        for item in manifest.get("separately_authorized_canaries") or []
+    }
+    canary_paths = _required_canary_paths(manifest)
+    canary_entries = capture.get("canaries")
+    if not isinstance(canary_entries, dict):
+        return errors
+    unknown_canaries = sorted(set(canary_entries) - set(canary_declarations))
+    if unknown_canaries:
+        errors.append("canaries: undeclared canary ids: " + ", ".join(unknown_canaries))
+    for identifier, entry in canary_entries.items():
+        declaration = canary_declarations.get(identifier)
+        if declaration is None or not isinstance(entry, dict):
+            continue
+        if _encoded_size(entry) > MAX_OBSERVATION_BYTES:
+            errors.append(
+                f"canaries/{identifier}: exceeds the {MAX_OBSERVATION_BYTES}-byte bound."
+            )
+        if entry.get("canary_id") != identifier:
+            errors.append(f"canaries/{identifier}: canary_id mismatch.")
+        if entry.get("tool") != declaration.get("tool"):
+            errors.append(f"canaries/{identifier}: tool does not match the manifest.")
+        if (
+            declaration.get("availability") == "unavailable_pending_reviewed_protocol"
+            and entry.get("status") == "captured"
+        ):
+            errors.append(
+                f"canaries/{identifier}: unavailable requirement cannot be captured "
+                "without a reviewed protocol."
+            )
+        arguments = entry.get("arguments")
+        if not isinstance(arguments, dict):
+            continue
+        fixed = declaration.get("fixed_arguments") or {}
+        local = declaration.get("operator_arguments") or {}
+        status = entry.get("status")
+        required_names = set(fixed) | (set(local) if status == "captured" else set())
+        allowed_names = set(fixed) | set(local)
+        if not required_names.issubset(arguments) or not set(arguments).issubset(allowed_names):
+            errors.append(
+                f"canaries/{identifier}: invocation arguments must contain "
+                + ", ".join(sorted(required_names))
+                + " and no undeclared arguments."
+            )
+        for name, expected in fixed.items():
+            if name not in arguments or not strict_equal(arguments[name], expected):
+                errors.append(f"canaries/{identifier}/arguments/{name}: fixed argument mismatch.")
+        for name, argument_schema in local.items():
+            if name not in arguments:
+                continue
+            for issue in _schema_errors(arguments[name], argument_schema):
+                errors.append(f"canaries/{identifier}/arguments/{name}/{issue}")
+            if isinstance(arguments[name], str) and _PLACEHOLDER.search(arguments[name]):
+                errors.append(
+                    f"canaries/{identifier}/arguments/{name}: placeholder was not resolved."
+                )
+        if status != "captured":
+            continue
+        evidence = entry.get("evidence") or {}
+        absent = entry.get("absent_paths") or []
+        unexpected = sorted((set(evidence) | set(absent)) - canary_paths[identifier])
+        if unexpected:
+            errors.append(
+                f"canaries/{identifier}: evidence paths are not allowlisted: "
+                + ", ".join(unexpected)
+            )
+        overlap = sorted(set(evidence) & set(absent))
+        if overlap:
+            errors.append(
+                f"canaries/{identifier}: paths cannot be both present and absent: "
+                + ", ".join(overlap)
+            )
     return errors
 
 
@@ -524,66 +617,99 @@ def _projection_source_errors(value: Any, path: str = "projection_source") -> li
 
 
 def _derive_dependency_projection(source: Any) -> dict[str, Any]:
-    if not isinstance(source, dict) or set(source) != {
-        "failed_obligations",
-        "unique_dependency_source_count",
-    }:
-        raise CheckerError(
-            "Dependency projection source must contain only failed_obligations "
-            "and unique_dependency_source_count."
+    """Project only fields exposed by entity_dependency_analysis."""
+    if not isinstance(source, dict) or source.get("success") is not True:
+        raise CheckerError("Dependency projection requires a successful public response.")
+    data = source.get("data")
+    if not isinstance(data, dict):
+        raise CheckerError("Dependency projection response is missing data.")
+    overview, pagination, index = (
+        data.get("overview"), data.get("pagination"), data.get("index")
+    )
+    coverage = data.get("source_coverage")
+    if not all(isinstance(item, dict) for item in (overview, pagination, index)):
+        raise CheckerError("Dependency projection response is missing public evidence fields.")
+    if not isinstance(coverage, list) or len(coverage) > MAX_PROJECTION_CANDIDATES:
+        raise CheckerError("Dependency source_coverage is missing or outside bounds.")
+
+    def integer(mapping: dict[str, Any], name: str, maximum: int = 100_000) -> int:
+        value = mapping.get(name)
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= maximum:
+            raise CheckerError(f"Dependency public field {name} is missing or outside bounds.")
+        return value
+
+    normalized_coverage: list[dict[str, Any]] = []
+    expected_sources = {"automation", "blueprint"}
+    for item in coverage:
+        source_type = item.get("source_type")
+        if source_type not in expected_sources:
+            continue
+        completeness = item.get("completeness")
+        fallback = item.get("fallback_occurred")
+        if completeness not in {"complete", "partial", "unavailable", "unsupported"}:
+            raise CheckerError("Dependency public completeness is missing or unsupported.")
+        if not isinstance(fallback, bool):
+            raise CheckerError("Dependency public fallback evidence is missing.")
+        normalized_coverage.append({
+            "source_type": source_type,
+            "completeness": completeness,
+            "failed_item_count": integer(item, "failed_item_count"),
+            "obligation_ledger_failed_item_count": integer(
+                item, "obligation_ledger_failed_item_count"
+            ),
+            "fallback_occurred": fallback,
+        })
+    if {item["source_type"] for item in normalized_coverage} != expected_sources:
+        raise CheckerError("Dependency public coverage lacks automation or blueprint evidence.")
+    if len(normalized_coverage) != len(expected_sources):
+        raise CheckerError("Dependency public coverage contains duplicate source evidence.")
+    normalized_coverage.sort(key=lambda item: item["source_type"])
+
+    material = {
+        "overview": {
+            "coverage_complete": overview.get("coverage_complete"),
+            "direct_reference_count": integer(overview, "direct_reference_count"),
+            "indirect_reference_count": integer(overview, "indirect_reference_count"),
+            "unique_source_count": integer(overview, "unique_source_count"),
+            "unresolved_dynamic_reference_count": integer(
+                overview, "unresolved_dynamic_reference_count"
+            ),
+        },
+        "source_coverage": normalized_coverage,
+        "pagination": {
+            "total": integer(pagination, "total"),
+            "has_more": pagination.get("has_more"),
+        },
+        "index": {
+            "refreshed": index.get("refreshed"),
+            "cache_hit": index.get("cache_hit"),
+        },
+    }
+    if not all(
+        isinstance(value, bool)
+        for value in (
+            material["overview"]["coverage_complete"],
+            material["pagination"]["has_more"],
+            material["index"]["refreshed"],
+            material["index"]["cache_hit"],
         )
-    obligations = source["failed_obligations"]
-    if not isinstance(obligations, list) or len(obligations) > MAX_PROJECTION_CANDIDATES:
-        raise CheckerError(
-            f"failed_obligations must be a list bounded to {MAX_PROJECTION_CANDIDATES} items."
-        )
-    normalized: list[tuple[str, str, str, int]] = []
-    for index, item in enumerate(obligations):
-        if not isinstance(item, dict) or set(item) != {
-            "source_type",
-            "source_identity",
-            "reason_code",
-            "count",
-        }:
-            raise CheckerError(f"failed_obligations[{index}] has an invalid shape.")
-        count = item["count"]
-        if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 10_000:
-            raise CheckerError(f"failed_obligations[{index}].count is outside bounds.")
-        normalized.append(
-            (
-                _bounded_projection_text(
-                    item["source_type"],
-                    f"failed_obligations[{index}].source_type",
-                ),
-                _bounded_projection_text(
-                    item["source_identity"],
-                    f"failed_obligations[{index}].source_identity",
-                ),
-                _bounded_projection_text(
-                    item["reason_code"],
-                    f"failed_obligations[{index}].reason_code",
-                ),
-                count,
-            )
-        )
-    unique_count = source["unique_dependency_source_count"]
-    if (
-        isinstance(unique_count, bool)
-        or not isinstance(unique_count, int)
-        or not 0 <= unique_count <= 100_000
     ):
-        raise CheckerError("unique_dependency_source_count is outside bounds.")
-    signatures = [
-        f"{source_type}:{identity}:{reason}:count={count}"
-        for source_type, identity, reason, count in sorted(normalized)
-    ]
-    signature = "\n".join(signatures)
-    digest = hashlib.sha256(signature.encode("utf-8")).hexdigest()
+        raise CheckerError("Dependency public boolean evidence is missing.")
+    summary = "; ".join(
+        f"{item['source_type']}={item['completeness']}/"
+        f"failed:{item['failed_item_count']}/"
+        f"ledger_failed:{item['obligation_ledger_failed_item_count']}/"
+        f"fallback:{str(item['fallback_occurred']).lower()}"
+        for item in normalized_coverage
+    )
+    if len(summary.encode("utf-8")) > MAX_VALUE_BYTES:
+        raise CheckerError("Dependency public summary exceeds its bound.")
     return {
-        "projection.failed_obligation_count": sum(item[3] for item in normalized),
-        "projection.failed_obligation_signature": signature,
-        "projection.failed_obligation_set_fingerprint": "sha256:" + digest,
-        "projection.consequential_dependency_count": unique_count,
+        "projection.observable_coverage_summary": summary,
+        "projection.observable_evidence_fingerprint": _canonical_fingerprint(
+            "dependency_public_evidence_v2", material
+        ),
+        "projection.observable_dependency_source_count": material["overview"]["unique_source_count"],
     }
 
 
@@ -591,57 +717,35 @@ def _json_pointer_escape(value: str) -> str:
     return value.replace("~", "~0").replace("/", "~1")
 
 
-def _derive_wait_template_projection(source: Any) -> dict[str, Any]:
-    candidates: list[tuple[str, str]] = []
-    node_count = 0
-
-    def walk(value: Any, pointer: str, depth: int) -> None:
-        nonlocal node_count
-        if depth > MAX_PROJECTION_DEPTH:
-            raise CheckerError(
-                f"Projection source exceeds the {MAX_PROJECTION_DEPTH}-level depth bound."
-            )
-        node_count += 1
-        if node_count > MAX_PROJECTION_NODES:
-            raise CheckerError(
-                f"Projection source exceeds the {MAX_PROJECTION_NODES}-node bound."
-            )
-        if isinstance(value, dict):
-            wait_template = value.get("wait_template")
-            if wait_template is not None:
-                if not isinstance(wait_template, str):
-                    raise CheckerError("wait_template must be a string.")
-                normalized = unicodedata.normalize(
-                    "NFC", wait_template.replace("\r\n", "\n").replace("\r", "\n")
-                )
-                if len(normalized.encode("utf-8")) > MAX_WAIT_TEMPLATE_BYTES:
-                    raise CheckerError(
-                        f"wait_template exceeds the {MAX_WAIT_TEMPLATE_BYTES}-byte bound."
-                    )
-                if _SENSITIVE_VALUE.search(normalized):
-                    raise CheckerError("wait_template resembles credential material.")
-                candidates.append((pointer or "/", normalized))
-                if len(candidates) > MAX_PROJECTION_CANDIDATES:
-                    raise CheckerError(
-                        f"Projection source exceeds the {MAX_PROJECTION_CANDIDATES}-candidate bound."
-                    )
-            for key in sorted(value):
-                walk(
-                    value[key],
-                    pointer + "/" + _json_pointer_escape(str(key)),
-                    depth + 1,
-                )
-        elif isinstance(value, list):
-            for index, item in enumerate(value):
-                walk(item, pointer + f"/{index}", depth + 1)
-        elif value is not None and not isinstance(value, (str, int, float, bool)):
-            raise CheckerError("Projection source contains an unsupported value type.")
-
-    walk(source, "", 0)
-    if not candidates:
-        raise CheckerError("Projection source does not contain a wait_template action.")
-    candidates.sort(key=lambda item: item[0])
-    pointer, template = candidates[0]
+def _derive_wait_template_projection(source: Any, pointer: str) -> dict[str, Any]:
+    if not re.fullmatch(r"/action/(?:0|[1-9][0-9]*)", pointer):
+        raise CheckerError("Wait-template contract has a malformed action pointer.")
+    segments = pointer.lstrip("/").split("/")
+    if not isinstance(source, dict):
+        raise CheckerError("Wait-template projection source must be a mapping.")
+    parent = source.get(segments[0])
+    if not isinstance(parent, list):
+        raise CheckerError("Wait-template action parent must be the action sequence.")
+    direct_wait_actions = [
+        candidate
+        for candidate in parent
+        if isinstance(candidate, dict) and "wait_template" in candidate
+    ]
+    if len(direct_wait_actions) != 1:
+        raise CheckerError("Expected exactly one direct wait-template action.")
+    index = int(segments[1])
+    if index >= len(parent) or not isinstance(parent[index], dict):
+        raise CheckerError("Expected wait-template action is missing or moved.")
+    action = parent[index]
+    if "wait_template" not in action or not isinstance(action["wait_template"], str):
+        raise CheckerError("Expected action does not contain a string wait_template.")
+    template = unicodedata.normalize(
+        "NFC", action["wait_template"].replace("\r\n", "\n").replace("\r", "\n")
+    )
+    if len(template.encode("utf-8")) > MAX_WAIT_TEMPLATE_BYTES:
+        raise CheckerError(f"wait_template exceeds the {MAX_WAIT_TEMPLATE_BYTES}-byte bound.")
+    if _SENSITIVE_VALUE.search(template):
+        raise CheckerError("wait_template resembles credential material.")
     preimage = (
         b"wait_template_structure_v1\0"
         + pointer.encode("utf-8")
@@ -649,7 +753,7 @@ def _derive_wait_template_projection(source: Any) -> dict[str, Any]:
         + template.encode("utf-8")
     )
     return {
-        "projection.wait_template_count": len(candidates),
+        "projection.wait_template_count": 1,
         "projection.wait_template_action_path": pointer,
         "projection.wait_template_length": len(template.encode("utf-8")),
         "projection.wait_template_semantic_digest": "sha256:"
@@ -672,10 +776,12 @@ def derive_projection(
     if source_errors:
         raise CheckerError("Projection source is invalid: " + source_errors[0])
     algorithm = contract["algorithm"]
-    if algorithm == "dependency_evidence_v1":
+    if algorithm == "dependency_public_evidence_v2":
         projection = _derive_dependency_projection(source)
     elif algorithm == "wait_template_structure_v1":
-        projection = _derive_wait_template_projection(source)
+        projection = _derive_wait_template_projection(
+            source, str(contract.get("expected_action_pointer") or "")
+        )
     else:  # validated manifests cannot reach this branch
         raise CheckerError(f"Unsupported projection algorithm {algorithm!r}.")
     if set(projection) != set(contract["output_paths"]):
@@ -912,6 +1018,26 @@ class Report:
     def counts(self) -> dict[str, int]:
         return {outcome: len(self.by_outcome(outcome)) for outcome in OUTCOME_ORDER}
 
+    @property
+    def regression_present(self) -> bool:
+        return bool(self.counts[REGRESSION])
+
+    @property
+    def evidence_complete(self) -> bool:
+        return not bool(self.counts[NOT_CAPTURED])
+
+    @property
+    def review_required(self) -> bool:
+        return bool(self.counts[UNEXPECTED_PASS])
+
+    @property
+    def promotion_eligible(self) -> bool:
+        return (
+            self.evidence_complete
+            and not self.regression_present
+            and not self.review_required
+        )
+
 
 def _captured_observations(capture: dict[str, Any]) -> dict[str, CapturedObservation]:
     values: dict[str, CapturedObservation] = {}
@@ -1002,6 +1128,49 @@ def evaluate(
                 note=("required projected evidence is incomplete" if not conclusive else ""),
             )
         )
+    canary_capture = capture.get("canaries") or {}
+    for canary in manifest.get("separately_authorized_canaries") or []:
+        if not canary.get("required_for_promotion", False):
+            continue
+        entry = canary_capture.get(canary["id"])
+        if not isinstance(entry, dict) or entry.get("status") != "captured":
+            results.append(
+                SentinelResult(
+                    sentinel_id="canary:" + canary["id"],
+                    title=canary["title"],
+                    outcome=NOT_CAPTURED,
+                    expected_status="expected_pass",
+                    observation=canary["id"],
+                    note=(
+                        str((entry or {}).get("not_recorded_reason") or "required separately authorized canary not captured")
+                    ),
+                )
+            )
+            continue
+        captured = CapturedObservation(
+            identifier=canary["id"],
+            tool=entry["tool"],
+            arguments=dict(entry["arguments"]),
+            status="captured",
+            evidence=dict(entry.get("evidence") or {}),
+            absent_paths=frozenset(entry.get("absent_paths") or ()),
+            reason="",
+        )
+        desired = [evaluate_check(check, captured, {canary["id"]: captured}) for check in canary["desired_checks"]]
+        conclusive = all(item.conclusive for item in desired)
+        results.append(
+            SentinelResult(
+                sentinel_id="canary:" + canary["id"],
+                title=canary["title"],
+                outcome=classify(
+                    "expected_pass", all(item.passed for item in desired), conclusive=conclusive
+                ),
+                expected_status="expected_pass",
+                observation=canary["id"],
+                desired_checks=desired,
+                note=("required canary evidence is incomplete" if not conclusive else ""),
+            )
+        )
     return Report(
         manifest_target=dict(manifest.get("target") or {}),
         capture_metadata={
@@ -1021,9 +1190,9 @@ def evaluate(
 
 
 def exit_code(report: Report) -> int:
-    if report.counts[REGRESSION]:
+    if report.regression_present:
         return EXIT_REGRESSION
-    if report.counts[NOT_CAPTURED]:
+    if not report.promotion_eligible:
         return EXIT_INCOMPLETE
     return EXIT_OK
 
@@ -1066,12 +1235,14 @@ def render_text(report: Report) -> str:
                     f"      failed {check.path} [{check.operator}]: {_one_line(check.detail)}"
                 )
     lines.append("")
-    if counts[REGRESSION]:
-        lines.append("Result: regression present. Do not treat this capture as clean evidence.")
-    elif counts[NOT_CAPTURED]:
-        lines.append("Result: no regression found, but required evidence is not captured.")
+    if report.regression_present:
+        lines.append("Result: regression present; promotion is not eligible.")
+    elif not report.evidence_complete:
+        lines.append("Result: required evidence is incomplete; promotion is not eligible.")
+    elif report.review_required:
+        lines.append("Result: human review is required; promotion is not eligible.")
     else:
-        lines.append("Result: complete operator-attested capture; no regression detected.")
+        lines.append("Result: complete accepted operator-attested evidence; promotion eligible.")
     if counts[UNEXPECTED_PASS]:
         lines.append(
             "Unexpected passes require human confirmation and a reviewed manifest update; "
@@ -1088,8 +1259,12 @@ def render_json(report: Report) -> str:
         },
         "capture": report.capture_metadata,
         "counts": report.counts,
-        "promotion_blocked": bool(report.counts[REGRESSION]),
-        "run_complete": not report.counts[NOT_CAPTURED],
+        "regression_present": report.regression_present,
+        "evidence_complete": report.evidence_complete,
+        "review_required": report.review_required,
+        "promotion_eligible": report.promotion_eligible,
+        "promotion_blocked": not report.promotion_eligible,
+        "run_complete": report.evidence_complete,
         "sentinels": [
             {
                 "id": entry.sentinel_id,
@@ -1192,6 +1367,17 @@ def render_template(manifest: dict[str, Any]) -> str:
                 "build_sha": manifest["target"]["build_sha"],
             },
             "observations": observations,
+            "canaries": {
+                canary["id"]: {
+                    "canary_id": canary["id"],
+                    "tool": canary["tool"],
+                    "arguments": dict(canary.get("fixed_arguments") or {}),
+                    "status": "not_captured",
+                    "not_recorded_reason": "SEPARATE-AUTHORIZATION-AND-EVIDENCE-REQUIRED",
+                }
+                for canary in manifest.get("separately_authorized_canaries") or []
+                if canary.get("required_for_promotion", False)
+            },
         },
         indent=2,
         sort_keys=False,

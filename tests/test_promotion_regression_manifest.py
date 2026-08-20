@@ -52,6 +52,39 @@ def _load_checker():
 
 CHECKER = _load_checker()
 
+AUTHORITATIVE_DEFICIENCY_22 = {
+    "minimum_permanent_sentinels": {
+        "configuration-validation", "dependency-index-complete-coverage",
+        "execution-task-schema-version", "f3-ready-locks-and-recovery",
+        "governance-approval-authority-version", "governance-historical-projection-health",
+        "governance-plan-storage-healthy", "governance-task-storage-healthy",
+        "held-read-remains-held", "held-read-top-level-not-found-taxonomy",
+        "helper-provider-attribution", "home-assistant-connectivity",
+        "home-assistant-version-agreement", "provider-routing-zero-fallback",
+        "runtime-build-provenance", "runtime-server-version", "runtime-tool-accounting",
+        "runtime-tool-accounting-agreement", "upstream-dashboard-zero-fallback",
+        "upstream-ha-mcp-exact-admission", "upstream-read-gateway-zero-fallback",
+    },
+    "confirmed_regression_passes": {
+        "automation-long-wait-template-readable", "dashboard-hyphenless-map-read",
+        "historical-beta31-map-cleanup-succeeded", "historical-beta31-map-update-succeeded",
+        "historical-long-template-execution-succeeded", "read-delegated-upstream",
+        "read-direct-home-assistant", "read-engineering-native",
+        "stale-state-canary-held-pre-dispatch",
+    },
+    "known_failures": {
+        "dependency-index-complete-coverage": 1,
+        "f3-ready-locks-and-recovery": 2,
+        "governance-historical-projection-health": 4,
+        "held-read-top-level-not-found-taxonomy": 19,
+    },
+    "separately_authorized_canaries": {
+        "helper-no-change-path": "executable",
+        "beta39-jinja-helper-dependency-semantics": "unavailable_pending_reviewed_protocol",
+    },
+    "jinja_family": [".get()", ".items()", ".keys()", ".values()", "literal bracket access"],
+}
+
 
 def load_manifest() -> dict:
     return CHECKER.load_manifest(MANIFEST_PATH)
@@ -115,6 +148,23 @@ class ManifestStructureTests(unittest.TestCase):
 
     def test_required_sentinels_and_only_bounded_known_failures(self):
         contract = load_contract()
+        self.assertEqual(
+            set(contract["minimum_permanent_sentinels"]),
+            AUTHORITATIVE_DEFICIENCY_22["minimum_permanent_sentinels"],
+        )
+        self.assertEqual(
+            set(contract["confirmed_regression_passes"]),
+            AUTHORITATIVE_DEFICIENCY_22["confirmed_regression_passes"],
+        )
+        self.assertEqual(contract["known_failures"], AUTHORITATIVE_DEFICIENCY_22["known_failures"])
+        self.assertEqual(
+            contract["separately_authorized_canaries"],
+            AUTHORITATIVE_DEFICIENCY_22["separately_authorized_canaries"],
+        )
+        self.assertEqual(
+            contract["required_regression_families"]["beta39_jinja_helper_dependency_semantics"],
+            AUTHORITATIVE_DEFICIENCY_22["jinja_family"],
+        )
         sentinels = {item["id"]: item for item in load_manifest()["sentinels"]}
         expected_by_section = {
             section: set(contract[section])
@@ -182,15 +232,23 @@ class ManifestStructureTests(unittest.TestCase):
             for item in load_manifest()["separately_authorized_canaries"]
         }
         self.assertEqual(
-            set(canaries), set(load_contract()["separately_authorized_canaries"])
+            {key: value["availability"] for key, value in canaries.items()},
+            load_contract()["separately_authorized_canaries"],
         )
         helper = canaries["helper-no-change-path"]
         self.assertEqual(helper["tool"], "create_helper_state_plan")
         self.assertIs(helper["included_in_default_plan"], False)
         self.assertIs(helper["separate_authorization_required"], True)
         self.assertNotIn("create_helper_state_plan", CHECKER.render_plan(load_manifest()))
-        self.assertNotIn(
-            "create_helper_state_plan", CHECKER.render_template(load_manifest())
+        template = json.loads(CHECKER.render_template(load_manifest()))
+        self.assertNotIn("create_helper_state_plan", {
+            item["tool"] for item in template["observations"].values()
+        })
+        self.assertEqual(
+            load_contract()["required_regression_families"][
+                "beta39_jinja_helper_dependency_semantics"
+            ],
+            [".get()", ".items()", ".keys()", ".values()", "literal bracket access"],
         )
 
     def test_manifest_uses_real_fidelity_contracts(self):
@@ -262,12 +320,14 @@ class ClassificationTests(unittest.TestCase):
             report.counts,
             {
                 CHECKER.REGRESSION: 0,
-                CHECKER.NOT_CAPTURED: 0,
+                CHECKER.NOT_CAPTURED: 1,
                 CHECKER.UNEXPECTED_PASS: 0,
                 CHECKER.KNOWN_FAILING: 4,
-                CHECKER.CONFIRMED: 26,
+                CHECKER.CONFIRMED: 27,
             },
         )
+        self.assertFalse(report.evidence_complete)
+        self.assertFalse(report.promotion_eligible)
         self.assertEqual(
             {
                 item.sentinel_id
@@ -283,7 +343,10 @@ class ClassificationTests(unittest.TestCase):
         evidence[
             "data.source_coverage[source_type=blueprint].obligation_ledger_failed_item_count"
         ] = 3
-        evidence["projection.failed_obligation_count"] = 3
+        evidence["projection.observable_coverage_summary"] = (
+            "automation=complete/failed:0/ledger_failed:0/fallback:false; "
+            "blueprint=partial/failed:3/ledger_failed:3/fallback:false"
+        )
         self.assertEqual(
             result_for(evaluate(capture), "dependency-index-complete-coverage").outcome,
             CHECKER.REGRESSION,
@@ -329,8 +392,8 @@ class ClassificationTests(unittest.TestCase):
         evidence[
             "data.source_coverage[source_type=blueprint].obligation_ledger_failed_item_count"
         ] = 0
-        evidence.pop("projection.failed_obligation_signature")
-        evidence.pop("projection.failed_obligation_set_fingerprint")
+        evidence.pop("projection.observable_coverage_summary")
+        evidence.pop("projection.observable_evidence_fingerprint")
         self.assertEqual(
             result_for(evaluate(capture), "dependency-index-complete-coverage").outcome,
             CHECKER.UNEXPECTED_PASS,
@@ -639,17 +702,32 @@ class SentinelFidelityTests(unittest.TestCase):
             CHECKER.KNOWN_FAILING,
         )
 
-    def test_changed_known_failure_identity_is_a_regression(self):
+    def test_changed_observable_dependency_signature_is_a_regression(self):
         capture = load_fixture()
         evidence = observation(capture, "native_dependency_read")["evidence"]
-        evidence["projection.failed_obligation_signature"] = (
-            "blueprint:Other/example.yaml:provider_failure:count=2"
-        )
-        evidence["projection.failed_obligation_set_fingerprint"] = "sha256:" + "1" * 64
+        evidence["projection.observable_coverage_summary"] = "different observable coverage"
+        evidence["projection.observable_evidence_fingerprint"] = "sha256:" + "1" * 64
         self.assertEqual(
             result_for(evaluate(capture), "dependency-index-complete-coverage").outcome,
             CHECKER.REGRESSION,
         )
+
+    def test_historical_orphan_does_not_absorb_new_f3_failures(self):
+        cases = (
+            ("data.governance.f3.active_normal_lock_count", 1),
+            ("data.governance.f3.corrupt_record_count", 1),
+            ("data.governance.f3.recovery_coordinator_status", "recovering"),
+            ("data.governance.f3.recovery_failures", 1),
+            ("data.governance.f3.fallback_count", 1),
+        )
+        for path, value in cases:
+            with self.subTest(path=path):
+                capture = load_fixture()
+                observation(capture, "server_health")["evidence"][path] = value
+                self.assertEqual(
+                    result_for(evaluate(capture), "f3-ready-locks-and-recovery").outcome,
+                    CHECKER.REGRESSION,
+                )
 
 
 class BoundsAndDeterminismTests(unittest.TestCase):
@@ -678,9 +756,7 @@ class BoundsAndDeterminismTests(unittest.TestCase):
         }
         dependency = cases["native_dependency_read"]
         changed_dependency = copy.deepcopy(dependency["source"])
-        changed_dependency["failed_obligations"][0]["source_identity"] = (
-            "Blackshome/changed-sensor-light.yaml"
-        )
+        changed_dependency["data"]["source_coverage"][0]["failed_item_count"] = 3
         self.assertNotEqual(
             CHECKER.derive_projection(
                 manifest, dependency["observation"], changed_dependency
@@ -698,42 +774,98 @@ class BoundsAndDeterminismTests(unittest.TestCase):
             changed_projection["projection.wait_template_semantic_digest"],
             wait["expected"]["projection.wait_template_semantic_digest"],
         )
+        unrelated_wait = copy.deepcopy(wait["source"])
+        unrelated_wait["variables"]["wait_template"] = "changed unrelated value"
+        self.assertEqual(
+            CHECKER.derive_projection(manifest, wait["observation"], unrelated_wait),
+            wait["expected"],
+        )
         moved_wait = copy.deepcopy(wait["source"])
         moved_wait["action"].insert(0, {"delay": "00:00:02"})
-        moved_projection = CHECKER.derive_projection(
-            manifest, wait["observation"], moved_wait
-        )
-        self.assertEqual(
-            moved_projection["projection.wait_template_action_path"], "/action/3"
-        )
-        self.assertNotEqual(
-            moved_projection["projection.wait_template_semantic_digest"],
-            wait["expected"]["projection.wait_template_semantic_digest"],
-        )
+        with self.assertRaises(CHECKER.CheckerError):
+            CHECKER.derive_projection(manifest, wait["observation"], moved_wait)
 
     def test_projection_sources_are_bounded_and_sanitized(self):
         manifest = load_manifest()
-        source = {
-            "failed_obligations": [
-                {
-                    "source_type": "blueprint",
-                    "source_identity": "x" * (CHECKER.MAX_VALUE_BYTES + 1),
-                    "reason_code": "failure",
-                    "count": 1,
-                }
-            ],
-            "unique_dependency_source_count": 0,
-        }
+        source = copy.deepcopy(load_projection_fixture()["cases"][0]["source"])
+        source["warnings"] = ["x" * (CHECKER.MAX_VALUE_BYTES + 1)]
         with self.assertRaises(CHECKER.CheckerError) as raised:
             CHECKER.derive_projection(manifest, "native_dependency_read", source)
         self.assertIn("string exceeds", str(raised.exception))
 
-        source["failed_obligations"][0]["source_identity"] = (
-            "Bearer abcdefghijklmnopqrstuvwxyz"
-        )
+        source["warnings"] = ["Bearer abcdefghijklmnopqrstuvwxyz"]
         with self.assertRaises(CHECKER.CheckerError) as raised:
             CHECKER.derive_projection(manifest, "native_dependency_read", source)
         self.assertIn("credential material", str(raised.exception))
+
+    def test_dependency_projection_is_public_shaped_canonical_and_unambiguous(self):
+        manifest = load_manifest()
+        source = copy.deepcopy(load_projection_fixture()["cases"][0]["source"])
+        expected = CHECKER.derive_projection(manifest, "native_dependency_read", source)
+        reordered = json.loads(json.dumps(source, sort_keys=True))
+        reordered["warnings"] = ["different nonmaterial presentation"]
+        reordered["metadata"]["partial"] = False
+        self.assertEqual(
+            CHECKER.derive_projection(manifest, "native_dependency_read", reordered),
+            expected,
+        )
+        missing = copy.deepcopy(source)
+        missing["data"]["overview"].pop("unique_source_count")
+        with self.assertRaises(CHECKER.CheckerError):
+            CHECKER.derive_projection(manifest, "native_dependency_read", missing)
+        duplicate = copy.deepcopy(source)
+        duplicate["data"]["source_coverage"].append(
+            copy.deepcopy(duplicate["data"]["source_coverage"][0])
+        )
+        with self.assertRaises(CHECKER.CheckerError):
+            CHECKER.derive_projection(manifest, "native_dependency_read", duplicate)
+        self.assertNotEqual(
+            CHECKER._canonical_fingerprint(
+                "collision-test", {"identity": "A:B", "reason": "C"}
+            ),
+            CHECKER._canonical_fingerprint(
+                "collision-test", {"identity": "A", "reason": "B:C"}
+            ),
+        )
+
+    def test_wait_projection_uses_only_declared_action_pointer(self):
+        manifest = load_manifest()
+        case = load_projection_fixture()["cases"][1]
+        expected = case["expected"]
+        source = copy.deepcopy(case["source"])
+        source["variables"]["nested"] = {
+            "wait_template": "spoofed unrelated mapping"
+        }
+        self.assertEqual(
+            CHECKER.derive_projection(manifest, case["observation"], source),
+            expected,
+        )
+        for mutate in (
+            lambda value: value["action"].pop(2),
+            lambda value: value.__setitem__("action", {"2": value["action"][2]}),
+            lambda value: value["action"][2].__setitem__("wait_template", 42),
+            lambda value: value["action"].append({"wait_template": "duplicate"}),
+            lambda value: value["action"][2].__setitem__(
+                "wait_template", "x" * (CHECKER.MAX_WAIT_TEMPLATE_BYTES + 1)
+            ),
+        ):
+            malformed = copy.deepcopy(case["source"])
+            mutate(malformed)
+            with self.assertRaises(CHECKER.CheckerError):
+                CHECKER.derive_projection(manifest, case["observation"], malformed)
+
+        malformed_manifest = copy.deepcopy(manifest)
+        contract = next(
+            item
+            for item in malformed_manifest["projection_contracts"]
+            if item["observation"] == case["observation"]
+        )
+        contract["expected_action_pointer"] = "/variables/wait_template"
+        self.assertTrue(CHECKER.validate_manifest(malformed_manifest, load_schema()))
+        with self.assertRaises(CHECKER.CheckerError):
+            CHECKER.derive_projection(
+                malformed_manifest, case["observation"], copy.deepcopy(case["source"])
+            )
 
     def test_oversized_and_sensitive_capture_content_is_rejected(self):
         capture = load_fixture()
@@ -840,7 +972,7 @@ class OfflineCheckerBoundaryTests(unittest.TestCase):
             evaluate(capture)
 
     def test_cli_exit_codes_distinguish_regression_and_incomplete(self):
-        self.assertEqual(CHECKER.exit_code(evaluate(load_fixture())), CHECKER.EXIT_OK)
+        self.assertEqual(CHECKER.exit_code(evaluate(load_fixture())), CHECKER.EXIT_INCOMPLETE)
 
         regression = load_fixture()
         observation(regression, "server_identity")["evidence"]["data.server.version"] = "bad"
@@ -849,6 +981,75 @@ class OfflineCheckerBoundaryTests(unittest.TestCase):
         incomplete = load_fixture()
         mark_not_captured(incomplete, "direct_entity_read")
         self.assertEqual(CHECKER.exit_code(evaluate(incomplete)), CHECKER.EXIT_INCOMPLETE)
+
+    def test_decision_fields_are_noncontradictory(self):
+        def report(*outcomes):
+            return CHECKER.Report(
+                manifest_target={},
+                capture_metadata={},
+                results=[
+                    CHECKER.SentinelResult(
+                        sentinel_id=str(index), title="test", outcome=outcome,
+                        expected_status="expected_pass", observation="test"
+                    )
+                    for index, outcome in enumerate(outcomes)
+                ],
+            )
+
+        cases = (
+            ((CHECKER.CONFIRMED,), (False, True, False, True, CHECKER.EXIT_OK)),
+            ((CHECKER.CONFIRMED, CHECKER.KNOWN_FAILING), (False, True, False, True, CHECKER.EXIT_OK)),
+            ((CHECKER.REGRESSION,), (True, True, False, False, CHECKER.EXIT_REGRESSION)),
+            ((CHECKER.NOT_CAPTURED,), (False, False, False, False, CHECKER.EXIT_INCOMPLETE)),
+            ((CHECKER.UNEXPECTED_PASS,), (False, True, True, False, CHECKER.EXIT_INCOMPLETE)),
+            ((CHECKER.REGRESSION, CHECKER.NOT_CAPTURED, CHECKER.UNEXPECTED_PASS), (True, False, True, False, CHECKER.EXIT_REGRESSION)),
+        )
+        for outcomes, expected in cases:
+            value = report(*outcomes)
+            observed = (
+                value.regression_present, value.evidence_complete,
+                value.review_required, value.promotion_eligible,
+                CHECKER.exit_code(value),
+            )
+            self.assertEqual(observed, expected)
+            rendered = json.loads(CHECKER.render_json(value))
+            self.assertEqual(rendered["promotion_eligible"], expected[3])
+            self.assertEqual(rendered["promotion_blocked"], not expected[3])
+            text = CHECKER.render_text(value)
+            if expected[3]:
+                self.assertIn("promotion eligible", text)
+            else:
+                self.assertIn("promotion is not eligible", text.lower())
+
+    def test_missing_required_separate_canary_is_never_promotion_eligible(self):
+        report = evaluate(load_fixture())
+        self.assertEqual(
+            result_for(
+                report, "canary:beta39-jinja-helper-dependency-semantics"
+            ).outcome,
+            CHECKER.NOT_CAPTURED,
+        )
+        self.assertFalse(report.promotion_eligible)
+        self.assertEqual(CHECKER.exit_code(report), CHECKER.EXIT_INCOMPLETE)
+        rendered = json.loads(CHECKER.render_json(report))
+        self.assertFalse(rendered["evidence_complete"])
+        self.assertFalse(rendered["promotion_eligible"])
+        self.assertTrue(rendered["promotion_blocked"])
+
+        capture = load_fixture()
+        unavailable = capture["canaries"]["beta39-jinja-helper-dependency-semantics"]
+        unavailable["status"] = "captured"
+        unavailable.pop("not_recorded_reason")
+        unavailable["arguments"].update({
+            "entity_id": "input_boolean.synthetic_jinja_canary",
+            "desired_state": "off",
+            "fixture_contract_digest": "sha256:" + "1" * 64,
+        })
+        unavailable["evidence"] = {}
+        unavailable["absent_paths"] = []
+        with self.assertRaises(CHECKER.CheckerError) as raised:
+            evaluate(capture)
+        self.assertIn("unavailable requirement cannot be captured", str(raised.exception))
 
 
 if __name__ == "__main__":  # pragma: no cover

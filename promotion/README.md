@@ -26,12 +26,14 @@ classifies them as read-only. In particular, it does not contain
 `create_helper_state_plan`. A state preread cannot make that proposal tool
 structurally read-only because the state can change before invocation.
 
-The manifest records the helper no-change contract as a separately authorized
-canary so deficiency #22 remains complete, but that declaration is excluded
-from the default plan, capture template, completeness calculation, and
-classification. Any helper-state transition, no-change proposal, or other
-write-capable canary requires separate authorization. A preread cannot remove
-the race in which `create_helper_state_plan` creates a plan.
+The manifest records required write-classified contracts separately from the
+default plan. They appear only as `not_captured` requirements in the capture
+template and affect promotion completeness; the checker never invokes them.
+The helper no-change canary is executable only after separate authorization.
+The Beta 39 Jinja/helper-dependency family is explicitly unavailable until a
+separate reviewed live-fixture protocol exists. Any unperformed required canary
+makes `promotion_eligible=false`. A preread cannot remove the race in which
+`create_helper_state_plan` creates a plan.
 
 The checker itself has no live transport, MCP client, credential access,
 subprocess invocation, or file-writing path. Tests verify both that property and
@@ -129,25 +131,25 @@ outside the repository and discard it after checking the derived fields. The
 checker accepts at most 128 KiB, rejects credential-shaped values and sensitive
 field names, and outputs only the declared bounded projection.
 
-`dependency_evidence_v1` accepts only a bounded list of failure records with
-`source_type`, `source_identity`, `reason_code`, and positive `count`, plus the
-native `unique_dependency_source_count`. It validates each value, sorts the
-failure tuples lexicographically, serializes each as
-`source_type:source_identity:reason_code:count=N`, joins multiple records with a
-single LF byte, sums the counts, and hashes the exact UTF-8 signature with
-SHA-256. The unique dependency-source count becomes the conservative
-consequential-dependency count.
+`dependency_public_evidence_v2` consumes the actual public
+`entity_dependency_analysis` response. It reads only the public overview,
+automation/blueprint `source_coverage`, pagination, and refresh/cache fields.
+The response does not expose failed-blueprint identities or reason codes, so
+the pack does not invent them. The bounded human summary states only observable
+coverage and failure counts. The fingerprint preimage is a separate versioned
+structured object serialized as canonical compact JSON with sorted keys and
+finite typed values; delimiter-joined strings are never hashed. Warnings,
+durations, metadata, and input key order are nonmaterial.
 
-`wait_template_structure_v1` recursively walks a sanitized automation mapping.
-Mapping keys are visited in lexical order and sequences in index order. The
-walk is bounded to 4,096 nodes, 24 levels, 100 `wait_template` candidates, and
-60,000 UTF-8 bytes per template. Each containing action is identified by an
-RFC 6901 JSON Pointer; pointers are sorted and the first is selected. The
-template is normalized from CRLF/CR to LF and Unicode NFC without trimming.
-Length is the normalized UTF-8 byte count. The digest preimage is the UTF-8
-algorithm name `wait_template_structure_v1`, NUL, pointer, NUL, and normalized
-template, hashed with SHA-256. Unsupported, malformed, sensitive, or oversized
-source input fails without emitting a projection.
+`wait_template_structure_v1` resolves the reviewed `/action/2` JSON Pointer.
+The parent must be the automation's `action` sequence and the selected action
+must contain a string `wait_template`. Mappings under variables, action data,
+metadata, or unrelated nested configuration are ignored. The template is
+normalized from CRLF/CR to LF and Unicode NFC without trimming. Length is the
+normalized UTF-8 byte count. The digest preimage is the UTF-8 algorithm name
+`wait_template_structure_v1`, NUL, pointer, NUL, and normalized template,
+hashed with SHA-256. A missing, moved, malformed, sensitive, or oversized target
+fails without emitting a projection.
 
 The sanitized source-shaped fixtures under
 `tests/fixtures/promotion_regression/` independently derive every current
@@ -182,16 +184,27 @@ Exit codes:
 
 | Code | Meaning |
 | --- | --- |
-| 0 | Complete evidence and no regression. |
+| 0 | Complete accepted evidence; promotion eligible. |
 | 1 | At least one regression. |
-| 2 | No regression found, but evidence is incomplete. |
+| 2 | Evidence incomplete or mandatory human review required. |
 | 3 | Invalid manifest, capture, or invocation. |
+
+JSON and text use the same decision contract. `regression_present` reports any
+regression, `evidence_complete` is false for `NOT_CAPTURED`, `review_required`
+is true for `UNEXPECTED_PASS`, and `promotion_eligible` is true only for a
+complete result containing exclusively `CONFIRMED` and exact
+`KNOWN_FAILING` outcomes. The compatibility fields `run_complete` and
+`promotion_blocked` are exact aliases of `evidence_complete` and the inverse of
+`promotion_eligible`; they cannot contradict eligibility.
 
 ## Sentinel fidelity notes
 
 - Dependency evidence is forced fresh with `refresh_index: true`. The capture
   records refresh/cache state, automation and blueprint completeness, bounded
-  failed-obligation identity, consequential-dependency count, and fallback.
+  observable failure counts, observable dependency-source count, and fallback.
+  A zero source count proves there is no consequential source for this canary;
+  exact failed-blueprint identities and per-source consequence classes are not
+  public and are not claimed.
 - The stale-state sentinel is tied to the exact operator-supplied task ID,
   operation, and target. It requires `failed_pre_dispatch`, zero provider
   attempts, a null dispatch timestamp, the exact stale-state reason, and no
@@ -202,6 +215,10 @@ Exit codes:
   digest. It does not retain the automation body.
 - Approval authority version 3 is read from server health. Durable task schema
   version 1 is independently bound to the exact orphan execution-task read.
+- F3 known-failure evidence allows only the documented orphan difference.
+  Normal locks, corruption, recovery coordinator, recovery failures, fallback,
+  readiness, and conflict holds must remain at their desired values; any new
+  failure is a regression even while the orphan persists.
 - The historical Beta 31 map update and cleanup and the historical long-template
   execution use exact operator-local task identities from approved acceptance
   evidence. If an identity cannot be resolved, the observation is

@@ -41,7 +41,17 @@
     "governance-historical-projection-health": 4,
     "held-read-top-level-not-found-taxonomy": 19
   },
-  "separately_authorized_canaries": [
-    "helper-no-change-path"
-  ]
+  "separately_authorized_canaries": {
+    "helper-no-change-path": "executable",
+    "beta39-jinja-helper-dependency-semantics": "unavailable_pending_reviewed_protocol"
+  },
+  "required_regression_families": {
+    "beta39_jinja_helper_dependency_semantics": [
+      ".get()",
+      ".items()",
+      ".keys()",
+      ".values()",
+      "literal bracket access"
+    ]
+  }
 }

@@ -24,30 +24,30 @@ target:
     failure is a regression. No status is changed automatically.
 
 projection_contracts:
-  - id: dependency_evidence_projection_v1
+  - id: dependency_evidence_projection_v2
     version: 1
     observation: native_dependency_read
-    algorithm: dependency_evidence_v1
+    algorithm: dependency_public_evidence_v2
     maximum_source_bytes: 131072
     output_paths:
-      - projection.failed_obligation_count
-      - projection.failed_obligation_signature
-      - projection.failed_obligation_set_fingerprint
-      - projection.consequential_dependency_count
+      - projection.observable_coverage_summary
+      - projection.observable_evidence_fingerprint
+      - projection.observable_dependency_source_count
     procedure: >-
-      Supply a bounded source-shaped mapping with failed_obligations and
-      unique_dependency_source_count. Each failure contains source_type,
-      source_identity, reason_code, and count. The evaluator validates and
-      lexicographically sorts those tuples, joins normalized signatures with a
-      line-feed byte, sums counts, hashes the exact UTF-8 signature bytes with
-      SHA-256, and treats every unique dependency source as potentially
-      consequential. No automation or blueprint body is retained.
+      Supply the actual bounded public entity_dependency_analysis response.
+      The evaluator reads only public overview, source_coverage, pagination,
+      and freshness fields, validates their exact types, sorts coverage by
+      source type, and fingerprints a versioned canonical JSON object. The
+      human-readable summary is not the fingerprint preimage. Current public
+      evidence exposes failure counts but not failed blueprint identities or
+      reasons, so this contract truthfully binds the coarser observable state.
 
   - id: wait_template_structure_projection_v1
     version: 1
     observation: long_wait_template_automation_read
     algorithm: wait_template_structure_v1
     maximum_source_bytes: 131072
+    expected_action_pointer: /action/2
     output_paths:
       - projection.wait_template_count
       - projection.wait_template_action_path
@@ -55,11 +55,11 @@ projection_contracts:
       - projection.wait_template_semantic_digest
     procedure: >-
       Supply a bounded source-shaped automation mapping containing only the
-      returned id and material action structure. The evaluator recursively
-      visits mappings by sorted key and sequences by index, encodes locations
-      as RFC 6901 JSON Pointers, and selects the first pointer after canonical
-      ordering. It normalizes CRLF/CR to LF and Unicode to NFC without trimming
-      whitespace. Length is normalized UTF-8 bytes. The semantic digest is
+      returned id and material action structure. The evaluator resolves the
+      reviewed /action/2 pointer, requires action to be a sequence and the
+      selected item to contain a string wait_template, and ignores unrelated
+      mappings elsewhere. It normalizes CRLF/CR to LF and Unicode to NFC
+      without trimming whitespace. Length is normalized UTF-8 bytes. The digest is
       SHA-256 over UTF-8 bytes for "wait_template_structure_v1", one NUL byte,
       the JSON Pointer, one NUL byte, and the normalized template. Node, depth,
       candidate, template, and aggregate source bounds fail closed.
@@ -102,11 +102,11 @@ observations:
       refresh_index: true
     effect_class: read_only
     procedure: >-
-      Force a fresh bounded dependency scan. Copy the allowlisted cache,
-      coverage, count, fallback, and bounded failed-obligation projection only.
-      The failed-obligation set fingerprint is the SHA-256 of the exact bounded
-      signature containing source type, blueprint path, reason code, and count;
-      never copy blueprint bodies.
+      Force a fresh bounded dependency scan. Feed its public response directly
+      to the offline projector, then copy only the allowlisted cache, coverage,
+      count, fallback, and coarser observable projection. The public response
+      does not expose failed-blueprint identities or reason codes; do not invent
+      or reconstruct them and never copy blueprint bodies.
 
   - id: delegated_overview_read
     tool: ha_get_overview
@@ -446,6 +446,11 @@ sentinels:
       - {path: data.governance.f3.nonterminal_execution_count, operator: equals, value: 0}
       - {path: data.governance.f3.execution_ready, operator: equals, value: true}
       - {path: data.governance.f3.active_conflict_hold_count, operator: equals, value: 0}
+      - {path: data.governance.f3.active_normal_lock_count, operator: equals, value: 0}
+      - {path: data.governance.f3.corrupt_record_count, operator: equals, value: 0}
+      - {path: data.governance.f3.recovery_coordinator_status, operator: equals, value: ready}
+      - {path: data.governance.f3.recovery_failures, operator: equals, value: 0}
+      - {path: data.governance.f3.fallback_count, operator: equals, value: 0}
       - {path: data.governance.execution_tasks.storage.navigation.nonterminal_record_count, operator: equals, value: 0}
       - {path: data.task_id, operator: equals, value: ab8d7cd12aad48aab8307ca819c794ca, source_observation: f3_orphan_task}
       - {path: data.f3_children.0.state, operator: one_of, values: [succeeded_verified, failed_pre_dispatch, failed_post_dispatch, manual_review_required, cancelled_pre_dispatch], source_observation: f3_orphan_task}
@@ -454,6 +459,11 @@ sentinels:
       - {path: data.governance.f3.nonterminal_execution_count, operator: equals, value: 1}
       - {path: data.governance.f3.execution_ready, operator: equals, value: true}
       - {path: data.governance.f3.active_conflict_hold_count, operator: equals, value: 0}
+      - {path: data.governance.f3.active_normal_lock_count, operator: equals, value: 0}
+      - {path: data.governance.f3.corrupt_record_count, operator: equals, value: 0}
+      - {path: data.governance.f3.recovery_coordinator_status, operator: equals, value: ready}
+      - {path: data.governance.f3.recovery_failures, operator: equals, value: 0}
+      - {path: data.governance.f3.fallback_count, operator: equals, value: 0}
       - {path: data.governance.execution_tasks.storage.navigation.nonterminal_record_count, operator: equals, value: 0}
       - {path: data.task_id, operator: equals, value: ab8d7cd12aad48aab8307ca819c794ca, source_observation: f3_orphan_task}
       - {path: data.state, operator: one_of, values: [succeeded_verified, failed_pre_dispatch, failed_post_dispatch, manual_review_required, cancelled_pre_dispatch], source_observation: f3_orphan_task}
@@ -667,9 +677,11 @@ sentinels:
       register_item: 1
       summary: Two bounded Blackshome sensor-light blueprint obligations exceed source analysis limits.
       observed_evidence: >-
-        Fresh evidence has automation coverage complete, blueprint coverage
-        partial, two failed obligations, no fallback, and the exact normalized
-        Blackshome/sensor-light.yaml limit signature below.
+        The deficiency register attributes two failures to the bounded
+        Blackshome sensor-light blueprint. The public observation proves only
+        fresh automation coverage complete, blueprint coverage partial, two
+        failed obligations, zero detected dependency sources, and no fallback;
+        it does not expose blueprint identity or reason.
     desired_checks:
       - {path: success, operator: equals, value: true}
       - {path: data.index.refreshed, operator: equals, value: true}
@@ -680,7 +692,7 @@ sentinels:
       - {path: "data.source_coverage[source_type=blueprint].completeness", operator: equals, value: complete}
       - {path: "data.source_coverage[source_type=blueprint].failed_item_count", operator: equals, value: 0}
       - {path: "data.source_coverage[source_type=blueprint].obligation_ledger_failed_item_count", operator: equals, value: 0}
-      - {path: projection.consequential_dependency_count, operator: equals, value: 0}
+      - {path: projection.observable_dependency_source_count, operator: equals, value: 0}
       - {path: "data.source_coverage[source_type=blueprint].fallback_occurred", operator: equals, value: false}
     known_failure_checks:
       - {path: success, operator: equals, value: true}
@@ -692,10 +704,9 @@ sentinels:
       - {path: "data.source_coverage[source_type=blueprint].completeness", operator: equals, value: partial}
       - {path: "data.source_coverage[source_type=blueprint].failed_item_count", operator: equals, value: 2}
       - {path: "data.source_coverage[source_type=blueprint].obligation_ledger_failed_item_count", operator: equals, value: 2}
-      - {path: projection.failed_obligation_count, operator: equals, value: 2}
-      - {path: projection.failed_obligation_signature, operator: equals, value: "blueprint:Blackshome/sensor-light.yaml:blueprint_source_limit_exceeded:count=2"}
-      - {path: projection.failed_obligation_set_fingerprint, operator: equals, value: "sha256:3541e71bd2fa1f9642264f6631f97b52bd84b713b85e51f08401cd62fbdd44f2"}
-      - {path: projection.consequential_dependency_count, operator: equals, value: 0}
+      - {path: projection.observable_coverage_summary, operator: equals, value: "automation=complete/failed:0/ledger_failed:0/fallback:false; blueprint=partial/failed:2/ledger_failed:2/fallback:false"}
+      - {path: projection.observable_evidence_fingerprint, operator: equals, value: "sha256:7659028e3b7ff17daa65512be7fb165a56d1b601ad39578f8d91247b2062c57a"}
+      - {path: projection.observable_dependency_source_count, operator: equals, value: 0}
       - {path: "data.source_coverage[source_type=blueprint].fallback_occurred", operator: equals, value: false}
 
   - id: held-read-remains-held
@@ -750,10 +761,13 @@ sentinels:
 
 separately_authorized_canaries:
   - id: helper-no-change-path
+    title: Helper no-change path remains dispatch-free
     tool: create_helper_state_plan
     effect_class: governed_write
     included_in_default_plan: false
     separate_authorization_required: true
+    required_for_promotion: true
+    availability: executable
     fixed_arguments:
       entity_id: input_boolean.mcp_f2_standard_admin_test_flag
       expiration_minutes: 10
@@ -776,7 +790,38 @@ separately_authorized_canaries:
       - {path: data.fallback_occurred, operator: equals, value: false}
     procedure: >-
       This declaration represents the accepted helper no-change contract but is
-      never rendered into the default plan or capture template and never affects
-      default completeness or classification. A separately authorized operator
+      never rendered into the default read-only observation plan. It appears as
+      not_captured in the capture template, and an unperformed required canary
+      makes promotion evidence incomplete. A separately authorized operator
       may execute it only under the preconditions above and must review any plan
       created by a state race through the ordinary governance lifecycle.
+
+  - id: beta39-jinja-helper-dependency-semantics
+    title: Beta 39 Jinja helper-dependency semantics remain exact
+    tool: create_helper_state_plan
+    effect_class: governed_write
+    included_in_default_plan: false
+    separate_authorization_required: true
+    required_for_promotion: true
+    availability: unavailable_pending_reviewed_protocol
+    fixed_arguments:
+      expiration_minutes: 10
+    operator_arguments:
+      entity_id: {type: string, pattern: "^input_boolean\\.[a-z0-9_]+$"}
+      desired_state: {type: string, enum: ["on", "off"]}
+      fixture_contract_digest: {type: string, pattern: "^sha256:[0-9a-f]{64}$"}
+    preconditions:
+      - Separately authorize this governed planning canary and its reviewed disposable fixture lifecycle.
+      - Bind the exact fixture digest covering .get(), .items(), .keys(), .values(), and literal bracket access.
+      - Do not approve or apply any generated plan; this canary verifies dependency/risk evidence only.
+    procedure: >-
+      This required canary represents the authoritative Beta 39 live-accepted
+      Jinja/helper-dependency family. It is not a default observation and cannot
+      be proven by the current generic read-only pack without a pre-existing
+      reviewed fixture. A separately authorized operator must bind a reviewed
+      disposable fixture contract and capture only the bounded per-family
+      classification, exact fixture digest, no-dispatch, and no-fallback result.
+      No mechanically obtainable protocol is declared in this PR; it is an
+      explicit unavailable requirement. A separate bounded task must define
+      and authorize that protocol before this requirement can be captured.
+      Until then, promotion_eligible remains false.
