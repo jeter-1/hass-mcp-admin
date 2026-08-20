@@ -162,9 +162,16 @@ terminal, so children left in `preflight` or `not_started` were never
 revisited, their hold projections were never cleared, and
 `nonterminal_execution_count` never converged.
 
-Each sweep now terminalizes those children first, before the expired-lock
-pass, so their locks are released in the same sweep. Terminalize-then-release
-is also the order that leaves no window for a concurrent dispatch.
+Orphan work shares the coordinator's existing batch-16 and five-second budget.
+A deterministic rotating cursor prevents one repeatedly failing prefix from
+starving later declarations. Candidate discovery also stops at the time budget
+or a bounded 1,024-declaration scan slice. The sweep terminalizes one eligible
+child before releasing anything, which leaves no window for a concurrent
+dispatch to begin.
+It then releases only lock records whose exact task, plan, operation, attempt,
+owner, key, mode, and generation match that child's durable lock evidence.
+Both live/expired leases and selective conflict holds are covered. A later or
+ambiguous fencing generation fails closed and is never released.
 
 "Proven zero dispatch" is durable, not inferred. The parent must carry no
 provider attempt and no dispatch timestamp, and each child must carry no
@@ -176,11 +183,22 @@ cancellation refuses any record holding an intent and records
 `dispatch_intent_exists` rather than silently skipping.
 
 Terminalization uses `cancelled_pre_dispatch`, never a success outcome, and
-appends evidence rather than overwriting the original causal error. The pass
-is idempotent: an already-terminal child is a no-op with no new event. A child
-that never received an execution record has nothing to terminalize and is
-projected as `cancelled_pre_dispatch` under such a parent, so parent and child
-views agree. This is a bookkeeping and projection correction; it never
+appends evidence rather than overwriting the original parent state, terminal
+outcome, or causal error. Already-terminal children remain eligible while an
+exact lock, selective-hold token, or cancellation-audit cursor is unsettled.
+Physical lock disposition completes before runtime token projections are
+cleared. A crash after cancellation, lock release, token cleanup, or audit
+delivery therefore converges on a later sweep without redispatch or releasing a
+different generation.
+
+A child that never received an execution record has nothing to terminalize and
+is projected as `cancelled_pre_dispatch` under such a parent. The public
+`f3_children` and schema-1 `verification_summary.children` views are derived
+from the same canonical projection, while legacy child identities remain
+unchanged. Reconciliation items and health remain recovering until exact lock,
+token, and audit settlement completes. The persisted child event cursor emits
+the bounded `execution_cancelled` audit evidence once across repeated sweeps
+and restart. This is a bookkeeping and projection correction; it never
 dispatches a provider call.
 
 Before intent, exact authority re-enters public preflight, reacquires the

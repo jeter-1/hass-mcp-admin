@@ -23,6 +23,7 @@ from ..f3.locks import (
 from ..f3.models import (
     ExecutionIdentity,
     ExecutorTiming,
+    LockHandle,
     LockOwner,
     LockTiming,
     LockToken,
@@ -83,6 +84,9 @@ PRODUCTION_LOCK_TIMING = LockTiming(120, 20, 0, 0.05)
 RECOVERY_CADENCE_SECONDS = 30
 RECOVERY_BATCH_SIZE = 16
 RECOVERY_SWEEP_TIME_BUDGET_SECONDS = 5.0
+ORPHAN_RECOVERY_SCAN_LIMIT = RECOVERY_BATCH_SIZE * 64
+ORPHAN_RECONCILIATION_REASON = "orphaned_terminal_parent_recovery"
+ORPHAN_RECONCILIATION_RESULT = "orphaned_pre_dispatch_child_reconciled"
 _ACTIVE_F3_CHILD: ContextVar[str | None] = ContextVar(
     "f3_active_child", default=None
 )
@@ -531,6 +535,7 @@ class F3RuntimeIntegration:
         )
         self._reconstruct_selective_holds()
         self._finish_pending_hold_releases()
+        self._orphan_recovery_after: str | None = None
         self.provider_identity_reader = provider_identity_reader
         config_gateway = _AuditedConfigurationGateway(
             ExistingConfigurationGatewayBridge(configuration_gateway),
@@ -670,7 +675,23 @@ class F3RuntimeIntegration:
                         },
                     )
             elif stored and runtime["hold_release_authority"] is None:
-                raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+                parent = self.service.task_repository.get(
+                    declaration["public_task_id"]
+                )
+                execution = self.children.get(declaration["child_id"])
+                if not (
+                    parent is not None
+                    and self._is_terminal_zero_dispatch_parent(parent)
+                    and execution is not None
+                    and execution.dispatch_intent is None
+                ):
+                    raise GovernanceError(
+                        ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+                    )
+                # A process can die after a terminal-parent cancellation or
+                # exact lock release but before clearing the runtime token
+                # projection. Preserve that evidence for the bounded recovery
+                # sweep instead of making startup permanently fail.
 
     def _hold_owner(
         self, declaration: dict[str, Any], record: Any, tokens: list[dict[str, Any]]
@@ -789,20 +810,26 @@ class F3RuntimeIntegration:
 
     def _audit_record_events(
         self, declaration: dict[str, Any], record: Any | None
-    ) -> None:
+    ) -> bool:
         if record is None:
-            return
+            return True
         runtime = self.children.runtime(declaration["child_id"])
         start = int(runtime["audited_event_count"])
         if start > len(record.events):
             raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
         completed = start
         for item in record.events[start:]:
+            diagnostics = tuple(item.get("diagnostic_codes") or ())
             if not self._emit_f3_audit_event(
                 {
                     "event_type": item["event_type"],
                     "task_id": declaration["child_id"],
                     "phase": record.state,
+                    **(
+                        {"reason_code": diagnostics[0]}
+                        if diagnostics
+                        else {}
+                    ),
                     "dispatch_count": record.dispatch_count,
                     "observation_count": record.observation_attempts,
                     "verification_count": record.verification_attempts,
@@ -815,6 +842,7 @@ class F3RuntimeIntegration:
                 declaration["child_id"],
                 changes={"audited_event_count": completed},
             )
+        return completed == len(record.events)
 
     @staticmethod
     def is_covered_plan(plan: Any) -> bool:
@@ -2020,29 +2048,63 @@ class F3RuntimeIntegration:
         value = self.service._public_task(task)
         if task.legacy_projection.get("execution_authority") != F3_EXECUTION_AUTHORITY:
             return value
-        value["f3_children"] = [
-            {
-                "child_execution_id": declaration["child_id"],
-                "operation_id": declaration["operation_id"],
-                "ordinal": declaration["operation_ordinal"],
-                "prepared_operation_hash": declaration["prepared_operation_hash"],
-                "state": (
-                    projected := self._orphaned_child_state(
-                        task,
-                        record := self.children.get(declaration["child_id"]),
-                    )
-                )[0],
-                "normalized_outcome": projected[1],
-                "dispatch_count": 0 if record is None else record.dispatch_count,
-                "evidence_deadline": None if record is None or record.dispatch_intent is None else record.dispatch_intent["evidence_deadline"],
-                "selective_hold_keys": declaration["selective_hold_keys"],
+        rows = self._public_child_projection(task)
+        value["f3_children"] = [item["detail"] for item in rows]
+        if self._is_terminal_zero_dispatch_parent(task):
+            # The schema-1 verification summary is historical durable
+            # evidence. Normalize only its child rows from the same canonical
+            # projection used by f3_children, leaving the parent's causal
+            # state, terminal outcome, status, and last_error untouched.
+            value["verification_summary"] = {
+                **value["verification_summary"],
+                "children": [item["summary"] for item in rows],
             }
-            for declaration in self.children.declarations_for_task(task.task_id)
-        ]
         return value
+
+    def _public_child_projection(self, task: Any) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for declaration in self.children.declarations_for_task(task.task_id):
+            record = self.children.get(declaration["child_id"])
+            state, outcome = self._orphaned_child_state(task, record)
+            dispatch_count = 0 if record is None else record.dispatch_count
+            rows.append(
+                {
+                    "detail": {
+                        "child_execution_id": declaration["child_id"],
+                        "operation_id": declaration["operation_id"],
+                        "ordinal": declaration["operation_ordinal"],
+                        "prepared_operation_hash": declaration[
+                            "prepared_operation_hash"
+                        ],
+                        "state": state,
+                        "normalized_outcome": outcome,
+                        "dispatch_count": dispatch_count,
+                        "evidence_deadline": (
+                            None
+                            if record is None
+                            or record.dispatch_intent is None
+                            else record.dispatch_intent["evidence_deadline"]
+                        ),
+                        "selective_hold_keys": declaration[
+                            "selective_hold_keys"
+                        ],
+                    },
+                    "summary": {
+                        "child_execution_id": declaration["child_id"],
+                        "operation_id": declaration["operation_id"],
+                        "ordinal": declaration["operation_ordinal"],
+                        "state": state,
+                        "normalized_outcome": outcome,
+                        "dispatch_count": dispatch_count,
+                        "terminal": state == "terminal",
+                    },
+                }
+            )
+        return rows
 
     def reconciliation_items(self) -> list[dict[str, Any]]:
         items = []
+        lock_task_ids = {item.task_id for item in self.locks.records()}
         for declaration in sorted(
             (
                 item
@@ -2054,19 +2116,34 @@ class F3RuntimeIntegration:
             key=lambda item: (
                 item["public_task_id"], item["operation_ordinal"]
             ),
-        )[:100]:
+        ):
             record = self.children.get(declaration["child_id"])
             runtime = self.children.runtime(declaration["child_id"])
-            if record is not None and record.terminal and not runtime["selective_hold_tokens"]:
-                continue
             parent = self.service.task_repository.get(
                 declaration["public_task_id"]
             )
+            cleanup_pending = self._orphan_cleanup_pending(
+                parent=parent,
+                declaration=declaration,
+                record=record,
+                runtime=runtime,
+                lock_task_ids=lock_task_ids,
+            )
+            if (
+                record is not None
+                and record.terminal
+                and not runtime["selective_hold_tokens"]
+                and not cleanup_pending
+            ):
+                continue
             if record is None and parent is not None:
                 # A child that never started, under a terminal parent that
                 # never dispatched, is not pending reconciliation work.
                 projected_state, _ = self._orphaned_child_state(parent, record)
-                if projected_state == "terminal":
+                if (
+                    projected_state == "terminal"
+                    and declaration["child_id"] not in lock_task_ids
+                ):
                     continue
             items.append(
                 {
@@ -2104,6 +2181,8 @@ class F3RuntimeIntegration:
                     "last_readback_summary": runtime["last_readback_summary"],
                 }
             )
+            if len(items) >= 100:
+                break
         return items
 
     async def _read_only_reconciliation(
@@ -2327,8 +2406,11 @@ class F3RuntimeIntegration:
         task_navigation = (
             self.service.task_repository.navigation_metrics()
         )
+        pending_reconciliation = bool(self.reconciliation_items())
         status = "manual_intervention_required" if holds else (
-            "recovering" if child["nonterminal_execution_count"] else "ready"
+            "recovering"
+            if child["nonterminal_execution_count"] or pending_reconciliation
+            else "ready"
         )
         if not self._ready:
             status = "recovering"
@@ -2384,6 +2466,14 @@ class F3RuntimeIntegration:
         }
 
     @staticmethod
+    def _is_terminal_zero_dispatch_parent(task: Any) -> bool:
+        return (
+            task.state in TERMINAL_TASK_STATES
+            and not task.provider_attempts
+            and not task.dispatched_at
+        )
+
+    @staticmethod
     def _orphaned_child_state(
         task: Any, record: Any
     ) -> tuple[str, str | None]:
@@ -2399,107 +2489,345 @@ class F3RuntimeIntegration:
 
         if record is not None:
             return record.state, record.normalized_outcome
-        if (
-            task.state in TERMINAL_TASK_STATES
-            and not task.provider_attempts
-            and not task.dispatched_at
-        ):
+        if F3RuntimeIntegration._is_terminal_zero_dispatch_parent(task):
             return "terminal", "cancelled_pre_dispatch"
         return "not_started", None
 
-    def _terminalize_orphaned_children(self, *, now: datetime) -> int:
-        """Terminalize never-dispatched children of a terminal parent.
+    def _orphan_audit_pending(self, record: Any, runtime: dict[str, Any]) -> bool:
+        if self.service.audit is None:
+            return False
+        start = int(runtime["audited_event_count"])
+        if start > len(record.events):
+            raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+        return any(
+            item["event_type"] == "execution_cancelled"
+            and ORPHAN_RECONCILIATION_REASON
+            in tuple(item.get("diagnostic_codes") or ())
+            for item in record.events[start:]
+        )
 
-        Deficiency #2. The recovery sweep skips every child whose public task
-        is already terminal, so a parent that failed before dispatch left its
-        children stranded in ``preflight``/``not_started`` forever: the sweep
-        never revisited them, their holds were never cleared, and
-        ``nonterminal_execution_count`` never converged.
-
-        The invariant restored here is:
-
-            terminal parent + proven zero dispatch => no child remains
-            nonterminal.
-
-        "Proven zero dispatch" is durable, not inferred. The executor commits
-        the dispatch intent *before* invoking a provider, so a record with no
-        intent provably never dispatched; a crash after the intent leaves it
-        set and is deliberately excluded. This is a bookkeeping correction and
-        never dispatches anything.
-        """
-
-        reconciled = 0
-        declarations = self.children.all_declarations()
-        for public_task_id in sorted(
-            {item["public_task_id"] for item in declarations}
+    def _orphan_cleanup_pending(
+        self,
+        *,
+        parent: Any | None,
+        declaration: dict[str, Any],
+        record: Any | None,
+        runtime: dict[str, Any],
+        lock_task_ids: set[str],
+    ) -> bool:
+        if (
+            parent is None
+            or not self._is_terminal_zero_dispatch_parent(parent)
+            or record is None
+            or record.dispatch_intent is not None
         ):
-            public_task = self.service.task_repository.get(public_task_id)
-            if public_task is None:
-                continue
-            if public_task.state not in TERMINAL_TASK_STATES:
-                continue
-            # Only the proven-zero-dispatch parent qualifies. A parent with any
-            # provider attempt, or any dispatch timestamp, is out of scope.
-            if public_task.provider_attempts or public_task.dispatched_at:
-                continue
-            for declaration in declarations:
-                if declaration["public_task_id"] != public_task_id:
-                    continue
-                child_id = declaration["child_id"]
-                record = self.children.get(child_id)
-                if record is None or record.terminal:
-                    # Already converged: idempotent no-op, no event, no error.
-                    continue
-                if record.dispatch_intent is not None:
-                    # Post-intent work is never re-classified as pre-dispatch.
-                    # The repository would refuse it anyway; skipping keeps the
-                    # no-blind-redispatch guarantee intact.
-                    continue
-                # Terminalize before releasing anything, so no concurrent
-                # dispatch can start in the window between the two.
-                if not self.children.cancel(child_id, now=now):
-                    continue
-                reconciled += 1
-                self._release_orphaned_child_holds(declaration, now=now)
-        return reconciled
+            return False
+        if not record.terminal:
+            return True
+        if (
+            declaration["child_id"] in lock_task_ids
+            or runtime["selective_hold_tokens"]
+        ):
+            return True
+        return (
+            record.normalized_outcome == "cancelled_pre_dispatch"
+            and (
+                runtime["reconciliation_result"]
+                != ORPHAN_RECONCILIATION_RESULT
+                or self._orphan_audit_pending(record, runtime)
+            )
+        )
 
-    def _release_orphaned_child_holds(
+    def _orphan_reconciliation_candidates(
+        self,
+        declarations: tuple[dict[str, Any], ...],
+        *,
+        now: datetime,
+        sweep_started: float,
+        transition_limit: int,
+        monotonic: Callable[[], float],
+    ) -> list[dict[str, Any]]:
+        lock_task_ids = {item.task_id for item in self.locks.records()}
+        parents: dict[str, Any | None] = {}
+        candidates: list[dict[str, Any]] = []
+        ordered = sorted(declarations, key=lambda item: item["child_id"])
+        if self._orphan_recovery_after is not None and ordered:
+            split = next(
+                (
+                    index
+                    for index, item in enumerate(ordered)
+                    if item["child_id"] > self._orphan_recovery_after
+                ),
+                0,
+            )
+            ordered = ordered[split:] + ordered[:split]
+        candidate_parents: set[str] = set()
+        for scan_count, declaration in enumerate(ordered, start=1):
+            if scan_count > ORPHAN_RECOVERY_SCAN_LIMIT:
+                break
+            if (
+                monotonic() - sweep_started
+                >= RECOVERY_SWEEP_TIME_BUDGET_SECONDS
+            ):
+                break
+            self._orphan_recovery_after = declaration["child_id"]
+            public_task_id = declaration["public_task_id"]
+            if public_task_id not in parents:
+                parents[public_task_id] = self.service.task_repository.get(
+                    public_task_id
+                )
+            record = self.children.get(declaration["child_id"])
+            runtime = self.children.runtime(declaration["child_id"])
+            if (
+                runtime["next_eligible_at"] is not None
+                and datetime.fromisoformat(runtime["next_eligible_at"]) > now
+            ):
+                continue
+            if self._orphan_cleanup_pending(
+                parent=parents[public_task_id],
+                declaration=declaration,
+                record=record,
+                runtime=runtime,
+                lock_task_ids=lock_task_ids,
+            ) and public_task_id not in candidate_parents:
+                candidates.append(declaration)
+                candidate_parents.add(public_task_id)
+                if len(candidate_parents) >= transition_limit:
+                    break
+        return candidates
+
+    @staticmethod
+    def _exact_lock_owner(
+        declaration: dict[str, Any], record: Any, lock_records: list[Any]
+    ) -> LockOwner:
+        identity = record.execution_identity()
+        owners = {
+            (
+                item.owner_id,
+                item.task_id,
+                item.plan_id,
+                item.operation_id,
+                item.attempt_id,
+            )
+            for item in lock_records
+        }
+        token_owners = {
+            token["owner_id"]
+            for token in record.lock_tokens
+            if any(
+                item.key == token["key"]
+                and item.generation == token["generation"]
+                for item in lock_records
+            )
+        }
+        if len(token_owners) != 1:
+            raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+        expected = (
+            next(iter(token_owners)),
+            declaration["child_id"],
+            declaration["plan_id"],
+            record.operation,
+            identity.attempt_id,
+        )
+        if owners != {expected}:
+            raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+        return LockOwner(
+            owner_id=expected[0],
+            task_id=expected[1],
+            plan_id=expected[2],
+            operation_id=expected[3],
+            attempt_id=expected[4],
+        )
+
+    def _release_orphaned_child_locks(
+        self, declaration: dict[str, Any], record: Any
+    ) -> int:
+        """Release only the exact pre-intent child's fenced generations."""
+
+        if record.dispatch_intent is not None:
+            raise GovernanceError(ErrorCode.EXECUTION_TASK_INVALID_STATE)
+        child_id = declaration["child_id"]
+        lock_records = [
+            item for item in self.locks.records() if item.task_id == child_id
+        ]
+        if not lock_records:
+            return 0
+        expected_tokens = {
+            (
+                item["key"],
+                item["generation"],
+                item["mode"],
+                item["owner_id"],
+            )
+            for item in record.lock_tokens
+        }
+        if any(
+            (
+                item.key,
+                item.generation,
+                item.mode,
+                item.owner_id,
+            )
+            not in expected_tokens
+            for item in lock_records
+        ):
+            # A different or later fenced generation is ambiguous authority.
+            raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+        owner = self._exact_lock_owner(declaration, record, lock_records)
+        released = 0
+        regular = sorted(
+            (item for item in lock_records if not item.conflict_hold),
+            key=lambda item: item.key.encode("utf-8"),
+        )
+        if regular:
+            handle = LockHandle(
+                owner=owner,
+                tokens=tuple(
+                    LockToken(item.key, item.generation, item.mode)
+                    for item in regular
+                ),
+                acquired_at=regular[0].acquired_at,
+                lease_expires_at=regular[0].lease_expires_at,
+                timing=PRODUCTION_LOCK_TIMING,
+            )
+            self.locks.release(handle)
+            released += len(regular)
+        held = sorted(
+            (item for item in lock_records if item.conflict_hold),
+            key=lambda item: item.key.encode("utf-8"),
+        )
+        if held:
+            self.locks.release_conflict_hold(
+                owner=owner,
+                tokens=tuple(
+                    LockToken(item.key, item.generation, item.mode)
+                    for item in held
+                ),
+                reason_code=ORPHAN_RECONCILIATION_REASON,
+            )
+            released += len(held)
+        return released
+
+    def _reconcile_orphaned_child(
         self, declaration: dict[str, Any], *, now: datetime
-    ) -> None:
-        """Clear hold projections left on a child that never dispatched.
-
-        Only stale projections are cleared. A hold token that still matches a
-        live lock record is an operator-gated conflict hold and is left alone,
-        so this never silently discharges a hold that still means something.
-        """
+    ) -> tuple[bool, bool]:
+        """Converge one exact orphan through restart-safe durable steps."""
 
         child_id = declaration["child_id"]
+        record = self.children.get(child_id)
+        if record is None or record.dispatch_intent is not None:
+            return False, False
+        terminalized = False
+        if not record.terminal:
+            if not self.children.cancel(
+                child_id,
+                now=now,
+                diagnostic_codes=(ORPHAN_RECONCILIATION_REASON,),
+            ):
+                return False, False
+            terminalized = True
+            record = self.children.get(child_id)
+        if record is None or not record.terminal:
+            raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+
+        self._release_orphaned_child_locks(declaration, record)
+        if any(item.task_id == child_id for item in self.locks.records()):
+            raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+
         runtime = self.children.runtime(child_id)
-        tokens = list(runtime.get("selective_hold_tokens") or [])
-        if not tokens:
-            return
-        live = {
-            (item.key, item.generation) for item in self.locks.records()
-        }
-        retained = [
-            token
-            for token in tokens
-            if (token["key"], token["generation"]) in live
-        ]
-        if len(retained) == len(tokens):
-            return
-        self.children.update_runtime(
-            child_id,
-            changes={
-                "selective_hold_tokens": retained,
-                "last_reconciliation_at": now.isoformat(),
-                "reconciliation_result": (
-                    "orphaned_pre_dispatch_child_terminalized"
-                ),
-                "backoff_seconds": 0,
-                "next_eligible_at": None,
-            },
+        pending_audit_result = "orphaned_pre_dispatch_audit_pending"
+        if (
+            runtime["selective_hold_tokens"]
+            or runtime["hold_release_authority"] is not None
+            or runtime["selective_hold_promoted_at"] is not None
+            or runtime["selective_hold_reason"] is not None
+            or runtime["reconciliation_result"]
+            not in {pending_audit_result, ORPHAN_RECONCILIATION_RESULT}
+            or runtime["backoff_seconds"]
+            or runtime["next_eligible_at"] is not None
+        ):
+            self.children.update_runtime(
+                child_id,
+                changes={
+                    "selective_hold_tokens": [],
+                    "hold_release_authority": None,
+                    "selective_hold_promoted_at": None,
+                    "selective_hold_reason": None,
+                    "last_reconciliation_at": now.isoformat(),
+                    "reconciliation_result": pending_audit_result,
+                    "backoff_seconds": 0,
+                    "next_eligible_at": None,
+                },
+            )
+
+        audited = self.service.audit is None or self._audit_record_events(
+            declaration, record
         )
+        runtime = self.children.runtime(child_id)
+        if audited and runtime["reconciliation_result"] != ORPHAN_RECONCILIATION_RESULT:
+            self.children.update_runtime(
+                child_id,
+                changes={
+                    "last_reconciliation_at": now.isoformat(),
+                    "reconciliation_result": ORPHAN_RECONCILIATION_RESULT,
+                },
+            )
+        return True, terminalized
+
+    def _reconcile_orphaned_children(
+        self,
+        *,
+        declarations: tuple[dict[str, Any], ...],
+        now: datetime,
+        sweep_started: float,
+        transition_limit: int,
+        monotonic: Callable[[], float] | None = None,
+    ) -> dict[str, int]:
+        """Run a fair, deterministic slice inside the shared sweep budget."""
+
+        clock = monotonic or time.monotonic
+        candidates = self._orphan_reconciliation_candidates(
+            declarations,
+            now=now,
+            sweep_started=sweep_started,
+            transition_limit=transition_limit,
+            monotonic=clock,
+        )
+        processed = 0
+        terminalized = 0
+        processed_public_tasks: set[str] = set()
+        for declaration in candidates:
+            if processed >= transition_limit:
+                break
+            if clock() - sweep_started >= RECOVERY_SWEEP_TIME_BUDGET_SECONDS:
+                break
+            if declaration["public_task_id"] in processed_public_tasks:
+                continue
+            processed_public_tasks.add(declaration["public_task_id"])
+            processed += 1
+            try:
+                _changed, child_terminalized = self._reconcile_orphaned_child(
+                    declaration, now=now
+                )
+                terminalized += int(child_terminalized)
+            except Exception:
+                self._sweep_failures += 1
+                runtime = self.children.runtime(declaration["child_id"])
+                backoff = min(
+                    max(5, int(runtime["backoff_seconds"]) * 2), 300
+                )
+                self.children.update_runtime(
+                    declaration["child_id"],
+                    changes={
+                        "last_reconciliation_at": now.isoformat(),
+                        "reconciliation_result": "bounded_retry",
+                        "backoff_seconds": backoff,
+                        "next_eligible_at": (
+                            now + timedelta(seconds=backoff)
+                        ).isoformat(),
+                    },
+                )
+        return {"processed": processed, "terminalized": terminalized}
 
     async def recover_once(self, trigger: str) -> dict[str, int]:
         del trigger
@@ -2509,12 +2837,16 @@ class F3RuntimeIntegration:
         self._next_sweep_at = (now + timedelta(seconds=RECOVERY_CADENCE_SECONDS)).isoformat()
         sweep_started = time.monotonic()
         processed = 0
-        # Terminalize orphaned pre-dispatch children first, so the expired-lock
-        # pass below releases their locks in this same sweep rather than the
-        # next one.  Terminal-then-release is also the order that leaves no
-        # window for a concurrent dispatch.
-        orphaned_children_terminalized = self._terminalize_orphaned_children(
-            now=now
+        declarations = self.children.all_declarations()
+        # Orphan reconciliation shares the same batch and wall-clock budget as
+        # ordinary recovery. Each exact child is terminalized before its
+        # fenced locks are released, and already-terminal children remain
+        # eligible until lock, token, and audit projections converge.
+        orphaned = self._reconcile_orphaned_children(
+            declarations=declarations,
+            now=now,
+            sweep_started=sweep_started,
+            transition_limit=RECOVERY_BATCH_SIZE,
         )
         stale_release_decisions = {}
         for lock_record in self.locks.expired_records(now=now):
@@ -2535,7 +2867,6 @@ class F3RuntimeIntegration:
                 stale_release_decisions, now=now
             )
         candidates: list[tuple[dict[str, Any], Any | None]] = []
-        declarations = self.children.all_declarations()
         for public_task_id in sorted({item["public_task_id"] for item in declarations}):
             public_task = self.service.task_repository.get(public_task_id)
             if public_task is None:
@@ -2571,7 +2902,8 @@ class F3RuntimeIntegration:
                     break
                 candidates.append((declaration, record))
                 break
-        for declaration, record in candidates[:RECOVERY_BATCH_SIZE]:
+        remaining = max(0, RECOVERY_BATCH_SIZE - orphaned["processed"])
+        for declaration, record in candidates[:remaining]:
             if time.monotonic() - sweep_started >= RECOVERY_SWEEP_TIME_BUDGET_SECONDS:
                 break
             runtime = self.children.runtime(declaration["child_id"])
@@ -2633,8 +2965,10 @@ class F3RuntimeIntegration:
             "processed": processed,
             "eligible_limit": RECOVERY_BATCH_SIZE,
             "orphaned_children_terminalized": (
-                orphaned_children_terminalized
+                orphaned["terminalized"]
             ),
+            "orphaned_children_processed": orphaned["processed"],
+            "recovery_transitions": processed + orphaned["processed"],
         }
 
     async def supervise(self) -> None:

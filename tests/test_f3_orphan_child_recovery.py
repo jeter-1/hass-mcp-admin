@@ -19,16 +19,21 @@ deliberately excluded from this path.
 
 from __future__ import annotations
 
+from datetime import timedelta
+import json
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.f3.contracts import (  # noqa: E402
-    NormalizedOperationOutcome,
+    LockMode,
+    LockRequest,
+    LockScope,
 )
 from ha_mcp_engineering.governance.task_models import (  # noqa: E402
     ExecutionTaskState,
@@ -43,12 +48,17 @@ from tests.test_f3_runtime_integration import (  # noqa: E402
 from ha_mcp_engineering.f3.models import (  # noqa: E402
     ExecutionIdentity,
     ExecutorTiming,
+    LockOwner,
+    LockTiming,
 )
 from ha_mcp_engineering.f3.contracts import (  # noqa: E402
     F3_ADAPTER_CONTRACT_MODEL,
 )
 from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
     F3RuntimeIntegration,
+    ORPHAN_RECOVERY_SCAN_LIMIT,
+    ORPHAN_RECONCILIATION_RESULT,
+    RECOVERY_BATCH_SIZE,
 )
 
 
@@ -130,19 +140,6 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         self.assertIsNone(task.dispatched_at)
         return task, declarations
 
-    def _strand_children(self, declarations):
-        """Drop execution records so children look never-finished."""
-
-        for declaration in declarations:
-            path = self.runtime.children._path(declaration["child_id"])
-            envelope = self.runtime.children._raw_envelope(
-                declaration["child_id"]
-            )
-            if envelope is None:
-                continue
-            envelope["execution"] = None
-            self.runtime.children._atomic_write(path, envelope)
-
     def _claim_child(self, declaration):
         """Give one child a nonterminal, never-dispatched execution record."""
 
@@ -172,15 +169,117 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         self.assertIsNone(record.dispatch_intent)
         return record
 
+    def _hold_child_lock(
+        self,
+        declaration,
+        *,
+        expired=False,
+        conflict_hold=False,
+    ):
+        """Acquire and persist an exact child-owned lock through real stores."""
+
+        identity, claim, _timing = self._claims[declaration["child_id"]]
+        record = self.runtime.children.get(declaration["child_id"])
+        key = (
+            declaration["selective_hold_keys"][0]
+            if declaration["selective_hold_keys"]
+            else f"{declaration['target_type']}:{declaration['target_id']}"
+        )
+        owner = LockOwner(
+            owner_id=identity.owner_id,
+            task_id=identity.task_id,
+            plan_id=identity.plan_id,
+            operation_id=record.operation,
+            attempt_id=identity.attempt_id,
+        )
+        timing = LockTiming(120, 20, 0, 0.05)
+        acquired_at = self.service.now() - (
+            timedelta(seconds=121) if expired else timedelta(0)
+        )
+        handle = self.runtime.locks.acquire_once(
+            (
+                LockRequest(
+                    key=key,
+                    scopes=(LockScope.RESOURCE,),
+                    mode=LockMode.EXCLUSIVE,
+                    reason_codes=("orphan_recovery_test",),
+                ),
+            ),
+            owner=owner,
+            timing=timing,
+            now=acquired_at,
+        )
+        self.runtime.children.record_locks(
+            declaration["child_id"],
+            owner_id=identity.owner_id,
+            claim_generation=claim.claim_generation,
+            handle=handle,
+            now=self.service.now(),
+        )
+        if conflict_hold:
+            self.runtime.locks.promote_to_conflict_hold(
+                handle,
+                reason_code="orphan_recovery_test",
+            )
+        return owner, handle
+
+    def _set_runtime_tokens(self, child_id, handle):
+        self.runtime.children.update_runtime(
+            child_id,
+            changes={
+                "selective_hold_tokens": [
+                    {
+                        "key": token.key,
+                        "generation": token.generation,
+                        "mode": token.mode,
+                    }
+                    for token in handle.tokens
+                ]
+            },
+        )
+
+    def _audit_entries(self):
+        if not self.audit_path.exists():
+            return []
+        return [
+            json.loads(line)
+            for line in self.audit_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+
     async def _build_live_orphan(self):
         """Assemble the exact shape observed on the deployed server."""
 
         task, declarations = await self._orphaned_task()
-        self._strand_children(declarations)
-        self._claim_child(declarations[0])
+        claimable = next(
+            item
+            for item in declarations
+            if self.runtime.children.get(item["child_id"]) is None
+        )
+        self._claim_child(claimable)
+        declarations = (
+            claimable,
+            *(item for item in declarations if item is not claimable),
+        )
         health = self.runtime.children.health()
         self.assertEqual(1, health["nonterminal_execution_count"])
         return task, declarations
+
+    def _restart_runtime(self):
+        restarted = F3RuntimeIntegration(
+            service=self.service,
+            storage_root=str(self.root / "plans"),
+            configuration_gateway=_ExactFakeConfigurationGateway(
+                self.gateway
+            ),
+            backup_gateway=None,
+            lifecycle_gateway=None,
+            provider_identity_reader=_provider_identity,
+            retention_days=90,
+        )
+        self.service.f3_runtime = restarted
+        self.runtime = restarted
+        return restarted
 
     async def test_orphaned_children_converge_in_one_sweep(self):
         task, declarations = await self._build_live_orphan()
@@ -217,13 +316,17 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         )
         children = detail["f3_children"]
         self.assertGreaterEqual(len(children), 2)
+        outcomes = set()
         for child in children:
             with self.subTest(child=child["operation_id"]):
                 self.assertEqual("terminal", child["state"])
-                self.assertEqual(
-                    "cancelled_pre_dispatch", child["normalized_outcome"]
+                self.assertIn(
+                    child["normalized_outcome"],
+                    {"preflight_rejected", "cancelled_pre_dispatch"},
                 )
+                outcomes.add(child["normalized_outcome"])
                 self.assertEqual(0, child["dispatch_count"])
+        self.assertIn("cancelled_pre_dispatch", outcomes)
 
     async def test_sweep_is_idempotent(self):
         await self._build_live_orphan()
@@ -342,6 +445,458 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         ]
         # Nothing about this task still needs an operator's attention.
         self.assertEqual([], after)
+
+    async def test_unexpired_owned_lock_and_projection_are_settled(self):
+        _task, declarations = await self._build_live_orphan()
+        child_id = declarations[0]["child_id"]
+        _owner, handle = self._hold_child_lock(declarations[0])
+        self._set_runtime_tokens(child_id, handle)
+
+        await self.runtime.recover_once("periodic")
+        await self.runtime.recover_once("periodic")
+
+        self.assertEqual([], list(self.runtime.locks.records()))
+        self.assertEqual(
+            [],
+            self.runtime.children.runtime(child_id)[
+                "selective_hold_tokens"
+            ],
+        )
+        self.assertEqual([], self.runtime.reconciliation_items())
+
+    async def test_expired_lock_projection_converges_across_two_sweeps(self):
+        _task, declarations = await self._build_live_orphan()
+        child_id = declarations[0]["child_id"]
+        _owner, handle = self._hold_child_lock(
+            declarations[0], expired=True
+        )
+        self._set_runtime_tokens(child_id, handle)
+
+        await self.runtime.recover_once("periodic")
+        await self.runtime.recover_once("periodic")
+
+        self.assertEqual([], list(self.runtime.locks.records()))
+        self.assertEqual(
+            [],
+            self.runtime.children.runtime(child_id)[
+                "selective_hold_tokens"
+            ],
+        )
+        self.assertEqual([], self.runtime.reconciliation_items())
+
+    async def test_selective_conflict_hold_is_released_with_exact_fencing(self):
+        _task, declarations = await self._build_live_orphan()
+        child_id = declarations[0]["child_id"]
+        _owner, handle = self._hold_child_lock(
+            declarations[0], conflict_hold=True
+        )
+        projected = self.runtime.children.runtime(child_id)[
+            "selective_hold_tokens"
+        ]
+        self.assertEqual(handle.tokens[0].generation, projected[0]["generation"])
+
+        await self.runtime.recover_once("periodic")
+        await self.runtime.recover_once("periodic")
+
+        self.assertEqual([], list(self.runtime.locks.records()))
+        self.assertEqual(
+            [],
+            self.runtime.children.runtime(child_id)[
+                "selective_hold_tokens"
+            ],
+        )
+
+    async def test_stale_projection_without_lock_is_cleared(self):
+        _task, declarations = await self._build_live_orphan()
+        child_id = declarations[0]["child_id"]
+        owner, handle = self._hold_child_lock(
+            declarations[0], conflict_hold=True
+        )
+        self.runtime.locks.release_conflict_hold(
+            owner=owner,
+            tokens=handle.tokens,
+            reason_code="orphan_recovery_test",
+        )
+        self.assertEqual([], list(self.runtime.locks.records()))
+        self.assertTrue(
+            self.runtime.children.runtime(child_id)["selective_hold_tokens"]
+        )
+
+        await self.runtime.recover_once("periodic")
+
+        self.assertEqual(
+            [],
+            self.runtime.children.runtime(child_id)[
+                "selective_hold_tokens"
+            ],
+        )
+
+    async def test_crash_after_terminalization_restarts_into_lock_cleanup(self):
+        _task, declarations = await self._build_live_orphan()
+        child_id = declarations[0]["child_id"]
+        _owner, handle = self._hold_child_lock(declarations[0])
+        self._set_runtime_tokens(child_id, handle)
+
+        with patch.object(
+            self.runtime,
+            "_release_orphaned_child_locks",
+            side_effect=SystemExit("simulated process loss"),
+        ):
+            with self.assertRaises(SystemExit):
+                await self.runtime.recover_once("periodic")
+        claimed = self.runtime.children.get(child_id)
+        self.assertTrue(claimed.terminal)
+        self.assertTrue(list(self.runtime.locks.records()))
+
+        # Reconstruct the runtime exactly as a process restart would.
+        restarted = self._restart_runtime()
+        await self.runtime.recover_once("startup")
+        await self.runtime.recover_once("periodic")
+
+        self.assertEqual([], list(self.runtime.locks.records()))
+        self.assertEqual(
+            [],
+            self.runtime.children.runtime(child_id)[
+                "selective_hold_tokens"
+            ],
+        )
+        self.assertEqual([], self.runtime.reconciliation_items())
+
+    async def test_crash_after_lock_release_restarts_into_token_cleanup(self):
+        _task, declarations = await self._build_live_orphan()
+        child_id = declarations[0]["child_id"]
+        _owner, handle = self._hold_child_lock(declarations[0])
+        self._set_runtime_tokens(child_id, handle)
+        original_update = self.runtime.children.update_runtime
+
+        def crash_before_projection(target_id, *, changes):
+            if (
+                target_id == child_id
+                and "selective_hold_tokens" in changes
+                and not self.runtime.locks.records()
+            ):
+                raise SystemExit("simulated process loss")
+            return original_update(target_id, changes=changes)
+
+        with patch.object(
+            self.runtime.children,
+            "update_runtime",
+            side_effect=crash_before_projection,
+        ):
+            with self.assertRaises(SystemExit):
+                await self.runtime.recover_once("periodic")
+        self.assertEqual([], list(self.runtime.locks.records()))
+        self.assertTrue(
+            self.runtime.children.runtime(child_id)["selective_hold_tokens"]
+        )
+
+        self._restart_runtime()
+        await self.runtime.recover_once("startup")
+        await self.runtime.recover_once("periodic")
+
+        self.assertEqual([], list(self.runtime.locks.records()))
+        self.assertEqual(
+            [],
+            self.runtime.children.runtime(child_id)["selective_hold_tokens"],
+        )
+        self.assertEqual([], self.runtime.reconciliation_items())
+
+    async def test_crash_after_token_cleanup_restarts_into_audit_delivery(self):
+        _task, declarations = await self._build_live_orphan()
+        child_id = declarations[0]["child_id"]
+        _owner, handle = self._hold_child_lock(declarations[0])
+        self._set_runtime_tokens(child_id, handle)
+
+        with patch.object(
+            self.runtime,
+            "_audit_record_events",
+            side_effect=SystemExit("simulated process loss"),
+        ):
+            with self.assertRaises(SystemExit):
+                await self.runtime.recover_once("periodic")
+        runtime = self.runtime.children.runtime(child_id)
+        self.assertEqual([], runtime["selective_hold_tokens"])
+        self.assertEqual(
+            "orphaned_pre_dispatch_audit_pending",
+            runtime["reconciliation_result"],
+        )
+
+        self._restart_runtime()
+        await self.runtime.recover_once("startup")
+        await self.runtime.recover_once("periodic")
+
+        self.assertEqual(
+            ORPHAN_RECONCILIATION_RESULT,
+            self.runtime.children.runtime(child_id)[
+                "reconciliation_result"
+            ],
+        )
+        self.assertEqual([], self.runtime.reconciliation_items())
+
+    async def test_crash_after_audit_cursor_restarts_without_duplicate_audit(self):
+        _task, declarations = await self._build_live_orphan()
+        child_id = declarations[0]["child_id"]
+        before = self.runtime.children.get(child_id)
+        self.runtime._audit_record_events(declarations[0], before)
+        self.audit_path.write_text("", encoding="utf-8")
+        original_update = self.runtime.children.update_runtime
+
+        def crash_before_completion(target_id, *, changes):
+            if changes.get("reconciliation_result") == ORPHAN_RECONCILIATION_RESULT:
+                raise SystemExit("simulated process loss")
+            return original_update(target_id, changes=changes)
+
+        with patch.object(
+            self.runtime.children,
+            "update_runtime",
+            side_effect=crash_before_completion,
+        ):
+            with self.assertRaises(SystemExit):
+                await self.runtime.recover_once("periodic")
+        first = [
+            item
+            for item in self._audit_entries()
+            if item.get("event") == "f3_execution_cancelled"
+        ]
+        self.assertEqual(1, len(first))
+
+        self._restart_runtime()
+        await self.runtime.recover_once("startup")
+        await self.runtime.recover_once("periodic")
+        second = [
+            item
+            for item in self._audit_entries()
+            if item.get("event") == "f3_execution_cancelled"
+        ]
+
+        self.assertEqual(first, second)
+        self.assertEqual(
+            ORPHAN_RECONCILIATION_RESULT,
+            self.runtime.children.runtime(child_id)[
+                "reconciliation_result"
+            ],
+        )
+
+    async def test_later_fencing_generation_is_never_released(self):
+        _task, declarations = await self._build_live_orphan()
+        child_id = declarations[0]["child_id"]
+        owner, handle = self._hold_child_lock(declarations[0])
+        self._set_runtime_tokens(child_id, handle)
+        self.runtime.locks.release(handle)
+        later_owner = LockOwner(
+            owner_id="later-owner",
+            task_id=child_id,
+            plan_id=owner.plan_id,
+            operation_id=owner.operation_id,
+            attempt_id="later-attempt",
+        )
+        later = self.runtime.locks.acquire_once(
+            (
+                LockRequest(
+                    key=handle.tokens[0].key,
+                    scopes=(LockScope.RESOURCE,),
+                    mode=LockMode.EXCLUSIVE,
+                    reason_codes=("later_generation",),
+                ),
+            ),
+            owner=later_owner,
+            timing=LockTiming(120, 20, 0, 0.05),
+            now=self.service.now(),
+        )
+
+        await self.runtime.recover_once("periodic")
+
+        records = list(self.runtime.locks.records())
+        self.assertEqual(1, len(records))
+        self.assertEqual(later.tokens[0].generation, records[0].generation)
+        self.assertEqual("later-owner", records[0].owner_id)
+        self.assertEqual(
+            "bounded_retry",
+            self.runtime.children.runtime(child_id)[
+                "reconciliation_result"
+            ],
+        )
+
+    async def test_public_parent_and_child_projections_agree_exactly(self):
+        task, _declarations = await self._build_live_orphan()
+        original_error = task.last_error
+
+        await self.runtime.recover_once("periodic")
+
+        detail = self.runtime.decorate_task(
+            self.service._load_task(task.task_id)
+        )
+        public_children = detail["f3_children"]
+        summary_children = detail["verification_summary"]["children"]
+        by_id = {
+            child["child_execution_id"]: child
+            for child in summary_children
+        }
+        for child in public_children:
+            projected = by_id[child["child_execution_id"]]
+            self.assertEqual(child["state"], projected["state"])
+            self.assertEqual(
+                child["normalized_outcome"],
+                projected["normalized_outcome"],
+            )
+            self.assertEqual(child["dispatch_count"], projected["dispatch_count"])
+            self.assertEqual("terminal", projected["state"])
+            self.assertTrue(projected["terminal"])
+        self.assertEqual("failed_pre_dispatch", detail["state"])
+        self.assertEqual("failed_pre_dispatch", detail["terminal_outcome"])
+        self.assertEqual(original_error, detail["last_error"])
+        child_ids = {item["child_execution_id"] for item in public_children}
+        self.assertEqual(
+            child_ids,
+            set(detail["legacy_projection"]["child_execution_ids"]),
+        )
+        self.assertFalse(
+            any(
+                item["child_id"] in child_ids
+                for item in self.runtime.reconciliation_items()
+            )
+        )
+
+    async def test_orphan_cancellation_audit_is_once_across_restart(self):
+        task, declarations = await self._build_live_orphan()
+        child_id = declarations[0]["child_id"]
+        before_record = self.runtime.children.get(child_id)
+        self.runtime._audit_record_events(declarations[0], before_record)
+        self.audit_path.write_text("", encoding="utf-8")
+
+        await self.runtime.recover_once("periodic")
+        first = [
+            item
+            for item in self._audit_entries()
+            if item.get("event") == "f3_execution_cancelled"
+        ]
+
+        restarted = self._restart_runtime()
+        await self.runtime.recover_once("startup")
+        second = [
+            item
+            for item in self._audit_entries()
+            if item.get("event") == "f3_execution_cancelled"
+        ]
+
+        self.assertEqual(1, len(first))
+        self.assertEqual(first, second)
+        self.assertEqual(task.task_id, first[0]["task_id"])
+        self.assertEqual(child_id, first[0]["child_execution_id"])
+        self.assertEqual(0, first[0]["evidence_references"]["dispatch_count"])
+        self.assertEqual(
+            "orphaned_terminal_parent_recovery",
+            first[0]["evidence_references"]["reason_code"],
+        )
+        self.assertEqual("none", first[0]["fallback"])
+
+    async def test_maximum_namespace_reconciliation_is_bounded_and_fair(self):
+        declarations = tuple(
+            {
+                "child_id": f"child-{index:04d}",
+                "public_task_id": f"task-{index // 8:04d}",
+            }
+            for index in range(8_192)
+        )
+        attempted = []
+
+        candidate_runtime = {
+            "next_eligible_at": None,
+        }
+        with (
+            patch.object(
+                self.runtime,
+                "_orphan_cleanup_pending",
+                return_value=True,
+            ) as cleanup_pending,
+            patch.object(self.runtime.locks, "records", return_value=()),
+            patch.object(
+                self.runtime.children, "get", return_value=object()
+            ),
+            patch.object(
+                self.runtime.children,
+                "runtime",
+                return_value=candidate_runtime,
+            ),
+            patch.object(
+                self.service.task_repository, "get", return_value=object()
+            ),
+            patch.object(
+                self.runtime,
+                "_reconcile_orphaned_child",
+                side_effect=lambda declaration, **_kwargs: (
+                    attempted.append(declaration["child_id"]) or (True, True)
+                ),
+            ),
+        ):
+            first = self.runtime._reconcile_orphaned_children(
+                declarations=declarations,
+                now=self.service.now(),
+                sweep_started=0.0,
+                transition_limit=RECOVERY_BATCH_SIZE,
+                monotonic=lambda: 0.0,
+            )
+            second = self.runtime._reconcile_orphaned_children(
+                declarations=declarations,
+                now=self.service.now(),
+                sweep_started=0.0,
+                transition_limit=RECOVERY_BATCH_SIZE,
+                monotonic=lambda: 0.0,
+            )
+
+        self.assertEqual(RECOVERY_BATCH_SIZE, first["processed"])
+        self.assertEqual(RECOVERY_BATCH_SIZE, second["processed"])
+        self.assertEqual(RECOVERY_BATCH_SIZE * 2, len(set(attempted)))
+        self.assertLessEqual(
+            cleanup_pending.call_count,
+            ORPHAN_RECOVERY_SCAN_LIMIT * 2,
+        )
+
+        self.runtime._orphan_recovery_after = None
+        timed_attempts = []
+        clock_calls = 0
+
+        def bounded_clock():
+            nonlocal clock_calls
+            clock_calls += 1
+            return 0.0 if clock_calls <= 3 else 6.0
+
+        with (
+            patch.object(
+                self.runtime,
+                "_orphan_cleanup_pending",
+                return_value=True,
+            ),
+            patch.object(self.runtime.locks, "records", return_value=()),
+            patch.object(
+                self.runtime.children, "get", return_value=object()
+            ),
+            patch.object(
+                self.runtime.children,
+                "runtime",
+                return_value=candidate_runtime,
+            ),
+            patch.object(
+                self.service.task_repository, "get", return_value=object()
+            ),
+            patch.object(
+                self.runtime,
+                "_reconcile_orphaned_child",
+                side_effect=lambda declaration, **_kwargs: (
+                    timed_attempts.append(declaration["child_id"])
+                    or (True, True)
+                ),
+            ),
+        ):
+            timed = self.runtime._reconcile_orphaned_children(
+                declarations=declarations,
+                now=self.service.now(),
+                sweep_started=0.0,
+                transition_limit=RECOVERY_BATCH_SIZE,
+                monotonic=bounded_clock,
+            )
+        self.assertLessEqual(timed["processed"], 1)
+        self.assertEqual(timed["processed"], len(timed_attempts))
 
 if __name__ == "__main__":
     unittest.main()

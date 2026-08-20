@@ -829,8 +829,19 @@ class DurableExecutionRepository:
             mutator=update,
         )
 
-    def cancel(self, task_id: str, *, now: datetime | None = None) -> bool:
+    def cancel(
+        self,
+        task_id: str,
+        *,
+        now: datetime | None = None,
+        diagnostic_codes: tuple[str, ...] = (),
+    ) -> bool:
         now_text = timestamp(now or utc_now())
+        bounded = (
+            bounded_diagnostics(diagnostic_codes)
+            if diagnostic_codes
+            else ()
+        )
         with self._exclusive_transaction():
             record = self._read_unlocked(task_id)
             if record is None:
@@ -851,7 +862,10 @@ class DurableExecutionRepository:
             record.state = "terminal"
             record.terminal = True
             append_execution_event(
-                record, event_type="execution_cancelled", occurred_at=now_text
+                record,
+                event_type="execution_cancelled",
+                occurred_at=now_text,
+                diagnostic_codes=bounded,
             )
             self._write_unlocked(record)
             self.metrics.increment("cancellations")
