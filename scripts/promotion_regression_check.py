@@ -60,6 +60,12 @@ MAX_FAILED_CHECKS_RENDERED = 12
 BLOCKING = "blocking"
 TRACKED_NONBLOCKING = "tracked_nonblocking"
 
+_AUTHORITY_SOURCE_SHA256 = (
+    "ff17d026a98ad4f55c8ddc8c3f6131ebbb59bccce6920e1372211c9f9f458ca1"
+)
+_AUTHORITY_PROMOTION_BLOCKERS = frozenset({1, 2, 3, 4, 5})
+_AUTHORITY_TRACKED_NONBLOCKING = frozenset({19})
+
 _F3_TERMINAL_STATES = frozenset({
     "succeeded_verified",
     "failed_pre_dispatch",
@@ -315,6 +321,111 @@ def _reference_errors(manifest: dict[str, Any]) -> list[str]:
                 f"separately_authorized_canaries/{identifier}: write-classified tool "
                 "must not appear in default observations."
             )
+
+    snapshot = manifest.get("product_authority_snapshot") or {}
+    blockers = list(snapshot.get("promotion_blockers") or [])
+    tracked = list(snapshot.get("tracked_nonblocking") or [])
+    if snapshot.get("source_sha256") != _AUTHORITY_SOURCE_SHA256:
+        errors.append(
+            "product_authority_snapshot: source digest is not the reviewed authority snapshot."
+        )
+    blocker_items = {item.get("register_item") for item in blockers}
+    tracked_items = {item.get("register_item") for item in tracked}
+    if blocker_items != _AUTHORITY_PROMOTION_BLOCKERS:
+        errors.append(
+            "product_authority_snapshot: promotion blocker inventory must be exactly "
+            "1, 2, 3, 4, and 5."
+        )
+    if tracked_items != _AUTHORITY_TRACKED_NONBLOCKING:
+        errors.append(
+            "product_authority_snapshot: tracked nonblocking inventory must be exactly 19."
+        )
+    for requirement in blockers:
+        if requirement.get("promotion_disposition") != BLOCKING:
+            errors.append(
+                "product_authority_snapshot: every promotion blocker must be blocking."
+            )
+    for requirement in tracked:
+        if requirement.get("promotion_disposition") != TRACKED_NONBLOCKING:
+            errors.append(
+                "product_authority_snapshot: tracked item 19 must be tracked_nonblocking."
+            )
+    confirmed = {
+        item.get("id")
+        for item in sentinels
+        if item.get("register_section") == "confirmed_regression_passes"
+    }
+    if set(snapshot.get("confirmed_regression_passes") or []) != confirmed:
+        errors.append(
+            "product_authority_snapshot: confirmed regression-pass inventory is incomplete."
+        )
+
+    requirements = blockers + tracked
+    requirement_items: set[int] = set()
+    requirement_targets: set[tuple[str, str]] = set()
+    sentinel_by_id = {item.get("id"): item for item in sentinels}
+    canary_by_id = {
+        item.get("id"): item
+        for item in manifest.get("separately_authorized_canaries") or []
+    }
+    for requirement in requirements:
+        register_item = requirement.get("register_item")
+        representation = requirement.get("representation")
+        identifier = requirement.get("id")
+        target_key = (str(representation), str(identifier))
+        if register_item in requirement_items:
+            errors.append(
+                f"product_authority_snapshot: duplicate register item {register_item!r}."
+            )
+        requirement_items.add(register_item)
+        if target_key in requirement_targets:
+            errors.append(
+                "product_authority_snapshot: duplicate requirement target "
+                f"{representation}/{identifier}."
+            )
+        requirement_targets.add(target_key)
+        target = (
+            sentinel_by_id.get(identifier)
+            if representation == "sentinel"
+            else canary_by_id.get(identifier)
+        )
+        if target is None:
+            errors.append(
+                "product_authority_snapshot: requirement "
+                f"#{register_item} references unknown {representation} {identifier!r}."
+            )
+            continue
+        deficiency = target.get("deficiency") or {}
+        if deficiency.get("register_item") != register_item:
+            errors.append(
+                f"product_authority_snapshot: requirement #{register_item} does not "
+                "match its declared deficiency."
+            )
+        if sorted(deficiency.get("related_register_items") or []) != sorted(
+            requirement.get("related_register_items") or []
+        ):
+            errors.append(
+                f"product_authority_snapshot: requirement #{register_item} has "
+                "contradictory related-item evidence."
+            )
+        if target.get("promotion_disposition") != requirement.get(
+            "promotion_disposition"
+        ):
+            errors.append(
+                f"product_authority_snapshot: requirement #{register_item} has "
+                "a contradictory promotion disposition."
+            )
+        if representation == "required_canary" and not target.get(
+            "required_for_promotion"
+        ):
+            errors.append(
+                f"product_authority_snapshot: requirement #{register_item} canary "
+                "is not required for promotion."
+            )
+    if len(requirements) != len(requirement_items):
+        errors.append(
+            "product_authority_snapshot: each register item must map exactly once."
+        )
     return errors
 
 
@@ -416,6 +527,10 @@ def validate_capture(
             errors.append(f"{key}: must be a non-placeholder operator/session attribution.")
 
     declarations = {item["id"]: item for item in manifest.get("observations") or []}
+    projection_contracts = {
+        item["observation"]: item
+        for item in manifest.get("projection_contracts") or []
+    }
     allowed_paths = _required_paths(manifest)
     entries = capture.get("observations")
     if not isinstance(entries, dict):
@@ -442,6 +557,17 @@ def validate_capture(
         fixed = declaration.get("arguments") or {}
         local = declaration.get("operator_arguments") or {}
         status = entry.get("status")
+        projection_contract = projection_contracts.get(identifier)
+        if (
+            status == "captured"
+            and projection_contract is not None
+            and projection_contract.get("evidence_availability")
+            == "unavailable_pending_authoritative_capture"
+        ):
+            errors.append(
+                f"observations/{identifier}: authoritative projection identity is "
+                "unavailable and cannot be captured from synthetic evidence."
+            )
         required_names = set(fixed) | (set(local) if status == "captured" else set())
         allowed_names = set(fixed) | set(local)
         if not required_names.issubset(arguments) or not set(arguments).issubset(
@@ -746,10 +872,12 @@ def _derive_dependency_projection(source: Any) -> dict[str, Any]:
     }
 
 
-def _derive_f3_child_projection(source: Any) -> dict[str, Any]:
+def _derive_f3_child_projection(
+    source: Any, expected_parent_task_id: str, expected_child_count: int
+) -> dict[str, Any]:
     """Project the exact bounded child lifecycle from get_execution_task."""
-    if not isinstance(source, dict):
-        raise CheckerError("F3 child projection requires a public task mapping.")
+    if not isinstance(source, dict) or source.get("success") is not True:
+        raise CheckerError("F3 child projection requires a successful public response.")
     data = source.get("data")
     if not isinstance(data, dict):
         raise CheckerError("F3 child projection response is missing data.")
@@ -757,20 +885,34 @@ def _derive_f3_child_projection(source: Any) -> dict[str, Any]:
     children = data.get("f3_children")
     if not isinstance(task_id, str) or re.fullmatch(r"[a-f0-9]{32}", task_id) is None:
         raise CheckerError("F3 child projection task identity is missing or malformed.")
+    if task_id != expected_parent_task_id:
+        raise CheckerError("F3 child projection does not match the expected parent task.")
     if not isinstance(children, list) or not 1 <= len(children) <= 8:
         raise CheckerError("F3 child projection child list is missing or outside bounds.")
+    if len(children) != expected_child_count:
+        raise CheckerError("F3 child projection child list is incomplete or unexpected.")
 
     normalized: list[dict[str, Any]] = []
     operations: set[str] = set()
+    child_execution_ids: set[str] = set()
     ordinals: set[int] = set()
     for child in children:
         if not isinstance(child, dict):
             raise CheckerError("F3 child projection contains a malformed child.")
         operation_id = child.get("operation_id")
+        child_execution_id = child.get("child_execution_id")
         ordinal = child.get("ordinal")
         state = child.get("state")
         outcome = child.get("normalized_outcome")
         dispatch_count = child.get("dispatch_count")
+        if (
+            not isinstance(child_execution_id, str)
+            or re.fullmatch(r"[a-f0-9]{64}", child_execution_id) is None
+            or child_execution_id in child_execution_ids
+        ):
+            raise CheckerError(
+                "F3 child execution identity is missing, malformed, or duplicated."
+            )
         if (
             not isinstance(operation_id, str)
             or re.fullmatch(r"[A-Za-z0-9_-]{1,64}", operation_id) is None
@@ -795,10 +937,12 @@ def _derive_f3_child_projection(source: Any) -> dict[str, Any]:
         ):
             raise CheckerError("F3 child dispatch count is missing or outside bounds.")
         operations.add(operation_id)
+        child_execution_ids.add(child_execution_id)
         ordinals.add(ordinal)
         normalized.append({
             "identity": {
                 "public_task_id": task_id,
+                "child_execution_id": child_execution_id,
                 "operation_id": operation_id,
                 "ordinal": ordinal,
             },
@@ -894,7 +1038,11 @@ def derive_projection(
     if algorithm == "dependency_public_evidence_v2":
         projection = _derive_dependency_projection(source)
     elif algorithm == "f3_child_lifecycle_v1":
-        projection = _derive_f3_child_projection(source)
+        projection = _derive_f3_child_projection(
+            source,
+            str(contract.get("expected_parent_task_id") or ""),
+            int(contract.get("expected_child_count") or 0),
+        )
     elif algorithm == "wait_template_structure_v1":
         projection = _derive_wait_template_projection(
             source, str(contract.get("expected_action_pointer") or "")
@@ -1112,6 +1260,7 @@ class SentinelResult:
     known_failure_checks: list[CheckResult] = field(default_factory=list)
     deficiency: dict[str, Any] | None = None
     promotion_disposition: str | None = None
+    availability: str = "captured"
     note: str = ""
 
     @property
@@ -1166,12 +1315,39 @@ class Report:
         return bool(self.blocking_known_failure_count)
 
     @property
+    def blocking_unverified_requirements(self) -> list[SentinelResult]:
+        return [
+            item
+            for item in self.results
+            if item.outcome == NOT_CAPTURED
+            and item.promotion_disposition == BLOCKING
+        ]
+
+    @property
+    def blocking_unverified_requirement_count(self) -> int:
+        return len(self.blocking_unverified_requirements)
+
+    @property
+    def blocking_unverified_requirement_present(self) -> bool:
+        return bool(self.blocking_unverified_requirement_count)
+
+    @property
+    def unresolved_blocking_requirements(self) -> list[SentinelResult]:
+        return [
+            item
+            for item in self.results
+            if item.promotion_disposition == BLOCKING
+            and item.outcome != CONFIRMED
+        ]
+
+    @property
     def promotion_eligible(self) -> bool:
         return (
             self.evidence_complete
             and not self.regression_present
             and not self.review_required
             and not self.blocking_known_failure_present
+            and not self.blocking_unverified_requirement_present
         )
 
 
@@ -1213,6 +1389,7 @@ def evaluate(
                     observation=sentinel["observation"],
                     deficiency=sentinel.get("deficiency"),
                     promotion_disposition=sentinel.get("promotion_disposition"),
+                    availability="not_captured",
                     note=(primary.reason if primary else "observation entry is missing"),
                 )
             )
@@ -1247,6 +1424,24 @@ def evaluate(
             or desired_pass
             or known_conclusive
         )
+        incomplete_note = ""
+        if not conclusive:
+            source_ids = {
+                check.get("source_observation", sentinel["observation"])
+                for check in _all_checks(sentinel)
+            }
+            reasons = sorted({
+                observations[source_id].reason
+                for source_id in source_ids
+                if source_id in observations
+                and observations[source_id].status != "captured"
+                and observations[source_id].reason
+            })
+            incomplete_note = (
+                "; ".join(reasons)[:500]
+                if reasons
+                else "required projected evidence is incomplete"
+            )
         results.append(
             SentinelResult(
                 sentinel_id=sentinel["id"],
@@ -1263,7 +1458,8 @@ def evaluate(
                 known_failure_checks=known,
                 deficiency=sentinel.get("deficiency"),
                 promotion_disposition=sentinel.get("promotion_disposition"),
-                note=("required projected evidence is incomplete" if not conclusive else ""),
+                availability="captured" if conclusive else "not_captured",
+                note=incomplete_note,
             )
         )
     canary_capture = capture.get("canaries") or {}
@@ -1279,6 +1475,9 @@ def evaluate(
                     outcome=NOT_CAPTURED,
                     expected_status="expected_pass",
                     observation=canary["id"],
+                    deficiency=canary.get("deficiency"),
+                    promotion_disposition=canary.get("promotion_disposition"),
+                    availability=str(canary.get("availability") or "unknown"),
                     note=(
                         str((entry or {}).get("not_recorded_reason") or "required separately authorized canary not captured")
                     ),
@@ -1306,6 +1505,9 @@ def evaluate(
                 expected_status="expected_pass",
                 observation=canary["id"],
                 desired_checks=desired,
+                deficiency=canary.get("deficiency"),
+                promotion_disposition=canary.get("promotion_disposition"),
+                availability=str(canary.get("availability") or "unknown"),
                 note=("required canary evidence is incomplete" if not conclusive else ""),
             )
         )
@@ -1357,6 +1559,10 @@ def render_text(report: Report) -> str:
     lines.append(
         f"  {'BLOCKING_KNOWN':<15} {report.blocking_known_failure_count:>3}"
     )
+    lines.append(
+        f"  {'BLOCKING_UNVERIFIED':<19} "
+        f"{report.blocking_unverified_requirement_count:>3}"
+    )
     for outcome in OUTCOME_ORDER:
         entries = report.by_outcome(outcome)
         if not entries:
@@ -1373,6 +1579,12 @@ def render_text(report: Report) -> str:
                 lines.append(
                     f"      promotion disposition: {entry.promotion_disposition}"
                 )
+            lines.append(f"      evidence availability: {entry.availability}")
+            if (
+                entry.promotion_disposition == BLOCKING
+                and entry.outcome != CONFIRMED
+            ):
+                lines.append("      independently prevents promotion: true")
             if entry.note:
                 lines.append(f"      {_one_line(entry.note)}")
             for check in entry.failed_checks[:MAX_FAILED_CHECKS_RENDERED]:
@@ -1383,7 +1595,12 @@ def render_text(report: Report) -> str:
     if report.regression_present:
         lines.append("Result: regression present; promotion is not eligible.")
     elif not report.evidence_complete:
-        lines.append("Result: required evidence is incomplete; promotion is not eligible.")
+        if report.blocking_unverified_requirement_present:
+            lines.append(
+                "Result: blocking requirements are unverified; promotion is not eligible."
+            )
+        else:
+            lines.append("Result: required evidence is incomplete; promotion is not eligible.")
     elif report.review_required:
         lines.append("Result: human review is required; promotion is not eligible.")
     elif report.blocking_known_failure_present:
@@ -1416,6 +1633,18 @@ def render_json(report: Report) -> str:
         "blocking_known_failure_ids": [
             item.sentinel_id for item in report.blocking_known_failures
         ],
+        "blocking_unverified_requirement_present": (
+            report.blocking_unverified_requirement_present
+        ),
+        "blocking_unverified_requirement_count": (
+            report.blocking_unverified_requirement_count
+        ),
+        "blocking_unverified_requirement_ids": [
+            item.sentinel_id for item in report.blocking_unverified_requirements
+        ],
+        "unresolved_blocking_requirement_ids": [
+            item.sentinel_id for item in report.unresolved_blocking_requirements
+        ],
         "promotion_eligible": report.promotion_eligible,
         "promotion_blocked": not report.promotion_eligible,
         "run_complete": report.evidence_complete,
@@ -1426,6 +1655,11 @@ def render_json(report: Report) -> str:
                 "outcome": entry.outcome,
                 "expected_status": entry.expected_status,
                 "promotion_disposition": entry.promotion_disposition,
+                "availability": entry.availability,
+                "independently_prevents_promotion": (
+                    entry.promotion_disposition == BLOCKING
+                    and entry.outcome != CONFIRMED
+                ),
                 "observation": entry.observation,
                 "deficiency": entry.deficiency,
                 "note": entry.note,
@@ -1488,10 +1722,16 @@ def render_plan(manifest: dict[str, Any]) -> str:
                 "     projection        : "
                 f"{projection_contract['algorithm']} (contract v{projection_contract['version']})"
             )
-            lines.append(
-                "     derive offline    : python scripts/promotion_regression_check.py "
-                f"project --observation {observation['id']} --source /path/outside/repo/source.json"
-            )
+            if projection_contract["evidence_availability"] == "available":
+                lines.append(
+                    "     derive offline    : python scripts/promotion_regression_check.py "
+                    f"project --observation {observation['id']} --source /path/outside/repo/source.json"
+                )
+            else:
+                lines.append(
+                    "     evidence status   : "
+                    + _one_line(projection_contract["unavailable_reason"])
+                )
         lines.append("     capture paths     :")
         lines.extend(f"       - {path}" for path in sorted(paths[observation["id"]]))
         lines.append("")
@@ -1502,12 +1742,27 @@ def render_template(manifest: dict[str, Any]) -> str:
     observations: dict[str, Any] = {}
     for observation in manifest["observations"]:
         arguments = dict(observation.get("arguments") or {})
+        projection_contract = next(
+            (
+                item
+                for item in manifest.get("projection_contracts") or []
+                if item.get("observation") == observation["id"]
+            ),
+            None,
+        )
+        reason = "REPLACE-WITH-REASON-OR-CAPTURED-EVIDENCE"
+        if (
+            projection_contract is not None
+            and projection_contract.get("evidence_availability")
+            == "unavailable_pending_authoritative_capture"
+        ):
+            reason = projection_contract["unavailable_reason"]
         observations[observation["id"]] = {
             "observation_id": observation["id"],
             "tool": observation["tool"],
             "arguments": arguments,
             "status": "not_captured",
-            "not_recorded_reason": "REPLACE-WITH-REASON-OR-CAPTURED-EVIDENCE",
+            "not_recorded_reason": reason,
         }
     return json.dumps(
         {

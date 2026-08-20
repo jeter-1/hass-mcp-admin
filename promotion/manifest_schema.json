@@ -5,7 +5,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "manifest_version", "target", "projection_contracts", "observations",
+    "manifest_version", "target", "product_authority_snapshot", "projection_contracts", "observations",
     "sentinels", "separately_authorized_canaries"
   ],
   "properties": {
@@ -23,6 +23,7 @@
         "notes": {"type": "string", "maxLength": 2000}
       }
     },
+    "product_authority_snapshot": {"$ref": "#/$defs/product_authority_snapshot"},
     "observations": {
       "type": "array",
       "minItems": 1,
@@ -54,25 +55,73 @@
       "additionalProperties": false,
       "required": [
         "id", "version", "observation", "algorithm", "maximum_source_bytes",
-        "output_paths", "procedure"
+        "output_paths", "procedure", "evidence_availability"
       ],
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$", "maxLength": 100},
         "version": {"const": 1},
         "observation": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$"},
         "algorithm": {"enum": ["dependency_public_evidence_v2", "wait_template_structure_v1", "f3_child_lifecycle_v1"]},
+        "evidence_availability": {"enum": ["available", "unavailable_pending_authoritative_capture"]},
+        "unavailable_reason": {"type": "string", "minLength": 20, "maxLength": 1000},
         "maximum_source_bytes": {"type": "integer", "minimum": 1024, "maximum": 262144},
         "output_paths": {
           "type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true,
           "items": {"type": "string", "pattern": "^projection\\.[a-z0-9_]+$", "maxLength": 160}
         },
         "procedure": {"type": "string", "minLength": 40, "maxLength": 3000},
-        "expected_action_pointer": {"type": "string", "pattern": "^/action/(0|[1-9][0-9]*)$", "maxLength": 80}
+        "expected_action_pointer": {"type": "string", "pattern": "^/action/(0|[1-9][0-9]*)$", "maxLength": 80},
+        "expected_parent_task_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+        "expected_child_count": {"type": "integer", "minimum": 1, "maximum": 8}
       },
       "allOf": [
         {"if": {"properties": {"algorithm": {"const": "wait_template_structure_v1"}}, "required": ["algorithm"]}, "then": {"required": ["expected_action_pointer"]}},
-        {"if": {"properties": {"algorithm": {"const": "dependency_public_evidence_v2"}}, "required": ["algorithm"]}, "then": {"not": {"required": ["expected_action_pointer"]}}}
+        {"if": {"properties": {"algorithm": {"const": "f3_child_lifecycle_v1"}}, "required": ["algorithm"]}, "then": {"required": ["expected_parent_task_id", "expected_child_count"]}},
+        {"if": {"properties": {"algorithm": {"const": "dependency_public_evidence_v2"}}, "required": ["algorithm"]}, "then": {"not": {"anyOf": [{"required": ["expected_action_pointer"]}, {"required": ["expected_parent_task_id"]}]}}},
+        {"if": {"properties": {"evidence_availability": {"const": "available"}}, "required": ["evidence_availability"]}, "then": {"not": {"required": ["unavailable_reason"]}}},
+        {"if": {"properties": {"evidence_availability": {"const": "unavailable_pending_authoritative_capture"}}, "required": ["evidence_availability"]}, "then": {"required": ["unavailable_reason"]}}
       ]
+    },
+    "product_authority_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_document", "source_revision", "source_date", "source_sha256",
+        "promotion_blockers", "tracked_nonblocking", "confirmed_regression_passes"
+      ],
+      "properties": {
+        "source_document": {"const": "ha_mcp_engineering_consolidated_deficiencies.md"},
+        "source_revision": {"type": "string", "minLength": 10, "maxLength": 200},
+        "source_date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+        "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "promotion_blockers": {
+          "type": "array", "minItems": 1, "maxItems": 20,
+          "items": {"$ref": "#/$defs/authority_requirement"}
+        },
+        "tracked_nonblocking": {
+          "type": "array", "minItems": 1, "maxItems": 20,
+          "items": {"$ref": "#/$defs/authority_requirement"}
+        },
+        "confirmed_regression_passes": {
+          "type": "array", "minItems": 1, "maxItems": 40, "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": 100}
+        }
+      }
+    },
+    "authority_requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["register_item", "representation", "id", "promotion_disposition"],
+      "properties": {
+        "register_item": {"type": "integer", "minimum": 1},
+        "related_register_items": {
+          "type": "array", "maxItems": 8, "uniqueItems": true,
+          "items": {"type": "integer", "minimum": 1}
+        },
+        "representation": {"enum": ["sentinel", "required_canary"]},
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": 100},
+        "promotion_disposition": {"enum": ["blocking", "tracked_nonblocking"]}
+      }
     },
     "separately_authorized_canary": {
       "type": "object",
@@ -80,7 +129,8 @@
       "required": [
         "id", "title", "tool", "effect_class", "included_in_default_plan",
         "separate_authorization_required", "fixed_arguments", "operator_arguments",
-        "preconditions", "procedure", "required_for_promotion", "availability"
+        "preconditions", "procedure", "required_for_promotion", "availability",
+        "promotion_disposition"
       ],
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": 100},
@@ -91,6 +141,8 @@
         "separate_authorization_required": {"const": true},
         "required_for_promotion": {"type": "boolean"},
         "availability": {"enum": ["executable", "unavailable_pending_reviewed_protocol"]},
+        "promotion_disposition": {"enum": ["blocking", "tracked_nonblocking"]},
+        "deficiency": {"$ref": "#/$defs/deficiency"},
         "fixed_arguments": {"type": "object", "maxProperties": 20},
         "operator_arguments": {
           "type": "object", "minProperties": 1, "maxProperties": 10,

@@ -31,9 +31,13 @@ default plan. They appear only as `not_captured` requirements in the capture
 template and affect promotion completeness; the checker never invokes them.
 The helper no-change canary is executable only after separate authorization.
 The Beta 39 Jinja/helper-dependency family is explicitly unavailable until a
-separate reviewed live-fixture protocol exists. Any unperformed required canary
-makes `promotion_eligible=false`. A preread cannot remove the race in which
-`create_helper_state_plan` creates a plan.
+separate reviewed live-fixture protocol exists. Deficiency #3 approval-boundary
+fault injection and deficiency #5 safety-critical cover composition are also
+explicitly unavailable pending separate reviewed protocols. The cover proof is
+planning-only: approval, apply, and physical `cover.open_cover` dispatch are
+prohibited. Any unperformed required canary makes `promotion_eligible=false`.
+A preread cannot remove the race in which `create_helper_state_plan` creates a
+plan.
 
 The checker itself has no live transport, MCP client, credential access,
 subprocess invocation, or file-writing path. Tests verify both that property and
@@ -159,16 +163,26 @@ normalized UTF-8 byte count. The digest preimage is the UTF-8 algorithm name
 hashed with SHA-256. A missing, moved, malformed, sensitive, or oversized target
 fails without emitting a projection.
 
-`f3_child_lifecycle_v1` consumes the bounded public `get_execution_task`
-response for the exact orphan parent. It requires the complete child list and
-uses parent task ID plus operation ID and ordinal as the deterministic child
-identity grounded by authorized historical evidence. State, normalized
-outcome, and dispatch count are fingerprinted using canonical structured JSON.
-The projection also reports child count, all-zero-dispatch, all-terminal, and
-all-cancelled-pre-dispatch aggregates. Duplicate operations or ordinals,
-non-contiguous ordinals, missing children, unsupported states, and overflow
-fail closed. Child events, lock bodies, prepared hashes, and task configuration
-are never retained.
+`f3_child_lifecycle_v1` consumes a successful bounded public
+`get_execution_task` response for the exact orphan parent. It requires the
+complete two-child list. Every child must expose a unique 64-character
+lowercase hexadecimal `child_execution_id`, operation ID, contiguous ordinal,
+state, normalized outcome, and dispatch count. Parent ID and every child field
+are fingerprinted with versioned canonical structured JSON after sorting only
+by ordinal. Input list order is nonmaterial; child identity is material. Failed
+responses, missing data, a different parent, missing or malformed identities,
+duplicate identities or ordinals, incomplete children, unsupported states, and
+overflow fail closed.
+
+Authorized retained evidence identifies the parent and the two operations, but
+does not contain the public child execution IDs. Therefore the production F3
+projection contract is `unavailable_pending_authoritative_capture`, the
+committed operator-attested fixture leaves `f3_orphan_task` `NOT_CAPTURED`, and
+the manifest claims no live current or recovered child fingerprint. A later
+separately authorized read-only capture is required. The sanitized projector
+fixture uses unmistakably synthetic 64-hex values solely to prove the offline
+algorithm; those values are not live Beta 39 evidence. Child events, lock
+bodies, prepared hashes, and task configuration are never retained.
 
 The sanitized source-shaped fixtures under
 `tests/fixtures/promotion_regression/` independently derive every current
@@ -200,8 +214,18 @@ and deficiency #4 are `blocking`; an exact match remains `KNOWN_FAILING` but
 makes this regression-manifest gate promotion-ineligible. The separately
 represented top-level taxonomy part of deficiency #19 is
 `tracked_nonblocking` and does not independently block an otherwise complete
-pack. A disposition does not change classification, and there is no separate
-deficiency #3 sentinel.
+pack. Deficiency #3 and deficiency #5 are distinct required blocking canaries;
+they are not absorbed into the F3 orphan deficiency and remain `NOT_CAPTURED`
+until reviewed, separately authorized protocols exist. A disposition does not
+change classification.
+
+The manifest and sanitized contract fixture carry a bounded product-authority
+snapshot of `ha_mcp_engineering_consolidated_deficiencies.md`, revision/date,
+source SHA-256, blocker relationships, dispositions, required canaries, and the
+confirmed regression-pass inventory. The checker rejects a missing, unknown,
+duplicated, or contradictory blocker inventory. Deficiency #14 remains related
+to #2 rather than becoming a duplicate blocker. Deficiency #19 remains tracked
+and nonblocking.
 
 Exit codes:
 
@@ -216,10 +240,14 @@ JSON and text use the same decision contract. `regression_present` reports any
 regression, `evidence_complete` is false for `NOT_CAPTURED`, `review_required`
 is true for `UNEXPECTED_PASS`, and `blocking_known_failure_present` plus
 `blocking_known_failure_count` report exact known promotion blockers.
+`blocking_unverified_requirement_present`, its count and bounded IDs report
+blocking requirements whose evidence is unavailable or not captured. Every
+result also reports evidence availability and whether it independently blocks.
 `promotion_eligible` is true only for complete evidence with no regression,
-review requirement, or blocking known failure. It represents this regression-
-manifest gate only; it does not bypass release-specific acceptance, deployment
-authorization, publication policy, or any other promotion gate. The
+review requirement, blocking known failure, or unverified blocking
+requirement. It represents this regression-manifest gate only; it does not
+bypass release-specific acceptance, deployment authorization, publication
+policy, or any other promotion gate. The
 compatibility fields `run_complete` and
 `promotion_blocked` are exact aliases of `evidence_complete` and the inverse of
 `promotion_eligible`; they cannot contradict eligibility.
@@ -247,13 +275,19 @@ compatibility fields `run_complete` and
   outcome, zero attempts, null dispatch, causal error, exactly two children,
   `create_fp2_pending_helper` at ordinal 0 in `preflight`, and
   `update_vanity_automation` at ordinal 1 in `not_started`, each with zero
-  dispatch and no normalized terminal outcome. Desired recovery preserves the
-  parent failure and requires both children to become
-  `cancelled_pre_dispatch` with zero dispatch. Inventory and health must agree.
-  F3 known-failure evidence allows only this documented orphan difference.
-  Normal locks, corruption, recovery coordinator, recovery failures, fallback,
-  readiness, and conflict holds must remain at their desired values; any new
-  failure is a regression even while the orphan persists.
+  dispatch and no normalized terminal outcome. The retained evidence does not
+  provide their two public child IDs, so the live signature is deliberately
+  `NOT_CAPTURED`, not `KNOWN_FAILING`, until authorized read-only capture fills
+  that exact identity gap. Desired recovery must preserve parent and child
+  identities, operations, ordinals, and zero dispatch while both children
+  become `cancelled_pre_dispatch`. Inventory and health must agree. Once the
+  IDs are grounded, F3 known-failure evidence may allow only this documented
+  orphan difference.
+  An independent expected-pass F3 safety-health sentinel stays conclusive while
+  child identity is unavailable. Normal locks, corruption, recovery
+  coordinator, recovery failures, fallback, readiness, and conflict holds must
+  remain at their desired values; any new failure is a regression even while
+  the orphan lifecycle remains `NOT_CAPTURED`.
 - The historical Beta 31 map update and cleanup and the historical long-template
   execution use exact operator-local task identities from approved acceptance
   evidence. If an identity cannot be resolved, the observation is

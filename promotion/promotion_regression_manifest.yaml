@@ -19,15 +19,60 @@ target:
     contracts. The committed fixture is synthetic and contains no production
     response body or credential.
   notes: >-
-    Expected failures are informational only when every desired check fails in
-    the recorded way and every bounded known-failure check matches. A different
-    failure is a regression. No status is changed automatically.
+    Exact blocking known failures prevent promotion even when every bounded
+    known-failure check matches. Tracked nonblocking failures do not
+    independently block. Missing required blocker evidence prevents promotion,
+    and a different failure is a regression. No status is changed automatically.
+
+product_authority_snapshot:
+  source_document: ha_mcp_engineering_consolidated_deficiencies.md
+  source_revision: HAMCP-089 consolidated deficiency register through Beta 39
+  source_date: "2026-08-19"
+  source_sha256: ff17d026a98ad4f55c8ddc8c3f6131ebbb59bccce6920e1372211c9f9f458ca1
+  promotion_blockers:
+    - register_item: 1
+      representation: sentinel
+      id: dependency-index-complete-coverage
+      promotion_disposition: blocking
+    - register_item: 2
+      related_register_items: [14]
+      representation: sentinel
+      id: f3-ready-locks-and-recovery
+      promotion_disposition: blocking
+    - register_item: 3
+      representation: required_canary
+      id: approval-consumption-pre-dispatch-recovery
+      promotion_disposition: blocking
+    - register_item: 4
+      representation: sentinel
+      id: governance-historical-projection-health
+      promotion_disposition: blocking
+    - register_item: 5
+      representation: required_canary
+      id: cover-open-cover-composition-proof
+      promotion_disposition: blocking
+  tracked_nonblocking:
+    - register_item: 19
+      representation: sentinel
+      id: held-read-top-level-not-found-taxonomy
+      promotion_disposition: tracked_nonblocking
+  confirmed_regression_passes:
+    - automation-long-wait-template-readable
+    - dashboard-hyphenless-map-read
+    - historical-beta31-map-cleanup-succeeded
+    - historical-beta31-map-update-succeeded
+    - historical-long-template-execution-succeeded
+    - read-delegated-upstream
+    - read-direct-home-assistant
+    - read-engineering-native
+    - stale-state-canary-held-pre-dispatch
 
 projection_contracts:
   - id: dependency_evidence_projection_v2
     version: 1
     observation: native_dependency_read
     algorithm: dependency_public_evidence_v2
+    evidence_availability: available
     maximum_source_bytes: 131072
     output_paths:
       - projection.observable_coverage_summary
@@ -46,6 +91,7 @@ projection_contracts:
     version: 1
     observation: long_wait_template_automation_read
     algorithm: wait_template_structure_v1
+    evidence_availability: available
     maximum_source_bytes: 131072
     expected_action_pointer: /action/2
     output_paths:
@@ -68,7 +114,14 @@ projection_contracts:
     version: 1
     observation: f3_orphan_task
     algorithm: f3_child_lifecycle_v1
+    evidence_availability: unavailable_pending_authoritative_capture
+    unavailable_reason: >-
+      Authorized retained evidence identifies the parent and both child
+      operations but does not contain the two public 64-hex child execution
+      identifiers. A separately authorized read-only capture is required.
     maximum_source_bytes: 24576
+    expected_parent_task_id: ab8d7cd12aad48aab8307ca819c794ca
+    expected_child_count: 2
     output_paths:
       - projection.f3_child_count
       - projection.f3_child_lifecycle_fingerprint
@@ -76,14 +129,15 @@ projection_contracts:
       - projection.f3_all_terminal
       - projection.f3_all_cancelled_pre_dispatch
     procedure: >-
-      Supply the bounded public get_execution_task response for the exact orphan
-      parent. The evaluator requires a complete one-to-eight child list and
-      projects each child by the deterministic parent task id, operation id,
-      and ordinal identity available in public evidence. It binds exact state,
-      normalized outcome, and dispatch count in versioned canonical JSON. It
-      rejects duplicate or non-contiguous ordinals, duplicate operations,
-      malformed states, missing fields, and overflow. It does not retain child
-      events, hold bodies, prepared hashes, configuration, or unrelated task data.
+      Supply a successful bounded public get_execution_task response for the
+      exact orphan parent only after separately authorized read-only capture of
+      both child_execution_id values. The evaluator requires the complete
+      two-child list and binds parent task id, unique 64-hex child id,
+      operation id, ordinal, state, normalized outcome, and dispatch count in
+      versioned canonical JSON. Authorized retained evidence does not contain
+      the live child IDs, so this production observation remains not_captured
+      and has no claimed current or recovered fingerprint. Synthetic fixtures
+      exercise the algorithm without claiming live identity provenance.
 
 observations:
   - id: server_identity
@@ -448,6 +502,21 @@ sentinels:
       - {path: data.task_id, operator: equals, value: ab8d7cd12aad48aab8307ca819c794ca}
       - {path: data.task_schema_version, operator: equals, value: 1}
 
+  - id: f3-safety-health-invariants
+    title: F3 safety health remains independently clean
+    description: Lock, corruption, recovery, readiness, and fallback failures must regress even when child identity evidence is unavailable.
+    register_section: minimum_permanent_sentinels
+    observation: server_health
+    expected_status: expected_pass
+    desired_checks:
+      - {path: data.governance.f3.execution_ready, operator: equals, value: true}
+      - {path: data.governance.f3.active_conflict_hold_count, operator: equals, value: 0}
+      - {path: data.governance.f3.active_normal_lock_count, operator: equals, value: 0}
+      - {path: data.governance.f3.corrupt_record_count, operator: equals, value: 0}
+      - {path: data.governance.f3.recovery_coordinator_status, operator: equals, value: ready}
+      - {path: data.governance.f3.recovery_failures, operator: equals, value: 0}
+      - {path: data.governance.f3.fallback_count, operator: equals, value: 0}
+
   - id: f3-ready-locks-and-recovery
     title: F3 lifecycle and orphan accounting agree
     description: The exact recorded parent and child must terminalize consistently with zero dispatch and no active locks.
@@ -483,7 +552,7 @@ sentinels:
       - {path: data.dispatched_at, operator: equals, value: null, source_observation: f3_orphan_task}
       - {path: data.last_error.error_code, operator: equals, value: pre_dispatch_authority_invalid, source_observation: f3_orphan_task}
       - {path: projection.f3_child_count, operator: equals, value: 2, source_observation: f3_orphan_task}
-      - {path: projection.f3_child_lifecycle_fingerprint, operator: equals, value: "sha256:9252bbb6c217d008aa35977974e75c5b13a7e7149a36330ef904faaaf3f8462f", source_observation: f3_orphan_task}
+      - {path: projection.f3_child_lifecycle_fingerprint, operator: present, source_observation: f3_orphan_task}
       - {path: projection.f3_all_zero_dispatch, operator: equals, value: true, source_observation: f3_orphan_task}
       - {path: projection.f3_all_terminal, operator: equals, value: true, source_observation: f3_orphan_task}
       - {path: projection.f3_all_cancelled_pre_dispatch, operator: equals, value: true, source_observation: f3_orphan_task}
@@ -506,7 +575,7 @@ sentinels:
       - {path: data.dispatched_at, operator: equals, value: null, source_observation: f3_orphan_task}
       - {path: data.last_error.error_code, operator: equals, value: pre_dispatch_authority_invalid, source_observation: f3_orphan_task}
       - {path: projection.f3_child_count, operator: equals, value: 2, source_observation: f3_orphan_task}
-      - {path: projection.f3_child_lifecycle_fingerprint, operator: equals, value: "sha256:fbfe67c4b12d73a6f1a84c87ca41081a67bd1b5c64b87d54e8e21c6a9e9c1940", source_observation: f3_orphan_task}
+      - {path: projection.f3_child_lifecycle_fingerprint, operator: present, source_observation: f3_orphan_task}
       - {path: projection.f3_all_zero_dispatch, operator: equals, value: true, source_observation: f3_orphan_task}
       - {path: projection.f3_all_terminal, operator: equals, value: false, source_observation: f3_orphan_task}
       - {path: projection.f3_all_cancelled_pre_dispatch, operator: equals, value: false, source_observation: f3_orphan_task}
@@ -821,6 +890,7 @@ separately_authorized_canaries:
     separate_authorization_required: true
     required_for_promotion: true
     availability: executable
+    promotion_disposition: blocking
     fixed_arguments:
       entity_id: input_boolean.mcp_f2_standard_admin_test_flag
       expiration_minutes: 10
@@ -857,6 +927,7 @@ separately_authorized_canaries:
     separate_authorization_required: true
     required_for_promotion: true
     availability: unavailable_pending_reviewed_protocol
+    promotion_disposition: blocking
     fixed_arguments:
       expiration_minutes: 10
     operator_arguments:
@@ -878,3 +949,72 @@ separately_authorized_canaries:
       explicit unavailable requirement. A separate bounded task must define
       and authorize that protocol before this requirement can be captured.
       Until then, promotion_eligible remains false.
+
+  - id: approval-consumption-pre-dispatch-recovery
+    title: Approval consumption and pre-dispatch recovery remain exactly once
+    tool: unavailable_approval_boundary_fault_injection_protocol
+    effect_class: governed_write
+    included_in_default_plan: false
+    separate_authorization_required: true
+    required_for_promotion: true
+    availability: unavailable_pending_reviewed_protocol
+    promotion_disposition: blocking
+    deficiency:
+      register_item: 3
+      summary: Approval may be consumed without a safely recoverable pre-dispatch execution path.
+      observed_evidence: >-
+        The authoritative register requires independent fault injection at
+        every approval-consumption and provider-dispatch boundary. PR #138 has
+        no reviewed protocol or live authority for that proof.
+    fixed_arguments: {}
+    operator_arguments:
+      reviewed_protocol_digest: {type: string, pattern: "^sha256:[0-9a-f]{64}$"}
+    preconditions:
+      - Obtain separate authorization for a reviewed disposable fault-injection protocol.
+      - Bind the exact approval authority state at every approval-consumption and dispatch boundary.
+      - Prove permitted retry or refusal, at most one dispatch, and no blind redispatch.
+      - Prove stale, expired, drifted, and ambiguous cases fail closed.
+    procedure: >-
+      This required canary is intentionally unavailable in PR #138 and never
+      appears in the default read-only plan. A future separately authorized
+      protocol must inject failure at every approval-consumption and dispatch
+      boundary, bind exact authority state, prove permitted retry or refusal,
+      prove at most one dispatch and no blind redispatch, and prove stale,
+      expired, drifted, and ambiguous cases fail closed. This declaration adds
+      no runtime fault injection, retry authority, approval, apply, or dispatch.
+
+  - id: cover-open-cover-composition-proof
+    title: Safety-critical cover composition proof remains complete
+    tool: create_configuration_plan
+    effect_class: governed_write
+    included_in_default_plan: false
+    separate_authorization_required: true
+    required_for_promotion: true
+    availability: unavailable_pending_reviewed_protocol
+    promotion_disposition: blocking
+    deficiency:
+      register_item: 5
+      summary: Safety-critical multi-operation composition lacks a reviewed promotion proof protocol.
+      observed_evidence: >-
+        The authoritative register requires a disposable planning-only proof
+        for the cover.open_cover composition. PR #138 has no reviewed protocol
+        or fixture and prohibits approval, apply, and physical dispatch.
+    fixed_arguments: {}
+    operator_arguments:
+      reviewed_fixture_digest: {type: string, pattern: "^sha256:[0-9a-f]{64}$"}
+      reviewed_protocol_digest: {type: string, pattern: "^sha256:[0-9a-f]{64}$"}
+    preconditions:
+      - Obtain separate authorization for a reviewed disposable planning-only fixture and protocol.
+      - Preserve the retained physical action graph; added conditions may only narrow execution.
+      - Bind exact dependency and operation ordering, safe partial completion, and the complete reviewed operation set.
+      - Bind stale state, one-dispatch and readback semantics, zero fallback, and material-drift rejection.
+      - Never approve, apply, or dispatch cover.open_cover while performing this proof.
+    procedure: >-
+      This required canary is intentionally unavailable in PR #138 and never
+      appears in the default plan. A future separately authorized disposable
+      planning-only protocol must prove the retained physical action graph is
+      unchanged, added conditions only narrow execution, dependency and
+      operation order are exact, partial completion is safe, the operation set
+      is complete, stale state is bound, one-dispatch/readback and zero fallback
+      hold, and material drift invalidates approval. Approval, apply, and any
+      physical cover.open_cover dispatch are explicitly prohibited.

@@ -3,7 +3,8 @@
   "provenance": {
     "kind": "synthetic_sanitized_source_shaped_fixture",
     "not_a_live_response": true,
-    "purpose": "Independent deterministic derivation coverage without retaining automation or blueprint response bodies."
+    "purpose": "Independent deterministic derivation coverage without retaining automation or blueprint response bodies.",
+    "f3_identity_note": "The 64-hex F3 child ids are unmistakably synthetic algorithm fixtures and are not claimed as live Beta 39 identities."
   },
   "cases": [
     {
@@ -52,12 +53,14 @@
     },
     {
       "observation": "f3_orphan_task",
+      "variant": "synthetic_current_orphan",
       "source": {
         "success": true,
         "data": {
           "task_id": "ab8d7cd12aad48aab8307ca819c794ca",
           "f3_children": [
             {
+              "child_execution_id": "1111111111111111111111111111111111111111111111111111111111111111",
               "operation_id": "create_fp2_pending_helper",
               "ordinal": 0,
               "state": "preflight",
@@ -65,6 +68,7 @@
               "dispatch_count": 0
             },
             {
+              "child_execution_id": "2222222222222222222222222222222222222222222222222222222222222222",
               "operation_id": "update_vanity_automation",
               "ordinal": 1,
               "state": "not_started",
@@ -76,10 +80,45 @@
       },
       "expected": {
         "projection.f3_child_count": 2,
-        "projection.f3_child_lifecycle_fingerprint": "sha256:fbfe67c4b12d73a6f1a84c87ca41081a67bd1b5c64b87d54e8e21c6a9e9c1940",
+        "projection.f3_child_lifecycle_fingerprint": "sha256:b90943b828d4723e86921ec2cb99f65d5741c53a5d070cb077f8eca684186277",
         "projection.f3_all_zero_dispatch": true,
         "projection.f3_all_terminal": false,
         "projection.f3_all_cancelled_pre_dispatch": false
+      }
+    },
+    {
+      "observation": "f3_orphan_task",
+      "variant": "synthetic_recovered_orphan",
+      "source": {
+        "success": true,
+        "data": {
+          "task_id": "ab8d7cd12aad48aab8307ca819c794ca",
+          "f3_children": [
+            {
+              "child_execution_id": "1111111111111111111111111111111111111111111111111111111111111111",
+              "operation_id": "create_fp2_pending_helper",
+              "ordinal": 0,
+              "state": "cancelled_pre_dispatch",
+              "normalized_outcome": "cancelled_pre_dispatch",
+              "dispatch_count": 0
+            },
+            {
+              "child_execution_id": "2222222222222222222222222222222222222222222222222222222222222222",
+              "operation_id": "update_vanity_automation",
+              "ordinal": 1,
+              "state": "cancelled_pre_dispatch",
+              "normalized_outcome": "cancelled_pre_dispatch",
+              "dispatch_count": 0
+            }
+          ]
+        }
+      },
+      "expected": {
+        "projection.f3_child_count": 2,
+        "projection.f3_child_lifecycle_fingerprint": "sha256:83fa576f006f882fd03adf6a09726a677747ab2da874964bed5cbaf35b801b1d",
+        "projection.f3_all_zero_dispatch": true,
+        "projection.f3_all_terminal": true,
+        "projection.f3_all_cancelled_pre_dispatch": true
       }
     },
     {

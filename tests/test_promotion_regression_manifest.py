@@ -56,6 +56,7 @@ AUTHORITATIVE_DEFICIENCY_22 = {
     "minimum_permanent_sentinels": {
         "configuration-validation", "dependency-index-complete-coverage",
         "execution-task-schema-version", "f3-ready-locks-and-recovery",
+        "f3-safety-health-invariants",
         "governance-approval-authority-version", "governance-historical-projection-health",
         "governance-plan-storage-healthy", "governance-task-storage-healthy",
         "held-read-remains-held", "held-read-top-level-not-found-taxonomy",
@@ -87,8 +88,57 @@ AUTHORITATIVE_DEFICIENCY_22 = {
     "separately_authorized_canaries": {
         "helper-no-change-path": "executable",
         "beta39-jinja-helper-dependency-semantics": "unavailable_pending_reviewed_protocol",
+        "approval-consumption-pre-dispatch-recovery": "unavailable_pending_reviewed_protocol",
+        "cover-open-cover-composition-proof": "unavailable_pending_reviewed_protocol",
+    },
+    "required_canary_dispositions": {
+        "helper-no-change-path": "blocking",
+        "beta39-jinja-helper-dependency-semantics": "blocking",
+        "approval-consumption-pre-dispatch-recovery": "blocking",
+        "cover-open-cover-composition-proof": "blocking",
     },
     "jinja_family": [".get()", ".items()", ".keys()", ".values()", "literal bracket access"],
+}
+
+PRODUCT_AUTHORITY_BLOCKERS = {
+    1: {
+        "representation": "sentinel",
+        "id": "dependency-index-complete-coverage",
+        "related_items": [],
+        "promotion_disposition": "blocking",
+    },
+    2: {
+        "representation": "sentinel",
+        "id": "f3-ready-locks-and-recovery",
+        "related_items": [14],
+        "promotion_disposition": "blocking",
+    },
+    3: {
+        "representation": "required_canary",
+        "id": "approval-consumption-pre-dispatch-recovery",
+        "related_items": [],
+        "promotion_disposition": "blocking",
+    },
+    4: {
+        "representation": "sentinel",
+        "id": "governance-historical-projection-health",
+        "related_items": [],
+        "promotion_disposition": "blocking",
+    },
+    5: {
+        "representation": "required_canary",
+        "id": "cover-open-cover-composition-proof",
+        "related_items": [],
+        "promotion_disposition": "blocking",
+    },
+}
+PRODUCT_AUTHORITY_TRACKED = {
+    19: {
+        "representation": "sentinel",
+        "id": "held-read-top-level-not-found-taxonomy",
+        "related_items": [],
+        "promotion_disposition": "tracked_nonblocking",
+    }
 }
 
 
@@ -124,8 +174,8 @@ def set_projection(capture: dict, observation_id: str, projection: dict) -> None
     observation(capture, observation_id)["evidence"].update(projection)
 
 
-def evaluate(capture: dict):
-    return CHECKER.evaluate(load_manifest(), capture, load_schema())
+def evaluate(capture: dict, manifest: dict | None = None):
+    return CHECKER.evaluate(manifest or load_manifest(), capture, load_schema())
 
 
 def result_for(report, sentinel_id: str):
@@ -144,7 +194,120 @@ def mark_not_captured(capture: dict, identifier: str) -> None:
     entry["not_recorded_reason"] = "read-only observation unavailable"
 
 
+def synthetic_f3_context() -> tuple[dict, dict, dict, dict]:
+    """Create test-only exact F3 evidence without claiming live child identities."""
+    manifest = copy.deepcopy(load_manifest())
+    contract = next(
+        item
+        for item in manifest["projection_contracts"]
+        if item["observation"] == "f3_orphan_task"
+    )
+    contract["evidence_availability"] = "available"
+    contract.pop("unavailable_reason")
+    case = projection_case("f3_orphan_task")
+    current = CHECKER.derive_projection(
+        manifest, "f3_orphan_task", copy.deepcopy(case["source"])
+    )
+    recovered_source = copy.deepcopy(case["source"])
+    for child in recovered_source["data"]["f3_children"]:
+        child.update({
+            "state": "cancelled_pre_dispatch",
+            "normalized_outcome": "cancelled_pre_dispatch",
+        })
+    recovered = CHECKER.derive_projection(
+        manifest, "f3_orphan_task", recovered_source
+    )
+    sentinel = next(
+        item
+        for item in manifest["sentinels"]
+        if item["id"] == "f3-ready-locks-and-recovery"
+    )
+    for checks, expected in (
+        (sentinel["known_failure_checks"], current),
+        (sentinel["desired_checks"], recovered),
+    ):
+        check = next(
+            item
+            for item in checks
+            if item["path"] == "projection.f3_child_lifecycle_fingerprint"
+        )
+        check.update({"operator": "equals", "value": expected[check["path"]]})
+    capture = load_fixture()
+    entry = observation(capture, "f3_orphan_task")
+    entry["status"] = "captured"
+    entry.pop("not_recorded_reason")
+    entry["evidence"] = {
+        "data.task_id": "ab8d7cd12aad48aab8307ca819c794ca",
+        "data.task_schema_version": 1,
+        "data.state": "failed_pre_dispatch",
+        "data.terminal_outcome": "failed_pre_dispatch",
+        "data.provider_attempt_count": 0,
+        "data.dispatched_at": None,
+        "data.last_error.error_code": "pre_dispatch_authority_invalid",
+        **current,
+    }
+    entry["absent_paths"] = []
+    capture["manifest_digest"] = CHECKER.canonical_manifest_digest(manifest)
+    return manifest, capture, case["source"], recovered_source
+
+
 class ManifestStructureTests(unittest.TestCase):
+    def test_product_authority_snapshot_covers_every_current_blocker_once(self):
+        manifest = load_manifest()
+        snapshot = manifest["product_authority_snapshot"]
+        self.assertEqual(
+            snapshot["source_document"],
+            "ha_mcp_engineering_consolidated_deficiencies.md",
+        )
+        self.assertEqual(snapshot["source_date"], "2026-08-19")
+        blockers = {
+            item["register_item"]: {
+                "representation": item["representation"],
+                "id": item["id"],
+                "related_items": item.get("related_register_items", []),
+                "promotion_disposition": item["promotion_disposition"],
+            }
+            for item in snapshot["promotion_blockers"]
+        }
+        tracked = {
+            item["register_item"]: {
+                "representation": item["representation"],
+                "id": item["id"],
+                "related_items": item.get("related_register_items", []),
+                "promotion_disposition": item["promotion_disposition"],
+            }
+            for item in snapshot["tracked_nonblocking"]
+        }
+        self.assertEqual(blockers, PRODUCT_AUTHORITY_BLOCKERS)
+        self.assertEqual(tracked, PRODUCT_AUTHORITY_TRACKED)
+        self.assertNotEqual(blockers[3]["id"], blockers[2]["id"])
+
+    def test_product_authority_inventory_rejects_missing_unknown_duplicate_or_conflict(self):
+        manifest, schema = load_manifest(), load_schema()
+        mutations = (
+            lambda value: value["product_authority_snapshot"][
+                "promotion_blockers"
+            ].pop(),
+            lambda value: value["product_authority_snapshot"][
+                "promotion_blockers"
+            ][0].__setitem__("register_item", 99),
+            lambda value: value["product_authority_snapshot"][
+                "promotion_blockers"
+            ].append(
+                copy.deepcopy(
+                    value["product_authority_snapshot"]["promotion_blockers"][0]
+                )
+            ),
+            lambda value: value["product_authority_snapshot"][
+                "promotion_blockers"
+            ][0].__setitem__("promotion_disposition", "tracked_nonblocking"),
+        )
+        for mutate in mutations:
+            with self.subTest(mutation=mutate):
+                changed = copy.deepcopy(manifest)
+                mutate(changed)
+                self.assertTrue(CHECKER.validate_manifest(changed, schema))
+
     def test_manifest_and_capture_validate(self):
         manifest, schema, capture = load_manifest(), load_schema(), load_fixture()
         self.assertEqual(CHECKER.validate_manifest(manifest, schema), [])
@@ -184,6 +347,40 @@ class ManifestStructureTests(unittest.TestCase):
             AUTHORITATIVE_DEFICIENCY_22["separately_authorized_canaries"],
         )
         self.assertEqual(
+            contract["required_canary_dispositions"],
+            AUTHORITATIVE_DEFICIENCY_22["required_canary_dispositions"],
+        )
+        self.assertEqual(contract["source"], "ha_mcp_engineering_consolidated_deficiencies.md")
+        self.assertEqual(contract["source_date"], "2026-08-19")
+        self.assertEqual(
+            contract["source_sha256"],
+            "ff17d026a98ad4f55c8ddc8c3f6131ebbb59bccce6920e1372211c9f9f458ca1",
+        )
+        self.assertEqual(
+            {
+                item["register_item"]: {
+                    "representation": item["representation"],
+                    "id": item["id"],
+                    "related_items": item.get("related_register_items", []),
+                    "promotion_disposition": item["promotion_disposition"],
+                }
+                for item in contract["promotion_blockers"]
+            },
+            PRODUCT_AUTHORITY_BLOCKERS,
+        )
+        self.assertEqual(
+            {
+                item["register_item"]: {
+                    "representation": item["representation"],
+                    "id": item["id"],
+                    "related_items": item.get("related_register_items", []),
+                    "promotion_disposition": item["promotion_disposition"],
+                }
+                for item in contract["tracked_nonblocking"]
+            },
+            PRODUCT_AUTHORITY_TRACKED,
+        )
+        self.assertEqual(
             contract["required_regression_families"]["beta39_jinja_helper_dependency_semantics"],
             AUTHORITATIVE_DEFICIENCY_22["jinja_family"],
         )
@@ -219,6 +416,18 @@ class ManifestStructureTests(unittest.TestCase):
             contract["promotion_dispositions"],
         )
         self.assertNotIn(3, actual.values())
+        canaries = {
+            item["id"]: item
+            for item in load_manifest()["separately_authorized_canaries"]
+        }
+        for register_item in (3, 5):
+            requirement = PRODUCT_AUTHORITY_BLOCKERS[register_item]
+            canary = canaries[requirement["id"]]
+            self.assertEqual(canary["deficiency"]["register_item"], register_item)
+            self.assertEqual(canary["promotion_disposition"], CHECKER.BLOCKING)
+            self.assertEqual(
+                canary["availability"], "unavailable_pending_reviewed_protocol"
+            )
         self.assertEqual(
             sentinels["f3-ready-locks-and-recovery"]["deficiency"][
                 "related_register_items"
@@ -267,6 +476,23 @@ class ManifestStructureTests(unittest.TestCase):
         )["promotion_disposition"] = "blocking"
         self.assertTrue(CHECKER.validate_manifest(forbidden, schema))
 
+        canary = manifest["separately_authorized_canaries"][0]
+        missing_canary = copy.deepcopy(manifest)
+        next(
+            item
+            for item in missing_canary["separately_authorized_canaries"]
+            if item["id"] == canary["id"]
+        ).pop("promotion_disposition")
+        self.assertTrue(CHECKER.validate_manifest(missing_canary, schema))
+
+        invalid_canary = copy.deepcopy(manifest)
+        next(
+            item
+            for item in invalid_canary["separately_authorized_canaries"]
+            if item["id"] == canary["id"]
+        )["promotion_disposition"] = "informational"
+        self.assertTrue(CHECKER.validate_manifest(invalid_canary, schema))
+
     def test_default_manifest_contains_only_authoritatively_read_only_tools(self):
         tree = ast.parse(CAPABILITIES_PATH.read_text(encoding="utf-8"))
         declarations: list[dict] = []
@@ -299,6 +525,10 @@ class ManifestStructureTests(unittest.TestCase):
         self.assertEqual(
             {key: value["availability"] for key, value in canaries.items()},
             load_contract()["separately_authorized_canaries"],
+        )
+        self.assertEqual(
+            {key: value["promotion_disposition"] for key, value in canaries.items()},
+            load_contract()["required_canary_dispositions"],
         )
         helper = canaries["helper-no-change-path"]
         self.assertEqual(helper["tool"], "create_helper_state_plan")
@@ -360,6 +590,68 @@ class ManifestStructureTests(unittest.TestCase):
 
 
 class ClassificationTests(unittest.TestCase):
+    def test_missing_deficiency_3_or_5_canary_independently_blocks(self):
+        manifest, schema = load_manifest(), load_schema()
+        for canary_id in (
+            "approval-consumption-pre-dispatch-recovery",
+            "cover-open-cover-composition-proof",
+        ):
+            with self.subTest(canary=canary_id):
+                capture = load_fixture()
+                for other in manifest["separately_authorized_canaries"]:
+                    entry = capture["canaries"][other["id"]]
+                    if other["id"] == canary_id:
+                        self.assertEqual(entry["status"], "not_captured")
+                        continue
+                    if other["availability"] != "executable":
+                        continue
+                    entry["status"] = "captured"
+                    entry.pop("not_recorded_reason", None)
+                    entry["arguments"].update({
+                        key: (
+                            "off"
+                            if key == "desired_state"
+                            else "sha256:" + "1" * 64
+                        )
+                        for key in other["operator_arguments"]
+                    })
+                    entry["evidence"] = {
+                        check["path"]: check.get("value")
+                        for check in other.get("desired_checks", [])
+                        if check["operator"] == "equals"
+                    }
+                    entry["absent_paths"] = []
+                report = CHECKER.evaluate(manifest, capture, schema)
+                result = result_for(report, "canary:" + canary_id)
+                self.assertEqual(result.outcome, CHECKER.NOT_CAPTURED)
+                self.assertEqual(result.promotion_disposition, CHECKER.BLOCKING)
+                self.assertFalse(report.promotion_eligible)
+                self.assertEqual(CHECKER.exit_code(report), CHECKER.EXIT_INCOMPLETE)
+                isolated = CHECKER.Report(
+                    {},
+                    {},
+                    [
+                        CHECKER.SentinelResult(
+                            sentinel_id="confirmed",
+                            title="otherwise passing",
+                            outcome=CHECKER.CONFIRMED,
+                            expected_status="expected_pass",
+                            observation="test",
+                        ),
+                        copy.deepcopy(result),
+                    ],
+                )
+                self.assertFalse(isolated.promotion_eligible)
+                self.assertEqual(
+                    isolated.blocking_unverified_requirement_count, 1
+                )
+                self.assertEqual(
+                    json.loads(CHECKER.render_json(isolated))[
+                        "blocking_unverified_requirement_ids"
+                    ],
+                    ["canary:" + canary_id],
+                )
+
     def test_exact_classification_table(self):
         cases = (
             ("expected_pass", True, None, True, CHECKER.CONFIRMED),
@@ -385,23 +677,54 @@ class ClassificationTests(unittest.TestCase):
             report.counts,
             {
                 CHECKER.REGRESSION: 0,
-                CHECKER.NOT_CAPTURED: 1,
+                CHECKER.NOT_CAPTURED: 5,
                 CHECKER.UNEXPECTED_PASS: 0,
-                CHECKER.KNOWN_FAILING: 4,
+                CHECKER.KNOWN_FAILING: 3,
                 CHECKER.CONFIRMED: 27,
             },
         )
         self.assertFalse(report.evidence_complete)
         self.assertFalse(report.promotion_eligible)
         self.assertTrue(report.blocking_known_failure_present)
-        self.assertEqual(report.blocking_known_failure_count, 3)
+        self.assertEqual(report.blocking_known_failure_count, 2)
+        self.assertEqual(report.blocking_unverified_requirement_count, 4)
+        self.assertEqual(
+            {item.sentinel_id for item in report.blocking_unverified_requirements},
+            {
+                "f3-ready-locks-and-recovery",
+                "canary:beta39-jinja-helper-dependency-semantics",
+                "canary:approval-consumption-pre-dispatch-recovery",
+                "canary:cover-open-cover-composition-proof",
+            },
+        )
+        self.assertIn(
+            "child execution IDs",
+            result_for(report, "f3-ready-locks-and-recovery").note,
+        )
         self.assertEqual(
             {
                 item.sentinel_id
                 for item in report.by_outcome(CHECKER.KNOWN_FAILING)
             },
-            set(load_contract()["known_failures"]),
+            set(load_contract()["known_failures"]) - {"f3-ready-locks-and-recovery"},
         )
+        rendered = json.loads(CHECKER.render_json(report))
+        by_id = {item["id"]: item for item in rendered["sentinels"]}
+        for sentinel_id, register_item in (
+            ("canary:approval-consumption-pre-dispatch-recovery", 3),
+            ("canary:cover-open-cover-composition-proof", 5),
+        ):
+            item = by_id[sentinel_id]
+            self.assertEqual(item["outcome"], CHECKER.NOT_CAPTURED)
+            self.assertEqual(item["promotion_disposition"], CHECKER.BLOCKING)
+            self.assertEqual(item["availability"], "unavailable_pending_reviewed_protocol")
+            self.assertEqual(item["deficiency"]["register_item"], register_item)
+            self.assertTrue(item["independently_prevents_promotion"])
+            self.assertTrue(item["note"])
+        text = CHECKER.render_text(report)
+        self.assertIn("BLOCKING_UNVERIFIED", text)
+        self.assertIn("deficiency #3", text)
+        self.assertIn("deficiency #5", text)
 
     def test_known_failure_disposition_is_separate_from_classification(self):
         blocking = CHECKER.SentinelResult(
@@ -445,6 +768,27 @@ class ClassificationTests(unittest.TestCase):
         self.assertFalse(report.blocking_known_failure_present)
         self.assertTrue(report.promotion_eligible)
         self.assertEqual(CHECKER.exit_code(report), CHECKER.EXIT_OK)
+
+    def test_each_authoritative_known_failure_has_its_independent_policy(self):
+        production = evaluate(load_fixture())
+        synthetic_manifest, synthetic_capture, _, _ = synthetic_f3_context()
+        synthetic = evaluate(synthetic_capture, synthetic_manifest)
+        cases = (
+            (production, "dependency-index-complete-coverage", CHECKER.BLOCKING),
+            (synthetic, "f3-ready-locks-and-recovery", CHECKER.BLOCKING),
+            (production, "governance-historical-projection-health", CHECKER.BLOCKING),
+            (production, "held-read-top-level-not-found-taxonomy", CHECKER.TRACKED_NONBLOCKING),
+        )
+        for source_report, sentinel_id, disposition in cases:
+            with self.subTest(sentinel=sentinel_id):
+                result = copy.deepcopy(result_for(source_report, sentinel_id))
+                self.assertEqual(result.outcome, CHECKER.KNOWN_FAILING)
+                self.assertEqual(result.promotion_disposition, disposition)
+                isolated = CHECKER.Report({}, {}, [result])
+                self.assertEqual(
+                    isolated.promotion_eligible,
+                    disposition == CHECKER.TRACKED_NONBLOCKING,
+                )
 
     def test_materially_worse_known_failure_is_a_regression(self):
         capture = load_fixture()
@@ -560,10 +904,13 @@ class ClassificationTests(unittest.TestCase):
         )
         for sentinel_id, observation_id, path, value in mutations:
             with self.subTest(sentinel=sentinel_id):
-                capture = load_fixture()
+                if observation_id == "f3_orphan_task":
+                    manifest, capture, _, _ = synthetic_f3_context()
+                else:
+                    manifest, capture = load_manifest(), load_fixture()
                 observation(capture, observation_id)["evidence"][path] = value
                 self.assertEqual(
-                    result_for(evaluate(capture), sentinel_id).outcome,
+                    result_for(evaluate(capture, manifest), sentinel_id).outcome,
                     CHECKER.REGRESSION,
                 )
 
@@ -624,10 +971,13 @@ class ClassificationTests(unittest.TestCase):
         )
         for observation_id, path, sentinel_id in cases:
             with self.subTest(sentinel=sentinel_id):
-                capture = load_fixture()
+                if observation_id == "f3_orphan_task":
+                    manifest, capture, _, _ = synthetic_f3_context()
+                else:
+                    manifest, capture = load_manifest(), load_fixture()
                 observation(capture, observation_id)["evidence"].pop(path)
                 self.assertEqual(
-                    result_for(evaluate(capture), sentinel_id).outcome,
+                    result_for(evaluate(capture, manifest), sentinel_id).outcome,
                     CHECKER.NOT_CAPTURED,
                 )
 
@@ -651,6 +1001,24 @@ class CaptureIdentityTests(unittest.TestCase):
                 capture = load_fixture()
                 mutate(capture)
                 self.assertCaptureInvalid(capture, fragment)
+
+    def test_synthetic_f3_identity_cannot_be_claimed_as_live_capture(self):
+        capture = load_fixture()
+        entry = observation(capture, "f3_orphan_task")
+        entry["status"] = "captured"
+        entry.pop("not_recorded_reason")
+        entry["evidence"] = {
+            "data.task_id": "ab8d7cd12aad48aab8307ca819c794ca",
+            "data.task_schema_version": 1,
+            "data.state": "failed_pre_dispatch",
+            "data.terminal_outcome": "failed_pre_dispatch",
+            "data.provider_attempt_count": 0,
+            "data.dispatched_at": None,
+            "data.last_error.error_code": "pre_dispatch_authority_invalid",
+            **projection_case("f3_orphan_task")["expected"],
+        }
+        entry["absent_paths"] = []
+        self.assertCaptureInvalid(capture, "authoritative projection identity is unavailable")
 
     def test_placeholder_and_malformed_metadata_are_rejected(self):
         for field, value in (
@@ -841,12 +1209,31 @@ class SentinelFidelityTests(unittest.TestCase):
                 capture = load_fixture()
                 observation(capture, "server_health")["evidence"][path] = value
                 self.assertEqual(
-                    result_for(evaluate(capture), "f3-ready-locks-and-recovery").outcome,
+                    result_for(
+                        evaluate(capture), "f3-safety-health-invariants"
+                    ).outcome,
                     CHECKER.REGRESSION,
                 )
+                self.assertEqual(
+                    result_for(
+                        evaluate(capture), "f3-ready-locks-and-recovery"
+                    ).outcome,
+                    CHECKER.NOT_CAPTURED,
+                )
 
-    def test_exact_f3_orphan_lifecycle_is_known_failing(self):
+    def test_live_f3_is_not_captured_without_authoritative_child_ids(self):
         result = result_for(evaluate(load_fixture()), "f3-ready-locks-and-recovery")
+        self.assertEqual(result.outcome, CHECKER.NOT_CAPTURED)
+        self.assertEqual(result.promotion_disposition, CHECKER.BLOCKING)
+        self.assertEqual(
+            result.availability, "not_captured"
+        )
+
+    def test_synthetic_exact_f3_orphan_lifecycle_is_known_failing(self):
+        manifest, capture, _, _ = synthetic_f3_context()
+        result = result_for(
+            evaluate(capture, manifest), "f3-ready-locks-and-recovery"
+        )
         self.assertEqual(result.outcome, CHECKER.KNOWN_FAILING)
         self.assertEqual(result.promotion_disposition, CHECKER.BLOCKING)
 
@@ -860,20 +1247,25 @@ class SentinelFidelityTests(unittest.TestCase):
         )
         for path, value in cases:
             with self.subTest(path=path):
-                capture = load_fixture()
+                manifest, capture, _, _ = synthetic_f3_context()
                 observation(capture, "f3_orphan_task")["evidence"][path] = value
                 if path == "data.state":
                     observation(capture, "execution_task_inventory")["evidence"][
                         "data.tasks[task_id=ab8d7cd12aad48aab8307ca819c794ca].state"
                     ] = value
                 self.assertEqual(
-                    result_for(evaluate(capture), "f3-ready-locks-and-recovery").outcome,
+                    result_for(
+                        evaluate(capture, manifest), "f3-ready-locks-and-recovery"
+                    ).outcome,
                     CHECKER.REGRESSION,
                 )
 
     def test_f3_child_identity_lifecycle_and_dispatch_mutations_regress(self):
-        case = projection_case("f3_orphan_task")
+        manifest, base_capture, source, _ = synthetic_f3_context()
         mutations = (
+            lambda children: children[0].__setitem__(
+                "child_execution_id", "3" * 64
+            ),
             lambda children: children[0].__setitem__("operation_id", "different_operation"),
             lambda children: (
                 children[0].__setitem__("ordinal", 1),
@@ -887,92 +1279,111 @@ class SentinelFidelityTests(unittest.TestCase):
         )
         for mutate in mutations:
             with self.subTest(mutation=mutate):
-                source = copy.deepcopy(case["source"])
-                mutate(source["data"]["f3_children"])
-                capture = load_fixture()
+                changed_source = copy.deepcopy(source)
+                mutate(changed_source["data"]["f3_children"])
+                capture = copy.deepcopy(base_capture)
                 set_projection(
                     capture,
                     "f3_orphan_task",
-                    CHECKER.derive_projection(load_manifest(), "f3_orphan_task", source),
+                    CHECKER.derive_projection(
+                        manifest, "f3_orphan_task", changed_source
+                    ),
                 )
                 self.assertEqual(
-                    result_for(evaluate(capture), "f3-ready-locks-and-recovery").outcome,
+                    result_for(
+                        evaluate(capture, manifest), "f3-ready-locks-and-recovery"
+                    ).outcome,
                     CHECKER.REGRESSION,
                 )
 
     def test_f3_child_count_and_complete_recovery_are_exact(self):
-        case = projection_case("f3_orphan_task")
+        manifest, base_capture, source, recovered = synthetic_f3_context()
 
-        removed = copy.deepcopy(case["source"])
+        removed = copy.deepcopy(source)
         removed["data"]["f3_children"].pop()
-        capture = load_fixture()
-        set_projection(
-            capture,
-            "f3_orphan_task",
-            CHECKER.derive_projection(load_manifest(), "f3_orphan_task", removed),
-        )
-        self.assertEqual(
-            result_for(evaluate(capture), "f3-ready-locks-and-recovery").outcome,
-            CHECKER.REGRESSION,
-        )
+        with self.assertRaises(CHECKER.CheckerError):
+            CHECKER.derive_projection(manifest, "f3_orphan_task", removed)
 
-        added = copy.deepcopy(case["source"])
+        added = copy.deepcopy(source)
         added["data"]["f3_children"].append({
+            "child_execution_id": "3" * 64,
             "operation_id": "unexpected_operation",
             "ordinal": 2,
             "state": "not_started",
             "normalized_outcome": None,
             "dispatch_count": 0,
         })
-        capture = load_fixture()
-        set_projection(
-            capture,
-            "f3_orphan_task",
-            CHECKER.derive_projection(load_manifest(), "f3_orphan_task", added),
-        )
-        self.assertEqual(
-            result_for(evaluate(capture), "f3-ready-locks-and-recovery").outcome,
-            CHECKER.REGRESSION,
-        )
+        with self.assertRaises(CHECKER.CheckerError):
+            CHECKER.derive_projection(manifest, "f3_orphan_task", added)
 
-        one_terminal = copy.deepcopy(case["source"])
+        one_terminal = copy.deepcopy(source)
         one_terminal["data"]["f3_children"][0].update({
             "state": "cancelled_pre_dispatch",
             "normalized_outcome": "cancelled_pre_dispatch",
         })
-        capture = load_fixture()
+        capture = copy.deepcopy(base_capture)
         set_projection(
             capture,
             "f3_orphan_task",
-            CHECKER.derive_projection(load_manifest(), "f3_orphan_task", one_terminal),
+            CHECKER.derive_projection(manifest, "f3_orphan_task", one_terminal),
         )
         self.assertEqual(
-            result_for(evaluate(capture), "f3-ready-locks-and-recovery").outcome,
+            result_for(
+                evaluate(capture, manifest), "f3-ready-locks-and-recovery"
+            ).outcome,
             CHECKER.REGRESSION,
         )
 
-        recovered = copy.deepcopy(case["source"])
-        for child in recovered["data"]["f3_children"]:
-            child.update({
-                "state": "cancelled_pre_dispatch",
-                "normalized_outcome": "cancelled_pre_dispatch",
-            })
-        capture = load_fixture()
+        capture = copy.deepcopy(base_capture)
         set_projection(
             capture,
             "f3_orphan_task",
-            CHECKER.derive_projection(load_manifest(), "f3_orphan_task", recovered),
+            CHECKER.derive_projection(manifest, "f3_orphan_task", recovered),
         )
         health = observation(capture, "server_health")["evidence"]
         health["data.governance.f3.status"] = "ready"
         health["data.governance.f3.nonterminal_execution_count"] = 0
-        result = result_for(evaluate(capture), "f3-ready-locks-and-recovery")
+        result = result_for(
+            evaluate(capture, manifest), "f3-ready-locks-and-recovery"
+        )
         self.assertEqual(result.outcome, CHECKER.UNEXPECTED_PASS)
+
+    def test_f3_child_order_is_canonical_but_identity_is_material(self):
+        manifest, _, source, recovered = synthetic_f3_context()
+        self.assertEqual(
+            [item["child_execution_id"] for item in source["data"]["f3_children"]],
+            [
+                item["child_execution_id"]
+                for item in recovered["data"]["f3_children"]
+            ],
+        )
+        baseline = CHECKER.derive_projection(manifest, "f3_orphan_task", source)
+        reordered = copy.deepcopy(source)
+        reordered["data"]["f3_children"].reverse()
+        self.assertEqual(
+            CHECKER.derive_projection(manifest, "f3_orphan_task", reordered),
+            baseline,
+        )
+        changed = copy.deepcopy(source)
+        changed["data"]["f3_children"][0]["child_execution_id"] = "3" * 64
+        self.assertNotEqual(
+            CHECKER.derive_projection(manifest, "f3_orphan_task", changed)[
+                "projection.f3_child_lifecycle_fingerprint"
+            ],
+            baseline["projection.f3_child_lifecycle_fingerprint"],
+        )
 
     def test_f3_projection_rejects_incomplete_or_malformed_child_lists(self):
         case = projection_case("f3_orphan_task")
         for mutate in (
             lambda value: value["data"].pop("f3_children"),
+            lambda value: value["data"].__setitem__(
+                "task_id", "0" * 32
+            ),
+            lambda value: value["data"].__setitem__("f3_children", []),
+            lambda value: value["data"].__setitem__(
+                "f3_children", value["data"]["f3_children"] * 5
+            ),
             lambda value: value["data"]["f3_children"][0].pop("dispatch_count"),
             lambda value: value["data"]["f3_children"][0].__setitem__("state", "unknown"),
             lambda value: value["data"]["f3_children"][1].__setitem__("ordinal", 0),
@@ -981,6 +1392,32 @@ class SentinelFidelityTests(unittest.TestCase):
             mutate(source)
             with self.assertRaises(CHECKER.CheckerError):
                 CHECKER.derive_projection(load_manifest(), "f3_orphan_task", source)
+
+    def test_f3_projection_requires_success_and_exact_unique_child_ids(self):
+        case = projection_case("f3_orphan_task")
+        source_with_ids = copy.deepcopy(case["source"])
+        for index, child in enumerate(source_with_ids["data"]["f3_children"], start=1):
+            child["child_execution_id"] = str(index) * 64
+        mutations = (
+            lambda value: value.pop("success"),
+            lambda value: value.__setitem__("success", False),
+            lambda value: value["data"]["f3_children"][0].pop("child_execution_id"),
+            lambda value: value["data"]["f3_children"][0].__setitem__(
+                "child_execution_id", "not-a-child-id"
+            ),
+            lambda value: value["data"]["f3_children"][1].__setitem__(
+                "child_execution_id",
+                value["data"]["f3_children"][0].get("child_execution_id", "1" * 64),
+            ),
+        )
+        for mutate in mutations:
+            with self.subTest(mutation=mutate):
+                source = copy.deepcopy(source_with_ids)
+                mutate(source)
+                with self.assertRaises(CHECKER.CheckerError):
+                    CHECKER.derive_projection(
+                        load_manifest(), "f3_orphan_task", source
+                    )
 
 
 class BoundsAndDeterminismTests(unittest.TestCase):

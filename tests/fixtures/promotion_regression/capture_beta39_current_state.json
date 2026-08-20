@@ -3,11 +3,11 @@
     "kind": "synthetic_offline_fixture",
     "not_a_production_record": true,
     "source": "Bounded values recorded in the HAMCP-089 deficiency register and reviewed Beta 39 response contracts.",
-    "omissions": "No raw automation, dashboard, entity attributes, logs, configuration bodies, credentials, or production authority records are included."
+    "omissions": "No raw automation, dashboard, entity attributes, logs, configuration bodies, credentials, production authority records, or unverified F3 child execution IDs are included."
   },
   "capture_schema_version": 1,
   "manifest_version": 2,
-  "manifest_digest": "sha256:1a44188bdc510de99cb5bee3993b635fee939024ecf03e3f691656c66b39e92e",
+  "manifest_digest": "sha256:141adc8d9603e909926080a05347b4f61c8669c74e5ea6bef2eeb6428c044fab",
   "captured_at": "2026-08-19T12:00:00Z",
   "captured_by": "synthetic offline fixture maintainer",
   "session_id": "fixture-beta39-current-state-v2",
@@ -214,22 +214,8 @@
       "observation_id": "f3_orphan_task",
       "tool": "get_execution_task",
       "arguments": {"task_id": "ab8d7cd12aad48aab8307ca819c794ca"},
-      "status": "captured",
-      "evidence": {
-        "data.task_id": "ab8d7cd12aad48aab8307ca819c794ca",
-        "data.task_schema_version": 1,
-        "data.state": "failed_pre_dispatch",
-        "data.terminal_outcome": "failed_pre_dispatch",
-        "data.provider_attempt_count": 0,
-        "data.dispatched_at": null,
-        "data.last_error.error_code": "pre_dispatch_authority_invalid",
-        "projection.f3_child_count": 2,
-        "projection.f3_child_lifecycle_fingerprint": "sha256:fbfe67c4b12d73a6f1a84c87ca41081a67bd1b5c64b87d54e8e21c6a9e9c1940",
-        "projection.f3_all_zero_dispatch": true,
-        "projection.f3_all_terminal": false,
-        "projection.f3_all_cancelled_pre_dispatch": false
-      },
-      "absent_paths": []
+      "status": "not_captured",
+      "not_recorded_reason": "Retained evidence lacks the two public 64-hex child execution IDs; separate read-only capture is required"
     },
     "historical_beta31_map_update_task": {
       "observation_id": "historical_beta31_map_update_task",
@@ -397,6 +383,20 @@
       "arguments": {"expiration_minutes": 10},
       "status": "not_captured",
       "not_recorded_reason": "No reviewed mechanically obtainable live canary protocol exists in PR #138 scope"
+    },
+    "approval-consumption-pre-dispatch-recovery": {
+      "canary_id": "approval-consumption-pre-dispatch-recovery",
+      "tool": "unavailable_approval_boundary_fault_injection_protocol",
+      "arguments": {},
+      "status": "not_captured",
+      "not_recorded_reason": "No reviewed approval-boundary fault-injection protocol exists in PR #138 scope"
+    },
+    "cover-open-cover-composition-proof": {
+      "canary_id": "cover-open-cover-composition-proof",
+      "tool": "create_configuration_plan",
+      "arguments": {},
+      "status": "not_captured",
+      "not_recorded_reason": "No reviewed disposable planning-only cover composition protocol exists in PR #138 scope"
     }
   }
 }
