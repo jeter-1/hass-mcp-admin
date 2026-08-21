@@ -62,6 +62,17 @@ class DurableExecutionRepositoryTests(unittest.TestCase):
             now=NOW,
         )
 
+    @staticmethod
+    def _add_synthetic_lock(record) -> None:
+        record.lock_tokens = [
+            {
+                "key": "dashboard:overview",
+                "generation": 1,
+                "mode": "exclusive",
+                "owner_id": "owner-primary",
+            }
+        ]
+
     def test_different_owner_cannot_claim_active_task(self):
         self.claim()
         with self.assertRaises(DuplicateExecutionActive):
@@ -119,6 +130,201 @@ class DurableExecutionRepositoryTests(unittest.TestCase):
         path.write_text(json.dumps(payload), encoding="utf-8")
         with self.assertRaises(ExecutionRecordCorrupt):
             self.repository.get("task-persistence")
+
+    def test_contradictory_dispatch_classes_fail_closed_on_load(self):
+        corruptions = {
+            "no_intent_failed_post_dispatch": {
+                "normalized_outcome": "failed_post_dispatch",
+                "task_state": "failed_post_dispatch",
+            },
+            "no_intent_manual_review": {
+                "normalized_outcome": "manual_review_required",
+                "task_state": "manual_review_required",
+            },
+            "no_intent_provider_response": {
+                "provider_response_received": True,
+            },
+            "no_intent_observation": {"observation_attempts": 1},
+            "no_intent_verification": {"verification_attempts": 1},
+            "no_intent_post_dispatch_evidence": {
+                "evidence": {
+                    "manual_review_reason_code": "synthetic_post_dispatch",
+                }
+            },
+            "no_intent_post_dispatch_event": {},
+        }
+        for name, changes in corruptions.items():
+            with self.subTest(name=name):
+                repository = DurableExecutionRepository(
+                    Path(self.temporary.name) / name
+                )
+                claim = repository.claim(
+                    identity=_identity(),
+                    prepared=self.prepared,
+                    timing=TIMING,
+                    now=NOW,
+                )
+                repository.terminalize_pre_dispatch(
+                    "task-persistence",
+                    owner_id="owner-primary",
+                    claim_generation=claim.claim_generation,
+                    outcome="failed_pre_dispatch",
+                    now=NOW,
+                )
+                path = repository._path("task-persistence")
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                payload.update(changes)
+                if name == "no_intent_post_dispatch_event":
+                    payload["events"].append(
+                        {
+                            "sequence": len(payload["events"]) + 1,
+                            "event_type": "verification_recorded",
+                            "occurred_at": NOW.isoformat(),
+                            "diagnostic_codes": [],
+                        }
+                    )
+                path.write_text(json.dumps(payload), encoding="utf-8")
+                with self.assertRaises(ExecutionRecordCorrupt):
+                    repository.get("task-persistence")
+
+        repository = DurableExecutionRepository(
+            Path(self.temporary.name) / "intent_with_pre_dispatch_outcome"
+        )
+        claim = repository.claim(
+            identity=_identity(),
+            prepared=self.prepared,
+            timing=TIMING,
+            now=NOW,
+        )
+        record = repository.get("task-persistence")
+        assert record is not None
+        self._add_synthetic_lock(record)
+        repository._write_unlocked(record)
+        repository.record_preflight(
+            "task-persistence",
+            owner_id="owner-primary",
+            claim_generation=claim.claim_generation,
+            now=NOW,
+        )
+        repository.commit_dispatch_intent(
+            "task-persistence",
+            owner_id="owner-primary",
+            claim_generation=claim.claim_generation,
+            request_id="request-primary",
+            provider_operation="synthetic_dashboard_update",
+            provider_arguments_hash="a" * 64,
+            timing=TIMING,
+            now=NOW,
+        )
+        path = repository._path("task-persistence")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload.update(
+            {
+                "state": "terminal",
+                "normalized_outcome": "failed_pre_dispatch",
+                "task_state": "failed_pre_dispatch",
+                "terminal": True,
+            }
+        )
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with self.assertRaises(ExecutionRecordCorrupt):
+            repository.get("task-persistence")
+
+    def test_authoritative_terminal_writers_satisfy_closed_classes(self):
+        for outcome in (
+            "preflight_rejected",
+            "lock_conflict",
+            "provider_unavailable_pre_dispatch",
+            "failed_pre_dispatch",
+            "cancelled_pre_dispatch",
+        ):
+            with self.subTest(outcome=outcome):
+                repository = DurableExecutionRepository(
+                    Path(self.temporary.name) / outcome
+                )
+                claim = repository.claim(
+                    identity=_identity(),
+                    prepared=self.prepared,
+                    timing=TIMING,
+                    now=NOW,
+                )
+                repository.terminalize_pre_dispatch(
+                    "task-persistence",
+                    owner_id="owner-primary",
+                    claim_generation=claim.claim_generation,
+                    outcome=outcome,
+                    now=NOW,
+                )
+                loaded = repository.get("task-persistence")
+                self.assertEqual(outcome, loaded.normalized_outcome)
+
+        no_dispatch = DurableExecutionRepository(
+            Path(self.temporary.name) / "verified_no_dispatch"
+        )
+        claim = no_dispatch.claim(
+            identity=_identity(),
+            prepared=self.prepared,
+            timing=TIMING,
+            now=NOW,
+        )
+        record = no_dispatch.get("task-persistence")
+        assert record is not None
+        self._add_synthetic_lock(record)
+        no_dispatch._write_unlocked(record)
+        no_dispatch.terminalize_verified_no_dispatch(
+            "task-persistence",
+            owner_id="owner-primary",
+            claim_generation=claim.claim_generation,
+            resulting_state_fingerprint="b" * 64,
+            evidence_hash="c" * 64,
+            now=NOW,
+        )
+        self.assertEqual(
+            "succeeded_verified",
+            no_dispatch.get("task-persistence").normalized_outcome,
+        )
+
+        for outcome in ("succeeded_verified", "failed_post_dispatch"):
+            with self.subTest(post_intent_outcome=outcome):
+                repository = DurableExecutionRepository(
+                    Path(self.temporary.name) / f"post_intent_{outcome}"
+                )
+                claim = repository.claim(
+                    identity=_identity(),
+                    prepared=self.prepared,
+                    timing=TIMING,
+                    now=NOW,
+                )
+                record = repository.get("task-persistence")
+                assert record is not None
+                self._add_synthetic_lock(record)
+                repository._write_unlocked(record)
+                repository.record_preflight(
+                    "task-persistence",
+                    owner_id="owner-primary",
+                    claim_generation=claim.claim_generation,
+                    now=NOW,
+                )
+                repository.commit_dispatch_intent(
+                    "task-persistence",
+                    owner_id="owner-primary",
+                    claim_generation=claim.claim_generation,
+                    request_id="request-primary",
+                    provider_operation="synthetic_dashboard_update",
+                    provider_arguments_hash="a" * 64,
+                    timing=TIMING,
+                    now=NOW,
+                )
+                repository.record_verification(
+                    "task-persistence",
+                    owner_id="owner-primary",
+                    claim_generation=claim.claim_generation,
+                    outcome=outcome,
+                    terminal=True,
+                    now=NOW,
+                )
+                loaded = repository.get("task-persistence")
+                self.assertEqual(outcome, loaded.normalized_outcome)
 
     def test_invalid_json_fails_closed_without_replacement_authority(self):
         self.claim()

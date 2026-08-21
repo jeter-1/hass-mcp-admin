@@ -197,8 +197,21 @@ its persisted execution class is either post-intent (`dispatch_count=1`) or
 verified no-dispatch (`dispatch_count=0`, no intent, completed preflight, and a
 persisted `preflight_noop_verified` proof). A no-intent terminal non-success is
 also projection-eligible and preserves the existing aggregate failure
-precedence. Dispatch count without matching intent, count above one, or a
-no-dispatch success without exact no-op proof fails closed.
+precedence.
+
+The persisted model supplies the one closed execution classification used by
+record loading, active recovery, terminal projection, orphan lock settlement,
+and expired-lock settlement. No-intent records require count zero, no provider
+response, no observation or verification attempts, and no post-dispatch event.
+Their terminal outcomes are limited to the five outcomes written by
+`terminalize_pre_dispatch`, plus `succeeded_verified` only with exact no-op
+proof. Intent-bearing records require count one, completed preflight, the
+persisted intent event, and post-intent-compatible state and outcomes; a
+pre-dispatch-only terminal outcome is contradictory. Any contradiction is
+classified as bounded corrupt storage before projection or lock disposition,
+so the public parent, checkpoint, and exact fenced locks remain unresolved for
+operator-visible recovery rather than being rewritten as conclusive
+pre-dispatch failure.
 
 When the complete authoritative sequence succeeds, active discovery chooses its
 last successful child as a scheduling anchor, including all-post-intent,

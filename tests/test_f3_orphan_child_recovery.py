@@ -2892,6 +2892,188 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         with self.assertRaises(ExecutionRecordCorrupt):
             self.runtime.children.get(post_intent["child_id"])
 
+    async def _assert_contradictory_execution_remains_unsettled(
+        self, kind: str
+    ):
+        task, declaration = await self._preintent_active_child(
+            f"rr17_{kind}"
+        )
+        self._claim_child(declaration)
+        _owner, handle = self._hold_child_lock(
+            declaration,
+            expired=True,
+            conflict_hold=True,
+        )
+        self._set_runtime_tokens(declaration["child_id"], handle)
+        identity, claim, timing = self._claims[declaration["child_id"]]
+        if kind == "intent_with_pre_dispatch_outcome":
+            self.runtime.children.record_preflight(
+                declaration["child_id"],
+                owner_id=identity.owner_id,
+                claim_generation=claim.claim_generation,
+                now=self.service.now(),
+            )
+            self.runtime.children.commit_dispatch_intent(
+                declaration["child_id"],
+                owner_id=identity.owner_id,
+                claim_generation=claim.claim_generation,
+                request_id=declaration["request_id"],
+                provider_operation=declaration["operation_id"],
+                provider_arguments_hash=hashlib.sha256(
+                    f"{declaration['child_id']}:arguments".encode()
+                ).hexdigest(),
+                timing=timing,
+                now=self.service.now(),
+            )
+        else:
+            self.runtime.children.terminalize_pre_dispatch(
+                declaration["child_id"],
+                owner_id=identity.owner_id,
+                claim_generation=claim.claim_generation,
+                outcome="failed_pre_dispatch",
+                now=self.service.now(),
+            )
+        checkpoint = self._store_active_checkpoint(declaration)
+        path = self.runtime.children._path(declaration["child_id"])
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        changes = {
+            "no_intent_failed_post_dispatch": {
+                "normalized_outcome": "failed_post_dispatch",
+                "task_state": "failed_post_dispatch",
+            },
+            "no_intent_manual_review": {
+                "normalized_outcome": "manual_review_required",
+                "task_state": "manual_review_required",
+            },
+            "no_intent_provider_response": {
+                "provider_response_received": True,
+            },
+            "no_intent_observation": {"observation_attempts": 1},
+            "no_intent_verification": {"verification_attempts": 1},
+            "no_intent_post_dispatch_event_evidence": {
+                "evidence": {
+                    "manual_review_reason_code": "synthetic_post_dispatch",
+                },
+            },
+            "intent_with_pre_dispatch_outcome": {
+                "state": "terminal",
+                "normalized_outcome": "failed_pre_dispatch",
+                "task_state": "failed_pre_dispatch",
+                "terminal": True,
+            },
+        }[kind]
+        payload["execution"].update(changes)
+        if kind == "no_intent_post_dispatch_event_evidence":
+            payload["execution"]["events"].append(
+                {
+                    "sequence": len(payload["execution"]["events"]) + 1,
+                    "event_type": "verification_recorded",
+                    "occurred_at": self.service.now().isoformat(),
+                    "diagnostic_codes": [],
+                }
+            )
+        path.write_text(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+
+        public_before = self.service.task_repository.get(task.task_id)
+        lock_before = tuple(self.runtime.locks.records())
+        runtime_before = self.runtime.children.runtime(
+            declaration["child_id"]
+        )
+        writes_before = sum(
+            item[0] == "write" for item in self.gateway.calls
+        )
+        with (
+            patch.object(
+                self.runtime,
+                "_load_prepared",
+                side_effect=AssertionError(
+                    "corrupt execution must not prepare a provider operation"
+                ),
+            ),
+            patch.object(
+                self.runtime,
+                "_execute_child",
+                side_effect=AssertionError(
+                    "corrupt execution must not execute"
+                ),
+            ),
+        ):
+            with self.assertRaises(ExecutionRecordCorrupt):
+                await self.runtime.recover_once("periodic")
+            with self.assertRaises(ExecutionRecordCorrupt):
+                await self.runtime.recover_once("periodic")
+
+        public_after = self.service.task_repository.get(task.task_id)
+        self.assertEqual(public_before.state, public_after.state)
+        self.assertEqual(
+            public_before.terminal_outcome,
+            public_after.terminal_outcome,
+        )
+        self.assertEqual(len(public_before.events), len(public_after.events))
+        self.assertEqual(
+            checkpoint,
+            self.runtime.children.active_recovery_checkpoint(),
+        )
+        self.assertEqual(lock_before, tuple(self.runtime.locks.records()))
+        self.assertEqual(
+            runtime_before["selective_hold_tokens"],
+            self.runtime.children.runtime(declaration["child_id"])[
+                "selective_hold_tokens"
+            ],
+        )
+        self.assertEqual(
+            writes_before,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+        durable_after = json.loads(path.read_text(encoding="utf-8"))[
+            "execution"
+        ]
+        for field_name, expected in changes.items():
+            self.assertEqual(expected, durable_after[field_name])
+        if kind == "no_intent_post_dispatch_event_evidence":
+            self.assertEqual(
+                "verification_recorded",
+                durable_after["events"][-1]["event_type"],
+            )
+
+    async def test_no_intent_failed_post_dispatch_fails_closed(self):
+        await self._assert_contradictory_execution_remains_unsettled(
+            "no_intent_failed_post_dispatch"
+        )
+
+    async def test_no_intent_manual_review_fails_closed(self):
+        await self._assert_contradictory_execution_remains_unsettled(
+            "no_intent_manual_review"
+        )
+
+    async def test_no_intent_provider_response_fails_closed(self):
+        await self._assert_contradictory_execution_remains_unsettled(
+            "no_intent_provider_response"
+        )
+
+    async def test_no_intent_observation_fails_closed(self):
+        await self._assert_contradictory_execution_remains_unsettled(
+            "no_intent_observation"
+        )
+
+    async def test_no_intent_verification_fails_closed(self):
+        await self._assert_contradictory_execution_remains_unsettled(
+            "no_intent_verification"
+        )
+
+    async def test_no_intent_post_dispatch_event_evidence_fails_closed(self):
+        await self._assert_contradictory_execution_remains_unsettled(
+            "no_intent_post_dispatch_event_evidence"
+        )
+
+    async def test_intent_with_pre_dispatch_outcome_fails_closed(self):
+        await self._assert_contradictory_execution_remains_unsettled(
+            "intent_with_pre_dispatch_outcome"
+        )
+
     async def test_seventeen_no_dispatch_projections_obey_batch_bound(self):
         fixtures = []
         for index in range(RECOVERY_BATCH_SIZE + 1):

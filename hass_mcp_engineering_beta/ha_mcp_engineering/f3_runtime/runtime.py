@@ -22,6 +22,11 @@ from ..f3.locks import (
     StaleRecoveryDecision,
 )
 from ..f3.models import (
+    EXECUTION_CLASS_POST_INTENT,
+    EXECUTION_CLASS_PRE_INTENT,
+    EXECUTION_CLASS_TERMINAL_POST_INTENT,
+    EXECUTION_CLASS_TERMINAL_PRE_DISPATCH,
+    EXECUTION_CLASS_VERIFIED_NO_DISPATCH,
     ExecutionIdentity,
     ExecutorTiming,
     LockHandle,
@@ -1244,6 +1249,7 @@ class F3RuntimeIntegration:
                 raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
             record = self.children.get(declaration["child_id"])
             if record is not None:
+                record.execution_class()
                 if not prior_all_verified:
                     raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
                 if not record.terminal:
@@ -2754,34 +2760,23 @@ class F3RuntimeIntegration:
 
         if record is None:
             return _RECOVERY_MODE_PRE_INTENT
-        if record.dispatch_intent is None:
-            if record.dispatch_count != 0:
-                raise GovernanceError(
-                    ErrorCode.EXECUTION_TASK_STORAGE_ERROR
-                )
-        elif record.dispatch_count != 1:
-            raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
-        if record.terminal:
-            if (
-                record.normalized_outcome == "succeeded_verified"
-                and record.dispatch_intent is None
-                and not (
-                    record.preflight_completed
-                    and any(
-                        item.get("event_type") == "preflight_noop_verified"
-                        for item in record.events
-                    )
-                )
-            ):
-                raise GovernanceError(
-                    ErrorCode.EXECUTION_TASK_STORAGE_ERROR
-                )
+        try:
+            execution_class = record.execution_class()
+        except (KeyError, TypeError, ValueError) as exc:
+            raise GovernanceError(
+                ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+            ) from exc
+        if execution_class in {
+            EXECUTION_CLASS_TERMINAL_PRE_DISPATCH,
+            EXECUTION_CLASS_VERIFIED_NO_DISPATCH,
+            EXECUTION_CLASS_TERMINAL_POST_INTENT,
+        }:
             return _RECOVERY_MODE_TERMINAL_PROJECTION
-        return (
-            _RECOVERY_MODE_POST_INTENT
-            if record.dispatch_intent is not None
-            else _RECOVERY_MODE_PRE_INTENT
-        )
+        if execution_class == EXECUTION_CLASS_POST_INTENT:
+            return _RECOVERY_MODE_POST_INTENT
+        if execution_class == EXECUTION_CLASS_PRE_INTENT:
+            return _RECOVERY_MODE_PRE_INTENT
+        raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
 
     def _reload_active_candidate(
         self,
@@ -3040,7 +3035,10 @@ class F3RuntimeIntegration:
     ) -> int:
         """Release only the exact pre-intent child's fenced generations."""
 
-        if record.dispatch_intent is not None:
+        if record.execution_class() not in {
+            EXECUTION_CLASS_TERMINAL_PRE_DISPATCH,
+            EXECUTION_CLASS_VERIFIED_NO_DISPATCH,
+        }:
             raise GovernanceError(ErrorCode.EXECUTION_TASK_INVALID_STATE)
         child_id = declaration["child_id"]
         lock_records = self._related_lock_records(
@@ -3661,10 +3659,18 @@ class F3RuntimeIntegration:
             except Exception:
                 continue
             execution = self.children.get(lock_record.task_id)
+            execution_class = (
+                None
+                if execution is None
+                else execution.execution_class()
+            )
             if (
                 execution is not None
-                and execution.terminal
-                and execution.dispatch_intent is None
+                and execution_class
+                in {
+                    EXECUTION_CLASS_TERMINAL_PRE_DISPATCH,
+                    EXECUTION_CLASS_VERIFIED_NO_DISPATCH,
+                }
                 and self._lock_record_matches_execution_authority(
                     declaration, execution, lock_record
                 )
