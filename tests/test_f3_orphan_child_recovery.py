@@ -429,6 +429,40 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         )
         return task, declaration
 
+    async def _initialized_hvac_sequence(self):
+        created = await self.create_hvac_plan()
+        await self.approve(created)
+        plan = self.service._load(created["plan_id"])
+        task, prepared, requests = await self.runtime._initialize(
+            plan, created["plan_hash"]
+        )
+        task = self.runtime._enter_public_preflight(task)
+        declarations = self.runtime.children.declarations_for_task(
+            task.task_id
+        )
+        self.assertEqual(3, len(declarations))
+        return plan, task, declarations, prepared, requests
+
+    async def _complete_sequence_child(
+        self,
+        *,
+        plan,
+        task,
+        declaration,
+        operation,
+        requests,
+    ):
+        result = await self.runtime._execute_child(
+            plan, task, declaration, operation, requests
+        )
+        record = self.runtime.children.get(declaration["child_id"])
+        self.assertTrue(result.terminal)
+        self.assertEqual("succeeded_verified", result.outcome)
+        self.assertTrue(record.terminal)
+        self.assertEqual("succeeded_verified", record.normalized_outcome)
+        self.assertEqual(1, record.dispatch_count)
+        return record
+
     def _terminalize_post_intent_child(
         self,
         declaration,
@@ -448,6 +482,28 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         )
         self.assertTrue(terminal.terminal)
         self.assertEqual("manual_review_required", terminal.normalized_outcome)
+        self.assertEqual(1, terminal.dispatch_count)
+        return terminal
+
+    def _succeed_post_intent_child(
+        self,
+        declaration,
+        *,
+        diagnostic_code="rr15_terminal_success_evidence",
+    ):
+        record = self.runtime.children.get(declaration["child_id"])
+        identity = record.execution_identity()
+        terminal = self.runtime.children.record_verification(
+            declaration["child_id"],
+            owner_id=identity.owner_id,
+            claim_generation=record.claim_generation,
+            outcome="succeeded_verified",
+            terminal=True,
+            diagnostic_codes=(diagnostic_code,),
+            now=self.service.now(),
+        )
+        self.assertTrue(terminal.terminal)
+        self.assertEqual("succeeded_verified", terminal.normalized_outcome)
         self.assertEqual(1, terminal.dispatch_count)
         return terminal
 
@@ -2168,6 +2224,372 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         )
         self.assertNotEqual(
             checkpoint, self.runtime.children.active_recovery_checkpoint()
+        )
+
+    async def test_successful_post_intent_child_without_checkpoint_projects(self):
+        task, declaration = await self._post_intent_active_child(
+            "rr15_success_without_checkpoint"
+        )
+        terminal = self._succeed_post_intent_child(declaration)
+        before_writes = sum(
+            item[0] == "write" for item in self.gateway.calls
+        )
+        self.assertIsNone(self.runtime.children.active_recovery_checkpoint())
+
+        original_project = self.runtime._project
+
+        def project_after_checkpoint(plan, public_task):
+            checkpoint = self.runtime.children.active_recovery_checkpoint()
+            self.assertEqual(
+                [declaration["child_id"]],
+                [item["child_id"] for item in checkpoint["candidates"]],
+            )
+            return original_project(plan, public_task)
+
+        with (
+            patch.object(
+                self.runtime,
+                "_execute_child",
+                side_effect=AssertionError("terminal child must not execute"),
+            ),
+            patch.object(
+                self.runtime,
+                "_project",
+                side_effect=project_after_checkpoint,
+            ),
+        ):
+            result = await self.runtime.recover_once("periodic")
+
+        public = self.service.get_execution_task(task.task_id)
+        child = next(
+            item
+            for item in public["f3_children"]
+            if item["child_execution_id"] == declaration["child_id"]
+        )
+        self.assertEqual(1, result["active_recovery_transitions"])
+        self.assertEqual("succeeded_verified", public["state"])
+        self.assertEqual("succeeded_verified", public["terminal_outcome"])
+        self.assertEqual("terminal", child["state"])
+        self.assertEqual("succeeded_verified", child["normalized_outcome"])
+        self.assertEqual(1, child["dispatch_count"])
+        self.assertEqual(
+            terminal.events,
+            self.runtime.children.get(declaration["child_id"]).events,
+        )
+        self.assertEqual(
+            before_writes,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+        self.assertIsNone(self.runtime.children.active_recovery_checkpoint())
+
+    async def test_successful_child_is_discovered_after_restart_without_checkpoint(
+        self,
+    ):
+        task, declaration = await self._post_intent_active_child(
+            "rr15_success_restart_discovery"
+        )
+        self._succeed_post_intent_child(
+            declaration,
+            diagnostic_code="rr15_success_restart_evidence",
+        )
+        before_writes = sum(
+            item[0] == "write" for item in self.gateway.calls
+        )
+        self.assertIsNone(self.runtime.children.active_recovery_checkpoint())
+        self._restart_runtime()
+
+        with patch.object(
+            self.runtime,
+            "_execute_child",
+            side_effect=AssertionError("terminal child must not execute"),
+        ):
+            result = await self.runtime.recover_once("startup")
+
+        public = self.service.get_execution_task(task.task_id)
+        self.assertEqual(1, result["active_recovery_transitions"])
+        self.assertEqual("succeeded_verified", public["state"])
+        self.assertEqual("succeeded_verified", public["terminal_outcome"])
+        self.assertEqual(
+            1,
+            self.runtime.children.get(declaration["child_id"]).dispatch_count,
+        )
+        self.assertIsNone(self.runtime.children.active_recovery_checkpoint())
+        self.assertEqual(
+            before_writes,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+
+    async def test_checkpointed_success_projection_is_restart_idempotent(self):
+        task, declaration = await self._post_intent_active_child(
+            "rr15_checkpointed_success"
+        )
+        self._store_active_checkpoint(declaration)
+        self._succeed_post_intent_child(
+            declaration,
+            diagnostic_code="rr15_checkpointed_success_evidence",
+        )
+        before_writes = sum(
+            item[0] == "write" for item in self.gateway.calls
+        )
+
+        with patch.object(
+            self.runtime,
+            "_execute_child",
+            side_effect=AssertionError("terminal child must not execute"),
+        ):
+            first = await self.runtime.recover_once("periodic")
+
+        public = self.service.get_execution_task(task.task_id)
+        event_count = public["event_count"]
+        audit_ids = [
+            item["audit_event_id"]
+            for item in self._audit_entries()
+            if "audit_event_id" in item
+        ]
+        self.assertEqual(1, first["active_recovery_transitions"])
+        self.assertEqual("succeeded_verified", public["state"])
+        self.assertIsNone(self.runtime.children.active_recovery_checkpoint())
+
+        repeated = await self.runtime.recover_once("periodic")
+        self._restart_runtime()
+        restarted = await self.runtime.recover_once("startup")
+
+        self.assertEqual(0, repeated["active_recovery_transitions"])
+        self.assertEqual(0, restarted["active_recovery_transitions"])
+        self.assertEqual(
+            event_count,
+            self.service.get_execution_task(task.task_id)["event_count"],
+        )
+        self.assertEqual(
+            audit_ids,
+            [
+                item["audit_event_id"]
+                for item in self._audit_entries()
+                if "audit_event_id" in item
+            ],
+        )
+        self.assertEqual(
+            1,
+            self.runtime.children.get(declaration["child_id"]).dispatch_count,
+        )
+        self.assertEqual(
+            before_writes,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+
+    async def test_success_projection_failure_remains_checkpointed_for_retry(self):
+        task, declaration = await self._post_intent_active_child(
+            "rr15_success_projection_retry"
+        )
+        self._succeed_post_intent_child(
+            declaration,
+            diagnostic_code="rr15_success_projection_retry_evidence",
+        )
+        before_writes = sum(
+            item[0] == "write" for item in self.gateway.calls
+        )
+
+        with patch.object(
+            self.runtime,
+            "_project",
+            side_effect=RuntimeError("synthetic successful projection failure"),
+        ):
+            failed = await self.runtime.recover_once("periodic")
+
+        retained = self.runtime.children.active_recovery_checkpoint()
+        retry_at = datetime.fromisoformat(
+            self.runtime.children.runtime(declaration["child_id"])[
+                "next_eligible_at"
+            ]
+        )
+        self.assertEqual(1, failed["active_recovery_transitions"])
+        self.assertEqual(
+            [declaration["child_id"]],
+            [item["child_id"] for item in retained["candidates"]],
+        )
+        self.assertEqual("preflight", self.service.get_execution_task(
+            task.task_id
+        )["state"])
+
+        self.service.now = lambda: retry_at
+        recovered = await self.runtime.recover_once("periodic")
+
+        self.assertEqual(1, recovered["active_recovery_transitions"])
+        self.assertEqual(
+            "succeeded_verified",
+            self.service.get_execution_task(task.task_id)["state"],
+        )
+        self.assertIsNone(self.runtime.children.active_recovery_checkpoint())
+        self.assertEqual(
+            1,
+            self.runtime.children.get(declaration["child_id"]).dispatch_count,
+        )
+        self.assertEqual(
+            before_writes,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+        audit_ids = [
+            item["audit_event_id"]
+            for item in self._audit_entries()
+            if "audit_event_id" in item
+        ]
+        repeated = await self.runtime.recover_once("periodic")
+        self.assertEqual(0, repeated["active_recovery_transitions"])
+        self.assertEqual(
+            audit_ids,
+            [
+                item["audit_event_id"]
+                for item in self._audit_entries()
+                if "audit_event_id" in item
+            ],
+        )
+
+    async def test_successful_prior_child_does_not_displace_later_operation(self):
+        plan, task, declarations, prepared, requests = (
+            await self._initialized_hvac_sequence()
+        )
+        await self._complete_sequence_child(
+            plan=plan,
+            task=task,
+            declaration=declarations[0],
+            operation=prepared[0],
+            requests=requests,
+        )
+        before_writes = sum(
+            item[0] == "write" for item in self.gateway.calls
+        )
+
+        selection = self.runtime._active_recovery_candidates(
+            now=self.service.now(),
+            sweep_started=0.0,
+            monotonic=lambda: 0.0,
+        )
+
+        self.assertEqual(1, len(selection["candidates"]))
+        selected, selected_record = selection["candidates"][0]
+        self.assertEqual(declarations[1]["child_id"], selected["child_id"])
+        self.assertIsNone(selected_record)
+        self.assertEqual("preflight", self.service.get_execution_task(
+            task.task_id
+        )["state"])
+        self.assertEqual(
+            1,
+            self.runtime.children.get(declarations[0]["child_id"]).dispatch_count,
+        )
+        self.assertEqual(
+            before_writes,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+
+    async def test_terminal_failure_after_success_controls_parent_projection(self):
+        plan, task, declarations, prepared, requests = (
+            await self._initialized_hvac_sequence()
+        )
+        await self._complete_sequence_child(
+            plan=plan,
+            task=task,
+            declaration=declarations[0],
+            operation=prepared[0],
+            requests=requests,
+        )
+        self.gateway.fail_write_target = ("script", "set_hvac_comfort")
+        failed = await self.runtime._execute_child(
+            plan,
+            task,
+            declarations[1],
+            prepared[1],
+            requests,
+        )
+        failed_record = self.runtime.children.get(
+            declarations[1]["child_id"]
+        )
+        before_writes = sum(
+            item[0] == "write" for item in self.gateway.calls
+        )
+        self.assertTrue(failed.terminal)
+        self.assertNotEqual("succeeded_verified", failed.outcome)
+        self.assertTrue(failed_record.terminal)
+
+        with patch.object(
+            self.runtime,
+            "_execute_child",
+            side_effect=AssertionError("terminal sequence must only project"),
+        ):
+            recovered = await self.runtime.recover_once("periodic")
+
+        public = self.service.get_execution_task(task.task_id)
+        projected = {
+            item["child_execution_id"]: item
+            for item in public["f3_children"]
+        }
+        self.assertEqual(1, recovered["active_recovery_transitions"])
+        self.assertEqual("manual_review_required", public["terminal_outcome"])
+        self.assertNotEqual("succeeded_verified", public["terminal_outcome"])
+        self.assertEqual(
+            "succeeded_verified",
+            projected[declarations[0]["child_id"]]["normalized_outcome"],
+        )
+        self.assertEqual(
+            failed.outcome,
+            projected[declarations[1]["child_id"]]["normalized_outcome"],
+        )
+        self.assertEqual(
+            1,
+            self.runtime.children.get(declarations[0]["child_id"]).dispatch_count,
+        )
+        self.assertEqual(1, failed_record.dispatch_count)
+        self.assertEqual(
+            before_writes,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+
+    async def test_complete_successful_sequence_projects_once(self):
+        plan, task, declarations, prepared, requests = (
+            await self._initialized_hvac_sequence()
+        )
+        for declaration, operation in zip(
+            declarations, prepared, strict=True
+        ):
+            await self._complete_sequence_child(
+                plan=plan,
+                task=task,
+                declaration=declaration,
+                operation=operation,
+                requests=requests,
+            )
+        before_writes = sum(
+            item[0] == "write" for item in self.gateway.calls
+        )
+        self.assertEqual("preflight", self.service.get_execution_task(
+            task.task_id
+        )["state"])
+        self.assertIsNone(self.runtime.children.active_recovery_checkpoint())
+
+        with patch.object(
+            self.runtime,
+            "_execute_child",
+            side_effect=AssertionError("successful sequence must only project"),
+        ):
+            result = await self.runtime.recover_once("periodic")
+
+        public = self.service.get_execution_task(task.task_id)
+        self.assertEqual(1, result["active_recovery_transitions"])
+        self.assertEqual("succeeded_verified", public["state"])
+        self.assertEqual("succeeded_verified", public["terminal_outcome"])
+        self.assertEqual(
+            ["succeeded_verified"] * len(declarations),
+            [item["normalized_outcome"] for item in public["f3_children"]],
+        )
+        self.assertTrue(
+            all(
+                self.runtime.children.get(item["child_id"]).dispatch_count == 1
+                for item in declarations
+            )
+        )
+        self.assertIsNone(self.runtime.children.active_recovery_checkpoint())
+        self.assertEqual(
+            before_writes,
+            sum(item[0] == "write" for item in self.gateway.calls),
         )
 
     async def test_terminalization_between_selection_and_reload_projects(self):

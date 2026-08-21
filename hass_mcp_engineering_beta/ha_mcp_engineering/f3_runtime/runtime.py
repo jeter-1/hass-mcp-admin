@@ -2656,14 +2656,29 @@ class F3RuntimeIntegration:
                 for item in task_declarations
             }
             candidate: tuple[dict[str, Any], Any | None] | None = None
+            successful_projection_anchor: (
+                tuple[dict[str, Any], Any] | None
+            ) = None
+            sequence_complete_successfully = True
             for declaration in task_declarations:
                 declarations_examined += 1
                 record = records[declaration["operation_id"]]
                 if record is not None and record.terminal:
                     if record.normalized_outcome == "succeeded_verified":
+                        if record.dispatch_intent is not None:
+                            if record.dispatch_count != 1:
+                                raise GovernanceError(
+                                    ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+                                )
+                            successful_projection_anchor = (
+                                declaration,
+                                record,
+                            )
                         continue
+                    sequence_complete_successfully = False
                     candidate = (declaration, record)
                     break
+                sequence_complete_successfully = False
                 dependencies = set(
                     declaration["operation_dependency_ids"]
                 )
@@ -2676,6 +2691,16 @@ class F3RuntimeIntegration:
                     break
                 candidate = (declaration, record)
                 break
+            if (
+                candidate is None
+                and sequence_complete_successfully
+                and successful_projection_anchor is not None
+            ):
+                # The complete authoritative sequence is already successful,
+                # but its nonterminal schema-1 parent still needs projection.
+                # The final post-intent success is scheduling evidence only;
+                # _project reloads and validates the complete sequence.
+                candidate = successful_projection_anchor
             if candidate is None:
                 continue
             declaration, record = candidate
@@ -3230,7 +3255,12 @@ class F3RuntimeIntegration:
                 prepared, requests = await self._load_prepared(plan, task)
                 operation = prepared[declaration["operation_ordinal"]]
                 record = self.children.get(declaration["child_id"])
-                if record is None or not record.terminal:
+                if record is not None and record.terminal:
+                    # Terminal recovery is projection-only. Keeping this
+                    # branch explicit makes provider execution unreachable
+                    # for both successful and non-success terminal outcomes.
+                    pass
+                else:
                     if record is None or record.dispatch_intent is None:
                         task = self._enter_public_preflight(task)
                     result = await self._execute_child(

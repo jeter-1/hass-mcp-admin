@@ -189,6 +189,15 @@ reloaded and considered before any further namespace scan. Removed,
 terminalized, backed-off, replaced, or authority-mismatched entries are skipped
 according to current durable state and cannot block later work.
 
+A terminal `succeeded_verified` child is also eligible for projection-only
+recovery when the complete authoritative child sequence has succeeded but its
+schema-1 public task remains nonterminal. Active discovery selects exactly one
+post-intent success as the sequence anchor and checkpoints it before projection;
+the coordinator reloads and validates the complete sequence and never invokes
+child execution for that anchor. Any later nonterminal or terminal-failure child
+takes precedence, so an earlier success cannot prematurely terminalize a
+multi-operation parent.
+
 If discovery reaches the deadline immediately after finding one eligible
 post-intent child, that child is attempted first on the next sweep. A checkpoint
 holding multiple eligible children retains immutable-deadline and deterministic
