@@ -2736,8 +2736,14 @@ class F3RuntimeIntegration:
         *,
         now: datetime,
         require_post_intent: bool,
-    ) -> tuple[dict[str, Any], Any | None] | None:
-        """Reload current authority for non-authoritative scheduling evidence."""
+    ) -> tuple[str, dict[str, Any] | None, Any | None]:
+        """Reload authority and classify non-authoritative scheduling evidence.
+
+        ``dismissed`` is reserved for authority that no longer applies.
+        ``deferred`` retains still-applicable work that is inside its durable
+        retry backoff.  Keeping those outcomes distinct prevents a failed
+        public projection from being mistaken for a settled checkpoint.
+        """
 
         public_task = self.service.task_repository.get(
             reference["public_task_id"]
@@ -2748,7 +2754,7 @@ class F3RuntimeIntegration:
             or public_task.legacy_projection.get("execution_authority")
             != F3_EXECUTION_AUTHORITY
         ):
-            return None
+            return "dismissed", None, None
         current = next(
             (
                 item
@@ -2770,25 +2776,21 @@ class F3RuntimeIntegration:
                 "declaration_hash",
             )
         ):
-            return None
+            return "dismissed", None, None
         record = self.children.get(current["child_id"])
-        if record is not None and record.terminal:
-            return None
-        runtime = self.children.runtime(current["child_id"])
-        if (
-            runtime["next_eligible_at"] is not None
-            and datetime.fromisoformat(runtime["next_eligible_at"]) > now
-        ):
-            return None
         if require_post_intent:
             if record is None or record.dispatch_intent is None:
-                return None
+                return "dismissed", None, None
             if record.dispatch_count != 1:
                 raise GovernanceError(
                     ErrorCode.EXECUTION_TASK_STORAGE_ERROR
                 )
         elif record is not None and record.dispatch_intent is not None:
-            return None
+            return "dismissed", None, None
+        elif record is not None and record.terminal:
+            # RR14 concerns the post-intent no-dispatch projection path. Keep
+            # the existing pre-intent recovery contract unchanged.
+            return "dismissed", None, None
         if record is not None:
             identity = record.execution_identity()
             if (
@@ -2812,7 +2814,13 @@ class F3RuntimeIntegration:
                 raise GovernanceError(
                     ErrorCode.EXECUTION_TASK_STORAGE_ERROR
                 )
-        return current, record
+        runtime = self.children.runtime(current["child_id"])
+        if (
+            runtime["next_eligible_at"] is not None
+            and datetime.fromisoformat(runtime["next_eligible_at"]) > now
+        ):
+            return "deferred", current, record
+        return "eligible", current, record
 
     def _checkpointed_post_intent_candidates(
         self,
@@ -2826,6 +2834,9 @@ class F3RuntimeIntegration:
         candidates: list[
             tuple[tuple[Any, ...], dict[str, Any], Any]
         ] = []
+        retained: list[dict[str, Any]] = []
+        deferred: list[str] = []
+        dismissed: list[str] = []
         references = tuple(
             () if checkpoint is None else checkpoint["candidates"]
         )
@@ -2837,12 +2848,18 @@ class F3RuntimeIntegration:
             ):
                 break
             examined += 1
-            current = self._reload_active_candidate(
+            disposition, declaration, record = self._reload_active_candidate(
                 reference, now=now, require_post_intent=True
             )
-            if current is None:
+            if disposition == "dismissed":
+                dismissed.append(reference["child_id"])
                 continue
-            declaration, record = current
+            if disposition == "deferred":
+                assert declaration is not None
+                retained.append(declaration)
+                deferred.append(declaration["child_id"])
+                continue
+            assert declaration is not None and record is not None
             candidates.append(
                 (
                     self._active_recovery_priority(
@@ -2858,7 +2875,9 @@ class F3RuntimeIntegration:
                 (declaration, record)
                 for _priority, declaration, record in candidates
             ),
-            "unexamined": references[examined:],
+            "retained": (*retained, *references[examined:]),
+            "deferred_child_ids": tuple(deferred),
+            "dismissed_child_ids": tuple(dismissed),
             "examined": examined,
         }
 
@@ -3177,22 +3196,29 @@ class F3RuntimeIntegration:
         processed = 0
         transitions = 0
         selected: list[str] = []
+        settled: list[str] = []
         dismissed: list[str] = []
+        retry: list[str] = []
         for reference, _selected_record in candidates:
             if transitions >= transition_limit or (
                 clock() - sweep_started
                 >= RECOVERY_SWEEP_TIME_BUDGET_SECONDS
             ):
                 break
-            current = self._reload_active_candidate(
-                reference,
-                now=now,
-                require_post_intent=require_post_intent,
+            disposition, declaration, _current_record = (
+                self._reload_active_candidate(
+                    reference,
+                    now=now,
+                    require_post_intent=require_post_intent,
+                )
             )
-            if current is None:
+            if disposition == "dismissed":
                 dismissed.append(reference["child_id"])
                 continue
-            declaration, _current_record = current
+            if disposition == "deferred":
+                retry.append(reference["child_id"])
+                continue
+            assert declaration is not None
             runtime = self.children.runtime(declaration["child_id"])
             transitions += 1
             selected.append(declaration["child_id"])
@@ -3241,6 +3267,7 @@ class F3RuntimeIntegration:
                         ),
                     },
                 )
+                settled.append(declaration["child_id"])
             except Exception:
                 self._sweep_failures += 1
                 backoff = min(
@@ -3257,11 +3284,14 @@ class F3RuntimeIntegration:
                         ).isoformat(),
                     },
                 )
+                retry.append(declaration["child_id"])
         return {
             "processed": processed,
             "transitions": transitions,
             "selected_child_ids": tuple(selected),
+            "settled_child_ids": tuple(settled),
             "dismissed_child_ids": tuple(dismissed),
+            "retry_child_ids": tuple(retry),
         }
 
     async def recover_once(self, trigger: str) -> dict[str, int]:
@@ -3298,7 +3328,8 @@ class F3RuntimeIntegration:
             monotonic=clock,
         )
         checkpoint_handled_ids = {
-            *checkpoint_recovery["selected_child_ids"],
+            *checkpoint_selection["dismissed_child_ids"],
+            *checkpoint_recovery["settled_child_ids"],
             *checkpoint_recovery["dismissed_child_ids"],
         }
         checkpoint_remaining = (
@@ -3307,7 +3338,7 @@ class F3RuntimeIntegration:
                 for declaration, _record in checkpoint_candidates
                 if declaration["child_id"] not in checkpoint_handled_ids
             ),
-            *checkpoint_selection["unexamined"],
+            *checkpoint_selection["retained"],
         )
         checkpoint_current = (
             self.children.active_recovery_checkpoint_for_candidates(
@@ -3397,7 +3428,7 @@ class F3RuntimeIntegration:
             monotonic=clock,
         )
         fresh_handled_ids = {
-            *fresh_post_intent["selected_child_ids"],
+            *fresh_post_intent["settled_child_ids"],
             *fresh_post_intent["dismissed_child_ids"],
         }
         fresh_remaining = tuple(
@@ -3429,9 +3460,19 @@ class F3RuntimeIntegration:
                 *checkpoint_recovery["selected_child_ids"],
                 *fresh_post_intent["selected_child_ids"],
             ),
+            "settled_child_ids": (
+                *checkpoint_recovery["settled_child_ids"],
+                *fresh_post_intent["settled_child_ids"],
+            ),
             "dismissed_child_ids": (
+                *checkpoint_selection["dismissed_child_ids"],
                 *checkpoint_recovery["dismissed_child_ids"],
                 *fresh_post_intent["dismissed_child_ids"],
+            ),
+            "retry_child_ids": (
+                *checkpoint_selection["deferred_child_ids"],
+                *checkpoint_recovery["retry_child_ids"],
+                *fresh_post_intent["retry_child_ids"],
             ),
         }
 
@@ -3489,7 +3530,9 @@ class F3RuntimeIntegration:
             "processed": 0,
             "transitions": 0,
             "selected_child_ids": (),
+            "settled_child_ids": (),
             "dismissed_child_ids": (),
+            "retry_child_ids": (),
         }
         if (
             pre_intent_candidates
@@ -3504,9 +3547,9 @@ class F3RuntimeIntegration:
                 require_post_intent=False,
                 monotonic=clock,
             )
-        selected_ids = {
-            *post_intent["selected_child_ids"],
-            *pre_intent["selected_child_ids"],
+        settled_ids = {
+            *post_intent["settled_child_ids"],
+            *pre_intent["settled_child_ids"],
         }
 
         stale_release_decisions = {}
@@ -3545,7 +3588,7 @@ class F3RuntimeIntegration:
                 next_cursor=orphaned["next_cursor"],
             )
         safely_navigated_ids = {
-            *selected_ids,
+            *settled_ids,
             *post_intent["dismissed_child_ids"],
             *pre_intent["dismissed_child_ids"],
             *(
@@ -3557,7 +3600,11 @@ class F3RuntimeIntegration:
                 )
             ),
         }
-        unprocessed_active = any(
+        unsettled_active = bool(
+            post_intent["retry_child_ids"]
+            or pre_intent["retry_child_ids"]
+        )
+        unprocessed_active = unsettled_active or any(
             declaration["child_id"] not in safely_navigated_ids
             for declaration, _record in active_candidates
         )
