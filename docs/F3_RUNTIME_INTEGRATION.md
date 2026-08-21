@@ -180,23 +180,35 @@ or placed in the bounded durable checkpoint described below; a removed or
 terminal cursor target safely restarts from the bounded F3 set.
 
 Active discovery and recovery share the same five-second envelope. Discovery
-therefore persists up to the batch limit of 16 selected post-intent identities
-in `f3-active-recovery-checkpoint-v1` before attempting recovery. The
+therefore persists up to the batch limit of 16 selected priority identities
+in `f3-active-recovery-checkpoint-v1` before attempting recovery. Priority
+identities comprise nonterminal post-intent readback and terminal child
+projection; nonterminal post-intent work retains the first capacity. The
 checkpoint contains only public-task, child, operation, ordinal, attempt, and
 declaration-hash navigation evidence. It is not an authority index and cannot
-authorize execution. On the next sweep checkpointed post-intent work is
-reloaded and considered before any further namespace scan. Removed,
-terminalized, backed-off, replaced, or authority-mismatched entries are skipped
-according to current durable state and cannot block later work.
+authorize execution. On the next sweep checkpointed work is reloaded and
+considered before any further namespace scan. Removed, backed-off, replaced,
+already-projected, or authority-mismatched entries are skipped according to
+current durable state and cannot block later work.
 
-A terminal `succeeded_verified` child is also eligible for projection-only
-recovery when the complete authoritative child sequence has succeeded but its
-schema-1 public task remains nonterminal. Active discovery selects exactly one
-post-intent success as the sequence anchor and checkpoints it before projection;
-the coordinator reloads and validates the complete sequence and never invokes
-child execution for that anchor. Any later nonterminal or terminal-failure child
-takes precedence, so an earlier success cannot prematurely terminalize a
-multi-operation parent.
+Terminal child projection is an explicit recovery mode independent of dispatch
+intent. A terminal child beneath a nonterminal exact-F3 parent is eligible when
+its persisted execution class is either post-intent (`dispatch_count=1`) or
+verified no-dispatch (`dispatch_count=0`, no intent, completed preflight, and a
+persisted `preflight_noop_verified` proof). A no-intent terminal non-success is
+also projection-eligible and preserves the existing aggregate failure
+precedence. Dispatch count without matching intent, count above one, or a
+no-dispatch success without exact no-op proof fails closed.
+
+When the complete authoritative sequence succeeds, active discovery chooses its
+last successful child as a scheduling anchor, including all-post-intent,
+all-no-dispatch, and mixed sequences. Any later unfinished or terminal-failure
+child takes precedence, so an earlier success cannot prematurely terminalize a
+multi-operation parent. Every projection candidate is checkpointed first. The
+coordinator then reloads the public task, F3 authority, manifest, declaration,
+child identity, runtime state, and the complete sequence. Projection invokes
+neither child execution nor a provider call; the checkpoint clears only after
+the public projection settles durably.
 
 If discovery reaches the deadline immediately after finding one eligible
 post-intent child, that child is attempted first on the next sweep. A checkpoint

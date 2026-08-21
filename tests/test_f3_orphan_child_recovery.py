@@ -507,6 +507,93 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         self.assertEqual(1, terminal.dispatch_count)
         return terminal
 
+    def _succeed_no_dispatch_child(
+        self,
+        declaration,
+        *,
+        diagnostic_code="rr16_preflight_noop_verified",
+    ):
+        self._claim_child(declaration)
+        self._hold_child_lock(declaration)
+        identity, claim, _timing = self._claims[declaration["child_id"]]
+        terminal = self.runtime.children.terminalize_verified_no_dispatch(
+            declaration["child_id"],
+            owner_id=identity.owner_id,
+            claim_generation=claim.claim_generation,
+            resulting_state_fingerprint=hashlib.sha256(
+                f"{declaration['child_id']}:state".encode()
+            ).hexdigest(),
+            evidence_hash=hashlib.sha256(
+                f"{declaration['child_id']}:evidence".encode()
+            ).hexdigest(),
+            diagnostic_codes=(diagnostic_code,),
+            now=self.service.now(),
+        )
+        self._release_fixture_locks(declaration["child_id"])
+        self.assertTrue(terminal.terminal)
+        self.assertEqual("succeeded_verified", terminal.normalized_outcome)
+        self.assertIsNone(terminal.dispatch_intent)
+        self.assertEqual(0, terminal.dispatch_count)
+        return terminal
+
+    def _fail_no_dispatch_child(
+        self,
+        declaration,
+        *,
+        diagnostic_code="rr16_failed_pre_dispatch",
+    ):
+        self._claim_child(declaration)
+        self._hold_child_lock(declaration)
+        identity, claim, _timing = self._claims[declaration["child_id"]]
+        terminal = self.runtime.children.terminalize_pre_dispatch(
+            declaration["child_id"],
+            owner_id=identity.owner_id,
+            claim_generation=claim.claim_generation,
+            outcome="failed_pre_dispatch",
+            diagnostic_codes=(diagnostic_code,),
+            now=self.service.now(),
+        )
+        self._release_fixture_locks(declaration["child_id"])
+        self.assertTrue(terminal.terminal)
+        self.assertIsNone(terminal.dispatch_intent)
+        self.assertEqual(0, terminal.dispatch_count)
+        return terminal
+
+    def _succeed_manual_post_intent_child(self, declaration):
+        self._claim_child(declaration)
+        self._hold_child_lock(declaration)
+        identity, claim, timing = self._claims[declaration["child_id"]]
+        self.runtime.children.record_preflight(
+            declaration["child_id"],
+            owner_id=identity.owner_id,
+            claim_generation=claim.claim_generation,
+            now=self.service.now(),
+        )
+        self.runtime.children.commit_dispatch_intent(
+            declaration["child_id"],
+            owner_id=identity.owner_id,
+            claim_generation=claim.claim_generation,
+            request_id=declaration["request_id"],
+            provider_operation=declaration["operation_id"],
+            provider_arguments_hash=hashlib.sha256(
+                f"{declaration['child_id']}:arguments".encode()
+            ).hexdigest(),
+            timing=timing,
+            now=self.service.now(),
+        )
+        terminal = self.runtime.children.record_verification(
+            declaration["child_id"],
+            owner_id=identity.owner_id,
+            claim_generation=claim.claim_generation,
+            outcome="succeeded_verified",
+            terminal=True,
+            diagnostic_codes=("rr16_post_intent_verified",),
+            now=self.service.now(),
+        )
+        self._release_fixture_locks(declaration["child_id"])
+        self.assertEqual(1, terminal.dispatch_count)
+        return terminal
+
     async def _preintent_active_child(self, target_id):
         proposed = copy.deepcopy(PROPOSED_AUTOMATION)
         proposed["id"] = target_id
@@ -2249,6 +2336,13 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         with (
             patch.object(
                 self.runtime,
+                "_load_prepared",
+                side_effect=AssertionError(
+                    "terminal child must not prepare a provider operation"
+                ),
+            ),
+            patch.object(
+                self.runtime,
                 "_execute_child",
                 side_effect=AssertionError("terminal child must not execute"),
             ),
@@ -2444,6 +2538,236 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
             ],
         )
 
+    async def test_verified_no_dispatch_child_projects_from_discovery(self):
+        task, declaration = await self._preintent_active_child(
+            "rr16_no_dispatch_projection"
+        )
+        terminal = self._succeed_no_dispatch_child(declaration)
+        before_writes = sum(item[0] == "write" for item in self.gateway.calls)
+        original_project = self.runtime._project
+
+        def project_after_checkpoint(plan, public_task):
+            checkpoint = self.runtime.children.active_recovery_checkpoint()
+            self.assertEqual(
+                [declaration["child_id"]],
+                [item["child_id"] for item in checkpoint["candidates"]],
+            )
+            return original_project(plan, public_task)
+
+        with (
+            patch.object(
+                self.runtime,
+                "_load_prepared",
+                side_effect=AssertionError(
+                    "terminal child must not prepare a provider operation"
+                ),
+            ),
+            patch.object(
+                self.runtime,
+                "_execute_child",
+                side_effect=AssertionError("terminal child must not execute"),
+            ),
+            patch.object(
+                self.runtime,
+                "_project",
+                side_effect=project_after_checkpoint,
+            ),
+        ):
+            result = await self.runtime.recover_once("periodic")
+
+        public = self.service.get_execution_task(task.task_id)
+        child = public["f3_children"][0]
+        self.assertEqual(1, result["active_recovery_transitions"])
+        self.assertEqual("succeeded_verified", public["state"])
+        self.assertEqual("succeeded_verified", public["terminal_outcome"])
+        self.assertEqual("succeeded_verified", child["normalized_outcome"])
+        self.assertEqual(0, child["dispatch_count"])
+        self.assertEqual(terminal.events, self.runtime.children.get(
+            declaration["child_id"]
+        ).events)
+        self.assertIsNone(self.runtime.children.active_recovery_checkpoint())
+        self.assertEqual(
+            before_writes,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+
+        event_count = public["event_count"]
+        audit_ids = [
+            item["audit_event_id"]
+            for item in self._audit_entries()
+            if "audit_event_id" in item
+        ]
+        repeated = await self.runtime.recover_once("periodic")
+        self._restart_runtime()
+        restarted = await self.runtime.recover_once("startup")
+        self.assertEqual(0, repeated["active_recovery_transitions"])
+        self.assertEqual(0, restarted["active_recovery_transitions"])
+        self.assertEqual(
+            event_count,
+            self.service.get_execution_task(task.task_id)["event_count"],
+        )
+        self.assertEqual(
+            audit_ids,
+            [
+                item["audit_event_id"]
+                for item in self._audit_entries()
+                if "audit_event_id" in item
+            ],
+        )
+
+    async def test_no_dispatch_projection_failure_retries_after_restart(self):
+        task, declaration = await self._preintent_active_child(
+            "rr16_no_dispatch_retry"
+        )
+        self._succeed_no_dispatch_child(declaration)
+        before_writes = sum(item[0] == "write" for item in self.gateway.calls)
+
+        with patch.object(
+            self.runtime,
+            "_project",
+            side_effect=RuntimeError("synthetic no-dispatch projection failure"),
+        ):
+            failed = await self.runtime.recover_once("periodic")
+
+        retained = self.runtime.children.active_recovery_checkpoint()
+        retry_at = datetime.fromisoformat(
+            self.runtime.children.runtime(declaration["child_id"])[
+                "next_eligible_at"
+            ]
+        )
+        self.assertEqual(1, failed["active_recovery_transitions"])
+        self.assertEqual(
+            [declaration["child_id"]],
+            [item["child_id"] for item in retained["candidates"]],
+        )
+        self.assertEqual(
+            "preflight", self.service.get_execution_task(task.task_id)["state"]
+        )
+
+        self._restart_runtime()
+        self.service.now = lambda: retry_at
+        with patch.object(
+            self.runtime,
+            "_execute_child",
+            side_effect=AssertionError("terminal child must not execute"),
+        ):
+            recovered = await self.runtime.recover_once("startup")
+
+        self.assertEqual(1, recovered["active_recovery_transitions"])
+        self.assertEqual(
+            "succeeded_verified",
+            self.service.get_execution_task(task.task_id)["state"],
+        )
+        self.assertIsNone(self.runtime.children.active_recovery_checkpoint())
+        self.assertEqual(
+            before_writes,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+
+    async def test_checkpointed_preintent_terminalizes_no_dispatch_before_reload(
+        self,
+    ):
+        task, declaration = await self._preintent_active_child(
+            "rr16_terminal_before_checkpoint_reload"
+        )
+        self._store_active_checkpoint(declaration)
+        self._succeed_no_dispatch_child(declaration)
+        before_writes = sum(item[0] == "write" for item in self.gateway.calls)
+
+        with patch.object(
+            self.runtime,
+            "_execute_child",
+            side_effect=AssertionError("terminal child must not execute"),
+        ):
+            recovered = await self.runtime.recover_once("periodic")
+
+        self.assertEqual(1, recovered["active_recovery_transitions"])
+        self.assertEqual(
+            "succeeded_verified",
+            self.service.get_execution_task(task.task_id)["state"],
+        )
+        self.assertIsNone(self.runtime.children.active_recovery_checkpoint())
+        self.assertEqual(
+            before_writes,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+
+    async def test_complete_no_dispatch_and_mixed_sequences_project(self):
+        before_writes = sum(item[0] == "write" for item in self.gateway.calls)
+        for suffix, modes in (
+            ("all_no_dispatch", ("noop", "noop", "noop")),
+            ("mixed", ("noop", "post_intent", "noop")),
+        ):
+            plan, task, declarations, _prepared, _requests = (
+                await self._initialized_hvac_sequence()
+            )
+            for declaration, mode in zip(declarations, modes, strict=True):
+                if mode == "noop":
+                    self._succeed_no_dispatch_child(declaration)
+                else:
+                    await self.runtime._consume_approval_counted(
+                        plan, task, declaration
+                    )
+                    self._succeed_manual_post_intent_child(declaration)
+            with self.subTest(sequence=suffix):
+                with patch.object(
+                    self.runtime,
+                    "_execute_child",
+                    side_effect=AssertionError(
+                        "terminal child must not execute"
+                    ),
+                ):
+                    recovered = await self.runtime.recover_once("periodic")
+                public = self.service.get_execution_task(task.task_id)
+                self.assertGreaterEqual(
+                    recovered["active_recovery_transitions"], 1
+                )
+                self.assertEqual("succeeded_verified", public["state"])
+                self.assertEqual(
+                    [0 if mode == "noop" else 1 for mode in modes],
+                    [item["dispatch_count"] for item in public["f3_children"]],
+                )
+                self.assertEqual(
+                    ["succeeded_verified"] * len(declarations),
+                    [
+                        item["normalized_outcome"]
+                        for item in public["f3_children"]
+                    ],
+                )
+        self.assertEqual(
+            before_writes,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+
+    async def test_no_dispatch_failure_projects_failed_pre_dispatch(self):
+        task, declaration = await self._preintent_active_child(
+            "rr16_failed_pre_dispatch"
+        )
+        self._fail_no_dispatch_child(declaration)
+        before_writes = sum(item[0] == "write" for item in self.gateway.calls)
+
+        with patch.object(
+            self.runtime,
+            "_execute_child",
+            side_effect=AssertionError("terminal child must not execute"),
+        ):
+            recovered = await self.runtime.recover_once("periodic")
+
+        public = self.service.get_execution_task(task.task_id)
+        self.assertEqual(1, recovered["active_recovery_transitions"])
+        self.assertEqual("failed_pre_dispatch", public["state"])
+        self.assertEqual("failed_pre_dispatch", public["terminal_outcome"])
+        self.assertEqual(
+            "failed_pre_dispatch",
+            public["f3_children"][0]["normalized_outcome"],
+        )
+        self.assertEqual(0, public["f3_children"][0]["dispatch_count"])
+        self.assertIsNone(self.runtime.children.active_recovery_checkpoint())
+        self.assertEqual(
+            before_writes,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+
     async def test_successful_prior_child_does_not_displace_later_operation(self):
         plan, task, declarations, prepared, requests = (
             await self._initialized_hvac_sequence()
@@ -2475,6 +2799,132 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         self.assertEqual(
             1,
             self.runtime.children.get(declarations[0]["child_id"]).dispatch_count,
+        )
+        self.assertEqual(
+            before_writes,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+
+    async def test_no_dispatch_success_does_not_displace_later_operation(self):
+        _plan, task, declarations, _prepared, _requests = (
+            await self._initialized_hvac_sequence()
+        )
+        self._succeed_no_dispatch_child(declarations[0])
+        before_writes = sum(item[0] == "write" for item in self.gateway.calls)
+
+        selection = self.runtime._active_recovery_candidates(
+            now=self.service.now(),
+            sweep_started=0.0,
+            monotonic=lambda: 0.0,
+        )
+
+        selected, selected_record = next(
+            item
+            for item in selection["candidates"]
+            if item[0]["public_task_id"] == task.task_id
+        )
+        self.assertEqual(declarations[1]["child_id"], selected["child_id"])
+        self.assertIsNone(selected_record)
+        self.assertEqual(
+            "preflight", self.service.get_execution_task(task.task_id)["state"]
+        )
+        self.assertEqual(
+            before_writes,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+
+    async def test_corrupt_no_dispatch_projection_proof_fails_closed(self):
+        _task, declaration = await self._preintent_active_child(
+            "rr16_corrupt_noop_proof"
+        )
+        self._succeed_no_dispatch_child(declaration)
+        path = self.runtime.children._path(declaration["child_id"])
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["execution"]["events"] = [
+            item
+            for item in payload["execution"]["events"]
+            if item["event_type"] != "preflight_noop_verified"
+        ]
+        path.write_text(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+
+        with self.assertRaises(ExecutionRecordCorrupt):
+            await self.runtime.recover_once("periodic")
+
+    async def test_corrupt_terminal_dispatch_classes_fail_closed(self):
+        _task, no_intent = await self._preintent_active_child(
+            "rr16_corrupt_dispatch_count_without_intent"
+        )
+        self._succeed_no_dispatch_child(no_intent)
+        no_intent_path = self.runtime.children._path(no_intent["child_id"])
+        no_intent_payload = json.loads(
+            no_intent_path.read_text(encoding="utf-8")
+        )
+        no_intent_payload["execution"]["dispatch_count"] = 1
+        no_intent_path.write_text(
+            json.dumps(
+                no_intent_payload, sort_keys=True, separators=(",", ":")
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaises(ExecutionRecordCorrupt):
+            self.runtime.children.get(no_intent["child_id"])
+
+        _task, post_intent = await self._post_intent_active_child(
+            "rr16_corrupt_dispatch_count_above_one"
+        )
+        self._terminalize_post_intent_child(post_intent)
+        post_intent_path = self.runtime.children._path(
+            post_intent["child_id"]
+        )
+        post_intent_payload = json.loads(
+            post_intent_path.read_text(encoding="utf-8")
+        )
+        post_intent_payload["execution"]["dispatch_count"] = 2
+        post_intent_path.write_text(
+            json.dumps(
+                post_intent_payload, sort_keys=True, separators=(",", ":")
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaises(ExecutionRecordCorrupt):
+            self.runtime.children.get(post_intent["child_id"])
+
+    async def test_seventeen_no_dispatch_projections_obey_batch_bound(self):
+        fixtures = []
+        for index in range(RECOVERY_BATCH_SIZE + 1):
+            task, declaration = await self._preintent_active_child(
+                f"rr16_batch_{index:02d}"
+            )
+            self._succeed_no_dispatch_child(declaration)
+            fixtures.append((task, declaration))
+        before_writes = sum(item[0] == "write" for item in self.gateway.calls)
+
+        with patch.object(
+            self.runtime,
+            "_execute_child",
+            side_effect=AssertionError("terminal child must not execute"),
+        ):
+            first = await self.runtime.recover_once("periodic")
+            second = await self.runtime.recover_once("periodic")
+
+        self.assertEqual(RECOVERY_BATCH_SIZE, first["active_recovery_transitions"])
+        self.assertEqual(1, second["active_recovery_transitions"])
+        self.assertTrue(
+            all(
+                self.service.get_execution_task(task.task_id)["state"]
+                == "succeeded_verified"
+                for task, _declaration in fixtures
+            )
+        )
+        self.assertTrue(
+            all(
+                self.runtime.children.get(declaration["child_id"]).dispatch_count
+                == 0
+                for _task, declaration in fixtures
+            )
         )
         self.assertEqual(
             before_writes,
@@ -2602,7 +3052,7 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         original_reload = self.runtime._reload_active_candidate
         terminalized = {"value": False}
 
-        def terminalize_then_reload(reference, *, now, require_post_intent):
+        def terminalize_then_reload(reference, *, now, recovery_mode):
             if (
                 reference["child_id"] == declaration["child_id"]
                 and not terminalized["value"]
@@ -2615,7 +3065,7 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
             return original_reload(
                 reference,
                 now=now,
-                require_post_intent=require_post_intent,
+                recovery_mode=recovery_mode,
             )
 
         with (

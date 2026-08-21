@@ -93,6 +93,10 @@ ORPHAN_RECOVERY_SCAN_LIMIT = RECOVERY_DECLARATION_PAGE_SIZE
 ORPHAN_RECONCILIATION_REASON = "orphaned_terminal_parent_recovery"
 ORPHAN_RECONCILIATION_RESULT = "orphaned_pre_dispatch_child_reconciled"
 PERSISTED_AUDIT_EVENT_MODEL = "f3-persisted-audit-event-v1"
+_RECOVERY_MODE_CHECKPOINT = "checkpoint"
+_RECOVERY_MODE_POST_INTENT = "post_intent"
+_RECOVERY_MODE_PRE_INTENT = "pre_intent"
+_RECOVERY_MODE_TERMINAL_PROJECTION = "terminal_projection"
 _ACTIVE_F3_CHILD: ContextVar[str | None] = ContextVar(
     "f3_active_child", default=None
 )
@@ -2664,16 +2668,12 @@ class F3RuntimeIntegration:
                 declarations_examined += 1
                 record = records[declaration["operation_id"]]
                 if record is not None and record.terminal:
+                    self._active_recovery_mode(record)
                     if record.normalized_outcome == "succeeded_verified":
-                        if record.dispatch_intent is not None:
-                            if record.dispatch_count != 1:
-                                raise GovernanceError(
-                                    ErrorCode.EXECUTION_TASK_STORAGE_ERROR
-                                )
-                            successful_projection_anchor = (
-                                declaration,
-                                record,
-                            )
+                        successful_projection_anchor = (
+                            declaration,
+                            record,
+                        )
                         continue
                     sequence_complete_successfully = False
                     candidate = (declaration, record)
@@ -2710,14 +2710,7 @@ class F3RuntimeIntegration:
                 and datetime.fromisoformat(runtime["next_eligible_at"]) > now
             ):
                 continue
-            if (
-                record is not None
-                and record.dispatch_intent is not None
-                and record.dispatch_count != 1
-            ):
-                raise GovernanceError(
-                    ErrorCode.EXECUTION_TASK_STORAGE_ERROR
-                )
+            self._active_recovery_mode(record)
             priority = self._active_recovery_priority(
                 declaration, record, now=now
             )
@@ -2755,12 +2748,47 @@ class F3RuntimeIntegration:
             declaration["child_id"].encode("utf-8"),
         )
 
+    @staticmethod
+    def _active_recovery_mode(record: Any | None) -> str:
+        """Classify validated child state without granting recovery authority."""
+
+        if record is None:
+            return _RECOVERY_MODE_PRE_INTENT
+        if record.dispatch_intent is None:
+            if record.dispatch_count != 0:
+                raise GovernanceError(
+                    ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+                )
+        elif record.dispatch_count != 1:
+            raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+        if record.terminal:
+            if (
+                record.normalized_outcome == "succeeded_verified"
+                and record.dispatch_intent is None
+                and not (
+                    record.preflight_completed
+                    and any(
+                        item.get("event_type") == "preflight_noop_verified"
+                        for item in record.events
+                    )
+                )
+            ):
+                raise GovernanceError(
+                    ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+                )
+            return _RECOVERY_MODE_TERMINAL_PROJECTION
+        return (
+            _RECOVERY_MODE_POST_INTENT
+            if record.dispatch_intent is not None
+            else _RECOVERY_MODE_PRE_INTENT
+        )
+
     def _reload_active_candidate(
         self,
         reference: dict[str, Any],
         *,
         now: datetime,
-        require_post_intent: bool,
+        recovery_mode: str,
     ) -> tuple[str, dict[str, Any] | None, Any | None]:
         """Reload authority and classify non-authoritative scheduling evidence.
 
@@ -2803,18 +2831,28 @@ class F3RuntimeIntegration:
         ):
             return "dismissed", None, None
         record = self.children.get(current["child_id"])
-        if require_post_intent:
-            if record is None or record.dispatch_intent is None:
-                return "dismissed", None, None
-            if record.dispatch_count != 1:
-                raise GovernanceError(
-                    ErrorCode.EXECUTION_TASK_STORAGE_ERROR
-                )
-        elif record is not None and record.dispatch_intent is not None:
-            return "dismissed", None, None
-        elif record is not None and record.terminal:
-            # RR14 concerns the post-intent no-dispatch projection path. Keep
-            # the existing pre-intent recovery contract unchanged.
+        current_mode = self._active_recovery_mode(record)
+        allowed_modes = {
+            _RECOVERY_MODE_CHECKPOINT: {
+                _RECOVERY_MODE_POST_INTENT,
+                _RECOVERY_MODE_TERMINAL_PROJECTION,
+            },
+            # A post-intent child may terminalize after selection. It was
+            # checkpointed before this reload, so projection remains safe.
+            _RECOVERY_MODE_POST_INTENT: {
+                _RECOVERY_MODE_POST_INTENT,
+                _RECOVERY_MODE_TERMINAL_PROJECTION,
+            },
+            _RECOVERY_MODE_TERMINAL_PROJECTION: {
+                _RECOVERY_MODE_TERMINAL_PROJECTION,
+            },
+            _RECOVERY_MODE_PRE_INTENT: {
+                _RECOVERY_MODE_PRE_INTENT,
+            },
+        }
+        if recovery_mode not in allowed_modes:
+            raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+        if current_mode not in allowed_modes[recovery_mode]:
             return "dismissed", None, None
         if record is not None:
             identity = record.execution_identity()
@@ -2847,7 +2885,7 @@ class F3RuntimeIntegration:
             return "deferred", current, record
         return "eligible", current, record
 
-    def _checkpointed_post_intent_candidates(
+    def _checkpointed_priority_candidates(
         self,
         checkpoint: dict[str, Any] | None,
         *,
@@ -2874,7 +2912,7 @@ class F3RuntimeIntegration:
                 break
             examined += 1
             disposition, declaration, record = self._reload_active_candidate(
-                reference, now=now, require_post_intent=True
+                reference, now=now, recovery_mode=_RECOVERY_MODE_CHECKPOINT
             )
             if disposition == "dismissed":
                 dismissed.append(reference["child_id"])
@@ -2885,10 +2923,16 @@ class F3RuntimeIntegration:
                 deferred.append(declaration["child_id"])
                 continue
             assert declaration is not None and record is not None
+            current_mode = self._active_recovery_mode(record)
             candidates.append(
                 (
-                    self._active_recovery_priority(
-                        declaration, record, now=now
+                    (
+                        0
+                        if current_mode == _RECOVERY_MODE_POST_INTENT
+                        else 1,
+                        *self._active_recovery_priority(
+                            declaration, record, now=now
+                        ),
                     ),
                     declaration,
                     record,
@@ -3212,7 +3256,7 @@ class F3RuntimeIntegration:
         now: datetime,
         sweep_started: float,
         transition_limit: int,
-        require_post_intent: bool,
+        recovery_mode: str,
         monotonic: Callable[[], float] | None = None,
     ) -> dict[str, Any]:
         """Reload authority, then run active work inside recovery bounds."""
@@ -3234,7 +3278,7 @@ class F3RuntimeIntegration:
                 self._reload_active_candidate(
                     reference,
                     now=now,
-                    require_post_intent=require_post_intent,
+                    recovery_mode=recovery_mode,
                 )
             )
             if disposition == "dismissed":
@@ -3252,15 +3296,16 @@ class F3RuntimeIntegration:
                 task = self.service._load_task(
                     declaration["public_task_id"]
                 )
-                prepared, requests = await self._load_prepared(plan, task)
-                operation = prepared[declaration["operation_ordinal"]]
                 record = self.children.get(declaration["child_id"])
                 if record is not None and record.terminal:
                     # Terminal recovery is projection-only. Keeping this
-                    # branch explicit makes provider execution unreachable
-                    # for both successful and non-success terminal outcomes.
+                    # branch before preparation makes provider preparation
+                    # and execution unreachable for both successful and
+                    # non-success terminal outcomes.
                     pass
                 else:
+                    prepared, requests = await self._load_prepared(plan, task)
+                    operation = prepared[declaration["operation_ordinal"]]
                     if record is None or record.dispatch_intent is None:
                         task = self._enter_public_preflight(task)
                     result = await self._execute_child(
@@ -3337,12 +3382,13 @@ class F3RuntimeIntegration:
             >= RECOVERY_SWEEP_TIME_BUDGET_SECONDS
         )
 
-        # A post-intent candidate durably checkpointed by a prior bounded
-        # discovery sweep receives the first recovery opportunity. The
-        # checkpoint is navigation evidence only: every authority surface is
-        # reloaded immediately before observation/verification.
+        # A priority candidate durably checkpointed by a prior bounded
+        # discovery sweep receives the first recovery opportunity. This
+        # includes observation-only post-intent work and projection-only
+        # terminal work. The checkpoint is navigation evidence only: every
+        # authority surface is reloaded immediately before recovery.
         checkpoint_expected = self.children.active_recovery_checkpoint()
-        checkpoint_selection = self._checkpointed_post_intent_candidates(
+        checkpoint_selection = self._checkpointed_priority_candidates(
             checkpoint_expected,
             now=now,
             sweep_started=sweep_started,
@@ -3354,7 +3400,7 @@ class F3RuntimeIntegration:
             now=now,
             sweep_started=sweep_started,
             transition_limit=RECOVERY_BATCH_SIZE,
-            require_post_intent=True,
+            recovery_mode=_RECOVERY_MODE_CHECKPOINT,
             monotonic=clock,
         )
         checkpoint_handled_ids = {
@@ -3395,11 +3441,11 @@ class F3RuntimeIntegration:
             "manifest_reads": 0,
             "declarations_examined": 0,
         }
-        remaining_post_intent_capacity = max(
+        remaining_priority_capacity = max(
             0,
             RECOVERY_BATCH_SIZE - checkpoint_recovery["transitions"],
         )
-        if remaining_post_intent_capacity and not deadline_reached():
+        if remaining_priority_capacity and not deadline_reached():
             active_selection = self._active_recovery_candidates(
                 now=now,
                 sweep_started=sweep_started,
@@ -3409,13 +3455,20 @@ class F3RuntimeIntegration:
         post_intent_candidates = tuple(
             item
             for item in active_candidates
-            if item[1] is not None
-            and item[1].dispatch_intent is not None
+            if self._active_recovery_mode(item[1])
+            == _RECOVERY_MODE_POST_INTENT
+        )
+        terminal_projection_candidates = tuple(
+            item
+            for item in active_candidates
+            if self._active_recovery_mode(item[1])
+            == _RECOVERY_MODE_TERMINAL_PROJECTION
         )
         pre_intent_candidates = tuple(
             item
             for item in active_candidates
-            if item[1] is None or item[1].dispatch_intent is None
+            if self._active_recovery_mode(item[1])
+            == _RECOVERY_MODE_PRE_INTENT
         )
         navigation = self.service.task_repository.navigation_metrics()
         has_terminal_history = (
@@ -3423,9 +3476,24 @@ class F3RuntimeIntegration:
             > navigation["nonterminal_record_count"]
         )
 
+        # Nonterminal possibly-dispatched work retains first priority. Exact
+        # terminal projection then owns the remaining priority capacity and
+        # is checkpointed before any public projection write.
         fresh_post_intent_candidates = post_intent_candidates[
-            :remaining_post_intent_capacity
+            :remaining_priority_capacity
         ]
+        projection_capacity = max(
+            0,
+            remaining_priority_capacity
+            - len(fresh_post_intent_candidates),
+        )
+        fresh_projection_candidates = terminal_projection_candidates[
+            :projection_capacity
+        ]
+        fresh_priority_candidates = (
+            *fresh_post_intent_candidates,
+            *fresh_projection_candidates,
+        )
         fresh_checkpoint = (
             self.children.active_recovery_checkpoint_for_candidates(
                 (
@@ -3433,7 +3501,7 @@ class F3RuntimeIntegration:
                     *(
                         declaration
                         for declaration, _record
-                        in fresh_post_intent_candidates
+                        in fresh_priority_candidates
                     ),
                 )
             )
@@ -3449,21 +3517,21 @@ class F3RuntimeIntegration:
         # historical cleanup receives a reservation. Recovery remains
         # observation/verification-only because _execute_child enforces the
         # durable-intent no-redispatch boundary.
-        fresh_post_intent = await self._recover_active_candidates(
-            fresh_post_intent_candidates,
+        fresh_priority = await self._recover_active_candidates(
+            fresh_priority_candidates,
             now=now,
             sweep_started=sweep_started,
-            transition_limit=remaining_post_intent_capacity,
-            require_post_intent=True,
+            transition_limit=remaining_priority_capacity,
+            recovery_mode=_RECOVERY_MODE_CHECKPOINT,
             monotonic=clock,
         )
         fresh_handled_ids = {
-            *fresh_post_intent["settled_child_ids"],
-            *fresh_post_intent["dismissed_child_ids"],
+            *fresh_priority["settled_child_ids"],
+            *fresh_priority["dismissed_child_ids"],
         }
         fresh_remaining = tuple(
             declaration
-            for declaration, _record in fresh_post_intent_candidates
+            for declaration, _record in fresh_priority_candidates
             if declaration["child_id"] not in fresh_handled_ids
         )
         next_checkpoint = (
@@ -3477,32 +3545,32 @@ class F3RuntimeIntegration:
                 next_checkpoint=next_checkpoint,
             )
             checkpoint_current = next_checkpoint
-        post_intent = {
+        priority_recovery = {
             "processed": (
                 checkpoint_recovery["processed"]
-                + fresh_post_intent["processed"]
+                + fresh_priority["processed"]
             ),
             "transitions": (
                 checkpoint_recovery["transitions"]
-                + fresh_post_intent["transitions"]
+                + fresh_priority["transitions"]
             ),
             "selected_child_ids": (
                 *checkpoint_recovery["selected_child_ids"],
-                *fresh_post_intent["selected_child_ids"],
+                *fresh_priority["selected_child_ids"],
             ),
             "settled_child_ids": (
                 *checkpoint_recovery["settled_child_ids"],
-                *fresh_post_intent["settled_child_ids"],
+                *fresh_priority["settled_child_ids"],
             ),
             "dismissed_child_ids": (
                 *checkpoint_selection["dismissed_child_ids"],
                 *checkpoint_recovery["dismissed_child_ids"],
-                *fresh_post_intent["dismissed_child_ids"],
+                *fresh_priority["dismissed_child_ids"],
             ),
             "retry_child_ids": (
                 *checkpoint_selection["deferred_child_ids"],
                 *checkpoint_recovery["retry_child_ids"],
-                *fresh_post_intent["retry_child_ids"],
+                *fresh_priority["retry_child_ids"],
             ),
         }
 
@@ -3522,7 +3590,7 @@ class F3RuntimeIntegration:
             "next_cursor": page["cursor"],
         }
         remaining = max(
-            0, RECOVERY_BATCH_SIZE - post_intent["transitions"]
+            0, RECOVERY_BATCH_SIZE - priority_recovery["transitions"]
         )
         historical_limit = (
             remaining
@@ -3553,7 +3621,7 @@ class F3RuntimeIntegration:
         pre_intent_limit = max(
             0,
             RECOVERY_BATCH_SIZE
-            - post_intent["transitions"]
+            - priority_recovery["transitions"]
             - orphaned["processed"],
         )
         pre_intent = {
@@ -3574,11 +3642,11 @@ class F3RuntimeIntegration:
                 now=now,
                 sweep_started=sweep_started,
                 transition_limit=pre_intent_limit,
-                require_post_intent=False,
+                recovery_mode=_RECOVERY_MODE_PRE_INTENT,
                 monotonic=clock,
             )
         settled_ids = {
-            *post_intent["settled_child_ids"],
+            *priority_recovery["settled_child_ids"],
             *pre_intent["settled_child_ids"],
         }
 
@@ -3619,7 +3687,7 @@ class F3RuntimeIntegration:
             )
         safely_navigated_ids = {
             *settled_ids,
-            *post_intent["dismissed_child_ids"],
+            *priority_recovery["dismissed_child_ids"],
             *pre_intent["dismissed_child_ids"],
             *(
                 item["child_id"]
@@ -3631,7 +3699,7 @@ class F3RuntimeIntegration:
             ),
         }
         unsettled_active = bool(
-            post_intent["retry_child_ids"]
+            priority_recovery["retry_child_ids"]
             or pre_intent["retry_child_ids"]
         )
         unprocessed_active = unsettled_active or any(
@@ -3649,10 +3717,10 @@ class F3RuntimeIntegration:
             )
 
         processed = (
-            post_intent["processed"] + pre_intent["processed"]
+            priority_recovery["processed"] + pre_intent["processed"]
         )
         active_transitions = (
-            post_intent["transitions"] + pre_intent["transitions"]
+            priority_recovery["transitions"] + pre_intent["transitions"]
         )
         self._ready = True
         return {
