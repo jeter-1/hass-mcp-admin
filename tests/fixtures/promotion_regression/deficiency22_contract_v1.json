@@ -1,0 +1,121 @@
+{
+  "contract_version": 1,
+  "source": "ha_mcp_engineering_consolidated_deficiencies.md",
+  "source_revision": "HAMCP-089 consolidated deficiency register through Beta 39",
+  "source_date": "2026-08-19",
+  "source_sha256": "ff17d026a98ad4f55c8ddc8c3f6131ebbb59bccce6920e1372211c9f9f458ca1",
+  "promotion_blockers": [
+    {
+      "register_item": 1,
+      "representation": "sentinel",
+      "id": "dependency-index-complete-coverage",
+      "related_register_items": [],
+      "promotion_disposition": "blocking"
+    },
+    {
+      "register_item": 2,
+      "representation": "sentinel",
+      "id": "f3-ready-locks-and-recovery",
+      "related_register_items": [14],
+      "promotion_disposition": "blocking"
+    },
+    {
+      "register_item": 3,
+      "representation": "required_canary",
+      "id": "approval-consumption-pre-dispatch-recovery",
+      "related_register_items": [],
+      "promotion_disposition": "blocking"
+    },
+    {
+      "register_item": 4,
+      "representation": "sentinel",
+      "id": "governance-historical-projection-health",
+      "related_register_items": [],
+      "promotion_disposition": "blocking"
+    },
+    {
+      "register_item": 5,
+      "representation": "required_canary",
+      "id": "cover-open-cover-composition-proof",
+      "related_register_items": [],
+      "promotion_disposition": "blocking"
+    }
+  ],
+  "tracked_nonblocking": [
+    {
+      "register_item": 19,
+      "representation": "sentinel",
+      "id": "held-read-top-level-not-found-taxonomy",
+      "related_register_items": [],
+      "promotion_disposition": "tracked_nonblocking"
+    }
+  ],
+  "minimum_permanent_sentinels": [
+    "configuration-validation",
+    "dependency-index-complete-coverage",
+    "execution-task-schema-version",
+    "f3-safety-health-invariants",
+    "f3-ready-locks-and-recovery",
+    "governance-approval-authority-version",
+    "governance-historical-projection-health",
+    "governance-plan-storage-healthy",
+    "governance-task-storage-healthy",
+    "held-read-remains-held",
+    "held-read-top-level-not-found-taxonomy",
+    "helper-provider-attribution",
+    "home-assistant-connectivity",
+    "home-assistant-version-agreement",
+    "provider-routing-zero-fallback",
+    "runtime-build-provenance",
+    "runtime-server-version",
+    "runtime-tool-accounting",
+    "runtime-tool-accounting-agreement",
+    "upstream-dashboard-zero-fallback",
+    "upstream-ha-mcp-exact-admission",
+    "upstream-read-gateway-zero-fallback"
+  ],
+  "confirmed_regression_passes": [
+    "automation-long-wait-template-readable",
+    "dashboard-hyphenless-map-read",
+    "historical-beta31-map-cleanup-succeeded",
+    "historical-beta31-map-update-succeeded",
+    "historical-long-template-execution-succeeded",
+    "read-delegated-upstream",
+    "read-direct-home-assistant",
+    "read-engineering-native",
+    "stale-state-canary-held-pre-dispatch"
+  ],
+  "known_failures": {
+    "dependency-index-complete-coverage": 1,
+    "f3-ready-locks-and-recovery": 2,
+    "governance-historical-projection-health": 4,
+    "held-read-top-level-not-found-taxonomy": 19
+  },
+  "promotion_dispositions": {
+    "dependency-index-complete-coverage": "blocking",
+    "f3-ready-locks-and-recovery": "blocking",
+    "governance-historical-projection-health": "blocking",
+    "held-read-top-level-not-found-taxonomy": "tracked_nonblocking"
+  },
+  "separately_authorized_canaries": {
+    "helper-no-change-path": "executable",
+    "beta39-jinja-helper-dependency-semantics": "unavailable_pending_reviewed_protocol",
+    "approval-consumption-pre-dispatch-recovery": "unavailable_pending_reviewed_protocol",
+    "cover-open-cover-composition-proof": "unavailable_pending_reviewed_protocol"
+  },
+  "required_canary_dispositions": {
+    "helper-no-change-path": "blocking",
+    "beta39-jinja-helper-dependency-semantics": "blocking",
+    "approval-consumption-pre-dispatch-recovery": "blocking",
+    "cover-open-cover-composition-proof": "blocking"
+  },
+  "required_regression_families": {
+    "beta39_jinja_helper_dependency_semantics": [
+      ".get()",
+      ".items()",
+      ".keys()",
+      ".values()",
+      "literal bracket access"
+    ]
+  }
+}

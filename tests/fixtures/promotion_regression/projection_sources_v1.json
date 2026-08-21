@@ -1,0 +1,150 @@
+{
+  "fixture_version": 1,
+  "provenance": {
+    "kind": "synthetic_sanitized_source_shaped_fixture",
+    "not_a_live_response": true,
+    "purpose": "Independent deterministic derivation coverage without retaining automation or blueprint response bodies.",
+    "f3_identity_note": "The 64-hex F3 child ids are unmistakably synthetic algorithm fixtures and are not claimed as live Beta 39 identities."
+  },
+  "cases": [
+    {
+      "observation": "native_dependency_read",
+      "source": {
+        "success": true,
+        "data": {
+          "overview": {
+            "coverage_complete": false,
+            "direct_reference_count": 0,
+            "indirect_reference_count": 0,
+            "unique_source_count": 0,
+            "unresolved_dynamic_reference_count": 0
+          },
+          "source_coverage": [
+            {
+              "source_type": "blueprint",
+              "completeness": "partial",
+              "failed_item_count": 2,
+              "obligation_ledger_completeness": "partial",
+              "obligation_ledger_failed_item_count": 2,
+              "fallback_occurred": false,
+              "duration_ms": 12.5
+            },
+            {
+              "source_type": "automation",
+              "completeness": "complete",
+              "failed_item_count": 0,
+              "obligation_ledger_completeness": "complete",
+              "obligation_ledger_failed_item_count": 0,
+              "fallback_occurred": false,
+              "duration_ms": 4.0
+            }
+          ],
+          "pagination": {"total": 0, "has_more": false},
+          "index": {"refreshed": true, "cache_hit": false, "generation": 8}
+        },
+        "warnings": ["bounded presentation detail is ignored"],
+        "metadata": {"detail_level": "evidence", "partial": true}
+      },
+      "expected": {
+        "projection.observable_coverage_summary": "automation=complete/failed:0/ledger:complete/ledger_failed:0/fallback:false; blueprint=partial/failed:2/ledger:partial/ledger_failed:2/fallback:false",
+        "projection.observable_evidence_fingerprint": "sha256:fa6a5ce4a64139781e986457e699cb54f629d356e8d27cae26c7bc95d5ab3635",
+        "projection.observable_dependency_source_count": 0
+      }
+    },
+    {
+      "observation": "f3_orphan_task",
+      "variant": "synthetic_current_orphan",
+      "source": {
+        "success": true,
+        "data": {
+          "task_id": "ab8d7cd12aad48aab8307ca819c794ca",
+          "f3_children": [
+            {
+              "child_execution_id": "1111111111111111111111111111111111111111111111111111111111111111",
+              "operation_id": "create_fp2_pending_helper",
+              "ordinal": 0,
+              "state": "preflight",
+              "normalized_outcome": null,
+              "dispatch_count": 0
+            },
+            {
+              "child_execution_id": "2222222222222222222222222222222222222222222222222222222222222222",
+              "operation_id": "update_vanity_automation",
+              "ordinal": 1,
+              "state": "not_started",
+              "normalized_outcome": null,
+              "dispatch_count": 0
+            }
+          ]
+        }
+      },
+      "expected": {
+        "projection.f3_child_count": 2,
+        "projection.f3_child_lifecycle_fingerprint": "sha256:b90943b828d4723e86921ec2cb99f65d5741c53a5d070cb077f8eca684186277",
+        "projection.f3_all_zero_dispatch": true,
+        "projection.f3_all_terminal": false,
+        "projection.f3_all_cancelled_pre_dispatch": false
+      }
+    },
+    {
+      "observation": "f3_orphan_task",
+      "variant": "synthetic_recovered_orphan",
+      "source": {
+        "success": true,
+        "data": {
+          "task_id": "ab8d7cd12aad48aab8307ca819c794ca",
+          "f3_children": [
+            {
+              "child_execution_id": "1111111111111111111111111111111111111111111111111111111111111111",
+              "operation_id": "create_fp2_pending_helper",
+              "ordinal": 0,
+              "state": "cancelled_pre_dispatch",
+              "normalized_outcome": "cancelled_pre_dispatch",
+              "dispatch_count": 0
+            },
+            {
+              "child_execution_id": "2222222222222222222222222222222222222222222222222222222222222222",
+              "operation_id": "update_vanity_automation",
+              "ordinal": 1,
+              "state": "cancelled_pre_dispatch",
+              "normalized_outcome": "cancelled_pre_dispatch",
+              "dispatch_count": 0
+            }
+          ]
+        }
+      },
+      "expected": {
+        "projection.f3_child_count": 2,
+        "projection.f3_child_lifecycle_fingerprint": "sha256:83fa576f006f882fd03adf6a09726a677747ab2da874964bed5cbaf35b801b1d",
+        "projection.f3_all_zero_dispatch": true,
+        "projection.f3_all_terminal": true,
+        "projection.f3_all_cancelled_pre_dispatch": true
+      }
+    },
+    {
+      "observation": "long_wait_template_automation_read",
+      "source": {
+        "id": "synthetic-beta34-long-wait",
+        "variables": {
+          "wait_template": "unrelated mapping must not be treated as an action"
+        },
+        "action": [
+          {
+            "action": "notify.synthetic",
+            "data": {"message": "Starting sanitized long-wait fixture"}
+          },
+          {"delay": "00:00:01"},
+          {
+            "wait_template": "{% set sample = states('sensor.synthetic_long_wait_source') %}\n{{ sample in ['ready', 'complete'] and\n   is_state('binary_sensor.synthetic_gate', 'on') and\n   (states('sensor.synthetic_counter') | int(0)) >= 1 }}\n{# sanitized source-shaped fixture; no live content retained #}"
+          }
+        ]
+      },
+      "expected": {
+        "projection.wait_template_count": 1,
+        "projection.wait_template_action_path": "/action/2",
+        "projection.wait_template_length": 276,
+        "projection.wait_template_semantic_digest": "sha256:a4640bd7bfb8ecc56cc805322192168901234d6492e86906f63104fb5f0d2286"
+      }
+    }
+  ]
+}

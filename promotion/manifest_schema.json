@@ -1,0 +1,378 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/jeter-1/hass-mcp-admin/promotion/manifest_schema.json",
+  "title": "HA MCP Engineering promotion regression manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest_version", "target", "product_authority_snapshot", "projection_contracts", "observations",
+    "sentinels", "separately_authorized_canaries"
+  ],
+  "properties": {
+    "manifest_version": {"const": 2},
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["release", "tag", "build_sha", "evidence_captured_at", "evidence_source"],
+      "properties": {
+        "release": {"type": "string", "minLength": 1, "maxLength": 64},
+        "tag": {"type": "string", "minLength": 1, "maxLength": 80},
+        "build_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "evidence_captured_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+        "evidence_source": {"type": "string", "minLength": 20, "maxLength": 2000},
+        "notes": {"type": "string", "maxLength": 2000}
+      }
+    },
+    "product_authority_snapshot": {"$ref": "#/$defs/product_authority_snapshot"},
+    "observations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 40,
+      "items": {"$ref": "#/$defs/observation"}
+    },
+    "projection_contracts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {"$ref": "#/$defs/projection_contract"}
+    },
+    "sentinels": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 80,
+      "items": {"$ref": "#/$defs/sentinel"}
+    },
+    "separately_authorized_canaries": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {"$ref": "#/$defs/separately_authorized_canary"}
+    }
+  },
+  "$defs": {
+    "projection_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "version", "observation", "algorithm", "maximum_source_bytes",
+        "output_paths", "procedure", "evidence_availability"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$", "maxLength": 100},
+        "version": {"const": 1},
+        "observation": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$"},
+        "algorithm": {"enum": ["dependency_public_evidence_v2", "wait_template_structure_v1", "f3_child_lifecycle_v1"]},
+        "evidence_availability": {"enum": ["available", "unavailable_pending_authoritative_capture"]},
+        "unavailable_reason": {"type": "string", "minLength": 20, "maxLength": 1000},
+        "maximum_source_bytes": {"type": "integer", "minimum": 1024, "maximum": 262144},
+        "output_paths": {
+          "type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^projection\\.[a-z0-9_]+$", "maxLength": 160}
+        },
+        "procedure": {"type": "string", "minLength": 40, "maxLength": 3000},
+        "expected_action_pointer": {"type": "string", "pattern": "^/action/(0|[1-9][0-9]*)$", "maxLength": 80},
+        "expected_parent_task_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+        "expected_child_count": {"type": "integer", "minimum": 1, "maximum": 8}
+      },
+      "allOf": [
+        {"if": {"properties": {"algorithm": {"const": "wait_template_structure_v1"}}, "required": ["algorithm"]}, "then": {"required": ["expected_action_pointer"]}},
+        {"if": {"properties": {"algorithm": {"const": "f3_child_lifecycle_v1"}}, "required": ["algorithm"]}, "then": {"required": ["expected_parent_task_id", "expected_child_count"]}},
+        {"if": {"properties": {"algorithm": {"const": "dependency_public_evidence_v2"}}, "required": ["algorithm"]}, "then": {"not": {"anyOf": [{"required": ["expected_action_pointer"]}, {"required": ["expected_parent_task_id"]}]}}},
+        {"if": {"properties": {"evidence_availability": {"const": "available"}}, "required": ["evidence_availability"]}, "then": {"not": {"required": ["unavailable_reason"]}}},
+        {"if": {"properties": {"evidence_availability": {"const": "unavailable_pending_authoritative_capture"}}, "required": ["evidence_availability"]}, "then": {"required": ["unavailable_reason"]}}
+      ]
+    },
+    "product_authority_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_document", "source_revision", "source_date", "source_sha256",
+        "promotion_blockers", "tracked_nonblocking", "confirmed_regression_passes"
+      ],
+      "properties": {
+        "source_document": {"const": "ha_mcp_engineering_consolidated_deficiencies.md"},
+        "source_revision": {"type": "string", "minLength": 10, "maxLength": 200},
+        "source_date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+        "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "promotion_blockers": {
+          "type": "array", "minItems": 1, "maxItems": 20,
+          "items": {"$ref": "#/$defs/authority_requirement"}
+        },
+        "tracked_nonblocking": {
+          "type": "array", "minItems": 1, "maxItems": 20,
+          "items": {"$ref": "#/$defs/authority_requirement"}
+        },
+        "confirmed_regression_passes": {
+          "type": "array", "minItems": 1, "maxItems": 40, "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": 100}
+        }
+      }
+    },
+    "authority_requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["register_item", "representation", "id", "promotion_disposition"],
+      "properties": {
+        "register_item": {"type": "integer", "minimum": 1},
+        "related_register_items": {
+          "type": "array", "maxItems": 8, "uniqueItems": true,
+          "items": {"type": "integer", "minimum": 1}
+        },
+        "representation": {"enum": ["sentinel", "required_canary"]},
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": 100},
+        "promotion_disposition": {"enum": ["blocking", "tracked_nonblocking"]}
+      }
+    },
+    "separately_authorized_canary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "title", "tool", "effect_class", "included_in_default_plan",
+        "separate_authorization_required", "fixed_arguments", "operator_arguments",
+        "preconditions", "procedure", "required_for_promotion", "availability",
+        "promotion_disposition"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": 100},
+        "title": {"type": "string", "minLength": 1, "maxLength": 200},
+        "tool": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$", "maxLength": 128},
+        "effect_class": {"const": "governed_write"},
+        "included_in_default_plan": {"const": false},
+        "separate_authorization_required": {"const": true},
+        "required_for_promotion": {"type": "boolean"},
+        "availability": {"enum": ["executable", "unavailable_pending_reviewed_protocol"]},
+        "promotion_disposition": {"enum": ["blocking", "tracked_nonblocking"]},
+        "deficiency": {"$ref": "#/$defs/deficiency"},
+        "fixed_arguments": {"type": "object", "maxProperties": 20},
+        "operator_arguments": {
+          "type": "object", "minProperties": 1, "maxProperties": 10,
+          "additionalProperties": {"type": "object"}
+        },
+        "preconditions": {
+          "type": "array", "minItems": 1, "maxItems": 20,
+          "items": {"type": "string", "minLength": 10, "maxLength": 500}
+        },
+        "desired_checks": {
+          "type": "array", "minItems": 1, "maxItems": 20,
+          "items": {"$ref": "#/$defs/check"}
+        },
+        "procedure": {"type": "string", "minLength": 40, "maxLength": 3000}
+      },
+      "allOf": [
+        {"if": {"properties": {"availability": {"const": "executable"}}, "required": ["availability"]}, "then": {"required": ["desired_checks"]}},
+        {"if": {"properties": {"availability": {"const": "unavailable_pending_reviewed_protocol"}}, "required": ["availability"]}, "then": {"not": {"required": ["desired_checks"]}}}
+      ]
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "tool", "arguments", "effect_class", "procedure"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$", "maxLength": 80},
+        "tool": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$", "maxLength": 128},
+        "arguments": {"type": "object", "maxProperties": 20},
+        "operator_arguments": {
+          "type": "object",
+          "maxProperties": 10,
+          "additionalProperties": {"type": "object"}
+        },
+        "effect_class": {"const": "read_only"},
+        "procedure": {"type": "string", "minLength": 20, "maxLength": 2000},
+        "target_binding": {"enum": ["fixed", "operator_local"]},
+        "target_note": {"type": "string", "minLength": 20, "maxLength": 1200}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"target_binding": {"const": "operator_local"}},
+            "required": ["target_binding"]
+          },
+          "then": {"required": ["operator_arguments", "target_note"]}
+        }
+      ]
+    },
+    "sentinel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "title", "description", "register_section", "observation",
+        "expected_status", "desired_checks"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "maxLength": 100},
+        "title": {"type": "string", "minLength": 1, "maxLength": 200},
+        "description": {"type": "string", "minLength": 20, "maxLength": 2000},
+        "register_section": {"enum": ["minimum_permanent_sentinels", "confirmed_regression_passes"]},
+        "observation": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$"},
+        "expected_status": {"enum": ["expected_pass", "expected_fail"]},
+        "promotion_disposition": {"enum": ["blocking", "tracked_nonblocking"]},
+        "desired_checks": {
+          "type": "array", "minItems": 1, "maxItems": 40,
+          "items": {"$ref": "#/$defs/check"}
+        },
+        "known_failure_checks": {
+          "type": "array", "minItems": 1, "maxItems": 40,
+          "items": {"$ref": "#/$defs/check"}
+        },
+        "deficiency": {"$ref": "#/$defs/deficiency"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"expected_status": {"const": "expected_fail"}}, "required": ["expected_status"]},
+          "then": {"required": ["deficiency", "known_failure_checks", "promotion_disposition"]}
+        },
+        {
+          "if": {"properties": {"expected_status": {"const": "expected_pass"}}, "required": ["expected_status"]},
+          "then": {
+            "not": {"anyOf": [{"required": ["deficiency"]}, {"required": ["known_failure_checks"]}, {"required": ["promotion_disposition"]}]}
+          }
+        }
+      ]
+    },
+    "deficiency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["register_item", "summary", "observed_evidence"],
+      "properties": {
+        "register_item": {"type": "integer", "minimum": 1},
+        "related_register_items": {
+          "type": "array", "maxItems": 8,
+          "items": {"type": "integer", "minimum": 1},
+          "uniqueItems": true
+        },
+        "summary": {"type": "string", "minLength": 10, "maxLength": 1000},
+        "observed_evidence": {"type": "string", "minLength": 10, "maxLength": 1600}
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "operator"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 240},
+        "operator": {
+          "enum": [
+            "equals", "not_equals", "one_of", "gte", "lte", "gt", "lt",
+            "present", "absent", "matches", "equals_observation_path",
+            "equals_invocation_argument"
+          ]
+        },
+        "value": {},
+        "values": {"type": "array", "minItems": 1, "maxItems": 30},
+        "source_observation": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$"},
+        "observation": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$"},
+        "reference_path": {"type": "string", "minLength": 1, "maxLength": 240},
+        "invocation_argument": {"type": "string", "minLength": 1, "maxLength": 120},
+        "note": {"type": "string", "maxLength": 1000}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"operator": {"enum": ["equals", "not_equals", "gte", "lte", "gt", "lt", "matches"]}}, "required": ["operator"]},
+          "then": {"required": ["value"]}
+        },
+        {
+          "if": {"properties": {"operator": {"const": "one_of"}}, "required": ["operator"]},
+          "then": {"required": ["values"]}
+        },
+        {
+          "if": {"properties": {"operator": {"const": "equals_observation_path"}}, "required": ["operator"]},
+          "then": {"required": ["observation", "reference_path"]}
+        },
+        {
+          "if": {"properties": {"operator": {"const": "equals_invocation_argument"}}, "required": ["operator"]},
+          "then": {"required": ["invocation_argument"]}
+        }
+      ]
+    },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capture_schema_version", "manifest_version", "manifest_digest",
+        "captured_at", "captured_by", "session_id", "target", "observations", "canaries"
+      ],
+      "properties": {
+        "_fixture_provenance": {"type": "object", "maxProperties": 12},
+        "capture_schema_version": {"const": 1},
+        "manifest_version": {"type": "integer", "minimum": 1},
+        "manifest_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "captured_at": {"type": "string", "minLength": 20, "maxLength": 40},
+        "captured_by": {"type": "string", "minLength": 1, "maxLength": 160},
+        "session_id": {"type": "string", "minLength": 1, "maxLength": 160},
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["release", "build_sha"],
+          "properties": {
+            "release": {"type": "string", "minLength": 1, "maxLength": 64},
+            "build_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+          }
+        },
+        "observations": {
+          "type": "object",
+          "maxProperties": 40,
+          "propertyNames": {"pattern": "^[a-z0-9][a-z0-9_]*$"},
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["observation_id", "tool", "arguments", "status"],
+            "properties": {
+              "observation_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$"},
+              "tool": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$", "maxLength": 128},
+              "arguments": {"type": "object", "maxProperties": 20},
+              "status": {"enum": ["captured", "not_captured"]},
+              "evidence": {
+                "type": "object", "maxProperties": 128,
+                "propertyNames": {"minLength": 1, "maxLength": 240}
+              },
+              "absent_paths": {
+                "type": "array", "maxItems": 128, "uniqueItems": true,
+                "items": {"type": "string", "minLength": 1, "maxLength": 240}
+              },
+              "not_recorded_reason": {"type": "string", "minLength": 3, "maxLength": 500}
+            },
+            "allOf": [
+              {
+                "if": {"properties": {"status": {"const": "captured"}}, "required": ["status"]},
+                "then": {
+                  "required": ["evidence", "absent_paths"],
+                  "not": {"required": ["not_recorded_reason"]}
+                }
+              },
+              {
+                "if": {"properties": {"status": {"const": "not_captured"}}, "required": ["status"]},
+                "then": {
+                  "required": ["not_recorded_reason"],
+                  "not": {"anyOf": [{"required": ["evidence"]}, {"required": ["absent_paths"]}]}
+                }
+              }
+            ]
+          }
+        },
+        "canaries": {
+          "type": "object",
+          "maxProperties": 20,
+          "propertyNames": {"pattern": "^[a-z0-9][a-z0-9-]*$"},
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["canary_id", "tool", "arguments", "status"],
+            "properties": {
+              "canary_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+              "tool": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$", "maxLength": 128},
+              "arguments": {"type": "object", "maxProperties": 20},
+              "status": {"enum": ["captured", "not_captured"]},
+              "evidence": {"type": "object", "maxProperties": 128},
+              "absent_paths": {"type": "array", "maxItems": 128, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 240}},
+              "not_recorded_reason": {"type": "string", "minLength": 3, "maxLength": 500}
+            },
+            "allOf": [
+              {"if": {"properties": {"status": {"const": "captured"}}, "required": ["status"]}, "then": {"required": ["evidence", "absent_paths"], "not": {"required": ["not_recorded_reason"]}}},
+              {"if": {"properties": {"status": {"const": "not_captured"}}, "required": ["status"]}, "then": {"required": ["not_recorded_reason"], "not": {"anyOf": [{"required": ["evidence"]}, {"required": ["absent_paths"]}]}}}
+            ]
+          }
+        }
+      }
+    }
+  }
+}

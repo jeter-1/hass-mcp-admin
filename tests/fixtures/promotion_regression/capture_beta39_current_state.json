@@ -1,0 +1,402 @@
+{
+  "_fixture_provenance": {
+    "kind": "synthetic_offline_fixture",
+    "not_a_production_record": true,
+    "source": "Bounded values recorded in the HAMCP-089 deficiency register and reviewed Beta 39 response contracts.",
+    "omissions": "No raw automation, dashboard, entity attributes, logs, configuration bodies, credentials, production authority records, or unverified F3 child execution IDs are included."
+  },
+  "capture_schema_version": 1,
+  "manifest_version": 2,
+  "manifest_digest": "sha256:141adc8d9603e909926080a05347b4f61c8669c74e5ea6bef2eeb6428c044fab",
+  "captured_at": "2026-08-19T12:00:00Z",
+  "captured_by": "synthetic offline fixture maintainer",
+  "session_id": "fixture-beta39-current-state-v2",
+  "target": {
+    "release": "2.2.0-beta.39",
+    "build_sha": "bf4236cc99c9515325d7cba0fd8d2f909d3573cb"
+  },
+  "observations": {
+    "server_identity": {
+      "observation_id": "server_identity",
+      "tool": "server_info",
+      "arguments": {"check_ha": true},
+      "status": "captured",
+      "evidence": {
+        "success": true,
+        "data.server.version": "2.2.0-beta.39",
+        "data.server.id": "hass-mcp-engineering-beta",
+        "data.server.schema_version": "1",
+        "data.server.build_sha": "bf4236cc99c9515325d7cba0fd8d2f909d3573cb",
+        "data.server.build_dirty": false,
+        "data.tool_count": 76,
+        "data.engineering_registered_tool_count": 51,
+        "data.dynamic_upstream_tool_count": 25,
+        "data.canonical_tool_count": 25,
+        "data.runtime.home_assistant_connection.ha_version": "2026.8.1"
+      },
+      "absent_paths": []
+    },
+    "server_health": {
+      "observation_id": "server_health",
+      "tool": "get_server_health",
+      "arguments": {"check_ha": true},
+      "status": "captured",
+      "evidence": {
+        "data.registered_tool_count": 76,
+        "data.engineering_registered_tool_count": 51,
+        "data.dynamic_upstream_tool_count": 25,
+        "data.home_assistant.status": "connected",
+        "data.home_assistant.rest_status": "connected",
+        "data.home_assistant.websocket_status": "connected",
+        "data.home_assistant.version": "2026.8.1",
+        "data.upstream_read_gateway.compatibility_status": "exact",
+        "data.upstream_read_gateway.admission_status": "admitted_exact",
+        "data.upstream_read_gateway.dynamically_exposed_count": 25,
+        "data.upstream_read_gateway.fallback_count": 0,
+        "data.upstream_read_gateway.direct_ha_fallback_allowed": false,
+        "data.upstream_read_gateway.writes_allowed": false,
+        "data.upstream_dashboard.ordinary_dashboard_read_route.fallback": "none",
+        "data.upstream_dashboard.governed_dashboard_write_route.fallback": "none",
+        "data.upstream_dashboard.governed_dashboard_write_route.direct_home_assistant_fallback": false,
+        "data.upstream_dashboard.writes_allowed": false,
+        "data.provider_routing.fallback_attempts": 0,
+        "data.provider_routing.fallback_successes": 0,
+        "data.provider_routing.prohibited_fallback_attempts": 0,
+        "data.provider_routing.standard_ha_mcp_delegation": "unavailable",
+        "data.provider_routing.direct_fallback_requires_explicit_policy": true,
+        "data.governance.storage_status": "healthy",
+        "data.governance.storage.corruption_count": 0,
+        "data.governance.storage.write_failures": 0,
+        "data.governance.execution_tasks.storage_status": "healthy",
+        "data.governance.execution_tasks.storage.corruption_count": 0,
+        "data.governance.execution_tasks.storage.write_failures": 0,
+        "data.governance.execution_tasks.storage.event_write_failures": 0,
+        "data.governance.execution_tasks.storage.materialization_failures": 0,
+        "data.governance.approval_authority_version": 3,
+        "data.governance.execution_tasks.storage.navigation.nonterminal_record_count": 0,
+        "data.governance.f3.status": "recovering",
+        "data.governance.f3.execution_ready": true,
+        "data.governance.f3.nonterminal_execution_count": 1,
+        "data.governance.f3.active_conflict_hold_count": 0,
+        "data.governance.f3.active_normal_lock_count": 0,
+        "data.governance.f3.corrupt_record_count": 0,
+        "data.governance.f3.recovery_coordinator_status": "ready",
+        "data.governance.f3.recovery_failures": 0,
+        "data.governance.f3.fallback_count": 0,
+        "data.governance.projection_failure_count": 2,
+        "data.governance.policy_snapshot_mismatches": 1,
+        "data.governance.approval_sequence_failures": 1,
+        "data.governance.operational_administration.helper_state_provider.provider": "direct_home_assistant_state",
+        "data.governance.operational_administration.helper_state_provider.provider_contract": "direct-ha-exact-input-boolean-v1",
+        "data.governance.operational_administration.helper_state_provider.transport_health.rest": "connected",
+        "data.governance.operational_administration.helper_state_provider.transport_health.websocket": "connected",
+        "data.governance.operational_administration.helper_state_provider.operational_status": "available",
+        "data.governance.operational_administration.helper_state_provider.fallback": "none",
+        "data.governance.operational_administration.helper_state_provider.fallback_count": 0
+      },
+      "absent_paths": []
+    },
+    "direct_entity_read": {
+      "observation_id": "direct_entity_read",
+      "tool": "get_entity",
+      "arguments": {"entity_id": "input_boolean.mcp_f2_standard_admin_test_flag"},
+      "status": "captured",
+      "evidence": {
+        "success": true,
+        "data.entity_id": "input_boolean.mcp_f2_standard_admin_test_flag",
+        "data.state": "off",
+        "metadata.resource_type": "entity"
+      },
+      "absent_paths": []
+    },
+    "native_dependency_read": {
+      "observation_id": "native_dependency_read",
+      "tool": "entity_dependency_analysis",
+      "arguments": {
+        "entity_id": "input_boolean.mcp_f2_standard_admin_test_flag",
+        "detail_level": "evidence",
+        "include_indirect": true,
+        "max_depth": 3,
+        "source_types": ["automation", "blueprint"],
+        "limit": 100,
+        "cursor": "",
+        "refresh_index": true
+      },
+      "status": "captured",
+      "evidence": {
+        "success": true,
+        "data.target.entity_id": "input_boolean.mcp_f2_standard_admin_test_flag",
+        "data.index.generation": 8,
+        "data.index.refreshed": true,
+        "data.index.cache_hit": false,
+        "data.overview.coverage_complete": false,
+        "data.source_coverage[source_type=automation].completeness": "complete",
+        "data.source_coverage[source_type=automation].failed_item_count": 0,
+        "data.source_coverage[source_type=automation].obligation_ledger_completeness": "complete",
+        "data.source_coverage[source_type=automation].obligation_ledger_failed_item_count": 0,
+        "data.source_coverage[source_type=automation].fallback_occurred": false,
+        "data.source_coverage[source_type=blueprint].completeness": "partial",
+        "data.source_coverage[source_type=blueprint].failed_item_count": 2,
+        "data.source_coverage[source_type=blueprint].obligation_ledger_completeness": "partial",
+        "data.source_coverage[source_type=blueprint].obligation_ledger_failed_item_count": 2,
+        "data.source_coverage[source_type=blueprint].fallback_occurred": false,
+        "data.pagination.total": 0,
+        "data.pagination.has_more": false,
+        "projection.observable_coverage_summary": "automation=complete/failed:0/ledger:complete/ledger_failed:0/fallback:false; blueprint=partial/failed:2/ledger:partial/ledger_failed:2/fallback:false",
+        "projection.observable_evidence_fingerprint": "sha256:fa6a5ce4a64139781e986457e699cb54f629d356e8d27cae26c7bc95d5ab3635",
+        "projection.observable_dependency_source_count": 0
+      },
+      "absent_paths": []
+    },
+    "delegated_overview_read": {
+      "observation_id": "delegated_overview_read",
+      "tool": "ha_get_overview",
+      "arguments": {},
+      "status": "captured",
+      "evidence": {
+        "success": true,
+        "metadata.provider": "upstream_read_gateway",
+        "metadata.classification": "automatic_read",
+        "metadata.fallback": "none",
+        "metadata.fallback_occurred": false
+      },
+      "absent_paths": []
+    },
+    "dashboard_map_read": {
+      "observation_id": "dashboard_map_read",
+      "tool": "get_dashboard_config",
+      "arguments": {"url_path": "map", "force_reload": true},
+      "status": "captured",
+      "evidence": {
+        "success": true,
+        "data.url_path": "map",
+        "data.configuration_returned": true,
+        "metadata.provider": "upstream_dashboard",
+        "metadata.upstream_dispatch_occurred": true
+      },
+      "absent_paths": []
+    },
+    "long_wait_template_automation_read": {
+      "observation_id": "long_wait_template_automation_read",
+      "tool": "get_automation_config",
+      "arguments": {"automation_id": "synthetic-beta34-long-wait"},
+      "status": "captured",
+      "evidence": {
+        "id": "synthetic-beta34-long-wait",
+        "projection.wait_template_count": 1,
+        "projection.wait_template_action_path": "/action/2",
+        "projection.wait_template_length": 276,
+        "projection.wait_template_semantic_digest": "sha256:a4640bd7bfb8ecc56cc805322192168901234d6492e86906f63104fb5f0d2286"
+      },
+      "absent_paths": []
+    },
+    "stale_state_canary_task": {
+      "observation_id": "stale_state_canary_task",
+      "tool": "get_execution_task",
+      "arguments": {"task_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "status": "captured",
+      "evidence": {
+        "success": true,
+        "data.task_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "data.operation": "set_input_boolean_state",
+        "data.target.target_type": "input_boolean",
+        "data.target.target_id": "input_boolean.mcp_f2_standard_admin_test_flag",
+        "data.state": "failed_pre_dispatch",
+        "data.terminal_outcome": "failed_pre_dispatch",
+        "data.provider_attempt_count": 0,
+        "data.dispatched_at": null,
+        "data.last_error.error_code": "stale_observed_state",
+        "data.last_error.reason": "helper_state_drift"
+      },
+      "absent_paths": ["data.verification_summary.status"]
+    },
+    "f3_orphan_task": {
+      "observation_id": "f3_orphan_task",
+      "tool": "get_execution_task",
+      "arguments": {"task_id": "ab8d7cd12aad48aab8307ca819c794ca"},
+      "status": "not_captured",
+      "not_recorded_reason": "Retained evidence lacks the two public 64-hex child execution IDs; separate read-only capture is required"
+    },
+    "historical_beta31_map_update_task": {
+      "observation_id": "historical_beta31_map_update_task",
+      "tool": "get_execution_task",
+      "arguments": {"task_id": "31313131313131313131313131313131"},
+      "status": "captured",
+      "evidence": {
+        "data.task_id": "31313131313131313131313131313131",
+        "data.task_schema_version": 1,
+        "data.operation": "update_dashboard",
+        "data.target.target_type": "dashboard",
+        "data.target.target_id": "map",
+        "data.state": "succeeded_verified",
+        "data.terminal_outcome": "succeeded_verified",
+        "data.provider_attempt_count": 1,
+        "data.verification_summary.status": "succeeded_verified"
+      },
+      "absent_paths": []
+    },
+    "historical_beta31_map_cleanup_task": {
+      "observation_id": "historical_beta31_map_cleanup_task",
+      "tool": "get_execution_task",
+      "arguments": {"task_id": "32323232323232323232323232323232"},
+      "status": "captured",
+      "evidence": {
+        "data.task_id": "32323232323232323232323232323232",
+        "data.task_schema_version": 1,
+        "data.operation": "update_dashboard",
+        "data.target.target_type": "dashboard",
+        "data.target.target_id": "map",
+        "data.state": "succeeded_verified",
+        "data.terminal_outcome": "succeeded_verified",
+        "data.provider_attempt_count": 1,
+        "data.verification_summary.status": "succeeded_verified"
+      },
+      "absent_paths": []
+    },
+    "historical_long_template_execution_task": {
+      "observation_id": "historical_long_template_execution_task",
+      "tool": "get_execution_task",
+      "arguments": {"task_id": "34343434343434343434343434343434"},
+      "status": "captured",
+      "evidence": {
+        "data.task_id": "34343434343434343434343434343434",
+        "data.task_schema_version": 1,
+        "data.operation": "configuration_plan",
+        "data.target.target_type": "configuration_plan",
+        "data.state": "succeeded_verified",
+        "data.terminal_outcome": "succeeded_verified",
+        "data.provider_attempt_count": 1,
+        "data.verification_summary.status": "succeeded_verified"
+      },
+      "absent_paths": []
+    },
+    "execution_task_inventory": {
+      "observation_id": "execution_task_inventory",
+      "tool": "list_execution_tasks",
+      "arguments": {"state": "", "terminal_outcome": "", "plan_id": "", "limit": 100},
+      "status": "captured",
+      "evidence": {
+        "data.tasks[task_id=ab8d7cd12aad48aab8307ca819c794ca].state": "failed_pre_dispatch"
+      },
+      "absent_paths": []
+    },
+    "historical_policy_snapshot_plan": {
+      "observation_id": "historical_policy_snapshot_plan",
+      "tool": "get_change_plan",
+      "arguments": {"plan_id": "00dbf0dfbd7f4f3e84d01a30d18ffdde"},
+      "status": "captured",
+      "evidence": {
+        "success": false,
+        "error_code": "policy_snapshot_mismatch",
+        "details.resource_id": "00dbf0dfbd7f4f3e84d01a30d18ffdde"
+      },
+      "absent_paths": []
+    },
+    "historical_approval_sequence_plan": {
+      "observation_id": "historical_approval_sequence_plan",
+      "tool": "get_change_plan",
+      "arguments": {"plan_id": "72cd49adeeec492c91679ef2c78bc325"},
+      "status": "captured",
+      "evidence": {
+        "success": false,
+        "error_code": "approval_sequence_failure",
+        "details.resource_id": "72cd49adeeec492c91679ef2c78bc325"
+      },
+      "absent_paths": []
+    },
+    "home_assistant_configuration_validation": {
+      "observation_id": "home_assistant_configuration_validation",
+      "tool": "check_config",
+      "arguments": {},
+      "status": "captured",
+      "evidence": {
+        "success": true,
+        "data.result": "valid",
+        "data.errors": null,
+        "metadata.routing.classification": "direct_ha_required",
+        "metadata.routing.provider": "direct_ha_api",
+        "metadata.routing.fallback_occurred": false
+      },
+      "absent_paths": []
+    },
+    "held_read_canary_not_found": {
+      "observation_id": "held_read_canary_not_found",
+      "tool": "run_held_read_canary",
+      "arguments": {
+        "upstream_tool_name": "ha_get_operation_status",
+        "arguments": {"operation_id": "hamcp-089-deliberately-nonexistent-operation"},
+        "expected_compatibility_entry_id": "synthetic-fixture-compatibility-entry"
+      },
+      "status": "captured",
+      "evidence": {
+        "success": false,
+        "error": "HeldReadCanaryError",
+        "error_code": "provider_error",
+        "retryable": true,
+        "details.failure_category": "upstream_error",
+        "details.canary_evidence.upstream_tool": "ha_get_operation_status",
+        "details.canary_evidence.expected_compatibility_entry_id": "synthetic-fixture-compatibility-entry",
+        "details.canary_evidence.input_schema_match": true,
+        "details.canary_evidence.annotation_match": true,
+        "details.canary_evidence.security_match": true,
+        "details.canary_evidence.runtime_contract_match": true,
+        "details.canary_evidence.output_contract_match": true,
+        "details.canary_evidence.error_contract.structured_code": "RESOURCE_NOT_FOUND",
+        "details.canary_evidence.reviewed_classification_after": "held_for_canary",
+        "details.canary_evidence.promotion_performed": false,
+        "details.canary_evidence.dispatch_occurred": true,
+        "details.canary_evidence.fallback_occurred": false,
+        "metadata.fallback": "none",
+        "metadata.fallback_occurred": false,
+        "metadata.promotion_performed": false
+      },
+      "absent_paths": []
+    }
+  },
+  "canaries": {
+    "helper-no-change-path": {
+      "canary_id": "helper-no-change-path",
+      "tool": "create_helper_state_plan",
+      "arguments": {
+        "entity_id": "input_boolean.mcp_f2_standard_admin_test_flag",
+        "expiration_minutes": 10,
+        "desired_state": "off"
+      },
+      "status": "captured",
+      "evidence": {
+        "success": true,
+        "data.status": "no_change",
+        "data.outcome": "already_in_desired_state",
+        "data.plan_created": false,
+        "data.provider_dispatch_occurred": false,
+        "data.verified": true,
+        "data.target_id": "input_boolean.mcp_f2_standard_admin_test_flag",
+        "data.provider": "direct_home_assistant_state",
+        "data.fallback": "none",
+        "data.fallback_occurred": false
+      },
+      "absent_paths": []
+    },
+    "beta39-jinja-helper-dependency-semantics": {
+      "canary_id": "beta39-jinja-helper-dependency-semantics",
+      "tool": "create_helper_state_plan",
+      "arguments": {"expiration_minutes": 10},
+      "status": "not_captured",
+      "not_recorded_reason": "No reviewed mechanically obtainable live canary protocol exists in PR #138 scope"
+    },
+    "approval-consumption-pre-dispatch-recovery": {
+      "canary_id": "approval-consumption-pre-dispatch-recovery",
+      "tool": "unavailable_approval_boundary_fault_injection_protocol",
+      "arguments": {},
+      "status": "not_captured",
+      "not_recorded_reason": "No reviewed approval-boundary fault-injection protocol exists in PR #138 scope"
+    },
+    "cover-open-cover-composition-proof": {
+      "canary_id": "cover-open-cover-composition-proof",
+      "tool": "create_configuration_plan",
+      "arguments": {},
+      "status": "not_captured",
+      "not_recorded_reason": "No reviewed disposable planning-only cover composition protocol exists in PR #138 scope"
+    }
+  }
+}
