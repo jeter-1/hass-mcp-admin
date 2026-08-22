@@ -27,12 +27,14 @@ from the nonauthoritative checkpoint remains reachable through authoritative
 task, manifest, and execution-record discovery. Deferred work cannot cause an
 oversized checkpoint or prevent a fresh candidate from receiving readback.
 
-Malformed recovery cursor, checkpoint, or retry-sidecar JSON is treated as
-corrupt nonauthoritative navigation evidence. Recovery records a diagnostic,
-durably resets the affected navigation file, and resumes bounded discovery
-from authoritative persistence. Corrupt task, manifest, and execution records
-remain fail-closed and are not reset by this behavior. Resetting navigation
-never creates dispatch authority.
+Malformed recovery declaration cursor, active-recovery cursor, or
+active-recovery checkpoint JSON is treated as corrupt nonauthoritative
+navigation evidence. Recovery records a diagnostic, durably resets the
+affected navigation file, and resumes bounded discovery from authoritative
+persistence. Corrupt task, manifest, and execution records remain fail-closed,
+unmodified, and non-executable. They are never deleted, quarantined, repaired,
+rewritten, or bypassed by navigation recovery. Resetting navigation never
+creates dispatch authority.
 
 ## Bounded audit replay and deterministic limits
 

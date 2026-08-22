@@ -1445,6 +1445,206 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
             self.runtime.children.runtime(child_id)["audited_event_count"],
         )
 
+    async def test_partial_audit_batch_persists_prefix_and_retries_suffix_once(
+        self,
+    ):
+        _task, declaration = await self._post_intent_active_child(
+            "partial_prefix_audit_replay"
+        )
+        child_id = declaration["child_id"]
+        record = self.runtime.children.get(child_id)
+        self.assertGreater(len(record.events), 1)
+        self.runtime.children.update_runtime(
+            child_id, changes={"audited_event_count": 0}
+        )
+
+        rotated_path = Path(f"{self.audit_path}.1")
+        self.audit_path.unlink(missing_ok=True)
+        rotated_path.unlink(missing_ok=True)
+        rotated_identity = hashlib.sha256(
+            b"retained-audit-predecessor-fixture"
+        ).hexdigest()
+        current_identity = hashlib.sha256(
+            b"current-audit-fixture"
+        ).hexdigest()
+        retained_audit = AuditLogger(
+            str(rotated_path), "dev14-test-access-secret"
+        )
+        self.assertTrue(
+            retained_audit.write(
+                {
+                    "event": "retained_audit_fixture",
+                    "audit_event_id": rotated_identity,
+                }
+            )
+        )
+        self.assertTrue(
+            self.service.audit.write(
+                {
+                    "event": "current_audit_fixture",
+                    "audit_event_id": current_identity,
+                }
+            )
+        )
+        self.assertTrue(self.audit_path.exists())
+        self.assertTrue(rotated_path.exists())
+
+        expected_ids = tuple(
+            _persisted_audit_event_id(child_id, event)
+            for event in record.events
+        )
+
+        def retained_entries():
+            entries = []
+            for path in (self.audit_path, rotated_path):
+                entries.extend(
+                    json.loads(line)
+                    for line in path.read_text(
+                        encoding="utf-8"
+                    ).splitlines()
+                    if line.strip()
+                )
+            return entries
+
+        original_batch = self.service.audit.write_batch
+        original_append = self.service.audit._write_safe_unlocked
+        batch_results = []
+        durable_appends = 0
+
+        def observe_batch(entries):
+            result = original_batch(entries)
+            batch_results.append(result)
+            return result
+
+        def append_prefix_then_fail(entry):
+            nonlocal durable_appends
+            if durable_appends >= 1:
+                raise OSError("synthetic failure after durable audit prefix")
+            original_append(entry)
+            durable_appends += 1
+
+        with (
+            patch.object(
+                self.service.audit,
+                "_idempotency_keys",
+                wraps=self.service.audit._idempotency_keys,
+            ) as retained_scan,
+            patch.object(
+                self.service.audit,
+                "write_batch",
+                side_effect=observe_batch,
+            ),
+            patch.object(
+                self.service.audit,
+                "_write_safe_unlocked",
+                side_effect=append_prefix_then_fail,
+            ),
+        ):
+            self.assertFalse(
+                self.runtime._audit_record_events(declaration, record)
+            )
+
+        self.assertEqual([1], batch_results)
+        self.assertEqual(1, retained_scan.call_count)
+        self.assertEqual(
+            1,
+            self.runtime.children.runtime(child_id)["audited_event_count"],
+        )
+        first_attempt_entries = retained_entries()
+        first_attempt_ids = [
+            item.get("audit_event_id") for item in first_attempt_entries
+        ]
+        self.assertEqual(1, first_attempt_ids.count(expected_ids[0]))
+        for identity in expected_ids[1:]:
+            self.assertEqual(0, first_attempt_ids.count(identity))
+
+        retry_results = []
+
+        def observe_retry(entries):
+            result = original_batch(entries)
+            retry_results.append(result)
+            return result
+
+        with (
+            patch.object(
+                self.service.audit,
+                "_idempotency_keys",
+                wraps=self.service.audit._idempotency_keys,
+            ) as retry_scan,
+            patch.object(
+                self.service.audit,
+                "write_batch",
+                side_effect=observe_retry,
+            ),
+        ):
+            self.assertTrue(
+                self.runtime._audit_record_events(declaration, record)
+            )
+
+        self.assertEqual([len(record.events) - 1], retry_results)
+        self.assertEqual(1, retry_scan.call_count)
+        self.assertEqual(
+            len(record.events),
+            self.runtime.children.runtime(child_id)["audited_event_count"],
+        )
+        after_retry_entries = retained_entries()
+        after_retry_ids = [
+            item.get("audit_event_id") for item in after_retry_entries
+        ]
+        self.assertEqual(
+            len(record.events) - 1,
+            len(after_retry_entries) - len(first_attempt_entries),
+        )
+        for identity in expected_ids:
+            self.assertEqual(1, after_retry_ids.count(identity))
+
+        restarted = self._restart_runtime()
+        restarted.children.update_runtime(
+            child_id, changes={"audited_event_count": 0}
+        )
+        restarted_record = restarted.children.get(child_id)
+        restart_results = []
+
+        def observe_restart(entries):
+            result = original_batch(entries)
+            restart_results.append(result)
+            return result
+
+        before_restart_replay = retained_entries()
+        with (
+            patch.object(
+                self.service.audit,
+                "_idempotency_keys",
+                wraps=self.service.audit._idempotency_keys,
+            ) as restart_scan,
+            patch.object(
+                self.service.audit,
+                "write_batch",
+                side_effect=observe_restart,
+            ),
+        ):
+            self.assertTrue(
+                restarted._audit_record_events(declaration, restarted_record)
+            )
+
+        self.assertEqual([len(record.events)], restart_results)
+        self.assertEqual(1, restart_scan.call_count)
+        self.assertEqual(
+            len(record.events),
+            restarted.children.runtime(child_id)["audited_event_count"],
+        )
+        self.assertEqual(before_restart_replay, retained_entries())
+        final_ids = [
+            item["audit_event_id"]
+            for item in retained_entries()
+            if "audit_event_id" in item
+        ]
+        self.assertEqual(len(final_ids), len(set(final_ids)))
+        self.assertEqual(
+            {rotated_identity, current_identity, *expected_ids},
+            set(final_ids),
+        )
+
     def test_audit_truncation_preserves_id_and_invalid_id_does_not_dedup(self):
         path = self.root / "bounded-audit.jsonl"
         audit = AuditLogger(
@@ -4316,6 +4516,114 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
                             "navigation_kind"
                         ],
                     )
+
+    async def test_malformed_authoritative_manifest_remains_fail_closed(
+        self,
+    ):
+        task, declaration = await self._preintent_active_child(
+            "rr18_malformed_authoritative_manifest"
+        )
+        child_id = declaration["child_id"]
+        manifest_path = (
+            self.runtime.children.root / f"{task.task_id}.manifest.json"
+        )
+        self.assertTrue(manifest_path.exists())
+        self.assertIsNone(self.runtime.children.get(child_id))
+        child_path = self.runtime.children._path(child_id)
+        child_bytes_before = (
+            child_path.read_bytes() if child_path.exists() else None
+        )
+        manifest_path.write_text("{", encoding="utf-8")
+        malformed_bytes = manifest_path.read_bytes()
+        related_before = tuple(
+            sorted(
+                path.name
+                for path in manifest_path.parent.glob(
+                    f"{manifest_path.name}*"
+                )
+            )
+        )
+        public_before = self.service.task_repository.get(task.task_id).to_dict()
+        provider_service_calls_before = tuple(self.gateway.calls)
+
+        def assert_authoritative_state_unchanged(runtime):
+            self.assertTrue(manifest_path.exists())
+            self.assertEqual(malformed_bytes, manifest_path.read_bytes())
+            self.assertEqual(
+                related_before,
+                tuple(
+                    sorted(
+                        path.name
+                        for path in manifest_path.parent.glob(
+                            f"{manifest_path.name}*"
+                        )
+                    )
+                ),
+            )
+            self.assertIsNone(runtime.children.get(child_id))
+            self.assertEqual(
+                child_bytes_before,
+                child_path.read_bytes() if child_path.exists() else None,
+            )
+            public_after = self.service.task_repository.get(task.task_id)
+            self.assertEqual(public_before, public_after.to_dict())
+            self.assertIsNone(public_after.dispatched_at)
+            self.assertEqual([], public_after.provider_attempts)
+            self.assertEqual(
+                provider_service_calls_before, tuple(self.gateway.calls)
+            )
+
+        navigation_path = (
+            self.runtime.children.active_recovery_checkpoint_path
+        )
+        navigation_path.write_text("{", encoding="utf-8")
+        with (
+            patch.object(
+                self.runtime,
+                "_load_prepared",
+                side_effect=AssertionError(
+                    "corrupt manifest cannot prepare provider work"
+                ),
+            ),
+            patch.object(
+                self.runtime,
+                "_execute_child",
+                side_effect=AssertionError(
+                    "corrupt manifest cannot authorize dispatch"
+                ),
+            ),
+        ):
+            with self.assertRaises(ExecutionRecordCorrupt):
+                await self.runtime.recover_once("periodic")
+
+        self.assertFalse(navigation_path.exists())
+        assert_authoritative_state_unchanged(self.runtime)
+
+        startup_navigation_path = (
+            self.runtime.children.active_recovery_checkpoint_path
+        )
+        startup_navigation_path.write_text("{", encoding="utf-8")
+        with (
+            patch.object(
+                F3RuntimeIntegration,
+                "_load_prepared",
+                side_effect=AssertionError(
+                    "startup cannot prepare through a corrupt manifest"
+                ),
+            ),
+            patch.object(
+                F3RuntimeIntegration,
+                "_execute_child",
+                side_effect=AssertionError(
+                    "startup cannot dispatch through a corrupt manifest"
+                ),
+            ),
+        ):
+            with self.assertRaises(ExecutionRecordCorrupt):
+                self._restart_runtime()
+
+        self.assertTrue(startup_navigation_path.exists())
+        assert_authoritative_state_unchanged(self.runtime)
 
     def test_active_recovery_cursor_compare_and_swap_fails_closed(self):
         first = self.runtime.children.active_recovery_cursor_for_task(

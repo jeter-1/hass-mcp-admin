@@ -56,15 +56,18 @@ checkpoint rotation must not strand it.
 ## F139-3: corrupt nonauthoritative navigation
 
 Exercise startup and periodic recovery separately with malformed recovery
-cursor, checkpoint, and retry-sidecar JSON. Each case must emit a diagnostic,
-durably reset only the affected navigation evidence, and continue bounded
-authoritative discovery. Listener startup and subsequent recovery must remain
-reachable, with zero newly created dispatch authority and zero provider calls
-unless an independently valid authoritative record permits them.
+declaration cursor, active-recovery cursor, and active-recovery checkpoint
+JSON. These three navigation artifacts are nonauthoritative. Each case must
+emit a diagnostic, durably reset only the affected navigation evidence, and
+continue bounded authoritative discovery. Listener startup and subsequent
+recovery must remain reachable, with zero newly created dispatch authority and
+zero provider calls unless an independently valid authoritative record permits
+them.
 
 Repeat the boundary with malformed authoritative task, manifest, and execution
-records. Those records must continue to fail closed; navigation recovery must
-not quarantine, rewrite, or treat them as executable.
+records. Those records must continue to fail closed, remain unmodified, and
+remain non-executable. Navigation recovery must not delete, quarantine, repair,
+rewrite, or bypass them.
 
 ## F139-4: bounded audit idempotency
 
