@@ -147,8 +147,178 @@ One coordinator owns F3 recovery and historical Beta 19 read-only
 reconciliation. It performs a strict startup sweep before listener creation,
 then one 30-second loop. Sweeps use cross-process child claims, deterministic
 task/ordinal order, batch 16, a five-second budget, persisted eligibility, and
-bounded 5-to-300 or 30-to-300 second exponential backoff. One public task
-receives at most one child transition per sweep.
+bounded 5-to-300 or 30-to-300 second exponential backoff. Active recovery
+selects at most one eligible child per nonterminal public task per sweep.
+Deadline-bearing post-intent children sort first by their immutable evidence
+deadline, followed by deterministic task/operation identity. Pre-intent work
+follows without receiving any new execution authority.
+
+### Terminal-parent orphan reconciliation
+
+The sweep also enforces a named invariant:
+
+> **Terminal parent + proven zero dispatch => no child remains nonterminal.**
+
+A parent that reaches a terminal state before dispatch used to strand its
+children: the sweep skipped every child whose public task was already
+terminal, so children left in `preflight` or `not_started` were never
+revisited, their hold projections were never cleared, and
+`nonterminal_execution_count` never converged.
+
+Orphan work shares the coordinator's existing batch-16 and five-second budget.
+Active recovery and historical orphan discovery are deliberately separate.
+Active discovery starts from an in-memory nonterminal navigation index already
+filtered to exact `f3_child_sequence` authority before applying the reviewed
+1,024-public-task bound. Unrelated legacy tasks therefore cannot consume the
+F3 result limit. This index and its dedicated cursor are scheduling evidence
+only: the coordinator reloads and validates the exact public task, manifest,
+declaration, child record, runtime/backoff state, attempt, operation, dispatch
+intent, and dispatch count before recovery. A missing or contradictory
+authority fails closed. The active cursor makes an ineligible prefix
+restart-fair and advances past eligible work only after that work is processed
+or placed in the bounded durable checkpoint described below; a removed or
+terminal cursor target safely restarts from the bounded F3 set.
+
+Active discovery and recovery share the same five-second envelope. Discovery
+therefore persists up to the batch limit of 16 selected priority identities
+in `f3-active-recovery-checkpoint-v1` before attempting recovery. Priority
+identities comprise nonterminal post-intent readback and terminal child
+projection; nonterminal post-intent work retains the first capacity. The
+checkpoint contains only public-task, child, operation, ordinal, attempt, and
+declaration-hash navigation evidence. It is not an authority index and cannot
+authorize execution. On the next sweep checkpointed work is reloaded and
+considered before any further namespace scan. Removed, backed-off, replaced,
+already-projected, or authority-mismatched entries are skipped according to
+current durable state and cannot block later work. Checkpoint composition is
+always bounded to 16. If deferred entries fill that bound while newly eligible
+priority work is discovered, only the minimum deterministic suffix of deferred
+navigation references is evicted. Those children remain reachable from the
+authoritative nonterminal index, and the unsettled sweep prevents the active
+cursor from advancing as though they had completed.
+
+Terminal child projection is an explicit recovery mode independent of dispatch
+intent. A terminal child beneath a nonterminal exact-F3 parent is eligible when
+its persisted execution class is either post-intent (`dispatch_count=1`) or
+verified no-dispatch (`dispatch_count=0`, no intent, completed preflight, and a
+persisted `preflight_noop_verified` proof). A no-intent terminal non-success is
+also projection-eligible and preserves the existing aggregate failure
+precedence.
+
+The persisted model supplies the one closed execution classification used by
+record loading, active recovery, terminal projection, orphan lock settlement,
+and expired-lock settlement. No-intent records require count zero, no provider
+response, no observation or verification attempts, and no post-dispatch event.
+Their terminal outcomes are limited to the five outcomes written by
+`terminalize_pre_dispatch`, plus `succeeded_verified` only with exact no-op
+proof. Intent-bearing records require count one, nonempty matching intent
+locks, and the writer-produced lifecycle grammar: one initial start, a final
+ordered `locks_acquired` / `preflight_completed` /
+`dispatch_intent_committed` boundary, exactly one matching intent event, and
+only post-intent events after that boundary. Post-intent-compatible state and
+outcomes are also required; a pre-dispatch-only terminal outcome is
+contradictory. Any contradiction is
+classified as bounded corrupt storage before projection or lock disposition,
+so the public parent, checkpoint, and exact fenced locks remain unresolved for
+operator-visible recovery rather than being rewritten as conclusive
+pre-dispatch failure.
+
+When the complete authoritative sequence succeeds, active discovery chooses its
+last successful child as a scheduling anchor, including all-post-intent,
+all-no-dispatch, and mixed sequences. Any later unfinished or terminal-failure
+child takes precedence, so an earlier success cannot prematurely terminalize a
+multi-operation parent. Every projection candidate is checkpointed first. The
+coordinator then reloads the public task, F3 authority, manifest, declaration,
+child identity, runtime state, and the complete sequence. Projection invokes
+neither child execution nor a provider call; the checkpoint clears only after
+the public projection settles durably.
+
+If discovery reaches the deadline immediately after finding one eligible
+post-intent child, that child is attempted first on the next sweep. A checkpoint
+holding multiple eligible children retains immutable-deadline and deterministic
+task/operation/child ordering; batch overflow remains directly reachable on a
+later sweep. A crash before checkpoint persistence leaves the active cursor
+unchanged. A crash after persistence resumes from the checkpoint. A crash after
+a transition but before checkpoint or cursor cleanup revalidates the now-current
+record and cannot redispatch. Checkpoint replacement and both cursors use atomic
+compare-and-swap, so concurrency conflicts fail without losing authority or
+making skipped work unreachable.
+
+The checkpoint and both recovery cursors are nonauthoritative navigation
+files. Malformed JSON or an invalid navigation schema is removed under the
+repository lock, directory-fsynced, and reported as a bounded diagnostic; the
+next bounded sweep restarts discovery from authoritative public tasks,
+manifests, and child records. I/O failures still surface as storage failures,
+and corruption in any authoritative record continues to fail closed.
+
+Deadline-bearing post-intent candidates receive all available batch and time
+capacity before historical cleanup can reserve a transition. If fewer than 16
+post-intent transitions are available, historical scanning may receive one
+fairness slot ahead of lower-priority pre-intent work; an unused slot returns
+to pre-intent recovery. When no pre-intent candidate competes, historical
+cleanup may use the remaining batch. Equal post-intent deadlines retain
+deterministic task/operation/child ordering. This priority does not alter or
+extend an immutable evidence deadline, and no recovery path may redispatch.
+
+A separate durable historical cursor pages at most 1,024 declarations, reads
+at most the repository's bounded 1,024 manifest paths, and stops at the shared
+deadline. It advances only through declarations safely examined. A candidate
+skipped because the batch or time budget is exhausted remains immediately
+after the cursor for the next sweep instead of waiting for a namespace
+rotation. Both cursor writes use atomic compare-and-swap; a crash or conflict
+leaves work eligible. Generic recovery performs no full-namespace declaration
+load or second sort after the deadline. The sweep
+terminalizes one eligible orphan before releasing anything, which leaves no
+window for a concurrent dispatch to begin.
+It then releases only lock records whose exact task, plan, operation, attempt,
+owner, key, mode, and generation match that child's durable lock evidence.
+Both live/expired leases and selective conflict holds are covered. A later or
+ambiguous fencing generation fails closed and is never released. The generic
+expired-lock pass applies the same complete authority match and therefore
+cannot bypass that refusal.
+
+"Proven zero dispatch" is durable, not inferred. The parent must carry no
+provider attempt and no dispatch timestamp, and each child must carry no
+durable dispatch intent. Because intent is committed *before* the provider is
+invoked, a record with no intent provably never dispatched; a crash after the
+intent leaves it set, and such a record is deliberately excluded and left for
+the post-intent readback path. The storage layer enforces this independently:
+cancellation refuses any record holding an intent and records
+`dispatch_intent_exists` rather than silently skipping.
+
+Terminalization uses `cancelled_pre_dispatch`, never a success outcome, and
+appends evidence rather than overwriting the original parent state, terminal
+outcome, or causal error. Already-terminal children remain eligible while an
+exact lock, selective-hold token, or cancellation-audit cursor is unsettled.
+Physical lock disposition completes before runtime token projections are
+cleared. A crash after cancellation, lock release, token cleanup, or audit
+delivery therefore converges on a later sweep without redispatch or releasing a
+different generation.
+
+The five-second value is a stopping boundary for starting further discovery or
+recovery work, not a claim that the operating system can interrupt one atomic
+fsync or that an already-authorized external observation can always be
+cancelled safely at exactly five seconds. Such an individual operation may
+finish after the boundary; the coordinator starts no subsequent transition in
+that sweep, preserves the remaining checkpoint, and resumes on a later sweep.
+This limitation does not extend immutable evidence deadlines.
+
+A child that never received an execution record has nothing to terminalize and
+is projected as `cancelled_pre_dispatch` under such a parent. The public
+`f3_children` and schema-1 `verification_summary.children` views are derived
+from the same canonical projection, while legacy child identities remain
+unchanged. Reconciliation items and health remain recovering until exact lock,
+token, and audit settlement completes. Every event replayed from a persisted
+child record receives a deterministic SHA-256 identity, independent of event
+type or diagnostic classification. Its canonical preimage is model
+`f3-persisted-audit-event-v1`, exact child ID, persisted positive event
+`sequence`, and the exact validated persisted event. The audit sink preserves
+that identity through truncation, serializes append/rotation, checks the exact
+identity in retained logs, and fsyncs the append before returning. The durable
+audit replay batch scans both retained logs once under the exclusive audit
+lock, then reuses that bounded identity set for every event in the batch. The
+cursor advances only through the acknowledged prefix, so retry after a crash
+between append and cursor persistence does not write a duplicate. This is a
+bookkeeping and projection correction; it never dispatches a provider call.
 
 Before intent, exact authority re-enters public preflight, reacquires the
 complete set, repeats preflight, and commits intent before mutation. After

@@ -59,6 +59,56 @@ TERMINAL_OUTCOMES = frozenset(
     }
 )
 
+PRE_DISPATCH_TERMINAL_OUTCOMES = frozenset(
+    {
+        "preflight_rejected",
+        "lock_conflict",
+        "provider_unavailable_pre_dispatch",
+        "failed_pre_dispatch",
+        "cancelled_pre_dispatch",
+    }
+)
+POST_INTENT_TERMINAL_OUTCOMES = frozenset(
+    {
+        "dispatch_failed_confirmed",
+        "verification_mismatch",
+        "succeeded_verified",
+        "failed_post_dispatch",
+        "manual_review_required",
+    }
+)
+EXECUTION_CLASS_PRE_INTENT = "pre_intent"
+EXECUTION_CLASS_TERMINAL_PRE_DISPATCH = "terminal_pre_dispatch"
+EXECUTION_CLASS_VERIFIED_NO_DISPATCH = "verified_no_dispatch"
+EXECUTION_CLASS_POST_INTENT = "post_intent"
+EXECUTION_CLASS_TERMINAL_POST_INTENT = "terminal_post_intent"
+
+_PRE_INTENT_EVENT_TYPES = frozenset(
+    {
+        "execution_started",
+        "execution_reclaimed",
+        "locks_acquired",
+        "preflight_completed",
+        "pre_intent_retry_required",
+    }
+)
+_PRE_DISPATCH_TERMINAL_EVENT_TYPES = frozenset(
+    {"pre_dispatch_terminal", "execution_cancelled"}
+)
+_POST_INTENT_EVENT_TYPES = frozenset(
+    {
+        *_PRE_INTENT_EVENT_TYPES,
+        "dispatch_intent_committed",
+        "dispatch_result_recorded",
+        "observation_recorded",
+        "verification_recorded",
+        "execution_claim_yielded",
+        "recovery_claimed",
+        "recovery_locks_transferred",
+        "cancellation_rejected",
+    }
+)
+
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -500,25 +550,6 @@ class ExecutionRecord:
         if type(self.dispatch_count) is not int or self.dispatch_count not in {0, 1}:
             raise ValueError("execution record has multiple dispatches")
         self._validate_lock_tokens(self.lock_tokens)
-        if self.dispatch_intent is None and self.dispatch_count:
-            raise ValueError("dispatch count exists without durable intent")
-        if (
-            self.terminal
-            and self.normalized_outcome == "succeeded_verified"
-            and self.dispatch_intent is None
-            and (
-                not self.preflight_completed
-                or not any(
-                    event.get("event_type") == "preflight_noop_verified"
-                    for event in self.events
-                )
-                or set(self.evidence)
-                != {"evidence_hash", "resulting_state_fingerprint"}
-            )
-        ):
-            raise ValueError(
-                "verified no-dispatch execution lacks exact preflight proof"
-            )
         if self.dispatch_intent is not None:
             required = {
                 "committed_at", "evidence_deadline", "request_id", "provider_operation",
@@ -540,6 +571,8 @@ class ExecutionRecord:
                 field_name="provider_operation",
             )
             self._validate_lock_tokens(self.dispatch_intent["lock_tokens"])
+            if not self.dispatch_intent["lock_tokens"]:
+                raise ValueError("durable intent lock evidence is empty")
             if self.dispatch_intent["lock_tokens"] != self.lock_tokens:
                 raise ValueError("durable intent lock tokens are inconsistent")
             if self.dispatch_intent["possibly_dispatched"] is not True:
@@ -587,6 +620,195 @@ class ExecutionRecord:
                 "diagnostic_codes"
             ]:
                 raise ValueError("execution event diagnostics are invalid")
+        self.execution_class()
+
+    def execution_class(self) -> str:
+        """Return the closed persisted dispatch class or fail on contradiction.
+
+        The class is derived exclusively from fields written by the durable
+        execution repository.  Callers may use it for scheduling and lock
+        disposition, but it never grants recovery or dispatch authority.
+        """
+
+        event_types = tuple(item["event_type"] for item in self.events)
+        event_type_set = set(event_types)
+        if self.dispatch_intent is None:
+            if (
+                self.dispatch_count != 0
+                or self.provider_response_received
+                or self.observation_attempts != 0
+                or self.verification_attempts != 0
+            ):
+                raise ValueError(
+                    "no-intent execution contains post-dispatch evidence"
+                )
+            if self.terminal:
+                if self.state != "terminal":
+                    raise ValueError(
+                        "terminal no-intent execution has invalid state"
+                    )
+                if self.normalized_outcome == "succeeded_verified":
+                    if (
+                        self.task_state != "succeeded_verified"
+                        or not self.preflight_completed
+                        or set(self.evidence)
+                        != {
+                            "evidence_hash",
+                            "resulting_state_fingerprint",
+                        }
+                        or "preflight_noop_verified" not in event_type_set
+                        or not event_type_set.issubset(
+                            _PRE_INTENT_EVENT_TYPES
+                            | {"preflight_noop_verified"}
+                        )
+                    ):
+                        raise ValueError(
+                            "verified no-dispatch execution lacks exact "
+                            "preflight proof"
+                        )
+                    return EXECUTION_CLASS_VERIFIED_NO_DISPATCH
+                terminal_events = (
+                    event_type_set & _PRE_DISPATCH_TERMINAL_EVENT_TYPES
+                )
+                if (
+                    self.normalized_outcome
+                    not in PRE_DISPATCH_TERMINAL_OUTCOMES
+                    or self.evidence
+                    or not event_type_set.issubset(
+                        _PRE_INTENT_EVENT_TYPES
+                        | _PRE_DISPATCH_TERMINAL_EVENT_TYPES
+                    )
+                    or len(terminal_events) != 1
+                    or (
+                        self.normalized_outcome != "cancelled_pre_dispatch"
+                        and "execution_cancelled" in event_type_set
+                    )
+                ):
+                    raise ValueError(
+                        "terminal no-intent execution class is invalid"
+                    )
+                return EXECUTION_CLASS_TERMINAL_PRE_DISPATCH
+            if (
+                self.normalized_outcome is not None
+                or self.evidence
+                or (self.state, self.task_state)
+                not in {
+                    ("planning", "created"),
+                    ("planning", "preflight"),
+                    ("preflight", "preflight"),
+                }
+                or not event_type_set.issubset(_PRE_INTENT_EVENT_TYPES)
+            ):
+                raise ValueError("nonterminal pre-intent execution is invalid")
+            return EXECUTION_CLASS_PRE_INTENT
+
+        intent_positions = tuple(
+            index
+            for index, event_type in enumerate(event_types)
+            if event_type == "dispatch_intent_committed"
+        )
+        writer_lifecycle_valid = len(intent_positions) == 1
+        if writer_lifecycle_valid:
+            intent_index = intent_positions[0]
+            pre_intent_events = event_types[:intent_index]
+            post_intent_events = event_types[intent_index + 1 :]
+            writer_lifecycle_valid = (
+                len(pre_intent_events) >= 3
+                and pre_intent_events[0] == "execution_started"
+                and event_types.count("execution_started") == 1
+                and event_types[intent_index - 2 : intent_index + 1]
+                == (
+                    "locks_acquired",
+                    "preflight_completed",
+                    "dispatch_intent_committed",
+                )
+                and all(
+                    event_type in _PRE_INTENT_EVENT_TYPES
+                    for event_type in pre_intent_events
+                )
+                and all(
+                    event_type not in _PRE_INTENT_EVENT_TYPES
+                    for event_type in post_intent_events
+                )
+                and self.dispatch_intent["committed_at"]
+                == self.events[intent_index]["occurred_at"]
+            )
+            previous = pre_intent_events[0] if pre_intent_events else None
+            for event_type in pre_intent_events[1:]:
+                if event_type == "execution_reclaimed":
+                    pass
+                elif event_type == "locks_acquired":
+                    if previous not in {
+                        "execution_started",
+                        "execution_reclaimed",
+                        "pre_intent_retry_required",
+                    }:
+                        writer_lifecycle_valid = False
+                elif event_type == "preflight_completed":
+                    if previous != "locks_acquired":
+                        writer_lifecycle_valid = False
+                elif event_type == "pre_intent_retry_required":
+                    if previous != "preflight_completed":
+                        writer_lifecycle_valid = False
+                else:
+                    writer_lifecycle_valid = False
+                previous = event_type
+        dispatch_result_count = event_types.count("dispatch_result_recorded")
+        if (
+            self.dispatch_count != 1
+            or not self.preflight_completed
+            or not writer_lifecycle_valid
+            or not event_type_set.issubset(_POST_INTENT_EVENT_TYPES)
+            or dispatch_result_count > 1
+            or event_types.count("observation_recorded")
+            != self.observation_attempts
+            or event_types.count("verification_recorded")
+            != self.verification_attempts
+            or (
+                self.provider_response_received
+                and dispatch_result_count != 1
+            )
+        ):
+            raise ValueError("post-intent execution evidence is invalid")
+        if self.terminal:
+            if (
+                self.state != "terminal"
+                or self.normalized_outcome
+                not in POST_INTENT_TERMINAL_OUTCOMES
+                or (
+                    self.normalized_outcome == "dispatch_failed_confirmed"
+                    and (
+                        self.observation_attempts != 0
+                        or self.verification_attempts != 0
+                        or self.evidence
+                    )
+                )
+                or (
+                    self.normalized_outcome != "dispatch_failed_confirmed"
+                    and self.verification_attempts == 0
+                )
+            ):
+                raise ValueError("terminal post-intent execution is invalid")
+            return EXECUTION_CLASS_TERMINAL_POST_INTENT
+        expected_nonterminal = {
+            None: ("dispatching", "dispatching"),
+            "dispatch_indeterminate": ("observation", "observing"),
+            "observing": ("observation", "observing"),
+            "verification_mismatch": (
+                "observation",
+                "failed_post_dispatch",
+            ),
+            "manual_review_required": (
+                "observation",
+                "manual_review_required",
+            ),
+        }
+        if expected_nonterminal.get(self.normalized_outcome) != (
+            self.state,
+            self.task_state,
+        ):
+            raise ValueError("nonterminal post-intent execution is invalid")
+        return EXECUTION_CLASS_POST_INTENT
 
     @staticmethod
     def _validate_lock_tokens(value: object) -> None:

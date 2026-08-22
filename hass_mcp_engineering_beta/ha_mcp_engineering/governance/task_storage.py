@@ -24,6 +24,7 @@ from .task_models import (
 TASK_NAMESPACE = "execution-tasks-v1"
 TASK_ID = re.compile(r"^[a-f0-9]{32}$")
 PLAN_ID = re.compile(r"^[a-f0-9]{32}$")
+F3_EXECUTION_AUTHORITY = "f3_child_sequence"
 
 
 class ExecutionTaskStorageError(RuntimeError):
@@ -78,10 +79,13 @@ class ExecutionTaskRepository:
         self._ordered_keys: list[tuple[float, str]] = []
         self._nonterminal_ids: set[str] = set()
         self._nonterminal_keys: list[tuple[float, str]] = []
+        self._f3_nonterminal_ids: set[str] = set()
+        self._f3_nonterminal_keys: list[tuple[float, str]] = []
         self._task_by_plan: dict[str, str] = {}
         self._task_by_idempotency: dict[str, str] = {}
         self._expected_nonterminal_count = 0
         self._expected_nonterminal_signature = (0, 0, 0)
+        self._expected_f3_nonterminal_signature = (0, 0, 0)
         self._total_event_count = 0
         self._manual_review_count = 0
         self._legacy_task_count = 0
@@ -136,6 +140,9 @@ class ExecutionTaskRepository:
         self._expected_nonterminal_signature = self._identifier_signature(
             self._nonterminal_ids
         )
+        self._expected_f3_nonterminal_signature = (
+            self._identifier_signature(self._f3_nonterminal_ids)
+        )
 
     def _remove_entry(self, task_id: str) -> None:
         entry = self._entries.pop(task_id, None)
@@ -149,10 +156,13 @@ class ExecutionTaskRepository:
         if not entry.terminal:
             self._expected_nonterminal_count -= 1
             self._nonterminal_keys.remove(entry.order_key)
+            if entry.execution_authority == F3_EXECUTION_AUTHORITY:
+                self._f3_nonterminal_ids.discard(task_id)
+                self._f3_nonterminal_keys.remove(entry.order_key)
         self._total_event_count -= entry.event_count
         if entry.state == ExecutionTaskState.MANUAL_REVIEW_REQUIRED.value:
             self._manual_review_count -= 1
-        if entry.execution_authority != "f3_child_sequence":
+        if entry.execution_authority != F3_EXECUTION_AUTHORITY:
             self._legacy_task_count -= 1
             if not entry.terminal:
                 self._legacy_active_task_count -= 1
@@ -173,10 +183,13 @@ class ExecutionTaskRepository:
             self._nonterminal_ids.add(task.task_id)
             insort(self._nonterminal_keys, entry.order_key)
             self._expected_nonterminal_count += 1
+            if entry.execution_authority == F3_EXECUTION_AUTHORITY:
+                self._f3_nonterminal_ids.add(task.task_id)
+                insort(self._f3_nonterminal_keys, entry.order_key)
         self._total_event_count += entry.event_count
         if entry.state == ExecutionTaskState.MANUAL_REVIEW_REQUIRED.value:
             self._manual_review_count += 1
-        if entry.execution_authority != "f3_child_sequence":
+        if entry.execution_authority != F3_EXECUTION_AUTHORITY:
             self._legacy_task_count += 1
             if not entry.terminal:
                 self._legacy_active_task_count += 1
@@ -208,6 +221,8 @@ class ExecutionTaskRepository:
             self._ordered_keys.clear()
             self._nonterminal_ids.clear()
             self._nonterminal_keys.clear()
+            self._f3_nonterminal_ids.clear()
+            self._f3_nonterminal_keys.clear()
             self._task_by_plan.clear()
             self._task_by_idempotency.clear()
             self._expected_nonterminal_count = 0
@@ -261,6 +276,24 @@ class ExecutionTaskRepository:
                 {task_id for _, task_id in self._nonterminal_keys}
             )
             != self._expected_nonterminal_signature
+            or not self._f3_nonterminal_ids.issubset(
+                self._nonterminal_ids
+            )
+            or len(self._f3_nonterminal_keys)
+            != len(self._f3_nonterminal_ids)
+            or self._identifier_signature(self._f3_nonterminal_ids)
+            != self._expected_f3_nonterminal_signature
+            or self._identifier_signature(
+                {task_id for _, task_id in self._f3_nonterminal_keys}
+            )
+            != self._expected_f3_nonterminal_signature
+            or any(
+                task_id not in self._entries
+                or self._entries[task_id].terminal
+                or self._entries[task_id].execution_authority
+                != F3_EXECUTION_AUTHORITY
+                for task_id in self._f3_nonterminal_ids
+            )
         ):
             self.index_invalidation_count += 1
             self.rebuild_navigation_index()
@@ -269,6 +302,29 @@ class ExecutionTaskRepository:
         with self._lock:
             self._ensure_navigation_index()
             return tuple(task_id for _, task_id in self._nonterminal_keys)
+
+    def f3_nonterminal_task_ids(self, *, limit: int) -> tuple[str, ...]:
+        """Return bounded F3-authority navigation without mixed-task scans.
+
+        The in-memory index is non-authoritative scheduling evidence. Callers
+        must reload each task and the corresponding F3 authority before use.
+        A namespace larger than its independently reviewed F3 bound fails
+        closed instead of silently making tail tasks unreachable.
+        """
+
+        if type(limit) is not int or limit < 1:
+            raise ExecutionTaskStorageError(
+                "F3 nonterminal navigation limit is invalid"
+            )
+        with self._lock:
+            self._ensure_navigation_index()
+            if len(self._f3_nonterminal_keys) > limit:
+                raise ExecutionTaskStorageError(
+                    "F3 nonterminal namespace exceeds navigation bound"
+                )
+            return tuple(
+                task_id for _, task_id in self._f3_nonterminal_keys
+            )
 
     def list_nonterminal(self) -> list[ExecutionTask]:
         tasks: list[ExecutionTask] = []

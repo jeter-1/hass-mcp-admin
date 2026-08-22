@@ -6,11 +6,12 @@ from contextlib import contextmanager
 import fcntl
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import threading
 import time
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from ..f3.models import (
     ExecutionRecord,
@@ -26,6 +27,7 @@ from ..f3.persistence import (
 )
 from ..governance.task_models import ExecutionTask
 from ..governance.task_storage import ExecutionTaskRepository
+from ..logging_config import get_logger, log_event
 
 
 CHILD_EXECUTION_MODEL = "f3-child-execution-v1"
@@ -34,6 +36,17 @@ MAX_F3_PUBLIC_TASKS = 1_024
 MAX_F3_CHILD_EXECUTIONS = MAX_F3_PUBLIC_TASKS * 8
 CHILD_EXECUTION_NAMESPACE = "f3-child-execution-v1"
 INITIALIZATION_MODEL = "f3-sequence-initialization-v1"
+RECOVERY_CURSOR_MODEL = "f3-recovery-declaration-cursor-v1"
+RECOVERY_CURSOR_SCHEMA_VERSION = 1
+RECOVERY_CURSOR_FILE = ".recovery-declaration-cursor.json"
+ACTIVE_RECOVERY_CURSOR_MODEL = "f3-active-recovery-cursor-v1"
+ACTIVE_RECOVERY_CURSOR_SCHEMA_VERSION = 1
+ACTIVE_RECOVERY_CURSOR_FILE = ".active-recovery-cursor.json"
+ACTIVE_RECOVERY_CHECKPOINT_MODEL = "f3-active-recovery-checkpoint-v1"
+ACTIVE_RECOVERY_CHECKPOINT_SCHEMA_VERSION = 1
+ACTIVE_RECOVERY_CHECKPOINT_FILE = ".active-recovery-checkpoint.json"
+ACTIVE_RECOVERY_CHECKPOINT_LIMIT = 16
+RECOVERY_DECLARATION_PAGE_SIZE = 1_024
 
 
 def canonical_hash(value: Any) -> str:
@@ -189,11 +202,19 @@ class ChildExecutionRepository(DurableExecutionRepository):
         self.transaction_path = self.root / ".transaction.lock"
         self.projection_transaction_path = self.root / ".projection-transaction.lock"
         self.initialization_path = self.root / ".initialization.json"
+        self.recovery_cursor_path = self.root / RECOVERY_CURSOR_FILE
+        self.active_recovery_cursor_path = (
+            self.root / ACTIVE_RECOVERY_CURSOR_FILE
+        )
+        self.active_recovery_checkpoint_path = (
+            self.root / ACTIVE_RECOVERY_CHECKPOINT_FILE
+        )
         self.retention_days = retention_days
         self.metrics = metrics or ExecutorMetrics()
         self.event_sink = event_sink or null_event_sink
         self._fault_hook = fault_hook
         self._thread_lock = threading.RLock()
+        self._navigation_logger = get_logger("f3_recovery_navigation")
         try:
             self.root.mkdir(parents=True, exist_ok=True)
             self.transaction_path.touch(exist_ok=True)
@@ -624,6 +645,490 @@ class ChildExecutionRepository(DurableExecutionRepository):
                     ),
                 )
             )
+
+    @staticmethod
+    def _validate_recovery_cursor(
+        value: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        expected = {
+            "model",
+            "schema_version",
+            "public_task_id",
+            "operation_ordinal",
+            "child_id",
+        }
+        if (
+            not isinstance(value, dict)
+            or set(value) != expected
+            or value["model"] != RECOVERY_CURSOR_MODEL
+            or value["schema_version"] != RECOVERY_CURSOR_SCHEMA_VERSION
+            or type(value["operation_ordinal"]) is not int
+            or not 0 <= value["operation_ordinal"] < 8
+        ):
+            raise ExecutionRecordCorrupt(
+                "F3 recovery declaration cursor is corrupt"
+            )
+        try:
+            validate_identifier(
+                value["public_task_id"], field_name="public_task_id"
+            )
+            validate_identifier(value["child_id"], field_name="child_id")
+        except (TypeError, ValueError) as exc:
+            raise ExecutionRecordCorrupt(
+                "F3 recovery declaration cursor is corrupt"
+            ) from exc
+        return dict(value)
+
+    def _reset_corrupt_navigation_unlocked(
+        self, path: Path, *, navigation_kind: str
+    ) -> None:
+        """Discard only non-authoritative recovery navigation evidence."""
+
+        try:
+            path.unlink(missing_ok=True)
+            directory_fd = os.open(self.root, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except OSError as exc:
+            raise ExecutionStorageError(
+                "corrupt F3 recovery navigation could not be reset"
+            ) from exc
+        log_event(
+            self._navigation_logger,
+            logging.WARNING,
+            "f3_recovery_navigation_reset",
+            "Corrupt non-authoritative F3 recovery navigation was reset.",
+            context={"navigation_kind": navigation_kind},
+        )
+
+    def _read_recovery_cursor_unlocked(self) -> dict[str, Any] | None:
+        try:
+            value = json.loads(
+                self.recovery_cursor_path.read_text(encoding="utf-8")
+            )
+        except FileNotFoundError:
+            return None
+        except (json.JSONDecodeError, UnicodeError):
+            self._reset_corrupt_navigation_unlocked(
+                self.recovery_cursor_path,
+                navigation_kind="declaration_cursor",
+            )
+            return None
+        except OSError as exc:
+            raise ExecutionStorageError(
+                "F3 recovery declaration cursor read failed"
+            ) from exc
+        try:
+            return self._validate_recovery_cursor(value)
+        except ExecutionRecordCorrupt:
+            self._reset_corrupt_navigation_unlocked(
+                self.recovery_cursor_path,
+                navigation_kind="declaration_cursor",
+            )
+            return None
+
+    def recovery_cursor(self) -> dict[str, Any] | None:
+        with self._exclusive_transaction():
+            return self._read_recovery_cursor_unlocked()
+
+    @staticmethod
+    def _validate_active_recovery_cursor(
+        value: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        if (
+            not isinstance(value, dict)
+            or set(value) != {
+                "model",
+                "schema_version",
+                "public_task_id",
+            }
+            or value["model"] != ACTIVE_RECOVERY_CURSOR_MODEL
+            or value["schema_version"]
+            != ACTIVE_RECOVERY_CURSOR_SCHEMA_VERSION
+        ):
+            raise ExecutionRecordCorrupt(
+                "F3 active recovery cursor is corrupt"
+            )
+        try:
+            validate_identifier(
+                value["public_task_id"], field_name="public_task_id"
+            )
+        except (TypeError, ValueError) as exc:
+            raise ExecutionRecordCorrupt(
+                "F3 active recovery cursor is corrupt"
+            ) from exc
+        return dict(value)
+
+    def _read_active_recovery_cursor_unlocked(
+        self,
+    ) -> dict[str, Any] | None:
+        try:
+            value = json.loads(
+                self.active_recovery_cursor_path.read_text(
+                    encoding="utf-8"
+                )
+            )
+        except FileNotFoundError:
+            return None
+        except (json.JSONDecodeError, UnicodeError):
+            self._reset_corrupt_navigation_unlocked(
+                self.active_recovery_cursor_path,
+                navigation_kind="active_cursor",
+            )
+            return None
+        except OSError as exc:
+            raise ExecutionStorageError(
+                "F3 active recovery cursor read failed"
+            ) from exc
+        try:
+            return self._validate_active_recovery_cursor(value)
+        except ExecutionRecordCorrupt:
+            self._reset_corrupt_navigation_unlocked(
+                self.active_recovery_cursor_path,
+                navigation_kind="active_cursor",
+            )
+            return None
+
+    def active_recovery_cursor(self) -> dict[str, Any] | None:
+        with self._exclusive_transaction():
+            return self._read_active_recovery_cursor_unlocked()
+
+    @staticmethod
+    def _validate_active_recovery_checkpoint(
+        value: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        if (
+            not isinstance(value, dict)
+            or set(value) != {"model", "schema_version", "candidates"}
+            or value["model"] != ACTIVE_RECOVERY_CHECKPOINT_MODEL
+            or value["schema_version"]
+            != ACTIVE_RECOVERY_CHECKPOINT_SCHEMA_VERSION
+            or not isinstance(value["candidates"], list)
+            or not 1
+            <= len(value["candidates"])
+            <= ACTIVE_RECOVERY_CHECKPOINT_LIMIT
+        ):
+            raise ExecutionRecordCorrupt(
+                "F3 active recovery checkpoint is corrupt"
+            )
+        candidates: list[dict[str, Any]] = []
+        child_ids: set[str] = set()
+        for item in value["candidates"]:
+            if not isinstance(item, dict) or set(item) != {
+                "public_task_id",
+                "child_id",
+                "operation_id",
+                "operation_ordinal",
+                "attempt_id",
+                "declaration_hash",
+            }:
+                raise ExecutionRecordCorrupt(
+                    "F3 active recovery checkpoint is corrupt"
+                )
+            try:
+                for name in (
+                    "public_task_id",
+                    "child_id",
+                    "operation_id",
+                    "attempt_id",
+                ):
+                    validate_identifier(item[name], field_name=name)
+                validate_sha256(
+                    item["declaration_hash"],
+                    field_name="declaration_hash",
+                )
+                ordinal = item["operation_ordinal"]
+                if type(ordinal) is not int or not 0 <= ordinal < 8:
+                    raise ValueError
+                if item["child_id"] in child_ids:
+                    raise ValueError
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ExecutionRecordCorrupt(
+                    "F3 active recovery checkpoint is corrupt"
+                ) from exc
+            child_ids.add(item["child_id"])
+            candidates.append(dict(item))
+        return {
+            "model": ACTIVE_RECOVERY_CHECKPOINT_MODEL,
+            "schema_version": ACTIVE_RECOVERY_CHECKPOINT_SCHEMA_VERSION,
+            "candidates": candidates,
+        }
+
+    def _read_active_recovery_checkpoint_unlocked(
+        self,
+    ) -> dict[str, Any] | None:
+        try:
+            value = json.loads(
+                self.active_recovery_checkpoint_path.read_text(
+                    encoding="utf-8"
+                )
+            )
+        except FileNotFoundError:
+            return None
+        except (json.JSONDecodeError, UnicodeError):
+            self._reset_corrupt_navigation_unlocked(
+                self.active_recovery_checkpoint_path,
+                navigation_kind="active_checkpoint",
+            )
+            return None
+        except OSError as exc:
+            raise ExecutionStorageError(
+                "F3 active recovery checkpoint read failed"
+            ) from exc
+        try:
+            return self._validate_active_recovery_checkpoint(value)
+        except ExecutionRecordCorrupt:
+            self._reset_corrupt_navigation_unlocked(
+                self.active_recovery_checkpoint_path,
+                navigation_kind="active_checkpoint",
+            )
+            return None
+
+    def active_recovery_checkpoint(self) -> dict[str, Any] | None:
+        """Return bounded, non-authoritative pending recovery navigation."""
+
+        with self._exclusive_transaction():
+            return self._read_active_recovery_checkpoint_unlocked()
+
+    @classmethod
+    def active_recovery_checkpoint_for_candidates(
+        cls, declarations: Iterable[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        candidates = [
+            {
+                "public_task_id": item["public_task_id"],
+                "child_id": item["child_id"],
+                "operation_id": item["operation_id"],
+                "operation_ordinal": item["operation_ordinal"],
+                "attempt_id": item["attempt_id"],
+                "declaration_hash": item["declaration_hash"],
+            }
+            for item in declarations
+        ]
+        if not candidates:
+            return None
+        return cls._validate_active_recovery_checkpoint(
+            {
+                "model": ACTIVE_RECOVERY_CHECKPOINT_MODEL,
+                "schema_version": ACTIVE_RECOVERY_CHECKPOINT_SCHEMA_VERSION,
+                "candidates": candidates,
+            }
+        )
+
+    @staticmethod
+    def active_recovery_cursor_for_task(
+        public_task_id: str,
+    ) -> dict[str, Any]:
+        validate_identifier(public_task_id, field_name="public_task_id")
+        return {
+            "model": ACTIVE_RECOVERY_CURSOR_MODEL,
+            "schema_version": ACTIVE_RECOVERY_CURSOR_SCHEMA_VERSION,
+            "public_task_id": public_task_id,
+        }
+
+    @staticmethod
+    def recovery_cursor_for_declaration(
+        declaration: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Return non-authoritative scheduling evidence for one declaration."""
+
+        try:
+            validate_identifier(
+                declaration["public_task_id"], field_name="public_task_id"
+            )
+            validate_identifier(
+                declaration["child_id"], field_name="child_id"
+            )
+            ordinal = declaration["operation_ordinal"]
+            if type(ordinal) is not int or not 0 <= ordinal < 8:
+                raise ValueError
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ExecutionRecordCorrupt(
+                "F3 recovery declaration cursor source is corrupt"
+            ) from exc
+        return {
+            "model": RECOVERY_CURSOR_MODEL,
+            "schema_version": RECOVERY_CURSOR_SCHEMA_VERSION,
+            "public_task_id": declaration["public_task_id"],
+            "operation_ordinal": declaration["operation_ordinal"],
+            "child_id": declaration["child_id"],
+        }
+
+    def recovery_declaration_page(
+        self,
+        *,
+        limit: int = RECOVERY_DECLARATION_PAGE_SIZE,
+        should_stop: Callable[[], bool] | None = None,
+    ) -> dict[str, Any]:
+        """Read a deterministic, restart-fair declaration page.
+
+        Manifest path ordering is bounded by the reviewed 1,024-task
+        namespace, and at most ``limit`` declarations are materialized. The
+        returned far-edge cursor is informational; the caller persists only
+        the last declaration it safely examined after its sweep completes.
+        """
+
+        if not 1 <= limit <= RECOVERY_DECLARATION_PAGE_SIZE:
+            raise ValueError("recovery declaration page limit is invalid")
+        stop = should_stop or (lambda: False)
+        with self._exclusive_transaction():
+            cursor = self._read_recovery_cursor_unlocked()
+            paths = self._bounded_paths(
+                "*.manifest.json", MAX_F3_PUBLIC_TASKS
+            )
+            if cursor is not None and paths:
+                current = cursor["public_task_id"]
+                split = next(
+                    (
+                        index
+                        for index, path in enumerate(paths)
+                        if path.name.removesuffix(".manifest.json") >= current
+                    ),
+                    0,
+                )
+                paths = paths[split:] + paths[:split]
+            declarations: list[dict[str, Any]] = []
+            next_cursor = cursor
+            manifest_reads = 0
+            for path in paths:
+                if stop() or len(declarations) >= limit:
+                    break
+                public_task_id = path.name.removesuffix(".manifest.json")
+                manifest = self.manifest_for_task(
+                    public_task_id, locked=True
+                )
+                manifest_reads += 1
+                if manifest is None:
+                    continue
+                for declaration in manifest["declarations"]:
+                    if stop() or len(declarations) >= limit:
+                        break
+                    if (
+                        cursor is not None
+                        and public_task_id == cursor["public_task_id"]
+                        and declaration["operation_ordinal"]
+                        <= cursor["operation_ordinal"]
+                    ):
+                        continue
+                    item = dict(declaration)
+                    declarations.append(item)
+                    next_cursor = self.recovery_cursor_for_declaration(item)
+            if (
+                not declarations
+                and cursor is not None
+                and paths
+                and not stop()
+            ):
+                # A one-manifest namespace can be positioned after its final
+                # child. Wrap once without the cursor skip so it remains
+                # eligible on the next bounded sweep.
+                public_task_id = paths[0].name.removesuffix(
+                    ".manifest.json"
+                )
+                manifest = self.manifest_for_task(
+                    public_task_id, locked=True
+                )
+                manifest_reads += 1
+                if manifest is not None:
+                    for declaration in manifest["declarations"]:
+                        if stop() or len(declarations) >= limit:
+                            break
+                        item = dict(declaration)
+                        declarations.append(item)
+                        next_cursor = self.recovery_cursor_for_declaration(
+                            item
+                        )
+            return {
+                "cursor": cursor,
+                "next_cursor": next_cursor,
+                "declarations": tuple(declarations),
+                "manifest_reads": manifest_reads,
+            }
+
+    def advance_recovery_cursor(
+        self,
+        *,
+        expected: dict[str, Any] | None,
+        next_cursor: dict[str, Any] | None,
+    ) -> None:
+        validated_expected = self._validate_recovery_cursor(expected)
+        validated_next = self._validate_recovery_cursor(next_cursor)
+        if validated_next is None:
+            return
+        with self._exclusive_transaction():
+            current = self._read_recovery_cursor_unlocked()
+            if current != validated_expected:
+                raise ExecutionStorageError(
+                    "F3 recovery declaration cursor changed concurrently"
+                )
+            self._atomic_write(self.recovery_cursor_path, validated_next)
+
+    def advance_active_recovery_cursor(
+        self,
+        *,
+        expected: dict[str, Any] | None,
+        next_cursor: dict[str, Any] | None,
+    ) -> None:
+        validated_expected = self._validate_active_recovery_cursor(expected)
+        validated_next = self._validate_active_recovery_cursor(next_cursor)
+        if validated_next is None or validated_next == validated_expected:
+            return
+        with self._exclusive_transaction():
+            current = self._read_active_recovery_cursor_unlocked()
+            if current != validated_expected:
+                raise ExecutionStorageError(
+                    "F3 active recovery cursor changed concurrently"
+                )
+            self._atomic_write(
+                self.active_recovery_cursor_path, validated_next
+            )
+
+    def replace_active_recovery_checkpoint(
+        self,
+        *,
+        expected: dict[str, Any] | None,
+        next_checkpoint: dict[str, Any] | None,
+    ) -> None:
+        """CAS bounded pending navigation without granting recovery authority."""
+
+        validated_expected = self._validate_active_recovery_checkpoint(
+            expected
+        )
+        validated_next = self._validate_active_recovery_checkpoint(
+            next_checkpoint
+        )
+        if validated_next == validated_expected:
+            return
+        with self._exclusive_transaction():
+            current = self._read_active_recovery_checkpoint_unlocked()
+            if current != validated_expected:
+                raise ExecutionStorageError(
+                    "F3 active recovery checkpoint changed concurrently"
+                )
+            if validated_next is not None:
+                self._atomic_write(
+                    self.active_recovery_checkpoint_path, validated_next
+                )
+                return
+            try:
+                self.active_recovery_checkpoint_path.unlink(missing_ok=True)
+                directory_fd = os.open(self.root, os.O_RDONLY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+            except OSError as exc:
+                raise ExecutionStorageError(
+                    "atomic active recovery checkpoint removal failed"
+                ) from exc
 
     def update_runtime(self, child_id: str, *, changes: dict[str, Any]) -> dict[str, Any]:
         allowed = {
