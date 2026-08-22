@@ -808,21 +808,24 @@ class F3RuntimeIntegration:
                 },
             )
 
-    def _emit_f3_audit_event(self, event: dict[str, object]) -> bool:
-        """Project a bounded core or lock event into the existing audit sink."""
+    def _f3_audit_entry(
+        self,
+        event: dict[str, object],
+        *,
+        declaration: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """Project one bounded core or lock event into an audit entry."""
 
         child_id = event.get("task_id")
         if not isinstance(child_id, str):
-            return False
-        try:
-            declaration = self.children.declaration(child_id)
-        except Exception:
-            return False
-        audit = self.service.audit
-        if audit is None:
-            return False
+            return None
+        if declaration is None:
+            try:
+                declaration = self.children.declaration(child_id)
+            except Exception:
+                return None
         event_type = str(event.get("event_type", "f3_event"))[:64]
-        safe = {
+        return {
             "event": f"f3_{event_type}",
             **(
                 {"audit_event_id": event["audit_event_id"]}
@@ -859,7 +862,13 @@ class F3RuntimeIntegration:
             "fallback_occurred": False,
             "fallback": "none",
         }
-        return audit.write(safe)
+
+    def _emit_f3_audit_event(self, event: dict[str, object]) -> bool:
+        """Project a bounded core or lock event into the existing audit sink."""
+
+        safe = self._f3_audit_entry(event)
+        audit = self.service.audit
+        return safe is not None and audit is not None and audit.write(safe)
 
     def _audit_record_events(
         self, declaration: dict[str, Any], record: Any | None
@@ -870,13 +879,16 @@ class F3RuntimeIntegration:
         start = int(runtime["audited_event_count"])
         if start > len(record.events):
             raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
-        completed = start
+        audit = self.service.audit
+        if audit is None:
+            return True
+        pending: list[dict[str, Any]] = []
         for item in record.events[start:]:
             diagnostics = tuple(item.get("diagnostic_codes") or ())
             audit_event_id = _persisted_audit_event_id(
                 declaration["child_id"], item
             )
-            if not self._emit_f3_audit_event(
+            safe = self._f3_audit_entry(
                 {
                     "event_type": item["event_type"],
                     "task_id": declaration["child_id"],
@@ -890,10 +902,13 @@ class F3RuntimeIntegration:
                     "dispatch_count": record.dispatch_count,
                     "observation_count": record.observation_attempts,
                     "verification_count": record.verification_attempts,
-                }
-            ):
+                },
+                declaration=declaration,
+            )
+            if safe is None:
                 break
-            completed += 1
+            pending.append(safe)
+        completed = start + audit.write_batch(pending)
         if start != completed:
             self.children.update_runtime(
                 declaration["child_id"],
@@ -3492,10 +3507,48 @@ class F3RuntimeIntegration:
             *fresh_post_intent_candidates,
             *fresh_projection_candidates,
         )
+        # Deferred checkpoint entries are non-authoritative navigation. When
+        # they fill the durable bound, evict only as many deferred references
+        # as necessary to checkpoint newly eligible priority work. Evicted
+        # children remain reachable through authoritative active discovery;
+        # retry IDs also prevent the round-robin cursor from advancing past an
+        # unsettled sweep. The original order makes eviction deterministic.
+        checkpoint_composition_remaining = checkpoint_remaining
+        overflow = max(
+            0,
+            len(checkpoint_composition_remaining)
+            + len(fresh_priority_candidates)
+            - ACTIVE_RECOVERY_CHECKPOINT_LIMIT,
+        )
+        if overflow:
+            deferred_ids = set(
+                checkpoint_selection["deferred_child_ids"]
+            )
+            evictable_ids = [
+                declaration["child_id"]
+                for declaration in reversed(
+                    checkpoint_composition_remaining
+                )
+                if declaration["child_id"] in deferred_ids
+            ]
+            evicted_ids = set(evictable_ids[:overflow])
+            checkpoint_composition_remaining = tuple(
+                declaration
+                for declaration in checkpoint_composition_remaining
+                if declaration["child_id"] not in evicted_ids
+            )
+        fresh_checkpoint_capacity = max(
+            0,
+            ACTIVE_RECOVERY_CHECKPOINT_LIMIT
+            - len(checkpoint_composition_remaining),
+        )
+        fresh_priority_candidates = fresh_priority_candidates[
+            :fresh_checkpoint_capacity
+        ]
         fresh_checkpoint = (
             self.children.active_recovery_checkpoint_for_candidates(
                 (
-                    *checkpoint_remaining,
+                    *checkpoint_composition_remaining,
                     *(
                         declaration
                         for declaration, _record
@@ -3534,7 +3587,7 @@ class F3RuntimeIntegration:
         )
         next_checkpoint = (
             self.children.active_recovery_checkpoint_for_candidates(
-                (*checkpoint_remaining, *fresh_remaining)
+                (*checkpoint_composition_remaining, *fresh_remaining)
             )
         )
         if next_checkpoint != checkpoint_current:

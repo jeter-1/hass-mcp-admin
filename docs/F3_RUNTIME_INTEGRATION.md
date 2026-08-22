@@ -189,7 +189,12 @@ declaration-hash navigation evidence. It is not an authority index and cannot
 authorize execution. On the next sweep checkpointed work is reloaded and
 considered before any further namespace scan. Removed, backed-off, replaced,
 already-projected, or authority-mismatched entries are skipped according to
-current durable state and cannot block later work.
+current durable state and cannot block later work. Checkpoint composition is
+always bounded to 16. If deferred entries fill that bound while newly eligible
+priority work is discovered, only the minimum deterministic suffix of deferred
+navigation references is evicted. Those children remain reachable from the
+authoritative nonterminal index, and the unsettled sweep prevents the active
+cursor from advancing as though they had completed.
 
 Terminal child projection is an explicit recovery mode independent of dispatch
 intent. A terminal child beneath a nonterminal exact-F3 parent is eligible when
@@ -205,9 +210,13 @@ and expired-lock settlement. No-intent records require count zero, no provider
 response, no observation or verification attempts, and no post-dispatch event.
 Their terminal outcomes are limited to the five outcomes written by
 `terminalize_pre_dispatch`, plus `succeeded_verified` only with exact no-op
-proof. Intent-bearing records require count one, completed preflight, the
-persisted intent event, and post-intent-compatible state and outcomes; a
-pre-dispatch-only terminal outcome is contradictory. Any contradiction is
+proof. Intent-bearing records require count one, nonempty matching intent
+locks, and the writer-produced lifecycle grammar: one initial start, a final
+ordered `locks_acquired` / `preflight_completed` /
+`dispatch_intent_committed` boundary, exactly one matching intent event, and
+only post-intent events after that boundary. Post-intent-compatible state and
+outcomes are also required; a pre-dispatch-only terminal outcome is
+contradictory. Any contradiction is
 classified as bounded corrupt storage before projection or lock disposition,
 so the public parent, checkpoint, and exact fenced locks remain unresolved for
 operator-visible recovery rather than being rewritten as conclusive
@@ -233,6 +242,13 @@ a transition but before checkpoint or cursor cleanup revalidates the now-current
 record and cannot redispatch. Checkpoint replacement and both cursors use atomic
 compare-and-swap, so concurrency conflicts fail without losing authority or
 making skipped work unreachable.
+
+The checkpoint and both recovery cursors are nonauthoritative navigation
+files. Malformed JSON or an invalid navigation schema is removed under the
+repository lock, directory-fsynced, and reported as a bounded diagnostic; the
+next bounded sweep restarts discovery from authoritative public tasks,
+manifests, and child records. I/O failures still surface as storage failures,
+and corruption in any authoritative record continues to fail closed.
 
 Deadline-bearing post-intent candidates receive all available batch and time
 capacity before historical cleanup can reserve a transition. If fewer than 16
@@ -298,7 +314,9 @@ type or diagnostic classification. Its canonical preimage is model
 `sequence`, and the exact validated persisted event. The audit sink preserves
 that identity through truncation, serializes append/rotation, checks the exact
 identity in retained logs, and fsyncs the append before returning. The durable
-audit cursor advances only after acknowledgement, so retry after a crash
+audit replay batch scans both retained logs once under the exclusive audit
+lock, then reuses that bounded identity set for every event in the batch. The
+cursor advances only through the acknowledged prefix, so retry after a crash
 between append and cursor persistence does not write a duplicate. This is a
 bookkeeping and projection correction; it never dispatches a provider call.
 

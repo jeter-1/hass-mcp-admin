@@ -9,7 +9,7 @@ import json
 import logging
 import os
 import re
-from typing import Any
+from typing import Any, Iterable
 
 from .logging_config import get_logger, log_event, redact_data
 from .version import SERVER_VERSION
@@ -88,7 +88,8 @@ class AuditLogger:
             return value
         return None
 
-    def _contains_idempotency_key(self, value: str) -> bool:
+    def _idempotency_keys(self) -> set[str]:
+        values: set[str] = set()
         for candidate in (self.path, self.path + ".1"):
             try:
                 with open(candidate, "r", encoding="utf-8") as handle:
@@ -97,48 +98,71 @@ class AuditLogger:
                             item = json.loads(line)
                         except json.JSONDecodeError:
                             continue
-                        if (
-                            isinstance(item, dict)
-                            and item.get("audit_event_id") == value
-                        ):
-                            return True
+                        if isinstance(item, dict):
+                            identity = self._idempotency_key(item)
+                            if identity is not None:
+                                values.add(identity)
             except FileNotFoundError:
                 continue
-        return False
+        return values
 
-    def write(self, entry: AuditRecord | dict[str, Any]) -> bool:
+    def _write_safe_unlocked(self, safe: dict[str, Any]) -> None:
+        if (
+            os.path.exists(self.path)
+            and os.path.getsize(self.path) > AUDIT_MAX_BYTES
+        ):
+            os.replace(self.path, self.path + ".1")
+        with open(self.path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(safe, default=str, sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+
+    def write_batch(
+        self, entries: Iterable[AuditRecord | dict[str, Any]]
+    ) -> int:
+        """Append one replay batch with a single retained-log identity scan."""
+
+        raw_entries = tuple(entries)
         if not self.enabled:
-            return True
-        raw = entry.as_dict() if isinstance(entry, AuditRecord) else dict(entry)
-        safe = self.sanitize(raw)
-        safe.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
-        safe.setdefault("server_version", SERVER_VERSION)
+            return len(raw_entries)
+        safe_entries: list[dict[str, Any]] = []
+        for entry in raw_entries:
+            raw = (
+                entry.as_dict()
+                if isinstance(entry, AuditRecord)
+                else dict(entry)
+            )
+            safe = self.sanitize(raw)
+            safe.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
+            safe.setdefault("server_version", SERVER_VERSION)
+            safe_entries.append(safe)
+        completed = 0
         try:
             with open(self.path + ".lock", "a+b") as lock_handle:
                 fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
                 try:
-                    identity = self._idempotency_key(safe)
-                    if identity is not None and self._contains_idempotency_key(
-                        identity
+                    identities = tuple(
+                        self._idempotency_key(safe) for safe in safe_entries
+                    )
+                    retained_ids = (
+                        self._idempotency_keys()
+                        if any(identity is not None for identity in identities)
+                        else set()
+                    )
+                    for safe, identity in zip(
+                        safe_entries, identities, strict=True
                     ):
-                        self.last_error = None
-                        return True
-                    if (
-                        os.path.exists(self.path)
-                        and os.path.getsize(self.path) > AUDIT_MAX_BYTES
-                    ):
-                        os.replace(self.path, self.path + ".1")
-                    with open(self.path, "a", encoding="utf-8") as handle:
-                        handle.write(
-                            json.dumps(safe, default=str, sort_keys=True)
-                            + "\n"
-                        )
-                        handle.flush()
-                        os.fsync(handle.fileno())
+                        if identity is not None and identity in retained_ids:
+                            completed += 1
+                            continue
+                        self._write_safe_unlocked(safe)
+                        if identity is not None:
+                            retained_ids.add(identity)
+                        completed += 1
                 finally:
                     fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
             self.last_error = None
-            return True
+            return completed
         except OSError as exc:
             self.write_failures += 1
             self.last_error = type(exc).__name__
@@ -149,7 +173,10 @@ class AuditLogger:
                 "Audit output could not be written.",
                 context={"error_type": type(exc).__name__},
             )
-            return False
+            return completed
+
+    def write(self, entry: AuditRecord | dict[str, Any]) -> bool:
+        return self.write_batch((entry,)) == 1
 
     def state(self) -> dict[str, Any]:
         return {

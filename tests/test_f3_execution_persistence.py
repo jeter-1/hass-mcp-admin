@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
@@ -18,6 +19,10 @@ sys.path.insert(0, str(BETA_DIR))
 from ha_mcp_engineering.f3.models import (  # noqa: E402
     ExecutionIdentity,
     ExecutorTiming,
+    LockHandle,
+    LockOwner,
+    LockTiming,
+    LockToken,
 )
 from ha_mcp_engineering.f3.persistence import (  # noqa: E402
     BlindRedispatchProhibited,
@@ -63,15 +68,28 @@ class DurableExecutionRepositoryTests(unittest.TestCase):
         )
 
     @staticmethod
-    def _add_synthetic_lock(record) -> None:
-        record.lock_tokens = [
-            {
-                "key": "dashboard:overview",
-                "generation": 1,
-                "mode": "exclusive",
-                "owner_id": "owner-primary",
-            }
-        ]
+    def _record_synthetic_lock(repository, claim) -> None:
+        repository.record_locks(
+            "task-persistence",
+            owner_id="owner-primary",
+            claim_generation=claim.claim_generation,
+            handle=LockHandle(
+                owner=LockOwner(
+                    owner_id="owner-primary",
+                    task_id="task-persistence",
+                    plan_id="plan-persistence",
+                    operation_id="synthetic_dashboard_update",
+                    attempt_id="attempt-persistence",
+                ),
+                tokens=(
+                    LockToken("dashboard:overview", 1, "exclusive"),
+                ),
+                acquired_at=NOW.isoformat(),
+                lease_expires_at=(NOW + timedelta(seconds=120)).isoformat(),
+                timing=LockTiming(120, 20, 0, 0.05),
+            ),
+            now=NOW,
+        )
 
     def test_different_owner_cannot_claim_active_task(self):
         self.claim()
@@ -196,10 +214,7 @@ class DurableExecutionRepositoryTests(unittest.TestCase):
             timing=TIMING,
             now=NOW,
         )
-        record = repository.get("task-persistence")
-        assert record is not None
-        self._add_synthetic_lock(record)
-        repository._write_unlocked(record)
+        self._record_synthetic_lock(repository, claim)
         repository.record_preflight(
             "task-persistence",
             owner_id="owner-primary",
@@ -258,6 +273,99 @@ class DurableExecutionRepositoryTests(unittest.TestCase):
                 loaded = repository.get("task-persistence")
                 self.assertEqual(outcome, loaded.normalized_outcome)
 
+    def test_post_intent_writer_lifecycle_corruption_fails_closed(self):
+        for corruption in (
+            "empty_lock_evidence",
+            "missing_locks_event",
+            "missing_preflight_event",
+            "reordered_lock_preflight_events",
+            "duplicate_intent_event",
+        ):
+            with self.subTest(corruption=corruption):
+                repository = DurableExecutionRepository(
+                    Path(self.temporary.name) / corruption
+                )
+                claim = repository.claim(
+                    identity=_identity(),
+                    prepared=self.prepared,
+                    timing=TIMING,
+                    now=NOW,
+                )
+                self._record_synthetic_lock(repository, claim)
+                repository.record_preflight(
+                    "task-persistence",
+                    owner_id="owner-primary",
+                    claim_generation=claim.claim_generation,
+                    now=NOW,
+                )
+                repository.commit_dispatch_intent(
+                    "task-persistence",
+                    owner_id="owner-primary",
+                    claim_generation=claim.claim_generation,
+                    request_id="request-primary",
+                    provider_operation="synthetic_dashboard_update",
+                    provider_arguments_hash="a" * 64,
+                    timing=TIMING,
+                    now=NOW,
+                )
+                repository.record_verification(
+                    "task-persistence",
+                    owner_id="owner-primary",
+                    claim_generation=claim.claim_generation,
+                    outcome="succeeded_verified",
+                    terminal=True,
+                    now=NOW,
+                )
+                path = repository._path("task-persistence")
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                events = payload["events"]
+                if corruption == "empty_lock_evidence":
+                    payload["lock_tokens"] = []
+                    payload["dispatch_intent"]["lock_tokens"] = []
+                elif corruption == "missing_locks_event":
+                    events[:] = [
+                        item
+                        for item in events
+                        if item["event_type"] != "locks_acquired"
+                    ]
+                elif corruption == "missing_preflight_event":
+                    events[:] = [
+                        item
+                        for item in events
+                        if item["event_type"] != "preflight_completed"
+                    ]
+                elif corruption == "reordered_lock_preflight_events":
+                    locks_index = next(
+                        index
+                        for index, item in enumerate(events)
+                        if item["event_type"] == "locks_acquired"
+                    )
+                    preflight_index = next(
+                        index
+                        for index, item in enumerate(events)
+                        if item["event_type"] == "preflight_completed"
+                    )
+                    events[locks_index], events[preflight_index] = (
+                        events[preflight_index],
+                        events[locks_index],
+                    )
+                else:
+                    intent = copy.deepcopy(
+                        next(
+                            item
+                            for item in events
+                            if item["event_type"]
+                            == "dispatch_intent_committed"
+                        )
+                    )
+                    events.append(intent)
+                for sequence, event in enumerate(events, start=1):
+                    event["sequence"] = sequence
+                path.write_text(json.dumps(payload), encoding="utf-8")
+
+                with self.assertRaises(ExecutionRecordCorrupt):
+                    repository.get("task-persistence")
+
         no_dispatch = DurableExecutionRepository(
             Path(self.temporary.name) / "verified_no_dispatch"
         )
@@ -267,10 +375,7 @@ class DurableExecutionRepositoryTests(unittest.TestCase):
             timing=TIMING,
             now=NOW,
         )
-        record = no_dispatch.get("task-persistence")
-        assert record is not None
-        self._add_synthetic_lock(record)
-        no_dispatch._write_unlocked(record)
+        self._record_synthetic_lock(no_dispatch, claim)
         no_dispatch.terminalize_verified_no_dispatch(
             "task-persistence",
             owner_id="owner-primary",
@@ -295,10 +400,7 @@ class DurableExecutionRepositoryTests(unittest.TestCase):
                     timing=TIMING,
                     now=NOW,
                 )
-                record = repository.get("task-persistence")
-                assert record is not None
-                self._add_synthetic_lock(record)
-                repository._write_unlocked(record)
+                self._record_synthetic_lock(repository, claim)
                 repository.record_preflight(
                     "task-persistence",
                     owner_id="owner-primary",
@@ -365,21 +467,15 @@ class DurableExecutionRepositoryTests(unittest.TestCase):
             timing=TIMING,
             now=NOW,
         )
-        # The persistence API requires real held-lock evidence.  This test uses
-        # bounded synthetic tokens because lock ownership is independently
-        # proven by the lock-manager suite.
-        record = repository.get("task-persistence")
-        assert record is not None
-        record.lock_tokens = [
-            {
-                "key": "dashboard:overview",
-                "generation": 1,
-                "mode": "exclusive",
-                "owner_id": "owner-primary",
-            }
-        ]
-        record.preflight_completed = True
-        repository._write_unlocked(record)
+        # The current writer APIs create the exact lifecycle evidence. Lock
+        # ownership itself remains independently proven by the lock suite.
+        self._record_synthetic_lock(repository, claim)
+        repository.record_preflight(
+            "task-persistence",
+            owner_id="owner-primary",
+            claim_generation=claim.claim_generation,
+            now=NOW,
+        )
         fault.active = True
         with self.assertRaises(RuntimeError):
             repository.commit_dispatch_intent(
@@ -402,18 +498,13 @@ class DurableExecutionRepositoryTests(unittest.TestCase):
 
     def test_second_intent_is_permanently_rejected(self):
         claim = self.claim()
-        record = self.repository.get("task-persistence")
-        assert record is not None
-        record.lock_tokens = [
-            {
-                "key": "dashboard:overview",
-                "generation": 1,
-                "mode": "exclusive",
-                "owner_id": "owner-primary",
-            }
-        ]
-        record.preflight_completed = True
-        self.repository._write_unlocked(record)
+        self._record_synthetic_lock(self.repository, claim)
+        self.repository.record_preflight(
+            "task-persistence",
+            owner_id="owner-primary",
+            claim_generation=claim.claim_generation,
+            now=NOW,
+        )
         arguments = dict(
             task_id="task-persistence",
             owner_id="owner-primary",
@@ -430,18 +521,13 @@ class DurableExecutionRepositoryTests(unittest.TestCase):
 
     def test_pre_intent_retry_preserves_operation_identity_without_intent(self):
         claim = self.claim()
-        record = self.repository.get("task-persistence")
-        assert record is not None
-        record.lock_tokens = [
-            {
-                "key": "dashboard:overview",
-                "generation": 1,
-                "mode": "exclusive",
-                "owner_id": "owner-primary",
-            }
-        ]
-        record.preflight_completed = True
-        self.repository._write_unlocked(record)
+        self._record_synthetic_lock(self.repository, claim)
+        self.repository.record_preflight(
+            "task-persistence",
+            owner_id="owner-primary",
+            claim_generation=claim.claim_generation,
+            now=NOW,
+        )
         retryable = self.repository.record_pre_intent_retry(
             "task-persistence",
             owner_id="owner-primary",

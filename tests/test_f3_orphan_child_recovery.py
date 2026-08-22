@@ -1171,17 +1171,21 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         before = self.runtime.children.get(child_id)
         self.runtime._audit_record_events(declarations[0], before)
         self.audit_path.write_text("", encoding="utf-8")
-        original_write = self.service.audit.write
+        original_write_batch = self.service.audit.write_batch
 
-        def append_then_crash(entry):
-            written = original_write(entry)
-            if entry.get("event") == "f3_execution_cancelled":
+        def append_then_crash(entries):
+            entries = tuple(entries)
+            written = original_write_batch(entries)
+            if any(
+                entry.get("event") == "f3_execution_cancelled"
+                for entry in entries
+            ):
                 raise SystemExit("simulated process loss after audit append")
             return written
 
         with patch.object(
             self.service.audit,
-            "write",
+            "write_batch",
             side_effect=append_then_crash,
         ):
             with self.assertRaises(SystemExit):
@@ -1218,17 +1222,21 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         self.assertTrue(
             self.runtime.children.cancel(child_id, now=self.service.now())
         )
-        original_write = self.service.audit.write
+        original_write_batch = self.service.audit.write_batch
 
-        def append_then_crash(entry):
-            written = original_write(entry)
-            if entry.get("event") == "f3_execution_cancelled":
+        def append_then_crash(entries):
+            entries = tuple(entries)
+            written = original_write_batch(entries)
+            if any(
+                entry.get("event") == "f3_execution_cancelled"
+                for entry in entries
+            ):
                 raise SystemExit("simulated process loss after audit append")
             return written
 
         with patch.object(
             self.service.audit,
-            "write",
+            "write_batch",
             side_effect=append_then_crash,
         ):
             with self.assertRaises(SystemExit):
@@ -1339,16 +1347,22 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         child_id = declaration["child_id"]
         record = self.runtime.children.get(child_id)
         self.audit_path.write_text("", encoding="utf-8")
-        original_write = self.service.audit.write
+        original_write_batch = self.service.audit.write_batch
 
-        def append_then_crash(entry):
-            written = original_write(entry)
-            if entry.get("event") == "f3_execution_started":
+        def append_then_crash(entries):
+            entries = tuple(entries)
+            written = original_write_batch(entries)
+            if any(
+                entry.get("event") == "f3_execution_started"
+                for entry in entries
+            ):
                 raise SystemExit("simulated persisted-event append crash")
             return written
 
         with patch.object(
-            self.service.audit, "write", side_effect=append_then_crash
+            self.service.audit,
+            "write_batch",
+            side_effect=append_then_crash,
         ):
             with self.assertRaises(SystemExit):
                 self.runtime._audit_record_events(declaration, record)
@@ -1377,7 +1391,9 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         before = self.runtime.children.runtime(child_id)[
             "audited_event_count"
         ]
-        with patch.object(self.service.audit, "write", return_value=False):
+        with patch.object(
+            self.service.audit, "write_batch", return_value=0
+        ):
             self.assertFalse(
                 self.runtime._audit_record_events(declaration, record)
             )
@@ -1396,6 +1412,38 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
             if "audit_event_id" in item
         ]
         self.assertEqual(len(identities), len(set(identities)))
+
+    async def test_persisted_audit_replay_scans_retained_logs_once_per_batch(
+        self,
+    ):
+        _task, declaration = await self._post_intent_active_child(
+            "bounded_audit_replay_scan"
+        )
+        child_id = declaration["child_id"]
+        record = self.runtime.children.get(child_id)
+        self.assertGreater(len(record.events), 1)
+        self.runtime.children.update_runtime(
+            child_id, changes={"audited_event_count": 0}
+        )
+        self.audit_path.write_text("", encoding="utf-8")
+
+        with patch.object(
+            self.service.audit,
+            "_idempotency_keys",
+            wraps=self.service.audit._idempotency_keys,
+        ) as retained_scan:
+            self.assertTrue(
+                self.runtime._audit_record_events(declaration, record)
+            )
+            self.assertTrue(
+                self.runtime._audit_record_events(declaration, record)
+            )
+
+        self.assertEqual(1, retained_scan.call_count)
+        self.assertEqual(
+            len(record.events),
+            self.runtime.children.runtime(child_id)["audited_event_count"],
+        )
 
     def test_audit_truncation_preserves_id_and_invalid_id_does_not_dedup(self):
         path = self.root / "bounded-audit.jsonl"
@@ -1613,6 +1661,7 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
             order.append("historical_scan")
             return original_reconcile(**kwargs)
 
+        self.runtime._recovery_monotonic = lambda: 0.0
         with (
             patch.object(
                 self.runtime, "_execute_child", side_effect=record_active
@@ -1675,6 +1724,7 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
             )
             declarations.append(declaration)
 
+        self.runtime._recovery_monotonic = lambda: 0.0
         first = await self.runtime.recover_once("periodic")
         first_writes = sum(
             item[0] == "write" for item in self.gateway.calls
@@ -2892,6 +2942,66 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         with self.assertRaises(ExecutionRecordCorrupt):
             self.runtime.children.get(post_intent["child_id"])
 
+    async def test_writer_impossible_success_cannot_satisfy_dependency(self):
+        plan, task, declarations, prepared, requests = (
+            await self._initialized_hvac_sequence()
+        )
+        first = declarations[0]
+        second = declarations[1]
+        await self._complete_sequence_child(
+            plan=plan,
+            task=task,
+            declaration=first,
+            operation=prepared[0],
+            requests=requests,
+        )
+        path = self.runtime.children._path(first["child_id"])
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        execution = payload["execution"]
+        execution["lock_tokens"] = []
+        execution["dispatch_intent"]["lock_tokens"] = []
+        execution["events"] = [
+            item
+            for item in execution["events"]
+            if item["event_type"]
+            not in {"locks_acquired", "preflight_completed"}
+        ]
+        for sequence, event in enumerate(execution["events"], start=1):
+            event["sequence"] = sequence
+        path.write_text(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        public_before = self.service.task_repository.get(task.task_id)
+        provider_calls_before = tuple(self.gateway.calls)
+
+        with (
+            patch.object(
+                self.runtime,
+                "_load_prepared",
+                side_effect=AssertionError(
+                    "dependent provider preparation must remain unreachable"
+                ),
+            ),
+            patch.object(
+                self.runtime,
+                "_execute_child",
+                side_effect=AssertionError(
+                    "dependent child execution must remain unreachable"
+                ),
+            ),
+        ):
+            with self.assertRaises(ExecutionRecordCorrupt):
+                await self.runtime.recover_once("periodic")
+
+        with self.assertRaises(ExecutionRecordCorrupt):
+            self.runtime.children.get(first["child_id"])
+        self.assertIsNone(self.runtime.children.get(second["child_id"]))
+        public_after = self.service.task_repository.get(task.task_id)
+        self.assertEqual(public_before.state, public_after.state)
+        self.assertEqual(len(public_before.events), len(public_after.events))
+        self.assertEqual(provider_calls_before, tuple(self.gateway.calls))
+
     async def _assert_contradictory_execution_remains_unsettled(
         self, kind: str
     ):
@@ -3084,6 +3194,7 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
             fixtures.append((task, declaration))
         before_writes = sum(item[0] == "write" for item in self.gateway.calls)
 
+        self.runtime._recovery_monotonic = lambda: 0.0
         with patch.object(
             self.runtime,
             "_execute_child",
@@ -3551,6 +3662,77 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         self.assertEqual(
             {item["child_id"] for item in declarations},
             {failing_id, later_id},
+        )
+
+    async def test_full_deferred_checkpoint_does_not_block_fresh_readback(
+        self,
+    ):
+        retry_at = self.service.now() + timedelta(seconds=300)
+        deferred = []
+        for index in range(RECOVERY_BATCH_SIZE):
+            _task, declaration = await self._post_intent_active_child(
+                f"checkpoint_deferred_{index:02d}"
+            )
+            self._release_fixture_locks(declaration["child_id"])
+            self.runtime.children.update_runtime(
+                declaration["child_id"],
+                changes={
+                    "backoff_seconds": 300,
+                    "next_eligible_at": retry_at.isoformat(),
+                },
+            )
+            deferred.append(declaration)
+        self._store_active_checkpoint(*deferred)
+        _fresh_task, fresh = await self._post_intent_active_child(
+            "checkpoint_fresh_readback"
+        )
+        self._release_fixture_locks(fresh["child_id"])
+        writes_before = sum(
+            item[0] == "write" for item in self.gateway.calls
+        )
+        self.runtime._recovery_monotonic = lambda: 0.0
+
+        first = await self.runtime.recover_once("periodic")
+
+        self.assertEqual(1, first["active_recovery_transitions"])
+        fresh_record = self.runtime.children.get(fresh["child_id"])
+        self.assertEqual(1, fresh_record.dispatch_count)
+        self.assertTrue(
+            fresh_record.terminal
+            or any(
+                item["event_type"] == "recovery_claimed"
+                for item in fresh_record.events
+            )
+        )
+        retained = self.runtime.children.active_recovery_checkpoint()
+        retained_ids = {
+            item["child_id"]
+            for item in (() if retained is None else retained["candidates"])
+        }
+        deferred_ids = {item["child_id"] for item in deferred}
+        self.assertLessEqual(len(retained_ids), RECOVERY_BATCH_SIZE)
+        self.assertEqual(1, len(deferred_ids - retained_ids))
+        self.assertEqual(
+            writes_before,
+            sum(item[0] == "write" for item in self.gateway.calls),
+        )
+
+        self.service.now = lambda: retry_at
+        second = await self.runtime.recover_once("periodic")
+
+        self.assertEqual(
+            RECOVERY_BATCH_SIZE, second["active_recovery_transitions"]
+        )
+        self.assertTrue(
+            all(
+                self.runtime.children.get(item["child_id"]).dispatch_count
+                == 1
+                for item in deferred
+            )
+        )
+        self.assertEqual(
+            writes_before,
+            sum(item[0] == "write" for item in self.gateway.calls),
         )
 
     async def test_crash_after_active_discovery_keeps_candidate_reachable(self):
@@ -4091,29 +4273,49 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         self.assertEqual(5, page["manifest_reads"])
         self.assertEqual(32, len(page["declarations"]))
 
-    def test_corrupt_recovery_cursor_fails_closed(self):
-        self.runtime.children.recovery_cursor_path.write_text(
-            '{"model":"unknown"}', encoding="utf-8"
-        )
+    async def test_corrupt_nonauthoritative_navigation_resets_on_startup_and_periodic(
+        self,
+    ):
+        navigation_paths = {
+            "declaration_cursor": self.runtime.children.recovery_cursor_path,
+            "active_cursor": self.runtime.children.active_recovery_cursor_path,
+            "active_checkpoint": (
+                self.runtime.children.active_recovery_checkpoint_path
+            ),
+        }
+        for trigger, payload in (
+            ("startup", "{"),
+            ("periodic", '{"model":"unknown"}'),
+        ):
+            for navigation_kind, path in navigation_paths.items():
+                with self.subTest(
+                    trigger=trigger, navigation_kind=navigation_kind
+                ):
+                    path.write_text(payload, encoding="utf-8")
+                    with (
+                        patch(
+                            "ha_mcp_engineering.f3_runtime.repository."
+                            "log_event"
+                        ) as diagnostic,
+                        patch.object(
+                            self.runtime,
+                            "_execute_child",
+                            side_effect=AssertionError(
+                                "navigation reset cannot authorize dispatch"
+                            ),
+                        ),
+                    ):
+                        result = await self.runtime.recover_once(trigger)
 
-        with self.assertRaises(ExecutionRecordCorrupt):
-            self.runtime.children.recovery_cursor()
-
-    def test_corrupt_active_recovery_cursor_fails_closed(self):
-        self.runtime.children.active_recovery_cursor_path.write_text(
-            '{"model":"unknown"}', encoding="utf-8"
-        )
-
-        with self.assertRaises(ExecutionRecordCorrupt):
-            self.runtime.children.active_recovery_cursor()
-
-    def test_corrupt_active_recovery_checkpoint_fails_closed(self):
-        self.runtime.children.active_recovery_checkpoint_path.write_text(
-            '{"model":"unknown"}', encoding="utf-8"
-        )
-
-        with self.assertRaises(ExecutionRecordCorrupt):
-            self.runtime.children.active_recovery_checkpoint()
+                    self.assertFalse(path.exists())
+                    self.assertEqual(0, result["recovery_transitions"])
+                    diagnostic.assert_called_once()
+                    self.assertEqual(
+                        navigation_kind,
+                        diagnostic.call_args.kwargs["context"][
+                            "navigation_kind"
+                        ],
+                    )
 
     def test_active_recovery_cursor_compare_and_swap_fails_closed(self):
         first = self.runtime.children.active_recovery_cursor_for_task(

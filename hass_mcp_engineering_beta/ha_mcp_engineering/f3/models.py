@@ -571,6 +571,8 @@ class ExecutionRecord:
                 field_name="provider_operation",
             )
             self._validate_lock_tokens(self.dispatch_intent["lock_tokens"])
+            if not self.dispatch_intent["lock_tokens"]:
+                raise ValueError("durable intent lock evidence is empty")
             if self.dispatch_intent["lock_tokens"] != self.lock_tokens:
                 raise ValueError("durable intent lock tokens are inconsistent")
             if self.dispatch_intent["possibly_dispatched"] is not True:
@@ -700,18 +702,71 @@ class ExecutionRecord:
                 raise ValueError("nonterminal pre-intent execution is invalid")
             return EXECUTION_CLASS_PRE_INTENT
 
+        intent_positions = tuple(
+            index
+            for index, event_type in enumerate(event_types)
+            if event_type == "dispatch_intent_committed"
+        )
+        writer_lifecycle_valid = len(intent_positions) == 1
+        if writer_lifecycle_valid:
+            intent_index = intent_positions[0]
+            pre_intent_events = event_types[:intent_index]
+            post_intent_events = event_types[intent_index + 1 :]
+            writer_lifecycle_valid = (
+                len(pre_intent_events) >= 3
+                and pre_intent_events[0] == "execution_started"
+                and event_types.count("execution_started") == 1
+                and event_types[intent_index - 2 : intent_index + 1]
+                == (
+                    "locks_acquired",
+                    "preflight_completed",
+                    "dispatch_intent_committed",
+                )
+                and all(
+                    event_type in _PRE_INTENT_EVENT_TYPES
+                    for event_type in pre_intent_events
+                )
+                and all(
+                    event_type not in _PRE_INTENT_EVENT_TYPES
+                    for event_type in post_intent_events
+                )
+                and self.dispatch_intent["committed_at"]
+                == self.events[intent_index]["occurred_at"]
+            )
+            previous = pre_intent_events[0] if pre_intent_events else None
+            for event_type in pre_intent_events[1:]:
+                if event_type == "execution_reclaimed":
+                    pass
+                elif event_type == "locks_acquired":
+                    if previous not in {
+                        "execution_started",
+                        "execution_reclaimed",
+                        "pre_intent_retry_required",
+                    }:
+                        writer_lifecycle_valid = False
+                elif event_type == "preflight_completed":
+                    if previous != "locks_acquired":
+                        writer_lifecycle_valid = False
+                elif event_type == "pre_intent_retry_required":
+                    if previous != "preflight_completed":
+                        writer_lifecycle_valid = False
+                else:
+                    writer_lifecycle_valid = False
+                previous = event_type
+        dispatch_result_count = event_types.count("dispatch_result_recorded")
         if (
             self.dispatch_count != 1
             or not self.preflight_completed
-            or "dispatch_intent_committed" not in event_type_set
+            or not writer_lifecycle_valid
             or not event_type_set.issubset(_POST_INTENT_EVENT_TYPES)
+            or dispatch_result_count > 1
             or event_types.count("observation_recorded")
             != self.observation_attempts
             or event_types.count("verification_recorded")
             != self.verification_attempts
             or (
                 self.provider_response_received
-                and "dispatch_result_recorded" not in event_type_set
+                and dispatch_result_count != 1
             )
         ):
             raise ValueError("post-intent execution evidence is invalid")

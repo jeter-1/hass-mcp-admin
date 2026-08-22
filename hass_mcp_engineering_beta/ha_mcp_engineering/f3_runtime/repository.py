@@ -6,6 +6,7 @@ from contextlib import contextmanager
 import fcntl
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import threading
@@ -26,6 +27,7 @@ from ..f3.persistence import (
 )
 from ..governance.task_models import ExecutionTask
 from ..governance.task_storage import ExecutionTaskRepository
+from ..logging_config import get_logger, log_event
 
 
 CHILD_EXECUTION_MODEL = "f3-child-execution-v1"
@@ -212,6 +214,7 @@ class ChildExecutionRepository(DurableExecutionRepository):
         self.event_sink = event_sink or null_event_sink
         self._fault_hook = fault_hook
         self._thread_lock = threading.RLock()
+        self._navigation_logger = get_logger("f3_recovery_navigation")
         try:
             self.root.mkdir(parents=True, exist_ok=True)
             self.transaction_path.touch(exist_ok=True)
@@ -678,6 +681,30 @@ class ChildExecutionRepository(DurableExecutionRepository):
             ) from exc
         return dict(value)
 
+    def _reset_corrupt_navigation_unlocked(
+        self, path: Path, *, navigation_kind: str
+    ) -> None:
+        """Discard only non-authoritative recovery navigation evidence."""
+
+        try:
+            path.unlink(missing_ok=True)
+            directory_fd = os.open(self.root, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except OSError as exc:
+            raise ExecutionStorageError(
+                "corrupt F3 recovery navigation could not be reset"
+            ) from exc
+        log_event(
+            self._navigation_logger,
+            logging.WARNING,
+            "f3_recovery_navigation_reset",
+            "Corrupt non-authoritative F3 recovery navigation was reset.",
+            context={"navigation_kind": navigation_kind},
+        )
+
     def _read_recovery_cursor_unlocked(self) -> dict[str, Any] | None:
         try:
             value = json.loads(
@@ -685,11 +712,24 @@ class ChildExecutionRepository(DurableExecutionRepository):
             )
         except FileNotFoundError:
             return None
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ExecutionRecordCorrupt(
-                "F3 recovery declaration cursor is corrupt"
+        except (json.JSONDecodeError, UnicodeError):
+            self._reset_corrupt_navigation_unlocked(
+                self.recovery_cursor_path,
+                navigation_kind="declaration_cursor",
+            )
+            return None
+        except OSError as exc:
+            raise ExecutionStorageError(
+                "F3 recovery declaration cursor read failed"
             ) from exc
-        return self._validate_recovery_cursor(value)
+        try:
+            return self._validate_recovery_cursor(value)
+        except ExecutionRecordCorrupt:
+            self._reset_corrupt_navigation_unlocked(
+                self.recovery_cursor_path,
+                navigation_kind="declaration_cursor",
+            )
+            return None
 
     def recovery_cursor(self) -> dict[str, Any] | None:
         with self._exclusive_transaction():
@@ -736,11 +776,24 @@ class ChildExecutionRepository(DurableExecutionRepository):
             )
         except FileNotFoundError:
             return None
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ExecutionRecordCorrupt(
-                "F3 active recovery cursor is corrupt"
+        except (json.JSONDecodeError, UnicodeError):
+            self._reset_corrupt_navigation_unlocked(
+                self.active_recovery_cursor_path,
+                navigation_kind="active_cursor",
+            )
+            return None
+        except OSError as exc:
+            raise ExecutionStorageError(
+                "F3 active recovery cursor read failed"
             ) from exc
-        return self._validate_active_recovery_cursor(value)
+        try:
+            return self._validate_active_recovery_cursor(value)
+        except ExecutionRecordCorrupt:
+            self._reset_corrupt_navigation_unlocked(
+                self.active_recovery_cursor_path,
+                navigation_kind="active_cursor",
+            )
+            return None
 
     def active_recovery_cursor(self) -> dict[str, Any] | None:
         with self._exclusive_transaction():
@@ -820,11 +873,24 @@ class ChildExecutionRepository(DurableExecutionRepository):
             )
         except FileNotFoundError:
             return None
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ExecutionRecordCorrupt(
-                "F3 active recovery checkpoint is corrupt"
+        except (json.JSONDecodeError, UnicodeError):
+            self._reset_corrupt_navigation_unlocked(
+                self.active_recovery_checkpoint_path,
+                navigation_kind="active_checkpoint",
+            )
+            return None
+        except OSError as exc:
+            raise ExecutionStorageError(
+                "F3 active recovery checkpoint read failed"
             ) from exc
-        return self._validate_active_recovery_checkpoint(value)
+        try:
+            return self._validate_active_recovery_checkpoint(value)
+        except ExecutionRecordCorrupt:
+            self._reset_corrupt_navigation_unlocked(
+                self.active_recovery_checkpoint_path,
+                navigation_kind="active_checkpoint",
+            )
+            return None
 
     def active_recovery_checkpoint(self) -> dict[str, Any] | None:
         """Return bounded, non-authoritative pending recovery navigation."""
