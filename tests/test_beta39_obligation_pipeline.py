@@ -1633,7 +1633,13 @@ class ProviderObligationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_shared_blueprint_source_is_read_once_per_scan(self):
         class SharedBlueprintRest:
+            def __init__(self):
+                self.calls = []
+
             async def request(self, method, path):
+                self.calls.append((method, path))
+                if method != "GET":
+                    raise AssertionError((method, path))
                 if path == "/config":
                     return {"version": SUPPORTED_HA_VERSION}
                 if path == "/states":
@@ -1658,6 +1664,19 @@ class ProviderObligationTests(unittest.IsolatedAsyncioTestCase):
                     }
                 raise AssertionError((method, path))
 
+        class RecordingWebSocket:
+            def __init__(self):
+                self.calls = []
+
+            async def command(self, payload):
+                self.calls.append(payload)
+                if payload in (
+                    {"type": "config/entity_registry/list"},
+                    {"type": "config/label_registry/list"},
+                ):
+                    return []
+                raise AssertionError(payload)
+
         evidence = _BlueprintSourceEvidence(
             config=large_sensor_light_structural_blueprint(),
             reason_code=None,
@@ -1665,16 +1684,45 @@ class ProviderObligationTests(unittest.IsolatedAsyncioTestCase):
             content_sha256=BLUEPRINT_CONTENT_SHA256,
             content_bytes=256,
         )
+        rest = SharedBlueprintRest()
+        websocket = RecordingWebSocket()
         with patch(
             "ha_mcp_engineering.dependency.provider."
             "_read_blueprint_source_with_status",
             return_value=evidence,
         ) as reader:
             result = await DirectHaDependencyProvider(
-                SharedBlueprintRest(), self.WebSocket(), concurrency=2
+                rest, websocket, concurrency=2
             ).scan()
 
         self.assertEqual(reader.call_count, 1)
+        self.assertEqual(
+            rest.calls[:2],
+            [
+                ("GET", "/config"),
+                ("GET", "/states"),
+            ],
+        )
+        self.assertCountEqual(
+            rest.calls[2:],
+            [
+                (
+                    "GET",
+                    "/config/automation/config/synthetic_shared_a",
+                ),
+                (
+                    "GET",
+                    "/config/automation/config/synthetic_shared_b",
+                ),
+            ],
+        )
+        self.assertEqual(
+            websocket.calls,
+            [{"type": "config/entity_registry/list"}],
+        )
+        self.assertTrue(
+            all(not item.fallback_occurred for item in result.coverage)
+        )
         boundaries = [
             item
             for item in result.obligations
@@ -1738,6 +1786,144 @@ class ProviderObligationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(second_identities), LARGE_TEMPLATE_COUNT)
         self.assertTrue(first_identities.isdisjoint(second_identities))
         self.assertEqual(result.obligation_diagnostics, [])
+
+        index = DependencyIndex(_FakeProvider(result))
+        snapshot, _rebuilt, _lookup_ms = await index.get(refresh=True)
+        binding = build_helper_dependency_risk_binding(
+            snapshot,
+            entity_id=TARGET,
+            index_metadata=index.evidence_metadata(snapshot),
+        )
+        self.assertTrue(binding["coverage_complete"])
+        self.assertTrue(binding["execution_eligible"])
+        self.assertEqual(
+            binding["relevant_downstream_object_ids"], []
+        )
+
+    async def test_unreadable_and_over_bound_blueprint_sources_fail_closed(self):
+        class BlueprintFailureRest:
+            def __init__(self):
+                self.calls = []
+
+            async def request(self, method, path):
+                self.calls.append((method, path))
+                if method != "GET":
+                    raise AssertionError((method, path))
+                if path == "/config":
+                    return {"version": SUPPORTED_HA_VERSION}
+                if path == "/states":
+                    return [
+                        {
+                            "entity_id": "automation.synthetic_failure",
+                            "state": "on",
+                            "attributes": {"id": "synthetic_failure"},
+                        }
+                    ]
+                if path.endswith("/synthetic_failure"):
+                    return {
+                        "use_blueprint": {
+                            "path": "synthetic/failure.yaml",
+                            "input": {},
+                        }
+                    }
+                raise AssertionError((method, path))
+
+        class ReadOnlyWebSocket:
+            def __init__(self):
+                self.calls = []
+
+            async def command(self, payload):
+                self.calls.append(payload)
+                if payload in (
+                    {"type": "config/entity_registry/list"},
+                    {"type": "config/label_registry/list"},
+                ):
+                    return []
+                raise AssertionError(payload)
+
+        cases = (
+            ("blueprint_source_unavailable", None, 0),
+            (
+                "blueprint_source_limit_exceeded",
+                BLUEPRINT_CONTENT_SHA256,
+                1_048_577,
+            ),
+        )
+        for reason_code, content_sha256, content_bytes in cases:
+            with self.subTest(reason_code=reason_code):
+                rest = BlueprintFailureRest()
+                websocket = ReadOnlyWebSocket()
+                evidence = _BlueprintSourceEvidence(
+                    config=None,
+                    reason_code=reason_code,
+                    source_path="synthetic/failure.yaml",
+                    content_sha256=content_sha256,
+                    content_bytes=content_bytes,
+                )
+                with patch(
+                    "ha_mcp_engineering.dependency.provider."
+                    "_read_blueprint_source_with_status",
+                    return_value=evidence,
+                ) as reader:
+                    result = await DirectHaDependencyProvider(
+                        rest, websocket, concurrency=1
+                    ).scan()
+
+                self.assertEqual(reader.call_count, 1)
+                self.assertTrue(
+                    all(method == "GET" for method, _path in rest.calls)
+                )
+                self.assertEqual(
+                    websocket.calls,
+                    [
+                        {"type": "config/entity_registry/list"},
+                        {"type": "config/label_registry/list"},
+                    ],
+                )
+                self.assertTrue(
+                    all(
+                        not item.fallback_occurred
+                        for item in result.coverage
+                    )
+                )
+                diagnostics = [
+                    item
+                    for item in result.obligation_diagnostics
+                    if item.source_type == "blueprint"
+                    and item.consumer_source_id == "synthetic_failure"
+                ]
+                self.assertTrue(diagnostics)
+                self.assertTrue(
+                    all(not item.evidence_complete for item in diagnostics)
+                )
+                blueprint_coverage = next(
+                    item
+                    for item in result.coverage
+                    if item.source_type == "blueprint"
+                )
+                self.assertEqual(
+                    blueprint_coverage.completeness, "partial"
+                )
+                self.assertEqual(
+                    blueprint_coverage.failed_item_count,
+                    len(diagnostics),
+                )
+                self.assertEqual(
+                    blueprint_coverage.obligation_ledger_failed_item_count,
+                    len(diagnostics),
+                )
+
+                index = DependencyIndex(_FakeProvider(result))
+                snapshot, _rebuilt, _lookup_ms = await index.get(
+                    refresh=True
+                )
+                binding = build_helper_dependency_risk_binding(
+                    snapshot,
+                    entity_id=TARGET,
+                    index_metadata=index.evidence_metadata(snapshot),
+                )
+                self.assertFalse(binding["coverage_complete"])
+                self.assertFalse(binding["execution_eligible"])
 
     async def test_shared_source_consumers_remain_independently_attributable(self):
         class SharedInputRest:

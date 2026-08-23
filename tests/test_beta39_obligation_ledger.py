@@ -147,6 +147,36 @@ class WholeTemplateObligationLedgerTests(unittest.TestCase):
             with self.subTest(label=label):
                 self._assert_exact_target(template)
 
+    def test_mapping_method_and_same_named_key_precedence(self):
+        dot_method = self._outcomes(
+            "{% set values = {'get':'"
+            + TARGET
+            + "','selected':'sensor.synthetic_not_target'} %}"
+            "{{ states(values.get('selected')) }}"
+        )
+        self.assertFalse(
+            any(TARGET in item.exact_entity_ids for item in dot_method),
+            dot_method,
+        )
+        self.assertTrue(
+            any(
+                "sensor.synthetic_not_target" in item.exact_entity_ids
+                for item in dot_method
+            ),
+            dot_method,
+        )
+
+        bracket_key = self._outcomes(
+            "{% set values = {'get':'"
+            + TARGET
+            + "','selected':'sensor.synthetic_not_target'} %}"
+            "{{ states(values['get']) }}"
+        )
+        self.assertTrue(
+            any(TARGET in item.exact_entity_ids for item in bracket_key),
+            bracket_key,
+        )
+
     def test_if_elif_else_branches_union_without_order_loss(self):
         branch_values = (
             (TARGET, "sensor.second", "sensor.last"),
