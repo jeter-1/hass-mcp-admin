@@ -359,7 +359,7 @@ class ObligationGovernanceTests(unittest.TestCase):
             policy.physical_consequence.value, "safety_critical"
         )
 
-    def test_dynamic_dispatch_domain_hint_cannot_discharge_opacity(self):
+    def test_complete_sensor_domain_excludes_unrelated_safety_critical_profile(self):
         observed = bind(
             snapshot(
                 (
@@ -376,15 +376,193 @@ class ObligationGovernanceTests(unittest.TestCase):
         risk = helper_dependency_risk_assessment(
             {"binding": observed, "provenance": {"generation": 39}}
         )
+        plan = make_plan("set_input_boolean_state", target_id=TARGET)
+        plan.operational.baseline["dependency_risk"] = observed
+        plan.risk = risk
+        policy = evaluate_change_policy(plan)
 
         self.assertTrue(observed["coverage_complete"])
+        self.assertTrue(observed["evidence_complete"])
+        self.assertEqual("exact", observed["semantic_precision"])
+        self.assertEqual(0, observed["opaque_obligation_count"])
+        self.assertEqual(
+            1, observed["proven_target_exclusion_obligation_count"]
+        )
+        self.assertEqual([], observed["relevant_downstream_object_ids"])
+        self.assertEqual("none", observed["physical_consequence"])
+        self.assertEqual("low", risk.level.value)
+        self.assertTrue(risk.apply_allowed)
+        self.assertEqual("standard_admin", policy.policy_class.value)
+
+    def test_incomplete_domain_evidence_remains_consequentially_opaque(self):
+        observed = bind(
+            snapshot(
+                (
+                    obligation(
+                        "bounded_semantic_opaque",
+                        domains=None,
+                        category="dynamic_filter_test_dispatch",
+                        reason="dynamic_test_name",
+                    ),
+                ),
+                profiles=(profile("porch_light", "cover.open_cover"),),
+            )
+        )
+        risk = helper_dependency_risk_assessment(
+            {"binding": observed, "provenance": {"generation": 39}}
+        )
+
+        self.assertTrue(observed["coverage_complete"])
+        self.assertFalse(observed["evidence_complete"])
         self.assertEqual("bounded_opaque", observed["semantic_precision"])
         self.assertEqual(1, observed["opaque_obligation_count"])
         self.assertEqual(
-            "safety_critical", observed["physical_consequence"]
+            ["automation.porch_light"],
+            observed["relevant_downstream_object_ids"],
         )
+        self.assertEqual("safety_critical", observed["physical_consequence"])
         self.assertEqual("high", risk.level.value)
-        self.assertTrue(risk.apply_allowed)
+
+    def test_complete_candidate_set_matches_or_excludes_exact_target(self):
+        including = bind(
+            snapshot(
+                (
+                    obligation(
+                        "exact_dependency",
+                        exact=("input_boolean.other", TARGET),
+                    ),
+                ),
+                profiles=(profile("porch_light", "cover.open_cover"),),
+            )
+        )
+        excluding = bind(
+            snapshot(
+                (
+                    obligation(
+                        "exact_dependency",
+                        exact=(
+                            "input_boolean.first_other",
+                            "input_boolean.second_other",
+                        ),
+                    ),
+                )
+            )
+        )
+
+        self.assertEqual(1, including["exact_dependency_obligation_count"])
+        self.assertEqual(
+            "exact_dependency",
+            including["obligation_evidence"][0]["target_outcome"],
+        )
+        self.assertEqual("safety_critical", including["physical_consequence"])
+        self.assertEqual(0, excluding["opaque_obligation_count"])
+        self.assertEqual(
+            1, excluding["proven_target_exclusion_obligation_count"]
+        )
+        self.assertEqual([], excluding["relevant_downstream_object_ids"])
+        self.assertEqual("none", excluding["physical_consequence"])
+
+    def test_coverage_failure_precedes_retained_matching_candidate(self):
+        observed = bind(
+            snapshot(
+                (
+                    obligation(
+                        "coverage_failure",
+                        exact=(TARGET,),
+                        reason="candidate_evidence_clipped",
+                    ),
+                ),
+                profiles=(profile("porch_light", "cover.open_cover"),),
+            )
+        )
+        risk = helper_dependency_risk_assessment(
+            {"binding": observed, "provenance": {"generation": 39}}
+        )
+
+        self.assertFalse(observed["coverage_complete"])
+        self.assertFalse(observed["evidence_complete"])
+        self.assertFalse(observed["execution_eligible"])
+        self.assertEqual("coverage_failure", observed["semantic_precision"])
+        self.assertEqual(
+            "coverage_failure",
+            observed["obligation_evidence"][0]["target_outcome"],
+        )
+        self.assertEqual("unknown", observed["physical_consequence"])
+        self.assertFalse(risk.apply_allowed)
+
+    def test_non_entity_dynamic_notification_content_remains_neutral(self):
+        _findings, _dynamic, obligations = extract_document_with_obligations(
+            source_type="automation",
+            source_id="dynamic_notification",
+            source_entity_id="automation.dynamic_notification",
+            source_name=None,
+            source_state="on",
+            config={
+                "action": [
+                    {
+                        "service": "notify.notify",
+                        "data": {
+                            "message": "{{ runtime_message | default('ready') }}"
+                        },
+                    }
+                ]
+            },
+        )
+        observed = bind(
+            snapshot(
+                tuple(obligations),
+                profiles=(profile("dynamic_notification", "notify.notify"),),
+            )
+        )
+
+        self.assertTrue(observed["coverage_complete"])
+        self.assertTrue(observed["evidence_complete"])
+        self.assertEqual(0, observed["opaque_obligation_count"])
+        self.assertEqual([], observed["relevant_downstream_object_ids"])
+        self.assertEqual("none", observed["physical_consequence"])
+
+    def test_arbitrary_runtime_override_remains_target_relevant_and_elevated(self):
+        config = {
+            "variables": {"selected_entity": "sensor.synthetic_default"},
+            "condition": [
+                {
+                    "condition": "template",
+                    "value_template": "{{ is_state(selected_entity, 'on') }}",
+                }
+            ],
+            "action": [
+                {
+                    "service": "cover.open_cover",
+                    "target": {"entity_id": "cover.synthetic_garage"},
+                }
+            ],
+        }
+        _findings, _dynamic, obligations = extract_document_with_obligations(
+            source_type="automation",
+            source_id="runtime_override",
+            source_entity_id="automation.runtime_override",
+            source_name=None,
+            source_state="on",
+            config=config,
+        )
+        observed = bind(
+            snapshot(
+                tuple(obligations),
+                profiles=(profile("runtime_override", "cover.open_cover"),),
+            )
+        )
+        risk = helper_dependency_risk_assessment(
+            {"binding": observed, "provenance": {"generation": 39}}
+        )
+
+        self.assertTrue(observed["coverage_complete"])
+        self.assertGreater(observed["opaque_obligation_count"], 0)
+        self.assertIn(
+            "automation.runtime_override",
+            observed["relevant_downstream_object_ids"],
+        )
+        self.assertEqual("safety_critical", observed["physical_consequence"])
+        self.assertEqual("high", risk.level.value)
 
     def test_transformed_state_result_remains_consequentially_opaque(self):
         config = {

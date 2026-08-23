@@ -20,12 +20,16 @@ from ..dependency.semantic_registry import (
 from .normalize import stable_hash
 
 
-HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v3"
+HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v4"
 # Compatibility: persisted bindings from these models stay readable, remain
 # projectable for review, and keep readback-first recovery available.  Being
 # readable is not authority to execute.
 HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS = frozenset(
-    {"helper-dependency-risk-v2", HELPER_DEPENDENCY_RISK_MODEL}
+    {
+        "helper-dependency-risk-v2",
+        "helper-dependency-risk-v3",
+        HELPER_DEPENDENCY_RISK_MODEL,
+    }
 )
 # Execution authority: only current-model evidence may authorize approval,
 # lock projection, or dispatch.  An older compatible model describes a
@@ -369,12 +373,17 @@ def _obligation_targets_helper(
 ) -> str:
     """Project one target-independent terminal to one exact helper.
 
-    The obligation ledger is authoritative for semantic coverage.  Candidate
-    domains may prove an exact target exclusion, but an opaque obligation may
-    never become neutral merely because no exact candidate happened to survive
-    precision analysis.
+    The obligation ledger is authoritative for semantic coverage.  A finite
+    exact-dependency candidate set and a non-``None`` domain set are complete
+    target-selection evidence by that contract.  Missing candidate/domain
+    proof remains opaque; it is never treated as an exclusion merely because
+    the target was not observed.
     """
 
+    # Retained candidate material can accompany a failed or clipped analysis.
+    # Such material is diagnostic only and can never restore target authority.
+    if item.outcome == "coverage_failure" or item.limit_exceeded:
+        return "coverage_failure"
     if (
         item.obligation_kind == "structured_entity_reference"
         and item.relation in _NON_CAUSAL_RELATIONS
@@ -386,22 +395,21 @@ def _obligation_targets_helper(
         return "proven_dependency_neutral"
     if entity_id in item.exact_entity_ids:
         return "exact_dependency"
-    if item.outcome == "coverage_failure" or item.limit_exceeded:
-        return "coverage_failure"
-    if item.outcome == "proven_dependency_neutral":
-        return "proven_dependency_neutral"
-    if item.outcome == "proven_target_exclusion":
+    # ``exact_dependency`` with candidates represents a complete finite set.
+    # A non-member therefore has an attributable exclusion proof.  Candidates
+    # retained on an opaque obligation are only partial hints and cannot do so.
+    if item.outcome == "exact_dependency" and item.exact_entity_ids:
         return "proven_target_exclusion"
     domains = item.possible_entity_domains
     if (
-        item.outcome == "exact_dependency"
-        and domains is not None
+        domains is not None
         and domains
         and "input_boolean" not in domains
-        and not item.literal_selectors
     ):
         return "proven_target_exclusion"
-    if item.outcome == "exact_dependency" and item.exact_entity_ids:
+    if item.outcome == "proven_dependency_neutral":
+        return "proven_dependency_neutral"
+    if item.outcome == "proven_target_exclusion":
         return "proven_target_exclusion"
     if item.outcome == "exact_dependency":
         # A proven domain that contains the target domain bounds the potential
