@@ -247,6 +247,8 @@ def make_coverage_failure_obligation(
     reason_code: str,
     configuration_fingerprint: str | None = None,
     limit_exceeded: bool = False,
+    blueprint_source_path: str | None = None,
+    blueprint_source_sha256: str | None = None,
 ) -> DependencyObligation:
     """Create one bounded identity-preserving coverage-failure terminal."""
 
@@ -293,7 +295,35 @@ def make_coverage_failure_obligation(
         context_provenance=(f"configuration_path:{config_path}",),
         limit_exceeded=limit_exceeded,
         lock_projection="coverage_failure",
+        blueprint_source_path=blueprint_source_path,
+        blueprint_source_sha256=blueprint_source_sha256,
     )
+
+
+def bind_blueprint_obligation_provenance(
+    obligations: Iterable[DependencyObligation],
+    *,
+    blueprint_source_path: str | None,
+    blueprint_source_sha256: str | None,
+    secret: str = "",
+) -> list[DependencyObligation]:
+    """Bind every consumer terminal to one exact blueprint source read."""
+
+    safe_path = _bounded(blueprint_source_path, 256, secret)
+    safe_sha256 = (
+        blueprint_source_sha256
+        if isinstance(blueprint_source_sha256, str)
+        and re.fullmatch(r"[0-9a-f]{64}", blueprint_source_sha256)
+        else None
+    )
+    return [
+        replace(
+            item,
+            blueprint_source_path=safe_path,
+            blueprint_source_sha256=safe_sha256,
+        )
+        for item in obligations
+    ]
 
 
 def extract_document_obligation_evidence(
@@ -862,12 +892,17 @@ def extract_document_obligation_evidence(
             )
             return
         event_scan_nodes += 1
-        if (
-            event_scan_nodes > MAX_CONFIGURATION_NODES
-            or depth > MAX_CONFIGURATION_DEPTH
-        ):
+        if event_scan_nodes > MAX_CONFIGURATION_NODES:
             document_limit_exceeded = True
-            document_limit_reason = "configuration_structure_limit_exceeded"
+            document_limit_reason = (
+                "configuration_analysis_node_limit_exceeded"
+            )
+            return
+        if depth > MAX_CONFIGURATION_DEPTH:
+            document_limit_exceeded = True
+            document_limit_reason = (
+                "configuration_analysis_depth_limit_exceeded"
+            )
             return
         if isinstance(value, dict):
             add_state_changed_event_obligation(
@@ -883,7 +918,7 @@ def extract_document_obligation_evidence(
                 ):
                     document_limit_exceeded = True
                     document_limit_reason = (
-                        "configuration_structure_limit_exceeded"
+                        "configuration_analysis_node_limit_exceeded"
                     )
                     break
                 scan_event_triggers(
@@ -902,7 +937,7 @@ def extract_document_obligation_evidence(
                 ):
                     document_limit_exceeded = True
                     document_limit_reason = (
-                        "configuration_structure_limit_exceeded"
+                        "configuration_analysis_node_limit_exceeded"
                     )
                     break
                 scan_event_triggers(
@@ -932,12 +967,17 @@ def extract_document_obligation_evidence(
             )
             return
         configuration_walk_nodes += 1
-        if (
-            configuration_walk_nodes > MAX_CONFIGURATION_NODES
-            or depth > MAX_CONFIGURATION_DEPTH
-        ):
+        if configuration_walk_nodes > MAX_CONFIGURATION_NODES:
             document_limit_exceeded = True
-            document_limit_reason = "configuration_structure_limit_exceeded"
+            document_limit_reason = (
+                "configuration_analysis_node_limit_exceeded"
+            )
+            return
+        if depth > MAX_CONFIGURATION_DEPTH:
+            document_limit_exceeded = True
+            document_limit_reason = (
+                "configuration_analysis_depth_limit_exceeded"
+            )
             return
         if len(obligations) >= MAX_DOCUMENT_OBLIGATIONS - 1:
             document_limit_exceeded = True
@@ -1463,6 +1503,18 @@ def discharge_resolved_blueprint_source_obligation(
     blueprint_path = (
         blueprint.get("path") if isinstance(blueprint, dict) else None
     )
+    raw = bind_blueprint_obligation_provenance(
+        raw,
+        blueprint_source_path=blueprint_path,
+        blueprint_source_sha256=blueprint_source_content_sha256,
+        secret=secret,
+    )
+    resolved = bind_blueprint_obligation_provenance(
+        resolved,
+        blueprint_source_path=blueprint_path,
+        blueprint_source_sha256=blueprint_source_content_sha256,
+        secret=secret,
+    )
     expected_expression_fingerprint = (
         _blueprint_source_obligation_fingerprint(
             configuration_fingerprint=automation_fingerprint,
@@ -1482,6 +1534,27 @@ def discharge_resolved_blueprint_source_obligation(
         and item.reason_code
         == "blueprint_source_unavailable_to_local_analysis"
     ]
+    if not source_content_fingerprint_valid and len(candidates) == 1:
+        drifted = replace(
+            candidates[0],
+            outcome="coverage_failure",
+            reason_code="blueprint_source_drift_detected",
+            semantic_category="external_opaque",
+            limit_exceeded=True,
+            lock_projection="coverage_failure",
+        )
+        return (
+            [
+                drifted
+                if item.evidence_id == candidates[0].evidence_id
+                else item
+                for item in raw
+            ],
+            resolved_findings,
+            resolved_dynamic,
+            resolved,
+            frozenset(),
+        )
     resolved_is_bound = bool(
         not automation_limit
         and not resolved_limit

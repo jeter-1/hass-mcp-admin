@@ -21,6 +21,9 @@ OBLIGATION_OUTCOMES = frozenset(
         "coverage_failure",
     }
 )
+UNRESOLVED_OBLIGATION_OUTCOMES = frozenset(
+    {"bounded_semantic_opaque", "coverage_failure"}
+)
 OBLIGATION_LEDGER_MODEL = "whole-template-obligation-ledger-v1"
 # Selector evidence is derived from configuration and template literals, so a
 # single value can be arbitrarily long and can carry secret-bearing material.
@@ -134,6 +137,12 @@ class DependencyObligation:
     # Set when bounding or sanitization replaced or dropped evidence, so a
     # reader can distinguish "no such value" from "value not retained".
     evidence_bounded: bool = False
+    # Blueprint provenance is internal authoritative evidence.  It is not
+    # projected through the public dependency-analysis response, but it makes
+    # every consumer occurrence independently attributable and makes source
+    # drift change the obligation identity and snapshot fingerprint.
+    blueprint_source_path: str | None = None
+    blueprint_source_sha256: str | None = None
 
     def __post_init__(self) -> None:
         if self.outcome not in OBLIGATION_OUTCOMES:
@@ -282,6 +291,27 @@ class AutomationReadFailure:
 
 
 @dataclass(frozen=True)
+class DependencyObligationDiagnostic:
+    """One bounded, attributable unresolved obligation result."""
+
+    diagnostic_id: str
+    obligation_identity: str
+    obligation_evidence_id: str
+    consumer_source_id: str
+    consumer_source_entity_id: str | None
+    source_type: str
+    blueprint_source_path: str | None
+    blueprint_source_sha256: str | None
+    config_path: str
+    obligation_kind: str
+    status: str
+    coverage_reason: str
+    diagnostic_code: str
+    evidence_complete: bool
+    limit_exceeded: bool
+
+
+@dataclass(frozen=True)
 class AutomationActionRiskProfile:
     """Bounded normalized action consequence for one automation source."""
 
@@ -374,6 +404,9 @@ class DependencyScanResult:
     label_membership_truncated: tuple[str, ...] = ()
     label_registry_complete: bool = False
     obligations: list[DependencyObligation] = field(default_factory=list)
+    obligation_diagnostics: list[
+        DependencyObligationDiagnostic
+    ] = field(default_factory=list)
     obligation_ledger_model: str | None = None
     # The running Home Assistant version observed during this scan, and how
     # that observation went.  The reviewed template semantics are only valid
@@ -408,6 +441,11 @@ class DependencyIndexSnapshot:
     label_membership_truncated: tuple[str, ...] = ()
     label_registry_complete: bool = False
     obligations: tuple[DependencyObligation, ...] = ()
+    obligation_diagnostics: tuple[
+        DependencyObligationDiagnostic, ...
+    ] = ()
+    obligation_diagnostic_overflow_count: int = 0
+    obligation_diagnostic_overflow_fingerprint: str | None = None
     obligation_overflow_count: int = 0
     obligation_overflow_fingerprint: str | None = None
     obligation_ledger_model: str | None = None
@@ -455,6 +493,9 @@ def obligation_material(item: DependencyObligation) -> dict[str, Any]:
         "limit_exceeded": item.limit_exceeded,
         "lock_projection": item.lock_projection,
         "evidence_bounded": item.evidence_bounded,
+        "blueprint_source_path": item.blueprint_source_path,
+        "blueprint_source_sha256": item.blueprint_source_sha256,
+        "obligation_identity": obligation_identity(item),
     }
 
 
@@ -463,6 +504,159 @@ def obligation_fingerprint(item: DependencyObligation) -> str:
         obligation_material(item), sort_keys=True, separators=(",", ":")
     )
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def obligation_identity(item: DependencyObligation) -> str:
+    """Return the stable consumer-and-source identity for one obligation."""
+
+    material = {
+        "obligation_evidence_id": item.evidence_id,
+        "consumer_source_id": item.source_id,
+        "consumer_source_entity_id": item.source_entity_id,
+        "source_type": item.source_type,
+        "blueprint_source_path": item.blueprint_source_path,
+        "blueprint_source_sha256": item.blueprint_source_sha256,
+        "configuration_path": item.config_path,
+        "obligation_kind": item.obligation_kind,
+        "relation": item.relation,
+        "expression_fingerprint": item.expression_fingerprint,
+        "configuration_fingerprint": item.configuration_fingerprint,
+    }
+    encoded = json.dumps(
+        material, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return "obl_" + hashlib.sha256(encoded).hexdigest()
+
+
+def obligation_diagnostic_code(item: DependencyObligation) -> str:
+    """Map internal reasons to a bounded stable diagnostic taxonomy."""
+
+    reason = item.reason_code
+    exact = {
+        "blueprint_source_limit_exceeded": (
+            "blueprint_source_size_limit_exceeded"
+        ),
+        "blueprint_source_yaml_node_limit_exceeded": (
+            "blueprint_source_yaml_node_limit_exceeded"
+        ),
+        "blueprint_source_yaml_depth_limit_exceeded": (
+            "blueprint_source_yaml_depth_limit_exceeded"
+        ),
+        "blueprint_input_resolution_node_limit_exceeded": (
+            "blueprint_analysis_node_limit_exceeded"
+        ),
+        "configuration_analysis_node_limit_exceeded": (
+            "blueprint_analysis_node_limit_exceeded"
+        ),
+        "blueprint_input_resolution_depth_limit_exceeded": (
+            "blueprint_analysis_depth_limit_exceeded"
+        ),
+        "configuration_analysis_depth_limit_exceeded": (
+            "blueprint_analysis_depth_limit_exceeded"
+        ),
+        "configuration_context_evidence_limit_exceeded": (
+            "blueprint_context_member_limit_exceeded"
+        ),
+        "configuration_context_member_limit_exceeded": (
+            "blueprint_context_member_limit_exceeded"
+        ),
+        "configuration_obligation_limit_exceeded": (
+            "blueprint_terminal_count_limit_exceeded"
+        ),
+        "template_obligation_limit_exceeded": (
+            "blueprint_terminal_count_limit_exceeded"
+        ),
+        "blueprint_source_analysis_time_limit_exceeded": (
+            "blueprint_analysis_deadline_exceeded"
+        ),
+        "blueprint_input_resolution_time_limit_exceeded": (
+            "blueprint_analysis_deadline_exceeded"
+        ),
+        "configuration_analysis_time_limit_exceeded": (
+            "blueprint_analysis_deadline_exceeded"
+        ),
+        "blueprint_source_drift_detected": (
+            "blueprint_source_drift_detected"
+        ),
+    }
+    if reason in exact:
+        return exact[reason]
+    if item.outcome == "bounded_semantic_opaque" and (
+        "target_opaque" in reason
+        or "dynamic_entity" in reason
+        or "dynamic_lookup" in reason
+    ):
+        return "unsupported_dynamic_entity_lookup"
+    if item.outcome == "bounded_semantic_opaque":
+        return "dependency_semantics_unresolved"
+    if "context" in reason and "limit" in reason:
+        return "blueprint_context_member_limit_exceeded"
+    if "obligation" in reason and "limit" in reason:
+        return "blueprint_terminal_count_limit_exceeded"
+    if "depth" in reason and "limit" in reason:
+        return "blueprint_analysis_depth_limit_exceeded"
+    if "node" in reason and "limit" in reason:
+        return "blueprint_analysis_node_limit_exceeded"
+    if "time_limit" in reason or "deadline" in reason:
+        return "blueprint_analysis_deadline_exceeded"
+    return "dependency_coverage_failure"
+
+
+def obligation_diagnostic(
+    item: DependencyObligation,
+) -> DependencyObligationDiagnostic | None:
+    """Project an unresolved terminal to one attributable internal record."""
+
+    if item.outcome not in UNRESOLVED_OBLIGATION_OUTCOMES:
+        return None
+    identity = obligation_identity(item)
+    code = obligation_diagnostic_code(item)
+    status = (
+        "failed" if item.outcome == "coverage_failure" else "unresolved"
+    )
+    material = {
+        "obligation_identity": identity,
+        "status": status,
+        "coverage_reason": item.reason_code,
+        "diagnostic_code": code,
+    }
+    encoded = json.dumps(
+        material, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return DependencyObligationDiagnostic(
+        diagnostic_id="diag_" + hashlib.sha256(encoded).hexdigest(),
+        obligation_identity=identity,
+        obligation_evidence_id=item.evidence_id,
+        consumer_source_id=item.source_id,
+        consumer_source_entity_id=item.source_entity_id,
+        source_type=item.source_type,
+        blueprint_source_path=item.blueprint_source_path,
+        blueprint_source_sha256=item.blueprint_source_sha256,
+        config_path=item.config_path,
+        obligation_kind=item.obligation_kind,
+        status=status,
+        coverage_reason=item.reason_code,
+        diagnostic_code=code,
+        evidence_complete=False,
+        limit_exceeded=item.limit_exceeded,
+    )
+
+
+def obligation_diagnostic_material(
+    item: DependencyObligationDiagnostic,
+) -> dict[str, Any]:
+    return asdict(item)
+
+
+def obligation_diagnostic_fingerprint(
+    item: DependencyObligationDiagnostic,
+) -> str:
+    encoded = json.dumps(
+        obligation_diagnostic_material(item),
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def evidence_id(*parts: Any) -> str:
@@ -535,6 +729,11 @@ def snapshot_fingerprint(
     obligations: list[DependencyObligation] | tuple[
         DependencyObligation, ...
     ] = (),
+    obligation_diagnostics: list[
+        DependencyObligationDiagnostic
+    ] | tuple[DependencyObligationDiagnostic, ...] = (),
+    obligation_diagnostic_overflow_count: int = 0,
+    obligation_diagnostic_overflow_fingerprint: str | None = None,
     obligation_overflow_count: int = 0,
     obligation_overflow_fingerprint: str | None = None,
     obligation_ledger_model: str | None = None,
@@ -589,6 +788,16 @@ def snapshot_fingerprint(
         "obligations": sorted(
             obligation_fingerprint(item) for item in obligations
         ),
+        "obligation_diagnostics": sorted(
+            obligation_diagnostic_fingerprint(item)
+            for item in obligation_diagnostics
+        ),
+        "obligation_diagnostic_overflow": {
+            "count": max(
+                0, int(obligation_diagnostic_overflow_count)
+            ),
+            "fingerprint": obligation_diagnostic_overflow_fingerprint,
+        },
         "obligation_overflow": {
             "count": max(0, int(obligation_overflow_count)),
             "fingerprint": obligation_overflow_fingerprint,

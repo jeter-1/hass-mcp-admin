@@ -21,6 +21,7 @@ from ha_mcp_engineering.dependency.models import (  # noqa: E402
     DynamicReference,
     OBLIGATION_LEDGER_MODEL,
     SourceCoverageItem,
+    obligation_identity,
 )
 from ha_mcp_engineering.dependency.provider import (  # noqa: E402
     _BlueprintSourceEvidence,
@@ -32,6 +33,10 @@ from ha_mcp_engineering.providers import (  # noqa: E402
 )
 from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
     build_helper_dependency_risk_binding,
+)
+from tests.dependency_blueprint_fixtures import (  # noqa: E402
+    LARGE_TEMPLATE_COUNT,
+    large_sensor_light_structural_blueprint,
 )
 
 
@@ -1183,7 +1188,8 @@ class WholeConfigurationObligationTests(unittest.TestCase):
         self.assertTrue(
             any(
                 item.obligation_kind == "external_blueprint_source"
-                and item.outcome == "bounded_semantic_opaque"
+                and item.outcome == "coverage_failure"
+                and item.reason_code == "blueprint_source_drift_detected"
                 for item in unchanged
             )
         )
@@ -1653,10 +1659,7 @@ class ProviderObligationTests(unittest.IsolatedAsyncioTestCase):
                 raise AssertionError((method, path))
 
         evidence = _BlueprintSourceEvidence(
-            config={
-                "blueprint": {"name": "Synthetic shared source"},
-                "actions": [],
-            },
+            config=large_sensor_light_structural_blueprint(),
             reason_code=None,
             source_path="synthetic/shared.yaml",
             content_sha256=BLUEPRINT_CONTENT_SHA256,
@@ -1699,6 +1702,298 @@ class ProviderObligationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(blueprint_coverage.completeness, "complete")
         self.assertEqual(blueprint_coverage.failed_item_count, 0)
+        by_consumer = {
+            source_id: [
+                item
+                for item in result.obligations
+                if item.source_type == "blueprint"
+                and item.source_id == source_id
+            ]
+            for source_id in ("synthetic_shared_a", "synthetic_shared_b")
+        }
+        self.assertTrue(
+            all(
+                len(items) == LARGE_TEMPLATE_COUNT
+                for items in by_consumer.values()
+            )
+        )
+        self.assertTrue(
+            all(
+                item.blueprint_source_path == "synthetic/shared.yaml"
+                and item.blueprint_source_sha256
+                == BLUEPRINT_CONTENT_SHA256
+                for items in by_consumer.values()
+                for item in items
+            )
+        )
+        first_identities = {
+            obligation_identity(item)
+            for item in by_consumer["synthetic_shared_a"]
+        }
+        second_identities = {
+            obligation_identity(item)
+            for item in by_consumer["synthetic_shared_b"]
+        }
+        self.assertEqual(len(first_identities), LARGE_TEMPLATE_COUNT)
+        self.assertEqual(len(second_identities), LARGE_TEMPLATE_COUNT)
+        self.assertTrue(first_identities.isdisjoint(second_identities))
+        self.assertEqual(result.obligation_diagnostics, [])
+
+    async def test_shared_source_consumers_remain_independently_attributable(self):
+        class SharedInputRest:
+            async def request(self, method, path):
+                if path == "/config":
+                    return {"version": SUPPORTED_HA_VERSION}
+                if path == "/states":
+                    return [
+                        {
+                            "entity_id": "automation.synthetic_safe",
+                            "state": "on",
+                            "attributes": {"id": "synthetic_safe"},
+                        },
+                        {
+                            "entity_id": "automation.synthetic_opaque",
+                            "state": "on",
+                            "attributes": {"id": "synthetic_opaque"},
+                        },
+                    ]
+                if path.endswith("/synthetic_safe"):
+                    selected = "{{ 'synthetic non-entity text' }}"
+                elif path.endswith("/synthetic_opaque"):
+                    selected = "{{ states(entity_variable) }}"
+                else:
+                    raise AssertionError((method, path))
+                return {
+                    "use_blueprint": {
+                        "path": "synthetic/shared-input.yaml",
+                        "input": {"selected_template": selected},
+                    }
+                }
+
+        evidence = _BlueprintSourceEvidence(
+            config={
+                "blueprint": {"name": "Synthetic shared input"},
+                "actions": [
+                    {
+                        "value_template": {
+                            "__blueprint_input__": "selected_template"
+                        }
+                    }
+                ],
+            },
+            reason_code=None,
+            source_path="synthetic/shared-input.yaml",
+            content_sha256=BLUEPRINT_CONTENT_SHA256,
+            content_bytes=256,
+        )
+        with patch(
+            "ha_mcp_engineering.dependency.provider."
+            "_read_blueprint_source_with_status",
+            return_value=evidence,
+        ) as reader:
+            result = await DirectHaDependencyProvider(
+                SharedInputRest(), self.WebSocket(), concurrency=2
+            ).scan()
+
+        self.assertEqual(reader.call_count, 1)
+        safe = [
+            item
+            for item in result.obligations
+            if item.source_type == "blueprint"
+            and item.source_id == "synthetic_safe"
+        ]
+        opaque = [
+            item
+            for item in result.obligations
+            if item.source_type == "blueprint"
+            and item.source_id == "synthetic_opaque"
+        ]
+        self.assertTrue(safe)
+        self.assertTrue(opaque)
+        self.assertFalse(
+            any(
+                item.consumer_source_id == "synthetic_safe"
+                for item in result.obligation_diagnostics
+            )
+        )
+        opaque_diagnostics = [
+            item
+            for item in result.obligation_diagnostics
+            if item.consumer_source_id == "synthetic_opaque"
+            and item.source_type == "blueprint"
+        ]
+        self.assertEqual(len(opaque_diagnostics), 1)
+        self.assertEqual(
+            opaque_diagnostics[0].diagnostic_code,
+            "unsupported_dynamic_entity_lookup",
+        )
+        self.assertEqual(
+            opaque_diagnostics[0].blueprint_source_sha256,
+            BLUEPRINT_CONTENT_SHA256,
+        )
+        blueprint_coverage = next(
+            item
+            for item in result.coverage
+            if item.source_type == "blueprint"
+        )
+        self.assertEqual(blueprint_coverage.completeness, "partial")
+        self.assertEqual(
+            blueprint_coverage.failed_item_count,
+            len(opaque_diagnostics),
+        )
+        self.assertEqual(
+            blueprint_coverage.obligation_ledger_failed_item_count,
+            len(opaque_diagnostics),
+        )
+
+    async def test_multiple_failures_have_exact_diagnostic_correspondence(self):
+        class MultipleFailureRest:
+            async def request(self, method, path):
+                if path == "/config":
+                    return {"version": SUPPORTED_HA_VERSION}
+                if path == "/states":
+                    return [
+                        {
+                            "entity_id": "automation.synthetic_failures",
+                            "state": "on",
+                            "attributes": {"id": "synthetic_failures"},
+                        }
+                    ]
+                if path.endswith("/synthetic_failures"):
+                    return {
+                        "use_blueprint": {
+                            "path": "synthetic/failures.yaml",
+                            "input": {},
+                        }
+                    }
+                raise AssertionError((method, path))
+
+        evidence = _BlueprintSourceEvidence(
+            config={
+                "actions": [
+                    {
+                        "value_template": (
+                            "{{ states(entity_variable) }}"
+                        )
+                    }
+                    for _index in range(3)
+                ]
+            },
+            reason_code=None,
+            source_path="synthetic/failures.yaml",
+            content_sha256=BLUEPRINT_CONTENT_SHA256,
+            content_bytes=256,
+        )
+        with patch(
+            "ha_mcp_engineering.dependency.provider."
+            "_read_blueprint_source_with_status",
+            return_value=evidence,
+        ):
+            result = await DirectHaDependencyProvider(
+                MultipleFailureRest(), self.WebSocket(), concurrency=1
+            ).scan()
+
+        diagnostics = [
+            item
+            for item in result.obligation_diagnostics
+            if item.source_type == "blueprint"
+        ]
+        self.assertEqual(len(diagnostics), 3)
+        self.assertEqual(
+            len({item.diagnostic_id for item in diagnostics}), 3
+        )
+        self.assertTrue(
+            all(
+                item.diagnostic_code
+                == "unsupported_dynamic_entity_lookup"
+                and not item.evidence_complete
+                for item in diagnostics
+            )
+        )
+        coverage = next(
+            item
+            for item in result.coverage
+            if item.source_type == "blueprint"
+        )
+        self.assertEqual(coverage.failed_item_count, len(diagnostics))
+        self.assertEqual(
+            coverage.obligation_ledger_failed_item_count,
+            len(diagnostics),
+        )
+
+    async def test_source_hash_change_invalidates_scan_local_identity(self):
+        class OneBlueprintRest:
+            async def request(self, method, path):
+                if path == "/config":
+                    return {"version": SUPPORTED_HA_VERSION}
+                if path == "/states":
+                    return [
+                        {
+                            "entity_id": "automation.synthetic_hash",
+                            "state": "on",
+                            "attributes": {"id": "synthetic_hash"},
+                        }
+                    ]
+                if path.endswith("/synthetic_hash"):
+                    return {
+                        "use_blueprint": {
+                            "path": "synthetic/hash.yaml",
+                            "input": {},
+                        }
+                    }
+                raise AssertionError((method, path))
+
+        source = {"actions": [{"value_template": "{{ 'safe' }}"}]}
+        evidence = [
+            _BlueprintSourceEvidence(
+                source,
+                None,
+                "synthetic/hash.yaml",
+                "b" * 64,
+                128,
+            ),
+            _BlueprintSourceEvidence(
+                source,
+                None,
+                "synthetic/hash.yaml",
+                "c" * 64,
+                128,
+            ),
+        ]
+        provider = DirectHaDependencyProvider(
+            OneBlueprintRest(), self.WebSocket(), concurrency=1
+        )
+        with patch(
+            "ha_mcp_engineering.dependency.provider."
+            "_read_blueprint_source_with_status",
+            side_effect=evidence,
+        ) as reader:
+            first = await provider.scan()
+            second = await provider.scan()
+
+        self.assertEqual(reader.call_count, 2)
+        first_blueprint = [
+            item
+            for item in first.obligations
+            if item.source_type == "blueprint"
+        ]
+        second_blueprint = [
+            item
+            for item in second.obligations
+            if item.source_type == "blueprint"
+        ]
+        self.assertEqual(
+            {item.blueprint_source_sha256 for item in first_blueprint},
+            {"b" * 64},
+        )
+        self.assertEqual(
+            {item.blueprint_source_sha256 for item in second_blueprint},
+            {"c" * 64},
+        )
+        self.assertNotEqual(
+            {obligation_identity(item) for item in first_blueprint},
+            {obligation_identity(item) for item in second_blueprint},
+        )
 
     async def test_automation_inventory_overflow_is_bounded_coverage_failure(self):
         class RecordingRest(self.Rest):
@@ -1828,6 +2123,99 @@ class IndexObligationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(binding["coverage_complete"])
         self.assertTrue(binding["execution_eligible"])
         self.assertEqual([], binding["relevant_downstream_object_ids"])
+
+    async def test_public_projection_overflow_preserves_authoritative_failures(self):
+        _findings, _dynamic, extracted = _extract(
+            {
+                "condition": [
+                    {
+                        "condition": "template",
+                        "value_template": "{{ states(entity_variable) }}",
+                    }
+                ]
+            },
+            source_id="opaque_projection",
+        )
+        base = next(
+            item
+            for item in extracted
+            if item.outcome == "bounded_semantic_opaque"
+        )
+        obligation_count = 1_001
+        obligations = [
+            replace(
+                base,
+                evidence_id=f"ev_opaque_{index:04d}",
+                source_id=f"opaque_{index:04d}",
+                source_entity_id=f"automation.opaque_{index:04d}",
+                expression_fingerprint=f"{index:064x}",
+            )
+            for index in range(obligation_count)
+        ]
+        dynamic = [
+            DynamicReference(
+                evidence_id=f"dyn_opaque_{index:04d}",
+                source_type="automation",
+                source_id=f"opaque_{index:04d}",
+                source_entity_id=f"automation.opaque_{index:04d}",
+                config_path="$.condition[0].value_template",
+                warning="Unsupported dynamic entity lookup.",
+            )
+            for index in range(obligation_count)
+        ]
+        result = DependencyScanResult(
+            findings=[],
+            dynamic_references=dynamic,
+            target_metadata={},
+            coverage=_coverage(),
+            obligations=obligations,
+            obligation_ledger_model=OBLIGATION_LEDGER_MODEL,
+            home_assistant_version=SUPPORTED_HA_VERSION,
+            home_assistant_version_status="observed",
+        )
+
+        index = DependencyIndex(_FakeProvider(result))
+        snapshot, _rebuilt, _lookup_ms = await index.get(refresh=True)
+
+        self.assertEqual(len(snapshot.dynamic_references), 1_000)
+        self.assertEqual(snapshot.dynamic_reference_overflow_count, 1)
+        self.assertEqual(len(snapshot.obligations), obligation_count)
+        self.assertEqual(snapshot.obligation_overflow_count, 0)
+        self.assertEqual(
+            len(snapshot.obligation_diagnostics), obligation_count
+        )
+        self.assertEqual(
+            snapshot.obligation_diagnostic_overflow_count, 0
+        )
+        coverage = next(
+            item
+            for item in snapshot.coverage
+            if item.source_type == "automation"
+        )
+        self.assertEqual(coverage.completeness, "partial")
+        self.assertEqual(
+            coverage.obligation_ledger_completeness, "partial"
+        )
+        self.assertEqual(
+            coverage.failed_item_count, obligation_count
+        )
+        self.assertEqual(
+            coverage.obligation_ledger_failed_item_count,
+            obligation_count,
+        )
+        public = coverage.public()
+        self.assertLessEqual(len(public["warnings"]), 10)
+        self.assertEqual(
+            public["obligation_ledger_failed_item_count"],
+            obligation_count,
+        )
+        binding = build_helper_dependency_risk_binding(
+            snapshot,
+            entity_id=TARGET,
+            index_metadata=index.evidence_metadata(snapshot),
+        )
+        self.assertFalse(binding["coverage_complete"])
+        self.assertFalse(binding["execution_eligible"])
 
     async def test_overflow_is_fingerprinted_and_retains_coverage_failure(self):
         obligations = []

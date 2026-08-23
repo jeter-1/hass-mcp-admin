@@ -24,6 +24,7 @@ from ..providers import (
     ProviderResult,
 )
 from .extraction import (
+    bind_blueprint_obligation_provenance,
     discharge_resolved_blueprint_source_obligation,
     extract_document_with_obligations,
     make_coverage_failure_obligation,
@@ -37,6 +38,7 @@ from .models import (
     OBLIGATION_LEDGER_MODEL,
     SOURCE_TYPES,
     SourceCoverageItem,
+    obligation_diagnostic,
 )
 
 
@@ -61,6 +63,14 @@ class _BlueprintSourceEvidence:
     source_path: str | None
     content_sha256: str | None
     content_bytes: int
+
+
+def _valid_blueprint_source_sha256(value: Any) -> bool:
+    return bool(
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
 
 
 def _bounded_provider_identity(
@@ -336,8 +346,6 @@ class DirectHaDependencyProvider(DependencySourceProvider):
 
         auto_started = time.perf_counter()
         results = await asyncio.gather(*(fetch_automation(state) for state in automations))
-        failed = 0
-        blueprint_failures = 0
         blueprint_source_cache: dict[str, _BlueprintSourceEvidence] = {}
         parse_started = time.perf_counter()
         for state, config, failure in results:
@@ -351,7 +359,6 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 secret=self.secret,
             )
             if failure or config is None:
-                failed += 1
                 failure_reason = str(
                     failure or "automation_config_unreadable"
                 )
@@ -399,6 +406,16 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                     blueprint_source_content_sha256 = (
                         source_evidence.content_sha256
                     )
+                    if parsed_blueprint is not None and (
+                        source_evidence.source_path != path
+                        or not _valid_blueprint_source_sha256(
+                            blueprint_source_content_sha256
+                        )
+                    ):
+                        parsed_blueprint = None
+                        blueprint_read_failure = (
+                            "blueprint_source_drift_detected"
+                        )
                 else:
                     blueprint_read_failure = "blueprint_source_unavailable"
             extracted, unresolved, extracted_obligations = (
@@ -412,10 +429,26 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                     secret=self.secret,
                 )
             )
+            if isinstance(blueprint, dict):
+                extracted_obligations = (
+                    bind_blueprint_obligation_provenance(
+                        extracted_obligations,
+                        blueprint_source_path=(
+                            path if isinstance(path, str) else None
+                        ),
+                        blueprint_source_sha256=(
+                            blueprint_source_content_sha256
+                            if _valid_blueprint_source_sha256(
+                                blueprint_source_content_sha256
+                            )
+                            else None
+                        ),
+                        secret=self.secret,
+                    )
+                )
             action_config = config
             if isinstance(blueprint, dict):
                 if parsed_blueprint is None:
-                    blueprint_failures += 1
                     obligations.append(
                         make_coverage_failure_obligation(
                             source_type="blueprint",
@@ -430,6 +463,16 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                             configuration_fingerprint=(
                                 extracted_obligations[0].configuration_fingerprint
                                 if extracted_obligations
+                                else None
+                            ),
+                            blueprint_source_path=(
+                                path if isinstance(path, str) else None
+                            ),
+                            blueprint_source_sha256=(
+                                blueprint_source_content_sha256
+                                if _valid_blueprint_source_sha256(
+                                    blueprint_source_content_sha256
+                                )
                                 else None
                             ),
                         )
@@ -453,7 +496,6 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                         monotonic=self.monotonic,
                     )
                     if not blueprint_resolution_complete:
-                        blueprint_failures += 1
                         obligations.append(
                             make_coverage_failure_obligation(
                                 source_type="blueprint",
@@ -471,6 +513,16 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                                     else None
                                 ),
                                 limit_exceeded=True,
+                                blueprint_source_path=(
+                                    path if isinstance(path, str) else None
+                                ),
+                                blueprint_source_sha256=(
+                                    blueprint_source_content_sha256
+                                    if _valid_blueprint_source_sha256(
+                                        blueprint_source_content_sha256
+                                    )
+                                    else None
+                                ),
                             )
                         )
                     findings.extend(
@@ -527,6 +579,16 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                                 blueprint_analysis_deadline
                             ),
                             monotonic=self.monotonic,
+                        )
+                        blueprint_obligations = (
+                            bind_blueprint_obligation_provenance(
+                                blueprint_obligations,
+                                blueprint_source_path=path,
+                                blueprint_source_sha256=(
+                                    blueprint_source_content_sha256
+                                ),
+                                secret=self.secret,
+                            )
                         )
                     findings.extend(blueprint_findings)
                     dynamic.extend(blueprint_dynamic)
@@ -646,15 +708,36 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             )
             registry_warning.extend(label_warning)
 
-        automation_coverage_failure_sources = {
-            item.source_id
+        obligation_diagnostics = [
+            diagnostic
             for item in obligations
-            if item.source_type == "automation"
-            and item.outcome == "coverage_failure"
-        }
-        automation_failed_items = max(
-            failed + automation_inventory_overflow_count,
-            len(automation_coverage_failure_sources),
+            if (diagnostic := obligation_diagnostic(item)) is not None
+        ]
+
+        def diagnostic_warnings(source_type: str) -> list[str]:
+            counts = Counter(
+                item.diagnostic_code
+                for item in obligation_diagnostics
+                if item.source_type == source_type
+            )
+            warnings = [
+                (
+                    f"{count} unresolved obligation(s): "
+                    f"diagnostic_code={code}."
+                )
+                for code, count in sorted(counts.items())[:10]
+            ]
+            if len(counts) > 10:
+                warnings[-1] = (
+                    f"{sum(count for _code, count in sorted(counts.items())[9:])} "
+                    "additional unresolved obligation(s) are retained in "
+                    "the authoritative diagnostic fingerprint."
+                )
+            return warnings
+
+        automation_failed_items = sum(
+            item.source_type == "automation"
+            for item in obligation_diagnostics
         )
         automation_status = (
             "complete"
@@ -663,25 +746,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             if results
             else "unavailable"
         )
-        automation_warnings: list[str] = []
-        if failed:
-            automation_warnings.append(
-                f"{failed} automation configuration(s) could not be read."
-            )
-        if automation_inventory_overflow_count:
-            automation_warnings.append(
-                f"{automation_inventory_overflow_count} automation source(s) exceeded the bounded provider inventory."
-            )
-        bounded_failures = max(
-            0,
-            len(automation_coverage_failure_sources)
-            - failed
-            - (1 if automation_inventory_overflow_count else 0),
-        )
-        if bounded_failures:
-            automation_warnings.append(
-                f"{bounded_failures} automation configuration(s) exceeded dependency-analysis coverage bounds."
-            )
+        automation_warnings = diagnostic_warnings("automation")
         coverage.append(
             SourceCoverageItem(
                 "automation", self.provider_id, ProviderCapability.AUTOMATION_CONFIG.value,
@@ -694,31 +759,14 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 ),
             )
         )
-        blueprint_coverage_failure_sources = {
-            item.source_id
-            for item in obligations
-            if item.source_type == "blueprint"
-            and item.outcome == "coverage_failure"
-        }
-        blueprint_failed_items = max(
-            blueprint_failures,
-            len(blueprint_coverage_failure_sources),
+        blueprint_failed_items = sum(
+            item.source_type == "blueprint"
+            for item in obligation_diagnostics
         )
         blueprint_status = (
             "complete" if blueprint_failed_items == 0 else "partial"
         )
-        blueprint_warnings: list[str] = []
-        if blueprint_failures:
-            blueprint_warnings.append(
-                f"{blueprint_failures} blueprint source(s) could not be resolved; input findings were retained."
-            )
-        bounded_blueprint_failures = max(
-            0, blueprint_failed_items - blueprint_failures
-        )
-        if bounded_blueprint_failures:
-            blueprint_warnings.append(
-                f"{bounded_blueprint_failures} blueprint source(s) exceeded dependency-analysis coverage bounds."
-            )
+        blueprint_warnings = diagnostic_warnings("blueprint")
         coverage.append(
             SourceCoverageItem(
                 "blueprint", self.provider_id, ProviderCapability.BLUEPRINT_SOURCE.value,
@@ -800,6 +848,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             ),
             label_registry_complete=label_registry_complete,
             obligations=obligations,
+            obligation_diagnostics=obligation_diagnostics,
             obligation_ledger_model=OBLIGATION_LEDGER_MODEL,
         )
 
@@ -864,11 +913,16 @@ def _read_blueprint_source_with_status(
                     if (
                         self._blueprint_node_count
                         > MAX_BLUEPRINT_PARSE_NODES
-                        or self._blueprint_node_depth
+                    ):
+                        raise _BlueprintSourceLimitExceeded(
+                            "blueprint_source_yaml_node_limit_exceeded"
+                        )
+                    if (
+                        self._blueprint_node_depth
                         > MAX_BLUEPRINT_RESOLUTION_DEPTH
                     ):
                         raise _BlueprintSourceLimitExceeded(
-                            "blueprint_source_structure_limit_exceeded"
+                            "blueprint_source_yaml_depth_limit_exceeded"
                         )
                     try:
                         return super().compose_node(parent, index)
@@ -976,13 +1030,18 @@ def _resolve_blueprint_inputs_with_status(
                 or "blueprint_input_resolution_time_limit_exceeded"
             )
             return {"__blueprint_input__": "resolution_limit"}
-        if work_units > MAX_BLUEPRINT_RESOLUTION_NODES or (
-            depth > MAX_BLUEPRINT_RESOLUTION_DEPTH
-        ):
+        if work_units > MAX_BLUEPRINT_RESOLUTION_NODES:
             complete = False
             failure_reason = (
                 failure_reason
-                or "blueprint_input_resolution_limit_exceeded"
+                or "blueprint_input_resolution_node_limit_exceeded"
+            )
+            return {"__blueprint_input__": "resolution_limit"}
+        if depth > MAX_BLUEPRINT_RESOLUTION_DEPTH:
+            complete = False
+            failure_reason = (
+                failure_reason
+                or "blueprint_input_resolution_depth_limit_exceeded"
             )
             return {"__blueprint_input__": "resolution_limit"}
         if isinstance(value, dict):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -13,11 +14,15 @@ from typing import Any
 from ..observability import METRICS
 from .models import (
     DependencyObligation,
+    DependencyObligationDiagnostic,
     DependencyIndexSnapshot,
     DynamicReference,
     dynamic_reference_fingerprint,
     obligation_fingerprint,
+    obligation_diagnostic,
+    obligation_diagnostic_fingerprint,
     snapshot_fingerprint,
+    obligation_identity,
 )
 from .extraction import make_coverage_failure_obligation
 from .provider import DependencySourceProvider
@@ -28,7 +33,8 @@ DEFAULT_HARD_TTL_SECONDS = 3600.0
 MAX_AUTOMATION_ACTION_PROFILES = 1_000
 MAX_AUTOMATION_READ_FAILURES = 1_000
 MAX_DYNAMIC_REFERENCES = 1_000
-MAX_DEPENDENCY_OBLIGATIONS = 10_000
+MAX_DEPENDENCY_OBLIGATIONS = 16_384
+MAX_DEPENDENCY_OBLIGATION_DIAGNOSTICS = 16_384
 # A fenced refresh normally needs one rebuild.  The bound keeps a pathological
 # invalidation storm from looping instead of failing closed.
 MAX_FENCED_BUILD_ATTEMPTS = 8
@@ -90,6 +96,57 @@ def _obligation_overflow_fingerprint(
         separators=(",", ":"),
     )
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _obligation_diagnostic_sort_key(
+    item: DependencyObligationDiagnostic,
+) -> tuple[str, str, str, str, str, str]:
+    return (
+        item.source_type,
+        item.consumer_source_entity_id or "",
+        item.consumer_source_id,
+        item.config_path,
+        item.diagnostic_id,
+        obligation_diagnostic_fingerprint(item),
+    )
+
+
+def _obligation_diagnostic_overflow_fingerprint(
+    items: list[DependencyObligationDiagnostic],
+) -> str | None:
+    if not items:
+        return None
+    encoded = json.dumps(
+        [obligation_diagnostic_fingerprint(item) for item in items],
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _diagnostic_warnings(
+    diagnostics: list[DependencyObligationDiagnostic],
+    source_type: str,
+) -> list[str]:
+    counts = Counter(
+        item.diagnostic_code
+        for item in diagnostics
+        if item.source_type == source_type
+    )
+    if not counts:
+        return []
+    ordered = sorted(counts.items())
+    warnings = [
+        f"{count} unresolved obligation(s): diagnostic_code={code}."
+        for code, count in ordered[:10]
+    ]
+    if len(ordered) > 10:
+        warnings[-1] = (
+            f"{sum(count for _code, count in ordered[9:])} additional "
+            "unresolved obligation(s) are retained in the authoritative "
+            "diagnostic fingerprint."
+        )
+    return warnings
 
 
 def _utc_now() -> str:
@@ -452,12 +509,101 @@ class DependencyIndex:
                         limit_exceeded=True,
                     )
                 )
+            unresolved_identities = {
+                obligation_identity(item)
+                for item in obligations
+                if item.outcome
+                in {"bounded_semantic_opaque", "coverage_failure"}
+            }
+            provided_diagnostics = {
+                item.obligation_identity: item
+                for item in scan.obligation_diagnostics
+                if item.obligation_identity in unresolved_identities
+            }
+            if set(provided_diagnostics) == unresolved_identities:
+                # The direct provider already produced these records in the
+                # same pass as coverage aggregation. Reuse them without a
+                # second diagnostic projection or source traversal.
+                diagnostic_values = list(provided_diagnostics.values())
+            else:
+                # Internal provider fakes and compatibility callers may not
+                # yet supply diagnostics. Derive only the missing bounded
+                # records from retained terminals; never infer completeness.
+                diagnostic_values = [
+                    diagnostic
+                    for item in obligations
+                    if (diagnostic := obligation_diagnostic(item))
+                    is not None
+                ]
+            ordered_obligation_diagnostics = sorted(
+                diagnostic_values,
+                key=_obligation_diagnostic_sort_key,
+            )
+            obligation_diagnostics = ordered_obligation_diagnostics[
+                :MAX_DEPENDENCY_OBLIGATION_DIAGNOSTICS
+            ]
+            obligation_diagnostic_overflow = (
+                ordered_obligation_diagnostics[
+                    MAX_DEPENDENCY_OBLIGATION_DIAGNOSTICS:
+                ]
+            )
+            obligation_diagnostic_overflow_count = len(
+                obligation_diagnostic_overflow
+            )
+            obligation_diagnostic_overflow_fingerprint = (
+                _obligation_diagnostic_overflow_fingerprint(
+                    obligation_diagnostic_overflow
+                )
+            )
             coverage = list(scan.coverage)
+            diagnostic_counts = Counter(
+                item.source_type for item in obligation_diagnostics
+            )
+            coverage = [
+                replace(
+                    item,
+                    completeness=(
+                        "partial"
+                        if diagnostic_counts[item.source_type] > 0
+                        and item.completeness
+                        not in {"unavailable", "unsupported", "not_requested"}
+                        else item.completeness
+                    ),
+                    failed_item_count=(
+                        diagnostic_counts[item.source_type]
+                        if item.source_type in {"automation", "blueprint"}
+                        else item.failed_item_count
+                    ),
+                    obligation_ledger_completeness=(
+                        "partial"
+                        if diagnostic_counts[item.source_type] > 0
+                        else item.obligation_ledger_completeness
+                    ),
+                    obligation_ledger_failed_item_count=(
+                        diagnostic_counts[item.source_type]
+                        if item.source_type in {"automation", "blueprint"}
+                        else item.obligation_ledger_failed_item_count
+                    ),
+                    warnings=list(
+                        dict.fromkeys(
+                            [
+                                *item.warnings,
+                                *_diagnostic_warnings(
+                                    obligation_diagnostics,
+                                    item.source_type,
+                                ),
+                            ]
+                        )
+                    ),
+                )
+                for item in coverage
+            ]
             authoritative_payload_truncated = bool(
                 findings_truncated
                 or profiles_truncated
                 or read_failures_truncated
                 or obligations_truncated
+                or obligation_diagnostic_overflow
             )
             if (
                 authoritative_payload_truncated
@@ -521,6 +667,13 @@ class DependencyIndex:
                     scan.label_registry_complete
                 ),
                 obligations=obligations,
+                obligation_diagnostics=obligation_diagnostics,
+                obligation_diagnostic_overflow_count=(
+                    obligation_diagnostic_overflow_count
+                ),
+                obligation_diagnostic_overflow_fingerprint=(
+                    obligation_diagnostic_overflow_fingerprint
+                ),
                 obligation_overflow_count=obligation_overflow_count,
                 obligation_overflow_fingerprint=(
                     obligation_overflow_fingerprint
@@ -562,6 +715,13 @@ class DependencyIndex:
                     scan.label_registry_complete
                 ),
                 obligations=tuple(obligations),
+                obligation_diagnostics=tuple(obligation_diagnostics),
+                obligation_diagnostic_overflow_count=(
+                    obligation_diagnostic_overflow_count
+                ),
+                obligation_diagnostic_overflow_fingerprint=(
+                    obligation_diagnostic_overflow_fingerprint
+                ),
                 obligation_overflow_count=(
                     obligation_overflow_count
                 ),

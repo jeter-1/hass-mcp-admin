@@ -21,11 +21,13 @@ from ha_mcp_engineering.dependency.extraction import (
     _bounded_context_value,
     _context_with_variables,
     extract_document_with_obligations,
+    make_coverage_failure_obligation,
 )
 from ha_mcp_engineering.dependency.models import (
     AutomationActionRiskProfile,
     DependencyIndexSnapshot,
     SourceCoverageItem,
+    obligation_diagnostic,
 )
 from ha_mcp_engineering.dependency.obligation_ledger import (
     MAX_TEMPLATE_BINDINGS,
@@ -349,7 +351,7 @@ class ObligationLedgerResourceBoundTests(unittest.TestCase):
         )
         self.assertFalse(complete)
         self.assertEqual(
-            reason, "blueprint_input_resolution_limit_exceeded"
+            reason, "blueprint_input_resolution_node_limit_exceeded"
         )
 
     def test_document_obligation_bound_minus_exact_and_plus_one(self):
@@ -448,6 +450,94 @@ class ObligationLedgerResourceBoundTests(unittest.TestCase):
             "configuration_analysis_time_limit_exceeded",
         )
 
+    def test_unresolved_obligations_have_explicit_bounded_diagnostics(self):
+        expected = {
+            "blueprint_source_limit_exceeded": (
+                "blueprint_source_size_limit_exceeded"
+            ),
+            "blueprint_source_yaml_node_limit_exceeded": (
+                "blueprint_source_yaml_node_limit_exceeded"
+            ),
+            "blueprint_source_yaml_depth_limit_exceeded": (
+                "blueprint_source_yaml_depth_limit_exceeded"
+            ),
+            "blueprint_input_resolution_node_limit_exceeded": (
+                "blueprint_analysis_node_limit_exceeded"
+            ),
+            "blueprint_input_resolution_depth_limit_exceeded": (
+                "blueprint_analysis_depth_limit_exceeded"
+            ),
+            "configuration_context_evidence_limit_exceeded": (
+                "blueprint_context_member_limit_exceeded"
+            ),
+            "configuration_obligation_limit_exceeded": (
+                "blueprint_terminal_count_limit_exceeded"
+            ),
+            "configuration_analysis_time_limit_exceeded": (
+                "blueprint_analysis_deadline_exceeded"
+            ),
+            "blueprint_source_drift_detected": (
+                "blueprint_source_drift_detected"
+            ),
+        }
+        for reason, diagnostic_code in expected.items():
+            with self.subTest(reason=reason):
+                obligation = make_coverage_failure_obligation(
+                    source_type="blueprint",
+                    source_id="synthetic_diagnostic_consumer",
+                    source_entity_id=(
+                        "automation.synthetic_diagnostic_consumer"
+                    ),
+                    config_path="$.actions[0].value_template",
+                    relation="blueprint_resolved_role",
+                    reason_code=reason,
+                    limit_exceeded=True,
+                    blueprint_source_path="synthetic/diagnostic.yaml",
+                    blueprint_source_sha256="d" * 64,
+                )
+                diagnostic = obligation_diagnostic(obligation)
+                self.assertIsNotNone(diagnostic)
+                self.assertEqual(
+                    diagnostic.diagnostic_code, diagnostic_code
+                )
+                self.assertEqual(
+                    diagnostic.consumer_source_id,
+                    "synthetic_diagnostic_consumer",
+                )
+                self.assertEqual(
+                    diagnostic.blueprint_source_path,
+                    "synthetic/diagnostic.yaml",
+                )
+                self.assertEqual(
+                    diagnostic.blueprint_source_sha256, "d" * 64
+                )
+                self.assertFalse(diagnostic.evidence_complete)
+                self.assertLessEqual(len(diagnostic.diagnostic_code), 64)
+
+        _findings, _dynamic, obligations = (
+            extract_document_with_obligations(
+                source_type="blueprint",
+                source_id="synthetic_dynamic_diagnostic",
+                source_entity_id=(
+                    "automation.synthetic_dynamic_diagnostic"
+                ),
+                config={
+                    "value_template": "{{ states(entity_variable) }}"
+                },
+            )
+        )
+        dynamic_diagnostics = [
+            obligation_diagnostic(item) for item in obligations
+        ]
+        dynamic_diagnostics = [
+            item for item in dynamic_diagnostics if item is not None
+        ]
+        self.assertEqual(len(dynamic_diagnostics), 1)
+        self.assertEqual(
+            dynamic_diagnostics[0].diagnostic_code,
+            "unsupported_dynamic_entity_lookup",
+        )
+
     def test_blueprint_source_byte_and_parse_node_bounds_are_exact(self):
         self.assertEqual(MAX_BLUEPRINT_SOURCE_BYTES, 1_048_576)
         self.assertEqual(MAX_BLUEPRINT_PARSE_NODES, 32_768)
@@ -514,8 +604,26 @@ class ObligationLedgerResourceBoundTests(unittest.TestCase):
                 self.assertIsNone(evidence.config)
                 self.assertEqual(
                     evidence.reason_code,
-                    "blueprint_source_structure_limit_exceeded",
+                    "blueprint_source_yaml_node_limit_exceeded",
                 )
+
+            source.write_text(
+                "root:\n  child:\n    child:\n      child: 1\n",
+                encoding="utf-8",
+            )
+            with patch(
+                "ha_mcp_engineering.dependency.provider."
+                "MAX_BLUEPRINT_RESOLUTION_DEPTH",
+                2,
+            ):
+                evidence = _read_blueprint_source_with_status(
+                    source.name, roots=(root,)
+                )
+            self.assertIsNone(evidence.config)
+            self.assertEqual(
+                evidence.reason_code,
+                "blueprint_source_yaml_depth_limit_exceeded",
+            )
 
     def test_large_fixture_provenance_is_pinned_and_source_safe(self):
         path = (
@@ -729,7 +837,7 @@ class ObligationLedgerResourceBoundTests(unittest.TestCase):
             any(
                 item.outcome == "coverage_failure"
                 and item.reason_code
-                == "configuration_structure_limit_exceeded"
+                == "configuration_analysis_node_limit_exceeded"
                 for item in obligations
             ),
             obligations,

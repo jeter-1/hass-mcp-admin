@@ -94,6 +94,20 @@ path-bound evidence ID. The public dynamic-reference projection remains
 separately bounded; its overflow count and fingerprint are retained and reported
 without changing authoritative obligation-ledger completeness.
 
+Every unresolved authoritative obligation also has one internal diagnostic
+record bound to the consumer automation, consumer entity, blueprint path,
+blueprint source SHA-256, configuration path, obligation type, and expression
+and configuration fingerprints. Opaque semantics are unresolved unless a
+reviewed semantic rule positively discharges them. Coverage counts these
+records rather than deduplicating consumers that share one parsed source, and
+cannot be complete while any required record remains unresolved. Diagnostic
+codes distinguish source-size, YAML-node, depth, analysis-node, context-member,
+terminal-count, deadline, unsupported dynamic lookup, and source-drift
+failures. Detailed compatibility evidence remains publicly bounded; its
+overflow never decides authoritative ledger coverage. Source parsing is cached
+only within one scan, while consumer obligations and diagnostics are freshly
+bound for each source hash and index generation.
+
 The reviewed semantic registry derives the complete standard Jinja 3.1.6 filter
 and test vocabulary from the pinned package itself, so every name Jinja binds -
 including the `d`/`default`, `e`/`escape`, `count`/`length`, and comparison-test

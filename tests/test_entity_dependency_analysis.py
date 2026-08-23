@@ -483,7 +483,9 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
         result = await provider.scan()
         statuses = {item.source_type: item for item in result.coverage}
         self.assertEqual(statuses["automation"].completeness, "partial")
-        self.assertEqual(statuses["automation"].failed_item_count, 1)
+        # The unreadable automation and the good consumer's unresolved
+        # external blueprint source are independently attributable.
+        self.assertEqual(statuses["automation"].failed_item_count, 2)
         self.assertEqual(len(result.automation_read_failures), 1)
         self.assertEqual(
             result.automation_read_failures[0].source_entity_id,
