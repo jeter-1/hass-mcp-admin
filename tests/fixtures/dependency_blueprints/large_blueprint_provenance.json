@@ -1,0 +1,36 @@
+{
+  "fixture_contract": "synthetic-large-blueprint-structure-v1",
+  "control_source": {
+    "repository": "https://github.com/home-assistant/core",
+    "commit": "53998d7710b4ac280658511c24a2a3e2651f9873",
+    "path": "homeassistant/components/automation/blueprints/motion_light.yaml",
+    "git_blob_sha1": "11900708b19a23e627ad46e20a58621be56bfc7e",
+    "bytes": 1518,
+    "sha256": "e07ac35fae7270131f118da767b036e7f7776672077691d9fbcd026e5a7e3f9c"
+  },
+  "large_source_witness": {
+    "repository": "https://gist.github.com/Blackshome/6edfec0ff6a25c5da0d07b88dc908238",
+    "commit": "c710556d02f6d37052efaf98c1baf5b4380e7d48",
+    "path": "sensor-light.yaml",
+    "declared_version": "8.7",
+    "git_blob_sha1": "1563956f6ee7231b0037a98aa093d706424a0579",
+    "bytes": 701076,
+    "sha256": "eb378157e063d531523a3658690b50dbeed61c75e8f9bad4a4222288496fe9eb",
+    "yaml_compose_nodes": 18568,
+    "resolved_value_nodes": 11442,
+    "maximum_depth": 31,
+    "blueprint_input_occurrences": 620,
+    "root_variable_count": 140
+  },
+  "committed_fixture": {
+    "kind": "structurally_equivalent_synthetic_generator",
+    "generator": "tests.dependency_blueprint_fixtures.large_sensor_light_structural_blueprint",
+    "contains_upstream_source_text": false,
+    "contains_live_observations": false,
+    "contains_real_entity_ids": false,
+    "resolved_value_nodes": 10648,
+    "root_variable_count": 140,
+    "template_obligation_count": 3000,
+    "padding_value_count": 4500
+  }
+}

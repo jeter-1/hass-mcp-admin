@@ -77,6 +77,23 @@ opacity when consumed as entity selectors. Aggregate context conversion, lexical
 scope, macro capture, recursion, value depth, member count, and scalar size are
 bounded explicitly; a breached bound is coverage failure.
 
+Blueprint acquisition retains a 1 MiB source ceiling and safe-root containment.
+The YAML composer admits at most 32,768 nodes at depth 64, input resolution at
+most 16,384 values at depth 64, configuration analysis at most 16,384 values,
+256 context members, and 8,192 terminal document obligations. Each blueprint
+has a 60-second monotonic analysis deadline. Boundary failures produce explicit
+coverage-failure terminals; no limit silently truncates authoritative evidence.
+
+One scan reads and parses each declared blueprint path once. The cache is local
+to that scan, so the next refresh still re-reads the source and preserves the
+index TTL, invalidation, and post-lock refresh fence. Successful source discharge
+binds the declared path, raw source SHA-256, resolved configuration fingerprint,
+and complete resolved-ledger fingerprint. Repeated template text may reuse
+document-local semantic analysis, but every occurrence receives its own
+path-bound evidence ID. The public dynamic-reference projection remains
+separately bounded; its overflow count and fingerprint are retained and reported
+without changing authoritative obligation-ledger completeness.
+
 The reviewed semantic registry derives the complete standard Jinja 3.1.6 filter
 and test vocabulary from the pinned package itself, so every name Jinja binds -
 including the `d`/`default`, `e`/`escape`, `count`/`length`, and comparison-test

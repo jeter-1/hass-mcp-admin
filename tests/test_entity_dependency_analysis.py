@@ -391,10 +391,11 @@ class IndexAndAnalysisTests(unittest.IsolatedAsyncioTestCase):
             for item in first.coverage
             if item.source_type == "automation"
         )
-        self.assertEqual(automation_coverage.completeness, "partial")
+        self.assertEqual(automation_coverage.completeness, "complete")
         self.assertTrue(
             any(
-                "exceeded the bounded index payload" in warning
+                "Dynamic compatibility evidence exceeded its bounded projection"
+                in warning
                 for warning in automation_coverage.warnings
             )
         )

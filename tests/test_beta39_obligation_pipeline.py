@@ -23,6 +23,7 @@ from ha_mcp_engineering.dependency.models import (  # noqa: E402
     SourceCoverageItem,
 )
 from ha_mcp_engineering.dependency.provider import (  # noqa: E402
+    _BlueprintSourceEvidence,
     DependencySourceProvider,
     DirectHaDependencyProvider,
 )
@@ -35,6 +36,7 @@ from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
 
 
 TARGET = "input_boolean.obligation_canary"
+BLUEPRINT_CONTENT_SHA256 = "b" * 64
 
 
 
@@ -1097,6 +1099,9 @@ class WholeConfigurationObligationTests(unittest.TestCase):
                 resolved_blueprint_config=resolved_config,
                 raw_obligations=obligations,
                 source_id="raw_blueprint_source",
+                blueprint_source_content_sha256=(
+                    BLUEPRINT_CONTENT_SHA256
+                ),
                 source_entity_id="automation.raw_blueprint_source",
                 source_name="Resolved blueprint fixture",
                 source_state="on",
@@ -1114,7 +1119,31 @@ class WholeConfigurationObligationTests(unittest.TestCase):
             boundary.reason_code,
         )
         self.assertEqual("none", boundary.lock_projection)
+        self.assertIn(
+            "blueprint_source_content_sha256:"
+            + BLUEPRINT_CONTENT_SHA256,
+            boundary.context_provenance,
+        )
         self.assertEqual(1, len(removed_dynamic_ids))
+
+        changed_source, *_rest = (
+            discharge_resolved_blueprint_source_obligation(
+                automation_config=config,
+                resolved_blueprint_config=resolved_config,
+                raw_obligations=obligations,
+                source_id="raw_blueprint_source",
+                blueprint_source_content_sha256="c" * 64,
+            )
+        )
+        changed_boundary = next(
+            item
+            for item in changed_source
+            if item.obligation_kind == "external_blueprint_source"
+        )
+        self.assertNotEqual(
+            boundary.expression_fingerprint,
+            changed_boundary.expression_fingerprint,
+        )
 
         unchanged, _findings, _dynamic, _resolved, removed = (
             discharge_resolved_blueprint_source_obligation(
@@ -1127,6 +1156,27 @@ class WholeConfigurationObligationTests(unittest.TestCase):
                 resolved_blueprint_config=resolved_config,
                 raw_obligations=obligations,
                 source_id="raw_blueprint_source",
+                blueprint_source_content_sha256=(
+                    BLUEPRINT_CONTENT_SHA256
+                ),
+            )
+        )
+        self.assertFalse(removed)
+        self.assertTrue(
+            any(
+                item.obligation_kind == "external_blueprint_source"
+                and item.outcome == "bounded_semantic_opaque"
+                for item in unchanged
+            )
+        )
+
+        unchanged, _findings, _dynamic, _resolved, removed = (
+            discharge_resolved_blueprint_source_obligation(
+                automation_config=config,
+                resolved_blueprint_config=resolved_config,
+                raw_obligations=obligations,
+                source_id="raw_blueprint_source",
+                blueprint_source_content_sha256="invalid",
             )
         )
         self.assertFalse(removed)
@@ -1518,8 +1568,15 @@ class ProviderObligationTests(unittest.IsolatedAsyncioTestCase):
             ],
         }
         with patch(
-            "ha_mcp_engineering.dependency.provider._read_blueprint_with_status",
-            return_value=(parsed_blueprint, None),
+            "ha_mcp_engineering.dependency.provider."
+            "_read_blueprint_source_with_status",
+            return_value=_BlueprintSourceEvidence(
+                config=parsed_blueprint,
+                reason_code=None,
+                source_path="synthetic/hardcoded_helper.yaml",
+                content_sha256=BLUEPRINT_CONTENT_SHA256,
+                content_bytes=512,
+            ),
         ):
             result = await DirectHaDependencyProvider(
                 BlueprintRest(), self.WebSocket(), concurrency=2
@@ -1567,6 +1624,81 @@ class ProviderObligationTests(unittest.IsolatedAsyncioTestCase):
             "blueprint_guard",
             binding["downstream_automation_resource_ids"],
         )
+
+    async def test_shared_blueprint_source_is_read_once_per_scan(self):
+        class SharedBlueprintRest:
+            async def request(self, method, path):
+                if path == "/config":
+                    return {"version": SUPPORTED_HA_VERSION}
+                if path == "/states":
+                    return [
+                        {
+                            "entity_id": "automation.synthetic_shared_a",
+                            "state": "on",
+                            "attributes": {"id": "synthetic_shared_a"},
+                        },
+                        {
+                            "entity_id": "automation.synthetic_shared_b",
+                            "state": "on",
+                            "attributes": {"id": "synthetic_shared_b"},
+                        },
+                    ]
+                if path.startswith("/config/automation/config/"):
+                    return {
+                        "use_blueprint": {
+                            "path": "synthetic/shared.yaml",
+                            "input": {},
+                        }
+                    }
+                raise AssertionError((method, path))
+
+        evidence = _BlueprintSourceEvidence(
+            config={
+                "blueprint": {"name": "Synthetic shared source"},
+                "actions": [],
+            },
+            reason_code=None,
+            source_path="synthetic/shared.yaml",
+            content_sha256=BLUEPRINT_CONTENT_SHA256,
+            content_bytes=256,
+        )
+        with patch(
+            "ha_mcp_engineering.dependency.provider."
+            "_read_blueprint_source_with_status",
+            return_value=evidence,
+        ) as reader:
+            result = await DirectHaDependencyProvider(
+                SharedBlueprintRest(), self.WebSocket(), concurrency=2
+            ).scan()
+
+        self.assertEqual(reader.call_count, 1)
+        boundaries = [
+            item
+            for item in result.obligations
+            if item.obligation_kind == "external_blueprint_source"
+        ]
+        self.assertEqual(
+            {item.source_id for item in boundaries},
+            {"synthetic_shared_a", "synthetic_shared_b"},
+        )
+        self.assertTrue(
+            all(
+                item.outcome == "proven_dependency_neutral"
+                and (
+                    "blueprint_source_content_sha256:"
+                    + BLUEPRINT_CONTENT_SHA256
+                )
+                in item.context_provenance
+                for item in boundaries
+            )
+        )
+        blueprint_coverage = next(
+            item
+            for item in result.coverage
+            if item.source_type == "blueprint"
+        )
+        self.assertEqual(blueprint_coverage.completeness, "complete")
+        self.assertEqual(blueprint_coverage.failed_item_count, 0)
 
     async def test_automation_inventory_overflow_is_bounded_coverage_failure(self):
         class RecordingRest(self.Rest):
@@ -1675,12 +1807,19 @@ class IndexObligationTests(unittest.IsolatedAsyncioTestCase):
             for item in snapshot.coverage
             if item.source_type == "automation"
         )
-        self.assertEqual("partial", automation_coverage.completeness)
+        self.assertEqual("complete", automation_coverage.completeness)
         self.assertEqual(
             "complete",
             automation_coverage.obligation_ledger_completeness,
         )
         self.assertEqual(1, snapshot.dynamic_reference_overflow_count)
+        self.assertTrue(
+            any(
+                "Dynamic compatibility evidence exceeded its bounded projection"
+                in warning
+                for warning in automation_coverage.warnings
+            )
+        )
         binding = build_helper_dependency_risk_binding(
             snapshot,
             entity_id=TARGET,

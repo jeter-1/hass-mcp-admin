@@ -5,11 +5,12 @@ from __future__ import annotations
 from abc import abstractmethod
 import asyncio
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
 import time
-from typing import Any
+from typing import Any, Callable
 
 from ..facilitation import EvidenceReference
 from ..observability import METRICS
@@ -46,9 +47,20 @@ MAX_LABEL_REGISTRY_ENTRIES = 1_000
 MAX_LABEL_MEMBERSHIP = 128
 MAX_LITERAL_LABEL_SELECTORS = 256
 MAX_ENTITY_LABELS = 64
-MAX_BLUEPRINT_RESOLUTION_NODES = 10_000
+MAX_BLUEPRINT_PARSE_NODES = 32_768
+MAX_BLUEPRINT_RESOLUTION_NODES = 16_384
 MAX_BLUEPRINT_RESOLUTION_DEPTH = 64
 MAX_BLUEPRINT_SOURCE_BYTES = 1_048_576
+MAX_BLUEPRINT_ANALYSIS_SECONDS = 60.0
+
+
+@dataclass(frozen=True)
+class _BlueprintSourceEvidence:
+    config: dict[str, Any] | None
+    reason_code: str | None
+    source_path: str | None
+    content_sha256: str | None
+    content_bytes: int
 
 
 def _bounded_provider_identity(
@@ -87,12 +99,22 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         }
     )
 
-    def __init__(self, rest_client, websocket_client, *, secret: str = "", concurrency: int = 8, timeout: float = 60.0):
+    def __init__(
+        self,
+        rest_client,
+        websocket_client,
+        *,
+        secret: str = "",
+        concurrency: int = 8,
+        timeout: float = 60.0,
+        monotonic: Callable[[], float] = time.monotonic,
+    ):
         self.rest_client = rest_client
         self.websocket_client = websocket_client
         self.secret = secret
         self.concurrency = max(1, min(concurrency, 10))
         self.timeout = max(1.0, min(timeout, 120.0))
+        self.monotonic = monotonic
 
     @property
     def available(self) -> bool:
@@ -316,6 +338,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         results = await asyncio.gather(*(fetch_automation(state) for state in automations))
         failed = 0
         blueprint_failures = 0
+        blueprint_source_cache: dict[str, _BlueprintSourceEvidence] = {}
         parse_started = time.perf_counter()
         for state, config, failure in results:
             attrs = state.get("attributes") if isinstance(state.get("attributes"), dict) else {}
@@ -353,13 +376,31 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             blueprint = config.get("use_blueprint")
             parsed_blueprint = None
             blueprint_read_failure = None
+            blueprint_source_content_sha256 = None
+            blueprint_analysis_deadline = None
             if isinstance(blueprint, dict):
                 path = blueprint.get("path")
-                parsed_blueprint, blueprint_read_failure = (
-                    _read_blueprint_with_status(path)
-                    if isinstance(path, str)
-                    else (None, "blueprint_source_unavailable")
+                blueprint_analysis_deadline = (
+                    self.monotonic() + MAX_BLUEPRINT_ANALYSIS_SECONDS
                 )
+                if isinstance(path, str):
+                    source_evidence = blueprint_source_cache.get(path)
+                    if source_evidence is None:
+                        source_evidence = _read_blueprint_source_with_status(
+                            path,
+                            analysis_deadline_monotonic=(
+                                blueprint_analysis_deadline
+                            ),
+                            monotonic=self.monotonic,
+                        )
+                        blueprint_source_cache[path] = source_evidence
+                    parsed_blueprint = source_evidence.config
+                    blueprint_read_failure = source_evidence.reason_code
+                    blueprint_source_content_sha256 = (
+                        source_evidence.content_sha256
+                    )
+                else:
+                    blueprint_read_failure = "blueprint_source_unavailable"
             extracted, unresolved, extracted_obligations = (
                 extract_document_with_obligations(
                     source_type="automation",
@@ -399,8 +440,17 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                         ]
                     }
                 else:
-                    resolved_blueprint, blueprint_resolution_complete = (
-                        _resolve_blueprint_inputs(parsed_blueprint, config)
+                    (
+                        resolved_blueprint,
+                        blueprint_resolution_complete,
+                        blueprint_resolution_failure,
+                    ) = _resolve_blueprint_inputs_with_status(
+                        parsed_blueprint,
+                        config,
+                        analysis_deadline_monotonic=(
+                            blueprint_analysis_deadline
+                        ),
+                        monotonic=self.monotonic,
                     )
                     if not blueprint_resolution_complete:
                         blueprint_failures += 1
@@ -412,7 +462,8 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                                 config_path="$.use_blueprint.input",
                                 relation="blueprint_resolved_role",
                                 reason_code=(
-                                    "blueprint_input_resolution_limit_exceeded"
+                                    blueprint_resolution_failure
+                                    or "blueprint_input_resolution_limit_exceeded"
                                 ),
                                 configuration_fingerprint=(
                                     extracted_obligations[0].configuration_fingerprint
@@ -441,10 +492,17 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                             resolved_blueprint_config=resolved_blueprint,
                             raw_obligations=extracted_obligations,
                             source_id=internal_id,
+                            blueprint_source_content_sha256=(
+                                blueprint_source_content_sha256 or ""
+                            ),
                             source_entity_id=source_entity_id,
                             source_name=attrs.get("friendly_name"),
                             source_state=state.get("state"),
                             secret=self.secret,
+                            analysis_deadline_monotonic=(
+                                blueprint_analysis_deadline
+                            ),
+                            monotonic=self.monotonic,
                         )
                         unresolved = [
                             item
@@ -465,6 +523,10 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                             source_state=state.get("state"),
                             config=resolved_blueprint,
                             secret=self.secret,
+                            analysis_deadline_monotonic=(
+                                blueprint_analysis_deadline
+                            ),
+                            monotonic=self.monotonic,
                         )
                     findings.extend(blueprint_findings)
                     dynamic.extend(blueprint_dynamic)
@@ -742,41 +804,128 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         )
 
 
-def _read_blueprint_with_status(
+class _BlueprintSourceLimitExceeded(RuntimeError):
+    def __init__(self, reason_code: str):
+        super().__init__(reason_code)
+        self.reason_code = reason_code
+
+
+def _read_blueprint_source_with_status(
     path: str | None,
-) -> tuple[dict[str, Any] | None, str | None]:
+    *,
+    roots: tuple[Path, ...] | None = None,
+    analysis_deadline_monotonic: float | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> _BlueprintSourceEvidence:
     if not path or not path.endswith((".yaml", ".yml")):
-        return None, "blueprint_source_unavailable"
+        return _BlueprintSourceEvidence(
+            None, "blueprint_source_unavailable", None, None, 0
+        )
     try:
         import yaml
     except ImportError:
-        return None, "blueprint_parser_unavailable"
-    for base in ("/homeassistant/blueprints", "/config/blueprints"):
-        root = Path(base, "automation").resolve()
+        return _BlueprintSourceEvidence(
+            None, "blueprint_parser_unavailable", None, None, 0
+        )
+    source_roots = roots or (
+        Path("/homeassistant/blueprints/automation"),
+        Path("/config/blueprints/automation"),
+    )
+    for configured_root in source_roots:
+        root = configured_root.resolve()
         candidate = Path(root, path).resolve()
         if root not in candidate.parents or not candidate.is_file():
             continue
         try:
+            if (
+                analysis_deadline_monotonic is not None
+                and monotonic() >= analysis_deadline_monotonic
+            ):
+                raise _BlueprintSourceLimitExceeded(
+                    "blueprint_source_analysis_time_limit_exceeded"
+                )
+
             class BlueprintLoader(yaml.SafeLoader):
-                pass
+                def __init__(self, stream):
+                    super().__init__(stream)
+                    self._blueprint_node_count = 0
+                    self._blueprint_node_depth = 0
+
+                def compose_node(self, parent, index):
+                    if (
+                        analysis_deadline_monotonic is not None
+                        and monotonic() >= analysis_deadline_monotonic
+                    ):
+                        raise _BlueprintSourceLimitExceeded(
+                            "blueprint_source_analysis_time_limit_exceeded"
+                        )
+                    self._blueprint_node_count += 1
+                    self._blueprint_node_depth += 1
+                    if (
+                        self._blueprint_node_count
+                        > MAX_BLUEPRINT_PARSE_NODES
+                        or self._blueprint_node_depth
+                        > MAX_BLUEPRINT_RESOLUTION_DEPTH
+                    ):
+                        raise _BlueprintSourceLimitExceeded(
+                            "blueprint_source_structure_limit_exceeded"
+                        )
+                    try:
+                        return super().compose_node(parent, index)
+                    finally:
+                        self._blueprint_node_depth -= 1
+
             BlueprintLoader.add_constructor(
                 "!input", lambda loader, node: {"__blueprint_input__": loader.construct_scalar(node)}
             )
             with candidate.open("rb") as handle:
                 payload = handle.read(MAX_BLUEPRINT_SOURCE_BYTES + 1)
             if len(payload) > MAX_BLUEPRINT_SOURCE_BYTES:
-                return None, "blueprint_source_limit_exceeded"
+                return _BlueprintSourceEvidence(
+                    None,
+                    "blueprint_source_limit_exceeded",
+                    path,
+                    None,
+                    len(payload),
+                )
+            content_sha256 = hashlib.sha256(payload).hexdigest()
             value = yaml.load(
                 payload.decode("utf-8"), Loader=BlueprintLoader
             )
-            return (
-                (value, None)
-                if isinstance(value, dict)
-                else (None, "blueprint_source_invalid")
+            return _BlueprintSourceEvidence(
+                value if isinstance(value, dict) else None,
+                None if isinstance(value, dict) else "blueprint_source_invalid",
+                path,
+                content_sha256,
+                len(payload),
+            )
+        except _BlueprintSourceLimitExceeded as exc:
+            return _BlueprintSourceEvidence(
+                None, exc.reason_code, path, None, 0
             )
         except Exception:
-            return None, "blueprint_source_unavailable"
-    return None, "blueprint_source_unavailable"
+            return _BlueprintSourceEvidence(
+                None, "blueprint_source_unavailable", path, None, 0
+            )
+    return _BlueprintSourceEvidence(
+        None, "blueprint_source_unavailable", None, None, 0
+    )
+
+
+def _read_blueprint_with_status(
+    path: str | None,
+    *,
+    roots: tuple[Path, ...] | None = None,
+    analysis_deadline_monotonic: float | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> tuple[dict[str, Any] | None, str | None]:
+    evidence = _read_blueprint_source_with_status(
+        path,
+        roots=roots,
+        analysis_deadline_monotonic=analysis_deadline_monotonic,
+        monotonic=monotonic,
+    )
+    return evidence.config, evidence.reason_code
 
 
 def _read_blueprint(path: str | None) -> dict[str, Any] | None:
@@ -786,10 +935,13 @@ def _read_blueprint(path: str | None) -> dict[str, Any] | None:
     return value
 
 
-def _resolve_blueprint_inputs(
+def _resolve_blueprint_inputs_with_status(
     blueprint_config: dict[str, Any],
     automation_config: dict[str, Any],
-) -> tuple[dict[str, Any], bool]:
+    *,
+    analysis_deadline_monotonic: float | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> tuple[dict[str, Any], bool, str | None]:
     """Resolve bounded ``!input`` markers without executing templates."""
 
     use_blueprint = automation_config.get("use_blueprint")
@@ -810,15 +962,28 @@ def _resolve_blueprint_inputs(
     )
     work_units = 0
     complete = True
+    failure_reason: str | None = None
 
     def resolve(value: Any, depth: int) -> Any:
-        nonlocal work_units, complete
+        nonlocal work_units, complete, failure_reason
         work_units += 1
-        if (
-            work_units > MAX_BLUEPRINT_RESOLUTION_NODES
-            or depth > MAX_BLUEPRINT_RESOLUTION_DEPTH
+        if analysis_deadline_monotonic is not None and (
+            monotonic() >= analysis_deadline_monotonic
         ):
             complete = False
+            failure_reason = (
+                failure_reason
+                or "blueprint_input_resolution_time_limit_exceeded"
+            )
+            return {"__blueprint_input__": "resolution_limit"}
+        if work_units > MAX_BLUEPRINT_RESOLUTION_NODES or (
+            depth > MAX_BLUEPRINT_RESOLUTION_DEPTH
+        ):
+            complete = False
+            failure_reason = (
+                failure_reason
+                or "blueprint_input_resolution_limit_exceeded"
+            )
             return {"__blueprint_input__": "resolution_limit"}
         if isinstance(value, dict):
             if set(value) == {"__blueprint_input__"}:
@@ -844,7 +1009,20 @@ def _resolve_blueprint_inputs(
     return (
         resolved if isinstance(resolved, dict) else {},
         bool(complete and isinstance(resolved, dict)),
+        failure_reason,
     )
+
+
+def _resolve_blueprint_inputs(
+    blueprint_config: dict[str, Any],
+    automation_config: dict[str, Any],
+) -> tuple[dict[str, Any], bool]:
+    """Compatibility wrapper retaining the historical two-value contract."""
+
+    resolved, complete, _reason = _resolve_blueprint_inputs_with_status(
+        blueprint_config, automation_config
+    )
+    return resolved, complete
 
 
 def _build_label_membership_evidence(

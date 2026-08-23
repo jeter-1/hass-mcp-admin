@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from statistics import median
+import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 from ha_mcp_engineering.dependency.extraction import (
     MAX_CONTEXT_ENTITY_IDS,
@@ -12,6 +16,7 @@ from ha_mcp_engineering.dependency.extraction import (
     MAX_CONTEXT_VALUE_DEPTH,
     MAX_CONTEXT_VARIABLES,
     MAX_CONFIGURATION_NODES,
+    MAX_DOCUMENT_OBLIGATIONS,
     MAX_EVENT_SELECTOR_VALUES,
     _bounded_context_value,
     _context_with_variables,
@@ -32,6 +37,13 @@ from ha_mcp_engineering.dependency.obligation_ledger import (
     TemplateContextEvidence,
     analyze_template_obligations,
 )
+from ha_mcp_engineering.dependency.provider import (
+    MAX_BLUEPRINT_PARSE_NODES,
+    MAX_BLUEPRINT_RESOLUTION_NODES,
+    MAX_BLUEPRINT_SOURCE_BYTES,
+    _read_blueprint_source_with_status,
+    _resolve_blueprint_inputs_with_status,
+)
 from ha_mcp_engineering.f3_configuration.locks import (
     operation_lock_requests,
     unconstrained_helper_dependency_lock_key,
@@ -49,6 +61,13 @@ from tests.f3_configuration_fixtures import (
     adapter_for,
     proposal_for,
     valid_config,
+)
+from tests.dependency_blueprint_fixtures import (
+    LARGE_RESOLUTION_VALUE_NODES,
+    LARGE_ROOT_VARIABLE_COUNT,
+    LARGE_TEMPLATE_COUNT,
+    large_sensor_light_structural_blueprint,
+    small_motion_light_blueprint,
 )
 
 
@@ -164,6 +183,364 @@ def _profile(configuration: dict) -> AutomationActionRiskProfile:
 
 
 class ObligationLedgerResourceBoundTests(unittest.TestCase):
+    def test_small_motion_light_control_resolves_exactly(self):
+        resolved, complete, reason = (
+            _resolve_blueprint_inputs_with_status(
+                small_motion_light_blueprint(),
+                {
+                    "use_blueprint": {
+                        "path": "homeassistant/motion_light.yaml",
+                        "input": {
+                            "motion_entity": (
+                                "binary_sensor.synthetic_motion"
+                            ),
+                            "light_entity": "light.synthetic_control",
+                        },
+                    }
+                },
+            )
+        )
+        self.assertTrue(complete)
+        self.assertIsNone(reason)
+
+        findings, _dynamic, obligations = (
+            extract_document_with_obligations(
+                source_type="blueprint",
+                source_id="synthetic_motion_light_control",
+                source_entity_id=(
+                    "automation.synthetic_motion_light_control"
+                ),
+                config=resolved,
+            )
+        )
+        self.assertEqual(
+            {item.target_entity_id for item in findings},
+            {
+                "binary_sensor.synthetic_motion",
+                "light.synthetic_control",
+            },
+        )
+        self.assertFalse(
+            any(item.outcome == "coverage_failure" for item in obligations)
+        )
+
+    def test_large_synthetic_blueprint_completes_inside_declared_bounds(self):
+        config = large_sensor_light_structural_blueprint()
+        self.assertEqual(
+            len(config["variables"]), LARGE_ROOT_VARIABLE_COUNT
+        )
+        self.assertGreater(
+            LARGE_RESOLUTION_VALUE_NODES, 10_000
+        )
+        self.assertLess(
+            LARGE_RESOLUTION_VALUE_NODES,
+            MAX_BLUEPRINT_RESOLUTION_NODES,
+        )
+        self.assertGreater(LARGE_TEMPLATE_COUNT, 2_000)
+        self.assertLess(LARGE_TEMPLATE_COUNT, MAX_DOCUMENT_OBLIGATIONS)
+
+        resolved, complete, reason = (
+            _resolve_blueprint_inputs_with_status(config, {})
+        )
+        self.assertTrue(complete)
+        self.assertIsNone(reason)
+
+        with patch(
+            "ha_mcp_engineering.dependency.extraction."
+            "analyze_template_obligations",
+            wraps=analyze_template_obligations,
+        ) as analyzer:
+            findings, dynamic, obligations = (
+                extract_document_with_obligations(
+                    source_type="blueprint",
+                    source_id="synthetic_large_sensor_light",
+                    source_entity_id=(
+                        "automation.synthetic_large_sensor_light"
+                    ),
+                    source_name="Synthetic large blueprint fixture",
+                    source_state="on",
+                    config=resolved,
+                )
+            )
+
+        self.assertEqual(analyzer.call_count, 1)
+        self.assertEqual(findings, [])
+        self.assertEqual(dynamic, [])
+        self.assertEqual(len(obligations), LARGE_TEMPLATE_COUNT)
+        self.assertEqual(
+            len({item.evidence_id for item in obligations}),
+            LARGE_TEMPLATE_COUNT,
+        )
+        self.assertTrue(
+            all(
+                item.outcome == "proven_dependency_neutral"
+                and not item.limit_exceeded
+                for item in obligations
+            )
+        )
+
+    def test_template_cache_rebases_exact_canonical_terminals(self):
+        template = "{{ states('sensor.synthetic_cache') }}"
+        source_entity_id = "automation.synthetic_cache"
+        with patch(
+            "ha_mcp_engineering.dependency.extraction."
+            "analyze_template_obligations",
+            wraps=analyze_template_obligations,
+        ) as analyzer:
+            _findings, _dynamic, obligations = (
+                extract_document_with_obligations(
+                    source_type="blueprint",
+                    source_id="synthetic_cache",
+                    source_entity_id=source_entity_id,
+                    config={
+                        "actions": [
+                            {"value_template": template},
+                            {"value_template": template},
+                        ]
+                    },
+                )
+            )
+
+        self.assertEqual(analyzer.call_count, 1)
+        self.assertEqual(len(obligations), 2)
+        for item in obligations:
+            direct = analyze_template_obligations(
+                template,
+                source_type="blueprint",
+                source_id="synthetic_cache",
+                config_path=item.config_path,
+                relation=item.relation,
+                source_entity_id=source_entity_id,
+                source_name=None,
+                source_state=None,
+                configuration_fingerprint=(
+                    item.configuration_fingerprint
+                ),
+                entity_id_validator=_valid_entity_id,
+                context=TemplateContextEvidence(
+                    this_entity_id=source_entity_id
+                ),
+                entity_output_role=False,
+            )
+            self.assertEqual((item,), direct.obligations)
+
+    def test_blueprint_resolution_node_bound_minus_exact_and_plus_one(self):
+        def fixture(total_nodes: int) -> dict[str, object]:
+            # Resolver work counts the root mapping, the list, and each value.
+            return {"synthetic_padding": [0] * (total_nodes - 2)}
+
+        for total_nodes in (
+            MAX_BLUEPRINT_RESOLUTION_NODES - 1,
+            MAX_BLUEPRINT_RESOLUTION_NODES,
+        ):
+            with self.subTest(total_nodes=total_nodes):
+                _resolved, complete, reason = (
+                    _resolve_blueprint_inputs_with_status(
+                        fixture(total_nodes), {}
+                    )
+                )
+                self.assertTrue(complete)
+                self.assertIsNone(reason)
+
+        _resolved, complete, reason = (
+            _resolve_blueprint_inputs_with_status(
+                fixture(MAX_BLUEPRINT_RESOLUTION_NODES + 1), {}
+            )
+        )
+        self.assertFalse(complete)
+        self.assertEqual(
+            reason, "blueprint_input_resolution_limit_exceeded"
+        )
+
+    def test_document_obligation_bound_minus_exact_and_plus_one(self):
+        def fixture(template_count: int) -> dict[str, object]:
+            return {
+                "actions": [
+                    {
+                        "value_template": (
+                            "{{ 'synthetic non-entity text' }}"
+                        )
+                    }
+                    for _index in range(template_count)
+                ]
+            }
+
+        # One slot is deliberately reserved for the coverage-failure terminal.
+        with patch(
+            "ha_mcp_engineering.dependency.extraction."
+            "MAX_DOCUMENT_OBLIGATIONS",
+            4,
+        ):
+            for template_count in (2, 3):
+                with self.subTest(template_count=template_count):
+                    _findings, _dynamic, obligations = (
+                        extract_document_with_obligations(
+                            source_type="blueprint",
+                            source_id="synthetic_obligation_boundary",
+                            config=fixture(template_count),
+                        )
+                    )
+                    self.assertEqual(len(obligations), template_count)
+                    self.assertFalse(
+                        any(
+                            item.outcome == "coverage_failure"
+                            for item in obligations
+                        )
+                    )
+
+            _findings, _dynamic, obligations = (
+                extract_document_with_obligations(
+                    source_type="blueprint",
+                    source_id="synthetic_obligation_boundary",
+                    config=fixture(4),
+                )
+            )
+            self.assertEqual(len(obligations), 4)
+            failures = [
+                item
+                for item in obligations
+                if item.outcome == "coverage_failure"
+            ]
+            self.assertEqual(len(failures), 1)
+            self.assertEqual(
+                failures[0].reason_code,
+                "configuration_obligation_limit_exceeded",
+            )
+            self.assertTrue(failures[0].limit_exceeded)
+
+    def test_blueprint_resolution_and_extraction_deadlines_fail_closed(self):
+        class StepClock:
+            def __init__(self):
+                self.value = 0.0
+
+            def __call__(self):
+                observed = self.value
+                self.value += 1.0
+                return observed
+
+        _resolved, complete, reason = (
+            _resolve_blueprint_inputs_with_status(
+                {"synthetic_padding": [0, 1, 2]},
+                {},
+                analysis_deadline_monotonic=2.0,
+                monotonic=StepClock(),
+            )
+        )
+        self.assertFalse(complete)
+        self.assertEqual(
+            reason, "blueprint_input_resolution_time_limit_exceeded"
+        )
+
+        _findings, _dynamic, obligations = (
+            extract_document_with_obligations(
+                source_type="blueprint",
+                source_id="expired_synthetic_source",
+                source_entity_id="automation.expired_synthetic_source",
+                config={"value_template": "{{ states('sensor.test') }}"},
+                analysis_deadline_monotonic=1.0,
+                monotonic=lambda: 1.0,
+            )
+        )
+        self.assertEqual(len(obligations), 1)
+        self.assertEqual(obligations[0].outcome, "coverage_failure")
+        self.assertEqual(
+            obligations[0].reason_code,
+            "configuration_analysis_time_limit_exceeded",
+        )
+
+    def test_blueprint_source_byte_and_parse_node_bounds_are_exact(self):
+        self.assertEqual(MAX_BLUEPRINT_SOURCE_BYTES, 1_048_576)
+        self.assertEqual(MAX_BLUEPRINT_PARSE_NODES, 32_768)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "synthetic.yaml"
+            prefix = b"blueprint:\n  name: Synthetic\n"
+            with patch(
+                "ha_mcp_engineering.dependency.provider."
+                "MAX_BLUEPRINT_SOURCE_BYTES",
+                128,
+            ):
+                for size in (127, 128):
+                    source.write_bytes(
+                        prefix + b"#" + b"x" * (size - len(prefix) - 1)
+                    )
+                    evidence = _read_blueprint_source_with_status(
+                        source.name, roots=(root,)
+                    )
+                    self.assertIsNotNone(evidence.config)
+                    self.assertIsNone(evidence.reason_code)
+                    self.assertEqual(evidence.content_bytes, size)
+                    self.assertRegex(
+                        evidence.content_sha256 or "", r"^[0-9a-f]{64}$"
+                    )
+
+                source.write_bytes(
+                    prefix + b"#" + b"x" * (129 - len(prefix) - 1)
+                )
+                evidence = _read_blueprint_source_with_status(
+                    source.name, roots=(root,)
+                )
+                self.assertIsNone(evidence.config)
+                self.assertEqual(
+                    evidence.reason_code,
+                    "blueprint_source_limit_exceeded",
+                )
+
+            with patch(
+                "ha_mcp_engineering.dependency.provider."
+                "MAX_BLUEPRINT_PARSE_NODES",
+                6,
+            ):
+                for item_count in (2, 3):
+                    source.write_text(
+                        "root:\n"
+                        + "".join("  - 0\n" for _ in range(item_count)),
+                        encoding="utf-8",
+                    )
+                    evidence = _read_blueprint_source_with_status(
+                        source.name, roots=(root,)
+                    )
+                    self.assertIsNotNone(evidence.config)
+                    self.assertIsNone(evidence.reason_code)
+
+                source.write_text(
+                    "root:\n" + "  - 0\n" * 4,
+                    encoding="utf-8",
+                )
+                evidence = _read_blueprint_source_with_status(
+                    source.name, roots=(root,)
+                )
+                self.assertIsNone(evidence.config)
+                self.assertEqual(
+                    evidence.reason_code,
+                    "blueprint_source_structure_limit_exceeded",
+                )
+
+    def test_large_fixture_provenance_is_pinned_and_source_safe(self):
+        path = (
+            Path(__file__).resolve().parent
+            / "fixtures"
+            / "dependency_blueprints"
+            / "large_blueprint_provenance.json"
+        )
+        provenance = json.loads(path.read_text(encoding="utf-8"))
+        witness = provenance["large_source_witness"]
+        committed = provenance["committed_fixture"]
+
+        self.assertEqual(
+            witness["commit"],
+            "c710556d02f6d37052efaf98c1baf5b4380e7d48",
+        )
+        self.assertEqual(len(witness["sha256"]), 64)
+        self.assertFalse(committed["contains_upstream_source_text"])
+        self.assertFalse(committed["contains_live_observations"])
+        self.assertFalse(committed["contains_real_entity_ids"])
+        self.assertEqual(
+            committed["resolved_value_nodes"],
+            LARGE_RESOLUTION_VALUE_NODES,
+        )
+
     def test_configuration_context_values_share_one_bounded_budget(self):
         budget = [5]
         context = TemplateContextEvidence()

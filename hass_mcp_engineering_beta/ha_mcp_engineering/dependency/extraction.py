@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import ast
-from dataclasses import replace
+from dataclasses import asdict, replace
 import hashlib
 import json
 import re
-from typing import Any, Iterable
+import time
+from typing import Any, Callable, Iterable
 
 from ..logging_config import redact_data
 from .dynamic_resolution import (
@@ -25,6 +26,7 @@ from .models import (
 from .obligation_ledger import (
     TemplateContextEvidence,
     TemplateContextValueEvidence,
+    TemplateLedgerResult,
     analyze_template_obligations,
 )
 from .semantic_registry import (
@@ -83,11 +85,11 @@ ENTITY_OUTPUT_KEYS = frozenset(
     }
 )
 MAX_CONTEXT_ENTITY_IDS = 128
-MAX_CONTEXT_VARIABLES = 128
+MAX_CONTEXT_VARIABLES = 256
 MAX_CONTEXT_VALUE_DEPTH = 8
 MAX_CONTEXT_SCALAR_CHARS = 1_024
-MAX_DOCUMENT_OBLIGATIONS = 2_000
-MAX_CONFIGURATION_NODES = 10_000
+MAX_DOCUMENT_OBLIGATIONS = 8_192
+MAX_CONFIGURATION_NODES = 16_384
 MAX_CONFIGURATION_DEPTH = 64
 MAX_EVENT_SELECTOR_VALUES = 128
 ACTION_SEQUENCE_KEYS = frozenset(
@@ -147,6 +149,91 @@ def valid_entity_id(value: str) -> bool:
     # brittle allow-list of Home Assistant domains.
     return any(char.isalpha() for char in domain) and any(
         char.isalpha() for char in object_id
+    )
+
+
+def _template_context_cache_material(
+    context: TemplateContextEvidence,
+) -> str:
+    """Return complete deterministic context material for a local cache key."""
+
+    return json.dumps(
+        asdict(context),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+
+def _rebase_template_ledger_result(
+    result: TemplateLedgerResult,
+    *,
+    source_type: str,
+    source_id: str,
+    config_path: str,
+    relation: str,
+    source_entity_id: str | None,
+    source_name: str | None,
+    source_state: str | None,
+    configuration_fingerprint: str,
+) -> TemplateLedgerResult:
+    """Rebind cached semantic terminals to one exact configuration path.
+
+    Template semantics and AST fingerprints do not depend on the surrounding
+    source identity.  Terminals emitted without an AST node deliberately bind
+    their expression fingerprint to the configuration path, so those hashes
+    are rebased only when the cached value proves it used that exact material.
+    Evidence IDs are then regenerated with the same grammar as the canonical
+    analyzer finalizer.  This preserves independently attributable terminals
+    while avoiding repeated parsing of identical templates.
+    """
+
+    obligations: list[DependencyObligation] = []
+    for ordinal, item in enumerate(result.obligations):
+        old_path_fingerprint = hashlib.sha256(
+            (
+                f"{item.obligation_kind}:{item.reason_code}:"
+                f"{item.config_path}"
+            ).encode("utf-8")
+        ).hexdigest()
+        expression_fingerprint = item.expression_fingerprint
+        if expression_fingerprint == old_path_fingerprint:
+            expression_fingerprint = hashlib.sha256(
+                (
+                    f"{item.obligation_kind}:{item.reason_code}:"
+                    f"{config_path}"
+                ).encode("utf-8")
+            ).hexdigest()
+        obligation_id = evidence_id(
+            source_type,
+            source_id,
+            config_path,
+            "obligation",
+            ordinal,
+            expression_fingerprint,
+            item.outcome,
+        )
+        obligations.append(
+            replace(
+                item,
+                evidence_id=obligation_id,
+                source_type=source_type,
+                source_id=source_id,
+                source_entity_id=source_entity_id,
+                source_name=source_name,
+                source_state=source_state,
+                config_path=config_path,
+                relation=relation,
+                expression_fingerprint=expression_fingerprint,
+                configuration_fingerprint=configuration_fingerprint,
+            )
+        )
+    return TemplateLedgerResult(
+        obligations=tuple(obligations),
+        ast_node_count=result.ast_node_count,
+        work_units=result.work_units,
+        coverage_failed=result.coverage_failed,
+        semantic_registry_sha256=result.semantic_registry_sha256,
     )
 
 
@@ -218,6 +305,8 @@ def extract_document_obligation_evidence(
     source_name: str | None = None,
     source_state: str | None = None,
     secret: str = "",
+    analysis_deadline_monotonic: float | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
 ) -> tuple[
     list[DependencyFinding],
     list[DynamicReference],
@@ -247,8 +336,38 @@ def extract_document_obligation_evidence(
     safe_source_state = _bounded(source_state, 32, secret)
     findings: list[DependencyFinding] = []
     obligations: list[DependencyObligation] = []
-    document_limit_exceeded = False
-    document_limit_reason = "configuration_obligation_limit_exceeded"
+    template_cache: dict[
+        tuple[str, bool, str], TemplateLedgerResult
+    ] = {}
+    template_context_material_cache: dict[
+        int, tuple[TemplateContextEvidence, str]
+    ] = {}
+
+    def template_context_material(
+        value: TemplateContextEvidence,
+    ) -> str:
+        identity = id(value)
+        cached = template_context_material_cache.get(identity)
+        if cached is not None and cached[0] is value:
+            return cached[1]
+        material = _template_context_cache_material(value)
+        # Retaining the object with its material prevents Python from reusing
+        # an identity for a later, semantically different context.
+        template_context_material_cache[identity] = (value, material)
+        return material
+
+    def analysis_time_exceeded() -> bool:
+        return bool(
+            analysis_deadline_monotonic is not None
+            and monotonic() >= analysis_deadline_monotonic
+        )
+
+    document_limit_exceeded = analysis_time_exceeded()
+    document_limit_reason = (
+        "configuration_analysis_time_limit_exceeded"
+        if document_limit_exceeded
+        else "configuration_obligation_limit_exceeded"
+    )
     event_scan_nodes = 0
     blueprint = config.get("use_blueprint") if isinstance(config, dict) else None
     blueprint_path = blueprint.get("path") if isinstance(blueprint, dict) else None
@@ -736,6 +855,12 @@ def extract_document_obligation_evidence(
     ) -> None:
         nonlocal document_limit_exceeded, document_limit_reason
         nonlocal event_scan_nodes
+        if analysis_time_exceeded():
+            document_limit_exceeded = True
+            document_limit_reason = (
+                "configuration_analysis_time_limit_exceeded"
+            )
+            return
         event_scan_nodes += 1
         if (
             event_scan_nodes > MAX_CONFIGURATION_NODES
@@ -800,6 +925,12 @@ def extract_document_obligation_evidence(
         nonlocal document_limit_exceeded
         nonlocal configuration_walk_nodes
         nonlocal document_limit_reason
+        if analysis_time_exceeded():
+            document_limit_exceeded = True
+            document_limit_reason = (
+                "configuration_analysis_time_limit_exceeded"
+            )
+            return
         configuration_walk_nodes += 1
         if (
             configuration_walk_nodes > MAX_CONFIGURATION_NODES
@@ -1148,22 +1279,54 @@ def extract_document_obligation_evidence(
             return
         if not isinstance(value, str) or not _is_template(value, parent_key):
             return
-        result = analyze_template_obligations(
-            value,
-            source_type=source_type,
-            source_id=source_id,
-            config_path=path,
-            relation=relation,
-            source_entity_id=safe_source_entity_id,
-            source_name=safe_source_name,
-            source_state=safe_source_state,
-            configuration_fingerprint=configuration_fingerprint,
-            entity_id_validator=valid_entity_id,
-            context=template_context,
-            entity_output_role=bool(
-                entity_output_roles and parent_key in ENTITY_OUTPUT_KEYS
-            ),
+        entity_output_role = bool(
+            entity_output_roles and parent_key in ENTITY_OUTPUT_KEYS
         )
+        context_material = (
+            template_context_material(template_context)
+            if _contains_template_value(value)
+            else "literal_template_value_context_independent"
+        )
+        cache_key = (
+            value,
+            entity_output_role,
+            context_material,
+        )
+        result = template_cache.get(cache_key)
+        if result is None:
+            result = analyze_template_obligations(
+                value,
+                source_type=source_type,
+                source_id=source_id,
+                config_path=path,
+                relation=relation,
+                source_entity_id=safe_source_entity_id,
+                source_name=safe_source_name,
+                source_state=safe_source_state,
+                configuration_fingerprint=configuration_fingerprint,
+                entity_id_validator=valid_entity_id,
+                context=template_context,
+                entity_output_role=entity_output_role,
+            )
+            template_cache[cache_key] = result
+        else:
+            result = _rebase_template_ledger_result(
+                result,
+                source_type=source_type,
+                source_id=source_id,
+                config_path=path,
+                relation=relation,
+                source_entity_id=safe_source_entity_id,
+                source_name=safe_source_name,
+                source_state=safe_source_state,
+                configuration_fingerprint=configuration_fingerprint,
+            )
+        if analysis_time_exceeded():
+            document_limit_exceeded = True
+            document_limit_reason = (
+                "configuration_analysis_time_limit_exceeded"
+            )
+            return
         remaining = MAX_DOCUMENT_OBLIGATIONS - 1 - len(obligations)
         if len(result.obligations) > remaining:
             document_limit_exceeded = True
@@ -1247,10 +1410,13 @@ def discharge_resolved_blueprint_source_obligation(
     resolved_blueprint_config: dict[str, Any],
     raw_obligations: Iterable[DependencyObligation],
     source_id: str,
+    blueprint_source_content_sha256: str,
     source_entity_id: str | None = None,
     source_name: str | None = None,
     source_state: str | None = None,
     secret: str = "",
+    analysis_deadline_monotonic: float | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
 ) -> tuple[
     list[DependencyObligation],
     list[DependencyFinding],
@@ -1280,6 +1446,8 @@ def discharge_resolved_blueprint_source_obligation(
         source_state=source_state,
         config=resolved_blueprint_config,
         secret=secret,
+        analysis_deadline_monotonic=analysis_deadline_monotonic,
+        monotonic=monotonic,
     )
     automation_fingerprint, automation_limit = (
         _dependency_configuration_fingerprint(automation_config)
@@ -1302,6 +1470,9 @@ def discharge_resolved_blueprint_source_obligation(
             source_id=source_id,
         )
     )
+    source_content_fingerprint_valid = bool(
+        re.fullmatch(r"[0-9a-f]{64}", blueprint_source_content_sha256)
+    )
     candidates = [
         item
         for item in raw
@@ -1314,6 +1485,7 @@ def discharge_resolved_blueprint_source_obligation(
     resolved_is_bound = bool(
         not automation_limit
         and not resolved_limit
+        and source_content_fingerprint_valid
         and isinstance(blueprint_path, str)
         and len(candidates) == 1
         and candidates[0].configuration_fingerprint
@@ -1356,6 +1528,9 @@ def discharge_resolved_blueprint_source_obligation(
         json.dumps(
             {
                 "raw_obligation": obligation_fingerprint(candidate),
+                "resolved_source_content_sha256": (
+                    blueprint_source_content_sha256
+                ),
                 "resolved_configuration": resolved_fingerprint,
                 "resolved_ledger": resolved_ledger_fingerprint,
             },
@@ -1374,6 +1549,10 @@ def discharge_resolved_blueprint_source_obligation(
                 set(candidate.context_provenance).union(
                     {
                         "blueprint_source:resolved",
+                        (
+                            "blueprint_source_content_sha256:"
+                            + blueprint_source_content_sha256
+                        ),
                         (
                             "resolved_blueprint_configuration:"
                             + resolved_fingerprint

@@ -413,6 +413,9 @@ class DependencyIndex:
                     dynamic_reference_overflow
                 )
             )
+            dynamic_reference_overflow_source_types = {
+                item.source_type for item in dynamic_reference_overflow
+            }
             ordered_obligations = sorted(
                 scan.obligations,
                 key=_obligation_sort_key,
@@ -450,12 +453,15 @@ class DependencyIndex:
                     )
                 )
             coverage = list(scan.coverage)
-            if (
+            authoritative_payload_truncated = bool(
                 findings_truncated
                 or profiles_truncated
                 or read_failures_truncated
-                or dynamic_references_truncated
                 or obligations_truncated
+            )
+            if (
+                authoritative_payload_truncated
+                or dynamic_references_truncated
             ):
                 METRICS.record_dependency_truncation()
                 coverage = [
@@ -463,16 +469,31 @@ class DependencyIndex:
                         item,
                         completeness=(
                             "partial"
-                            if item.source_type == "automation"
+                            if authoritative_payload_truncated
+                            and item.source_type == "automation"
                             else item.completeness
                         ),
                         warnings=(
                             [
                                 *item.warnings,
-                                "Automation dependency evidence exceeded the bounded index payload.",
+                                *(
+                                    [
+                                        "Automation dependency evidence exceeded the bounded index payload."
+                                    ]
+                                    if authoritative_payload_truncated
+                                    and item.source_type == "automation"
+                                    else []
+                                ),
+                                *(
+                                    [
+                                        "Dynamic compatibility evidence exceeded its bounded projection; overflow count and fingerprint were retained separately from the complete obligation ledger."
+                                    ]
+                                    if dynamic_references_truncated
+                                    and item.source_type
+                                    in dynamic_reference_overflow_source_types
+                                    else []
+                                ),
                             ]
-                            if item.source_type == "automation"
-                            else list(item.warnings)
                         ),
                     )
                     for item in coverage
