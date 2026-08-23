@@ -165,6 +165,7 @@ class FakeDependencyRiskReader:
         self.complete = True
         self.opaque = False
         self.effect_revision = "v1"
+        self.model = HELPER_DEPENDENCY_RISK_MODEL
 
     async def __call__(
         self,
@@ -231,7 +232,7 @@ class FakeDependencyRiskReader:
             )
         ]
         material = {
-            "model": HELPER_DEPENDENCY_RISK_MODEL,
+            "model": self.model,
             "entity_id": entity_id,
             "completeness": "complete" if self.complete else "partial",
             "evidence_complete": self.complete and not self.opaque,
@@ -410,6 +411,57 @@ class ExactHelperStateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             plan["policy_decision"]["physical_consequence"], "none"
         )
+        binding = self.service._load(plan["plan_id"]).operational.baseline[
+            "dependency_risk"
+        ]
+        self.assertEqual(
+            HELPER_DEPENDENCY_RISK_MODEL,
+            binding["model"],
+        )
+        self.assertTrue(plan["approval_actionable"])
+        self.assertFalse(plan["helper_dependency_replan_required"])
+        self.assertEqual("approve_change_plan", plan["next_required_operation"])
+        self.assertEqual(created["fallback"], "none")
+        self.assertTrue(
+            binding["dependency_lock_projection"][
+                "exact_helper_dependency"
+            ]
+        )
+        self.assertTrue(
+            binding["dependency_lock_projection"][
+                "conservative_helper_dependency"
+            ]
+        )
+
+    async def test_beta40_model_is_readable_but_requires_replanning(self):
+        self.dependency.model = "helper-dependency-risk-v3"
+
+        created = await self.service.create_helper_state_plan(
+            entity_id=self.helper.entity_id,
+            desired_state="on",
+        )
+        plan = created["plan"]
+        persisted = self.service._load(plan["plan_id"])
+
+        self.assertEqual(
+            "helper-dependency-risk-v3",
+            persisted.operational.baseline["dependency_risk"]["model"],
+        )
+        self.assertFalse(plan["approval_actionable"])
+        self.assertTrue(plan["helper_dependency_replan_required"])
+        self.assertEqual("create_change_plan", plan["next_required_operation"])
+        with self.assertRaises(GovernanceError) as caught:
+            self.service.approve(plan["plan_id"], plan["plan_hash"])
+        self.assertEqual(
+            ErrorCode.OPERATIONAL_VALIDATION_FAILED,
+            caught.exception.code,
+        )
+        self.assertEqual(
+            True,
+            caught.exception.details.get("replan_required"),
+        )
+        self.assertEqual(self.helper.dispatch_count, 0)
+        self.assertEqual(created["fallback"], "none")
 
     async def test_consequential_dependency_elevates_governance(self):
         self.dependency.automation_ids = ["automation.opens_cover"]

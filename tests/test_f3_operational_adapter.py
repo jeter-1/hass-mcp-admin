@@ -50,6 +50,9 @@ from ha_mcp_engineering.f3_configuration.locks import (
     unconstrained_helper_dependency_lock_key,
 )
 from ha_mcp_engineering.governance.models import ApprovalState
+from ha_mcp_engineering.governance.helper_dependency import (
+    HELPER_DEPENDENCY_RISK_MODEL,
+)
 
 from tests.f3_operational_fixtures import (
     PLAN_HASH,
@@ -576,6 +579,91 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(
                     {item.key: item.mode.value for item in requests}, keys
                 )
+
+    async def test_beta40_helper_binding_is_readable_but_has_no_lock_authority(
+        self,
+    ):
+        context = make_context(
+            self.root / "beta40-helper-binding",
+            SET_INPUT_BOOLEAN_STATE,
+            dependency_automation_ids=("porch_light",),
+            dependency_risk_model="helper-dependency-risk-v3",
+        )
+        prepared = await prepare_context(context)
+        binding = prepared.baseline["dependency_risk"]
+
+        self.assertEqual("helper-dependency-risk-v3", binding["model"])
+        self.assertEqual(
+            stable_hash(
+                {
+                    key: value
+                    for key, value in binding.items()
+                    if key != "evidence_fingerprint"
+                }
+            ),
+            binding["evidence_fingerprint"],
+        )
+        with self.assertRaises(ValueError) as caught:
+            context.adapter.lock_requests(prepared)
+        self.assertIn("not executable", str(caught.exception))
+        self.assertNotIn("helper_dependency_read", context.trace)
+        self.assertNotIn("helper_dependency_fenced_read", context.trace)
+        self.assertEqual(context.approval.callback_count, 0)
+        strategy = context.adapter.strategies[SET_INPUT_BOOLEAN_STATE]
+        self.assertEqual(strategy.gateway.provider_dispatches, 0)
+
+    async def test_fresh_helper_binding_preserves_fingerprint_locks_and_fenced_read(
+        self,
+    ):
+        context = make_context(
+            self.root / "fresh-helper-binding",
+            SET_INPUT_BOOLEAN_STATE,
+            dependency_automation_ids=("porch_light",),
+        )
+        prepared = await prepare_context(context)
+        binding = prepared.baseline["dependency_risk"]
+        locks = context.adapter.lock_requests(prepared)
+
+        self.assertEqual(HELPER_DEPENDENCY_RISK_MODEL, binding["model"])
+        self.assertEqual(
+            stable_hash(
+                {
+                    key: value
+                    for key, value in binding.items()
+                    if key != "evidence_fingerprint"
+                }
+            ),
+            binding["evidence_fingerprint"],
+        )
+        self.assertIn(
+            helper_dependency_lock_key("input_boolean.synthetic_exact"),
+            {item.key for item in locks},
+        )
+        self.assertIn(
+            unconstrained_helper_dependency_lock_key(),
+            {item.key for item in locks},
+        )
+        self.assertIn("automation:porch_light", {item.key for item in locks})
+        preflight = await context.adapter.preflight(
+            prepared,
+            acquired_locks=locks,
+        )
+        self.assertTrue(preflight.eligible)
+        self.assertEqual(
+            "helper_dependency_fenced_read",
+            context.trace[-1],
+        )
+        self.assertEqual(
+            "none",
+            context.plan.operational.provider_capability_evidence["fallback"],
+        )
+        self.assertFalse(
+            context.plan.operational.provider_capability_evidence[
+                "fallback_occurred"
+            ]
+        )
+        strategy = context.adapter.strategies[SET_INPUT_BOOLEAN_STATE]
+        self.assertEqual(strategy.gateway.provider_dispatches, 0)
 
     async def test_upstream_addon_restart_unions_provider_and_resource_lock(self):
         context = make_context(
