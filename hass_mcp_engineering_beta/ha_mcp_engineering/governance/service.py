@@ -4524,6 +4524,43 @@ class ChangeGovernanceService:
         binding = baseline.get("dependency_risk")
         return binding if isinstance(binding, dict) else None
 
+    def _public_plan_observability_projection(
+        self,
+        plan: ChangePlan,
+    ) -> dict[str, Any]:
+        """Return one configuration-free, sanitized plan-read projection.
+
+        Legacy ``get_plan`` retains its existing contract-v1 behavior.  The
+        bounded observability path is stricter: every contract version first
+        drops configuration, snapshot, and event bodies, and contract-v1 then
+        passes through the same fail-closed sanitizer already applied to
+        contract-v2 and contract-v3 projections.
+        """
+
+        value = self._public(plan, include_configs=False)
+        value.pop("dry_run_results", None)
+        for operation in value.get("operations", []):
+            if isinstance(operation, dict):
+                operation.pop("dry_run_results", None)
+        if plan.contract_version >= CONFIGURATION_PLAN_CONTRACT_VERSION:
+            return value
+        sanitized = sanitize_untrusted_data(
+            value,
+            known_secrets=self.sensitive_values,
+        )
+        if (
+            sanitized.failed_closed
+            or sanitized.redaction_applied
+            or not isinstance(sanitized.value, dict)
+        ):
+            raise GovernanceError(
+                ErrorCode.CHANGE_PLAN_STORAGE_ERROR,
+                details={
+                    "reason": "unsafe_persisted_plan_observability_projection",
+                },
+            )
+        return sanitized.value
+
     @staticmethod
     def _plan_observability_sort_key(
         section: str, item: dict[str, Any]
@@ -4894,7 +4931,7 @@ class ChangeGovernanceService:
                     },
                 ) from exc
             raise
-        public = self._public(plan)
+        public = self._public_plan_observability_projection(plan)
         public_binding = self._public_helper_dependency_binding(public)
         binding = public_binding or {}
         raw_obligations = binding.get("obligation_evidence")

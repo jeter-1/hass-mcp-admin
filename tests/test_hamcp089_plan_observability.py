@@ -144,6 +144,27 @@ class _Unreachable:
         raise AssertionError(f"provider method must remain unreachable: {name}")
 
 
+class SyntheticLegacyGateway:
+    def __init__(self, automation_id: str, current: dict) -> None:
+        self.automation_id = automation_id
+        self.current = deepcopy(current)
+        self.read_count = 0
+        self.write_count = 0
+
+    async def get(self, automation_id: str):
+        self.read_count += 1
+        if automation_id != self.automation_id:
+            raise AssertionError("unexpected legacy automation read")
+        return deepcopy(self.current)
+
+    async def write(self, *_args, **_kwargs):
+        self.write_count += 1
+        raise AssertionError("legacy automation write must remain unreachable")
+
+    async def validate(self):
+        raise AssertionError("legacy validation must remain unreachable")
+
+
 class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -211,6 +232,126 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
         self.service.helper_dependency_risk_reader = forbidden_reader
         self.service.helper_state_gateway = _Unreachable()
         self.service.gateway = _Unreachable()
+
+    async def _create_contract_v1_plan(
+        self,
+        *,
+        sentinel: str,
+        title: str = "Synthetic R4 contract-v1 observability",
+    ) -> tuple[str, SyntheticLegacyGateway]:
+        automation_id = "synthetic_r4_contract_v1"
+        current = {
+            "id": automation_id,
+            "alias": "Synthetic R4 legacy source",
+            "description": "Before",
+            "trigger": [
+                {
+                    "platform": "event",
+                    "event_type": "synthetic_r4_contract_v1",
+                }
+            ],
+            "condition": [],
+            "action": [
+                {
+                    "service": "notify.notify",
+                    "data": {"message": sentinel},
+                }
+            ],
+            "mode": "single",
+        }
+        proposed = deepcopy(current)
+        proposed["description"] = f"After {sentinel}"
+        gateway = SyntheticLegacyGateway(automation_id, current)
+        self.service.gateway = gateway
+        created = await self.service.create_plan(
+            title=title,
+            description="Synthetic contract-v1 writer regression",
+            operation="update_automation",
+            automation_id=automation_id,
+            proposed_config=proposed,
+        )
+        persisted = self.service.repository.get(created["plan_id"])
+        self.assertIsNotNone(persisted)
+        self.assertEqual(persisted.contract_version, 1)
+        return created["plan_id"], gateway
+
+    async def test_contract_v1_observability_excludes_raw_configuration(self):
+        sentinel = "SYNTHETIC_R4_LEGACY_CONFIGURATION_SENTINEL"
+        plan_id, gateway = await self._create_contract_v1_plan(
+            sentinel=sentinel
+        )
+        reads_after_writer = gateway.read_count
+        before = self._persisted_files()
+        self._disable_authority_paths()
+
+        results = [
+            self.service.get_plan_observability(plan_id),
+            self.service.get_plan_observability(
+                plan_id,
+                detail_section="obligation_evidence",
+            ),
+            self.service.get_plan_observability(
+                plan_id,
+                detail_section="downstream_profiles",
+            ),
+        ]
+
+        prohibited_keys = {
+            "proposed_config",
+            "current_config",
+            "normalized_proposed_config",
+            "normalized_current_config",
+            "snapshot",
+            "events",
+            "dry_run_results",
+        }
+
+        def all_keys(value):
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    yield key
+                    yield from all_keys(item)
+            elif isinstance(value, list):
+                for item in value:
+                    yield from all_keys(item)
+
+        for result in results:
+            with self.subTest(section=result["detail"]["section"]):
+                encoded = json.dumps(result, sort_keys=True)
+                self.assertEqual(json.loads(encoded), result)
+                self.assertLess(len(encoded), 60_000)
+                self.assertNotIn(sentinel, encoded)
+                self.assertTrue(prohibited_keys.isdisjoint(all_keys(result)))
+
+        self.assertEqual(gateway.read_count, reads_after_writer)
+        self.assertEqual(gateway.write_count, 0)
+        self.assertEqual(self.helper.dispatch_count, 0)
+        self.assertEqual(self.service._plan_locks, {})
+        self.assertEqual(self.service._target_locks, {})
+        self.assertEqual(before, self._persisted_files())
+
+    async def test_contract_v1_observability_fails_closed_when_projection_is_unsafe(self):
+        sentinel = "SYNTHETIC_R4_NEWLY_KNOWN_SECRET"
+        plan_id, gateway = await self._create_contract_v1_plan(
+            sentinel="synthetic-safe-configuration-value",
+            title=f"Legacy title {sentinel}",
+        )
+        before = self._persisted_files()
+        reads_after_writer = gateway.read_count
+        self.service.sensitive_values = (sentinel,)
+        self._disable_authority_paths()
+
+        with self.assertRaises(GovernanceError) as caught:
+            self.service.get_plan_observability(plan_id)
+
+        self.assertEqual(
+            caught.exception.code,
+            ErrorCode.CHANGE_PLAN_STORAGE_ERROR,
+        )
+        self.assertEqual(gateway.read_count, reads_after_writer)
+        self.assertEqual(gateway.write_count, 0)
+        self.assertEqual(self.helper.dispatch_count, 0)
+        self.assertEqual(before, self._persisted_files())
 
     async def test_small_plan_summary_is_canonical_and_detail_is_single_page(self):
         plan_id = await self._create_plan(obligations=2, profiles=1)
