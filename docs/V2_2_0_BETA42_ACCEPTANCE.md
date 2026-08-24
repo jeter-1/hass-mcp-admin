@@ -44,6 +44,8 @@ large detail collections. Where persisted data applies, require the response to
 retain:
 
 - plan identity, lifecycle status, and plan hash;
+- effective plan and approval lifecycle state, bundle state, actionability,
+  apply eligibility, and next required operation;
 - dependency-risk binding model and `helper_dependency_replan_required`;
 - coverage completeness, evidence completeness, semantic precision, execution
   eligibility, and physical consequence;
@@ -60,6 +62,27 @@ persisted collection would otherwise exceed the read-gateway response limit.
 Historical model-v3 plans must expose their stored model and
 `helper_dependency_replan_required=true`; their history must not be recomputed
 under the current model.
+
+## Projection-only lifecycle truth
+
+Require `get_change_plan` to calculate clock-effective plan and approval
+lifecycle state on a detached read projection. Plan expiration, approval
+challenge expiration, terminal-plan behavior, invalidated approval bundles,
+and the exact-once dispatched operational-plan expiration exception must match
+the existing lifecycle semantics without calling the mutating lifecycle
+resolver.
+
+The canonical summary and public body must agree on status, approval state and
+lifecycle, approval bundle state, `approval_actionable`, `apply_allowed`, and
+`next_required_operation`. An effectively expired plan must not appear as
+`awaiting_approval`, `approval_not_requested`, or actionable. The persisted
+plan hash and historical authority remain unchanged.
+
+Observability must not save the projected transition, append lifecycle events,
+create audit or notification authority, update an execution task, refresh
+dependencies, access a provider, acquire a lock, or dispatch. Subsequent legacy
+internal lifecycle enforcement continues to operate from the unchanged stored
+record.
 
 ## Plan-bound pagination
 
@@ -91,9 +114,14 @@ unbounded text.
 
 Require every response to remain below the configured 60,000-character public
 boundary with explicit safety headroom. Existing sanitization and redaction
-must run before projection and pagination. Raw configurations, credentials,
+must run before projection and pagination for every contract version,
+including contract-v1. Contract-v1 summary and detail reads must exclude raw
+and normalized proposed/current configuration, configuration-derived dry-run
+values, snapshots, and persisted plan events. Raw configurations, credentials,
 secret-bearing fields, signing material, tokens, and unbounded diagnostic text
-must remain absent from responses and cursors.
+must remain absent from responses and cursors. Unsafe residual contract-v1
+material must fail closed rather than be redacted into an apparently complete
+projection.
 
 Plan inspection must perform no dependency refresh, current-state recomputation,
 provider call, provider-health mutation, fallback, approval action, lock
@@ -104,6 +132,8 @@ to their persisted authority while retaining their existing actionability rules.
 Pagination and summary projection must have zero effect on helper-risk
 classification, evidence fingerprints, policy, approval binding, lock
 projection, execution eligibility, duplicate suppression, or provider routing.
+The contract-v1 storage format, stored records, plan hashes, and legacy internal
+`get_plan` authority remain unchanged.
 
 ## Required validation
 
@@ -130,6 +160,11 @@ held status, provider routing and admission, fallback policy, write authority,
 storage formats, and deployment behavior remain unchanged. The public schema
 change is limited to optional, backward-compatible read inputs on the existing
 `get_change_plan` tool.
+
+The R4 remediation changes only configuration-free read projection and
+clock-effective observability. It does not change helper-risk classification,
+approval or policy decisions, execution behavior, provider admission, routing,
+fallback, or any write authority.
 
 Before promotion or deployment, rollback is a coherent revert of the Beta 42
 feature and staging commits. No storage migration, plan rewrite, or live-state

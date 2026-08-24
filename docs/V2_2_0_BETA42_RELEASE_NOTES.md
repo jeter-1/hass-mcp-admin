@@ -28,6 +28,35 @@ Small plans remain directly readable. Large plans no longer lose their
 canonical model, replan, completeness, failure, count, or fingerprint fields
 merely because detailed evidence exceeds the public response boundary.
 
+## Configuration-free historical reads
+
+Contract-v1 plans now use the same configuration-free, fail-closed sanitized
+observability boundary as later contracts. Summary, obligation-evidence, and
+downstream-profile reads exclude proposed and current configuration, normalized
+configuration, configuration-derived dry-run values, snapshots, persisted plan
+events, and any configuration sentinel that could otherwise escape through a
+derived diff.
+
+This correction changes only the bounded observability projection. Contract-v1
+storage, serialized records, plan hashes, and the legacy internal `get_plan`
+authority remain unchanged. Unsafe residual historical material is refused
+rather than rewritten, quarantined, or returned as an apparently complete read.
+
+## Read-only lifecycle projection
+
+`get_change_plan` now reports clock-effective plan expiration and approval
+challenge expiration without persisting those transitions. Canonical summary
+and public fields agree on plan status, approval state and lifecycle, approval
+bundle state, actionability, apply eligibility, and the next required
+operation.
+
+The projection preserves terminal plans and the existing exact-once dispatched
+operational-plan expiration exception. It uses the stored plan hash and does
+not call the mutating lifecycle resolver, save a plan, append an event, create
+audit or notification authority, project task state, refresh dependencies,
+access a provider, acquire a lock, or dispatch. Normal approval and execution
+enforcement continue to operate from the unchanged persisted record.
+
 ## Deterministic persisted-detail traversal
 
 Obligation evidence and downstream automation profiles can be traversed as
@@ -72,6 +101,10 @@ Beta 42 adds no tool, route, provider, service call, fallback, approval path,
 lock authority, or execution capability. It does not remediate or alter the
 helper-risk classifications stored in existing plans; it makes the persisted
 evidence needed for later diagnosis truthfully and safely inspectable.
+
+The R4 remediation does not change helper-risk classification, policy,
+approval authority, execution behavior, provider admission, routing, fallback,
+or write authority.
 
 This feature and staging change perform no Home Assistant access, live plan
 inspection, plan approval or application, dispatch, promotion, release,

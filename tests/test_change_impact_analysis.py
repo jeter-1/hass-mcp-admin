@@ -112,7 +112,7 @@ BETA14_SCHEMA_HASHES = {
     "server_info": "7b4b1b89dbb37c36e528e8e412ada1915d16f57d3ead411f411b1a58dbea0094",
     "upsert_automation": "9d1188547d08b426e83ca2965bbe27470006ec52d188c3d05933b6cbf120ffe5",
 }
-BETA41_GET_CHANGE_PLAN_SCHEMA_HASH = (
+BETA42_GET_CHANGE_PLAN_SCHEMA_HASH = (
     "099a29d9ce9500d39e6f729b3317186003b42242058b30b4f32d0e12b89b9d60"
 )
 BETA16_CHANGE_IMPACT_SCHEMA_HASH = (
@@ -1815,7 +1815,7 @@ class ToolCompatibilityTests(unittest.TestCase):
             self.assertEqual(
                 digest,
                 (
-                    BETA41_GET_CHANGE_PLAN_SCHEMA_HASH
+                    BETA42_GET_CHANGE_PLAN_SCHEMA_HASH
                     if name == "get_change_plan"
                     else expected
                 ),
