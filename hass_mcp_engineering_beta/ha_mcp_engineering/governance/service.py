@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from copy import deepcopy
 from contextlib import AsyncExitStack
 from datetime import datetime, timedelta, timezone
@@ -159,6 +160,14 @@ LIFECYCLE_OPERATIONS = frozenset(
 )
 MAX_CONFIGURATION_OPERATIONS = 8
 MAX_PLAN_PROJECTION_FAILURES = 20
+PLAN_OBSERVABILITY_CURSOR_VERSION = 1
+PLAN_OBSERVABILITY_ORDERING_VERSION = 1
+PLAN_OBSERVABILITY_DEFAULT_PAGE_SIZE = 20
+PLAN_OBSERVABILITY_MAX_PAGE_SIZE = 100
+PLAN_OBSERVABILITY_RESPONSE_HEADROOM_CHARS = 8_000
+PLAN_OBSERVABILITY_SECTIONS = frozenset(
+    {"summary", "obligation_evidence", "downstream_profiles"}
+)
 SUPPORTED_CONFIGURATION_RESOURCES = frozenset({"automation", "script", "helper"})
 SUPPORTED_HELPER_TYPES = frozenset({"input_boolean", "input_number"})
 SUPPORTED_CONFIGURATION_ACTIONS = frozenset({"create", "update"})
@@ -415,6 +424,7 @@ class ChangeGovernanceService:
         dashboard_gateway: Any | None = None,
         provider_identity_reader: Callable[[], Awaitable[dict[str, str]]] | None = None,
         approval_notifications: Any | None = None,
+        plan_observability_cursor_key: bytes | None = None,
     ):
         self.repository = repository
         self.gateway = gateway
@@ -431,6 +441,9 @@ class ChangeGovernanceService:
         self.dashboard_gateway = dashboard_gateway
         self.provider_identity_reader = provider_identity_reader
         self.approval_notifications = approval_notifications
+        self._plan_observability_cursor_key = (
+            plan_observability_cursor_key or secrets.token_bytes(32)
+        )
         self.dashboard_artifacts = DashboardArtifactStore(
             repository.root / "dashboard_artifacts",
             retention_days=repository.retention_days,
@@ -2310,10 +2323,9 @@ class ChangeGovernanceService:
                 approval_action=approval_action,
             )
 
-    def _expire_if_needed(self, plan: ChangePlan) -> bool:
-        # A terminal plan has already completed its lifecycle transition.  In
-        # particular, an expired plan must never be "expired" again merely
-        # because a read surface inspects it.
+    def _plan_expiration_applies(self, plan: ChangePlan) -> bool:
+        """Return whether the current clock makes a plan effectively expired."""
+
         if is_terminal_plan(plan):
             return False
         if (
@@ -2327,26 +2339,41 @@ class ChangeGovernanceService:
             # dispatch evidence exists, read-only verification must remain
             # available indefinitely and must never reopen write authority.
             return False
-        if self.now() >= datetime.fromisoformat(plan.expires_at):
-            plan.status = PlanStatus.EXPIRED
-            plan.approval.state = ApprovalState.INVALIDATED
-            plan.approval.bundle_state = "invalidated"
-            plan.approval.csrf_digest = None
-            if plan.approval.elevated_risk_acknowledgement is not None:
-                plan.approval.elevated_risk_acknowledgement.state = (
-                    ApprovalState.INVALIDATED
-                )
-                plan.approval.elevated_risk_acknowledgement.csrf_digest = None
-            if plan.approval.challenge_id:
-                self._record(
-                    plan,
-                    "external_approval_invalidated",
-                    "rejected",
-                    error_code=ErrorCode.CHANGE_PLAN_EXPIRED.value,
-                )
-            self._record(plan, "change_plan_expired", "rejected", error_code=ErrorCode.CHANGE_PLAN_EXPIRED.value)
-            return True
-        return False
+        return self.now() >= datetime.fromisoformat(plan.expires_at)
+
+    @staticmethod
+    def _apply_plan_expiration_state(plan: ChangePlan) -> None:
+        plan.status = PlanStatus.EXPIRED
+        plan.approval.state = ApprovalState.INVALIDATED
+        plan.approval.bundle_state = "invalidated"
+        plan.approval.csrf_digest = None
+        if plan.approval.elevated_risk_acknowledgement is not None:
+            plan.approval.elevated_risk_acknowledgement.state = (
+                ApprovalState.INVALIDATED
+            )
+            plan.approval.elevated_risk_acknowledgement.csrf_digest = None
+
+    def _expire_if_needed(self, plan: ChangePlan) -> bool:
+        # A terminal plan has already completed its lifecycle transition.  In
+        # particular, an expired plan must never be "expired" again merely
+        # because a read surface inspects it.
+        if not self._plan_expiration_applies(plan):
+            return False
+        self._apply_plan_expiration_state(plan)
+        if plan.approval.challenge_id:
+            self._record(
+                plan,
+                "external_approval_invalidated",
+                "rejected",
+                error_code=ErrorCode.CHANGE_PLAN_EXPIRED.value,
+            )
+        self._record(
+            plan,
+            "change_plan_expired",
+            "rejected",
+            error_code=ErrorCode.CHANGE_PLAN_EXPIRED.value,
+        )
+        return True
 
     def _challenge_has_expired(self, plan: ChangePlan) -> bool:
         """Return the effective clock state for an external-pending challenge."""
@@ -2372,12 +2399,11 @@ class ChangeGovernanceService:
         except (TypeError, ValueError):
             return True
 
-    def _invalidate_terminal_challenge_if_needed(self, plan: ChangePlan) -> bool:
-        """Reconcile an impossible persisted pending challenge on a terminal plan."""
-
-        if (
-            not is_terminal_plan(plan)
-            or not (
+    @staticmethod
+    def _terminal_challenge_requires_invalidation(plan: ChangePlan) -> bool:
+        return bool(
+            is_terminal_plan(plan)
+            and (
                 plan.approval.state == ApprovalState.EXTERNAL_PENDING
                 or bool(
                     plan.approval.elevated_risk_acknowledgement
@@ -2385,8 +2411,12 @@ class ChangeGovernanceService:
                     == ApprovalState.EXTERNAL_PENDING
                 )
             )
-        ):
-            return False
+        )
+
+    @staticmethod
+    def _apply_terminal_challenge_invalidation_state(
+        plan: ChangePlan,
+    ) -> None:
         plan.approval.state = ApprovalState.INVALIDATED
         plan.approval.bundle_state = "invalidated"
         plan.approval.csrf_digest = None
@@ -2397,6 +2427,13 @@ class ChangeGovernanceService:
             plan.approval.elevated_risk_acknowledgement.csrf_digest = (
                 None
             )
+
+    def _invalidate_terminal_challenge_if_needed(self, plan: ChangePlan) -> bool:
+        """Reconcile an impossible persisted pending challenge on a terminal plan."""
+
+        if not self._terminal_challenge_requires_invalidation(plan):
+            return False
+        self._apply_terminal_challenge_invalidation_state(plan)
         self._record(
             plan,
             "external_approval_invalidated",
@@ -2421,6 +2458,19 @@ class ChangeGovernanceService:
             return plan_expired, False
         challenge_expired = self._expire_challenge_if_needed(plan)
         return plan_expired, challenge_expired
+
+    def _project_effective_lifecycle(self, plan: ChangePlan) -> ChangePlan:
+        """Project clock-effective lifecycle truth without persistence."""
+
+        projected = deepcopy(plan)
+        if self._plan_expiration_applies(projected):
+            self._apply_plan_expiration_state(projected)
+        if self._terminal_challenge_requires_invalidation(projected):
+            self._apply_terminal_challenge_invalidation_state(projected)
+            return projected
+        if self._challenge_has_expired(projected):
+            self._apply_challenge_expiration_state(projected)
+        return projected
 
     def _public(self, plan: ChangePlan, *, include_configs: bool = True) -> dict[str, Any]:
         self._require_v2_persisted_plan_safe(plan)
@@ -4497,6 +4547,589 @@ class ChangeGovernanceService:
                     self._record(plan, "external_approval_invalidated", "rejected")
                 self._record(plan, "change_plan_superseded", "rejected")
 
+    @staticmethod
+    def _public_helper_dependency_binding(
+        value: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        operational = value.get("operational")
+        baseline = (
+            operational.get("baseline")
+            if isinstance(operational, dict)
+            and isinstance(operational.get("baseline"), dict)
+            else {}
+        )
+        binding = baseline.get("dependency_risk")
+        return binding if isinstance(binding, dict) else None
+
+    def _public_plan_observability_projection(
+        self,
+        plan: ChangePlan,
+    ) -> dict[str, Any]:
+        """Return one configuration-free, sanitized plan-read projection.
+
+        Legacy ``get_plan`` retains its existing contract-v1 behavior.  The
+        bounded observability path is stricter: every contract version first
+        drops configuration, snapshot, and event bodies, and contract-v1 then
+        passes through the same fail-closed sanitizer already applied to
+        contract-v2 and contract-v3 projections.
+        """
+
+        value = self._public(plan, include_configs=False)
+        value.pop("dry_run_results", None)
+        for operation in value.get("operations", []):
+            if isinstance(operation, dict):
+                operation.pop("dry_run_results", None)
+        if plan.contract_version >= CONFIGURATION_PLAN_CONTRACT_VERSION:
+            return value
+        sanitized = sanitize_untrusted_data(
+            value,
+            known_secrets=self.sensitive_values,
+        )
+        if (
+            sanitized.failed_closed
+            or sanitized.redaction_applied
+            or not isinstance(sanitized.value, dict)
+        ):
+            raise GovernanceError(
+                ErrorCode.CHANGE_PLAN_STORAGE_ERROR,
+                details={
+                    "reason": "unsafe_persisted_plan_observability_projection",
+                },
+            )
+        return sanitized.value
+
+    @staticmethod
+    def _plan_observability_sort_key(
+        section: str, item: dict[str, Any]
+    ) -> tuple[str, ...]:
+        if section == "obligation_evidence":
+            fields = (
+                "source_object_id",
+                "source_entity_id",
+                "configuration_path",
+                "obligation_kind",
+                "target_projection_fingerprint",
+                "obligation_fingerprint",
+            )
+        else:
+            fields = (
+                "automation_id",
+                "automation_resource_id",
+                "profile_fingerprint",
+                "effect_projection_fingerprint",
+            )
+        return tuple(str(item.get(field) or "") for field in fields) + (
+            stable_hash(item),
+        )
+
+    @staticmethod
+    def _plan_observability_count(value: Any) -> int | None:
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            return value
+        return None
+
+    def _plan_observability_summary(
+        self,
+        *,
+        public: dict[str, Any],
+        binding: dict[str, Any] | None,
+        obligation_evidence: list[dict[str, Any]],
+        downstream_profiles: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        binding = binding or {}
+        retained_count = self._plan_observability_count(
+            binding.get("retained_obligation_count")
+        )
+        if retained_count is None:
+            retained_count = len(obligation_evidence)
+        non_relevant_count = self._plan_observability_count(
+            binding.get("non_relevant_obligation_count")
+        )
+        overflow_count = self._plan_observability_count(
+            binding.get("obligation_overflow_count")
+        )
+        total_count = retained_count
+        if non_relevant_count is not None:
+            total_count += non_relevant_count
+        if overflow_count is not None:
+            total_count += overflow_count
+        exact_count = self._plan_observability_count(
+            binding.get("exact_dependency_obligation_count")
+        )
+        if exact_count is None:
+            exact_count = self._plan_observability_count(
+                binding.get("resolved_target_dynamic_reference_count")
+            )
+        opaque_count = self._plan_observability_count(
+            binding.get("opaque_obligation_count")
+        )
+        if opaque_count is None:
+            opaque_count = self._plan_observability_count(
+                binding.get("target_relevant_dynamic_reference_count")
+            )
+        exclusions = self._plan_observability_count(
+            binding.get("proven_target_exclusion_obligation_count")
+        )
+        neutral = self._plan_observability_count(
+            binding.get("proven_dependency_neutral_obligation_count")
+        )
+        coverage_failures = self._plan_observability_count(
+            binding.get("coverage_failure_count")
+        )
+        raw_reason_codes = binding.get("coverage_failure_reason_codes", [])
+        if not isinstance(raw_reason_codes, list):
+            raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR)
+        reason_codes = sorted(
+            {
+                item
+                for item in raw_reason_codes
+                if isinstance(item, str)
+            }
+        )
+        relevant = binding.get("relevant_downstream_object_ids")
+        consequential = binding.get("consequential_downstream_object_ids")
+        policy = public.get("policy_decision")
+        physical_consequence = binding.get("physical_consequence")
+        if physical_consequence is None and isinstance(policy, dict):
+            physical_consequence = policy.get("physical_consequence")
+        approval = public.get("approval")
+        approval_state = (
+            approval.get("state") if isinstance(approval, dict) else None
+        )
+        obligation_fingerprint = stable_hash(obligation_evidence)
+        profile_fingerprint = stable_hash(downstream_profiles)
+        return {
+            "model": "change-plan-observability-v1",
+            "plan_id": public.get("plan_id"),
+            "status": public.get("status"),
+            "plan_hash": public.get("plan_hash"),
+            "approval_state": approval_state,
+            "approval_lifecycle": public.get("approval_lifecycle"),
+            "approval_bundle_state": public.get(
+                "approval_bundle_state"
+            ),
+            "approval_actionable": bool(
+                public.get("approval_actionable")
+            ),
+            "apply_allowed": bool(public.get("apply_allowed")),
+            "next_required_operation": public.get(
+                "next_required_operation"
+            ),
+            "dependency_risk_binding_model": binding.get("model"),
+            "helper_dependency_replan_required": bool(
+                public.get("helper_dependency_replan_required")
+            ),
+            "coverage_complete": binding.get("coverage_complete"),
+            "evidence_complete": binding.get("evidence_complete"),
+            "semantic_precision": binding.get("semantic_precision"),
+            "execution_eligible": binding.get("execution_eligible"),
+            "physical_consequence": physical_consequence,
+            "exact_dependency_count": exact_count,
+            "opaque_obligation_count": opaque_count,
+            "proven_exclusion_count": exclusions,
+            "proven_neutral_count": neutral,
+            "coverage_failure_count": coverage_failures,
+            "coverage_failure_reason_codes": reason_codes,
+            "retained_obligation_count": retained_count,
+            "total_obligation_count": total_count,
+            "obligation_detail_record_count": len(obligation_evidence),
+            "obligation_overflow_count": overflow_count,
+            "obligation_overflow_fingerprint": binding.get(
+                "obligation_overflow_fingerprint"
+            ),
+            "obligation_full_set_fingerprint": obligation_fingerprint,
+            "downstream_profile_retained_count": len(downstream_profiles),
+            "downstream_profile_total_count": len(downstream_profiles),
+            "downstream_profile_full_set_fingerprint": profile_fingerprint,
+            "relevant_automation_count": (
+                len(relevant) if isinstance(relevant, list) else None
+            ),
+            "consequential_automation_count": (
+                len(consequential) if isinstance(consequential, list) else None
+            ),
+            "evidence_fingerprint": binding.get("evidence_fingerprint"),
+            "evidence_truncated": bool(
+                binding.get("truncated") or (overflow_count or 0) > 0
+            ),
+            "pagination_available": bool(
+                obligation_evidence or downstream_profiles
+            ),
+            "obligation_pagination_required": (
+                len(obligation_evidence)
+                > PLAN_OBSERVABILITY_DEFAULT_PAGE_SIZE
+            ),
+            "downstream_profile_pagination_required": (
+                len(downstream_profiles)
+                > PLAN_OBSERVABILITY_DEFAULT_PAGE_SIZE
+            ),
+            "detail_collections_omitted": True,
+            "base_plan_projection_compacted": False,
+        }
+
+    def _encode_plan_observability_cursor(
+        self, payload_value: dict[str, Any]
+    ) -> str:
+        payload = json.dumps(
+            payload_value,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        signature = hmac.new(
+            self._plan_observability_cursor_key,
+            payload,
+            hashlib.sha256,
+        ).digest()
+        return (
+            base64.urlsafe_b64encode(payload).decode().rstrip("=")
+            + "."
+            + base64.urlsafe_b64encode(signature).decode().rstrip("=")
+        )
+
+    def _decode_plan_observability_cursor(
+        self, cursor: str
+    ) -> dict[str, Any]:
+        try:
+            payload_part, signature_part = cursor.split(".", 1)
+            payload = base64.urlsafe_b64decode(
+                payload_part + "=" * (-len(payload_part) % 4)
+            )
+            signature = base64.urlsafe_b64decode(
+                signature_part + "=" * (-len(signature_part) % 4)
+            )
+            if (
+                base64.urlsafe_b64encode(payload).decode().rstrip("=")
+                != payload_part
+                or base64.urlsafe_b64encode(signature).decode().rstrip("=")
+                != signature_part
+            ):
+                raise ValueError("cursor encoding is not canonical")
+            expected = hmac.new(
+                self._plan_observability_cursor_key,
+                payload,
+                hashlib.sha256,
+            ).digest()
+            if not hmac.compare_digest(signature, expected):
+                raise ValueError("cursor signature mismatch")
+            value = json.loads(payload.decode("utf-8"))
+            required = {
+                "version",
+                "plan_id",
+                "plan_hash",
+                "evidence_fingerprint",
+                "section",
+                "ordering_version",
+                "full_set_fingerprint",
+                "offset",
+                "page_size",
+            }
+            if not isinstance(value, dict) or set(value) != required:
+                raise ValueError("cursor fields are invalid")
+            if type(value["offset"]) is not int or value["offset"] < 0:
+                raise ValueError("cursor offset is invalid")
+            if (
+                type(value["page_size"]) is not int
+                or not 1
+                <= value["page_size"]
+                <= PLAN_OBSERVABILITY_MAX_PAGE_SIZE
+            ):
+                raise ValueError("cursor page size is invalid")
+            return value
+        except Exception as exc:
+            raise GovernanceError(
+                ErrorCode.INVALID_CURSOR,
+                details={
+                    "field": "cursor",
+                    "reason": "integrity_or_format_invalid",
+                    "operation": "get_change_plan",
+                },
+            ) from exc
+
+    @staticmethod
+    def _plan_observability_encoded_chars(value: dict[str, Any]) -> int:
+        return len(
+            json.dumps(
+                value,
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            )
+        )
+
+    @staticmethod
+    def _compact_plan_observability_core(
+        public: dict[str, Any]
+    ) -> dict[str, Any]:
+        keys = (
+            "plan_id",
+            "plan_version",
+            "contract_version",
+            "plan_family",
+            "created_at",
+            "updated_at",
+            "expires_at",
+            "title",
+            "status",
+            "target",
+            "operation",
+            "risk",
+            "policy_decision",
+            "approval_lifecycle",
+            "approval_bundle_state",
+            "status_is_legacy",
+            "authoritative_lifecycle_field",
+            "approval_actionable",
+            "approval_challenge_created",
+            "helper_dependency_replan_required",
+            "next_required_operation",
+            "plan_hash",
+            "apply_allowed",
+            "execution_task",
+            "execution_outcome",
+            "failure_information",
+            "rollback",
+        )
+        return {key: deepcopy(public[key]) for key in keys if key in public}
+
+    def get_plan_observability(
+        self,
+        plan_id: str,
+        *,
+        detail_section: str = "summary",
+        cursor: str = "",
+        page_size: int = PLAN_OBSERVABILITY_DEFAULT_PAGE_SIZE,
+        response_limit: int = 60_000,
+    ) -> dict[str, Any]:
+        """Return a bounded, persisted-only change-plan projection.
+
+        The canonical summary is independent of the selected detail page.  No
+        dependency reader, provider, approval, lock, or persistence method is
+        called by this projection.
+        """
+
+        if detail_section not in PLAN_OBSERVABILITY_SECTIONS:
+            raise GovernanceError(
+                ErrorCode.INVALID_REQUEST,
+                details={"field": "detail_section"},
+            )
+        if (
+            type(page_size) is not int
+            or not 1 <= page_size <= PLAN_OBSERVABILITY_MAX_PAGE_SIZE
+        ):
+            raise GovernanceError(
+                ErrorCode.INVALID_REQUEST,
+                details={"field": "page_size"},
+            )
+        if detail_section == "summary" and cursor:
+            raise GovernanceError(
+                ErrorCode.INVALID_CURSOR,
+                details={
+                    "field": "cursor",
+                    "reason": "detail_section_required",
+                    "operation": "get_change_plan",
+                },
+            )
+        decoded_cursor: dict[str, Any] | None = None
+        if cursor:
+            decoded_cursor = self._decode_plan_observability_cursor(cursor)
+            if (
+                decoded_cursor.get("version")
+                != PLAN_OBSERVABILITY_CURSOR_VERSION
+                or decoded_cursor.get("ordering_version")
+                != PLAN_OBSERVABILITY_ORDERING_VERSION
+            ):
+                raise GovernanceError(
+                    ErrorCode.INVALID_CURSOR,
+                    details={
+                        "field": "cursor",
+                        "reason": "unsupported_version",
+                        "operation": "get_change_plan",
+                    },
+                )
+            if (
+                decoded_cursor.get("plan_id") != plan_id
+                or decoded_cursor.get("section") != detail_section
+            ):
+                raise GovernanceError(
+                    ErrorCode.STALE_CURSOR,
+                    details={
+                        "field": "cursor",
+                        "reason": "plan_or_section_binding_changed",
+                        "operation": "get_change_plan",
+                    },
+                )
+            if decoded_cursor.get("page_size") != page_size:
+                raise GovernanceError(
+                    ErrorCode.INVALID_CURSOR,
+                    details={
+                        "field": "cursor",
+                        "reason": "page_size_mismatch",
+                        "operation": "get_change_plan",
+                    },
+                )
+        try:
+            plan = self._load_for_projection(plan_id)
+        except GovernanceError as exc:
+            if cursor and exc.code in {
+                ErrorCode.POLICY_SNAPSHOT_MISMATCH,
+                ErrorCode.APPROVAL_AUTHORITY_MISMATCH,
+                ErrorCode.APPROVAL_PRINCIPAL_MISMATCH,
+                ErrorCode.APPROVAL_SEQUENCE_FAILURE,
+            }:
+                raise GovernanceError(
+                    ErrorCode.STALE_CURSOR,
+                    details={
+                        "field": "cursor",
+                        "reason": "persisted_authority_changed",
+                        "operation": "get_change_plan",
+                    },
+                ) from exc
+            raise
+        persisted_plan_hash = self.plan_hash(plan)
+        effective_plan = self._project_effective_lifecycle(plan)
+        public = self._public_plan_observability_projection(effective_plan)
+        public["plan_hash"] = persisted_plan_hash
+        public_binding = self._public_helper_dependency_binding(public)
+        binding = public_binding or {}
+        raw_obligations = binding.get("obligation_evidence")
+        raw_profiles = binding.get("downstream_profiles")
+        if raw_obligations is not None and not isinstance(raw_obligations, list):
+            raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR)
+        if raw_profiles is not None and not isinstance(raw_profiles, list):
+            raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR)
+        if any(not isinstance(item, dict) for item in raw_obligations or []):
+            raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR)
+        if any(not isinstance(item, dict) for item in raw_profiles or []):
+            raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR)
+        obligation_evidence = sorted(
+            (deepcopy(item) for item in raw_obligations or []),
+            key=lambda item: self._plan_observability_sort_key(
+                "obligation_evidence", item
+            ),
+        )
+        downstream_profiles = sorted(
+            (deepcopy(item) for item in raw_profiles or []),
+            key=lambda item: self._plan_observability_sort_key(
+                "downstream_profiles", item
+            ),
+        )
+        summary = self._plan_observability_summary(
+            public=public,
+            binding=public_binding,
+            obligation_evidence=obligation_evidence,
+            downstream_profiles=downstream_profiles,
+        )
+        compact_public = deepcopy(public)
+        compact_binding = self._public_helper_dependency_binding(compact_public)
+        if compact_binding is not None:
+            compact_binding.pop("obligation_evidence", None)
+            compact_binding.pop("downstream_profiles", None)
+        detail: dict[str, Any] = {
+            "section": detail_section,
+            "ordering_version": PLAN_OBSERVABILITY_ORDERING_VERSION,
+            "returned_count": 0,
+            "total_count": 0,
+            "has_more": False,
+            "next_cursor": None,
+            "full_set_fingerprint": None,
+            "items": [],
+        }
+        result = {
+            "canonical_summary": summary,
+            **compact_public,
+            "detail": detail,
+        }
+        response_budget = max(
+            4_096,
+            int(response_limit) - PLAN_OBSERVABILITY_RESPONSE_HEADROOM_CHARS,
+        )
+        if self._plan_observability_encoded_chars(result) > response_budget:
+            summary["base_plan_projection_compacted"] = True
+            result = {
+                "canonical_summary": summary,
+                **self._compact_plan_observability_core(public),
+                "detail": detail,
+            }
+        if self._plan_observability_encoded_chars(result) > response_budget:
+            raise GovernanceError(
+                ErrorCode.INVALID_REQUEST,
+                details={"reason": "plan_summary_exceeds_response_budget"},
+            )
+        if detail_section == "summary":
+            return result
+
+        items = (
+            obligation_evidence
+            if detail_section == "obligation_evidence"
+            else downstream_profiles
+        )
+        full_set_fingerprint = stable_hash(items)
+        offset = 0
+        if decoded_cursor is not None:
+            if (
+                decoded_cursor.get("plan_hash") != public.get("plan_hash")
+                or decoded_cursor.get("evidence_fingerprint")
+                != summary.get("evidence_fingerprint")
+                or decoded_cursor.get("full_set_fingerprint")
+                != full_set_fingerprint
+            ):
+                raise GovernanceError(
+                    ErrorCode.STALE_CURSOR,
+                    details={
+                        "field": "cursor",
+                        "reason": "plan_or_evidence_binding_changed",
+                        "operation": "get_change_plan",
+                    },
+                )
+            offset = decoded_cursor["offset"]
+        if offset > len(items):
+            raise GovernanceError(
+                ErrorCode.INVALID_CURSOR,
+                details={
+                    "field": "cursor",
+                    "reason": "offset_out_of_range",
+                    "operation": "get_change_plan",
+                },
+            )
+        detail.update(
+            {
+                "total_count": len(items),
+                "full_set_fingerprint": full_set_fingerprint,
+            }
+        )
+        for item in items[offset : offset + page_size]:
+            candidate = deepcopy(detail["items"])
+            candidate.append(item)
+            detail["items"] = candidate
+            detail["returned_count"] = len(candidate)
+            if self._plan_observability_encoded_chars(result) > response_budget:
+                detail["items"].pop()
+                detail["returned_count"] = len(detail["items"])
+                break
+        if offset < len(items) and not detail["items"]:
+            raise GovernanceError(
+                ErrorCode.INVALID_REQUEST,
+                details={"reason": "detail_record_exceeds_response_budget"},
+            )
+        next_offset = offset + len(detail["items"])
+        detail["has_more"] = next_offset < len(items)
+        if detail["has_more"]:
+            detail["next_cursor"] = self._encode_plan_observability_cursor(
+                {
+                    "version": PLAN_OBSERVABILITY_CURSOR_VERSION,
+                    "plan_id": plan_id,
+                    "plan_hash": public.get("plan_hash"),
+                    "evidence_fingerprint": summary.get(
+                        "evidence_fingerprint"
+                    ),
+                    "section": detail_section,
+                    "ordering_version": PLAN_OBSERVABILITY_ORDERING_VERSION,
+                    "full_set_fingerprint": full_set_fingerprint,
+                    "offset": next_offset,
+                    "page_size": page_size,
+                }
+            )
+        return result
+
     def get_plan(self, plan_id: str) -> dict[str, Any]:
         plan = self._load_for_projection(plan_id)
         self._resolve_lifecycle(plan)
@@ -4896,9 +5529,8 @@ class ChangeGovernanceService:
             and not self._challenge_has_expired(plan)
         )
 
-    def _expire_challenge_if_needed(self, plan: ChangePlan) -> bool:
-        if not self._challenge_has_expired(plan):
-            return False
+    @staticmethod
+    def _apply_challenge_expiration_state(plan: ChangePlan) -> None:
         if plan.approval.elevated_risk_acknowledgement is not None:
             acknowledgement = plan.approval.elevated_risk_acknowledgement
             acknowledgement.state = ApprovalState.EXPIRED
@@ -4906,6 +5538,11 @@ class ChangeGovernanceService:
         plan.approval.state = ApprovalState.EXPIRED
         plan.approval.bundle_state = "expired"
         plan.approval.csrf_digest = None
+
+    def _expire_challenge_if_needed(self, plan: ChangePlan) -> bool:
+        if not self._challenge_has_expired(plan):
+            return False
+        self._apply_challenge_expiration_state(plan)
         self._record(
             plan,
             "external_approval_expired",

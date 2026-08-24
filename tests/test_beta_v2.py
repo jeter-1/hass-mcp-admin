@@ -1517,7 +1517,12 @@ class BetaApplicationTests(unittest.TestCase):
             },
             "create_change_plan": {"title", "description", "operation", "automation_id", "proposed_config", "expiration_minutes", "caller_context"},
             "create_configuration_plan": {"title", "description", "operations", "expiration_minutes", "caller_context"},
-            "get_change_plan": {"plan_id"},
+            "get_change_plan": {
+                "plan_id",
+                "detail_section",
+                "cursor",
+                "page_size",
+            },
             "list_change_plans": {"status", "limit"},
             "approve_change_plan": {"plan_id", "expected_plan_hash", "approval_note"},
             "apply_change_plan": {"plan_id", "expected_plan_hash"},
@@ -1525,6 +1530,19 @@ class BetaApplicationTests(unittest.TestCase):
         }
         for name, properties in expected_properties.items():
             self.assertEqual(set(tools[name]["properties"]), properties)
+        plan_read = tools["get_change_plan"]
+        self.assertEqual(plan_read["required"], ["plan_id"])
+        self.assertEqual(
+            plan_read["properties"]["detail_section"]["enum"],
+            ["summary", "obligation_evidence", "downstream_profiles"],
+        )
+        self.assertEqual(
+            plan_read["properties"]["detail_section"]["default"],
+            "summary",
+        )
+        self.assertEqual(plan_read["properties"]["cursor"]["maxLength"], 2048)
+        self.assertEqual(plan_read["properties"]["page_size"]["minimum"], 1)
+        self.assertEqual(plan_read["properties"]["page_size"]["maximum"], 100)
 
     def test_missing_addon_proposal_audit_is_bounded_domain_outcome(self):
         class MissingAddonTransport:

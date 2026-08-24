@@ -294,12 +294,25 @@ async def create_dashboard_update_plan(
     )
 
 
-async def get_change_plan(plan_id: str) -> str:
-    """Return one persisted change plan, including review diff and lifecycle state."""
+async def get_change_plan(
+    plan_id: str,
+    detail_section: Literal[
+        "summary", "obligation_evidence", "downstream_profiles"
+    ] = "summary",
+    cursor: Annotated[str, Field(max_length=2048)] = "",
+    page_size: Annotated[int, Field(ge=1, le=100)] = 20,
+) -> str:
+    """Return one bounded persisted plan summary and optional evidence page."""
     return await run_structured(
         "get_change_plan",
         "Returned the requested governed change plan.",
-        lambda: GOVERNANCE.require().get_plan(plan_id),
+        lambda: GOVERNANCE.require().get_plan_observability(
+            plan_id,
+            detail_section=detail_section,
+            cursor=cursor,
+            page_size=page_size,
+            response_limit=SETTINGS.response_size_limit,
+        ),
         metadata={"resource_type": "change_plan", "resource_id": plan_id},
         response_limit=SETTINGS.response_size_limit,
     )
