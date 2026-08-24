@@ -2323,10 +2323,9 @@ class ChangeGovernanceService:
                 approval_action=approval_action,
             )
 
-    def _expire_if_needed(self, plan: ChangePlan) -> bool:
-        # A terminal plan has already completed its lifecycle transition.  In
-        # particular, an expired plan must never be "expired" again merely
-        # because a read surface inspects it.
+    def _plan_expiration_applies(self, plan: ChangePlan) -> bool:
+        """Return whether the current clock makes a plan effectively expired."""
+
         if is_terminal_plan(plan):
             return False
         if (
@@ -2340,26 +2339,41 @@ class ChangeGovernanceService:
             # dispatch evidence exists, read-only verification must remain
             # available indefinitely and must never reopen write authority.
             return False
-        if self.now() >= datetime.fromisoformat(plan.expires_at):
-            plan.status = PlanStatus.EXPIRED
-            plan.approval.state = ApprovalState.INVALIDATED
-            plan.approval.bundle_state = "invalidated"
-            plan.approval.csrf_digest = None
-            if plan.approval.elevated_risk_acknowledgement is not None:
-                plan.approval.elevated_risk_acknowledgement.state = (
-                    ApprovalState.INVALIDATED
-                )
-                plan.approval.elevated_risk_acknowledgement.csrf_digest = None
-            if plan.approval.challenge_id:
-                self._record(
-                    plan,
-                    "external_approval_invalidated",
-                    "rejected",
-                    error_code=ErrorCode.CHANGE_PLAN_EXPIRED.value,
-                )
-            self._record(plan, "change_plan_expired", "rejected", error_code=ErrorCode.CHANGE_PLAN_EXPIRED.value)
-            return True
-        return False
+        return self.now() >= datetime.fromisoformat(plan.expires_at)
+
+    @staticmethod
+    def _apply_plan_expiration_state(plan: ChangePlan) -> None:
+        plan.status = PlanStatus.EXPIRED
+        plan.approval.state = ApprovalState.INVALIDATED
+        plan.approval.bundle_state = "invalidated"
+        plan.approval.csrf_digest = None
+        if plan.approval.elevated_risk_acknowledgement is not None:
+            plan.approval.elevated_risk_acknowledgement.state = (
+                ApprovalState.INVALIDATED
+            )
+            plan.approval.elevated_risk_acknowledgement.csrf_digest = None
+
+    def _expire_if_needed(self, plan: ChangePlan) -> bool:
+        # A terminal plan has already completed its lifecycle transition.  In
+        # particular, an expired plan must never be "expired" again merely
+        # because a read surface inspects it.
+        if not self._plan_expiration_applies(plan):
+            return False
+        self._apply_plan_expiration_state(plan)
+        if plan.approval.challenge_id:
+            self._record(
+                plan,
+                "external_approval_invalidated",
+                "rejected",
+                error_code=ErrorCode.CHANGE_PLAN_EXPIRED.value,
+            )
+        self._record(
+            plan,
+            "change_plan_expired",
+            "rejected",
+            error_code=ErrorCode.CHANGE_PLAN_EXPIRED.value,
+        )
+        return True
 
     def _challenge_has_expired(self, plan: ChangePlan) -> bool:
         """Return the effective clock state for an external-pending challenge."""
@@ -2385,12 +2399,11 @@ class ChangeGovernanceService:
         except (TypeError, ValueError):
             return True
 
-    def _invalidate_terminal_challenge_if_needed(self, plan: ChangePlan) -> bool:
-        """Reconcile an impossible persisted pending challenge on a terminal plan."""
-
-        if (
-            not is_terminal_plan(plan)
-            or not (
+    @staticmethod
+    def _terminal_challenge_requires_invalidation(plan: ChangePlan) -> bool:
+        return bool(
+            is_terminal_plan(plan)
+            and (
                 plan.approval.state == ApprovalState.EXTERNAL_PENDING
                 or bool(
                     plan.approval.elevated_risk_acknowledgement
@@ -2398,8 +2411,12 @@ class ChangeGovernanceService:
                     == ApprovalState.EXTERNAL_PENDING
                 )
             )
-        ):
-            return False
+        )
+
+    @staticmethod
+    def _apply_terminal_challenge_invalidation_state(
+        plan: ChangePlan,
+    ) -> None:
         plan.approval.state = ApprovalState.INVALIDATED
         plan.approval.bundle_state = "invalidated"
         plan.approval.csrf_digest = None
@@ -2410,6 +2427,13 @@ class ChangeGovernanceService:
             plan.approval.elevated_risk_acknowledgement.csrf_digest = (
                 None
             )
+
+    def _invalidate_terminal_challenge_if_needed(self, plan: ChangePlan) -> bool:
+        """Reconcile an impossible persisted pending challenge on a terminal plan."""
+
+        if not self._terminal_challenge_requires_invalidation(plan):
+            return False
+        self._apply_terminal_challenge_invalidation_state(plan)
         self._record(
             plan,
             "external_approval_invalidated",
@@ -2434,6 +2458,19 @@ class ChangeGovernanceService:
             return plan_expired, False
         challenge_expired = self._expire_challenge_if_needed(plan)
         return plan_expired, challenge_expired
+
+    def _project_effective_lifecycle(self, plan: ChangePlan) -> ChangePlan:
+        """Project clock-effective lifecycle truth without persistence."""
+
+        projected = deepcopy(plan)
+        if self._plan_expiration_applies(projected):
+            self._apply_plan_expiration_state(projected)
+        if self._terminal_challenge_requires_invalidation(projected):
+            self._apply_terminal_challenge_invalidation_state(projected)
+            return projected
+        if self._challenge_has_expired(projected):
+            self._apply_challenge_expiration_state(projected)
+        return projected
 
     def _public(self, plan: ChangePlan, *, include_configs: bool = True) -> dict[str, Any]:
         self._require_v2_persisted_plan_safe(plan)
@@ -4655,6 +4692,10 @@ class ChangeGovernanceService:
         physical_consequence = binding.get("physical_consequence")
         if physical_consequence is None and isinstance(policy, dict):
             physical_consequence = policy.get("physical_consequence")
+        approval = public.get("approval")
+        approval_state = (
+            approval.get("state") if isinstance(approval, dict) else None
+        )
         obligation_fingerprint = stable_hash(obligation_evidence)
         profile_fingerprint = stable_hash(downstream_profiles)
         return {
@@ -4662,6 +4703,18 @@ class ChangeGovernanceService:
             "plan_id": public.get("plan_id"),
             "status": public.get("status"),
             "plan_hash": public.get("plan_hash"),
+            "approval_state": approval_state,
+            "approval_lifecycle": public.get("approval_lifecycle"),
+            "approval_bundle_state": public.get(
+                "approval_bundle_state"
+            ),
+            "approval_actionable": bool(
+                public.get("approval_actionable")
+            ),
+            "apply_allowed": bool(public.get("apply_allowed")),
+            "next_required_operation": public.get(
+                "next_required_operation"
+            ),
             "dependency_risk_binding_model": binding.get("model"),
             "helper_dependency_replan_required": bool(
                 public.get("helper_dependency_replan_required")
@@ -4931,7 +4984,10 @@ class ChangeGovernanceService:
                     },
                 ) from exc
             raise
-        public = self._public_plan_observability_projection(plan)
+        persisted_plan_hash = self.plan_hash(plan)
+        effective_plan = self._project_effective_lifecycle(plan)
+        public = self._public_plan_observability_projection(effective_plan)
+        public["plan_hash"] = persisted_plan_hash
         public_binding = self._public_helper_dependency_binding(public)
         binding = public_binding or {}
         raw_obligations = binding.get("obligation_evidence")
@@ -5473,9 +5529,8 @@ class ChangeGovernanceService:
             and not self._challenge_has_expired(plan)
         )
 
-    def _expire_challenge_if_needed(self, plan: ChangePlan) -> bool:
-        if not self._challenge_has_expired(plan):
-            return False
+    @staticmethod
+    def _apply_challenge_expiration_state(plan: ChangePlan) -> None:
         if plan.approval.elevated_risk_acknowledgement is not None:
             acknowledgement = plan.approval.elevated_risk_acknowledgement
             acknowledgement.state = ApprovalState.EXPIRED
@@ -5483,6 +5538,11 @@ class ChangeGovernanceService:
         plan.approval.state = ApprovalState.EXPIRED
         plan.approval.bundle_state = "expired"
         plan.approval.csrf_digest = None
+
+    def _expire_challenge_if_needed(self, plan: ChangePlan) -> bool:
+        if not self._challenge_has_expired(plan):
+            return False
+        self._apply_challenge_expiration_state(plan)
         self._record(
             plan,
             "external_approval_expired",

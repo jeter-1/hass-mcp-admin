@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +17,7 @@ sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
 from ha_mcp_engineering.governance import GOVERNANCE  # noqa: E402
 from ha_mcp_engineering.governance.normalize import stable_hash  # noqa: E402
+from ha_mcp_engineering.governance.models import PlanStatus  # noqa: E402
 from ha_mcp_engineering.governance.service import (  # noqa: E402
     ChangeGovernanceService,
 )
@@ -274,6 +276,44 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(persisted)
         self.assertEqual(persisted.contract_version, 1)
         return created["plan_id"], gateway
+
+    async def _grant_helper_plan(
+        self,
+        plan_id: str,
+        plan_hash: str,
+    ) -> None:
+        pending = self.service.approve(plan_id, plan_hash)
+        while pending["status"] == "approval_pending":
+            _, csrf = await self.service.issue_external_csrf(
+                plan_id,
+                pending["challenge_id"],
+            )
+            pending = await self.service.decide_external_approval(
+                plan_id=plan_id,
+                challenge_id=pending["challenge_id"],
+                expected_plan_hash=plan_hash,
+                approval_kind=pending["approval_kind"],
+                approval_action=pending["approval_action"],
+                csrf_nonce=csrf,
+                decision="approve",
+                approver_principal=(
+                    "home_assistant_admin_ingress:synthetic-r4-reviewer"
+                ),
+            )
+
+    def _assert_canonical_lifecycle_matches_public(self, result: dict) -> None:
+        summary = result["canonical_summary"]
+        expected = {
+            "status": result["status"],
+            "approval_state": result["approval"]["state"],
+            "approval_lifecycle": result["approval_lifecycle"],
+            "approval_bundle_state": result["approval_bundle_state"],
+            "approval_actionable": result["approval_actionable"],
+            "apply_allowed": result["apply_allowed"],
+            "next_required_operation": result["next_required_operation"],
+        }
+        for field, value in expected.items():
+            self.assertEqual(summary[field], value, field)
 
     async def test_contract_v1_observability_excludes_raw_configuration(self):
         sentinel = "SYNTHETIC_R4_LEGACY_CONFIGURATION_SENTINEL"
@@ -602,11 +642,47 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
             obligations=1,
             expiration_minutes=5,
         )
+        persisted_v3 = self.service._load_for_projection(v3_plan_id)
+        persisted_v3_hash = self.service.plan_hash(persisted_v3)
         self.clock.advance(seconds=301)
-        self.service.get_plan(v3_plan_id)
         before = self._persisted_files()
-        v3 = self.service.get_plan_observability(v3_plan_id)
+        reads_before = self.reader.read_count
+        with (
+            patch.object(
+                self.service,
+                "_resolve_lifecycle",
+                side_effect=AssertionError(
+                    "mutating lifecycle resolver must remain unreachable"
+                ),
+            ),
+            patch.object(
+                self.service,
+                "_record",
+                side_effect=AssertionError(
+                    "observability must not persist lifecycle events"
+                ),
+            ),
+            patch.object(
+                self.service,
+                "_save",
+                side_effect=AssertionError(
+                    "observability must not save plans"
+                ),
+            ),
+            patch.object(
+                self.service,
+                "_project_plan_event_to_task",
+                side_effect=AssertionError(
+                    "observability must not project task events"
+                ),
+            ),
+        ):
+            v3 = self.service.get_plan_observability(v3_plan_id)
         self.assertEqual(v3["canonical_summary"]["status"], "expired")
+        self.assertEqual(v3["status"], "expired")
+        self.assertEqual(v3["approval"]["state"], "invalidated")
+        self.assertEqual(v3["approval_lifecycle"], "approval_invalidated")
+        self.assertEqual(v3["approval_bundle_state"], "invalidated")
         self.assertEqual(
             v3["canonical_summary"]["dependency_risk_binding_model"],
             "helper-dependency-risk-v3",
@@ -615,6 +691,15 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
             v3["canonical_summary"]["helper_dependency_replan_required"]
         )
         self.assertFalse(v3["approval_actionable"])
+        self.assertFalse(v3["apply_allowed"])
+        self.assertNotEqual(
+            v3["approval_lifecycle"],
+            "approval_not_requested",
+        )
+        self.assertEqual(v3["plan_hash"], persisted_v3_hash)
+        self._assert_canonical_lifecycle_matches_public(v3)
+        self.assertEqual(self.reader.read_count, reads_before)
+        self.assertEqual(self.helper.dispatch_count, 0)
         self.assertEqual(before, self._persisted_files())
 
         self.reader.model = "helper-dependency-risk-v4"
@@ -651,6 +736,177 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
                 for item in profile_page["detail"]["items"]
             )
         )
+
+    async def test_challenge_expiration_projects_truth_without_persistence(self):
+        plan_id = await self._create_plan(expiration_minutes=120)
+        persisted = self.service._load_for_projection(plan_id)
+        plan_hash = self.service.plan_hash(persisted)
+        pending = self.service.approve(plan_id, plan_hash)
+        self.assertEqual(pending["approval_lifecycle"], "approval_pending_external")
+        before = self._persisted_files()
+        reads_before = self.reader.read_count
+        self.clock.advance(seconds=3_601)
+
+        with (
+            patch.object(
+                self.service,
+                "_resolve_lifecycle",
+                side_effect=AssertionError(
+                    "mutating lifecycle resolver must remain unreachable"
+                ),
+            ),
+            patch.object(
+                self.service,
+                "_record",
+                side_effect=AssertionError(
+                    "observability must not persist lifecycle events"
+                ),
+            ),
+            patch.object(
+                self.service,
+                "_save",
+                side_effect=AssertionError(
+                    "observability must not save plans"
+                ),
+            ),
+            patch.object(
+                self.service,
+                "_project_plan_event_to_task",
+                side_effect=AssertionError(
+                    "observability must not project task events"
+                ),
+            ),
+        ):
+            result = self.service.get_plan_observability(plan_id)
+
+        self.assertEqual(result["status"], "awaiting_approval")
+        self.assertEqual(result["approval"]["state"], "expired")
+        self.assertEqual(result["approval_lifecycle"], "approval_expired")
+        self.assertEqual(result["approval_bundle_state"], "expired")
+        self.assertFalse(result["approval_actionable"])
+        self.assertFalse(result["apply_allowed"])
+        self.assertIsNone(result["next_required_operation"])
+        self.assertEqual(result["plan_hash"], plan_hash)
+        self._assert_canonical_lifecycle_matches_public(result)
+        self.assertEqual(self.reader.read_count, reads_before)
+        self.assertEqual(self.helper.dispatch_count, 0)
+        self.assertEqual(before, self._persisted_files())
+
+    async def test_terminal_plan_observability_remains_terminal_and_inert(self):
+        plan_id = await self._create_plan(expiration_minutes=5)
+        self.clock.advance(seconds=301)
+        persisted = self.service._load_for_projection(plan_id)
+        self.service._resolve_lifecycle(persisted)
+        terminal = self.service._load_for_projection(plan_id)
+        self.assertEqual(terminal.status, PlanStatus.EXPIRED)
+        terminal_hash = self.service.plan_hash(terminal)
+        before = self._persisted_files()
+        self.clock.advance(seconds=600)
+        self._disable_authority_paths()
+
+        with (
+            patch.object(
+                self.service,
+                "_resolve_lifecycle",
+                side_effect=AssertionError(
+                    "mutating lifecycle resolver must remain unreachable"
+                ),
+            ),
+            patch.object(
+                self.service,
+                "_record",
+                side_effect=AssertionError(
+                    "terminal observability must not append events"
+                ),
+            ),
+            patch.object(
+                self.service,
+                "_save",
+                side_effect=AssertionError(
+                    "terminal observability must not save"
+                ),
+            ),
+        ):
+            result = self.service.get_plan_observability(plan_id)
+
+        self.assertEqual(result["status"], "expired")
+        self.assertEqual(result["approval_lifecycle"], "approval_invalidated")
+        self.assertFalse(result["approval_actionable"])
+        self.assertFalse(result["apply_allowed"])
+        self.assertEqual(result["plan_hash"], terminal_hash)
+        self._assert_canonical_lifecycle_matches_public(result)
+        self.assertEqual(before, self._persisted_files())
+
+    async def test_dispatched_operational_plan_does_not_project_expired(self):
+        plan_id = await self._create_plan(expiration_minutes=5)
+        persisted = self.service._load_for_projection(plan_id)
+        plan_hash = self.service.plan_hash(persisted)
+        await self._grant_helper_plan(plan_id, plan_hash)
+        dispatched = self.service._load_for_projection(plan_id)
+        self.service._consume_approval_bundle(dispatched)
+        dispatched.status = PlanStatus.VERIFICATION_REQUIRED
+        dispatched.operational.dispatch.update(
+            {
+                "attempt_count": 1,
+                "dispatched": True,
+                "attempted_at": self.clock().isoformat(),
+                "provider_response_received": True,
+            }
+        )
+        self.service._save(dispatched)
+        before = self._persisted_files()
+        reads_before = self.reader.read_count
+        self.clock.advance(seconds=301)
+        self._disable_authority_paths()
+
+        with (
+            patch.object(
+                self.service,
+                "_resolve_lifecycle",
+                side_effect=AssertionError(
+                    "mutating lifecycle resolver must remain unreachable"
+                ),
+            ),
+            patch.object(
+                self.service,
+                "_record",
+                side_effect=AssertionError(
+                    "dispatched observability must not append events"
+                ),
+            ),
+            patch.object(
+                self.service,
+                "_save",
+                side_effect=AssertionError(
+                    "dispatched observability must not save"
+                ),
+            ),
+            patch.object(
+                self.service,
+                "_project_plan_event_to_task",
+                side_effect=AssertionError(
+                    "dispatched observability must not project task events"
+                ),
+            ),
+        ):
+            result = self.service.get_plan_observability(plan_id)
+
+        self.assertEqual(result["status"], "verification_required")
+        self.assertEqual(result["approval"]["state"], "consumed")
+        self.assertEqual(result["approval_lifecycle"], "approval_consumed")
+        self.assertEqual(result["approval_bundle_state"], "consumed")
+        self.assertFalse(result["approval_actionable"])
+        self.assertFalse(result["apply_allowed"])
+        self.assertIsNone(result["next_required_operation"])
+        self.assertEqual(result["plan_hash"], plan_hash)
+        self.assertEqual(
+            result["operational"]["dispatch"]["attempt_count"],
+            1,
+        )
+        self._assert_canonical_lifecycle_matches_public(result)
+        self.assertEqual(self.reader.read_count, reads_before)
+        self.assertEqual(self.helper.dispatch_count, 0)
+        self.assertEqual(before, self._persisted_files())
 
     async def test_pages_do_not_refresh_write_approve_lock_dispatch_or_leak(self):
         plan_id = await self._create_plan(
