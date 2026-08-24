@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import base64
 from copy import deepcopy
+import hashlib
+import hmac
 import json
 from pathlib import Path
 import sys
@@ -315,6 +318,45 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
         for field, value in expected.items():
             self.assertEqual(summary[field], value, field)
 
+    @staticmethod
+    def _decode_public_cursor_bytes(cursor: str) -> bytes:
+        return base64.b64decode(
+            cursor + "=" * (-len(cursor) % 4),
+            altchars=b"-_",
+            validate=True,
+        )
+
+    @staticmethod
+    def _encode_public_cursor_bytes(value: bytes) -> str:
+        return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
+
+    def _synthetic_cursor_claims(self) -> dict:
+        return {
+            "version": 2,
+            "plan_id": "plan_beta43_opaque_cursor_sentinel",
+            "plan_hash": "1f" * 32,
+            "evidence_fingerprint": "2e" * 32,
+            "section": "obligation_evidence",
+            "ordering_version": 1,
+            "full_set_fingerprint": "3d" * 32,
+            "offset": 123456789,
+            "page_size": 97,
+        }
+
+    def _assert_invalid_cursor_token(self, cursor: str) -> GovernanceError:
+        with self.assertRaises(GovernanceError) as caught:
+            self.service._decode_plan_observability_cursor(cursor)
+        self.assertEqual(caught.exception.code, ErrorCode.INVALID_CURSOR)
+        self.assertEqual(
+            caught.exception.details,
+            {
+                "field": "cursor",
+                "reason": "integrity_or_format_invalid",
+                "operation": "get_change_plan",
+            },
+        )
+        return caught.exception
+
     async def test_contract_v1_observability_excludes_raw_configuration(self):
         sentinel = "SYNTHETIC_R4_LEGACY_CONFIGURATION_SENTINEL"
         plan_id, gateway = await self._create_contract_v1_plan(
@@ -477,9 +519,172 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
             encoded_chars - 1,
         )
 
+    def test_cursor_tokens_are_randomized_opaque_and_bounded(self):
+        claims = self._synthetic_cursor_claims()
+
+        first = self.service._encode_plan_observability_cursor(claims)
+        second = self.service._encode_plan_observability_cursor(claims)
+
+        self.assertNotEqual(first, second)
+        self.assertEqual(
+            self.service._decode_plan_observability_cursor(first),
+            claims,
+        )
+        self.assertEqual(
+            self.service._decode_plan_observability_cursor(second),
+            claims,
+        )
+        self.assertLess(len(first), 2_048)
+        self.assertNotIn(".", first)
+        self.assertEqual(len(first.split(".")), 1)
+
+        decoded = self._decode_public_cursor_bytes(first)
+        with self.assertRaises((UnicodeDecodeError, json.JSONDecodeError)):
+            json.loads(decoded.decode("utf-8"))
+
+        canonical_claims = json.dumps(
+            claims,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        self.assertNotIn(canonical_claims, decoded)
+        for field in (
+            "plan_id",
+            "plan_hash",
+            "evidence_fingerprint",
+            "full_set_fingerprint",
+            "section",
+        ):
+            recognizable = str(claims[field]).encode("utf-8")
+            self.assertNotIn(recognizable, decoded, field)
+            self.assertNotIn(str(claims[field]), first, field)
+        for fragment in (
+            b'"offset":123456789',
+            b'"page_size":97',
+        ):
+            self.assertNotIn(fragment, decoded)
+
+        largest_valid_claims = dict(claims)
+        for field, marker in (
+            ("plan_id", "p"),
+            ("plan_hash", "h"),
+            ("evidence_fingerprint", "e"),
+            ("full_set_fingerprint", "f"),
+        ):
+            largest_valid_claims[field] = marker * 256
+        largest_valid = self.service._encode_plan_observability_cursor(
+            largest_valid_claims
+        )
+        self.assertLess(len(largest_valid), 2_048)
+        self.assertEqual(
+            self.service._decode_plan_observability_cursor(largest_valid),
+            largest_valid_claims,
+        )
+
+    def test_cursor_aead_rejects_tampering_and_noncanonical_encodings(self):
+        claims = self._synthetic_cursor_claims()
+        token = self.service._encode_plan_observability_cursor(claims)
+        raw = self._decode_public_cursor_bytes(token)
+        nonce_size = 12
+        tag_size = 16
+        ciphertext_end = len(raw) - tag_size
+        self.assertGreater(ciphertext_end, nonce_size)
+
+        mutation_positions = {
+            "nonce": 0,
+            "ciphertext_beginning": nonce_size,
+            "ciphertext_middle": nonce_size
+            + (ciphertext_end - nonce_size) // 2,
+            "ciphertext_end": ciphertext_end - 1,
+            "authentication_tag": len(raw) - 1,
+        }
+        for label, position in mutation_positions.items():
+            mutated = bytearray(raw)
+            mutated[position] ^= 0x01
+            with self.subTest(label=label):
+                self._assert_invalid_cursor_token(
+                    self._encode_public_cursor_bytes(bytes(mutated))
+                )
+
+        invalid_tokens = {
+            "truncated": self._encode_public_cursor_bytes(raw[:-1]),
+            "extra_bytes": self._encode_public_cursor_bytes(raw + b"\x00"),
+            "invalid_characters": token + "!",
+            "padding_added": token + "=",
+        }
+        for label, invalid in invalid_tokens.items():
+            with self.subTest(label=label):
+                self._assert_invalid_cursor_token(invalid)
+
+        noncanonical = None
+        alphabet = (
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            "abcdefghijklmnopqrstuvwxyz"
+            "0123456789-_"
+        )
+        for _ in range(3):
+            token = self.service._encode_plan_observability_cursor(claims)
+            raw = self._decode_public_cursor_bytes(token)
+            if len(token) % 4 in {2, 3}:
+                for replacement in alphabet:
+                    candidate = token[:-1] + replacement
+                    if candidate == token:
+                        continue
+                    try:
+                        candidate_raw = self._decode_public_cursor_bytes(
+                            candidate
+                        )
+                    except ValueError:
+                        continue
+                    if candidate_raw == raw:
+                        noncanonical = candidate
+                        break
+            if noncanonical is not None:
+                break
+            claims["plan_id"] += "x"
+        if noncanonical is None:
+            self.fail("could not construct a noncanonical base64url token")
+        self._assert_invalid_cursor_token(noncanonical)
+
+    def test_beta42_signed_plaintext_cursor_is_rejected_without_leakage(self):
+        claims = self._synthetic_cursor_claims()
+        payload = json.dumps(
+            claims,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        signature = hmac.new(
+            self.service._plan_observability_cursor_key,
+            payload,
+            hashlib.sha256,
+        ).digest()
+        legacy = (
+            self._encode_public_cursor_bytes(payload)
+            + "."
+            + self._encode_public_cursor_bytes(signature)
+        )
+
+        error = self._assert_invalid_cursor_token(legacy)
+        bounded_error = json.dumps(
+            {
+                "code": error.code.value,
+                "details": error.details,
+            },
+            sort_keys=True,
+        )
+        self.assertNotIn(legacy, bounded_error)
+        self.assertNotIn("synthetic-r3-cursor-key", bounded_error)
+        for field in (
+            "plan_id",
+            "plan_hash",
+            "evidence_fingerprint",
+            "full_set_fingerprint",
+        ):
+            self.assertNotIn(str(claims[field]), bounded_error)
+
     async def test_every_obligation_is_returned_once_across_stable_pages(self):
         plan_id = await self._create_plan(
-            obligations=55,
+            obligations=100,
             obligation_padding=300,
         )
         self._disable_authority_paths()
@@ -505,8 +710,8 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
         first, first_fingerprints = await traverse()
         second, second_fingerprints = await traverse()
         first_ids = [item["obligation_fingerprint"] for item in first]
-        self.assertEqual(len(first_ids), 55)
-        self.assertEqual(len(set(first_ids)), 55)
+        self.assertEqual(len(first_ids), 100)
+        self.assertEqual(len(set(first_ids)), 100)
         self.assertEqual(first, second)
         self.assertEqual(len(first_fingerprints), 1)
         self.assertEqual(first_fingerprints, second_fingerprints)
@@ -517,30 +722,37 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
             profile_padding=600,
         )
         self._disable_authority_paths()
-        cursor = ""
-        profiles = []
-        fingerprints = set()
-        while True:
-            page = self.service.get_plan_observability(
-                plan_id,
-                detail_section="downstream_profiles",
-                cursor=cursor,
-                page_size=6,
-            )
-            detail = page["detail"]
-            profiles.extend(detail["items"])
-            fingerprints.add(detail["full_set_fingerprint"])
-            cursor = detail["next_cursor"] or ""
-            if not detail["has_more"]:
-                break
-        profile_ids = [item["profile_fingerprint"] for item in profiles]
+
+        def traverse():
+            cursor = ""
+            profiles = []
+            fingerprints = set()
+            while True:
+                page = self.service.get_plan_observability(
+                    plan_id,
+                    detail_section="downstream_profiles",
+                    cursor=cursor,
+                    page_size=6,
+                )
+                detail = page["detail"]
+                profiles.extend(detail["items"])
+                fingerprints.add(detail["full_set_fingerprint"])
+                cursor = detail["next_cursor"] or ""
+                if not detail["has_more"]:
+                    return profiles, fingerprints
+
+        first, first_fingerprints = traverse()
+        second, second_fingerprints = traverse()
+        profile_ids = [item["profile_fingerprint"] for item in first]
         self.assertEqual(len(profile_ids), 37)
         self.assertEqual(len(set(profile_ids)), 37)
-        self.assertEqual(len(fingerprints), 1)
+        self.assertEqual(first, second)
+        self.assertEqual(len(first_fingerprints), 1)
+        self.assertEqual(first_fingerprints, second_fingerprints)
         self.assertEqual(
-            profiles,
+            first,
             sorted(
-                profiles,
+                first,
                 key=lambda item: self.service._plan_observability_sort_key(
                     "downstream_profiles", item
                 ),
@@ -576,6 +788,23 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
                 page_size=1,
             )
         self.assertEqual(caught.exception.code, ErrorCode.STALE_CURSOR)
+        self.assertEqual(
+            caught.exception.details["reason"],
+            "plan_or_section_binding_changed",
+        )
+
+        with self.assertRaises(GovernanceError) as caught:
+            self.service.get_plan_observability(
+                plan_id,
+                detail_section="obligation_evidence",
+                cursor=cursor,
+                page_size=2,
+            )
+        self.assertEqual(caught.exception.code, ErrorCode.INVALID_CURSOR)
+        self.assertEqual(
+            caught.exception.details["reason"],
+            "page_size_mismatch",
+        )
 
         unsupported = self.service._encode_plan_observability_cursor(
             {
@@ -602,6 +831,40 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
                 page_size=1,
             )
         self.assertEqual(caught.exception.code, ErrorCode.INVALID_CURSOR)
+        self.assertEqual(
+            caught.exception.details["reason"],
+            "unsupported_version",
+        )
+
+        out_of_range = self.service._encode_plan_observability_cursor(
+            {
+                "version": 2,
+                "plan_id": plan_id,
+                "plan_hash": first["canonical_summary"]["plan_hash"],
+                "evidence_fingerprint": first["canonical_summary"][
+                    "evidence_fingerprint"
+                ],
+                "section": "obligation_evidence",
+                "ordering_version": 1,
+                "full_set_fingerprint": first["detail"][
+                    "full_set_fingerprint"
+                ],
+                "offset": 4,
+                "page_size": 1,
+            }
+        )
+        with self.assertRaises(GovernanceError) as caught:
+            self.service.get_plan_observability(
+                plan_id,
+                detail_section="obligation_evidence",
+                cursor=out_of_range,
+                page_size=1,
+            )
+        self.assertEqual(caught.exception.code, ErrorCode.INVALID_CURSOR)
+        self.assertEqual(
+            caught.exception.details["reason"],
+            "offset_out_of_range",
+        )
 
         other_id = await self._create_plan(obligations=3)
         with self.assertRaises(GovernanceError) as caught:
@@ -612,6 +875,10 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
                 page_size=1,
             )
         self.assertEqual(caught.exception.code, ErrorCode.STALE_CURSOR)
+        self.assertEqual(
+            caught.exception.details["reason"],
+            "plan_or_section_binding_changed",
+        )
 
     async def test_cursor_rejects_persisted_authority_change(self):
         plan_id = await self._create_plan(obligations=3)
@@ -635,6 +902,10 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
                 page_size=1,
             )
         self.assertEqual(caught.exception.code, ErrorCode.STALE_CURSOR)
+        self.assertEqual(
+            caught.exception.details["reason"],
+            "persisted_authority_changed",
+        )
 
     async def test_expired_v3_and_v4_failure_summary_are_truthful(self):
         self.reader.model = "helper-dependency-risk-v3"
@@ -931,7 +1202,34 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
             detail_section="downstream_profiles",
             page_size=2,
         )
-        combined = {"obligations": obligations, "profiles": profiles}
+        obligation_continuation = self.service.get_plan_observability(
+            plan_id,
+            detail_section="obligation_evidence",
+            cursor=obligations["detail"]["next_cursor"],
+            page_size=2,
+        )
+        profile_continuation = self.service.get_plan_observability(
+            plan_id,
+            detail_section="downstream_profiles",
+            cursor=profiles["detail"]["next_cursor"],
+            page_size=2,
+        )
+        invalid_cursor = obligations["detail"]["next_cursor"] + "!"
+        with self.assertRaises(GovernanceError) as caught:
+            self.service.get_plan_observability(
+                plan_id,
+                detail_section="obligation_evidence",
+                cursor=invalid_cursor,
+                page_size=2,
+            )
+        self.assertEqual(caught.exception.code, ErrorCode.INVALID_CURSOR)
+        combined = {
+            "obligations": obligations,
+            "obligation_continuation": obligation_continuation,
+            "profiles": profiles,
+            "profile_continuation": profile_continuation,
+            "bounded_error": caught.exception.details,
+        }
         serialized = json.dumps(combined)
 
         def all_keys(value):
