@@ -58,9 +58,9 @@ from ha_mcp_engineering.version import SCHEMA_VERSION  # noqa: E402
 
 
 BETA26_BASELINE_SHA = "b64db57ddffc5108b9078717ce720440f5361412"
-F2_EXISTING_TOOL_SCHEMA_SHA256 = "30cee281e0f7ef3c3aae30955568ff5dddbe18ba4f5d1e080b89708e712ebe29"
+F2_EXISTING_TOOL_SCHEMA_SHA256 = "2e1667f26f158331a73c184f363e17093de57936c4dce9227f05bf1e26fb70f6"
 BETA26_SEARCH_ENTITIES_SCHEMA_SHA256 = "050632a52cb5baf438cfe71edfdb59ad2a715013d7684d2958cc40f4a2d00850"
-BETA26_ENUM_SHA256 = "465924bf56992b93019184e30b5a322582e9d2789ca670fc3742004e8daa0cfb"
+BETA26_ENUM_SHA256 = "c415f5e344cc6cf4bdc4035c3a35dcbfa2870891ebf0508e897a916792ef9d91"
 BETA26_CLASSIFICATION_SHA256 = "1a9dd62cd6a5c737b4cc65265b6f4f03e5532881f6d38b0e6f79994fa90a9684"
 BETA26_ROUTING_SHA256 = "3fb2e0444b4d2af078499e4cdf2305067982438b3e68fdd9597edc0fcbad268e"
 BETA26_DIRECT_POLICY_SHA256 = "f2719a8a6b78d9f5ec080cf79c1bf62498cdf95189daa0c50590b44978390850"
@@ -195,7 +195,7 @@ class RC1PublicContractTests(unittest.TestCase):
             BETA26_SEARCH_ENTITIES_SCHEMA_SHA256,
         )
         self.assertEqual(canonical_sha256(enums), BETA26_ENUM_SHA256)
-        self.assertEqual(len(enums), 13)
+        self.assertEqual(len(enums), 14)
 
     def test_rc2_routing_is_frozen_and_later_tools_are_additive(self):
         classifications = {
