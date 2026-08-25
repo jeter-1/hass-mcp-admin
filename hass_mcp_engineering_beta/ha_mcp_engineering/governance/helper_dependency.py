@@ -393,25 +393,24 @@ def _obligation_targets_helper(
         # Template reads in those same configuration paths remain causal and
         # must continue through the ledger below.
         return "proven_dependency_neutral"
-    if entity_id in item.exact_entity_ids:
+    if (
+        item.outcome == "exact_dependency"
+        and entity_id in item.exact_entity_ids
+    ):
         return "exact_dependency"
     # ``exact_dependency`` with candidates represents a complete finite set.
     # A non-member therefore has an attributable exclusion proof.  Candidates
     # retained on an opaque obligation are only partial hints and cannot do so.
     if item.outcome == "exact_dependency" and item.exact_entity_ids:
         return "proven_target_exclusion"
-    domains = item.possible_entity_domains
-    if (
-        domains is not None
-        and domains
-        and "input_boolean" not in domains
-    ):
-        return "proven_target_exclusion"
     if item.outcome == "proven_dependency_neutral":
         return "proven_dependency_neutral"
     if item.outcome == "proven_target_exclusion":
         return "proven_target_exclusion"
     if item.outcome == "exact_dependency":
+        domains = item.possible_entity_domains
+        if domains and "input_boolean" not in domains:
+            return "proven_target_exclusion"
         # A proven domain that contains the target domain bounds the potential
         # automation set but cannot prove membership for one exact helper.
         # This is semantic opacity, not missing inventory coverage.
@@ -420,6 +419,9 @@ def _obligation_targets_helper(
         # An alleged exact terminal without a candidate or domain proof is not
         # exact evidence and cannot be made reviewable safely.
         return "coverage_failure"
+    # Candidate IDs and domains retained on an opaque terminal are diagnostic
+    # hints only.  Authoritative exclusion must be produced by the analyzer;
+    # the risk layer never reconstructs a proof discarded upstream.
     return "bounded_semantic_opaque"
 
 
@@ -770,9 +772,9 @@ def _build_obligation_binding(
         semantic_precision = "exact"
     else:
         semantic_precision = "coverage_failure"
-    execution_eligible = coverage_complete
+    execution_eligible = bool(coverage_complete and not opaque_count)
     evidence_complete = bool(coverage_complete and not opaque_count)
-    if not execution_eligible and observed_consequence == "none":
+    if not coverage_complete and observed_consequence == "none":
         observed_consequence = "unknown"
 
     resource_ids = sorted(
@@ -1522,7 +1524,14 @@ def helper_dependency_risk_assessment(
             binding.get("home_assistant_supported_versions") or []
         )
         supported_text = ", ".join(str(item) for item in supported_versions)
-        if VERSION_UNSUPPORTED_REASON in codes:
+        if precision == "bounded_opaque" and not codes:
+            reasons = [
+                "Target-capable dependency semantics remain unresolved, so the helper plan is not execution-eligible.",
+            ]
+            warnings = [
+                "Resolve the opaque dependency evidence and create a fresh plan before approval or dispatch.",
+            ]
+        elif VERSION_UNSUPPORTED_REASON in codes:
             # State both sides plainly: the operator needs to know which
             # release is running and which the semantics were reviewed for.
             reasons = [

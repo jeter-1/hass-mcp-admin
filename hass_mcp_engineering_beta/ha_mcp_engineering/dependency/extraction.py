@@ -23,6 +23,7 @@ from .models import (
     obligation_fingerprint,
 )
 from .obligation_ledger import (
+    MAX_TEMPLATE_CANDIDATES,
     TemplateContextEvidence,
     TemplateContextValueEvidence,
     analyze_template_obligations,
@@ -1486,6 +1487,150 @@ def _project_obligations(
             )
         )
     return findings, dynamic
+
+
+def project_obligations(
+    obligations: Iterable[DependencyObligation],
+    *,
+    secret: str = "",
+) -> tuple[list[DependencyFinding], list[DynamicReference]]:
+    """Project an already-resolved authoritative ledger for compatibility."""
+
+    return _project_obligations(list(obligations), secret=secret)
+
+
+def resolve_literal_label_obligations(
+    obligations: Iterable[DependencyObligation],
+    *,
+    label_memberships: dict[str, tuple[str, ...]],
+    label_membership_fingerprints: dict[str, str],
+    label_membership_truncated: Iterable[str],
+    label_registry_complete: bool,
+) -> list[DependencyObligation]:
+    """Discharge literal ``label_entities`` opacity from one scan snapshot.
+
+    The template analyzer proves only the selector's bounded provenance.  The
+    dependency provider then resolves that selector against the same complete
+    entity/label registry generation used to build the index.  Failed,
+    truncated, mixed-producer, or dynamic selector evidence is left opaque.
+    """
+
+    truncated = set(label_membership_truncated)
+    resolved: list[DependencyObligation] = []
+    for item in obligations:
+        context = set(item.context_provenance)
+        producers = {
+            value.removeprefix("entity_set_producer:")
+            for value in context
+            if value.startswith("entity_set_producer:")
+        }
+        eligible = bool(
+            producers == {"label_entities"}
+            and "entity_selector_provenance:complete" in context
+            and "entity_selector_provenance:incomplete" not in context
+            and item.literal_selectors
+            and label_registry_complete
+        )
+        if not eligible:
+            resolved.append(item)
+            continue
+        selectors = tuple(sorted(set(item.literal_selectors)))
+        if any(
+            selector in truncated
+            or selector not in label_memberships
+            or selector not in label_membership_fingerprints
+            for selector in selectors
+        ):
+            resolved.append(item)
+            continue
+        candidates = tuple(
+            sorted(
+                {
+                    entity_id
+                    for selector in selectors
+                    for entity_id in label_memberships[selector]
+                    if valid_entity_id(entity_id)
+                },
+                key=lambda value: value.encode("utf-8"),
+            )
+        )
+        if len(candidates) > MAX_TEMPLATE_CANDIDATES:
+            resolved.append(item)
+            continue
+        if any(
+            len(label_memberships[selector])
+            != sum(
+                valid_entity_id(entity_id)
+                for entity_id in label_memberships[selector]
+            )
+            for selector in selectors
+        ):
+            resolved.append(item)
+            continue
+        resolution_material = {
+            "model": "literal-label-membership-v1",
+            "selectors": [
+                {
+                    "selector": selector,
+                    "membership_fingerprint": (
+                        label_membership_fingerprints[selector]
+                    ),
+                }
+                for selector in selectors
+            ],
+            "candidate_entity_ids": list(candidates),
+        }
+        resolution_fingerprint = hashlib.sha256(
+            json.dumps(
+                resolution_material,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        bound_context = tuple(
+            sorted(
+                context.union(
+                    {
+                        "label_membership_model:literal-label-membership-v1",
+                        "label_membership_fingerprint:"
+                        + resolution_fingerprint,
+                    }
+                )
+            )
+        )
+        resolved.append(
+            replace(
+                item,
+                outcome=(
+                    "exact_dependency"
+                    if candidates
+                    else "proven_dependency_neutral"
+                ),
+                reason_code=(
+                    "literal_label_membership_resolved"
+                    if candidates
+                    else "literal_label_membership_empty"
+                ),
+                semantic_category=(
+                    "state_entity_access"
+                    if candidates
+                    else "dependency_neutral"
+                ),
+                exact_entity_ids=candidates,
+                possible_entity_domains=(
+                    tuple(
+                        sorted(
+                            {value.split(".", 1)[0] for value in candidates}
+                        )
+                    )
+                    if candidates
+                    else None
+                ),
+                context_provenance=bound_context,
+                lock_projection="exact" if candidates else "none",
+            )
+        )
+    return resolved
 
 
 def _deduplicate_obligations(

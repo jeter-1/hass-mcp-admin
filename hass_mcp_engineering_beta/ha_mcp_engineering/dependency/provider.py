@@ -26,6 +26,8 @@ from .extraction import (
     discharge_resolved_blueprint_source_obligation,
     extract_document_with_obligations,
     make_coverage_failure_obligation,
+    project_obligations,
+    resolve_literal_label_obligations,
     resolve_blueprint_roles,
     valid_entity_id,
 )
@@ -526,8 +528,10 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         literal_label_selectors = sorted(
             {
                 selector
-                for item in dynamic
-                for selector in item.literal_label_selectors
+                for item in obligations
+                if "entity_set_producer:label_entities"
+                in item.context_provenance
+                for selector in item.literal_selectors
             },
             key=lambda item: item.encode("utf-8"),
         )
@@ -583,6 +587,31 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 and not label_warning
             )
             registry_warning.extend(label_warning)
+
+        obligations = resolve_literal_label_obligations(
+            obligations,
+            label_memberships=label_memberships,
+            label_membership_fingerprints=(
+                label_membership_fingerprints
+            ),
+            label_membership_truncated=label_membership_truncated,
+            label_registry_complete=label_registry_complete,
+        )
+        # Compatibility findings are a projection of the same post-registry
+        # ledger consumed by helper risk and persisted in the index.  Retain
+        # structured/blueprint-role findings, replace pre-resolution template
+        # projections, and never leave a stale opaque label projection behind.
+        ledger_findings, ledger_dynamic = project_obligations(
+            obligations,
+            secret=self.secret,
+        )
+        findings = [
+            item
+            for item in findings
+            if item.match_type != "template_ast_exact"
+        ]
+        findings.extend(ledger_findings)
+        dynamic = ledger_dynamic
 
         automation_coverage_failure_sources = {
             item.source_id

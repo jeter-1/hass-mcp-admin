@@ -449,6 +449,25 @@ def _single_plan_policy(
                     ),
                 ),
             )
+        if precision == "bounded_opaque":
+            return (
+                OperationPolicyClassification(
+                    ApprovalPolicyClass.ELEVATED_ADMIN,
+                    RiskDelta.HIGH,
+                    (
+                        PhysicalConsequence.SAFETY_CRITICAL
+                        if consequence == "safety_critical"
+                        else PhysicalConsequence.DIRECT
+                        if consequence == "direct"
+                        else PhysicalConsequence.INDIRECT
+                    ),
+                    (
+                        "exact_input_boolean_state_elevated_policy",
+                        "helper_dependency_bounded_semantic_opacity",
+                        "helper_dependency_execution_ineligible",
+                    ),
+                ),
+            )
         return (
             OperationPolicyClassification(
                 ApprovalPolicyClass.ELEVATED_ADMIN,

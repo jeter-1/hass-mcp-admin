@@ -1451,7 +1451,7 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
                 + helper
                 + "') | first) }}",
                 True,
-                True,
+                False,
             ),
             (
                 "{{ states([{'id':'sensor.a','ok':false},"
@@ -1473,7 +1473,7 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
                 + helper
                 + "','sensor.a'][:1] | first) or 'sensor.b') }}",
                 True,
-                True,
+                False,
             ),
         )
         for index, (template, exact, conservative) in enumerate(cases):
