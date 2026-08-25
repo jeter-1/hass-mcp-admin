@@ -16,6 +16,8 @@ import time
 from typing import Any, Awaitable, Callable
 import uuid
 
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
 from ..audit import AuditLogger
 from ..clients.rest import ExpectedHttpStatus, HomeAssistantRestClient
 from ..errors import (
@@ -160,10 +162,23 @@ LIFECYCLE_OPERATIONS = frozenset(
 )
 MAX_CONFIGURATION_OPERATIONS = 8
 MAX_PLAN_PROJECTION_FAILURES = 20
-PLAN_OBSERVABILITY_CURSOR_VERSION = 1
+PLAN_OBSERVABILITY_CURSOR_VERSION = 2
 PLAN_OBSERVABILITY_ORDERING_VERSION = 1
 PLAN_OBSERVABILITY_DEFAULT_PAGE_SIZE = 20
 PLAN_OBSERVABILITY_MAX_PAGE_SIZE = 100
+PLAN_OBSERVABILITY_CURSOR_MAX_CHARS = 2_048
+PLAN_OBSERVABILITY_CURSOR_NONCE_BYTES = 12
+PLAN_OBSERVABILITY_CURSOR_TAG_BYTES = 16
+PLAN_OBSERVABILITY_CURSOR_MAX_OFFSET = (1 << 63) - 1
+PLAN_OBSERVABILITY_CURSOR_KEY_CONTEXT = (
+    b"ha-mcp-engineering:plan-observability:cursor-encryption-key:v2"
+)
+PLAN_OBSERVABILITY_CURSOR_ASSOCIATED_DATA = (
+    b"ha-mcp-engineering:plan-observability:cursor:v2"
+)
+PLAN_OBSERVABILITY_CURSOR_BASE64URL_CHARS = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+)
 PLAN_OBSERVABILITY_RESPONSE_HEADROOM_CHARS = 8_000
 PLAN_OBSERVABILITY_SECTIONS = frozenset(
     {"summary", "obligation_evidence", "downstream_profiles"}
@@ -444,6 +459,12 @@ class ChangeGovernanceService:
         self._plan_observability_cursor_key = (
             plan_observability_cursor_key or secrets.token_bytes(32)
         )
+        cursor_encryption_key = hmac.new(
+            self._plan_observability_cursor_key,
+            PLAN_OBSERVABILITY_CURSOR_KEY_CONTEXT,
+            hashlib.sha256,
+        ).digest()
+        self._plan_observability_cursor_aead = AESGCM(cursor_encryption_key)
         self.dashboard_artifacts = DashboardArtifactStore(
             repository.root / "dashboard_artifacts",
             retention_days=repository.retention_days,
@@ -4774,43 +4795,62 @@ class ChangeGovernanceService:
             sort_keys=True,
             separators=(",", ":"),
         ).encode("utf-8")
-        signature = hmac.new(
-            self._plan_observability_cursor_key,
+        nonce = secrets.token_bytes(PLAN_OBSERVABILITY_CURSOR_NONCE_BYTES)
+        encrypted = self._plan_observability_cursor_aead.encrypt(
+            nonce,
             payload,
-            hashlib.sha256,
-        ).digest()
-        return (
-            base64.urlsafe_b64encode(payload).decode().rstrip("=")
-            + "."
-            + base64.urlsafe_b64encode(signature).decode().rstrip("=")
+            PLAN_OBSERVABILITY_CURSOR_ASSOCIATED_DATA,
         )
+        cursor = base64.urlsafe_b64encode(nonce + encrypted).decode().rstrip("=")
+        if len(cursor) > PLAN_OBSERVABILITY_CURSOR_MAX_CHARS:
+            raise GovernanceError(
+                ErrorCode.INVALID_REQUEST,
+                details={"reason": "cursor_exceeds_response_bound"},
+            )
+        return cursor
 
     def _decode_plan_observability_cursor(
         self, cursor: str
     ) -> dict[str, Any]:
         try:
-            payload_part, signature_part = cursor.split(".", 1)
-            payload = base64.urlsafe_b64decode(
-                payload_part + "=" * (-len(payload_part) % 4)
-            )
-            signature = base64.urlsafe_b64decode(
-                signature_part + "=" * (-len(signature_part) % 4)
-            )
             if (
-                base64.urlsafe_b64encode(payload).decode().rstrip("=")
-                != payload_part
-                or base64.urlsafe_b64encode(signature).decode().rstrip("=")
-                != signature_part
+                not isinstance(cursor, str)
+                or not cursor
+                or len(cursor) > PLAN_OBSERVABILITY_CURSOR_MAX_CHARS
+                or "=" in cursor
+                or any(
+                    character not in PLAN_OBSERVABILITY_CURSOR_BASE64URL_CHARS
+                    for character in cursor
+                )
             ):
+                raise ValueError("cursor encoding is invalid")
+            encoded = cursor.encode("ascii")
+            raw = base64.b64decode(
+                encoded + b"=" * (-len(encoded) % 4),
+                altchars=b"-_",
+                validate=True,
+            )
+            if base64.urlsafe_b64encode(raw).decode().rstrip("=") != cursor:
                 raise ValueError("cursor encoding is not canonical")
-            expected = hmac.new(
-                self._plan_observability_cursor_key,
-                payload,
-                hashlib.sha256,
-            ).digest()
-            if not hmac.compare_digest(signature, expected):
-                raise ValueError("cursor signature mismatch")
+            if len(raw) <= (
+                PLAN_OBSERVABILITY_CURSOR_NONCE_BYTES
+                + PLAN_OBSERVABILITY_CURSOR_TAG_BYTES
+            ):
+                raise ValueError("cursor is truncated")
+            nonce = raw[:PLAN_OBSERVABILITY_CURSOR_NONCE_BYTES]
+            payload = self._plan_observability_cursor_aead.decrypt(
+                nonce,
+                raw[PLAN_OBSERVABILITY_CURSOR_NONCE_BYTES:],
+                PLAN_OBSERVABILITY_CURSOR_ASSOCIATED_DATA,
+            )
             value = json.loads(payload.decode("utf-8"))
+            canonical_payload = json.dumps(
+                value,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            if canonical_payload != payload:
+                raise ValueError("cursor claims are not canonical")
             required = {
                 "version",
                 "plan_id",
@@ -4824,7 +4864,37 @@ class ChangeGovernanceService:
             }
             if not isinstance(value, dict) or set(value) != required:
                 raise ValueError("cursor fields are invalid")
-            if type(value["offset"]) is not int or value["offset"] < 0:
+            for field in (
+                "plan_id",
+                "plan_hash",
+                "evidence_fingerprint",
+                "full_set_fingerprint",
+            ):
+                field_value = value[field]
+                if (
+                    not isinstance(field_value, str)
+                    or not field_value
+                    or len(field_value) > 256
+                ):
+                    raise ValueError(f"cursor {field} is invalid")
+            if value["section"] not in (
+                "obligation_evidence",
+                "downstream_profiles",
+            ):
+                raise ValueError("cursor section is invalid")
+            if (
+                type(value["version"]) is not int
+                or not 1 <= value["version"] <= 255
+                or type(value["ordering_version"]) is not int
+                or not 1 <= value["ordering_version"] <= 255
+            ):
+                raise ValueError("cursor version is invalid")
+            if (
+                type(value["offset"]) is not int
+                or not 0
+                <= value["offset"]
+                <= PLAN_OBSERVABILITY_CURSOR_MAX_OFFSET
+            ):
                 raise ValueError("cursor offset is invalid")
             if (
                 type(value["page_size"]) is not int
